@@ -26,6 +26,11 @@ export const OPERATIONAL_FLAGS: { key: string; label: string; desc: string }[] =
     desc: 'Incoming calls can be forwarded to an outside Australian mobile or landline (Call routing). Each forwarded minute is an outbound call on Colvy’s Twilio account. Off = forwarding steps are skipped (the call rings the next step, then voicemail) and new forwarding can’t be saved. Needs a plan with phone channels either way.',
   },
   {
+    key: 'whatsapp',
+    label: 'WhatsApp sending',
+    desc: 'The business can send WhatsApp messages (inbox replies, approved templates, agents) once its WhatsApp sender is approved (company → WhatsApp). Each message is charged to Colvy’s Twilio account (plus Meta’s template fees). Off = sends are refused; customers’ WhatsApp messages still arrive in the inbox. Needs a plan with messaging channels either way.',
+  },
+  {
     key: 'posthog_analytics',
     label: 'Product analytics (PostHog)',
     desc: 'Capture pageviews and fulfilment events for this company. Off = no analytics events are sent for this company (independent of the global PostHog key).',

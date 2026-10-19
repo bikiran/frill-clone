@@ -111,6 +111,9 @@ export async function POST(req: NextRequest) {
     const to = get('To') || ''
     const text = get('Body') || ''
     if (!from || !to) return xml(EMPTY_TWIML)
+    // WhatsApp has its own webhook (/api/twilio/whatsapp). A sender pointed
+    // here by mistake must not open an SMS thread with "whatsapp:+61…".
+    if (/^whatsapp:/i.test(from) || /^whatsapp:/i.test(to)) return xml(EMPTY_TWIML)
 
     // Which company owns the receiving number? Resolve from the authoritative
     // phone_numbers table (NOT the stale integrations.phone_number column), then

@@ -92,11 +92,18 @@ export class TwilioService {
     messagingServiceSid?: string
     mediaUrls?: string[]
     statusCallback?: string
+    /** A Content Template (HX…), e.g. an approved WhatsApp template, sent instead of Body. */
+    contentSid?: string
+    /** The template's variables as Twilio takes them: a JSON object string, {"1":"Sam"}. */
+    contentVariables?: string
   }): Promise<{ sid: string | null; raw: any }> {
     const form: Record<string, any> = { To: params.to }
     if (params.messagingServiceSid) form.MessagingServiceSid = params.messagingServiceSid
     else if (params.from) form.From = params.from
-    if (params.text) form.Body = params.text
+    if (params.contentSid) {
+      form.ContentSid = params.contentSid
+      if (params.contentVariables) form.ContentVariables = params.contentVariables
+    } else if (params.text) form.Body = params.text
     if (params.mediaUrls?.length) form.MediaUrl = params.mediaUrls
     if (params.statusCallback) form.StatusCallback = params.statusCallback
     const data = await this.req('/Messages.json', 'POST', form)

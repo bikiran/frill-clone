@@ -202,13 +202,13 @@ export async function setOpsAuto(db: any, companyId: string, raw: any, userId: s
 }
 
 // ── Which channels Support and Reception answer ──────────────────────────────
-// SMS and website chat from the start; email, Facebook and Instagram once the
-// business switches them on. Stored as a company-wide (role-less) policy row
+// SMS and website chat from the start; email, Facebook, Instagram and WhatsApp
+// once the business switches them on. Stored as a company-wide (role-less) policy row
 // whose action key matches no action, so the policy engine ignores it.
 
 export const AGENT_CHANNEL_OPTIONS: { key: string; label: string }[] = [
   { key: 'sms', label: 'SMS' }, { key: 'chat', label: 'Website chat' }, { key: 'email', label: 'Email' },
-  { key: 'facebook', label: 'Facebook' }, { key: 'instagram', label: 'Instagram' },
+  { key: 'facebook', label: 'Facebook' }, { key: 'instagram', label: 'Instagram' }, { key: 'whatsapp', label: 'WhatsApp' },
 ]
 export const DEFAULT_AGENT_CHANNELS = ['sms', 'chat']
 const CHANNELS_ACTION = 'inbound_channels'

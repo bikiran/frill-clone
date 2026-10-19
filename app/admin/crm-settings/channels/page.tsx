@@ -3,7 +3,9 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { authFetch } from '@/lib/auth-fetch'
 import { useCompanyUser, S } from '../_shared'
+import WhatsAppGlyph from '@/components/WhatsAppGlyph'
 
 // Each channel points at the page that actually connects it. Channels that
 // aren't built yet say so honestly instead of offering a button that does
@@ -33,9 +35,9 @@ const CHANNELS = [
   { id: 'realestate', name: 'RealEstate',       color: '#E4002B', icon: 'RE',
     href: '/admin/crm-settings/channels/realestate', ready: true,
     note: 'realestate.com.au listing enquiries land in your inbox.' },
-  { id: 'whatsapp',  name: 'WhatsApp',         color: '#25D366', icon: 'W',
-    href: '', ready: false,
-    note: 'Needs a Meta app + WhatsApp Business account.' },
+  { id: 'whatsapp',  name: 'WhatsApp',         color: '#25D366', icon: <WhatsAppGlyph size={20} color="#fff" />,
+    href: '/admin/crm-settings/channels/whatsapp', ready: true,
+    note: 'WhatsApp Business messages in your inbox. Colvy registers your number with Meta.' },
   { id: 'instagram', name: 'Instagram',        color: '#E4405F', icon: 'IG',
     href: '/admin/crm-settings/channels/meta', ready: true,
     note: 'Connect IG accounts per outlet.' },
@@ -48,6 +50,8 @@ export default function ChannelsSettings() {
   const router = useRouter()
   const { companyId, loading } = useCompanyUser()
   const [connected, setConnected] = useState<Record<string, boolean>>({})
+  // WhatsApp goes request → pending → connected, set by Colvy (/api/whatsapp).
+  const [waStatus, setWaStatus] = useState<string>('not_requested')
 
   useEffect(() => {
     if (!companyId) return
@@ -94,6 +98,14 @@ export default function ChannelsSettings() {
 
       setConnected(status)
     })()
+    authFetch(`/api/whatsapp?companyId=${encodeURIComponent(companyId)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        const s = d?.sender?.status || 'not_requested'
+        setWaStatus(s)
+        if (s === 'approved') setConnected(c => ({ ...c, whatsapp: true }))
+      })
+      .catch(() => {})
   }, [companyId])
 
   if (loading) return <div style={{ color: 'var(--slate)' }}>Loading…</div>
@@ -106,6 +118,14 @@ export default function ChannelsSettings() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 16, marginTop: 22 }}>
         {CHANNELS.map(ch => {
           const isConnected = !!connected[ch.id]
+          // WhatsApp's own states: Request access / Pending approval / Connected.
+          const wa = ch.id === 'whatsapp' ? ({
+            not_requested: { label: 'Not connected', dot: '#d1d5db', fg: 'var(--slate)', cta: 'Request access', primary: true },
+            pending: { label: 'Pending approval', dot: '#f59e0b', fg: '#b45309', cta: 'View request', primary: false },
+            approved: { label: 'Connected', dot: '#22c55e', fg: '#059669', cta: 'Manage', primary: false },
+            rejected: { label: 'Not approved', dot: '#ef4444', fg: '#b91c1c', cta: 'Details', primary: false },
+            disabled: { label: 'Switched off', dot: '#d1d5db', fg: 'var(--slate)', cta: 'Details', primary: false },
+          } as Record<string, { label: string; dot: string; fg: string; cta: string; primary: boolean }>)[waStatus] || null : null
           return (
             <div key={ch.name} style={{ border: '1px solid var(--border)', borderRadius: 14, padding: 18, background: '#fff', opacity: ch.ready ? 1 : 0.72 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 12 }}>
@@ -118,12 +138,18 @@ export default function ChannelsSettings() {
               <p style={{ fontSize: 12.5, color: 'var(--slate)', margin: '0 0 14px', lineHeight: 1.5, minHeight: 34 }}>{ch.note}</p>
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 600, color: isConnected ? '#059669' : 'var(--slate)' }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: isConnected ? '#22c55e' : '#d1d5db', flexShrink: 0 }} />
-                  {isConnected ? 'Connected' : ch.ready ? 'Not connected' : 'Coming soon'}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 600, color: wa ? wa.fg : isConnected ? '#059669' : 'var(--slate)' }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: wa ? wa.dot : isConnected ? '#22c55e' : '#d1d5db', flexShrink: 0 }} />
+                  {wa ? wa.label : isConnected ? 'Connected' : ch.ready ? 'Not connected' : 'Coming soon'}
                 </span>
 
-                {ch.ready ? (
+                {wa ? (
+                  <button
+                    onClick={() => router.push(ch.href)}
+                    style={{ padding: '7px 15px', borderRadius: 8, border: wa.primary ? 'none' : '1px solid var(--border)', background: wa.primary ? 'var(--coral)' : '#fff', color: wa.primary ? '#fff' : 'var(--ink)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    {wa.cta}
+                  </button>
+                ) : ch.ready ? (
                   <button
                     onClick={() => router.push(ch.href)}
                     style={{ padding: '7px 15px', borderRadius: 8, border: isConnected ? '1px solid var(--border)' : 'none', background: isConnected ? '#fff' : 'var(--coral)', color: isConnected ? 'var(--ink)' : '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>

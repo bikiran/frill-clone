@@ -13,6 +13,7 @@ import { runReadTool, type AssistantContext } from '@/lib/ai-assistant/tools'
 import { notifyCompany } from '@/lib/notify'
 import type { ActionContext, ActionDef, ActionResult, JsonSchema, PolicyLimits } from './types'
 import { AUTO_TOPICS } from './pilot'
+import { serviceWindow } from '@/lib/whatsapp-core'
 import { findCustomerOrders, checkOrderStatus } from './order-actions'
 import { getBusinessHours } from './business-actions'
 import { getReview, replyToReviewAction } from './review-actions'
@@ -277,6 +278,10 @@ async function sendOnItsOwn(ctx: ActionContext, args: any, limits: PolicyLimits)
   // Meta allows automated replies only within 24 hours of the customer's last message.
   if (['facebook', 'instagram'].includes(String(conv?.channel || '')) && lastIn?.[0]?.created_at && Date.now() - new Date(lastIn[0].created_at).getTime() > 23 * 3600_000) {
     return 'Meta only allows automatic replies within 24 hours of the customer’s message, so a person sends it.'
+  }
+  // WhatsApp: free-form messages only inside the 24-hour window (lib/whatsapp-core).
+  if (String(conv?.channel || '') === 'whatsapp' && !serviceWindow(lastIn?.[0]?.created_at || null).open) {
+    return 'The WhatsApp 24-hour window has closed, so only a person can send an approved template now.'
   }
   if (conv?.ai_enabled === false) return 'AI replies are switched off for this conversation, so a person approves it.'
   // The automatic missed-call text (lib/missed-call-text) isn't anyone replying.
