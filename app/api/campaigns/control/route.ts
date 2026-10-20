@@ -1,4 +1,4 @@
-import { requireCompanyAdmin, callerUser } from '@/lib/company-access'
+import { requireCompanyAccess, callerUser } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { CampaignNotReadyError, notReadyBody } from '@/lib/campaign-sender'
@@ -15,7 +15,7 @@ const admin = () => createClient(
 
 /**
  * POST /api/campaigns/control — change a queued or sending campaign, SMS or
- * email alike (lib/campaign-control). The workspace owner or an admin only.
+ * email alike (lib/campaign-control). Same access as scheduling.
  *
  * Body: { companyId, campaignId, action, scheduledAt? }
  *   action 'unschedule'  scheduled → draft (content and audience kept; held
@@ -32,10 +32,10 @@ export async function POST(req: NextRequest) {
     const { companyId, campaignId, action, scheduledAt } = await req.json().catch(() => ({}))
     if (!companyId || !campaignId) return NextResponse.json({ error: 'Missing companyId or campaignId' }, { status: 400 })
     const db = admin()
-    const access = await requireCompanyAdmin(req, db, companyId)
-    if (!access.ok) {
-      return NextResponse.json({ error: access.notAdmin ? 'Only the workspace owner or an admin can change a scheduled or sending campaign.' : 'Not authorized' }, { status: access.unavailable ? 503 : 403 })
-    }
+    // Same access as scheduling: whoever can schedule a campaign can take it
+    // back, move it or stop it.
+    const access = await requireCompanyAccess(req, db, companyId)
+    if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: access.unavailable ? 503 : 403 })
     if (action === 'unschedule') {
       const r = await unscheduleCampaign(db, companyId, campaignId)
       return NextResponse.json({ ok: true, action, ...r })

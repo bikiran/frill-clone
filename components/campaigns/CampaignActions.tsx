@@ -3,7 +3,7 @@
 // Unschedule / Reschedule / Stop sending for a campaign, the same for SMS and
 // email, from the campaign page and the campaigns list. Each asks first (the
 // in-app confirm dialog, never window.confirm), then calls
-// /api/campaigns/control (owner or admin only) and says what happened.
+// /api/campaigns/control and says what happened.
 //
 //   const r = await stopSendingFlow(companyId, campaign)
 //   if (r) { setMessage(r.message); if (r.ok) setCampaign(c => ({ ...c, ...r.patch })) }
