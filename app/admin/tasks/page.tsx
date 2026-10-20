@@ -19,6 +19,9 @@ import { peekCompanyUser, resolveCompanyUser, readCache, writeCache } from '@/li
 import { readLocal, writeLocal } from '@/lib/local-cache'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { foldRepeats } from '@/lib/task-fold'
+import { beginWrite, endWrite, overlayPending, inOrder, type PendingWrites, type WriteChains } from '@/lib/task-pending'
+import { checklistActivity } from '@/lib/task-checklist'
+import ChecklistItemText from '@/components/ChecklistItemText'
 
 function parseTs(d: string | null | undefined): Date | null {
   if (!d) return null
@@ -163,6 +166,12 @@ export default function TasksPage() {
   const [userId, setUserId] = useState<string | null>(null)
   const [me, setMe] = useState('')
   const [tasks, setTasks] = useState<any[]>(seededTasks ?? [])
+  // Latest tasks for saves fired from a timer or an older render's closure.
+  const tasksRef = useRef<any[]>(tasks)
+  tasksRef.current = tasks
+  // Edits still saving, re-applied over every refetch (see lib/task-pending).
+  const pendingRef = useRef<PendingWrites>(new Map())
+  const writeChainsRef = useRef<WriteChains>(new Map())
   const [convs, setConvs] = useState<Record<string, any>>({})
   const [team, setTeam] = useState<any[]>([])
   const userIdRef = useRef<string | null>(null)
@@ -401,6 +410,7 @@ export default function TasksPage() {
   }, [])
 
   const loadTasks = useCallback(async (cid: string) => {
+    const startedAt = Date.now()
     // Fetch ALL tasks in pages — a single .limit(1000) truncated busy boards
     // (recurring series pre-generate up to 60 dated rows each), so the oldest
     // occurrences silently dropped off the board. Page until a short page or a
@@ -434,7 +444,7 @@ export default function TasksPage() {
       const base = await fetchAllTasks('id, conversation_id, company_id, text, done, assigned_to, assigned_to_id, due_date, created_at')
       data = base.data
     } else data = full.data
-    let rows: any[] = data || []
+    let rows: any[] = overlayPending(data || [], pendingRef.current, startedAt)
 
     // Paint the real tasks immediately, before the (slower) calendar merge and
     // conversation enrichment — so the list shows up straight away. On a refetch,
@@ -512,6 +522,7 @@ export default function TasksPage() {
       }
     } catch { /* backfill is best-effort */ }
 
+    rows = overlayPending(rows, pendingRef.current, startedAt)
     setTasks(rows)
     writeCache(`tasks:${cid}`, rows)
     writeLocal('tasks', userIdRef.current, cid, rows)
@@ -768,8 +779,13 @@ export default function TasksPage() {
   // Persist a field change (calendar-routing + resilient), WITHOUT touching
   // local state — callers that already updated state optimistically (e.g. the
   // batched drag reorder) use this to avoid a re-render per task.
-  const writeTaskFields = async (id: string, fields: any) => {
-    const target = tasks.find(t => t.id === id)
+  const writeTaskFields = (id: string, fields: any): Promise<boolean> => {
+    beginWrite(pendingRef.current, id, fields)
+    return inOrder(writeChainsRef.current, id, () => saveTaskFields(id, fields))
+  }
+  const saveTaskFields = async (id: string, fields: any) => {
+    const target = tasksRef.current.find(t => t.id === id)
+    let ok = false
     try {
       if (target?._source === 'calendar') {
         // Lives in calendar_events — translate the task fields back and save it
@@ -804,17 +820,23 @@ export default function TasksPage() {
           reminder_channels: raw.reminder_channels ?? null,
           notify_customer: !!raw.notify_customer,
           customer_contact_id: raw.customer_contact_id ?? null,
-          attachments: fields.attachments !== undefined ? fields.attachments : (raw.attachments ?? []),
-          checklist: fields.checklist !== undefined ? fields.checklist : (raw.checklist ?? []),
-          description: fields.description !== undefined ? fields.description : (raw.description ?? null),
-          cover_image: fields.cover_image !== undefined ? fields.cover_image : (raw.cover_image ?? null),
-          sort_order: fields.sort_order !== undefined ? fields.sort_order : (raw.sort_order ?? null),
-          linked_notes: fields.linked_notes !== undefined ? fields.linked_notes : (raw.linked_notes ?? []),
+          attachments: fields.attachments !== undefined ? fields.attachments : (target.attachments ?? raw.attachments ?? []),
+          checklist: fields.checklist !== undefined ? fields.checklist : (target.checklist ?? raw.checklist ?? []),
+          description: fields.description !== undefined ? fields.description : (target.description ?? raw.description ?? null),
+          cover_image: fields.cover_image !== undefined ? fields.cover_image : (target.cover_image ?? raw.cover_image ?? null),
+          sort_order: fields.sort_order !== undefined ? fields.sort_order : (target.sort_order ?? raw.sort_order ?? null),
+          linked_notes: fields.linked_notes !== undefined ? fields.linked_notes : (target.linked_notes ?? raw.linked_notes ?? []),
         }
-        await authFetch('/api/calendar', {
+        const r = await authFetch('/api/calendar', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         })
+        ok = r.ok
+        if (!ok) {
+          endWrite(pendingRef.current, id, false)
+          alert('Could not save this change.')
+          if (companyId) loadTasks(companyId)
+        }
       } else {
         // Supabase returns { error } rather than throwing, so a failed write
         // used to pass silently — the change looked saved until the next
@@ -832,8 +854,10 @@ export default function TasksPage() {
           if (!Object.keys(payload).length) { error = null as any; break }
           ;({ error } = await (supabase as any).from('conversation_tasks').update(payload).eq('id', id))
         }
+        ok = !error
         if (error) {
           console.error('[task update] failed', error, fields)
+          endWrite(pendingRef.current, id, false)
           alert(`Could not save: ${error.message}`)
           if (companyId) loadTasks(companyId)
         }
@@ -841,8 +865,11 @@ export default function TasksPage() {
     }
     catch (e: any) {
       console.error('[task update] threw', e)
+      endWrite(pendingRef.current, id, false)
       if (companyId) loadTasks(companyId)
     }
+    if (ok) endWrite(pendingRef.current, id, true)
+    return ok
   }
   // Card history — record meaningful changes so each task card shows its own
   // activity trail. Best-effort: if the table isn't migrated yet it stays quiet.
@@ -888,7 +915,7 @@ export default function TasksPage() {
     if (fields.due_date !== undefined && fields.due_date !== prev.due_date) out.push({ kind: 'due', detail: fields.due_date ? `set the due date to ${fmtDueShort(fields.due_date)}` : 'cleared the due date' })
     if (fields.title !== undefined && (fields.title || '') !== (prev.title || '')) out.push({ kind: 'edit', detail: `renamed this to “${(fields.title || '').slice(0, 60)}”` })
     if ((fields.text !== undefined && (fields.text || '') !== (prev.text || '')) || (fields.description !== undefined && (fields.description || '') !== (prev.description || ''))) out.push({ kind: 'edit', detail: 'updated the description' })
-    if (fields.checklist !== undefined && JSON.stringify(fields.checklist || []) !== JSON.stringify(prev.checklist || [])) out.push({ kind: 'checklist', detail: 'updated the checklist' })
+    if (fields.checklist !== undefined) { const c = checklistActivity(prev.checklist, fields.checklist); if (c) out.push({ kind: 'checklist', detail: c }) }
     if (fields.linked_notes !== undefined) { const b = (Array.isArray(prev.linked_notes) ? prev.linked_notes : []).length, a = (fields.linked_notes || []).length; if (a !== b) out.push({ kind: 'edit', detail: a > b ? 'linked a note' : 'unlinked a note' }) }
     if (fields.attachments !== undefined) { const b = (Array.isArray(prev.attachments) ? prev.attachments : []).length, a = (fields.attachments || []).length; if (a !== b) out.push({ kind: 'edit', detail: a > b ? 'added an attachment' : 'removed an attachment' }) }
     if (fields.order_id !== undefined && fields.order_id !== prev.order_id) out.push({ kind: 'edit', detail: fields.order_id ? 'linked an order' : 'removed the linked order' })
@@ -899,9 +926,9 @@ export default function TasksPage() {
   }
 
   const patchTask = async (id: string, fields: any) => {
-    const prev = tasks.find(t => t.id === id)
+    const prev = tasksRef.current.find(t => t.id === id)
     setTasks(cur => cur.map(t => t.id === id ? { ...t, ...fields } : t))
-    await writeTaskFields(id, fields)
+    if (!await writeTaskFields(id, fields)) return
     logActivity(id, diffActivity(prev, fields))
     if (fields.status === 'done' && prev && statusOf(prev) !== 'done') announceCompletion(prev)
   }
@@ -968,47 +995,54 @@ export default function TasksPage() {
     if (!task.series_id || !scope || scope === 'this' || task._source === 'calendar') {
       return patchTask(task.id, fields)
     }
+    const inScope = (t: any) => t.series_id === task.series_id &&
+      !(scope === 'following' && parseTs(t.due_date) && parseTs(task.due_date) && (parseTs(t.due_date)! < parseTs(task.due_date)!))
+    const before = tasksRef.current.find(t => t.id === task.id) || task
+    const affected = tasksRef.current.filter(inScope).map(t => t.id)
     // Optimistic local update across the affected rows.
-    setTasks(cur => cur.map(t => {
-      if (t.series_id !== task.series_id) return t
-      if (scope === 'following' && parseTs(t.due_date) && parseTs(task.due_date) && (parseTs(t.due_date)! < parseTs(task.due_date)!)) return t
-      return { ...t, ...fields }
-    }))
-    try {
-      let payload = { ...fields }
-      const runScoped = () => {
-        let q = (supabase as any).from('conversation_tasks').update(payload).eq('series_id', task.series_id)
-        if (scope === 'following' && task.due_date) q = q.gte('due_date', task.due_date)
-        return q
-      }
-      let { error } = await runScoped()
-      // Strip a column the DB hasn't migrated yet (e.g. description before
-      // COLVY_V230) and retry, so one missing field can't revert the whole
-      // series edit.
-      for (let attempt = 0; error && attempt < 3; attempt++) {
-        const m = /Could not find the '([^']+)'|column "?([a-z_]+)"? .* does not exist/i.exec(error.message || '')
-        const bad = m?.[1] || m?.[2]
-        if (!bad || !(bad in payload)) break
-        delete (payload as any)[bad]
-        if (!Object.keys(payload).length) { error = null as any; break }
-        ;({ error } = await runScoped())
-      }
-      if (error) { console.error('[task scoped update] failed', error); if (companyId) loadTasks(companyId) }
-      else {
-        // Record the change on every occurrence the edit touched, so a
-        // series-wide completion (or reschedule, priority change, …) shows up in
-        // each card's Activity — not just single-occurrence edits.
-        const entries = diffActivity(task, fields)
-        if (entries.length) {
-          const affected = tasks.filter(t =>
-            t.series_id === task.series_id &&
-            !(scope === 'following' && parseTs(t.due_date) && parseTs(task.due_date) && (parseTs(t.due_date)! < parseTs(task.due_date)!))
-          ).map(t => t.id)
-          affected.forEach(id => logActivity(id, entries))
-          if (fields.status === 'done') affected.forEach(id => { const t = tasks.find(x => x.id === id); if (t && statusOf(t) !== 'done') announceCompletion(t) })
+    setTasks(cur => cur.map(t => inScope(t) ? { ...t, ...fields } : t))
+    affected.forEach(id => beginWrite(pendingRef.current, id, fields))
+    // Queued behind any save still running for this task (see lib/task-pending).
+    await inOrder(writeChainsRef.current, task.id, async () => {
+      let ok = false
+      try {
+        let payload = { ...fields }
+        const runScoped = () => {
+          let q = (supabase as any).from('conversation_tasks').update(payload).eq('series_id', task.series_id)
+          if (scope === 'following' && task.due_date) q = q.gte('due_date', task.due_date)
+          return q
         }
+        let { error } = await runScoped()
+        // Strip a column the DB hasn't migrated yet (e.g. description before
+        // COLVY_V230) and retry, so one missing field can't revert the whole
+        // series edit.
+        for (let attempt = 0; error && attempt < 3; attempt++) {
+          const m = /Could not find the '([^']+)'|column "?([a-z_]+)"? .* does not exist/i.exec(error.message || '')
+          const bad = m?.[1] || m?.[2]
+          if (!bad || !(bad in payload)) break
+          delete (payload as any)[bad]
+          if (!Object.keys(payload).length) { error = null as any; break }
+          ;({ error } = await runScoped())
+        }
+        ok = !error
+        if (error) { console.error('[task scoped update] failed', error); affected.forEach(id => endWrite(pendingRef.current, id, false)); if (companyId) loadTasks(companyId) }
+        else {
+          affected.forEach(id => endWrite(pendingRef.current, id, true))
+          // Record the change on every occurrence the edit touched, so a
+          // series-wide completion (or reschedule, priority change, …) shows up in
+          // each card's Activity — not just single-occurrence edits.
+          const entries = diffActivity(before, fields)
+          if (entries.length) {
+            affected.forEach(id => logActivity(id, entries))
+            if (fields.status === 'done') affected.forEach(id => { const t = tasks.find(x => x.id === id); if (t && statusOf(t) !== 'done') announceCompletion(t) })
+          }
+        }
+      } catch (e) {
+        console.error('[task scoped update] threw', e)
+        if (!ok) affected.forEach(id => endWrite(pendingRef.current, id, false))
+        if (companyId) loadTasks(companyId)
       }
-    } catch (e) { console.error('[task scoped update] threw', e); if (companyId) loadTasks(companyId) }
+    })
   }
 
   // Remove missed copies of repeating tasks (past copies nobody ticked off).
@@ -2257,6 +2291,10 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
         const items: any[] = Array.isArray(task.checklist) ? task.checklist : []
         const doneN = items.filter(i => i.done).length
         const setItems = (next: any[]) => patch({ checklist: next })
+        // Match by id so a refresh that reorders the list can't hit the wrong
+        // row; items saved before ids existed fall back to their position.
+        const updateItem = (it: any, idx: number, fields: any) =>
+          setItems(items.map((x, j) => (it.id ? x.id === it.id : j === idx) ? { ...x, ...fields } : x))
         const addItem = () => {
           const text = checkText.trim(); if (!text) return
           const id = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.round(Math.random() * 1e6)}`
@@ -2274,18 +2312,22 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
               {items.map((it, idx) => (
                 <div key={it.id || idx} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 2px' }}>
                   <input type="checkbox" checked={!!it.done}
-                    onChange={() => setItems(items.map((x, j) => j === idx ? { ...x, done: !x.done } : x))}
+                    onChange={() => updateItem(it, idx, { done: !it.done })}
                     style={{ width: 16, height: 16, flexShrink: 0, cursor: 'pointer', accentColor: 'var(--coral)' }} />
-                  <input value={it.text} onChange={e => setItems(items.map((x, j) => j === idx ? { ...x, text: e.target.value } : x))}
-                    style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', fontSize: 13, background: 'transparent', color: 'var(--ink)', textDecoration: it.done ? 'line-through' : 'none', opacity: it.done ? 0.6 : 1 }} />
-                  <button onClick={() => setItems(items.filter((_, j) => j !== idx))} title="Remove"
+                  <ChecklistItemText value={it.text || ''} done={!!it.done} onCommit={text => updateItem(it, idx, { text })} />
+                  <button onClick={() => setItems(items.filter((x, j) => it.id ? x.id !== it.id : j !== idx))} title="Remove"
                     style={{ border: 'none', background: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: 15, lineHeight: 1, padding: 2, flexShrink: 0 }}>×</button>
                 </div>
               ))}
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
               <input value={checkText} onChange={e => setCheckText(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addItem() } }}
+                onKeyDown={e => {
+                  // Enter while an IME is composing (Chinese, Japanese, some
+                  // mobile keyboards) confirms the word — it isn't an "add".
+                  if (e.key !== 'Enter' || e.nativeEvent.isComposing || e.keyCode === 229) return
+                  e.preventDefault(); addItem()
+                }}
                 placeholder="Add a checklist item…"
                 style={{ flex: 1, padding: '8px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box' }} />
               <button onClick={addItem} disabled={!checkText.trim()}
