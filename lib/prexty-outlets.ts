@@ -7,7 +7,7 @@
 // land under the shop it happened in.
 //
 // The owner can pin each Prexty outlet to a location on the Prexty settings
-// page (prexty_integrations.outlet_map, V409). Until they do, an outlet whose
+// page (prexty_integrations.outlet_map, V410). Until they do, an outlet whose
 // name clearly names one location ("Oakleigh", "Roxy Aquarium Somerton") is
 // matched by name. Anything ambiguous stays unassigned rather than guessed.
 
@@ -48,7 +48,7 @@ export function locationName(id: string | null | undefined, locations: Location[
   return l ? (l.label || l.suburb || null) : null
 }
 
-/** The company's locations and saved outlet map (an empty map before V409). */
+/** The company's locations and saved outlet map (an empty map before V410). */
 export async function outletRouting(db: any, companyId: string): Promise<{ locations: Location[]; map: OutletMap }> {
   const [locs, integ] = await Promise.all([
     db.from('company_locations').select('id, label, suburb').eq('company_id', companyId),

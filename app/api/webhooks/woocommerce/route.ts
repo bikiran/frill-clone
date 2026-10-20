@@ -674,7 +674,7 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       attributed_at: attribution ? new Date().toISOString() : null,
       // A Prexty in-store sale (V407), so the apps can badge it.
       ...posColumns(order),
-      // …and the shop it was matched to (V409).
+      // …and the shop it was matched to (V410).
       ...(pos.isPos ? { pos_location_id: posLoc } : {}),
       // The full invoice detail (V408), so the order sheet doesn't lose it.
       detail: orderDetail(order),
@@ -684,7 +684,7 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     let sourceRowId = existingOrder?.id || null
     if (existingOrder?.id) {
       const { error } = await db.from('woocommerce_orders').update(orderRow).eq('id', existingOrder.id)
-      // A database from before V407/V409: write it without the missing columns.
+      // A database from before V407/V410: write it without the missing columns.
       if (error && missingPosColumns(error)) {
         const retry = await db.from('woocommerce_orders').update(withoutPosColumns(orderRow, error)).eq('id', existingOrder.id)
         if (retry.error && missingPosColumns(retry.error)) await db.from('woocommerce_orders').update(withoutPosColumns(orderRow)).eq('id', existingOrder.id)

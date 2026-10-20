@@ -237,7 +237,7 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
       }
 
       // 1. Upsert individual order rows for the order history view
-      // The shop each in-store sale was rung up at (V409, lib/prexty-outlets).
+      // The shop each in-store sale was rung up at (V410, lib/prexty-outlets).
       const routing = (orders || []).some((o: any) => posSaleInfo(o).isPos) ? await outletRouting(supabase, companyId).catch(() => null) : null
       const orderRows = (orders as any[]).map((o: any) => ({
         company_id: companyId,

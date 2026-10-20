@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
 
     const { error } = await db.from('prexty_integrations').update({ outlet_map: map, updated_at: new Date().toISOString() }).eq('company_id', companyId)
     if (error) {
-      if (missingColumn(error)) return NextResponse.json({ error: 'Run migration COLVY_V409 first, then save again.' }, { status: 409 })
+      if (missingColumn(error)) return NextResponse.json({ error: 'Run migration COLVY_V410 first, then save again.' }, { status: 409 })
       return NextResponse.json({ error: 'Could not save the shop mapping' }, { status: 500 })
     }
 
