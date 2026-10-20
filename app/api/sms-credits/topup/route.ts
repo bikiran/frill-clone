@@ -7,6 +7,7 @@ import { fmtCents, validateAutoTopUp, validateTopUpCents } from '@/lib/sms-credi
 import { billingUnavailableCopy, secretKeyOk } from '@/lib/billing-config'
 import { alertBillingNotConfigured } from '@/lib/billing-alert'
 import { COLVY_CONTACT } from '@/lib/colvy-contact'
+import { checkoutTaxParams } from '@/lib/tax-invoice-core'
 
 export const dynamic = 'force-dynamic'
 
@@ -102,7 +103,9 @@ export async function POST(req: NextRequest) {
       metadata,
       success_url: `${origin}/admin/billing?sms_credit=1#sms-credits`,
       cancel_url: `${origin}/admin/billing#sms-credits`,
-    })
+      // The buyer can add their ABN for the tax invoice (lib/tax-invoice-core).
+      ...checkoutTaxParams(process.env, { mode: 'payment', customer, description: 'Colvy SMS credit (prepaid). Price includes GST.' }),
+    } as any)
     return NextResponse.json({ url: session.url, sessionId: session.id })
   } catch (err: any) {
     console.error('[sms-credits/topup] checkout error', err?.message)

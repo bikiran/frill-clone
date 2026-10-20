@@ -17,9 +17,9 @@ const warn = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke=
 
 const tone = (c: BillingCheck) => c.state === 'ok' ? GREEN : c.state === 'warn' || !c.required ? AMBER : RED
 const icon = (c: BillingCheck) => c.state === 'ok' ? ok : c.state === 'warn' || !c.required ? warn : bad
-const stateLabel = (c: BillingCheck) => c.state === 'ok' ? 'Set' : c.state === 'missing' ? 'Missing' : c.state === 'invalid' ? 'Wrong value' : !c.required ? 'Optional' : c.envVar === 'STRIPE_SECRET_KEY' ? 'Test mode' : 'Check'
+const stateLabel = (c: BillingCheck) => c.state === 'ok' ? 'Set' : c.state === 'missing' ? (c.group === 'tax' && c.envVar !== 'COLVY_ABN' ? 'Recommended' : 'Missing') : c.state === 'invalid' ? 'Wrong value' : !c.required ? 'Optional' : c.envVar === 'STRIPE_SECRET_KEY' ? 'Test mode' : 'Check'
 
-const GROUPS: [BillingCheck['group'], string][] = [['keys', 'Keys'], ['plans', 'Plan prices'], ['addons', 'Add-ons']]
+const GROUPS: [BillingCheck['group'], string][] = [['keys', 'Keys'], ['plans', 'Plan prices'], ['addons', 'Add-ons'], ['tax', 'Tax invoices (Colvy’s details)']]
 
 export default function BillingConfigCard({ status, lastAlert }: { status: BillingStatus | null; lastAlert?: { day?: string; at?: string; tier?: string } | null }) {
   if (!status) return null
@@ -40,6 +40,15 @@ export default function BillingConfigCard({ status, lastAlert }: { status: Billi
                 ? `Customers can’t upgrade online: they see “Online upgrades aren’t available just yet” and your contact details. Add the ${status.missing.length} missing value${status.missing.length === 1 ? '' : 's'} below in Vercel → Settings → Environment Variables (Production), then redeploy.`
                 : 'Checkout works, but without the webhook secret a paid plan won’t switch on. Add it in Vercel, then redeploy.'}
           </p>
+          {(() => {
+            const abn = status.checks.find(c => c.envVar === 'COLVY_ABN')
+            return abn && abn.state !== 'ok' ? (
+              <p style={{ margin: '6px 0 0', fontSize: 12.5, color: AMBER, lineHeight: 1.5, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                <span style={{ flexShrink: 0, marginTop: 1 }}>{warn}</span>
+                <span>{abn.state === 'missing' ? 'Colvy’s ABN isn’t set' : 'Colvy’s ABN isn’t valid'} (COLVY_ABN): payment documents say “Receipt”, not “Tax Invoice”, so customers can’t claim the GST.</span>
+              </p>
+            ) : null
+          })()}
           {lastAlert?.at && (
             <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--sa-muted)' }}>
               Last customer blocked: {new Date(lastAlert.at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}{lastAlert.tier ? ` (${lastAlert.tier})` : ''}. You’re alerted at most once a day.

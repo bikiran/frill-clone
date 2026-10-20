@@ -19,6 +19,7 @@ import PortingQueuePage from '@/components/platform-admin/PortingQueuePage'
 import BillingConfigCard from '@/components/platform-admin/BillingConfigCard'
 import SmsCreditsPage from '@/components/platform-admin/SmsCreditsPage'
 import CompanySmsBilling from '@/components/platform-admin/CompanySmsBilling'
+import CompanyTaxInvoices from '@/components/platform-admin/CompanyTaxInvoices'
 import CompanyWhatsApp from '@/components/platform-admin/CompanyWhatsApp'
 import WhatsAppPage from '@/components/platform-admin/WhatsAppPage'
 import { COLVY_CONTACT, isColvyNumber } from '@/lib/colvy-contact'
@@ -628,7 +629,7 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
       <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)', textAlign: 'right', wordBreak: 'break-word' }}>{v ?? '—'}</span>
     </div>
   )
-  const TABS = [['overview', 'Overview'], ['plan', 'Subscription'], ['ent', 'Entitlements'], ['sms', 'SMS billing'], ['whatsapp', 'WhatsApp'], ['users', `Users${users ? ` (${users.length})` : ''}`], ['notes', `Notes${notes ? ` (${notes.length})` : ''}`], ['danger', 'Danger Zone']]
+  const TABS = [['overview', 'Overview'], ['plan', 'Subscription'], ['ent', 'Entitlements'], ['sms', 'SMS billing'], ['invoices', 'Tax invoices'], ['whatsapp', 'WhatsApp'], ['users', `Users${users ? ` (${users.length})` : ''}`], ['notes', `Notes${notes ? ` (${notes.length})` : ''}`], ['danger', 'Danger Zone']]
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 380, display: 'flex', justifyContent: 'flex-end' }}>
@@ -891,6 +892,8 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
           )}
 
           {tab === 'sms' && <CompanySmsBilling companyId={co.id} />}
+
+          {tab === 'invoices' && <CompanyTaxInvoices companyId={co.id} />}
 
           {tab === 'whatsapp' && <CompanyWhatsApp companyId={co.id} />}
 

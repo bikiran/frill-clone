@@ -187,6 +187,32 @@ export function smsAutoTopUpOffEmail(o: { business: string; error: string; balan
   return { subject: 'Auto top-up for SMS credits is off', html, text }
 }
 
+// ── A tax invoice was issued for a payment to Colvy (lib/tax-invoices) ──────
+
+export function taxInvoiceEmail(o: { business: string; title: string; number: string; total: string; gst: string; date: string; items: string[]; url: string }): Mail {
+  const isTax = o.title === 'Tax Invoice'
+  const word = isTax ? 'tax invoice' : 'receipt'
+  const { html, text } = colvyEmail({
+    preheader: `${o.title} ${o.number}: ${o.total}${isTax ? `, including GST of ${o.gst}` : ''}. Paid, thank you.`,
+    kicker: o.business,
+    title: `Your ${word} ${o.number}`,
+    intro: `Thanks for your payment. Your ${word} is ready to view, print or save as a PDF.`,
+    blocks: [{ type: 'facts', rows: [
+      [isTax ? 'Invoice number' : 'Receipt number', o.number],
+      ['Date', o.date],
+      ['For', o.items.join(', ') || 'Colvy'],
+      ['Total paid', o.total],
+      ...(isTax ? [['GST included', o.gst] as [string, string]] : []),
+    ] }],
+    cta: { label: `View ${word}`, url: o.url },
+    secondary: isTax
+      ? 'Keep it for your records: you can claim the GST as a credit in your BAS. All your invoices are in Billing → Billing history.'
+      : 'All your receipts are in Billing → Billing history.',
+    footerNote: `You’re receiving this because you’re the billing contact for ${o.business} on Colvy.`,
+  })
+  return { subject: `${o.title} ${o.number} from Colvy`, html, text }
+}
+
 // ── Colvy team alerts (lib/billing-alert) ───────────────────────────────────
 
 export function colvyTeamAlertEmail(subject: string, text: string): Mail {

@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import { requireCompanyAdmin } from '@/lib/company-access'
 import { getPort } from '@/lib/number-porting-server'
 import { formatAuNumber } from '@/lib/number-porting'
+import { checkoutTaxParams } from '@/lib/tax-invoice-core'
 
 export const dynamic = 'force-dynamic'
 
@@ -75,9 +76,12 @@ export async function POST(req: NextRequest) {
       customer_email: email || undefined,
       line_items: lineItems,
       metadata: { kind: 'ported_number', companyId, requestId: r.id },
+      // Whose numbers they are on every renewal's tax invoice (lib/tax-invoices).
+      ...(monthly > 0 ? { subscription_data: { metadata: { kind: 'ported_number', companyId, requestId: r.id } } } : {}),
+      ...checkoutTaxParams(process.env, { mode: monthly > 0 ? 'subscription' : 'payment', description: 'Number porting fee', createCustomer: true }),
       success_url: `${origin}/admin/crm-settings/channels/calls?port_billing=1&port_request=${encodeURIComponent(r.id)}&session_id={CHECKOUT_SESSION_ID}#porting`,
       cancel_url: `${origin}/admin/crm-settings/channels/calls#porting`,
-    })
+    } as any)
     try { await db.from('porting_requests').update({ stripe_checkout_session_id: session.id }).eq('id', r.id) } catch {}
     return NextResponse.json({ url: session.url })
   } catch (err: any) {

@@ -5,6 +5,7 @@ import { BRANDING_ADDON } from '@/lib/branding-addon'
 import { billingUnavailableCopy, checkoutBlockers, isKnownTier, priceIdFor } from '@/lib/billing-config'
 import { alertBillingNotConfigured } from '@/lib/billing-alert'
 import { COLVY_CONTACT } from '@/lib/colvy-contact'
+import { checkoutTaxParams } from '@/lib/tax-invoice-core'
 
 // The secret key and price IDs come from the environment (lib/billing-config
 // lists them; super admin → Billing shows which are missing). When they're
@@ -120,7 +121,9 @@ export async function POST(req: NextRequest) {
         subscription_data: { metadata: addonMeta },
         success_url: `${origin}/admin/billing?addon=branding`,
         cancel_url:  `${origin}/admin/billing`,
-      })
+        // The buyer can add their ABN for the tax invoice (lib/tax-invoice-core).
+        ...checkoutTaxParams(process.env, { mode: 'subscription', customer: sub?.stripe_customer_id || null }),
+      } as any)
       return NextResponse.json({ url: session.url, sessionId: session.id })
     }
 
@@ -133,7 +136,11 @@ export async function POST(req: NextRequest) {
       success_url: `${origin}/admin/billing?success=1`,
       cancel_url:  `${origin}/admin/billing`,
       ...trialParams,
-    })
+      // The workspace on the subscription too, so every renewal's tax invoice
+      // knows whose it is (lib/tax-invoices), and the buyer can add their ABN.
+      subscription_data: { ...(trialParams.subscription_data || {}), metadata: { userId, tier, ...(companyId ? { companyId } : {}) } },
+      ...checkoutTaxParams(process.env, { mode: 'subscription' }),
+    } as any)
 
     return NextResponse.json({ url: session.url, sessionId: session.id })
   } catch (err: any) {
