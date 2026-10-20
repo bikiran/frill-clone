@@ -8,6 +8,7 @@ import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
 import PageHeader from '@/components/PageHeader'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import { campaignControls, unscheduleFlow, rescheduleFlow, stopSendingFlow, type ActionOutcome } from '@/components/campaigns/CampaignActions'
 
 type Campaign = {
   id: string; name: string; channel: string; campaign_type: string | null
@@ -41,7 +42,7 @@ const STATUS_STYLE: Record<string, { bg: string; fg: string; label: string }> = 
   sending:   { bg: '#fef3c7', fg: '#b45309', label: 'Sending' },
   sent:      { bg: '#dcfce7', fg: '#15803d', label: 'Sent' },
   paused:    { bg: '#fef3c7', fg: '#b45309', label: 'Paused' },
-  cancelled: { bg: '#f3f4f6', fg: '#6b7280', label: 'Cancelled' },
+  cancelled: { bg: '#f3f4f6', fg: '#6b7280', label: 'Stopped' },
   failed:    { bg: '#fee2e2', fg: '#dc2626', label: 'Failed' },
 }
 const CHANNEL_LABEL: Record<string, string> = { sms: 'SMS', email: 'Email' }
@@ -230,6 +231,25 @@ export default function CampaignsPage() {
     } catch (e: any) { alert('Could not delete: ' + e.message) }
   }
 
+  // Unschedule / Reschedule / Stop sending, as on the campaign page (SMS and
+  // email alike), each confirmed first.
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null)
+  const runControl = async (c: Campaign, flow: (companyId: string, c: any) => Promise<ActionOutcome | null>) => {
+    if (!companyId || busyId) return
+    setBusyId(c.id)
+    try {
+      const r = await flow(companyId, c)
+      if (!r) return
+      setNotice({ ok: r.ok, text: `${c.name}: ${r.message}` })
+      if (r.ok && r.patch) setCampaigns(list => list.map(x => x.id === c.id ? { ...x, ...r.patch } as Campaign : x))
+    } finally { setBusyId(null) }
+  }
+  const rowBtn = (danger?: boolean): React.CSSProperties => ({
+    padding: '5px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: '#fff',
+    border: `1px solid ${danger ? '#fecaca' : 'var(--border)'}`, color: danger ? '#b91c1c' : 'var(--ink)', marginLeft: 6,
+  })
+
   const card: React.CSSProperties = { border: '1px solid var(--border)', borderRadius: 14, background: '#fff', padding: 16 }
   const statNum: React.CSSProperties = { fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: '4px 0 0' }
   const statLbl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.04em' }
@@ -327,6 +347,14 @@ export default function CampaignsPage() {
         ))}
       </div>
 
+      {notice && (
+        <div role="status" style={{ ...card, padding: '10px 14px', marginBottom: 12, fontSize: 13, display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start',
+          borderColor: notice.ok ? '#bbf7d0' : '#fecaca', background: notice.ok ? '#f0fdf4' : '#fef2f2', color: notice.ok ? '#166534' : '#7f1d1d' }}>
+          <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{notice.text}</span>
+          <button onClick={() => setNotice(null)} aria-label="Dismiss" style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'inherit', fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>
+        </div>
+      )}
+
       {/* Table */}
       <div style={{ border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden', background: '#fff', overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 940 }}>
@@ -356,7 +384,7 @@ export default function CampaignsPage() {
                   <td style={{ ...td, color: 'var(--ink)', fontWeight: 600 }}>
                     <button onClick={() => router.push(
                       // A sent campaign opens its report; a draft opens the builder.
-                      ['sent', 'sending'].includes(c.status)
+                      ['sent', 'sending', 'cancelled'].includes(c.status)
                         ? `/admin/campaigns/${c.id}/report`
                         : `/admin/campaigns/${c.id}`
                     )}
@@ -400,6 +428,15 @@ export default function CampaignsPage() {
                     {rev ? money(rev) : '—'}
                   </td>
                   <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    {campaignControls(c).reschedule && (
+                      <button onClick={() => runControl(c, rescheduleFlow)} disabled={!!busyId} style={rowBtn()}>Reschedule</button>
+                    )}
+                    {campaignControls(c).unschedule && (
+                      <button onClick={() => runControl(c, unscheduleFlow)} disabled={!!busyId} style={rowBtn(true)}>Unschedule</button>
+                    )}
+                    {campaignControls(c).stop && (
+                      <button onClick={() => runControl(c, stopSendingFlow)} disabled={!!busyId} style={rowBtn(true)}>Stop sending</button>
+                    )}
                     {c.status === 'draft' && (
                       <button onClick={() => deleteCampaign(c)} title="Delete draft"
                         style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#dc2626', padding: 4, display: 'inline-flex' }}>

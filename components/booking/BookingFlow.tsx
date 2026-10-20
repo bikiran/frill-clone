@@ -184,11 +184,16 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
   const fromOffer = !!offer && (offer.state === 'open' || offer.state === 'held') && !!slot && !!service && offer.service?.id === service.id && Date.parse(offer.start) === Date.parse(slot)
   const today = dateInZone(Date.now(), tz)
   const lastDay = service ? plusDays(today, service.max_days_ahead || 60) : plusDays(today, 60)
-  const openWaitlist = (day: string | null) => {
+  // `days` are business dates (SlotPicker converts the day it showed): every
+  // waitlist date on this page is the business's, like `today` above.
+  const openWaitlist = (days: string[] | null) => {
     setError(''); setWlDone(null)
-    setWl(w => day ? { ...w, mode: 'days', days: [day], addDay: '' } : { ...w, mode: 'range', days: [], from: today, to: plusDays(today, 13), addDay: '' })
+    const picked = (days || []).filter(d => d >= today && d <= lastDay)
+    setWl(w => picked.length ? { ...w, mode: 'days', days: picked, addDay: '' } : { ...w, mode: 'range', days: [], from: today, to: plusDays(today, 13) > lastDay ? lastDay : plusDays(today, 13), addDay: '' })
     setStep('waitlist')
   }
+  // Visitor elsewhere: say the waitlist's days are the business's.
+  const otherZone = typeof window !== 'undefined' && viewerTz() !== tz
   const joinWaitlist = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!service || submitting) return
@@ -452,7 +457,7 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
           ) : (
             <form onSubmit={joinWaitlist}>
               <h2 style={{ ...h2, marginBottom: 6 }}>Join the waitlist</h2>
-              <p style={{ margin: '0 0 16px', color: '#6b7280', fontSize: 13.5, lineHeight: 1.55 }}>Tell us when suits and we’ll text you if a spot opens up for {service.name}.</p>
+              <p style={{ margin: '0 0 16px', color: '#6b7280', fontSize: 13.5, lineHeight: 1.55 }}>Tell us when suits and we’ll text you if a spot opens up for {service.name}.{otherZone ? ` Days and times of day are ${data.company.name || 'the business'}’s local time (${tzShort(tz)}).` : ''}</p>
               <div style={label}>Which days?</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
                 <button type="button" aria-pressed={wl.mode === 'days'} onClick={() => setWl({ ...wl, mode: 'days' })} className={`bk-chip${wl.mode === 'days' ? ' sel' : ''}`}>Specific days</button>

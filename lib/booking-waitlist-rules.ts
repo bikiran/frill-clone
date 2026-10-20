@@ -103,24 +103,58 @@ export type CleanDates = { days: string[] | null; date_from: string; date_to: st
  * The dates and time of day a customer asked for, checked: specific days (up
  * to 14), or a range of up to 60 days; nothing in the past or beyond how far
  * ahead the service can be booked.
+ *
+ * Every date is a BUSINESS date ('YYYY-MM-DD' in the business's timezone):
+ * `today` and `lastDay` are the business's (dateInTz(now, settings.timezone)).
+ * A visitor behind the business (Los Angeles looking at Melbourne) can send
+ * the business's yesterday as "today" from a page loaded before midnight
+ * there: a range starting then starts today instead, and a specific day that
+ * is the business's yesterday is dropped when other days are left (alone, it
+ * is refused, as any past day is).
  */
 export function cleanWaitlistDates(input: any, opts: { today: string; lastDay: string }): { ok: true; value: CleanDates } | { ok: false; error: string } {
   const w: TimeWindow = input?.window === 'morning' || input?.window === 'afternoon' ? input.window : 'any'
   const inRange = (d: string) => d >= opts.today && d <= opts.lastDay
+  const yesterday = addDays(opts.today, -1)
   if (Array.isArray(input?.days) && input.days.length) {
-    const days = [...new Set<string>(input.days.filter(isDate))].sort()
+    let days = [...new Set<string>(input.days.filter(isDate))].sort()
     if (!days.length) return { ok: false, error: 'Pick the days that suit you.' }
     if (days.length > MAX_SPECIFIC_DAYS) return { ok: false, error: `Pick up to ${MAX_SPECIFIC_DAYS} days.` }
+    if (days.length > 1 && days[0] === yesterday) days = days.slice(1)
     if (!days.every(inRange)) return { ok: false, error: 'Pick days from today onwards, within the booking window.' }
     return { ok: true, value: { days, date_from: days[0], date_to: days[days.length - 1], time_window: w } }
   }
-  const from = isDate(input?.from) ? input.from : ''
+  let from = isDate(input?.from) ? input.from : ''
   const to = isDate(input?.to) ? input.to : from
   if (!from) return { ok: false, error: 'Pick the dates that suit you.' }
   if (to < from) return { ok: false, error: 'The end date is before the start date.' }
+  if (from === yesterday && to >= opts.today) from = opts.today
   if (!inRange(from) || !inRange(to)) return { ok: false, error: 'Pick dates from today onwards, within the booking window.' }
   if (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`) > MAX_RANGE_DAYS * 86_400_000) return { ok: false, error: `Pick a range of up to ${MAX_RANGE_DAYS} days.` }
   return { ok: true, value: { days: null, date_from: from, date_to: to, time_window: w } }
+}
+
+/**
+ * The business date(s) a day picked on the booking page's calendar stands
+ * for. The calendar can show days in the visitor's own timezone; the waitlist
+ * keeps business dates (what the server checks, matches and expires by).
+ *   • Same zone: that day.
+ *   • A day with free times shown: the business dates of those times (two
+ *     when the zones are far apart and the day straddles business midnight).
+ *   • A full day: the business date at noon of that day in the shown zone —
+ *     the business day that overlaps most of it.
+ * Kept within [today, lastDay] (business dates); never empty.
+ */
+export function waitlistDaysFor(day: string, shownTz: string, businessTz: string, opts: { slotStarts?: number[]; today?: string; lastDay?: string } = {}): string[] {
+  let out: string[]
+  if (!isDate(day)) out = []
+  else if (shownTz === businessTz) out = [day]
+  else if (opts.slotStarts?.length) out = [...new Set(opts.slotStarts.map(ms => dateInTz(ms, businessTz)))].sort()
+  else out = [dateInTz(zonedToUtc(day, '12:00', shownTz), businessTz)]
+  if (opts.today) out = out.map(d => (d < opts.today! ? opts.today! : d))
+  if (opts.lastDay) out = out.map(d => (d > opts.lastDay! ? opts.lastDay! : d))
+  out = [...new Set(out)].sort()
+  return out.length ? out : [opts.today || day]
 }
 
 /** "Tue 21 Oct" / "Tue 21 Oct – Fri 24 Oct" / "Tue 21, Thu 23 Oct", plus the time of day. */

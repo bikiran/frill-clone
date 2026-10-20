@@ -8,7 +8,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { resolveAudience, type AudienceFilter } from './campaign-audience'
-import { CampaignNotReadyError, savedFilterOf, updateCampaign } from './campaign-sender'
+import { CampaignNotReadyError, CampaignStateChangedError, savedFilterOf, updateCampaign } from './campaign-sender'
 import { prepareEmailCampaign, sendEmailBatch, type SenderDeps } from './email-campaign-sender'
 
 const admin = () => createClient(
@@ -66,20 +66,27 @@ function campaignMerge(campaign: any): Record<string, string> {
  * email counterpart of prepareCampaign). The audience is resolved again
  * here, against live consent and the suppression list.
  */
-export async function startEmailCampaign(companyId: string, campaignId: string, opts: { db?: any; deps?: SenderDeps } = {}) {
+export async function startEmailCampaign(companyId: string, campaignId: string, opts: { db?: any; deps?: SenderDeps; expectStatus?: string[] } = {}) {
   const db = opts.db || admin()
   const { data: campaign } = await db.from('campaigns')
     .select('*').eq('id', campaignId).eq('company_id', companyId).maybeSingle()
   if (!campaign) throw new Error('Campaign not found')
+  // The worker starts only what is still scheduled (it may have been
+  // unscheduled since the worker listed it).
+  if (opts.expectStatus && !opts.expectStatus.includes(campaign.status)) {
+    throw new CampaignStateChangedError(`This campaign is ${campaign.status === 'draft' ? 'no longer scheduled' : `now ${campaign.status}`}, so it wasn\u2019t started.`)
+  }
   if (['sending', 'sent'].includes(campaign.status)) throw new Error(`This campaign is already ${campaign.status}`)
+  if (campaign.status === 'cancelled') throw new CampaignNotReadyError('status', 'This campaign was stopped part-way, so it can\u2019t be sent again. Create a new campaign to send it again.')
   const { audience } = await preflightEmailCampaign(db, companyId, campaign)
   const merge = campaignMerge(campaign)
   let prepared
   try {
     prepared = await prepareEmailCampaign(companyId, campaignId, audience.recipients.map(r => ({
       contact_id: r.contact_id, email: r.email, name: r.name, merge,
-    })), { ...(opts.deps || {}), db })
+    })), { ...(opts.deps || {}), db, expectStatus: [campaign.status] })
   } catch (e: any) {
+    if (e instanceof CampaignStateChangedError) throw e
     // The sender's refusals are written for people ("The email has no subject line").
     if (/already/i.test(e?.message || '')) throw e
     throw new CampaignNotReadyError('message', e?.message || 'Couldn’t prepare the email')

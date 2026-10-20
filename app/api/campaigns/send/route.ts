@@ -1,7 +1,7 @@
 import { memberOr403 } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { prepareCampaign, processCampaignBatch, resumeCampaign, CampaignNotReadyError, notReadyBody, BATCH_BUDGET_MS, campaignMaySendNow } from '@/lib/campaign-sender'
+import { prepareCampaign, processCampaignBatch, resumeCampaign, CampaignNotReadyError, CampaignStateChangedError, notReadyBody, BATCH_BUDGET_MS, campaignMaySendNow } from '@/lib/campaign-sender'
 import { isEmailCampaign, startEmailCampaign, emailBatch } from '@/lib/campaign-email'
 import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
 
@@ -80,6 +80,8 @@ export async function POST(req: NextRequest) {
     // Not enough credit / not on the plan / allowance reached → 402 with the
     // reason and shortfall, so the editor can offer a top-up.
     if (e instanceof CampaignNotReadyError) return NextResponse.json(notReadyBody(e), { status: e.paymentRequired ? 402 : 400 })
+    // Unscheduled / deleted while it was starting: nothing was sent.
+    if (e instanceof CampaignStateChangedError) return NextResponse.json({ error: e.message }, { status: 409 })
     return NextResponse.json({ error: e.message }, { status: 400 })
   }
 }

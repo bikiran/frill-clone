@@ -2,12 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ClockIcon } from '@/components/booking/icons'
+import { waitlistDaysFor } from '@/lib/booking-waitlist-rules'
 
 // Month calendar + time list for picking a booking slot. Used by the public
 // booking page, the customer's reschedule screen and the team's reschedule
 // dialog. Times can be shown in the visitor's own timezone or the business's.
 // With `onWaitlist` (the public page, when the business keeps a booking
-// waitlist) full days can be picked too, and offer "Join the waitlist".
+// waitlist) full days can be picked too, and offer "Join the waitlist". The
+// calendar's days are in whichever zone the times are shown in; the waitlist
+// is handed BUSINESS dates (lib/booking-waitlist-rules waitlistDaysFor), the
+// dates the server checks, matches and expires by.
 
 export type SlotsResponse = { timezone: string; slots: { start: string; seatsLeft?: number }[] }
 
@@ -37,9 +41,9 @@ export default function SlotPicker({ accent = '#ff7a6b', businessTz, fetchSlots,
   onSelect: (iso: string) => void
   reloadKey?: any
   compact?: boolean
-  /** Join the waitlist (for this day, or any day when null). */
-  onWaitlist?: (day: string | null) => void
-  /** The last day the service can be booked ('YYYY-MM-DD'): full days after it can't be waited for. */
+  /** Join the waitlist (for these business dates — usually one — or any day when null). */
+  onWaitlist?: (days: string[] | null) => void
+  /** The last day the service can be booked ('YYYY-MM-DD', business time): full days after it can't be waited for. */
   maxDate?: string
 }) {
   const mine = useMemo(viewerTz, [])
@@ -126,6 +130,12 @@ export default function SlotPicker({ accent = '#ff7a6b', businessTz, fetchSlots,
     ['Evening', daySlots.filter(s => hourIn(Date.parse(s.start), tz) >= 17)],
   ]
   const dayLabel = day ? new Date(`${day}T12:00:00Z`).toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }) : ''
+  // The waitlist works in business dates: the day shown (in `tz`) → the
+  // business day(s) it stands for, kept inside the bookable window.
+  const businessToday = useMemo(() => dateIn(Date.now(), businessTz), [businessTz])
+  const waitFor = (d: string) => onWaitlist?.(waitlistDaysFor(d, tz, businessTz, {
+    slotStarts: (byDay.get(d) || []).map(s => Date.parse(s.start)), today: businessToday, lastDay: maxDate,
+  }))
 
   return (
     <div className={`bk-picker${compact ? ' bk-compact' : ''}`} style={{ ['--bk-accent' as any]: accent }}>
@@ -218,7 +228,7 @@ export default function SlotPicker({ accent = '#ff7a6b', businessTz, fetchSlots,
             <div style={{ paddingTop: 2 }}>
               <div style={{ fontWeight: 700, fontSize: 14.5, color: '#111', marginBottom: 6 }}>{dayLabel}</div>
               <div style={{ color: '#6b7280', fontSize: 13.5, lineHeight: 1.5, marginBottom: 12 }}>Fully booked. Join the waitlist and we’ll text you if a spot opens up.</div>
-              <button type="button" className="bk-wl" onClick={() => onWaitlist(day)} style={{ width: '100%' }}>Join the waitlist</button>
+              <button type="button" className="bk-wl" onClick={() => waitFor(day)} style={{ width: '100%' }}>Join the waitlist</button>
             </div>
           )
           : (
@@ -241,7 +251,7 @@ export default function SlotPicker({ accent = '#ff7a6b', businessTz, fetchSlots,
               </div>
               {onWaitlist && (
                 <div style={{ marginTop: 6, fontSize: 13, color: '#6b7280' }}>
-                  None of these suit? <button type="button" className="bk-wl-link" onClick={() => onWaitlist(day)}>Join the waitlist</button>
+                  None of these suit? <button type="button" className="bk-wl-link" onClick={() => waitFor(day)}>Join the waitlist</button>
                 </div>
               )}
             </>

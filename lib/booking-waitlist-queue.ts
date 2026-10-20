@@ -85,6 +85,35 @@ export async function bookingTimeFreed(db: any, companySettings: any, b: any, or
   } catch { return false }
 }
 
+/**
+ * The team cancelled an "in order" hold the waitlist made for someone (a
+ * pending booking, source 'waitlist_hold'): that person's offer has lapsed,
+ * and the time goes to the next person in line now, rather than when the hold
+ * would have run out. Idempotent (the offer moves on only once); never
+ * throws. `b` is the hold booking.
+ */
+export async function waitlistHoldReleased(db: any, b: any, origin: string | null, opts: { kick?: boolean } = {}): Promise<boolean> {
+  try {
+    if (!b?.id || b.source !== 'waitlist_hold') return false
+    const { data: offers, error } = await db.from('booking_waitlist_offers').select('id, company_id, service_id, slot_start, location_id')
+      .eq('hold_booking_id', b.id).eq('status', 'sent')
+    if (error) { if (!isMissingWaitlist(error)) console.error('[booking waitlist] hold release', error.message); return false }
+    let queued = false
+    for (const o of offers || []) {
+      const { data: mine } = await db.from('booking_waitlist_offers').update({ status: 'expired' }).eq('id', o.id).eq('status', 'sent').select('id')
+      if (!mine?.length) continue                        // housekeeping moved it on already
+      const at = Date.parse(o.slot_start)
+      if (!(at > Date.now())) continue
+      queued = (await queueWaitlistJob(db, {
+        companyId: o.company_id, kind: 'advance', serviceId: o.service_id, fromMs: at, untilMs: at,
+        payload: { location_id: o.location_id || null, after_offer: o.id, hold_cancelled: true },
+      })) || queued
+    }
+    if (queued && origin && opts.kick !== false) kickWaitlist(db, origin)
+    return queued
+  } catch { return false }
+}
+
 /** A booking was made from an offer: remember which (the offer's link token led to it). */
 export async function linkOfferToBooking(db: any, offerId: string, bookingId: string) {
   try { await db.from('booking_waitlist_offers').update({ booking_id: bookingId }).eq('id', offerId) } catch {}

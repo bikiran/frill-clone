@@ -14,6 +14,7 @@ import {
   creditRefusalText, campaignVars, uuidOrNull, refusalCode, TOP_UP_PATH,
 } from './campaign-credits'
 import { settleCampaign, releaseCampaign, maybeAutoTopUp, releaseHoldIfUnlimited, type Refusal } from './sms-credits'
+import { CampaignStateChangedError } from './campaign-state'
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -113,9 +114,36 @@ export async function updateCampaign(db: any, id: string, patch: Record<string, 
   }
 }
 
-/** Pause a campaign with a reason the editor shows. */
-export async function pauseCampaign(db: any, id: string, reason: string) {
-  await updateCampaign(db, id, { status: 'paused', status_reason: reason, updated_at: new Date().toISOString() })
+/**
+ * updateCampaign, but only while the campaign is still in one of `from` (a
+ * compare-and-set on status). True when this call made the change; false when
+ * something else (the worker starting it, someone unscheduling or stopping
+ * it) got there first.
+ */
+export async function updateCampaignIf(db: any, id: string, from: string[], patch: Record<string, any>): Promise<boolean> {
+  let p = { ...patch }
+  for (let i = 0; i < V394_CAMPAIGN_COLS.length + 1; i++) {
+    const { data, error } = await db.from('campaigns').update(p).eq('id', id).in('status', from).select('id')
+    if (!error) return !!data?.length
+    const col = missingColumn(error, V394_CAMPAIGN_COLS.filter(c => c in p))
+    if (!col) return false
+    const { [col]: _drop, ...rest } = p
+    p = rest
+  }
+  return false
+}
+
+export { CampaignStateChangedError }
+
+/**
+ * Pause a campaign with a reason the editor shows. With `from`, only while it
+ * is still in one of those statuses (so a batch can't un-stop a campaign that
+ * was stopped while it ran).
+ */
+export async function pauseCampaign(db: any, id: string, reason: string, from?: string[]) {
+  const patch = { status: 'paused', status_reason: reason, updated_at: new Date().toISOString() }
+  if (from) await updateCampaignIf(db, id, from, patch)
+  else await updateCampaign(db, id, patch)
 }
 
 async function loadPricing(db: any, companyId: string): Promise<SmsPricing> {
@@ -209,18 +237,26 @@ async function pool<T>(items: T[], n: number, fn: (x: T) => Promise<void>) {
  * can't duplicate recipients, and it refuses to run on a campaign that has
  * already been sent.
  */
-export async function prepareCampaign(companyId: string, campaignId: string, opts: { db?: any } = {}) {
+export async function prepareCampaign(companyId: string, campaignId: string, opts: { db?: any; expectStatus?: string[] } = {}) {
   const db = opts.db || admin()
 
   const { data: campaign } = await db.from('campaigns')
     .select('*').eq('id', campaignId).eq('company_id', companyId).maybeSingle()
   if (!campaign) throw new Error('Campaign not found')
+  // The worker starts only what is still scheduled (it may have been
+  // unscheduled since the worker listed it).
+  if (opts.expectStatus && !opts.expectStatus.includes(campaign.status)) {
+    throw new CampaignStateChangedError(`This campaign is ${campaign.status === 'draft' ? 'no longer scheduled' : `now ${campaign.status}`}, so it wasn\u2019t started.`)
+  }
 
   if (['sending', 'sent'].includes(campaign.status)) {
     throw new Error(`This campaign is already ${campaign.status}`)
   }
   if (campaign.status === 'paused' && Number(campaign.recipients_total) > 0) {
     throw new CampaignNotReadyError('status', 'This campaign was paused part-way through. Resume it rather than starting again.')
+  }
+  if (campaign.status === 'cancelled') {
+    throw new CampaignNotReadyError('status', 'This campaign was stopped part-way, so it can\u2019t be sent again. Create a new campaign to send it again.')
   }
 
   // Re-quotes the hold made at scheduling with the real, frozen audience.
@@ -253,7 +289,9 @@ export async function prepareCampaign(companyId: string, campaignId: string, opt
   const pricing = await loadPricing(db, companyId)
   const costing = calculateCost(pricing, segments, audience.recipients.length)
 
-  await updateCampaign(db, campaignId, {
+  // Start it only if nobody changed it meanwhile (unscheduled, or started by
+  // another run): a compare-and-set on the status this run read.
+  const won = await updateCampaignIf(db, campaignId, [campaign.status], {
     status: 'sending',
     status_reason: null,
     recipients_total: audience.recipients.length,
@@ -266,6 +304,16 @@ export async function prepareCampaign(companyId: string, campaignId: string, opt
     sent_at: now,
     updated_at: now,
   })
+  if (!won) {
+    const { data: live } = await db.from('campaigns').select('status').eq('id', campaignId).maybeSingle()
+    if (!['sending', 'sent'].includes(live?.status)) {
+      // Unscheduled (or deleted) while this was preparing: undo, send nothing.
+      await db.from('campaign_recipients').delete().eq('campaign_id', campaignId).in('status', ['pending', 'skipped'])
+      await releaseCampaign(db, { companyId, campaignId, note: 'Campaign unscheduled: hold returned' }).catch(() => null)
+      throw new CampaignStateChangedError(live ? 'This campaign was unscheduled before it started, so nothing was sent.' : 'This campaign was deleted before it started.')
+    }
+    // Another run started it a moment ago: that run sends it.
+  }
   invalidateAudienceCache(companyId)
 
   return {
@@ -434,17 +482,17 @@ export async function processCampaignBatch(campaignId: string, opts: BatchOption
 
   // Demo workspaces never text anyone.
   if (await isExternalSendBlocked(companyId, db)) {
-    await pauseCampaign(db, campaignId, DEMO_BLOCK_MESSAGE)
+    await pauseCampaign(db, campaignId, DEMO_BLOCK_MESSAGE, ['sending'])
     return { done: false, paused: true, reason: 'demo' }
   }
   const sender = o.sender !== undefined ? o.sender : await resolveSmsSender(db, companyId, { metered: false })
   if (!sender) {
-    await pauseCampaign(db, campaignId, 'SMS isn’t set up for this workspace. Connect a texting number, then resume the campaign.')
+    await pauseCampaign(db, campaignId, 'SMS isn’t set up for this workspace. Connect a texting number, then resume the campaign.', ['sending'])
     return { done: false, paused: true, reason: 'no sender' }
   }
   const allowance = await smsAllowanceSummary(db, companyId)
   if (!allowance.entitled) {
-    await pauseCampaign(db, campaignId, allowance.reason === 'sms_disabled' ? 'Texting is switched off for your account. Contact Colvy to turn it back on, then resume the campaign.' : 'SMS isn’t included in this plan. Upgrade to the Inbox or Everything plan, then resume the campaign.')
+    await pauseCampaign(db, campaignId, allowance.reason === 'sms_disabled' ? 'Texting is switched off for your account. Contact Colvy to turn it back on, then resume the campaign.' : 'SMS isn’t included in this plan. Upgrade to the Inbox or Everything plan, then resume the campaign.', ['sending'])
     return { done: false, paused: true, reason: 'plan' }
   }
   const { data: company } = await db.from('companies')
@@ -633,10 +681,19 @@ export async function processCampaignBatch(campaignId: string, opts: BatchOption
 
   await pool(pending, Math.max(1, o.concurrency ?? SEND_CONCURRENCY), one)
 
+  // Stopped while this batch ran (Stop sending): anyone it put back waits no
+  // more — they're cancelled with the rest, and the campaign stays stopped.
+  const { data: liveNow } = await db.from('campaigns').select('status').eq('id', campaignId).maybeSingle()
+  if (liveNow?.status === 'cancelled') {
+    await db.from('campaign_recipients').update({ status: 'cancelled', skip_reason: 'cancelled' }).eq('campaign_id', campaignId).eq('status', 'pending')
+    await refreshCounters(db, campaignId)
+    return { done: true, stopped: true, sent, failed, skipped, batch: pending.length }
+  }
+
   if (stop) {
     // Out of held credit: try the saved card (auto top-up) so resuming works.
     if (creditStop) await maybeAutoTopUp(db, companyId).catch(() => null)
-    await pauseCampaign(db, campaignId, stop)
+    await pauseCampaign(db, campaignId, stop, ['sending'])
     await refreshCounters(db, campaignId)
     return { done: false, paused: true, reason: stop, credit: creditStop || undefined, sent, failed, skipped, batch: pending.length }
   }
@@ -719,6 +776,15 @@ export async function finishIfDone(db: any, campaign: any): Promise<{ finished: 
     updated_at: new Date().toISOString(),
   }).eq('id', campaign.id).eq('status', 'sending').select('id')
   if (!won?.length) return { finished: true, inFlight: 0, sent, failed }
+  const { chargedCents } = await settleSmsCampaign(db, campaign, sent)
+  return { finished: true, inFlight: 0, sent, failed, chargedCents }
+}
+
+/**
+ * Charge a finished (or stopped) SMS campaign's credit for the parts that
+ * really went, give back the rest of the hold, and record what it cost.
+ */
+export async function settleSmsCampaign(db: any, campaign: any, sent: number): Promise<{ chargedCents?: number; actualCost: number }> {
   const { data: company } = await db.from('companies').select('name, slug').eq('id', campaign.company_id).maybeSingle()
   const partsSent = await campaignPartsSent(db, campaign, company)
   const settled = await settleCampaign(db, { companyId: campaign.company_id, campaignId: campaign.id, partsSent, createdBy: uuidOrNull(campaign.created_by_id) })
@@ -730,5 +796,5 @@ export async function finishIfDone(db: any, campaign: any): Promise<{ finished: 
     actual = calculateCost(pricing, campaign.segments || 1, sent).totalIncGst
   }
   await db.from('campaigns').update({ actual_cost: actual }).eq('id', campaign.id)
-  return { finished: true, inFlight: 0, sent, failed, chargedCents: settled.ok && !settled.skipped ? settled.spentCents : undefined }
+  return { chargedCents: settled.ok && !settled.skipped ? settled.spentCents : undefined, actualCost: actual }
 }

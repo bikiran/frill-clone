@@ -15,6 +15,7 @@ import { fmtCents, fmtRate } from '@/lib/sms-credits-core'
 import { EmailDesignStep, EmailTestCard, EmailReviewCard, type EmailInfo } from './EmailParts'
 import { calculateCost, DEFAULT_PRICING, SmsPricing, aud, audRate, resolveSmsPricing } from '@/lib/sms-pricing'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import { campaignControls, unscheduleFlow, rescheduleFlow, stopSendingFlow, type ActionOutcome } from '@/components/campaigns/CampaignActions'
 import { authFetch } from '@/lib/auth-fetch'
 
 const AUDIENCE_TYPES: [string, string, string][] = [
@@ -711,23 +712,34 @@ export default function CampaignEditorPage() {
     finally { setSending(false) }
   }
 
-  // Unschedule: back to a draft, and any credit held for it is given back.
-  const unschedule = async () => {
-    if (!companyId) return
+  // Unschedule (back to a draft, held credit / a prepared email list given
+  // back), Reschedule and Stop sending: the same for SMS and email, each
+  // confirmed first (components/campaigns/CampaignActions).
+  const controls = campaignControls(campaign)
+  const runControl = async (flow: (companyId: string, c: any) => Promise<ActionOutcome | null>) => {
+    if (!companyId || !campaign) return
     setSending(true); setSendResult('')
     try {
-      const res = await authFetch('/api/campaigns/cancel', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, campaignId }),
-      })
-      const d = await res.json()
-      if (!res.ok) throw new Error(d.error || 'Could not unschedule the campaign')
-      setCampaign((c: any) => ({ ...c, status: 'draft', status_reason: null }))
-      setSendResult(d.releasedCents > 0 ? `Unscheduled · ${fmtCents(d.releasedCents)} of held credit returned` : 'Unscheduled · it\u2019s a draft again')
-      setSaved(null)
-    } catch (e: any) { setSendResult('Could not unschedule: ' + e.message) }
-    finally { setSending(false) }
+      const r = await flow(companyId, campaign)
+      if (!r) return
+      setSendResult(r.message)
+      if (r.ok && r.patch) {
+        setCampaign((c: any) => ({ ...c, ...r.patch }))
+        if (r.patch.status === 'draft') setSaved(null)
+        if (r.patch.scheduled_at) {
+          // Keep the Schedule step's date and time in step with the new time.
+          const d = new Date(r.patch.scheduled_at)
+          const p2 = (n: number) => String(n).padStart(2, '0')
+          setSchedDate(`${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`)
+          setSchedTime(`${p2(d.getHours())}:${p2(d.getMinutes())}`)
+          setSendMode('later')
+        }
+      }
+    } finally { setSending(false) }
   }
+  const unschedule = () => runControl(unscheduleFlow)
+  const reschedule = () => runControl(rescheduleFlow)
+  const stopSending = () => runControl(stopSendingFlow)
 
   // A campaign that paused part-way (allowance used up, texting not set up).
   const pausedMidSend = campaign?.status === 'paused' && Number(campaign?.recipients_total) > 0
@@ -748,6 +760,7 @@ export default function CampaignEditorPage() {
   }
 
   const card: React.CSSProperties = { border: '1px solid var(--border)', borderRadius: 14, background: '#fff', padding: 18 }
+  const stopBtn: React.CSSProperties = { padding: '10px 16px', borderRadius: 10, background: '#fff', color: '#b91c1c', border: '1px solid #fecaca', fontSize: 13, fontWeight: 700, cursor: 'pointer' }
   const input: React.CSSProperties = { width: '100%', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box', background: '#fff' }
   const label: React.CSSProperties = { fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block', marginBottom: 6 }
 
@@ -1510,7 +1523,7 @@ export default function CampaignEditorPage() {
             <>
               <div style={{ ...card, borderColor: 'var(--coral)' }}>
                 <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-                  {pausedMidSend ? 'Paused part-way' : blockers.length ? 'Not ready yet' : 'Ready to send'}
+                  {pausedMidSend ? 'Paused part-way' : campaign.status === 'cancelled' ? 'Stopped part-way' : campaign.status === 'sending' ? 'Sending' : campaign.status === 'sent' ? 'Sent' : blockers.length ? 'Not ready yet' : 'Ready to send'}
                 </div>
                 <p style={{ fontSize: 30, fontWeight: 800, color: 'var(--ink)', margin: '6px 0 0', lineHeight: 1 }}>
                   <Count n={savedReady ? recipients : null} busy={savedLoading} />
@@ -1529,20 +1542,42 @@ export default function CampaignEditorPage() {
                     style={{ padding: '12px 16px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', opacity: sending ? 0.5 : 1 }}>
                     {sending ? 'Resuming\u2026' : 'Resume sending'}
                   </button>
+                  {controls.stop && (
+                    <button onClick={stopSending} disabled={sending} style={stopBtn}>
+                      Stop sending
+                    </button>
+                  )}
                   <button onClick={() => router.push(`/admin/campaigns/${campaignId}/report`)}
                     style={{ padding: '10px 16px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
                     View report
                   </button>
                 </>
+              ) : campaign.status === 'cancelled' ? (
+                <div style={{ ...card, background: '#f9fafb' }}>
+                  <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)', lineHeight: 1.5 }}>
+                    This campaign was stopped part-way{Number(campaign.sent_count) > 0 ? ` after ${Number(campaign.sent_count).toLocaleString()} ${isEmail ? 'emails' : 'texts'} went` : ''}. It can't be sent again.
+                  </p>
+                  <button onClick={() => router.push(`/admin/campaigns/${campaignId}/report`)}
+                    style={{ marginTop: 10, padding: '9px 16px', borderRadius: 9, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                    View report
+                  </button>
+                </div>
               ) : campaign.status === 'sent' || campaign.status === 'sending' ? (
                 <div style={{ ...card, background: '#f0fdf4', borderColor: '#bbf7d0' }}>
                   <p style={{ margin: 0, fontSize: 13, color: '#166534' }}>
                     This campaign is {campaign.status}. It can't be sent again.
                   </p>
-                  <button onClick={() => router.push(`/admin/campaigns/${campaignId}/report`)}
-                    style={{ marginTop: 10, padding: '9px 16px', borderRadius: 9, background: '#15803d', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                    View report
-                  </button>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                    <button onClick={() => router.push(`/admin/campaigns/${campaignId}/report`)}
+                      style={{ padding: '9px 16px', borderRadius: 9, background: '#15803d', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                      View report
+                    </button>
+                    {controls.stop && (
+                      <button onClick={stopSending} disabled={sending} style={{ ...stopBtn, padding: '9px 16px', borderRadius: 9 }}>
+                        Stop sending
+                      </button>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <>
@@ -1557,11 +1592,22 @@ export default function CampaignEditorPage() {
                       {sending ? 'Starting…' : savedReady ? `Send to ${recipients.toLocaleString()} now` : 'Send now'}
                     </button>
                   )}
-                  {campaign.status === 'scheduled' && (
-                    <button onClick={unschedule} disabled={sending}
-                      style={{ padding: '10px 16px', borderRadius: 10, background: '#fff', color: '#b91c1c', border: '1px solid #fecaca', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                      Unschedule
-                    </button>
+                  {controls.unschedule && (
+                    <div style={{ ...card, padding: 12, display: 'grid', gap: 8 }}>
+                      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.45 }}>
+                        Scheduled for <strong style={{ color: 'var(--ink)' }}>{campaign.scheduled_at ? new Date(campaign.scheduled_at).toLocaleString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : 'a time not set'}</strong>
+                      </p>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                        <button onClick={reschedule} disabled={sending}
+                          style={{ padding: '10px 12px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                          Reschedule
+                        </button>
+                        <button onClick={unschedule} disabled={sending}
+                          style={{ padding: '10px 12px', borderRadius: 10, background: '#fff', color: '#b91c1c', border: '1px solid #fecaca', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                          Unschedule
+                        </button>
+                      </div>
+                    </div>
                   )}
                   <button onClick={() => goToStep(5)}
                     style={{ padding: '10px 16px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
@@ -1582,7 +1628,7 @@ export default function CampaignEditorPage() {
                   )}
                 </p>
               )}
-              {blockers.length > 0 && !pausedMidSend && campaign.status !== 'sent' && campaign.status !== 'sending' && (
+              {blockers.length > 0 && !pausedMidSend && !['sent', 'sending', 'cancelled'].includes(campaign.status) && (
                 <p style={{ margin: 0, fontSize: 12, color: '#dc2626', textAlign: 'center', lineHeight: 1.45 }}>
                   {blockers[0]}
                 </p>
