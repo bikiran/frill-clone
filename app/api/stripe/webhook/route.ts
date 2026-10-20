@@ -405,6 +405,19 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Colvy's own tax invoice for a payment to Colvy (lib/tax-invoices): plans,
+    // add-ons, SMS credit and auto top-ups, numbers, porting fees, invoices
+    // sent by hand. Issued (and emailed) once per Stripe invoice or payment,
+    // after the branches above have done their work. Best effort: it never
+    // fails the event, and the business can still open it from Billing.
+    // Connected accounts are a business's own customers paying it: never.
+    if (!event.account) {
+      try {
+        const { issueForEvent } = await import('@/lib/tax-invoices')
+        await issueForEvent(supabase, stripe, event)
+      } catch (e: any) { console.error('[stripe/webhook] tax invoice failed', e?.message || e) }
+    }
+
     // Log event
     try {
       await (supabase as any).from('stripe_events').insert({

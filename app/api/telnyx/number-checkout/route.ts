@@ -4,6 +4,7 @@ import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 import { billingUnavailableCopy } from '@/lib/billing-config'
 import { alertBillingNotConfigured } from '@/lib/billing-alert'
+import { checkoutTaxParams } from '@/lib/tax-invoice-core'
 
 function admin() {
   return createClient(
@@ -69,9 +70,12 @@ export async function POST(req: NextRequest) {
         locality: locality || '',
         areaCode: areaCode || '',
       },
+      // Whose number it is on every renewal's tax invoice (lib/tax-invoices).
+      subscription_data: { metadata: { kind: 'phone_number', companyId } },
       success_url: `${origin}/admin/crm-settings/channels/calls?provisioning=1&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/admin/crm-settings/channels/calls`,
-    })
+      ...checkoutTaxParams(process.env, { mode: 'subscription' }),
+    } as any)
 
     return NextResponse.json({ url: session.url })
   } catch (err: any) {

@@ -8,6 +8,7 @@
 // billingUnavailableCopy().
 
 import { COLVY_CONTACT } from '@/lib/colvy-contact'
+import { supplierStatus } from '@/lib/tax-invoice-core'
 
 type Env = Record<string, string | undefined>
 
@@ -62,7 +63,7 @@ export type CheckState = 'ok' | 'missing' | 'invalid' | 'warn'
 export type BillingCheck = {
   envVar: string
   label: string
-  group: 'keys' | 'plans' | 'addons'
+  group: 'keys' | 'plans' | 'addons' | 'tax'
   required: boolean
   state: CheckState
   problem: string
@@ -131,6 +132,18 @@ export function billingConfigStatus(env: Env): BillingStatus {
         where: WHERE_PRICE,
       })
     }
+  }
+  // Colvy's own details on the tax invoices it issues (lib/tax-invoice-core).
+  // Not needed to take payments; without a valid ABN documents say "Receipt".
+  for (const t of supplierStatus(env).checks) {
+    checks.push({
+      envVar: t.envVar, label: t.label, group: 'tax', required: false,
+      state: t.state === 'ok' ? 'ok' : t.state, problem: t.problem,
+      where: t.envVar === 'COLVY_ABN' ? 'Your ABN, from abr.business.gov.au (ABN Lookup). Also add it in Stripe → Settings → Business → Tax details so Stripe’s own invoices show it.'
+        : t.envVar === 'COLVY_LEGAL_NAME' ? 'The entity name registered to the ABN.'
+        : t.envVar === 'COLVY_BILLING_ADDRESS' ? 'Lines separated by " | ", e.g. Level 1, 2 Example St | Sydney NSW 2000.'
+        : 'Where customers send billing questions.',
+    })
   }
   const bad = (c: BillingCheck) => c.required && (c.state === 'missing' || c.state === 'invalid')
   const missing = checks.filter(bad).map(c => c.envVar)

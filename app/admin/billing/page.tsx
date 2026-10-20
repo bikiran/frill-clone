@@ -9,6 +9,7 @@ import { track } from '@/lib/analytics'
 import { alertDialog } from '@/components/ConfirmDialog'
 import { showBillingUnavailable } from '@/components/BillingUnavailable'
 import SmsCreditsCard from '@/components/billing/SmsCreditsCard'
+import BillingDetailsCard from '@/components/billing/BillingDetailsCard'
 import { soonLabel } from '@/lib/feature-availability'
 
 // Mirrors the modular plans on /pricing and /upgrade. Each id is a Stripe checkout
@@ -229,10 +230,11 @@ export default function BillingPage() {
       const { data: sub } = await subP
       setSubscription(sub)
 
-      // Load billing history from Stripe via API
-      if (sub?.stripe_customer_id) {
+      // Billing history: the workspace's payments to Colvy (plans, SMS credit,
+      // numbers, porting), each with its Colvy tax invoice.
+      if (co?.id || sub?.stripe_customer_id) {
         try {
-          const res = await authFetch(`/api/stripe/billing-history?customerId=${sub.stripe_customer_id}`)
+          const res = await authFetch(co?.id ? `/api/stripe/billing-history?companyId=${co.id}` : '/api/stripe/billing-history')
           const data = await res.json()
           setBillingHistory(data.invoices || [])
         } catch {}
@@ -575,57 +577,92 @@ export default function BillingPage() {
         )}
       </div>
 
+      {/* Business details on Colvy's tax invoices */}
+      {company?.id && <BillingDetailsCard companyId={company.id} />}
+
       {/* Billing History */}
-      <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
-        <h2 className="font-bold mb-4" style={{ color: 'var(--ink)' }}>Billing History</h2>
+      <div className="bg-white rounded-2xl border p-5 md:p-6" style={{ borderColor: 'var(--border)' }}>
+        <h2 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Billing History</h2>
+        <p className="text-sm mb-4" style={{ color: 'var(--slate)', lineHeight: 1.5 }}>Every payment to Colvy, with a tax invoice you can print or save as a PDF.</p>
         {billingHistory.length === 0 ? (
           <div className="text-center py-10">
             <div className="flex justify-center mb-3" style={{ color: 'var(--slate)', opacity: 0.4 }}><ReceiptIcon /></div>
             <p className="text-sm" style={{ color: 'var(--slate)' }}>No billing history yet</p>
             <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>Invoices will appear here after your first payment</p>
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b" style={{ borderColor: 'var(--border)' }}>
-                  {['Date', 'Description', 'Amount', 'Status', ''].map(h => (
-                    <th key={h} className="text-left py-2 px-3 text-xs font-semibold uppercase" style={{ color: 'var(--slate)' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
+        ) : (() => {
+          const docLink = (inv: any) => {
+            const paid = (inv.status === 'paid' || inv.status === 'refunded') && (inv.amount_paid > 0 || inv.taxInvoice)
+            if (!paid || !company?.id) return null
+            const label = inv.taxInvoice?.docType === 'receipt' ? 'Receipt' : 'Tax invoice'
+            return (
+              <Link href={`/admin/billing/tax-invoice?ref=${encodeURIComponent(inv.taxInvoice?.id || inv.ref || inv.id)}&company=${encodeURIComponent(company.id)}`}
+                className="text-xs font-semibold hover:underline cursor-pointer whitespace-nowrap" style={{ color: 'var(--coral)' }}>
+                {label}{inv.taxInvoice?.number ? ` ${inv.taxInvoice.number}` : ''}
+              </Link>
+            )
+          }
+          const stripePdf = (inv: any) => inv.invoice_pdf ? (
+            <a href={inv.invoice_pdf} target="_blank" rel="noopener noreferrer" className="text-xs font-medium hover:underline cursor-pointer whitespace-nowrap" style={{ color: 'var(--slate)' }}>Stripe PDF</a>
+          ) : null
+          const badge = (inv: any) => (
+            <span className="px-2 py-0.5 rounded-full text-xs font-semibold capitalize"
+              style={{ background: inv.status === 'paid' ? '#dcfce7' : inv.status === 'refunded' ? 'var(--canvas)' : '#fee2e2', color: inv.status === 'paid' ? '#16a34a' : inv.status === 'refunded' ? 'var(--slate)' : '#dc2626' }}>
+              {inv.status}
+            </span>
+          )
+          return (
+            <>
+              <ul className="md:hidden divide-y rounded-xl border" style={{ borderColor: 'var(--border)' }}>
                 {billingHistory.map((inv: any) => (
-                  <tr key={inv.id} className="border-b last:border-b-0 hover:bg-gray-50" style={{ borderColor: 'var(--border)' }}>
-                    <td className="py-3 px-3" style={{ color: 'var(--ink)' }}>
-                      {new Date(inv.created * 1000).toLocaleDateString()}
-                    </td>
-                    <td className="py-3 px-3" style={{ color: 'var(--ink)' }}>
-                      {inv.description || 'Subscription'}
-                    </td>
-                    <td className="py-3 px-3 font-medium" style={{ color: 'var(--ink)' }}>
-                      {formatMoney(inv.amount_paid / 100, inv.currency)}
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold capitalize"
-                        style={{ background: inv.status === 'paid' ? '#dcfce7' : '#fee2e2', color: inv.status === 'paid' ? '#16a34a' : '#dc2626' }}>
-                        {inv.status}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3">
-                      {inv.invoice_pdf && (
-                        <a href={inv.invoice_pdf} target="_blank" rel="noopener noreferrer"
-                          className="text-xs font-medium hover:underline cursor-pointer" style={{ color: 'var(--coral)' }}>
-                          Download PDF
-                        </a>
-                      )}
-                    </td>
-                  </tr>
+                  <li key={inv.id} className="p-3.5" style={{ borderColor: 'var(--border)' }}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div style={{ minWidth: 0 }}>
+                        <p className="text-sm font-semibold" style={{ color: 'var(--ink)', overflowWrap: 'anywhere' }}>{inv.description || 'Subscription'}</p>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>{new Date(inv.created * 1000).toLocaleDateString()}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{formatMoney(inv.amount_paid / 100, inv.currency)}</p>
+                        <div className="mt-1">{badge(inv)}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 mt-2">{docLink(inv)}{stripePdf(inv)}</div>
+                  </li>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+              </ul>
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b" style={{ borderColor: 'var(--border)' }}>
+                      {['Date', 'Description', 'Amount', 'Status', ''].map(h => (
+                        <th key={h} className="text-left py-2 px-3 text-xs font-semibold uppercase" style={{ color: 'var(--slate)' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {billingHistory.map((inv: any) => (
+                      <tr key={inv.id} className="border-b last:border-b-0 hover:bg-gray-50" style={{ borderColor: 'var(--border)' }}>
+                        <td className="py-3 px-3" style={{ color: 'var(--ink)' }}>
+                          {new Date(inv.created * 1000).toLocaleDateString()}
+                        </td>
+                        <td className="py-3 px-3" style={{ color: 'var(--ink)' }}>
+                          {inv.description || 'Subscription'}
+                        </td>
+                        <td className="py-3 px-3 font-medium" style={{ color: 'var(--ink)' }}>
+                          {formatMoney(inv.amount_paid / 100, inv.currency)}
+                        </td>
+                        <td className="py-3 px-3">{badge(inv)}</td>
+                        <td className="py-3 px-3">
+                          <div className="flex items-center gap-4 justify-end">{docLink(inv)}{stripePdf(inv)}</div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )
+        })()}
       </div>
     </div>
   )
