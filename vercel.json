@@ -115,6 +115,10 @@
     {
       "path": "/api/cron/signup-retention",
       "schedule": "50 3 * * *"
+    },
+    {
+      "path": "/api/cron/status-snapshot",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
