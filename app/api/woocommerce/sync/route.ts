@@ -1,4 +1,4 @@
-import { posColumns, missingPosColumns, withoutPosColumns } from '@/lib/prexty-pos'
+import { posColumns, missingPosColumns, withoutPosColumns, orderDetail } from '@/lib/prexty-pos'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { decodeEntities } from '@/lib/decode-entities'
 import { NextRequest, NextResponse } from 'next/server'
@@ -264,6 +264,8 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
         billing_phone_norm: String(o.billing?.phone || '').replace(/\D/g, '').slice(-9) || null,
         // A Prexty in-store sale (V407), so the apps can badge it.
         ...posColumns(o),
+        // The full invoice detail (V408), so the order sheet doesn't lose it.
+        detail: orderDetail(o),
       })).filter((r: any) => r.woo_customer_id || r.customer_email)
       // Keep guest orders too — they have no woo_customer_id but DO have a
       // billing email, which is how the profile and inbox match orders to a

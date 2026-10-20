@@ -1,4 +1,4 @@
-import { posSaleInfo, posColumns, missingPosColumns, withoutPosColumns } from '@/lib/prexty-pos'
+import { posSaleInfo, posColumns, missingPosColumns, withoutPosColumns, orderDetail } from '@/lib/prexty-pos'
 import { wooSignatureOk } from '@/lib/woo-webhook'
 import { NextRequest, NextResponse } from 'next/server'
 import { deliverAutomatedMessage } from '@/lib/channel-fallback'
@@ -641,6 +641,8 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       attributed_at: attribution ? new Date().toISOString() : null,
       // A Prexty in-store sale (V407), so the apps can badge it.
       ...posColumns(order),
+      // The full invoice detail (V408), so the order sheet doesn't lose it.
+      detail: orderDetail(order),
     }
     const { data: existingOrder } = await db.from('woocommerce_orders')
       .select('id').eq('company_id', companyId).eq('woo_order_id', order.id).maybeSingle()

@@ -1,3 +1,4 @@
+import { orderDetail, posColumns } from '@/lib/prexty-pos'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -52,8 +53,9 @@ export async function GET(req: NextRequest) {
       o && Array.isArray(o.line_items) && o.line_items.length > 0 &&
       o.shipping_total != null &&
       o.line_items.every((li: any) => li?.image?.src)
-    if (complete(stored)) {
-      return NextResponse.json({ order: stored })
+    // The saved copy carries the rest of the invoice in `detail` (V408).
+    if (complete(stored) && stored.detail) {
+      return NextResponse.json({ order: { ...stored, ...stored.detail } })
     }
 
     // Otherwise fetch live.
@@ -115,7 +117,7 @@ export async function GET(req: NextRequest) {
     const refundedTotal = (order.refunds || []).reduce((s: number, r: any) => s + Math.abs(parseFloat(r.total || 0)), 0)
     try {
       const up = await db.from('woocommerce_orders')
-        .update({ line_items: lineItems, shipping_total: order.shipping_total ?? null, status: order.status, total_refunded: refundedTotal })
+        .update({ line_items: lineItems, shipping_total: order.shipping_total ?? null, status: order.status, total_refunded: refundedTotal, detail: orderDetail(order), ...posColumns(order) })
         .eq('company_id', companyId).eq('woo_order_id', order.id)
       if (up.error) await db.from('woocommerce_orders').update({ line_items: lineItems, shipping_total: order.shipping_total ?? null }).eq('company_id', companyId).eq('woo_order_id', order.id)
     } catch { /* cache only */ }
@@ -139,6 +141,9 @@ export async function GET(req: NextRequest) {
         payment_method_title: order.payment_method_title,
         date_created: order.date_created,
         date_paid: order.date_paid,
+        // Fees (surcharge), coupons, Prexty's own fields, and the rest.
+        ...orderDetail(order),
+        ...posColumns(order),
       },
     })
   } catch (e: any) {
