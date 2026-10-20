@@ -30,7 +30,7 @@ import { ilikeExact, exactEmailRow, phoneKey } from '@/lib/phone'
 import { loadStaffRows } from '@/lib/team-list'
 import { worksAt } from '@/lib/booking-outlets'
 import { resolveWaitlistSettings, type WaitlistSettings } from '@/lib/booking-waitlist-rules'
-import { bookingTimeFreed, linkOfferToBooking, markWaitlistBooked } from '@/lib/booking-waitlist-queue'
+import { bookingTimeFreed, linkOfferToBooking, markWaitlistBooked, waitlistHoldReleased } from '@/lib/booking-waitlist-queue'
 export { worksAt, staffOutlets, outletGaps } from '@/lib/booking-outlets'
 
 const MIN = 60_000
@@ -839,7 +839,11 @@ export async function cancelBooking(db: any, bookingId: string, opts: { by: 'cus
   if (!claimed?.length) return { ok: false, error: 'This booking is already cancelled or finished.' }
   const bk = { ...b, ...patch }
   // Its time is free again: offer it to the waitlist (if the business uses one).
-  await bookingTimeFreed(db, company?.booking_settings, b, opts.origin)
+  // A time the waitlist was holding for someone ("in order"): their offer has
+  // lapsed and it goes to the next person straight away.
+  const waitlistHold = b.source === 'waitlist_hold'
+  if (waitlistHold) await waitlistHoldReleased(db, b, opts.origin)
+  else await bookingTimeFreed(db, company?.booking_settings, b, opts.origin)
 
   let refunded = 0, refundError: string | undefined
   if (opts.refund && b.payment_status === 'paid') {
@@ -856,7 +860,9 @@ export async function cancelBooking(db: any, bookingId: string, opts: { by: 'cus
   emitIntegrationEvent(b.company_id, 'booking.cancelled', bookingEvent(bk, `Booking cancelled: ${b.service_name} · ${b.customer_name || 'a customer'}`, {
     'Cancelled by': opts.by === 'customer' ? 'Customer' : 'Team', Reason: bk.cancel_reason, Refunded: refunded ? fmtMoney(refunded, b.currency) : null,
   }), { db })
-  if (opts.notifyCustomer) await customerMessage(db, company, settings, bk, 'cancelled', { refunded, service, origin: opts.origin, alsoCancelled: opts.alsoCancelled, alsoCancelledEvents: opts.alsoCancelledEvents })
+  // A waitlist hold was never their booking (only an offer), so no
+  // "your booking was cancelled" message for it.
+  if (opts.notifyCustomer && !waitlistHold) await customerMessage(db, company, settings, bk, 'cancelled', { refunded, service, origin: opts.origin, alsoCancelled: opts.alsoCancelled, alsoCancelledEvents: opts.alsoCancelledEvents })
   return { ok: true, refunded, refundError }
 }
 

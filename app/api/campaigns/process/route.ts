@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { prepareCampaign, processCampaignBatch, campaignMaySendNow, pauseCampaign, CampaignNotReadyError, BATCH_BUDGET_MS } from '@/lib/campaign-sender'
+import { prepareCampaign, processCampaignBatch, campaignMaySendNow, pauseCampaign, updateCampaignIf, CampaignNotReadyError, CampaignStateChangedError, BATCH_BUDGET_MS } from '@/lib/campaign-sender'
 import { logJobRun } from '@/lib/job-log'
 import { isEmailCampaign, startEmailCampaign, emailBatch } from '@/lib/campaign-email'
 
@@ -82,18 +82,25 @@ export async function GET(req: NextRequest) {
         continue
       }
       try {
+        // Only while it's still scheduled: it may have been unscheduled (or
+        // rescheduled) since it was listed above.
         const prepared = isEmailCampaign(c)
-          ? await startEmailCampaign(c.company_id, c.id, { db })
-          : await prepareCampaign(c.company_id, c.id)
+          ? await startEmailCampaign(c.company_id, c.id, { db, expectStatus: ['scheduled'] })
+          : await prepareCampaign(c.company_id, c.id, { expectStatus: ['scheduled'] })
         results.push({ campaign: c.id, channel: c.channel || 'sms', started: true, ...prepared })
       } catch (e: any) {
+        if (e instanceof CampaignStateChangedError) {
+          // Unscheduled / stopped under us: nothing to do, nothing was sent.
+          results.push({ campaign: c.id, skipped: e.message })
+          continue
+        }
         results.push({ campaign: c.id, error: e.message })
         if (e instanceof CampaignNotReadyError) {
           // Something the owner can fix (the audience, the allowance, nobody
           // left to text): pause with the reason rather than retrying forever.
-          await pauseCampaign(db, c.id, e.message)
+          await pauseCampaign(db, c.id, e.message, ['scheduled'])
         } else if (/already|not found/i.test(e.message)) {
-          await db.from('campaigns').update({ status: 'failed' }).eq('id', c.id)
+          await updateCampaignIf(db, c.id, ['scheduled'], { status: 'failed' })
         }
       }
     }

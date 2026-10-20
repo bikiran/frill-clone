@@ -243,8 +243,16 @@ export async function joinWaitlist(db: any, a: { company: any; settings: Booking
 
 export type ProcessResult = {
   jobs: number; offers: number; held: number; deferred: number; skipped: number; failed: number
-  expiredEntries: number; advanced: number; note?: string
+  expiredEntries: number; advanced: number
+  /** Unpaid booking holds that lapsed since the last run, their time queued here. */
+  lapsedHolds?: number
+  note?: string
 }
+
+/** A lapsed unpaid hold is picked up this long after it lapses (webhook latency; the hold already outlasts Stripe Checkout). */
+export const LAPSED_HOLD_GRACE_MS = 2 * MIN
+/** …and only this far back: older ones are the booking sweep's (every 10 minutes). */
+export const LAPSED_HOLD_LOOKBACK_MS = 60 * MIN
 
 type Slot = { serviceId: string; service: any; start: number; end: number; locationId: string | null; resources: (string | null)[] }
 
@@ -266,6 +274,7 @@ export async function processWaitlistJobs(db: any, origin: string, opts: { deps?
     throw probe.error
   }
   await housekeeping(db, now, out)
+  await pickUpLapsedHolds(db, now, out)
 
   // A run that died mid-job leaves it 'running': put it back (a few tries).
   try {
@@ -348,6 +357,47 @@ async function housekeeping(db: any, now: number, out: ProcessResult) {
   } catch {}
 }
 
+/**
+ * Unpaid holds that lapsed a couple of minutes ago: free their time now, for
+ * a business with the waitlist on, instead of at the booking sweep's next
+ * pass (/api/cron/booking-reminders, every 10 minutes, which waits 10 minutes
+ * after a lapse: up to 20 minutes in all). This runs every 5 minutes with the
+ * worker, so a freed time is offered within about 7. The claim is the
+ * sweep's own (pending → expired, only while still pending and lapsed), so
+ * whichever gets there first queues the time, once; the job it queues is
+ * worked straight after, in this same run. The waitlist's own "in order"
+ * holds are moved on by housekeeping, not here.
+ */
+async function pickUpLapsedHolds(db: any, now: number, out: ProcessResult) {
+  try {
+    const { data: lapsed, error } = await db.from('bookings')
+      .select('id, company_id, service_id, staff_id, starts_at, busy_from, busy_until, source, hold_expires_at')
+      .eq('status', 'pending').lt('hold_expires_at', iso(now - LAPSED_HOLD_GRACE_MS)).gt('hold_expires_at', iso(now - LAPSED_HOLD_LOOKBACK_MS))
+      .gt('starts_at', iso(now)).limit(200)
+    if (error || !lapsed?.length) return
+    const settingsOf = new Map<string, any>()
+    for (const b of lapsed) {
+      if (b.source === 'waitlist_hold' || !b.busy_from || !b.busy_until) continue
+      if (!settingsOf.has(b.company_id)) {
+        const { data: co } = await db.from('companies').select('booking_settings').eq('id', b.company_id).maybeSingle()
+        settingsOf.set(b.company_id, co?.booking_settings ?? null)
+      }
+      const bs = settingsOf.get(b.company_id)
+      const st = resolveBookingSettings(bs)
+      if (!st.enabled || !st.waitlist.enabled) continue
+      const { data: mine } = await db.from('bookings').update({ status: 'expired' })
+        .eq('id', b.id).eq('status', 'pending').lt('hold_expires_at', iso(now - LAPSED_HOLD_GRACE_MS)).select('id')
+      if (!mine?.length) continue
+      // Due now (this run's clock), so the job list read next includes it.
+      const queued = await queueWaitlistJob(db, {
+        companyId: b.company_id, kind: 'slot_freed', serviceId: b.service_id || null, staffId: b.staff_id || null,
+        fromMs: Date.parse(b.busy_from), untilMs: Date.parse(b.busy_until), payload: { booking_id: b.id, lapsed_hold: true }, runAfterMs: now,
+      })
+      if (queued) out.lapsedHolds = (out.lapsedHolds || 0) + 1
+    }
+  } catch (e) { console.error('[booking waitlist] lapsed holds failed', e) }
+}
+
 type JobOutcome = { deferUntil?: number; result?: Record<string, any> }
 
 async function runJob(db: any, job: any, deps: WaitlistDeps, out: ProcessResult): Promise<JobOutcome> {
@@ -379,7 +429,9 @@ async function candidateSlots(db: any, job: any, company: any, settings: Booking
   const tz = settings.timezone
   const ws = settings.waitlist
   let serviceIds = [...new Set(entries.map(e => e.service_id))]
-  if ((job.kind === 'manual' || job.kind === 'advance') && job.service_id) serviceIds = serviceIds.filter(id => id === job.service_id)
+  // One service's own job (offered by hand, the next person in order, or that
+  // service's staff / length / buffers / hours edited): just that service.
+  if ((job.kind === 'manual' || job.kind === 'advance' || job.kind === 'availability') && job.service_id) serviceIds = serviceIds.filter(id => id === job.service_id)
   if (!serviceIds.length) return []
   const { data: services } = await db.from('booking_services').select('*').eq('company_id', company.id).in('id', serviceIds).eq('active', true)
   if (!services?.length) return []
@@ -389,6 +441,8 @@ async function candidateSlots(db: any, job: any, company: any, settings: Booking
   const fromMs = job.from_at ? Date.parse(job.from_at) : null
   const untilMs = job.until_at ? Date.parse(job.until_at) : fromMs
   const before = job.kind === 'availability' && job.payload?.before !== undefined ? job.payload.before : undefined
+  // A service edit: the service as it was, to compare its free times with now.
+  const serviceBefore = job.kind === 'availability' && job.payload?.service_before && typeof job.payload.service_before === 'object' ? job.payload.service_before : null
 
   for (const svc of services) {
     // The service's own notice still applies (the booking page enforces it).
@@ -413,6 +467,14 @@ async function candidateSlots(db: any, job: any, company: any, settings: Booking
           const oldSettings = resolveBookingSettings(before)
           const prev = await availability(db, { company: { ...company, booking_settings: before }, settings: oldSettings, service: svcEff, staff, staffFilter: 'any', fromDate: from, toDate: to, locationId: loc })
           old = new Set(prev.slots.map(s => s.start))
+        } else if (serviceBefore) {
+          // Was it bookable at all? Switched back on → everything free is new.
+          if (serviceBefore.active !== false) {
+            const was = { ...svc, ...serviceBefore, id: svc.id, company_id: svc.company_id }
+            const wasEff = { ...was, min_notice_mins: Math.max(was.min_notice_mins ?? 120, ws.notice_mins) }
+            const prev = await availability(db, { company, settings, service: wasEff, staff, staffFilter: 'any', fromDate: from, toDate: to, locationId: loc })
+            old = new Set(prev.slots.map(s => s.start))
+          }
         }
         found = fresh.slots.filter(s => !old.has(s.start))
       } else {
@@ -718,6 +780,33 @@ export async function availabilityChanged(db: any, companyId: string, before: an
   const changed = keys.some(k => JSON.stringify(before?.[k] ?? null) !== JSON.stringify(after?.[k] ?? null))
   if (!changed || !resolveBookingSettings(after).waitlist.enabled) return false
   return queueWaitlistJob(db, { companyId, kind: 'availability', payload: { before: before ?? null } })
+}
+
+/** The service fields that change when it can be booked (staff, length, buffers, hours…). */
+export const SERVICE_AVAILABILITY_KEYS = [
+  'staff_ids', 'duration_mins', 'buffer_before', 'buffer_after', 'slot_interval', 'capacity',
+  'location_mode', 'location_ids', 'min_notice_mins', 'max_days_ahead', 'active',
+] as const
+
+/**
+ * A service was saved: if anything that decides its free times changed (and
+ * the business keeps a waitlist), queue a "what's newly free" check for that
+ * service — its free times as it was against as it is now, the new ones
+ * offered to the people waiting for it. `before` is the row before the save.
+ */
+export async function serviceAvailabilityChanged(db: any, companyId: string, before: any, after: any): Promise<boolean> {
+  try {
+    if (!before || !after?.id) return false
+    const norm = (k: string, v: any) => Array.isArray(v) ? JSON.stringify([...v].map(String).sort()) : k === 'active' ? String(v !== false) : JSON.stringify(v ?? null)
+    const changed = SERVICE_AVAILABILITY_KEYS.filter(k => norm(k, before[k]) !== norm(k, after[k]))
+    if (!changed.length || after.active === false) return false
+    const { data: co } = await db.from('companies').select('booking_settings').eq('id', companyId).maybeSingle()
+    const settings = resolveBookingSettings(co?.booking_settings)
+    if (!settings.enabled || !settings.waitlist.enabled) return false
+    const was: Record<string, any> = {}
+    for (const k of SERVICE_AVAILABILITY_KEYS) was[k] = before[k] ?? null
+    return queueWaitlistJob(db, { companyId, kind: 'availability', serviceId: after.id, payload: { service_before: was, changed } })
+  } catch { return false }
 }
 
 /** For the Reception Agent: the booking-page link that opens the waitlist form. */

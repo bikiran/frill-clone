@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react'
 import { authFetch } from '@/lib/auth-fetch'
 
 type Report = {
-  recipients: number; sent: number; failed: number; skipped: number; delivered: number
+  recipients: number; sent: number; failed: number; skipped: number; cancelled?: number; inFlight?: number; delivered: number
   bounced: number; softBounced: number; complaints: number
   opens: number; uniqueOpens: number; clicks: number; uniqueClicks: number; unsubscribes: number
   rates: { delivery: number; open: number; click: number; clickToOpen: number; bounce: number; unsubscribe: number; complaint: number }
@@ -38,7 +38,8 @@ export default function EmailReport({ campaign, companyId, onBack }: { campaign:
   const statNum: React.CSSProperties = { fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: '4px 0 0' }
   const statLbl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.04em' }
   const sub: React.CSSProperties = { margin: '2px 0 0', fontSize: 11.5, color: 'var(--slate)' }
-  const notSentYet = !['sent', 'sending'].includes(campaign.status)
+  const notSentYet = !['sent', 'sending', 'cancelled'].includes(campaign.status)
+  const stopped = campaign.status === 'cancelled'
   const breakdown: Record<string, number> = campaign.excluded_breakdown || {}
   const skips = Object.entries(breakdown).filter(([, n]) => Number(n) > 0)
 
@@ -51,13 +52,21 @@ export default function EmailReport({ campaign, companyId, onBack }: { campaign:
       <div style={{ marginBottom: 18 }}>
         <h1 style={{ fontSize: 23, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>{campaign.name}</h1>
         <p style={{ color: 'var(--slate)', fontSize: 13, margin: '5px 0 0' }}>
-          {campaign.status === 'sent' ? `Sent ${fmt(campaign.completed_at || campaign.sent_at)}` : `Status: ${campaign.status}`} · EMAIL
+          {campaign.status === 'sent' ? `Sent ${fmt(campaign.completed_at || campaign.sent_at)}` : stopped ? `Stopped part-way ${fmt(campaign.completed_at)}` : `Status: ${campaign.status}`} · EMAIL
         </p>
       </div>
 
       {notSentYet && (
         <div style={{ ...card, borderColor: '#fde68a', background: '#fffbeb', marginBottom: 16 }}>
           <p style={{ margin: 0, fontSize: 13, color: '#78350f' }}>This campaign hasn’t been sent yet, so there are no figures.</p>
+        </div>
+      )}
+      {stopped && (
+        <div style={{ ...card, background: '#f9fafb', marginBottom: 16 }}>
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)', lineHeight: 1.5 }}>
+            {campaign.status_reason || 'Stopped part-way.'}
+            {report ? ` ${report.sent.toLocaleString()} sent before it stopped; ${(report.cancelled || 0).toLocaleString()} weren\u2019t sent.` : ''}
+          </p>
         </div>
       )}
       {error && <div style={{ ...card, borderColor: '#fecaca', background: '#fef2f2', color: '#7f1d1d', fontSize: 13, marginBottom: 16 }}>{error}</div>}
@@ -72,7 +81,8 @@ export default function EmailReport({ campaign, companyId, onBack }: { campaign:
             <p style={sub}>{report.rates.click}% of people emailed · {report.clicks.toLocaleString()} clicks</p>
           </div>
           <div style={card}><div style={statLbl}>Sent</div><p style={statNum}>{report.sent.toLocaleString()}</p>
-            {report.failed > 0 && <p style={{ ...sub, color: '#dc2626' }}>{report.failed.toLocaleString()} failed</p>}</div>
+            {report.failed > 0 && <p style={{ ...sub, color: '#dc2626' }}>{report.failed.toLocaleString()} failed</p>}
+            {(report.cancelled || 0) > 0 && <p style={sub}>{(report.cancelled || 0).toLocaleString()} not sent (stopped)</p>}</div>
           <div style={card}><div style={statLbl}>Delivered</div><p style={statNum}>{report.delivered.toLocaleString()}</p>
             <p style={sub}>{report.rates.delivery}% of sent</p></div>
           <div style={card}><div style={statLbl}>Bounced</div>

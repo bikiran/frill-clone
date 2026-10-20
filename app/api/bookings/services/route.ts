@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { cleanService, isMissingBookingSchema, MIGRATION_HINT } from '@/lib/booking'
+import { serviceAvailabilityChanged } from '@/lib/booking-waitlist'
+import { kickWaitlist } from '@/lib/booking-waitlist-queue'
 
 export const dynamic = 'force-dynamic'
 
@@ -55,6 +57,10 @@ export async function POST(req: NextRequest) {
     const others = new Set((taken || []).filter((t: any) => t.id !== id).map((t: any) => t.slug))
     if (others.has(row.slug)) { let n = 2; while (others.has(`${row.slug}-${n}`)) n++; row.slug = `${row.slug}-${n}` }
 
+    // The service before this save, so the waitlist can offer whatever its
+    // new staff / length / buffers / notice make free.
+    let before: any = null
+    if (id) { try { const { data } = await db.from('booking_services').select('*').eq('id', id).eq('company_id', companyId).maybeSingle(); before = data || null } catch {} }
     const res = id
       ? await db.from('booking_services').update({ ...row, updated_at: new Date().toISOString() }).eq('id', id).eq('company_id', companyId).select('*').maybeSingle()
       : await db.from('booking_services').insert({ ...row, company_id: companyId }).select('*').maybeSingle()
@@ -62,6 +68,7 @@ export async function POST(req: NextRequest) {
       if (isMissingBookingSchema(res.error)) return NextResponse.json({ error: MIGRATION_HINT }, { status: 400 })
       return NextResponse.json({ error: res.error.message }, { status: 400 })
     }
+    if (before && res.data && await serviceAvailabilityChanged(db, companyId, before, res.data)) kickWaitlist(db, req.nextUrl.origin)
     return NextResponse.json({ ok: true, service: res.data })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })
