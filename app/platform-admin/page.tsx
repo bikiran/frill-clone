@@ -21,6 +21,7 @@ import SmsCreditsPage from '@/components/platform-admin/SmsCreditsPage'
 import CompanySmsBilling from '@/components/platform-admin/CompanySmsBilling'
 import CompanyWhatsApp from '@/components/platform-admin/CompanyWhatsApp'
 import WhatsAppPage from '@/components/platform-admin/WhatsAppPage'
+import StatusIncidentsPage from '@/components/platform-admin/StatusIncidentsPage'
 import { COLVY_CONTACT, isColvyNumber } from '@/lib/colvy-contact'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
@@ -137,6 +138,7 @@ const NAV = [
   { key: 'porting',    label: 'Number Porting',   icon: 'tickets' },
   { key: 'webhooks',   label: 'Webhook Explorer', icon: 'system' },
   { key: 'jobs',       label: 'Background Jobs',  icon: 'system' },
+  { key: 'status',     label: 'Status & Incidents', icon: 'alert' },
   { key: 'apilogs',    label: 'API Logs',         icon: 'audit' },
   { key: 'devices',    label: 'Mobile Devices',   icon: 'users' },
   { key: 'integrations', label: 'Integrations',   icon: 'plug' },
@@ -1957,7 +1959,8 @@ const JOBS: JobDef[] = [
   { key: 'needs-you', label: 'Needs-you Phone Alerts', schedule: 'Every 15 min', desc: 'Pushes a phone alert for anything newly urgent on “Needs you” (missed goals, drafts waiting, unpicked hand-overs). Per-business counts are on AI Agents.', color: '#ef4444', logs: 'none', path: '/api/cron/needs-you' },
   { key: 'agent-digest', label: 'Weekly Agent Digest', schedule: 'Sundays 21:30 UTC', desc: 'Emails each business a summary of what its agents did. Per-business “last sent” is on AI Agents.', color: '#8b5cf6', logs: 'none', path: '/api/cron/agent-digest' },
   { key: 'operations', label: 'Operations Agent Sweep', schedule: 'Every 3 hours', desc: 'Operations Agent looks for orders that need a customer update', color: '#0ea5e9', logs: 'none', path: '/api/cron/operations' },
-  { key: 'booking-reminders', label: 'Booking Reminders', schedule: 'Every 10 min', desc: 'Sends booking reminders to customers', color: '#10b981', logs: 'none', path: '/api/cron/booking-reminders' },
+  { key: 'booking-reminders', label: 'Booking Reminders', schedule: 'Every 10 min', desc: 'Sends booking reminders to customers', color: '#10b981', staleMs: 30 * 60000, logs: 'always', path: '/api/cron/booking-reminders' },
+  { key: 'status-snapshot', label: 'Status Snapshot', schedule: 'Every 5 min', desc: 'Records the public status page’s five-minute snapshot (30-day bars) and prunes ones older than 90 days', color: '#64748b', staleMs: 20 * 60000, logs: 'always', path: '/api/cron/status-snapshot' },
   { key: 'calendar-reminders', label: 'Calendar Reminders', schedule: 'Every 10 min', desc: 'Reminds staff about calendar events', color: '#14b8a6', logs: 'none', path: '/api/calendar/reminders' },
   { key: 'waitlist', label: 'Waitlist', schedule: 'Every 5 min', desc: 'Sends back-in-stock texts held until sending hours', color: '#0891b2', logs: 'none', path: '/api/cron/waitlist' },
   { key: 'cart-recovery', label: 'Cart Recovery', schedule: 'Every 10 min', desc: 'Follows up abandoned carts', color: '#f59e0b', logs: 'none', path: '/api/cron/cart-recovery' },
@@ -4779,12 +4782,15 @@ export default function SuperAdmin() {
   const [searchQ, setSearchQ] = useState('')
   const [searchIdx, setSearchIdx] = useState(0)
   const [pulse, setPulse] = useState<any>(null)
+  // The same computed status customers see on /status (lib/status-health).
+  const [live, setLive] = useState<any>(null)
 
   // Overview numbers + live health signals (both service-role server routes).
   const loadDashboard = async () => {
-    const [a, p] = await Promise.all([paJson('/api/platform-admin/analytics'), paJson('/api/platform-admin/pulse')])
+    const [a, p, st] = await Promise.all([paJson('/api/platform-admin/analytics'), paJson('/api/platform-admin/pulse'), paJson('/api/status')])
     if (a.ok) setData(a.data)
     setPulse(p.ok ? p.data : { error: p.data.error || 'Could not load health', issues: [] })
+    setLive(st.ok && st.data?.overall ? st.data : null)
   }
 
   const setDark = (v: boolean) => {
@@ -5027,9 +5033,19 @@ export default function SuperAdmin() {
           </div>
           <div style={{ display: 'flex', gap: 6, marginLeft: 'auto', minWidth: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             {(() => {
+              // Live status (the public page's computed verdict) first when
+              // something is down; otherwise the 24h failure count; the
+              // "operational" wording only ever comes from the computed status.
               const issues: string[] = Array.isArray(pulse?.issues) ? pulse.issues : []
-              const [txt, c] = pulse === null ? ['● Checking…', '#6b7280'] : pulse.error ? ['● Health unavailable', '#6b7280'] : issues.length ? [`● ${issues.length} issue${issues.length === 1 ? '' : 's'} · 24h`, '#f59e0b'] : ['● All systems operational', '#10b981']
-              return <button onClick={() => setPage(issues.length ? 'system' : 'overview')} title={issues.join('\n') || 'No failures in the last 24 hours'} style={{ padding: '4px 10px', borderRadius: 999, background: c + '20', color: c, fontSize: 11, fontWeight: 700, border: 'none', cursor: 'pointer' }}>{txt}</button>
+              const lv = live?.overall?.status as string | undefined
+              const LIVE_C: Record<string, string> = { operational: '#10b981', partial: '#6b7280', degraded: '#f59e0b', outage: '#ef4444', unknown: '#6b7280' }
+              const [txt, c, go] = pulse === null && !live ? ['● Checking…', '#6b7280', 'overview']
+                : lv === 'outage' || lv === 'degraded' ? [`● ${live.overall.title}`, LIVE_C[lv], 'status']
+                : issues.length ? [`● ${issues.length} issue${issues.length === 1 ? '' : 's'} · 24h`, '#f59e0b', 'system']
+                : lv ? [`● ${live.overall.title}`, LIVE_C[lv] || '#6b7280', 'status']
+                : pulse?.error ? ['● Health unavailable', '#6b7280', 'system']
+                : ['● No failures · 24h', '#6b7280', 'system']
+              return <button onClick={() => setPage(go)} title={[live?.overall?.sub, ...issues].filter(Boolean).join('\n') || 'No failures in the last 24 hours'} style={{ padding: '4px 10px', borderRadius: 999, background: c + '20', color: c, fontSize: 11, fontWeight: 700, border: 'none', cursor: 'pointer' }}>{txt}</button>
             })()}
           </div>
           <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #ff7a6b, #6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>B</div>
@@ -5060,6 +5076,7 @@ export default function SuperAdmin() {
           {page === 'demos'        && <DemoWorkspacesPage />}
           {page === 'calls'        && <CallDiagnosticsPage />}
           {page === 'porting'      && <PortingQueuePage />}
+          {page === 'status'       && <StatusIncidentsPage />}
           {page === 'webhooks'     && <WebhookExplorerPage />}
           {page === 'jobs'         && <BackgroundJobsPage />}
           {page === 'apilogs'      && <ApiLogsPage />}
