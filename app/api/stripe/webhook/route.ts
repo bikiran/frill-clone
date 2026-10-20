@@ -411,6 +411,10 @@ export async function POST(req: NextRequest) {
     // after the branches above have done their work. Best effort: it never
     // fails the event, and the business can still open it from Billing.
     // Connected accounts are a business's own customers paying it: never.
+    // Refunds and Stripe credit notes on those payments (charge.refunded,
+    // refund.created / updated / failed, charge.refund.updated,
+    // credit_note.created / updated / voided) get an adjustment note each
+    // the same way (lib/tax-credit-notes).
     if (!event.account) {
       try {
         const { issueForEvent } = await import('@/lib/tax-invoices')

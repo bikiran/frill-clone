@@ -10,6 +10,8 @@ import { alertDialog } from '@/components/ConfirmDialog'
 import { showBillingUnavailable } from '@/components/BillingUnavailable'
 import SmsCreditsCard from '@/components/billing/SmsCreditsCard'
 import BillingDetailsCard from '@/components/billing/BillingDetailsCard'
+import { fmtAud } from '@/lib/tax-invoice-core'
+import { noteLabel } from '@/lib/tax-credit-note-core'
 import { soonLabel } from '@/lib/feature-availability'
 
 // Mirrors the modular plans on /pricing and /upgrade. Each id is a Stripe checkout
@@ -583,7 +585,7 @@ export default function BillingPage() {
       {/* Billing History */}
       <div className="bg-white rounded-2xl border p-5 md:p-6" style={{ borderColor: 'var(--border)' }}>
         <h2 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Billing History</h2>
-        <p className="text-sm mb-4" style={{ color: 'var(--slate)', lineHeight: 1.5 }}>Every payment to Colvy, with a tax invoice you can print or save as a PDF.</p>
+        <p className="text-sm mb-4" style={{ color: 'var(--slate)', lineHeight: 1.5 }}>Every payment to Colvy, with a tax invoice you can print or save as a PDF. Refunds come with an adjustment note.</p>
         {billingHistory.length === 0 ? (
           <div className="text-center py-10">
             <div className="flex justify-center mb-3" style={{ color: 'var(--slate)', opacity: 0.4 }}><ReceiptIcon /></div>
@@ -611,6 +613,33 @@ export default function BillingPage() {
               {inv.status}
             </span>
           )
+          // Refunded (or credited by a credit note) on this payment.
+          const liveNotes = (inv: any) => (Array.isArray(inv.notes) ? inv.notes : []).filter((n: any) => n.status !== 'void')
+          const refundBadge = (inv: any) => {
+            const refunded = Number(inv.refundedCents) || 0
+            const credited = liveNotes(inv).reduce((s: number, n: any) => s + (Number(n.amountCents) || 0), 0)
+            if (refunded <= 0 && credited <= 0) return null
+            return (
+              <span className="px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap" style={{ background: '#fef3c7', color: '#92400e' }}>
+                {refunded > 0 ? `Refunded ${fmtAud(Math.max(refunded, credited))}` : `Credited ${fmtAud(credited)}`}
+              </span>
+            )
+          }
+          // Its adjustment notes (credit notes), each opening the printable note.
+          const noteLinks = (inv: any) => {
+            const notes: any[] = Array.isArray(inv.notes) ? inv.notes : []
+            if (!notes.length || !company?.id) return null
+            return (
+              <div className="flex flex-col gap-1 mt-1.5">
+                {notes.map((n: any) => (
+                  <Link key={n.id} href={`/admin/billing/tax-invoice?note=${encodeURIComponent(n.id)}&company=${encodeURIComponent(company.id)}`}
+                    className="text-xs font-semibold hover:underline cursor-pointer" style={{ color: n.status === 'void' ? 'var(--slate)' : 'var(--coral)', overflowWrap: 'anywhere' }}>
+                    {noteLabel(n.kind)} {n.number} · {n.status === 'void' ? 'void' : `\u2212${fmtAud(n.amountCents)}`}
+                  </Link>
+                ))}
+              </div>
+            )
+          }
           return (
             <>
               <ul className="md:hidden divide-y rounded-xl border" style={{ borderColor: 'var(--border)' }}>
@@ -623,10 +652,11 @@ export default function BillingPage() {
                       </div>
                       <div className="text-right shrink-0">
                         <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{formatMoney(inv.amount_paid / 100, inv.currency)}</p>
-                        <div className="mt-1">{badge(inv)}</div>
+                        <div className="mt-1 flex flex-col items-end gap-1">{badge(inv)}{refundBadge(inv)}</div>
                       </div>
                     </div>
                     <div className="flex items-center gap-4 mt-2">{docLink(inv)}{stripePdf(inv)}</div>
+                    {noteLinks(inv)}
                   </li>
                 ))}
               </ul>
@@ -647,11 +677,12 @@ export default function BillingPage() {
                         </td>
                         <td className="py-3 px-3" style={{ color: 'var(--ink)' }}>
                           {inv.description || 'Subscription'}
+                          {noteLinks(inv)}
                         </td>
                         <td className="py-3 px-3 font-medium" style={{ color: 'var(--ink)' }}>
                           {formatMoney(inv.amount_paid / 100, inv.currency)}
                         </td>
-                        <td className="py-3 px-3">{badge(inv)}</td>
+                        <td className="py-3 px-3"><div className="flex flex-wrap items-center gap-1.5">{badge(inv)}{refundBadge(inv)}</div></td>
                         <td className="py-3 px-3">
                           <div className="flex items-center gap-4 justify-end">{docLink(inv)}{stripePdf(inv)}</div>
                         </td>

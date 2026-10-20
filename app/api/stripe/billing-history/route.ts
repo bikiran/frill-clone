@@ -43,6 +43,8 @@ export async function GET(req: NextRequest) {
         description: inv.lines?.data?.[0]?.description || 'Subscription',
         invoice_pdf: inv.invoice_pdf,
         taxInvoice: null,
+        refundedCents: 0,
+        notes: [],
       }))
     })
   } catch (err: any) {
