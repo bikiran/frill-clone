@@ -1,4 +1,4 @@
--- COLVY_V409 — put each Prexty POS sale under the shop it was rung up at.
+-- COLVY_V410 — put each Prexty POS sale under the shop it was rung up at.
 --
 -- A business with two shops (Roxy Aquarium Somerton and Oakleigh) has two
 -- Prexty outlets and two Colvy locations, but every in-store sale landed

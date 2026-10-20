@@ -59,11 +59,11 @@ export function orderDetail(order: any): Record<string, any> {
 
 export const POS_COLUMNS = ['pos_source', 'pos_sale_id', 'pos_outlet', 'pos_location_id', 'detail'] as const
 
-/** True when a write failed only because the V407/V408/V409 columns aren't there yet. */
+/** True when a write failed only because the V407/V408/V410 columns aren't there yet. */
 export const missingPosColumns = (err: any) => /pos_(source|sale_id|outlet|location_id)|'detail'|"detail"|column .*detail/i.test(String(err?.message || err || ''))
 
 /**
- * A row without the columns the database is missing. When only the V409
+ * A row without the columns the database is missing. When only the V410
  * pos_location_id is missing, just that goes, so the V407/V408 ones still save.
  */
 export function withoutPosColumns<T extends Record<string, any>>(row: T, err?: any): T {
