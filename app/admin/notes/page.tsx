@@ -17,6 +17,7 @@ import NoteComments from '@/components/NoteComments'
 import ChecklistProductPicker, { type PickerProduct } from '@/components/ChecklistProductPicker'
 import { notebookOf, visibleTags, withNotebook, listNotebooks } from '@/lib/notebooks'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import { renderNotePrintHtml, noteBodyForPrint } from '@/lib/note-print'
 import { loadStaffRows } from '@/lib/team-list'
 
 type Note = {
@@ -372,14 +373,40 @@ export default function NotesPage() {
       showToast('Link copied')
     } else shareNote()
   }
-  const printNote = () => {
+  // Print in the packing-slip style (lib/note-print): the business's logo and
+  // name, the note, and the checklist as a ruled table with tick boxes.
+  const printNote = async () => {
     setMoreOpen(false)
     if (!note) return
     const w = window.open('', '_blank'); if (!w) return
-    const esc = (s: string) => (s || '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' } as any)[c])
-    const checks = (note.checklist || []).map(c => `<div>${c.done ? '☑' : '☐'} ${esc(c.text)}</div>`).join('')
-    w.document.write(`<html><head><title>${esc(note.title || 'Note')}</title></head><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:720px;margin:40px auto;padding:0 20px;color:#111"><h1>${esc(note.title || 'Untitled')}</h1>${note.body || ''}${checks ? `<div style="margin-top:16px">${checks}</div>` : ''}</body></html>`)
-    w.document.close(); w.focus(); setTimeout(() => w.print(), 250)
+    w.document.write('<p style="font-family:sans-serif;color:#64748b;padding:24px">Preparing to print…</p>')
+    let company: { name?: string | null; logoUrl?: string | null; accent?: string | null } = {}
+    try {
+      const { data } = await (supabase as any).from('companies').select('name, logo_url, accent_color').eq('id', companyId).maybeSingle()
+      if (data) company = { name: data.name, logoUrl: data.logo_url, accent: data.accent_color }
+    } catch {}
+    const att = note.attachments || []
+    const secs = (v: any) => { const n = Number(v); return n > 0 ? `${Math.floor(n / 60)}:${String(Math.round(n % 60)).padStart(2, '0')}` : '' }
+    const html = renderNotePrintHtml({
+      title: note.title,
+      bodyHtml: noteBodyForPrint(note.body || ''),
+      checklist: (note.checklist || []).map(c => ({ text: c.text, done: c.done, image: c.image, qty: c.qty, sku: c.sku, price: c.price, due: c.due })),
+      tags: visibleTags(note.tags),
+      notebook: notebookOf(note),
+      reminderAt: note.reminder_at,
+      updatedAt: note.updated_at,
+      author: note.created_by_name || null,
+      images: att.filter((a: any) => !isAudio(a) && (a?.kind === 'image' || String(a?.type || '').startsWith('image/')) && a?.url).map((a: any) => ({ url: a.url, name: a.name })),
+      voiceNotes: att.filter(isAudio).map((a: any) => ({ name: a.name || 'Voice note', duration: secs(a.duration) })),
+    }, company)
+    w.document.open(); w.document.write(html); w.document.close(); w.focus()
+    // Print once the photos have loaded (or after 2s, whichever comes first).
+    const imgs = Array.from(w.document.images)
+    await Promise.race([
+      Promise.all(imgs.map(im => im.complete ? null : new Promise(r => { im.onload = im.onerror = r }))),
+      new Promise(r => setTimeout(r, 2000)),
+    ])
+    w.print()
   }
 
   // Open the public shared view (/n/[code]) in a new tab. If the note hasn't been
