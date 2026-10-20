@@ -36,6 +36,7 @@ import { senderFor } from '@/lib/email-domains'
 import { emailConsentSkip, loadConsent, suppressedSet } from '@/lib/email-suppression'
 import { signRecipientRef, signUnsubToken } from '@/lib/email-tokens'
 import { fillSubject, fillTemplate, renderEmail } from '@/components/EmailDesigner/render'
+import { CampaignStateChangedError } from '@/lib/campaign-state'
 import type { EmailDesign } from '@/components/EmailDesigner/types'
 
 export const RESEND_BATCH_URL = 'https://api.resend.com/emails/batch'
@@ -58,6 +59,12 @@ export type SenderDeps = {
   baseUrl?: string
   budgetMs?: number
   batchSize?: number
+  /**
+   * prepareEmailCampaign: start it only from one of these statuses (the one
+   * the caller read). Starting is a compare-and-set on it, so a campaign
+   * unscheduled meanwhile is never started.
+   */
+  expectStatus?: string[]
 }
 
 export type Frozen = {
@@ -157,6 +164,10 @@ export async function prepareEmailCampaign(companyId: string, campaignId: string
   if (!campaign) throw new Error('Campaign not found')
   if (campaign.channel !== 'email') throw new Error('This isn’t an email campaign')
   if (['sending', 'sent'].includes(campaign.status)) throw new Error(`This campaign is already ${campaign.status}`)
+  if (campaign.status === 'cancelled') throw new Error('This campaign was stopped part-way, so it can’t be sent again')
+  if (deps.expectStatus && !deps.expectStatus.includes(campaign.status)) {
+    throw new CampaignStateChangedError(`This campaign is ${campaign.status === 'draft' ? 'no longer scheduled' : `now ${campaign.status}`}, so it wasn’t started.`)
+  }
 
   const { data: design, error: dErr } = await db.from('email_designs').select('*').eq('campaign_id', campaignId).eq('company_id', companyId).maybeSingle()
   if (dErr) throw new Error('Email campaigns are waiting on a database update (V396)')
@@ -209,10 +220,20 @@ export async function prepareEmailCampaign(companyId: string, campaignId: string
 
   const skipped = Object.values(breakdown).reduce((a, b) => a + b, 0)
   const nowIso = new Date(deps.now ? deps.now() : Date.now()).toISOString()
-  await db.from('campaigns').update({
+  // Start it only if nobody changed it while the list was written: a
+  // compare-and-set on the status read above. Unscheduled meanwhile → undo
+  // the list and send nothing; started by another run → that run sends it.
+  const { data: won } = await db.from('campaigns').update({
     status: 'sending', recipients_total: pending, audience_count: pending, excluded_count: skipped,
     segments: 1, estimated_cost: 0, sent_at: nowIso, updated_at: nowIso,
-  }).eq('id', campaignId)
+  }).eq('id', campaignId).eq('status', campaign.status).select('id')
+  if (!won?.length) {
+    const { data: live } = await db.from('campaigns').select('status').eq('id', campaignId).maybeSingle()
+    if (!['sending', 'sent'].includes(live?.status)) {
+      await db.from('email_campaign_recipients').delete().eq('campaign_id', campaignId).in('status', ['pending', 'skipped'])
+      throw new CampaignStateChangedError(live ? 'This campaign was unscheduled before it started, so nothing was sent.' : 'This campaign was deleted before it started.')
+    }
+  }
   return { recipients: pending, skipped, skippedBreakdown: breakdown, sender: { from: sender.from, replyTo: sender.replyTo, shared: sender.shared } }
 }
 
@@ -315,6 +336,9 @@ export async function sendEmailBatch(campaignId: string, deps: SenderDeps = {}):
 
   let idle = 0
   while (now() < deadline) {
+    // Stopped (Stop sending) while this run was going: no more batches.
+    const { data: live } = await db.from('campaigns').select('status').eq('id', campaignId).maybeSingle()
+    if (live && live.status !== 'sending') break
     // A batch that was tried before goes again exactly as it was.
     const { data: next } = await db.from('email_campaign_recipients').select('*').eq('campaign_id', campaignId).eq('status', 'pending')
       .order('batch_key', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true }).limit(size)
@@ -388,11 +412,21 @@ export async function sendEmailBatch(campaignId: string, deps: SenderDeps = {}):
     const { count: c } = await db.from('email_campaign_recipients').select('id', { count: 'exact', head: true }).eq('campaign_id', campaignId).in('status', statuses)
     return c || 0
   }
+  const nowIso = new Date(now()).toISOString()
+  // Stopped while this run was going: anyone it put back (a retry) is
+  // cancelled with the rest, and the campaign stays stopped.
+  const { data: after } = await db.from('campaigns').select('status').eq('id', campaignId).maybeSingle()
+  if (after?.status === 'cancelled') {
+    await db.from('email_campaign_recipients').update({ status: 'cancelled', skip_reason: 'cancelled' }).eq('campaign_id', campaignId).eq('status', 'pending')
+    const [sentTotal, failedTotal, inFlight] = await Promise.all([count(['sent']), count(['failed']), count(['sending'])])
+    await db.from('campaigns').update({ sent_count: sentTotal, failed_count: failedTotal, updated_at: nowIso }).eq('id', campaignId)
+    return { ...out, done: true, remaining: inFlight, reason: 'stopped' }
+  }
   const [remaining, sentTotal, failedTotal] = await Promise.all([count(['pending', 'sending']), count(['sent']), count(['failed'])])
   out.remaining = remaining
-  const nowIso = new Date(now()).toISOString()
   if (!remaining) {
-    await db.from('campaigns').update({ status: 'sent', sent_count: sentTotal, failed_count: failedTotal, completed_at: nowIso, updated_at: nowIso }).eq('id', campaignId)
+    // Only a campaign still sending is finished (never a stopped one).
+    await db.from('campaigns').update({ status: 'sent', sent_count: sentTotal, failed_count: failedTotal, completed_at: nowIso, updated_at: nowIso }).eq('id', campaignId).eq('status', 'sending')
     out.done = true
   } else {
     await db.from('campaigns').update({ sent_count: sentTotal, failed_count: failedTotal, updated_at: nowIso }).eq('id', campaignId)

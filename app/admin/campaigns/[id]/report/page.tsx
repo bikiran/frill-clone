@@ -134,6 +134,8 @@ export default function CampaignReportPage() {
   const delivered = recipients.filter(r => r.status === 'delivered').length
   const failed = recipients.filter(r => r.status === 'failed').length
   const skipped = recipients.filter(r => r.status === 'skipped')
+  // Not sent because the campaign was stopped part-way (Stop sending).
+  const cancelledCount = recipients.filter(r => r.status === 'cancelled').length
 
   const clickedContacts = useMemo(
     () => new Set(clicks.map(c => c.contact_id).filter(Boolean)), [clicks])
@@ -267,7 +269,7 @@ export default function CampaignReportPage() {
     return <EmailReport campaign={campaign} companyId={companyId} onBack={() => router.push('/admin/campaigns')} />
   }
 
-  const notSentYet = !['sent', 'sending'].includes(campaign.status)
+  const notSentYet = !['sent', 'sending', 'cancelled'].includes(campaign.status)
 
   return (
     <div style={{ padding: 24, boxSizing: 'border-box', width: '100%' }}>
@@ -278,8 +280,8 @@ export default function CampaignReportPage() {
       <div style={{ marginBottom: 18 }}>
         <h1 style={{ fontSize: 23, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>{campaign.name}</h1>
         <p style={{ color: 'var(--slate)', fontSize: 13, margin: '5px 0 0' }}>
-          {campaign.status === 'sent' ? `Sent ${fmt(campaign.sent_at)}` : `Status: ${campaign.status}`}
-          {campaign.status === 'paused' && campaign.status_reason ? ` \u00b7 ${campaign.status_reason}` : ''}
+          {campaign.status === 'sent' ? `Sent ${fmt(campaign.sent_at)}` : campaign.status === 'cancelled' ? `Stopped part-way ${fmt(campaign.completed_at)}` : `Status: ${campaign.status}`}
+          {(campaign.status === 'paused' || campaign.status === 'cancelled') && campaign.status_reason ? ` \u00b7 ${campaign.status_reason}` : ''}
           {' · '}{String(campaign.channel || 'sms').toUpperCase()}
         </p>
       </div>
@@ -295,7 +297,8 @@ export default function CampaignReportPage() {
 
       {/* Headline metrics */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 12 }}>
-        <div style={card}><div style={statLbl}>Sent</div><p style={statNum}>{sent.toLocaleString()}</p></div>
+        <div style={card}><div style={statLbl}>Sent</div><p style={statNum}>{sent.toLocaleString()}</p>
+          {cancelledCount > 0 && <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--slate)' }}>{cancelledCount.toLocaleString()} not sent (stopped)</p>}</div>
         <div style={card}><div style={statLbl}>Delivered</div><p style={statNum}>{delivered.toLocaleString()}</p></div>
         <div style={card}><div style={statLbl}>Failed</div>
           <p style={{ ...statNum, color: failed ? '#dc2626' : 'var(--ink)' }}>{failed.toLocaleString()}</p></div>

@@ -16,6 +16,10 @@ export type EmailReport = {
   sent: number
   failed: number
   skipped: number
+  /** Not sent because the campaign was stopped part-way (Stop sending). */
+  cancelled: number
+  /** Being sent right now (a batch in flight). */
+  inFlight: number
   delivered: number
   bounced: number           // hard bounces
   softBounced: number
@@ -39,7 +43,7 @@ const who = (e: any) => e.recipient_id || e.contact_id || String(e.email || '').
 /** The report from rows already read (pure, for tests and callers with their own query). */
 export function computeEmailReport(recipients: { status: string }[], events: { type: string; link?: string | null; recipient_id?: string | null; contact_id?: string | null; email?: string | null; resend_email_id?: string | null; id?: string }[]): EmailReport {
   const by = (s: string) => recipients.filter(r => r.status === s).length
-  const sent = by('sent'), failed = by('failed'), skipped = by('skipped')
+  const sent = by('sent'), failed = by('failed'), skipped = by('skipped'), cancelled = by('cancelled'), inFlight = by('sending')
   const of = (t: string) => events.filter(e => e.type === t)
   const uniq = (list: any[]) => new Set(list.map(who)).size
   const delivered = uniq(of('delivered'))
@@ -57,7 +61,7 @@ export function computeEmailReport(recipients: { status: string }[], events: { t
   // Delivered is only known once Resend reports it; until then, what was sent.
   const base = delivered || sent
   return {
-    recipients: sent + failed, sent, failed, skipped, delivered, bounced, softBounced, complaints,
+    recipients: sent + failed, sent, failed, skipped, cancelled, inFlight, delivered, bounced, softBounced, complaints,
     opens: opens.length, uniqueOpens, clicks: clicks.length, uniqueClicks, unsubscribes,
     rates: {
       delivery: pct(delivered, sent), open: pct(uniqueOpens, base), click: pct(uniqueClicks, base),
