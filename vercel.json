@@ -119,6 +119,10 @@
     {
       "path": "/api/cron/status-snapshot",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/purge-closed-accounts",
+      "schedule": "30 17 * * *"
     }
   ]
 }

@@ -927,13 +927,22 @@ export default function SettingsPage() {
               </div>
               <div className="flex items-center justify-between py-3">
                 <div>
-                  <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Delete company</p>
-                  <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Including all Ideas and Announcements, this cannot be undone.</p>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Delete account and company</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Deletes your login now. A company you own is closed at once (staff locked out, numbers and subscription stopped) and all its data is erased after 30 days.</p>
                 </div>
-                <button onClick={async () => { if (await confirmDialog('Delete entire company? This CANNOT be undone!')) alert('Contact support to delete your company.') }}
+                <button onClick={async () => {
+                  if (!(await confirmDialog('Delete your account? A company you own is closed now and erased after 30 days. This cannot be undone.'))) return
+                  const typed = window.prompt('Type DELETE to confirm')
+                  if (String(typed || '').trim().toUpperCase() !== 'DELETE') return
+                  const res = await authFetch('/api/account/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: 'DELETE' }) })
+                  const d = await res.json().catch(() => ({}))
+                  if (!res.ok) { alert(d?.error || 'Couldn’t delete the account.'); return }
+                  try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
+                  window.location.href = '/'
+                }}
                   className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer text-white"
                   style={{ background: '#dc2626' }}>
-                  Delete company
+                  Delete account
                 </button>
               </div>
             </div>

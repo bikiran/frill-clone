@@ -60,8 +60,18 @@ export async function companyForInboundNumber(
 
   // 1. Authoritative current owner.
   const authoritative = await lookup('phone_numbers')
-  if (authoritative) return authoritative
+  if (authoritative) return (await isClosed(db, authoritative)) ? null : authoritative
 
   // 2. Legacy fallback — only when phone_numbers knows nothing about the number.
-  return lookup(provider === 'twilio' ? 'twilio_integrations' : 'telnyx_integrations')
+  const legacy = await lookup(provider === 'twilio' ? 'twilio_integrations' : 'telnyx_integrations')
+  return legacy && !(await isClosed(db, legacy)) ? legacy : null
+}
+
+// A workspace closed by its owner deleting their account (V409): its numbers
+// stop routing calls and texts. Before V409 there's no column: never closed.
+async function isClosed(db: SupabaseClient, companyId: string): Promise<boolean> {
+  try {
+    const { data, error } = await (db as any).from('companies').select('closed_at').eq('id', companyId).maybeSingle()
+    return !error && !!data?.closed_at
+  } catch { return false }
 }
