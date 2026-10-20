@@ -14,7 +14,9 @@
 //                                    invoices Colvy sends by hand (Enterprise)
 //       payment_intent.succeeded     SMS credit auto top-ups (off-session)
 //       charge.refunded              records a refund on an issued document
-//     and emails the billing contact a link (once);
+//     and emails the billing contact a link (once). Refunds and Stripe credit
+//     notes also get an adjustment note each (lib/tax-credit-notes: charge.refunded,
+//     refund.*, charge.refund.updated, credit_note.*), listed on the invoice;
 //   • opening an older payment from Billing → Billing history issues it then
 //     (ensureForRef), after checking the payment is this business's.
 // Connected-account events (a business's own customers paying it) never make
@@ -25,10 +27,11 @@
 // nothing is emailed.
 
 import { cleanAbn } from '@/lib/abn'
+import { rowToAdjustment } from '@/lib/tax-credit-note-core'
 import {
   buyerFromStripe, buyerParty, colvySupplier, docFromPaymentIntent, docFromStripeInvoice, docTitle, docToRow, fmtAud,
   fmtInvoiceDate, refundsOf, rowToDoc, sid, sourceForPayment, statusFor, stripeInvoiceCustomFields, stripeInvoiceFooter,
-  type InvoiceLine, type InvoiceSource, type Party, type StripeBuyer, type TaxInvoiceDoc,
+  type AdjustmentRef, type InvoiceLine, type InvoiceSource, type Party, type StripeBuyer, type TaxInvoiceDoc,
 } from '@/lib/tax-invoice-core'
 
 export const isMissing = (e: any) => /does not exist|schema cache|Could not find|PGRST20[0-5]|42P01|42703|42883/i.test(String(e?.message || e?.code || e || ''))
@@ -348,6 +351,13 @@ export async function issueForEvent(db: any, stripe: any | null, event: any): Pr
   try {
     if (!event || event.account) return null
     const obj = event.data?.object
+    // Refunds and Stripe credit notes: an adjustment note each (V406).
+    if (/^(charge\.refunded|charge\.refund\.updated|refund\.(created|updated|failed)|credit_note\.(created|updated|voided))$/.test(String(event.type))) {
+      if (event.type === 'charge.refunded') await recordRefund(db, obj)
+      const { noteForEvent } = await import('@/lib/tax-credit-notes')
+      await noteForEvent(db, stripe, event)
+      return null
+    }
     switch (event.type) {
       case 'checkout.session.completed':
         return await issueForCheckoutSession(db, stripe, obj, { email: true })
@@ -357,9 +367,6 @@ export async function issueForEvent(db: any, stripe: any | null, event: any): Pr
       case 'payment_intent.succeeded':
         if (obj?.metadata?.kind !== 'sms_credit_auto') return null
         return await issueForPaymentIntent(db, stripe, obj, { email: true, source: 'sms_auto_topup' })
-      case 'charge.refunded':
-        await recordRefund(db, obj)
-        return null
     }
   } catch (e: any) { console.error('[tax-invoices] issue failed', e?.message || e) }
   return null
@@ -393,7 +400,7 @@ async function refreshRefunds(db: any, stripe: any | null, row: any): Promise<an
 }
 
 /** Issued as a Receipt while Colvy's ABN wasn't set, now it is: becomes a Tax Invoice (same number). */
-async function upgradeReceipt(db: any, row: any): Promise<any> {
+export async function upgradeReceipt(db: any, row: any): Promise<any> {
   const s = colvySupplier()
   if (row?.doc_type !== 'receipt' || !s.abn) return row
   const supplier = { name: s.name, abn: s.abn, email: s.email, address: s.address }
@@ -404,6 +411,34 @@ async function upgradeReceipt(db: any, row: any): Promise<any> {
 }
 
 export type OpenResult = { ok: boolean; doc?: TaxInvoiceDoc; stored?: boolean; status?: number; error?: string }
+
+/** Adjustment notes issued against a stored document, oldest first. [] before V406. */
+export async function adjustmentsFor(db: any, invoiceId: string): Promise<AdjustmentRef[]> {
+  try {
+    const { data, error } = await db.from('tax_credit_notes').select('id, number, kind, status, issued_at, amount_cents, gst_cents, seq')
+      .eq('tax_invoice_id', invoiceId).order('seq', { ascending: true })
+    if (error) return []
+    return (data || []).map(rowToAdjustment)
+  } catch { return [] }
+}
+
+/**
+ * A stored document as it's opened: refunds brought up to date, upgraded to a
+ * Tax Invoice if Colvy's ABN is now set, refunds without a note given one
+ * (no email), and its adjustment notes listed.
+ */
+async function openStored(db: any, stripe: any | null, row: any): Promise<TaxInvoiceDoc> {
+  const fresh = await upgradeReceipt(db, await refreshRefunds(db, stripe, row))
+  let adjustments = await adjustmentsFor(db, fresh.id)
+  const noted = adjustments.filter(a => a.status !== 'void').reduce((s, a) => s + a.amountCents, 0)
+  if (stripe && Number(fresh.refunded_cents || 0) > noted) {
+    try {
+      const { issueMissingNotes } = await import('@/lib/tax-credit-notes')
+      if (await issueMissingNotes(db, stripe, fresh)) adjustments = await adjustmentsFor(db, fresh.id)
+    } catch (e: any) { console.error('[tax-invoices] missing notes failed', e?.message) }
+  }
+  return { ...rowToDoc(fresh), adjustments }
+}
 
 const notFound: OpenResult = { ok: false, status: 404, error: 'We couldn’t find that payment.' }
 
@@ -419,14 +454,14 @@ export async function ensureForRef(db: any, stripe: any | null, companyId: strin
   if (UUID.test(ref)) {
     const { row } = await storedBy(db, 'id', ref)
     if (!row || String(row.company_id) !== String(companyId)) return notFound
-    return { ok: true, doc: rowToDoc(await upgradeReceipt(db, await refreshRefunds(db, stripe, row))), stored: true }
+    return { ok: true, doc: await openStored(db, stripe, row), stored: true }
   }
   if (!/^(in|pi)_[A-Za-z0-9]+$/.test(ref)) return notFound
   const col = ref.startsWith('in_') ? 'stripe_invoice_id' : 'stripe_payment_intent_id'
   const hit = await storedBy(db, col, ref)
   if (hit.row) {
     if (String(hit.row.company_id) !== String(companyId)) return notFound
-    return { ok: true, doc: rowToDoc(await upgradeReceipt(db, await refreshRefunds(db, stripe, hit.row))), stored: true }
+    return { ok: true, doc: await openStored(db, stripe, hit.row), stored: true }
   }
   if (!stripe) return { ok: false, status: 503, error: 'Billing isn’t available just now. Try again in a minute.' }
 
@@ -460,6 +495,10 @@ export type HistoryRow = {
   id: string; ref: string; created: number; amount_paid: number; currency: string; status: string
   description: string; invoice_pdf: string | null
   taxInvoice: { id: string; number: string | null; docType: string } | null
+  /** Refunded on this payment (from its stored document). */
+  refundedCents: number
+  /** Adjustment notes (or refund receipts) issued against it, oldest first. */
+  notes: (AdjustmentRef & { reason?: string | null })[]
 }
 
 /** Stripe invoices and payments (with no invoice) for the business, with their documents. */
@@ -475,7 +514,7 @@ export async function billingHistory(db: any, stripe: any | null, companyId: str
           if (inv.status === 'draft') continue
           rows.set(inv.id, {
             id: inv.id, ref: inv.id, created: inv.created, amount_paid: inv.amount_paid ?? 0, currency: inv.currency || 'aud', status: inv.status || 'open',
-            description: inv.lines?.data?.[0]?.description || 'Subscription', invoice_pdf: inv.invoice_pdf || null, taxInvoice: null,
+            description: inv.lines?.data?.[0]?.description || 'Subscription', invoice_pdf: inv.invoice_pdf || null, taxInvoice: null, refundedCents: 0, notes: [],
           })
           const pi = sid(inv.payment_intent); if (pi) piToInvoice.set(pi, inv.id)
         }
@@ -486,7 +525,7 @@ export async function billingHistory(db: any, stripe: any | null, companyId: str
           if (pi.status !== 'succeeded' || pi.invoice) continue
           rows.set(pi.id, {
             id: pi.id, ref: pi.id, created: pi.created, amount_paid: pi.amount_received || pi.amount || 0, currency: pi.currency || 'aud', status: 'paid',
-            description: pi.description || 'Colvy payment', invoice_pdf: null, taxInvoice: null,
+            description: pi.description || 'Colvy payment', invoice_pdf: null, taxInvoice: null, refundedCents: 0, notes: [],
           })
         }
       } catch {}
@@ -494,8 +533,9 @@ export async function billingHistory(db: any, stripe: any | null, companyId: str
     for (const [pi, inv] of piToInvoice) if (rows.has(pi) && rows.has(inv)) rows.delete(pi)
   }
   let stored = true
+  const byInvoice = new Map<string, string>()
   try {
-    const { data, error } = await db.from('tax_invoices').select('id, number, doc_type, source, stripe_invoice_id, stripe_payment_intent_id, issued_at, total_cents, amount_paid_cents, currency, status, lines')
+    const { data, error } = await db.from('tax_invoices').select('id, number, doc_type, source, stripe_invoice_id, stripe_payment_intent_id, issued_at, total_cents, amount_paid_cents, refunded_cents, currency, status, lines')
       .eq('company_id', companyId).order('issued_at', { ascending: false }).limit(100)
     if (error) stored = !isMissing(error)
     for (const t of data || []) {
@@ -503,14 +543,27 @@ export async function billingHistory(db: any, stripe: any | null, companyId: str
       const key = rows.has(ref) ? ref : (t.stripe_payment_intent_id && rows.has(t.stripe_payment_intent_id) ? t.stripe_payment_intent_id : ref)
       const ti = { id: t.id, number: t.number, docType: t.doc_type }
       const row = rows.get(key)
-      if (row) row.taxInvoice = ti
+      const refundedCents = Number(t.refunded_cents) || 0
+      if (row) { row.taxInvoice = ti; row.refundedCents = refundedCents }
       else rows.set(key, {
         id: key, ref: key, created: Math.floor(Date.parse(t.issued_at) / 1000), amount_paid: Number(t.amount_paid_cents) || Number(t.total_cents) || 0,
         currency: t.currency || 'aud', status: t.status === 'refunded' ? 'refunded' : 'paid',
-        description: (Array.isArray(t.lines) && t.lines[0]?.description) || 'Colvy payment', invoice_pdf: null, taxInvoice: ti,
+        description: (Array.isArray(t.lines) && t.lines[0]?.description) || 'Colvy payment', invoice_pdf: null, taxInvoice: ti, refundedCents, notes: [],
       })
+      byInvoice.set(String(t.id), key)
     }
   } catch (e) { stored = !isMissing(e) }
+  // Adjustment notes under their payments (none before V406).
+  if (stored && byInvoice.size) {
+    try {
+      const { data, error } = await db.from('tax_credit_notes').select('id, number, kind, status, issued_at, amount_cents, gst_cents, seq, reason, tax_invoice_id')
+        .eq('company_id', companyId).order('seq', { ascending: true }).limit(300)
+      if (!error) for (const n of data || []) {
+        const row = rows.get(byInvoice.get(String(n.tax_invoice_id)) || '')
+        if (row) row.notes.push({ ...rowToAdjustment(n), reason: n.reason || null })
+      }
+    } catch {}
+  }
   return { rows: [...rows.values()].sort((a, b) => b.created - a.created).slice(0, 60), stored }
 }
 

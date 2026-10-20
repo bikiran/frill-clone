@@ -44,6 +44,8 @@ export type Party = {
 
 export type InvoiceLine = { description: string; quantity: number; unitCents: number; amountCents: number }
 export type Refund = { amountCents: number; at: string | null; reason?: string | null }
+/** An adjustment note (or refund receipt) issued against this document (lib/tax-credit-notes). */
+export type AdjustmentRef = { id: string; number: string; kind: 'adjustment_note' | 'refund_receipt'; status: 'issued' | 'void'; issuedAt: string; amountCents: number; gstCents: number }
 
 export type TaxInvoiceDoc = {
   /** Our row id once stored. */
@@ -78,6 +80,8 @@ export type TaxInvoiceDoc = {
   }
   /** The Stripe id people can quote (in_…, pi_…). */
   reference: string
+  /** Adjustment notes issued against it, oldest first (stored documents only). */
+  adjustments?: AdjustmentRef[]
 }
 
 // ── money ────────────────────────────────────────────────────────────────────

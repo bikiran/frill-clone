@@ -213,6 +213,33 @@ export function taxInvoiceEmail(o: { business: string; title: string; number: st
   return { subject: `${o.title} ${o.number} from Colvy`, html, text }
 }
 
+// ── An adjustment note was issued for a refund (lib/tax-credit-notes) ───────
+
+export function taxCreditNoteEmail(o: { business: string; title: string; number: string; amount: string; gst: string; date: string; original: string; reason: string; url: string }): Mail {
+  const isNote = o.title !== 'Refund Receipt'
+  const word = isNote ? 'adjustment note' : 'refund receipt'
+  const { html, text } = colvyEmail({
+    preheader: `${o.title} ${o.number}: ${o.amount} credited${isNote ? `, GST adjustment ${o.gst}` : ''}.`,
+    kicker: o.business,
+    title: `Your ${word} ${o.number}`,
+    intro: `We’ve refunded ${o.amount} on ${o.original}. Your ${word} is ready to view, print or save as a PDF.`,
+    blocks: [{ type: 'facts', rows: [
+      [isNote ? 'Adjustment note number' : 'Refund receipt number', o.number],
+      ['Date', o.date],
+      ['Adjusts', o.original],
+      ['Reason', o.reason || 'Refund'],
+      ['Amount credited', o.amount],
+      ...(isNote ? [['GST adjustment', o.gst] as [string, string]] : []),
+    ] }],
+    cta: { label: `View ${word}`, url: o.url },
+    secondary: isNote
+      ? 'Keep it with the original tax invoice: it reduces the GST credit you can claim for that invoice. All your invoices and adjustment notes are in Billing → Billing history.'
+      : 'All your receipts are in Billing → Billing history.',
+    footerNote: `You’re receiving this because you’re the billing contact for ${o.business} on Colvy.`,
+  })
+  return { subject: `${o.title} ${o.number} from Colvy`, html, text }
+}
+
 // ── Colvy team alerts (lib/billing-alert) ───────────────────────────────────
 
 export function colvyTeamAlertEmail(subject: string, text: string): Mail {
