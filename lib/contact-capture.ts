@@ -40,6 +40,22 @@ export async function findContactByPhone(db: any, companyId: string, phone: stri
   return null
 }
 
+/** Is any contact with this number blocked in this workspace? (Blocking used to
+ *  stop only what WE send them; their calls still rang the whole team.) */
+export async function isBlockedPhone(db: any, companyId: string, phone: string): Promise<boolean> {
+  const tail = digitsOf(phone)
+  if (!companyId || !tail || tail.length < 8) return false
+  const same = (c: any) => c?.phone && digitsOf(c.phone) === tail
+  try {
+    const { data, error } = await db.from('contacts').select('phone').eq('company_id', companyId).eq('is_blocked', true).eq('phone_norm', tail).limit(5)
+    if (!error && (data || []).some(same)) return true
+  } catch {}
+  try {
+    const { data } = await db.from('contacts').select('phone').eq('company_id', companyId).eq('is_blocked', true).ilike('phone', `%${tail}%`).limit(10)
+    return (data || []).some(same)
+  } catch { return false }
+}
+
 // Find, or create, a contact for a phone number — company-scoped.
 //
 // Unlike captureContactFromSms (which deliberately won't mint a nameless contact
