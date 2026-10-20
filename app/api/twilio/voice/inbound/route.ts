@@ -2,7 +2,7 @@ import { twilioSignatureOk } from '@/lib/twilio-signature'
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { companyForInboundNumber } from '@/lib/inbound-company'
-import { ensureContactByPhone, findContactByPhone } from '@/lib/contact-capture'
+import { ensureContactByPhone, findContactByPhone, isBlockedPhone } from '@/lib/contact-capture'
 import { alertCall } from '@/lib/call-alerts'
 import { getPhoneCatalog } from '@/lib/phone-catalog'
 import { getPhoneAgent, answerWithAgent, businessClosedNow, phoneBookable, answersRealCallers, ensureStatusCallbacks } from '@/lib/phone-agent'
@@ -84,6 +84,21 @@ export async function POST(req: NextRequest) {
       return twiml('<Response><Say>This number is not configured.</Say><Hangup/></Response>')
     }
     const greeting = integ.voicemail_greeting || 'Please leave a message after the tone.'
+
+    // A blocked caller: busy tone, nobody rings, the inbox isn't bumped. The
+    // attempt is still logged (status 'blocked') so it can be seen and undone.
+    if (from && await isBlockedPhone(db, companyId, from)) {
+      try {
+        const c = await findContactByPhone(db, companyId, from)
+        await db.from('calls').insert({
+          company_id: companyId, direction: 'inbound', provider: 'twilio',
+          from_number: from, to_number: to, caller_name: c?.name || null, contact_id: c?.id || null,
+          status: 'blocked', cause: 'blocked contact — rejected', twilio_call_sid: callSid,
+          created_at: new Date().toISOString(), ended_at: new Date().toISOString(),
+        })
+      } catch (e: any) { console.error('[twilio inbound] blocked call log failed', e?.message || e) }
+      return twiml('<Response><Reject reason="busy"/></Response>')
+    }
 
     // Resolve caller → contact + conversation, and make sure a conversation
     // EXISTS so the call is visible in the inbox for the whole team — even an
