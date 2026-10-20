@@ -20,6 +20,7 @@ import { logEnquiryReopened } from '@/lib/conversation-timeline'
 import { emitInboundEvent, emitCallEvent } from '@/lib/integration-hooks'
 import { alertCall, transcribeCall } from '@/lib/call-alerts'
 import { queueMissedCallText } from '@/lib/missed-call-text'
+import { placeByLine } from '@/lib/location-lines'
 
 // Is any of these agent legs still ringing (or talking)? Asked of Telnyx, not
 // our own table, so two legs ending at the same moment can't each think the
@@ -248,6 +249,8 @@ export async function POST(req: NextRequest) {
           channel_number: to,
           contact_id: matchedContactId,
           status: 'open',
+          // A shop's own number places the thread under that shop (lib/location-lines).
+          ...(await placeByLine(db, companyId, to)),
           is_unread: true,
           unread_count: 1,
           last_message: summary,

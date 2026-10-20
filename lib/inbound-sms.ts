@@ -16,6 +16,7 @@ import { queueMediaUploadReply } from '@/lib/media-upload-reply'
 import { smsKeyword, STOP_WORDS, START_WORDS, recordSmsKeyword, textOptOut, resolveAutomatedSmsSender } from '@/lib/sms-consent'
 import { findContactByPhone } from '@/lib/contact-capture'
 import { scheduleMessageThumbs } from '@/lib/image-thumb'
+import { placeByLine } from '@/lib/location-lines'
 
 export interface InboundAttachment {
   url: string
@@ -108,6 +109,8 @@ export async function ingestInboundSms(params: {
       subject: matchedContactName || from,
       sms_number: from, sms_enabled: !optingOut, channel_number: to,
       contact_id: matchedContactId, status: 'open',
+      // A shop's own number places the thread under that shop (lib/location-lines).
+      ...(await placeByLine(db, companyId, to)),
       is_unread: true, unread_count: 1,
       last_message: summary, last_message_at: new Date().toISOString(),
     }).select().maybeSingle()

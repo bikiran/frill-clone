@@ -9532,6 +9532,30 @@ export default function InboxPage() {
                     else if (orderStatus === 'completed') { kind = 'placed'; accent = '#16a34a'; title = 'Order completed' }
                     else { kind = 'placed'; accent = '#16a34a'; title = 'Order placed' }
                   }
+                  // A Prexty in-store sale reads as one, naming the receipt and the
+                  // shop: "In-store sale · Receipt R49971 · Roxy Aquarium Somerton ·
+                  // Order #125043 · $31.84". Newer lines carry it in metadata;
+                  // older ones are matched to the order in the panel.
+                  let posLine: string | null = null
+                  if (kind || sm.prexty_order) {
+                    const wo: any = sm.order_id != null ? wooOrders.find((o: any) => String(o.order_id || o.woo_order_id || o.id) === String(sm.order_id)) : null
+                    const wpos = wo ? (wo.pos_source === 'prexty' ? { isPos: true, saleId: wo.pos_sale_id || '', outlet: wo.pos_outlet || '' } : posSaleInfo(wo)) : null
+                    const isPos = sm.pos === 'prexty' || !!sm.prexty_order || !!wpos?.isPos
+                    if (isPos) {
+                      const locId = sm.location_id || wo?.pos_location_id || null
+                      const loc = locId ? outlets.find((x: any) => x.id === locId) : null
+                      const shop = (loc ? (loc.label || loc.suburb) : null) || sm.shop || sm.outlet || sm.pos_outlet || wpos?.outlet || ''
+                      const saleId = sm.pos_sale_id || wpos?.saleId || ''
+                      const raw0 = String(msg.content || '')
+                      const num = sm.order_number || wo?.order_number || (raw0.match(/#\s*([\w-]+)/) || [])[1] || ''
+                      const amt = (raw0.match(/\$\s?[\d,]+(?:\.\d+)?/) || [])[0] || (wo ? `$${(parseFloat(wo.total) || 0).toFixed(2)}` : '')
+                      if (orderStatus === 'refunded') { kind = 'refunded'; accent = '#d97706'; title = 'In-store sale refunded' }
+                      else if (orderStatus === 'cancelled' || orderStatus === 'failed') { kind = 'failed'; accent = '#dc2626'; title = 'In-store sale cancelled' }
+                      else { kind = 'placed'; accent = '#16a34a'; title = 'In-store sale' }
+                      posLine = [saleId ? `Receipt ${saleId}` : '', shop, num ? `Order #${num}` : '', amt].filter(Boolean).join(' · ')
+                      if (sm.prexty_order && Array.isArray(sm.items) && sm.items.length) posLine += ` · ${sm.items.map((i: any) => `${i.qty}× ${i.name}`).join(', ')}`
+                    }
+                  }
 
                   if (!kind) {
                     // Plain system line — keep it light and unobtrusive.
@@ -9550,7 +9574,7 @@ export default function InboxPage() {
                   const raw = String(msg.content || '')
                   const urlMatch = raw.match(/https?:\/\/\S+/)
                   const link = urlMatch ? urlMatch[0] : null
-                  let detail = raw
+                  let detail = posLine ?? raw
                     .replace(link || '', '')
                     .replace(/^[^\p{L}\p{N}#$]+/u, '')          // leading emoji / arrows
                     .replace(new RegExp(`^\\s*${title}\\s*[—:\\-]*`, 'i'), '') // redundant title
@@ -9565,7 +9589,7 @@ export default function InboxPage() {
                             rather than truncating, so the whole cart/order detail
                             is readable. Keeps the rounded-pill look on one line. */}
                         <span style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 8, maxWidth: '100%', background: `color-mix(in srgb, ${accent} 13%, transparent)`, color: accent, padding: '7px 15px', borderRadius: 16, lineHeight: 1.45 }}>
-                          <span style={{ flexShrink: 0, display: 'inline-flex', marginTop: 2 }}><LifecycleIcon kind={kind} /></span>
+                          <span style={{ flexShrink: 0, display: 'inline-flex', marginTop: 2 }}>{posLine != null ? <PrextyMark size={14} /> : <LifecycleIcon kind={kind} />}</span>
                           <span style={{ minWidth: 0, fontSize: 12, overflowWrap: 'anywhere' }}>
                             <span style={{ fontWeight: 700 }}>{title}</span>
                             {detail && <span style={{ opacity: 0.8, fontWeight: 500 }}>{` · ${detail}`}</span>}
@@ -11901,48 +11925,40 @@ export default function InboxPage() {
                   </div>
                 )}
 
-                {/* Prexty POS customer summary (order history activates when
-                    Prexty's /orders endpoint ships; for now we show aggregates). */}
-                {prextyCustomer && (
-                  <div style={{ marginBottom: 16, padding: '14px 16px', borderRadius: 12, background: `linear-gradient(135deg, ${PREXTY.tint}, ${PREXTY.tint2})`, border: `1px solid ${PREXTY.border}` }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                      <span style={{ width: 24, height: 24, borderRadius: 7, background: '#fff', border: `1px solid ${PREXTY.border}`, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <PrextyMark size={15} />
-                      </span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: PREXTY.ink }}>Prexty POS Customer</span>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                      <div>
-                        <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Total Spend</p>
-                        <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>
-                          {prextyCustomer.totalSpent > 0 ? `$${Number(prextyCustomer.totalSpent).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A'}
-                        </p>
+                {/* Prexty POS customer — a compact strip rather than a big tinted
+                    block, so the order history below stays the focus. */}
+                {prextyCustomer && (() => {
+                  const money = (n: any) => `$${Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  const stats = [
+                    { label: 'Spent', value: prextyCustomer.totalSpent > 0 ? money(prextyCustomer.totalSpent) : '—' },
+                    { label: prextyCustomer.totalOrders === 1 ? 'Sale' : 'Sales', value: String(prextyCustomer.totalOrders || 0) },
+                    ...(prextyCustomer.loyaltyPoints > 0 ? [{ label: 'Points', value: String(prextyCustomer.loyaltyPoints) }] : []),
+                    ...(prextyCustomer.storeCredit > 0 ? [{ label: 'Credit', value: money(prextyCustomer.storeCredit) }] : []),
+                  ]
+                  const where = [prextyCustomer.city, prextyCustomer.state].filter(Boolean).join(', ')
+                  const since = prextyCustomer.memberSince ? new Date(prextyCustomer.memberSince).toLocaleDateString('en-AU', { month: 'short', year: 'numeric' }) : ''
+                  return (
+                    <div style={{ marginBottom: 16, borderRadius: 12, border: '1px solid var(--border)', background: '#fff', overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderBottom: '1px solid var(--border)' }}>
+                        <PrextyMark size={16} />
+                        <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink)' }}>Prexty POS</span>
+                        {(since || where) && (
+                          <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--slate)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+                            {since ? `Since ${since}` : where}
+                          </span>
+                        )}
                       </div>
-                      <div>
-                        <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Orders</p>
-                        <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>{prextyCustomer.totalOrders || 0}</p>
+                      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${stats.length}, 1fr)` }}>
+                        {stats.map((st, i) => (
+                          <div key={st.label} style={{ padding: '9px 12px', borderLeft: i ? '1px solid var(--border)' : 'none', minWidth: 0 }}>
+                            <p style={{ margin: 0, fontSize: 14.5, fontWeight: 800, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{st.value}</p>
+                            <p style={{ margin: '1px 0 0', fontSize: 10.5, fontWeight: 600, color: '#9ca3af' }}>{st.label}</p>
+                          </div>
+                        ))}
                       </div>
-                      {(prextyCustomer.loyaltyPoints > 0 || prextyCustomer.storeCredit > 0) && (
-                        <>
-                          <div>
-                            <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Loyalty Pts</p>
-                            <p style={{ margin: '2px 0 0', fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{prextyCustomer.loyaltyPoints || 0}</p>
-                          </div>
-                          <div>
-                            <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Store Credit</p>
-                            <p style={{ margin: '2px 0 0', fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>${Number(prextyCustomer.storeCredit || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                          </div>
-                        </>
-                      )}
                     </div>
-                    {(prextyCustomer.city || prextyCustomer.state || prextyCustomer.memberSince) && (
-                      <p style={{ margin: '10px 0 0', fontSize: 11.5, color: PREXTY.ink }}>
-                        {[prextyCustomer.city, prextyCustomer.state].filter(Boolean).join(', ')}
-                        {prextyCustomer.memberSince ? `${(prextyCustomer.city || prextyCustomer.state) ? ' · ' : ''}Member since ${new Date(prextyCustomer.memberSince).toLocaleDateString('en-AU', { month: 'short', year: 'numeric' })}` : ''}
-                      </p>
-                    )}
-                  </div>
-                )}
+                  )
+                })()}
 
                 {/* Order history */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -12007,27 +12023,43 @@ export default function InboxPage() {
                       const payload = { order_id: oid, order_number: onum, total: o.total, currency: o.currency, status: o.status, pay_link: o.payment_url || (o.store_url && o.order_key ? `${o.store_url}/checkout/order-pay/${oid}/?pay_for_order=true&key=${o.order_key}` : null), store_url: o.store_url, integration_id: o.integration_id }
                       return (
                       <div key={oid} style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)' }}>#{onum}</span>
-                            {/* A Prexty in-store sale pushed into WooCommerce (V407 columns,
-                                or the order's own meta when it came live from the store). */}
-                            {(() => {
-                              const pos = o.pos_source === 'prexty' ? { isPos: true, saleId: o.pos_sale_id || '', outlet: o.pos_outlet || '' } : posSaleInfo(o)
-                              return pos.isPos ? (
-                                <span title={`Prexty POS sale${pos.saleId ? ` ${pos.saleId}` : ''}${pos.outlet ? ` · ${pos.outlet}` : ''}`}
-                                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '1px 6px 1px 3px', borderRadius: 99, background: PREXTY.tint, border: `1px solid ${PREXTY.border}`, fontSize: 10.5, fontWeight: 700, color: PREXTY.ink, whiteSpace: 'nowrap' }}>
-                                  <PrextyMark size={12} />In store{pos.saleId ? ` · ${pos.saleId}` : ''}
+                        {(() => {
+                          // Header: number + status on the left, total on the right.
+                          // A Prexty in-store sale (V407 columns, or the order's own
+                          // meta when it came live from the store) gets its own line
+                          // naming the shop and receipt, instead of a pill squeezed
+                          // in beside the order number.
+                          const pos = o.pos_source === 'prexty' ? { isPos: true, saleId: o.pos_sale_id || '', outlet: o.pos_outlet || '' } : posSaleInfo(o)
+                          const shopLoc = pos.isPos ? outlets.find((x: any) => x.id === o.pos_location_id) : null
+                          // The short name (suburb) fits the narrow card; the full one is in the tooltip.
+                          const shop = pos.isPos ? (shopLoc?.suburb || shopLoc?.label || pos.outlet) : ''
+                          const st = String(o.status || '').toLowerCase()
+                          const tone = st === 'completed' ? ['#dcfce7', '#059669'] : st === 'processing' ? ['#dbeafe', '#2563eb'] : st === 'cancelled' || st === 'failed' ? ['#fee2e2', '#dc2626'] : st === 'refunded' ? ['#f3e8ff', '#7c3aed'] : ['#fef3c7', '#d97706']
+                          const date = o.order_date ? new Date(o.order_date).toLocaleDateString('en-AU') : ''
+                          return (
+                            <>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                                  <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--ink)' }}>#{onum}</span>
+                                  <span style={{ fontSize: 10.5, padding: '1px 7px', borderRadius: 99, background: tone[0], color: tone[1], fontWeight: 700, textTransform: 'capitalize', whiteSpace: 'nowrap' }}>{o.status}</span>
                                 </span>
-                              ) : null
-                            })()}
-                          </span>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--coral)' }}>${(parseFloat(o.total) || 0).toFixed(2)}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 6, background: o.status === 'completed' ? '#dcfce7' : o.status === 'processing' ? '#dbeafe' : o.status === 'cancelled' || o.status === 'failed' ? '#fee2e2' : o.status === 'refunded' ? '#f3e8ff' : '#fef3c7', color: o.status === 'completed' ? '#059669' : o.status === 'processing' ? '#2563eb' : o.status === 'cancelled' || o.status === 'failed' ? '#dc2626' : o.status === 'refunded' ? '#7c3aed' : '#d97706', fontWeight: 600, textTransform: 'capitalize' }}>{o.status}</span>
-                          <span style={{ fontSize: 11, color: '#9ca3af' }}>{o.order_date ? new Date(o.order_date).toLocaleDateString('en-AU') : ''}</span>
-                        </div>
+                                <span style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--ink)', whiteSpace: 'nowrap' }}>${(parseFloat(o.total) || 0).toFixed(2)}</span>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                                {pos.isPos ? (
+                                  <span title={`Prexty POS sale${pos.saleId ? ` ${pos.saleId}` : ''}${shopLoc?.label || pos.outlet ? ` · ${shopLoc?.label || pos.outlet}` : ''}`}
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, minWidth: 0, fontSize: 11, color: 'var(--slate)' }}>
+                                    <PrextyMark size={12} />
+                                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                      In store{pos.saleId ? <> · <b style={{ color: 'var(--ink)', fontWeight: 700 }}>{pos.saleId}</b></> : null}{shop ? ` · ${shop}` : ''}
+                                    </span>
+                                  </span>
+                                ) : <span />}
+                                <span style={{ fontSize: 11, color: '#9ca3af', whiteSpace: 'nowrap' }}>{date}</span>
+                              </div>
+                            </>
+                          )
+                        })()}
                         {Number(o.total_refunded) > 0 && o.status !== 'refunded' && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5 }}>
                             <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 6, background: '#f3e8ff', color: '#7c3aed', fontWeight: 700 }}>

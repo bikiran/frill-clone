@@ -12,6 +12,7 @@ import { canTextFrom } from '@/lib/missed-call-text-settings'
 import { isFromNumberRejection } from '@/lib/missed-call-text'
 import { businessNumbers } from '@/lib/business-numbers'
 import { phoneKey } from '@/lib/phone'
+import { replyLineFor } from '@/lib/location-lines'
 
 // Twilio's limits for one picture message (MMS): 10 media, 5 MB in total.
 // A little under 5 MB, for headers and carriers that count slightly differently.
@@ -207,9 +208,16 @@ export async function POST(req: NextRequest) {
     })
     if (cur.length) batches.push(cur)
     let fromLine: string | undefined
-    if (fromWanted) {
+    // A reply in a conversation goes out on that shop's own line when it has
+    // one: the number the customer texted, else their location's number
+    // (lib/location-lines). With one shared number this is the usual number.
+    let lineWanted = fromWanted
+    if (!lineWanted && conversationId) {
+      try { lineWanted = (await replyLineFor(db, companyId, conversationId)) || '' } catch {}
+    }
+    if (lineWanted) {
       try {
-        const f = toE164(fromWanted)
+        const f = toE164(lineWanted)
         if (f && canTextFrom(f) && phoneKey(f) !== phoneKey(sender.from) && (await businessNumbers(db, companyId)).lines.has(phoneKey(f))) fromLine = f
       } catch {}
     }
@@ -227,7 +235,7 @@ export async function POST(req: NextRequest) {
     // a failure here is reported rather than failing the whole send.
     let mediaNotSent = 0
     for (const batch of batches.slice(1)) {
-      try { await sender.send({ to: e164, text: '', mediaUrls: batch, statusCallback }) }
+      try { await sender.send({ to: e164, text: '', mediaUrls: batch, statusCallback, ...(fromLine ? { from: fromLine } : {}) }) }
       catch (e: any) { mediaNotSent += batch.length; console.error('[sms/send] extra MMS batch failed', e?.message || e) }
     }
 

@@ -4,6 +4,7 @@ import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { normalizePrextyCustomer } from '@/lib/prexty-service'
 import { emitIntegrationEvent } from '@/lib/integration-events'
+import { outletRouting, locationForOutlet, locationName } from '@/lib/prexty-outlets'
 
 export const dynamic = 'force-dynamic'
 
@@ -182,7 +183,16 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Compose the order line ───────────────────────────────────────────────
-    const outletLabel = outletName || (outletId != null ? `Outlet ${outletId}` : null)
+    // The shop the sale was rung up at, as a Colvy location (lib/prexty-outlets):
+    // matched by outlet name, or by id when the outlet map pins one.
+    let shopLoc: string | null = null
+    let shopName: string | null = null
+    try {
+      const r = await outletRouting(db, companyId)
+      shopLoc = locationForOutlet(outletName, r.locations, r.map) || locationForOutlet(outletId, r.locations, r.map)
+      shopName = locationName(shopLoc, r.locations)
+    } catch { /* unplaced, as before */ }
+    const outletLabel = shopName || outletName || (outletId != null ? `Outlet ${outletId}` : null)
     const totalStr = total != null ? `${money(total)}${currency ? ` ${currency}` : ''}` : null
     const content = [
       `🧾 POS order #${orderNo} — ${status}`,
@@ -206,8 +216,12 @@ export async function POST(req: NextRequest) {
         contact_id: contact?.id || null, status: 'open',
         is_unread: true, unread_count: 1,
         last_message: content.slice(0, 200), last_message_at: new Date().toISOString(),
+        ...(shopLoc ? { assigned_location_id: shopLoc, assigned_auto: true } : {}),
       }).select().maybeSingle()
       conv = newConv
+    } else if (shopLoc && !conv.assigned_location_id && !conv.location_id) {
+      // A thread nobody has placed yet goes under the sale's shop.
+      try { await db.from('conversations').update({ assigned_location_id: shopLoc, assigned_auto: true }).eq('id', conv.id) } catch {}
     }
     if (!conv) return NextResponse.json({ ok: false, reason: 'Could not create conversation' })
 
@@ -216,7 +230,7 @@ export async function POST(req: NextRequest) {
       .select('id, metadata').eq('conversation_id', conv.id)
     const prior = (priorMsgs || []).find((m: any) => m.metadata?.prexty_order && String(m.metadata?.prexty_order_id) === String(orderId))
 
-    const meta = { prexty_order: true, prexty_order_id: orderId, order_number: orderNo, status, outlet_id: outletId ?? null, outlet: outletLabel, items, created_at: createdAt || null }
+    const meta = { prexty_order: true, prexty_order_id: orderId, order_number: orderNo, status, outlet_id: outletId ?? null, outlet: outletLabel, location_id: shopLoc, items, created_at: createdAt || null }
     let isNew = false
     let changed = false
     if (prior) {
