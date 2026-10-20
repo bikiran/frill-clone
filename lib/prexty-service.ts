@@ -35,6 +35,7 @@ export interface PrextyCustomer {
   country: string | null
   totalOrders: number
   totalSpent: number
+  totalSpentIncTax: number | null
   loyaltyPoints: number
   storeCredit: number
   rewardBalance: number
@@ -48,6 +49,11 @@ const onlyDigits = (s: any) => String(s || '').replace(/\D/g, '')
 // Match the phone convention used elsewhere in the app (last 9 significant
 // digits), so 0490… / +61490… / 61490… all compare equal.
 const phoneKey = (s: any) => onlyDigits(s).slice(-9)
+
+const firstNumber = (c: any, keys: string[]): number | null => {
+  for (const k of keys) { const v = c?.[k]; if (v != null && v !== '' && Number.isFinite(Number(v))) return Number(v) }
+  return null
+}
 
 export function normalizePrextyCustomer(c: any): PrextyCustomer {
   return {
@@ -65,6 +71,9 @@ export function normalizePrextyCustomer(c: any): PrextyCustomer {
     country: c?.country_name || c?.country_code || null,
     totalOrders: Number(c?.total_sales_count) || 0,
     totalSpent: Number(c?.total_sales_amount) || 0,
+    // Prexty's total_sales_amount is before GST. Take a GST-inclusive total
+    // when Prexty sends one; otherwise the card works it out (prextySpendIncGst).
+    totalSpentIncTax: firstNumber(c, ['total_sales_amount_inc_tax', 'total_sales_amount_incl_tax', 'total_sales_inc_tax', 'total_sales_amount_with_tax', 'total_sales_inc_gst']),
     loyaltyPoints: Number(c?.loyalty_points) || 0,
     storeCredit: Number(c?.store_credit) || 0,
     rewardBalance: Number(c?.reward_balance) || 0,

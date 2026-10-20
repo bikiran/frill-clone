@@ -70,7 +70,7 @@ import LinkCards, { linkCodesIn, useLinkStats, LastOpen } from '@/components/Lin
 import { confirmDialog } from '@/components/ConfirmDialog'
 import RefundOrderModal from '@/components/RefundOrderModal'
 import PrextyMark, { PREXTY } from '@/components/PrextyMark'
-import { posSaleInfo } from '@/lib/prexty-pos'
+import { posSaleInfo, prextySpendIncGst } from '@/lib/prexty-pos'
 import { notifyIntegrations } from '@/lib/integrations-notify'
 import { isOldPhoneVideo } from '@/lib/web-video'
 import { composerSubject } from '@/lib/email-subject'
@@ -11930,7 +11930,10 @@ export default function InboxPage() {
                 {prextyCustomer && (() => {
                   const money = (n: any) => `$${Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                   const stats = [
-                    { label: 'Spent', value: prextyCustomer.totalSpent > 0 ? money(prextyCustomer.totalSpent) : '—' },
+                    // Including GST, like every other price in Colvy (Prexty's own figure is before GST).
+                    { label: 'Spent inc GST', value: prextyCustomer.totalSpent > 0 || prextyCustomer.totalSpentIncTax > 0
+                      ? money(prextySpendIncGst(prextyCustomer, wooOrders.filter((o: any) => o.pos_source === 'prexty' || posSaleInfo(o).isPos)))
+                      : '—' },
                     { label: prextyCustomer.totalOrders === 1 ? 'Sale' : 'Sales', value: String(prextyCustomer.totalOrders || 0) },
                     ...(prextyCustomer.loyaltyPoints > 0 ? [{ label: 'Points', value: String(prextyCustomer.loyaltyPoints) }] : []),
                     ...(prextyCustomer.storeCredit > 0 ? [{ label: 'Credit', value: money(prextyCustomer.storeCredit) }] : []),
@@ -11948,11 +11951,11 @@ export default function InboxPage() {
                           </span>
                         )}
                       </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${stats.length}, 1fr)` }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: `1.6fr repeat(${stats.length - 1}, 1fr)` }}>
                         {stats.map((st, i) => (
                           <div key={st.label} style={{ padding: '9px 12px', borderLeft: i ? '1px solid var(--border)' : 'none', minWidth: 0 }}>
                             <p style={{ margin: 0, fontSize: 14.5, fontWeight: 800, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{st.value}</p>
-                            <p style={{ margin: '1px 0 0', fontSize: 10.5, fontWeight: 600, color: '#9ca3af' }}>{st.label}</p>
+                            <p title={st.label} style={{ margin: '1px 0 0', fontSize: 10.5, fontWeight: 600, color: '#9ca3af', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{st.label}</p>
                           </div>
                         ))}
                       </div>

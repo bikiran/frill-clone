@@ -72,3 +72,25 @@ export function withoutPosColumns<T extends Record<string, any>>(row: T, err?: a
   for (const k of POS_COLUMNS) delete r[k]
   return r
 }
+
+/**
+ * A Prexty customer's total spend including GST, for the inbox card.
+ * Prexty reports spend before GST. In order of preference:
+ *   1. a GST-inclusive total Prexty sends itself;
+ *   2. the sum of their in-store orders synced from WooCommerce, which are
+ *      GST-inclusive, when that's all of their sales (exact to the cent);
+ *   3. Prexty's figure plus 10% GST.
+ */
+export function prextySpendIncGst(
+  customer: { totalSpent?: number | null; totalSpentIncTax?: number | null; totalOrders?: number | null },
+  posOrders: { total?: any }[] = [],
+): number {
+  if (customer.totalSpentIncTax != null && customer.totalSpentIncTax > 0) return customer.totalSpentIncTax
+  const count = Number(customer.totalOrders) || 0
+  if (count > 0 && posOrders.length === count) {
+    const sum = posOrders.reduce((t, o) => t + (parseFloat(o.total) || 0), 0)
+    if (sum > 0) return Math.round(sum * 100) / 100
+  }
+  const ex = Number(customer.totalSpent) || 0
+  return Math.round(ex * 110) / 100
+}
