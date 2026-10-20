@@ -17,6 +17,7 @@ import { notifyWaitlist, resolveWaitlistSettings } from '@/lib/waitlist'
 import { recoverAbandonedCarts } from '@/lib/abandoned-carts'
 import { readStoreJson } from '@/lib/store-response'
 import { forgetWooOrders } from '@/lib/woocommerce-service'
+import { outletRouting, locationForOutlet, locationName } from '@/lib/prexty-outlets'
 
 // A product changed in WooCommerce. Keep the synced catalogue's stock current,
 // and when it's back IN stock, text everyone on its back-in-stock waitlist
@@ -252,6 +253,20 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   })()
   const convSubject = contact?.name || billingName || `Order #${order.number || order.id}`
   const isNewConv = !conv
+  // In-store POS sale (pushed to WooCommerce by Prexty)? It belongs to the shop
+  // it was rung up at: the Prexty outlet maps to a Colvy location
+  // (lib/prexty-outlets), so the thread files under Somerton or Oakleigh rather
+  // than "Website".
+  const pos = posSaleInfo(order)
+  let posLoc: string | null = null
+  let posShop: string | null = pos.outlet || null
+  if (pos.isPos && pos.outlet) {
+    try {
+      const r = await outletRouting(db, companyId)
+      posLoc = locationForOutlet(pos.outlet, r.locations, r.map)
+      posShop = locationName(posLoc, r.locations) || pos.outlet
+    } catch { /* unplaced, as before */ }
+  }
   // The customer's mobile, so an SMS reply threads back into THIS conversation
   // instead of opening a separate "+61…" chat. Without it the inbound webhook
   // had nothing to match on.
@@ -264,6 +279,7 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       order_status: badgeStatus || null,
       sms_number: convPhone,
       sms_enabled: !!convPhone,
+      ...(posLoc ? { assigned_location_id: posLoc, assigned_auto: true } : {}),
     }).select().maybeSingle()
     conv = newConv
   } else if (contact?.id && !conv.contact_id) {
@@ -283,6 +299,18 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     } catch { /* not fatal */ }
   }
   if (!conv) return
+
+  // An existing thread nobody has placed yet goes under the sale's shop too;
+  // one already in a location stays there. Same for the customer's record.
+  if (posLoc && !conv.assigned_location_id && !conv.location_id) {
+    try {
+      await db.from('conversations').update({ assigned_location_id: posLoc, assigned_auto: true }).eq('id', conv.id)
+      conv.assigned_location_id = posLoc
+    } catch { /* not fatal */ }
+  }
+  if (posLoc && contact?.id) {
+    try { await db.from('contacts').update({ location_id: posLoc }).eq('id', contact.id).is('location_id', null) } catch {}
+  }
 
   // A new order from the customer reopens a closed enquiry — placing an order is
   // fresh activity, so the thread shouldn't stay buried in Closed. Only on the
@@ -334,23 +362,29 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     const { data: priorOrderMsgs } = await db.from('messages')
       .select('id, metadata').eq('conversation_id', conv.id)
     const priorOrderMsg = (priorOrderMsgs || []).find((m: any) => m.metadata?.order_event && String(m.metadata?.order_id) === String(order.id))
+    // An in-store sale names its receipt and shop: "In-store sale R49971 at
+    // Roxy Aquarium Somerton · Order #125043 · $31.84".
+    const orderLine = pos.isPos
+      ? `In-store sale${pos.saleId ? ` ${pos.saleId}` : ''}${posShop ? ` at ${posShop}` : ''} · Order #${order.number || order.id} · $${order.total}`
+      : `Order #${order.number || order.id} — ${badgeStatus || 'received'} · $${order.total}`
+    const posMeta = pos.isPos ? { pos: 'prexty', pos_sale_id: pos.saleId || null, pos_outlet: pos.outlet || null, location_id: posLoc, shop: posShop } : {}
     if (priorOrderMsg) {
       await db.from('messages').update({
-        content: `Order #${order.number || order.id} — ${badgeStatus || 'received'} · $${order.total}`,
-        metadata: { ...(priorOrderMsg.metadata || {}), status: badgeStatus },
+        content: orderLine,
+        metadata: { ...(priorOrderMsg.metadata || {}), status: badgeStatus, ...posMeta },
       }).eq('id', priorOrderMsg.id)
     } else {
       await db.from('messages').insert({
         conversation_id: conv.id, company_id: companyId, sender_type: 'system',
-        content: `Order #${order.number || order.id} — ${badgeStatus || 'received'} · $${order.total}`,
-        metadata: { order_event: true, order_id: order.id, status: badgeStatus },
+        content: orderLine,
+        metadata: { order_event: true, order_id: order.id, status: badgeStatus, ...posMeta },
       })
     }
     // Title the alert by what actually happened. A completed order was arriving
     // labelled "New order" — the same wording as a fresh order — so the team
     // couldn't tell a placement from a fulfilment at a glance. Completed orders
     // now read "Order completed"; everything else stays "New order".
-    const orderVerb = status === 'completed' ? 'Order completed' : 'New order'
+    const orderVerb = pos.isPos ? `In-store sale${pos.saleId ? ` ${pos.saleId}` : ''}${posShop ? ` at ${posShop}` : ''} ·` : status === 'completed' ? 'Order completed' : 'New order'
     try { await notifyCompany({ db, companyId, type: 'order', message: `${orderVerb} #${order.number || order.id} from ${displayName} — $${order.total}`, actorName: displayName, conversationId: conv.id }) } catch {}
     // notifyCompany only writes the in-app bell row — it does NOT push, which is
     // why a new order showed up in Activity and on the web while no phone ever
@@ -374,7 +408,6 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   // an automated order SMS/email — they bought in person, and the nightly bulk
   // upload of the day's sales would otherwise text every one of them. The order
   // is still recorded below; only the customer-facing message is suppressed.
-  const pos = posSaleInfo(order)
 
   // Completed: shipped (tracking sent or not yet) or picked up.
   if (status === 'completed' && !seenEvent && !pos.isPos) {
@@ -641,6 +674,8 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       attributed_at: attribution ? new Date().toISOString() : null,
       // A Prexty in-store sale (V407), so the apps can badge it.
       ...posColumns(order),
+      // …and the shop it was matched to (V409).
+      ...(pos.isPos ? { pos_location_id: posLoc } : {}),
       // The full invoice detail (V408), so the order sheet doesn't lose it.
       detail: orderDetail(order),
     }
@@ -649,11 +684,17 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     let sourceRowId = existingOrder?.id || null
     if (existingOrder?.id) {
       const { error } = await db.from('woocommerce_orders').update(orderRow).eq('id', existingOrder.id)
-      // A database from before V407: write it without the POS columns.
-      if (error && missingPosColumns(error)) await db.from('woocommerce_orders').update(withoutPosColumns(orderRow)).eq('id', existingOrder.id)
+      // A database from before V407/V409: write it without the missing columns.
+      if (error && missingPosColumns(error)) {
+        const retry = await db.from('woocommerce_orders').update(withoutPosColumns(orderRow, error)).eq('id', existingOrder.id)
+        if (retry.error && missingPosColumns(retry.error)) await db.from('woocommerce_orders').update(withoutPosColumns(orderRow)).eq('id', existingOrder.id)
+      }
     } else {
       let { data: insOrder, error } = await db.from('woocommerce_orders').insert(orderRow).select('id').maybeSingle()
-      if (error && missingPosColumns(error)) ({ data: insOrder } = await db.from('woocommerce_orders').insert(withoutPosColumns(orderRow)).select('id').maybeSingle())
+      if (error && missingPosColumns(error)) {
+        ;({ data: insOrder, error } = await db.from('woocommerce_orders').insert(withoutPosColumns(orderRow, error)).select('id').maybeSingle())
+        if (error && missingPosColumns(error)) ({ data: insOrder } = await db.from('woocommerce_orders').insert(withoutPosColumns(orderRow)).select('id').maybeSingle())
+      }
       sourceRowId = insOrder?.id || null
     }
     // Mirror into the operational Orders board so a new/updated order shows up

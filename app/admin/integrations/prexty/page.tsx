@@ -28,6 +28,36 @@ export default function PrextyIntegration() {
   const [testMsg, setTestMsg] = useState('')
   const [testOk, setTestOk] = useState(false)
 
+  // Shops: which Colvy location each Prexty outlet's in-store sales go to.
+  const [shopOutlets, setShopOutlets] = useState<{ key: string; name: string; sales: number; locationId: string | null; pinned: boolean; suggested: string | null }[]>([])
+  const [shopLocations, setShopLocations] = useState<{ id: string; label?: string | null; suburb?: string | null }[]>([])
+  const [shopDraft, setShopDraft] = useState<Record<string, string>>({})
+  const [shopBusy, setShopBusy] = useState(false)
+  const [shopMsg, setShopMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const loadShops = async (cid: string) => {
+    try {
+      const d = await (await authFetch(`/api/prexty/outlets?companyId=${cid}`)).json()
+      setShopOutlets(d.outlets || []); setShopLocations(d.locations || [])
+      setShopDraft(Object.fromEntries((d.outlets || []).map((o: any) => [o.key, o.locationId || ''])))
+    } catch {}
+  }
+  useEffect(() => { if (companyId && integration) loadShops(companyId) }, [companyId, integration?.id])
+  const shopsChanged = shopOutlets.some(o => (shopDraft[o.key] || '') !== (o.locationId || '') || (!o.pinned && shopDraft[o.key] !== undefined && o.locationId === null && shopDraft[o.key] !== ''))
+  const saveShops = async () => {
+    setShopBusy(true); setShopMsg(null)
+    try {
+      const res = await authFetch('/api/prexty/outlets', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, map: shopDraft }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Could not save')
+      setShopMsg({ ok: true, text: d.conversations ? `Saved. ${d.conversations} earlier conversation${d.conversations === 1 ? '' : 's'} filed under ${d.conversations === 1 ? 'its' : 'their'} shop.` : 'Saved.' })
+      await loadShops(companyId)
+    } catch (e: any) { setShopMsg({ ok: false, text: e.message || 'Could not save' }) }
+    finally { setShopBusy(false) }
+  }
+
   const webhookUrl = integration?.webhook_token && typeof window !== 'undefined'
     ? `${window.location.origin}/api/webhooks/prexty?t=${integration.webhook_token}`
     : ''
@@ -200,6 +230,7 @@ export default function PrextyIntegration() {
           </Card>
         </div>
 
+        <div className="space-y-5">
         {integration && webhookUrl ? (
           <Card icon="webhook" title="Order webhook URL"
             sub={<>Give this to Prexty (or your developer). Prexty should <strong style={{ color: 'var(--ink)' }}>POST</strong> each <code>order.*</code> and <code>customer.*</code> event here, and Colvy matches them by email or phone, just like WooCommerce.</>}>
@@ -231,6 +262,50 @@ export default function PrextyIntegration() {
             <p className="text-sm" style={{ color: 'var(--slate)', margin: 0 }}>Connect Prexty first. Then this shows the address to give Prexty so new orders land in the inbox automatically.</p>
           </Card>
         )}
+
+        {integration && (
+          <Card icon="store" title="Shops"
+            sub={<>Choose which Colvy location each Prexty outlet belongs to. In-store sales then show under that shop in the inbox, and the chat names the shop and receipt number.</>}>
+            {shopLocations.length < 2 && (
+              <p className="text-sm mb-3" style={{ color: 'var(--slate)', margin: '0 0 12px' }}>
+                {shopLocations.length ? 'You have one location, so every sale goes there. ' : 'Add your shops under Locations first. '}
+                <a href="/admin/locations" style={{ color: 'var(--coral)', fontWeight: 600 }}>Manage locations</a>
+              </p>
+            )}
+            {shopOutlets.length === 0 ? (
+              <p className="text-sm" style={{ color: 'var(--slate)', margin: 0 }}>No in-store sales yet. Outlets appear here after Prexty sends its first sale; names that match a location (like &ldquo;Oakleigh&rdquo;) are filed automatically.</p>
+            ) : (
+              <div className="space-y-2">
+                {shopOutlets.map(o => (
+                  <div key={o.key} className="flex items-center gap-3 p-3 rounded-xl" style={{ background: 'var(--canvas, #f8f8fa)' }}>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold truncate" style={{ color: 'var(--ink)', margin: 0 }}>{o.name}</p>
+                      <p className="text-xs" style={{ color: 'var(--slate)', margin: 0 }}>
+                        {o.sales} sale{o.sales === 1 ? '' : 's'}
+                        {!o.pinned && o.suggested ? ' · matched by name' : !o.pinned && !o.locationId ? ' · not matched yet' : ''}
+                      </p>
+                    </div>
+                    <select value={shopDraft[o.key] ?? ''} onChange={e => setShopDraft(d => ({ ...d, [o.key]: e.target.value }))}
+                      className={inputCls} style={{ ...inputStyle, width: 230, maxWidth: '55%', fontSize: 13, padding: '8px 26px 8px 10px', flexShrink: 0 }} aria-label={`Location for ${o.name}`}>
+                      <option value="">No location</option>
+                      {shopLocations.map(l => <option key={l.id} value={l.id}>{l.label || l.suburb || 'Location'}</option>)}
+                    </select>
+                  </div>
+                ))}
+                <div className="flex items-center gap-3 pt-3 flex-wrap">
+                  <button type="button" onClick={saveShops} disabled={shopBusy} {...btn('primary')}>{shopBusy ? 'Saving…' : 'Save shops'}</button>
+                  {shopMsg && <span className="text-xs" style={{ color: shopMsg.ok ? '#15803d' : '#b42318' }}>{shopMsg.text}</span>}
+                  {!shopMsg && shopsChanged && <span className="text-xs" style={{ color: 'var(--slate)' }}>Unsaved changes</span>}
+                </div>
+                <p className="text-xs" style={{ color: 'var(--slate)', margin: '8px 0 0' }}>
+                  Saving also files earlier in-store sales under their shop. Conversations you&rsquo;ve already placed in a location stay where they are.
+                  {' '}Texts to a shop&rsquo;s customers go out from that shop&rsquo;s own number once it has one; until then they use your main number.
+                </p>
+              </div>
+            )}
+          </Card>
+        )}
+        </div>
       </div>
     </IntegrationPage>
   )

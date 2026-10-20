@@ -1,4 +1,5 @@
-import { posColumns, missingPosColumns, withoutPosColumns, orderDetail } from '@/lib/prexty-pos'
+import { posColumns, posSaleInfo, missingPosColumns, withoutPosColumns, orderDetail } from '@/lib/prexty-pos'
+import { outletRouting, locationForOutlet } from '@/lib/prexty-outlets'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { decodeEntities } from '@/lib/decode-entities'
 import { NextRequest, NextResponse } from 'next/server'
@@ -236,6 +237,8 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
       }
 
       // 1. Upsert individual order rows for the order history view
+      // The shop each in-store sale was rung up at (V409, lib/prexty-outlets).
+      const routing = (orders || []).some((o: any) => posSaleInfo(o).isPos) ? await outletRouting(supabase, companyId).catch(() => null) : null
       const orderRows = (orders as any[]).map((o: any) => ({
         company_id: companyId,
         woo_order_id: o.id,
@@ -264,6 +267,7 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
         billing_phone_norm: String(o.billing?.phone || '').replace(/\D/g, '').slice(-9) || null,
         // A Prexty in-store sale (V407), so the apps can badge it.
         ...posColumns(o),
+        ...(routing && posSaleInfo(o).isPos ? { pos_location_id: locationForOutlet(posSaleInfo(o).outlet, routing.locations, routing.map) } : {}),
         // The full invoice detail (V408), so the order sheet doesn't lose it.
         detail: orderDetail(o),
       })).filter((r: any) => r.woo_customer_id || r.customer_email)
@@ -280,7 +284,10 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
         } catch (e: any) {
           // A database from before V407: the same rows without the POS columns.
           if (missingPosColumns(e)) {
-            try { await upsertRetry(() => supabase.from('woocommerce_orders').upsert(orderRows.map(withoutPosColumns), { onConflict: 'company_id,woo_order_id' })) } catch {}
+            try { await upsertRetry(() => supabase.from('woocommerce_orders').upsert(orderRows.map((r: any) => withoutPosColumns(r, e)), { onConflict: 'company_id,woo_order_id' })) }
+            catch (e2: any) {
+              if (missingPosColumns(e2)) { try { await upsertRetry(() => supabase.from('woocommerce_orders').upsert(orderRows.map((r: any) => withoutPosColumns(r)), { onConflict: 'company_id,woo_order_id' })) } catch {} }
+            }
           }
         }
       }
