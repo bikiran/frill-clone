@@ -1,3 +1,4 @@
+import { posSaleInfo, posColumns, missingPosColumns, withoutPosColumns } from '@/lib/prexty-pos'
 import { wooSignatureOk } from '@/lib/woo-webhook'
 import { NextRequest, NextResponse } from 'next/server'
 import { deliverAutomatedMessage } from '@/lib/channel-fallback'
@@ -62,23 +63,6 @@ function orderLooksPaid(order: any): boolean {
   return !!(String(paidStamp || '').trim() || String(txn || '').trim())
 }
 
-// Read an order meta_data value by key (case-insensitive). WooCommerce orders
-// carry custom fields as meta_data: [{ key, value }, …].
-function orderMeta(order: any, key: string): string {
-  const meta = Array.isArray(order?.meta_data) ? order.meta_data : []
-  const k = key.toLowerCase()
-  const hit = meta.find((m: any) => String(m?.key || '').toLowerCase() === k)
-  return hit ? String(hit.value ?? '').trim() : ''
-}
-
-// An in-store POS sale, pushed into WooCommerce by Prexty, tagged with
-// `_prexty_source = pos` (plus `_prexty_sale_id` / `_prexty_outlet`). These are
-// NOT online orders, so the customer must NOT get the automated order SMS/email —
-// it costs money and, with the nightly bulk upload of the day's sales, is spammy.
-function posSaleInfo(order: any): { isPos: boolean; saleId: string; outlet: string } {
-  const source = orderMeta(order, '_prexty_source').toLowerCase()
-  return { isPos: source === 'pos', saleId: orderMeta(order, '_prexty_sale_id'), outlet: orderMeta(order, '_prexty_outlet') }
-}
 
 // Re-fetch the order's CURRENT status from WooCommerce so we don't act on a
 // stale/out-of-order webhook. Returns the live status string (lowercased), or
@@ -655,14 +639,19 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       conversation_id: conv?.id || null,
       attribution,
       attributed_at: attribution ? new Date().toISOString() : null,
+      // A Prexty in-store sale (V407), so the apps can badge it.
+      ...posColumns(order),
     }
     const { data: existingOrder } = await db.from('woocommerce_orders')
       .select('id').eq('company_id', companyId).eq('woo_order_id', order.id).maybeSingle()
     let sourceRowId = existingOrder?.id || null
     if (existingOrder?.id) {
-      await db.from('woocommerce_orders').update(orderRow).eq('id', existingOrder.id)
+      const { error } = await db.from('woocommerce_orders').update(orderRow).eq('id', existingOrder.id)
+      // A database from before V407: write it without the POS columns.
+      if (error && missingPosColumns(error)) await db.from('woocommerce_orders').update(withoutPosColumns(orderRow)).eq('id', existingOrder.id)
     } else {
-      const { data: insOrder } = await db.from('woocommerce_orders').insert(orderRow).select('id').maybeSingle()
+      let { data: insOrder, error } = await db.from('woocommerce_orders').insert(orderRow).select('id').maybeSingle()
+      if (error && missingPosColumns(error)) ({ data: insOrder } = await db.from('woocommerce_orders').insert(withoutPosColumns(orderRow)).select('id').maybeSingle())
       sourceRowId = insOrder?.id || null
     }
     // Mirror into the operational Orders board so a new/updated order shows up

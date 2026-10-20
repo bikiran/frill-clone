@@ -70,6 +70,7 @@ import LinkCards, { linkCodesIn, useLinkStats, LastOpen } from '@/components/Lin
 import { confirmDialog } from '@/components/ConfirmDialog'
 import RefundOrderModal from '@/components/RefundOrderModal'
 import PrextyMark, { PREXTY } from '@/components/PrextyMark'
+import { posSaleInfo } from '@/lib/prexty-pos'
 import { notifyIntegrations } from '@/lib/integrations-notify'
 import { isOldPhoneVideo } from '@/lib/web-video'
 import { composerSubject } from '@/lib/email-subject'
@@ -12007,7 +12008,20 @@ export default function InboxPage() {
                       return (
                       <div key={oid} style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)' }}>#{onum}</span>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)' }}>#{onum}</span>
+                            {/* A Prexty in-store sale pushed into WooCommerce (V407 columns,
+                                or the order's own meta when it came live from the store). */}
+                            {(() => {
+                              const pos = o.pos_source === 'prexty' ? { isPos: true, saleId: o.pos_sale_id || '', outlet: o.pos_outlet || '' } : posSaleInfo(o)
+                              return pos.isPos ? (
+                                <span title={`Prexty POS sale${pos.saleId ? ` ${pos.saleId}` : ''}${pos.outlet ? ` · ${pos.outlet}` : ''}`}
+                                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '1px 6px 1px 3px', borderRadius: 99, background: PREXTY.tint, border: `1px solid ${PREXTY.border}`, fontSize: 10.5, fontWeight: 700, color: PREXTY.ink, whiteSpace: 'nowrap' }}>
+                                  <PrextyMark size={12} />In store{pos.saleId ? ` · ${pos.saleId}` : ''}
+                                </span>
+                              ) : null
+                            })()}
+                          </span>
                           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--coral)' }}>${(parseFloat(o.total) || 0).toFixed(2)}</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

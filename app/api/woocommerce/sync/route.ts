@@ -1,3 +1,4 @@
+import { posColumns, missingPosColumns, withoutPosColumns } from '@/lib/prexty-pos'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { decodeEntities } from '@/lib/decode-entities'
 import { NextRequest, NextResponse } from 'next/server'
@@ -261,6 +262,8 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
         // Normalised billing phone (last 9 digits) so SMS-only customers can be
         // matched to their orders via an index instead of a client-side scan.
         billing_phone_norm: String(o.billing?.phone || '').replace(/\D/g, '').slice(-9) || null,
+        // A Prexty in-store sale (V407), so the apps can badge it.
+        ...posColumns(o),
       })).filter((r: any) => r.woo_customer_id || r.customer_email)
       // Keep guest orders too — they have no woo_customer_id but DO have a
       // billing email, which is how the profile and inbox match orders to a
@@ -272,7 +275,12 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
         orderRows.sort((a: any, b: any) => (a.woo_order_id || 0) - (b.woo_order_id || 0))
         try {
           await upsertRetry(() => supabase.from('woocommerce_orders').upsert(orderRows, { onConflict: 'company_id,woo_order_id' }))
-        } catch {}
+        } catch (e: any) {
+          // A database from before V407: the same rows without the POS columns.
+          if (missingPosColumns(e)) {
+            try { await upsertRetry(() => supabase.from('woocommerce_orders').upsert(orderRows.map(withoutPosColumns), { onConflict: 'company_id,woo_order_id' })) } catch {}
+          }
+        }
       }
 
       // Incremental sync stops here: changed order rows are refreshed, but we
