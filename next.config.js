@@ -62,7 +62,25 @@ const nextConfig = {
   // Keep the embeddable widget script fresh so businesses pick up updates fast
   // (default static caching would pin an old widget.js for a long time).
   async headers() {
+    // Clickjacking: the admin, the platform console and the account/sign-in
+    // pages may only be framed by Colvy itself. Everything else (the chat
+    // widget, forms, booking, surveys, the board) stays embeddable on
+    // customers' sites, so this is per path, not site-wide.
+    const noFraming = [
+      { key: 'Content-Security-Policy', value: "frame-ancestors 'self'" },
+      { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+    ]
+    const privatePages = ['/admin/:path*', '/platform-admin/:path*', '/signin', '/signup', '/onboarding', '/upgrade', '/billing/:path*',
+      '/account/:path*', '/profile/:path*', '/reset-password', '/forgot-password', '/auth/:path*', '/drive-connect/:path*']
+    // /oauth/* is stricter still (no framing at all): see the consent page below.
     return [
+      ...privatePages.map(source => ({ source, headers: noFraming })),
+      // The platform console host is all admin (its "/" is /platform-admin).
+      { source: '/:path*', has: [{ type: 'host', value: 'admin.colvy.com' }], headers: noFraming },
+      { source: '/:path*', headers: [
+        { key: 'X-Content-Type-Options', value: 'nosniff' },
+        { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+      ] },
       {
         source: '/widget.js',
         headers: [

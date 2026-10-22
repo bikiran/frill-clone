@@ -160,6 +160,10 @@ export async function send(integration: string, cfg: Record<string, any>, env: E
 const UA = 'Colvy-Integrations/2.0 (+https://colvy.com)'
 
 async function http(url: string, init: RequestInit & { timeoutMs?: number } = {}): Promise<{ status: number; ok: boolean; json: any; text: string }> {
+  // Hosts built from what the business typed (Jira site, Zendesk subdomain)
+  // get the same public-address check as webhook URLs.
+  const bad = await checkPublicUrl(url)
+  if (bad) throw new Error(bad)
   const ctl = new AbortController()
   const t = setTimeout(() => ctl.abort(), init.timeoutMs || 10_000)
   try {

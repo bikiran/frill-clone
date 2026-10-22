@@ -5,6 +5,19 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { signInWithGoogle, signInWithGitHub } from '@/lib/auth'
 import ColvyLogo from '@/components/ColvyLogo'
+import { sameSitePath } from '@/lib/same-site-path'
+
+// ?redirect= is a page on this same site: a path, or a full URL on this origin
+// (the board sends its own address). Never another site or a javascript: URL.
+function safeRedirect(raw: string | null): string {
+  const path = sameSitePath(raw)
+  if (path || !raw) return path
+  try {
+    const u = new URL(raw)
+    if (u.origin === window.location.origin) return sameSitePath(`${u.pathname}${u.search}${u.hash}`)
+  } catch {}
+  return ''
+}
 
 const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
@@ -49,7 +62,7 @@ function SignInForm() {
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }: any) => {
       if (data?.session?.user) {
-        const redirect = params.get('redirect')
+        const redirect = safeRedirect(params.get('redirect'))
         window.location.href = redirect || await getRedirectUrl()
       }
     })
@@ -156,7 +169,7 @@ function SignInForm() {
     setError('')
     const { error: err } = await supabase.auth.signInWithPassword({ email, password })
     if (err) { setError(err.message); setLoading(false); return }
-    const redirect = params.get('redirect') || await getRedirectUrl()
+    const redirect = safeRedirect(params.get('redirect')) || await getRedirectUrl()
     window.location.href = redirect
   }
 

@@ -172,7 +172,7 @@
     if (isOpen) {
       btn.innerHTML = CLOSE_ICON + (iconOnly ? '' : '<span>Close</span>')
     } else {
-      btn.innerHTML = CHAT_ICON + (iconOnly ? '' : '<span>' + (cfg.label || 'Chat with us') + '</span>')
+      btn.innerHTML = CHAT_ICON + (iconOnly ? '' : '<span>' + String(cfg.label || 'Chat with us').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</span>')
     }
   }
   renderBtn(false)

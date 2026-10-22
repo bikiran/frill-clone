@@ -3,6 +3,7 @@
 // (lib/import/normalize). Nothing here writes to Colvy.
 
 import { emptyPayload, mapStatus, topicSlug, htmlToMarkdown, clean, toInt, toIso, type ImportPayload } from './normalize'
+import { publicUrlProblem } from '@/lib/site-crawl'
 
 export type FetchResult = {
   payload: ImportPayload
@@ -19,7 +20,11 @@ const PAGE = 100
 const MAX_ITEMS = 20000
 
 async function getJson(url: string, init?: RequestInit) {
-  const res = await fetch(url, { ...init, signal: AbortSignal.timeout(25000), cache: 'no-store' })
+  // The Zendesk host is whatever was pasted: a public address only, and a
+  // redirect isn't followed (it could point anywhere, our own network included).
+  const bad = await publicUrlProblem(url)
+  if (bad) throw new SourceError(bad)
+  const res = await fetch(url, { ...init, redirect: 'manual', signal: AbortSignal.timeout(25000), cache: 'no-store' })
   const text = await res.text()
   let data: any = null
   try { data = text ? JSON.parse(text) : null } catch {}

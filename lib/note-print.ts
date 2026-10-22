@@ -4,6 +4,8 @@
 // body and the checklist as a ruled table (tick box, photo, item, SKU, qty).
 // Pure string building; the notes page opens it in a new window and prints.
 
+import { cleanRichHtml } from '@/lib/clean-rich-html'
+
 export type PrintChecklistItem = { text: string; done: boolean; image?: string | null; qty?: number; sku?: string | null; price?: string | null; due?: string | null }
 export type PrintNote = {
   title: string
@@ -41,7 +43,7 @@ const MIC = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke=
  * event-handler attributes are dropped.
  */
 export function noteBodyForPrint(html: string): string {
-  if (typeof DOMParser === 'undefined') return html || ''
+  if (typeof DOMParser === 'undefined') return cleanRichHtml(html)
   const doc = new DOMParser().parseFromString(`<div id="r">${html || ''}</div>`, 'text/html')
   const root = doc.getElementById('r')!
   root.querySelectorAll('.rte-voice').forEach(card => {
@@ -61,7 +63,9 @@ export function noteBodyForPrint(html: string): string {
   })
   // Drop empty trailing paragraphs the editor leaves behind.
   while (root.lastElementChild && /^(P|DIV)$/.test(root.lastElementChild.nodeName) && !root.lastElementChild.textContent?.trim() && !root.lastElementChild.querySelector('img')) root.lastElementChild.remove()
-  return root.innerHTML
+  // The print window shares the admin's origin, and a shared note's body can
+  // come from anyone with its link: the full clean, not just the list above.
+  return cleanRichHtml(root.innerHTML)
 }
 
 export function renderNotePrintHtml(note: PrintNote, company: PrintCompany = {}): string {

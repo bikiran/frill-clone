@@ -15,6 +15,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { modelFor, trackAi } from '@/lib/ai-models'
 import { memoryForPrompt, memoryBlock, followedMemory, memoryAnswers } from '@/lib/agent/business-memory'
 import { isPublicNow } from '@/lib/announcements'
+import { safeFetch } from '@/lib/site-crawl'
 
 export type KnowledgeSource = 'fact' | 'help' | 'file' | 'website' | 'announcement' | 'roadmap' | 'idea' | 'chat'
 export type KnowledgeHit = { id?: string; source: string; source_id?: string; title: string | null; content: string; url: string | null; rank?: number }
@@ -203,17 +204,11 @@ export async function smartSearchKnowledge(db: any, companyId: string, question:
 const SKIP_URL = /\/(cart|basket|checkout|my-account|account|login|register|wp-admin|wp-json|wp-login|feed|tag|author|search|product|products|product-category|collections|shop\/page|page\/\d+|wishlist|compare|order-tracking|cms_block[^/]*)(\/|$)|\.(jpe?g|png|gif|webp|svg|pdf|zip|mp4|mp3|css|js|xml)(\?|$)|[?#]/i
 const PRIORITY_URL = /(faq|question|help|support|shipping|delivery|postage|return|refund|exchange|warranty|policy|policies|terms|conditions|privacy|about|contact|hours|opening|location|visit|store|pickup|collect|care|guide|how-to|payment|afterpay|booking|services|pricing)/i
 
+// Every hop must resolve to a public address (lib/site-crawl): the site is
+// whatever the business typed, and the pages end up in what it can read.
 async function fetchText(url: string, maxBytes = 400_000, timeoutMs = 8000): Promise<{ ok: boolean; text: string; type: string }> {
-  const ctrl = new AbortController()
-  const t = setTimeout(() => ctrl.abort(), timeoutMs)
-  try {
-    const res = await fetch(url, { signal: ctrl.signal, redirect: 'follow', headers: { 'User-Agent': 'ColvyBot/1.0 (+https://colvy.com)', Accept: 'text/html,application/xml;q=0.9,*/*;q=0.5' } })
-    const type = res.headers.get('content-type') || ''
-    if (!res.ok) return { ok: false, text: '', type }
-    const buf = await res.arrayBuffer()
-    return { ok: true, text: new TextDecoder().decode(buf.slice(0, maxBytes)), type }
-  } catch { return { ok: false, text: '', type: '' } }
-  finally { clearTimeout(t) }
+  const r = await safeFetch(url, { maxBytes, timeoutMs })
+  return { ok: r.ok, text: r.text, type: r.type }
 }
 
 const locs = (xml: string) => Array.from(xml.matchAll(/<loc>\s*(?:<!\[CDATA\[)?\s*([^<\]\s]+)\s*(?:\]\]>)?\s*<\/loc>/gi)).map(m => decode(m[1].trim()))

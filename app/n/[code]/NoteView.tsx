@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import RichTextEditor from '@/components/RichTextEditor'
 import NoteAttachments from './NoteAttachments'
 import { toPublicUrl } from '@/lib/storage-url'
+import { cleanRichHtml } from '@/lib/clean-rich-html'
 
 // The whole item, as the app and the web editor store it — a product line
 // carries its photo, SKU, price and quantity; any step can have its own photos,
@@ -101,11 +102,14 @@ export default function NoteView({ code, accent, allowEdit, initialBody, initial
   const setL = (next: ChecklistItem[]) => { setChecklist(next); save(body, next) }
   const done = checklist.filter(c => c.done).length
   const lastEdit = log[log.length - 1]
+  // Cleaned in the browser (it needs DOMParser), so the body appears just after the page loads.
+  const [safeBody, setSafeBody] = useState('')
+  useEffect(() => { setSafeBody(cleanRichHtml(body)) }, [body])
 
   if (!allowEdit) {
     return (
       <>
-        {body ? <div className="note-body" dangerouslySetInnerHTML={{ __html: body }} />
+        {body ? <div className="note-body" dangerouslySetInnerHTML={{ __html: safeBody }} />
           : <p style={{ color: '#9ca3af', fontSize: 15 }}>This note has no text yet.</p>}
         {checklist.length > 0 && (
           <div style={{ marginTop: 22 }}>

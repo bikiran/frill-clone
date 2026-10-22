@@ -3,6 +3,7 @@ import { authFetch } from '@/lib/auth-fetch'
 
 import { useRef, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { cleanRichHtml } from '@/lib/clean-rich-html'
 
 // A lightweight rich-text editor built on contentEditable + execCommand — no
 // external dependency. Supports bold/italic/underline/strikethrough, headings,
@@ -76,7 +77,7 @@ export default function RichTextEditor({
         `<button class="rte-voice-btn" type="button" data-va="download" title="Download"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>` +
         `<button class="rte-voice-btn" type="button" data-va="more" title="More options"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>` +
       `</span>` +
-      `<audio src="${url}" data-name="${n}" preload="metadata" style="display:none"></audio>`
+      `<audio src="${esc(url)}" data-name="${n}" preload="metadata" style="display:none"></audio>`
   }
 
   const insertVoiceBlock = (url: string, secs: number) => {
@@ -214,7 +215,8 @@ export default function RichTextEditor({
 
   useEffect(() => {
     if (ref.current) {
-      ref.current.innerHTML = value || ''
+      // A shared note can be edited by anyone with its link: never let a body run code here.
+      ref.current.innerHTML = cleanRichHtml(value)
       if (blockDrag || enableVoice) normalizeVoice()
       if (blockDrag) { try { document.execCommand('defaultParagraphSeparator', false, 'p') } catch {}; normalizeBlocks() }
     }

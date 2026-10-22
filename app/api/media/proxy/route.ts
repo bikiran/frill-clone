@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
     // Only proxy images — never let this stream arbitrary content types. Not
     // SVG either: it's a document that can run script, and *.supabase.co
     // includes anyone's project, so one opened from here would run on our origin.
-    if (!ct.startsWith('image/') || /svg/i.test(ct)) return NextResponse.json({ error: 'Not an image' }, { status: 415 })
+    if (!ct.startsWith('image/') || /svg|xml/i.test(ct)) return NextResponse.json({ error: 'Not an image' }, { status: 415 })
     return new NextResponse(upstream.body, {
       status: 200,
       headers: {

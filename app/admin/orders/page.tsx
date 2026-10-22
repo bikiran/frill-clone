@@ -26,6 +26,7 @@ import { notifyIntegrations } from '@/lib/integrations-notify'
 import { authFetch } from '@/lib/auth-fetch'
 import { loadStaffRows } from '@/lib/team-list'
 import type { OrderRefund } from '@/lib/order-refunds'
+import { sanitizeHtml } from '@/lib/safe-html'
 
 type Order = any
 
@@ -2561,7 +2562,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
                   )}
                   {customerWoo.map((n: any) => (
                     <div key={n.id} className="ord-note" style={{ position: 'relative', padding: '8px 11px', borderRadius: 10, background: '#eff6ff', border: '1px solid #bfdbfe' }}>
-                      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', whiteSpace: 'pre-wrap', lineHeight: 1.5, paddingRight: 24 }} dangerouslySetInnerHTML={{ __html: String(n.note || '').replace(/<script[\s\S]*?<\/script>/gi, '') }} />
+                      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', whiteSpace: 'pre-wrap', lineHeight: 1.5, paddingRight: 24 }} dangerouslySetInnerHTML={{ __html: sanitizeHtml(String(n.note || '')) }} />
                       <p style={{ margin: '4px 0 0', fontSize: 10.5, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 6 }}>
                         <span style={{ fontSize: 9, fontWeight: 800, color: '#1d4ed8', background: '#dbeafe', padding: '1px 6px', borderRadius: 20 }}>TO CUSTOMER</span>
                         {n.author || 'WooCommerce'}{n.date ? ` · ${new Date(n.date).toLocaleString('en-AU')}` : ''}
