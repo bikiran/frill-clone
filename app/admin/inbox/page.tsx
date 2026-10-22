@@ -4915,7 +4915,7 @@ export default function InboxPage() {
 
                         <div style={{ borderTop: '1px solid var(--border)' }} />
 
-                        <button type="button" role="menuitem" data-pop-item onClick={() => openPicker('payment' as any)}
+                        <button type="button" role="menuitem" data-pop-item onClick={() => { pickerInsertRef.current = insert || null; openPicker('payment' as any) }}
                           style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
                           <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>{Icon.payment()}</span>Send Payment Link
                         </button>
@@ -5496,28 +5496,26 @@ export default function InboxPage() {
     try {
       const via = composeChannel()
       const isWidgetActive = via === 'widget' || via === 'chat'
+      // SMS / email / Messenger: a draft payment, its short link put into the
+      // reply for a person to check and send (nothing goes out from here).
+      // Live chat: the payment card, sent from this form.
       const res = await authFetch('/api/stripe/chat-payment', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, conversationId: selected.id, amount: payAmount, description: payDesc, senderName, channel: isWidgetActive ? 'chat' : via, ...(payAddress ? { collectAddress: payAddress } : {}) }),
+        body: JSON.stringify({ companyId, conversationId: selected.id, amount: payAmount, description: payDesc, senderName, channel: isWidgetActive ? 'chat' : via, draft: !isWidgetActive, ...(payAddress ? { collectAddress: payAddress } : {}) }),
       })
       const data = await res.json()
       if (!res.ok) { alert(data.error || 'Could not create payment'); return }
-      // Off-site (SMS/email/Messenger): the payment card can't render, so text the
-      // pay link over their real channel. `silent` = the card (already inserted
-      // server-side with the correct delivery_channel) is the thread record, so we
-      // don't insert a duplicate.
-      if (data.checkoutUrl && !isWidgetActive) {
-        try {
-          await deliverToCustomer({
-            subject: `Payment request from ${companyInfo?.name || 'us'}`,
-            body: `Payment request: $${parseFloat(payAmount).toFixed(2)} AUD${payDesc ? ` — ${payDesc}` : ''}\nPay securely:`,
-            url: data.checkoutUrl,
-            silent: true,
-          })
-        } catch (e) { showToast(`Payment created, but sending failed: ${(e as any).message}`) }
+      if (!isWidgetActive) {
+        if (!data.checkoutUrl) { alert('Could not make the payment link'); return }
+        const text = `Payment request: $${parseFloat(payAmount).toFixed(2)} AUD${payDesc ? ` — ${payDesc}` : ''}\nPay securely: ${data.checkoutUrl}`
+        const insert = pickerInsertRef.current
+        if (insert) insert(text)
+        else setReply(r => (r.trim() ? r.trimEnd() + '\n\n' : '') + text)
+        pickerInsertRef.current = null
+        showToast('Payment link added to your reply. Check it, then press Send.')
       }
       setSendPicker(null); setPayAmount(''); setPayDesc(''); setPayAddress(null)
-      if (await reloadThread(selected.id)) scrollBottom()
+      if (isWidgetActive && await reloadThread(selected.id)) scrollBottom()
     } catch (e: any) { alert('Payment error: ' + e.message) }
     finally { paySendingRef.current = false; setPaySending(false) }
   }
@@ -8409,7 +8407,7 @@ export default function InboxPage() {
                   Secure payment via Stripe. Card details are never stored by Colvy.{(companyInfo as any)?.payment_settings?.paylink_fill_contact !== false ? ' Their name and email fill in any blanks on the contact.' : ''}
                 </div>
                 <button type="button" onClick={sendPayment} disabled={!payAmount || paySending} style={{ padding: '11px 0', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: (!payAmount || paySending) ? 'default' : 'pointer', opacity: paySending ? 0.7 : 1 }}>
-                  {paySending ? 'Sending…' : 'Send payment request'}
+                  {(() => { const v = composeChannel(); const chat = v === 'widget' || v === 'chat'; return paySending ? (chat ? 'Sending…' : 'Making the link…') : chat ? 'Send payment request' : 'Add to reply' })()}
                 </button>
               </div>
             ) : pickerItems.length === 0 ? (

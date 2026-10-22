@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
   try {
     // collectAddress (optional): 'none' | 'billing' | 'shipping' for this link;
     // otherwise the business's default (Settings → Payments → Payment links).
-    const { companyId, conversationId, amount, description, senderName, orderId, integrationId, pageUrl, channel, collectAddress } = await req.json()
+    const { companyId, conversationId, amount, description, senderName, orderId, integrationId, pageUrl, channel, collectAddress, draft } = await req.json()
     // The customer's real channel, so the payment card is labelled correctly
     // (SMS/email/Messenger) instead of always reading "Live Chat". The caller
     // delivers the actual pay link over that channel.
@@ -90,7 +90,10 @@ export async function POST(req: NextRequest) {
     })
     const custLink = shortUrl || payUrl
 
-    const { data: msg } = await db.from('messages').insert({
+    // draft: the link goes into a person's reply (SMS / email) to check and
+    // send themselves, so no payment card is posted and the thread isn't
+    // touched until they send. "Payment received" still posts when it's paid.
+    const { data: msg } = draft ? { data: null as any } : await db.from('messages').insert({
       conversation_id: conversationId,
       company_id: companyId,
       sender_type: 'agent',
@@ -106,12 +109,12 @@ export async function POST(req: NextRequest) {
     // which /pay/<id> refreshes on demand.
     await db.from('chat_payments').insert({
       id: payId,
-      company_id: companyId, conversation_id: conversationId, message_id: msg?.id,
+      company_id: companyId, conversation_id: conversationId, message_id: msg?.id || null,
       amount_cents: cents, currency: 'aud', description: description || null,
       status: 'pending', stripe_session_id: session.id, checkout_url: custLink,
     })
 
-    await db.from('conversations').update({
+    if (!draft) await db.from('conversations').update({
       last_message: `💳 Payment request: $${(cents / 100).toFixed(2)}`,
       last_message_at: new Date().toISOString(),
     }).eq('id', conversationId)
