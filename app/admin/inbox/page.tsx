@@ -1024,6 +1024,8 @@ export default function InboxPage() {
   const [replyChannel, setReplyChannel] = useState<'chat' | 'sms'>('chat')
   const [showSendMenu, setShowSendMenu] = useState(false)
   const [sendPicker, setSendPicker] = useState<'poll' | 'survey' | 'form' | 'payment' | null>(null)
+  // Where a picked poll/survey/form goes: the email editor's insert, or the SMS/chat reply box.
+  const pickerInsertRef = useRef<((t: string) => void) | null>(null)
   const [pickerItems, setPickerItems] = useState<any[]>([])
   const [payAmount, setPayAmount] = useState('')
 
@@ -4896,7 +4898,7 @@ export default function InboxPage() {
                   </button>
                 </div>
   )
-  const renderSendMenu = (forEmail = false) => (
+  const renderSendMenu = (forEmail = false, insert?: (t: string) => void) => (
     <>
                   {/* Send poll/survey/form/payment */}
                   <div ref={sendMenuRef} style={{ position: 'relative' }}>
@@ -4907,7 +4909,7 @@ export default function InboxPage() {
                     <Popover open={showSendMenu} onClose={() => setShowSendMenu(false)} anchorRef={sendMenuRef} width={220} prefer="top" label="More actions" role="menu" padding={0}>
                       <div className="cmp-send-menu" style={{ padding: '4px 0' }}>
                         {[['poll', Icon.poll(), 'Send Poll'], ['survey', Icon.survey(), 'Send Survey'], ['form', Icon.form(), 'Send Form']].map(([k, icon, label]: any) => (
-                          <button key={k} type="button" role="menuitem" data-pop-item onClick={() => openPicker(k as any)}
+                          <button key={k} type="button" role="menuitem" data-pop-item onClick={() => { pickerInsertRef.current = insert || null; openPicker(k as any) }}
                             style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}><span style={{ color: 'var(--slate)', display: 'inline-flex' }}>{icon}</span>{label}</button>
                         ))}
 
@@ -5434,23 +5436,19 @@ export default function InboxPage() {
     } finally { setTicketSaving(false) }
   }
 
-  // Send a poll/survey/form into the chat as an interactive message
+  // A poll, survey or form for the customer. Nothing goes out on the click:
+  //   live chat → the interactive card, after a confirm;
+  //   SMS / email / Messenger → a short link to its own page, put into the
+  //   reply for a person to check, edit and send.
   const sendInteractive = async (kind: 'poll' | 'survey' | 'form', item: any) => {
     if (!selected || !companyId) return
     const senderName = myName
     const title = item.question || item.title || item.name || `${kind}`
-    const origin = typeof window !== 'undefined' ? window.location.origin : ''
-    const link = `${origin.replace(/admin\..*/, '')}/widget?slug=${(selected as any).company_slug || ''}&conversation=${selected.id}`
-
-    // The interactive card only renders INSIDE the live-chat widget. So only drop
-    // it into the thread when the customer is actually in the widget. Otherwise
-    // (SMS / email / Messenger / Instagram) just send a tap-to-respond LINK over
-    // their real channel — like sending a photo — with no misleading "sent to
-    // Live Chat" card.
     const via = composeChannel()
     const isWidgetActive = via === 'widget' || via === 'chat'
 
     if (isWidgetActive) {
+      if (!await confirmDialog({ title: `Send this ${kind}?`, message: `“${title}” appears in the live chat for the customer to answer.`, confirmLabel: 'Send', tone: 'primary' })) return
       await (supabase as any).from('messages').insert({
         conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
         sender_id: user.id, sender_name: senderName,
@@ -5460,19 +5458,31 @@ export default function InboxPage() {
         delivery_channel: 'chat',
       })
       await (supabase as any).from('conversations').update({ last_message: `📋 ${title}`, last_message_at: new Date().toISOString() }).eq('id', selected.id)
-    } else {
-      // deliverToCustomer sends over the active channel and records the message
-      // with the true delivery_channel (SMS/email/Meta) — no Live-Chat card.
-      try {
-        await deliverToCustomer({
-          subject: title,
-          body: `${title}\nTap to respond:`,
-          url: link,
-        })
-      } catch (e: any) { showToast(`Could not send the ${kind}: ${e.message}`) }
+      setSendPicker(null)
+      if (await reloadThread(selected.id)) scrollBottom()
+      return
     }
+
+    // The public page (company.colvy.com/polls/…, /surveys/…, /forms/…),
+    // behind a short tracked link so clicks show on the conversation.
+    const path = kind === 'poll' ? 'polls' : kind === 'survey' ? 'surveys' : 'forms'
+    const target = `${typeof window !== 'undefined' ? window.location.origin : ''}/${path}/${item.id}`
+    let link = target
+    try {
+      const res = await authFetch('/api/short-links/create', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, kind: 'redirect', url: target, label: title, conversationId: selected.id, sentBy: senderName || null, channel: via === 'email' ? 'email' : 'sms' }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (res.ok && d.url) link = d.url
+    } catch { /* the full link still works */ }
+    const text = `${title}\n${kind === 'form' ? 'Fill it in here' : 'Tap to answer'}: ${link}`
+    const insert = pickerInsertRef.current
+    if (insert) insert(text)
+    else setReply(r => (r.trim() ? r.trimEnd() + '\n\n' : '') + text)
+    pickerInsertRef.current = null
     setSendPicker(null)
-    if (await reloadThread(selected.id)) scrollBottom()
+    showToast('Added to your reply. Check it, then press Send.')
   }
 
   // Send a payment request into the chat. Locked while it's in flight, so a
@@ -10383,7 +10393,7 @@ export default function InboxPage() {
                   agentName={myName}
                   keyterms={[contact?.name, (contact as any)?.company_name].filter(Boolean) as string[]}
                   templateVars={templateVars}
-                  extraTools={(insert) => <>{renderSendMenu(true)}{renderLinkTools(true, insert)}</>}
+                  extraTools={(insert) => <>{renderSendMenu(true, insert)}{renderLinkTools(true, insert)}</>}
                   onAiAssist={() => logAiUpdate('Reply drafted with Colvy AI')}
                   onSent={async () => {
                     await reloadThread(selected.id)
