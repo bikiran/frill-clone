@@ -4,8 +4,9 @@ export default function JsonLd({ data }: { data: Record<string, any> | Record<st
   return (
     <script
       type="application/ld+json"
-      // JSON.stringify output is safe to inline; there is no user input here.
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }}
+      // JSON.stringify doesn't escape '<', so a "</script>" inside any string
+      // value would end the block: write it as \u003c (still the same JSON).
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(data).replace(/</g, '\\u003c') }}
     />
   )
 }

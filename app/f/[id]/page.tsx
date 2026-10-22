@@ -66,7 +66,8 @@ export default function PublicContactForm() {
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Could not submit')
-      if (form.redirect_url) { window.top ? (window.top.location.href = form.redirect_url) : (window.location.href = form.redirect_url); return }
+      // A web address only: a javascript: one would run on this page.
+      if (form.redirect_url && /^https?:\/\//i.test(String(form.redirect_url).trim())) { window.top ? (window.top.location.href = form.redirect_url) : (window.location.href = form.redirect_url); return }
       setDone(true)
     } catch (e: any) { setErr(e.message) } finally { setSubmitting(false) }
   }

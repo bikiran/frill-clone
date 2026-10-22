@@ -30,12 +30,15 @@ export async function GET(req: NextRequest) {
     const upstream = await fetch(target.toString(), { cache: 'force-cache' })
     if (!upstream.ok || !upstream.body) return NextResponse.json({ error: 'Fetch failed' }, { status: 502 })
     const ct = upstream.headers.get('content-type') || 'application/octet-stream'
-    // Only proxy images — never let this stream arbitrary content types.
-    if (!ct.startsWith('image/')) return NextResponse.json({ error: 'Not an image' }, { status: 415 })
+    // Only proxy images — never let this stream arbitrary content types, and
+    // never SVG (anyone can upload one, and here it would run on our origin).
+    if (!ct.startsWith('image/') || /svg|xml/i.test(ct)) return NextResponse.json({ error: 'Not an image' }, { status: 415 })
     return new NextResponse(upstream.body, {
       status: 200,
       headers: {
         'Content-Type': ct,
+        'X-Content-Type-Options': 'nosniff',
+        'Content-Security-Policy': "default-src 'none'; sandbox",
         'Cache-Control': 'public, max-age=86400, s-maxage=604800, immutable',
         'Access-Control-Allow-Origin': '*',
       },

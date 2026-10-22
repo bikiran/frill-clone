@@ -2,6 +2,7 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
+import { publicUrlProblem } from '@/lib/site-crawl'
 
 /**
  * POST /api/woocommerce/setup
@@ -35,6 +36,9 @@ export async function POST(req: NextRequest) {
 
     // Normalize store URL (remove trailing slash)
     const normalizedUrl = storeUrl.replace(/\/$/, '')
+    // Every later call goes to this address from our servers: a public store only.
+    const urlProblem = await publicUrlProblem(normalizedUrl)
+    if (urlProblem) return NextResponse.json({ error: urlProblem }, { status: 400 })
 
     // If updating credentials, test with new ones; otherwise fetch existing
     let keysToUse = { consumerKey, consumerSecret }

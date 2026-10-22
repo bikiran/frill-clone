@@ -9,6 +9,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { toCatMap } from '@/lib/help-shared'
 import type { HelpArticleData } from '@/lib/help-public'
+import { escapeHtml } from '@/lib/safe-html'
 
 const ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
@@ -109,7 +110,7 @@ function renderContent(content: string) {
       elements.push(<ul key={`ul-${i}`} className="mb-4 space-y-1 ml-4">{items.map((item, j) => (
         <li key={j} className="text-sm flex items-start gap-2" style={{ color: 'var(--ink)' }}>
           <span style={{ color: 'var(--coral)', marginTop: 2 }}>•</span>
-          <span dangerouslySetInnerHTML={{ __html: item.replace(/`([^`]+)`/g, '<code class="px-1 py-0.5 rounded text-xs" style="background:#f3f4f6;color:var(--ink);font-family:monospace">$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>') }} />
+          <span dangerouslySetInnerHTML={{ __html: escapeHtml(item).replace(/`([^`]+)`/g, '<code class="px-1 py-0.5 rounded text-xs" style="background:#f3f4f6;color:var(--ink);font-family:monospace">$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>') }} />
         </li>
       ))}</ul>)
       continue
@@ -120,16 +121,18 @@ function renderContent(content: string) {
         i++
       }
       elements.push(<ol key={`ol-${i}`} className="mb-4 space-y-1 ml-4 list-decimal">{items.map((item, j) => (
-        <li key={j} className="text-sm" style={{ color: 'var(--ink)' }} dangerouslySetInnerHTML={{ __html: item.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>') }} />
+        <li key={j} className="text-sm" style={{ color: 'var(--ink)' }} dangerouslySetInnerHTML={{ __html: escapeHtml(item).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>') }} />
       ))}</ol>)
       continue
     } else if (line === '---') {
       elements.push(<hr key={i} className="my-6" style={{ borderColor: 'var(--border)' }} />)
     } else {
-      const html = line
+      // Article text is written by the business (or imported/AI-drafted) and
+      // shown to anyone: escape it first, then add back only the markdown.
+      const html = escapeHtml(line)
         .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
         .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded text-xs font-mono" style="background:#f3f4f6;color:var(--coral)">$1</code>')
-        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="underline" style="color:var(--coral)">$1</a>')
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, href) => `<a href="${/^(https?:\/\/|\/|mailto:|#)/i.test(href) ? href : '#'}" class="underline" style="color:var(--coral)">${text}</a>`)
       elements.push(<p key={i} className="text-sm leading-relaxed mb-3" style={{ color: 'var(--ink)' }} dangerouslySetInnerHTML={{ __html: html }} />)
     }
     i++

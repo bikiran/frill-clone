@@ -11,6 +11,7 @@ import { AssignIcon, PinIcon, MergeIcon, ArchiveIcon, TrashIcon, EditIcon, Share
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { notifyIntegrations } from '@/lib/integrations-notify'
 import { loadStaffRows } from '@/lib/team-list'
+import { sanitizeHtml } from '@/lib/safe-html'
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
   new: { label: 'Under consideration', color: '#3b82f6', bg: '#dbeafe' },
@@ -1597,7 +1598,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
                         <div 
                           className="text-sm prose max-w-none mb-2" 
                           style={{ color: 'var(--ink)' }} 
-                          dangerouslySetInnerHTML={{ __html: comment.content }}
+                          dangerouslySetInnerHTML={{ __html: sanitizeHtml(comment.content) }}
                           onClick={(e) => {
                             const target = e.target as HTMLElement
                             if (target.tagName === 'IMG') {
