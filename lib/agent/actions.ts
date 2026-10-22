@@ -127,10 +127,34 @@ export function asksForKnowledgeGaps(actions: ActionDef[], runInput: { kind?: st
  * business's knowledge didn't cover the question: an "I'll check", or "send us
  * a message" under a review or comment.
  */
-export function noteReply(ctx: ActionContext, action: ActionDef, input: { knowledge_gap?: unknown } | null | undefined) {
+export function noteReply(ctx: ActionContext, action: ActionDef, input: { knowledge_gap?: unknown; text?: unknown } | null | undefined) {
   if (!isCustomerReply(action)) return
   if (input?.knowledge_gap === true) ctx.scratch.gapReply = true
   else ctx.scratch.replied = true
+  if (typeof input?.text === 'string') (ctx.scratch.replyTexts ||= []).push(input.text)
+}
+
+// A reply that tells the customer the team will pick it up ("I've asked the
+// team to check…", "the team will email you back").
+const TEAM_PROMISE = [
+  /\b(i(?:'|’)?ve|i have|we(?:'|’)?ve|we have|i(?:'|’)ll|i will|i(?:'|’)m|i am)\s+(?:just\s+)?(asked|asking|let|letting|told|passed|passing|flagged|flagging|checking with|check with|get|getting)\b[^.!?]{0,40}\b(the|our)\s+team\b/i,
+  /\b(check|checking|confirm|confirming)\s+(this\s+|that\s+|it\s+)?with\s+(the|our)\s+team\b/i,
+  /\b(the|our)\s+team\s+(will|’ll|'ll|can|is going to)\b/i,
+  /\b(someone|a team member|one of (the|our) team)\s+will\s+(get back|be in touch|contact|call|email|text|reply|follow up|let you know)/i,
+]
+export const promisesTeamFollowUp = (text: string) => TEAM_PROMISE.some(re => re.test(text || ''))
+
+/**
+ * Why this run should have handed over but didn't call escalate_to_human, or
+ * null. Without a hand-off the team never sees a note in the conversation (on
+ * any channel), however the run ended.
+ */
+export function missedHandoff(ctx: ActionContext, outcome: string): string | null {
+  if (ctx.scratch.escalated) return null
+  if (outcome === 'escalated') return 'The run ended as handed to the team, without a hand-off.'
+  const promised = (ctx.scratch.replyTexts || []).some((t: string) => promisesTeamFollowUp(t))
+  if (promised && !ctx.scratch.done?.create_task) return 'The reply told the customer the team would follow up.'
+  return null
 }
 
 const askKnowledgeBase = readTool('ask_knowledge', 'Search the business’s own knowledge (help articles, facts, files, website). Use before answering any question about policies, products or services.', obj({ question: { type: 'string' } }, ['question']), true)
