@@ -10,6 +10,8 @@ import ContactSalesModal from '@/components/ContactSalesModal'
 import { PRICING_FAQS } from '@/lib/pricing-faqs'
 import { COLVY_CONTACT } from '@/lib/colvy-contact'
 import { COMING_SOON, soonLabel } from '@/lib/feature-availability'
+import type { PlanId } from '@/lib/plan-finder'
+import PlanFinder from './PlanFinder'
 
 const CORAL = '#ff6a4d'
 const PINK = '#ff4d8d'
@@ -92,6 +94,8 @@ export default function PricingPage() {
   const [dark, setDark] = useState(false)
   const [scrollY, setScrollY] = useState(0)
   const [contactPlan, setContactPlan] = useState<string | null>(null)  // opens the Contact-sales modal
+  const [match, setMatch] = useState<PlanId | null>(null)  // the plan finder's pick, ringed in the grid
+  const toPlans = () => document.getElementById('plans')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   useEffect(() => {
     track('pricing_viewed')
     supabase.auth.getSession().then(({ data }) => setUser(data.session?.user || null))
@@ -162,17 +166,31 @@ export default function PricingPage() {
         </Reveal>
       </section>
 
+      {/* PLAN FINDER — a few questions, one recommended plan */}
+      <section id="plan-finder" style={{ padding: '10px 16px 40px' }}>
+        <Reveal>
+          <div style={{ textAlign: 'center', marginBottom: 22 }}>
+            <div style={{ fontFamily: 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace', fontSize: 11.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: muted }}>Not sure which suite? · 30 seconds</div>
+            <button type="button" onClick={toPlans} style={{ marginTop: 8, background: 'none', border: 'none', padding: 0, color: muted, fontFamily: 'inherit', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 3 }}>Skip to all plans</button>
+          </div>
+          <PlanFinder dark={dark} annual={annual} setAnnual={setAnnual} tiers={TIERS} onMatch={setMatch} onCompare={toPlans}
+            onChoose={id => { const t = TIERS.find(x => x.id === id); if (t) go(t) }} />
+        </Reveal>
+      </section>
+
       {/* TIERS */}
-      <section style={{ padding: '20px 24px 24px' }}>
+      <section id="plans" style={{ padding: '20px 24px 24px', scrollMarginTop: 80 }}>
         <div style={{ maxWidth: 1240, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(258px, 1fr))', gap: 20, alignItems: 'start' }}>
           {TIERS.map((tier, i) => {
-            const hi = !!tier.badge
+            const matched = match === tier.id
+            const hi = matched || (!match && !!tier.badge)
+            const badge = matched ? 'Your match' : tier.badge
             const price = annual ? tier.annual : tier.monthly
             const accent = tier.accent
             return (
               <Reveal key={tier.id} delay={i * 0.06}>
                 <div className="pr-card" style={{ borderRadius: 24, padding: '30px 24px', border: hi ? `2px solid ${accent}` : `1px solid ${cardBorder}`, background: hi ? (dark ? 'rgba(255,106,77,0.08)' : '#fff7f4') : cardBg, position: 'relative', boxShadow: hi ? `0 24px 60px ${accent}30` : '0 10px 30px rgba(15,17,25,0.05)', transform: hi ? 'scale(1.02)' : 'none' }}>
-                  {tier.badge && <div style={{ position: 'absolute', top: -13, left: '50%', transform: 'translateX(-50%)', fontSize: 11.5, fontWeight: 800, background: accent, color: '#fff', padding: '5px 16px', borderRadius: 999, whiteSpace: 'nowrap' }}>{tier.badge}</div>}
+                  {badge && <div style={{ position: 'absolute', top: -13, left: '50%', transform: 'translateX(-50%)', fontSize: 11.5, fontWeight: 800, background: accent, color: '#fff', padding: '5px 16px', borderRadius: 999, whiteSpace: 'nowrap' }}>{badge}</div>}
                   <h3 style={{ fontSize: 20, fontWeight: 900, margin: '0 0 3px', color: text }}>{tier.name}</h3>
                   <p style={{ fontSize: 12.5, fontWeight: 600, color: accent, margin: 0, minHeight: 18 }}>{tier.tagline}</p>
                   <div style={{ margin: '14px 0 20px', display: 'flex', alignItems: 'baseline', gap: 4 }}>

@@ -33,6 +33,7 @@ export type ColvyEvent =
   | 'signup_completed'      // email signup verified and account created (props: via)
   | 'workspace_created'     // a new workspace came into existence
   | 'pricing_viewed'        // the billing/plans page was opened
+  | 'plan_finder_completed' // the pricing page's plan finder showed a plan (props: plan, channels, extras, team)
   | 'checkout_started'      // upgrade clicked, redirecting to Stripe (props: tier, billing)
   | 'checkout_completed'    // returned from Stripe checkout success (props: tier)
   | 'sale_recorded'         // a tenant logged an attributed sale (props: amount, currency, payment_method)
