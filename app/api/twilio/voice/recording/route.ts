@@ -1,4 +1,4 @@
-import { twilioSignatureOk } from '@/lib/twilio-signature'
+import { twilioSignatureOk, twilioSignedFor } from '@/lib/twilio-signature'
 import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -39,6 +39,14 @@ export async function POST(req: NextRequest) {
     if (!companyId || !recordingUrl) return NextResponse.json({ ok: true })
 
     const db = admin()
+    // Signed by Colvy's account or this business's own, not another business's,
+    // and the call row must be this business's: the recording is fetched with
+    // its credentials and stored on that row.
+    if (!(await twilioSignedFor(req, form, db, companyId))) return new NextResponse('Forbidden', { status: 403 })
+    if (callRowId) {
+      const { data: own } = await db.from('calls').select('company_id').eq('id', callRowId).maybeSingle()
+      if (!own || own.company_id !== companyId) return NextResponse.json({ ok: true })
+    }
     const { data: integ } = await db.from('twilio_integrations').select('account_sid, auth_token').eq('company_id', companyId).maybeSingle()
 
     // Re-host the .mp3 to our public media domain so it plays in the browser and
@@ -71,10 +79,10 @@ export async function POST(req: NextRequest) {
     let rowId = callRowId
     if (!rowId) {
       const sid = get('CallSid')
-      if (sid) { const { data } = await db.from('calls').select('id').eq('twilio_call_sid', sid).maybeSingle(); rowId = data?.id || '' }
+      if (sid) { const { data } = await db.from('calls').select('id').eq('twilio_call_sid', sid).eq('company_id', companyId).maybeSingle(); rowId = data?.id || '' }
       if (!rowId) {
         const conf = get('ConferenceSid')
-        if (conf) { const { data } = await db.from('calls').select('id').eq('conference_sid', conf).maybeSingle(); rowId = data?.id || '' }
+        if (conf) { const { data } = await db.from('calls').select('id').eq('conference_sid', conf).eq('company_id', companyId).maybeSingle(); rowId = data?.id || '' }
       }
     }
     if (!rowId) return NextResponse.json({ ok: true })

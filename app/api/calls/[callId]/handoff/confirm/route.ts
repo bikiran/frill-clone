@@ -1,4 +1,4 @@
-import { twilioSignatureOk } from '@/lib/twilio-signature'
+import { twilioSignatureOk, twilioSignedFor } from '@/lib/twilio-signature'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { TwilioService } from '@/lib/twilio-service'
@@ -43,6 +43,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ callId: st
     const db = admin()
     const { data: call } = await db.from('calls').select('*').eq('id', callId).maybeSingle()
     if (!call) return NextResponse.json({ ok: true, ignored: 'no-call' })
+    // Signed by Colvy's account or the call's business's own, not another business's.
+    if (!(await twilioSignedFor(req, form, db, call.company_id))) return new NextResponse('Forbidden', { status: 403 })
     if (String(call.handoff_status || '') !== 'joining') return NextResponse.json({ ok: true, ignored: 'not-joining' })
 
     // The joining leg is the new agent device. Ignore the customer/old-agent legs

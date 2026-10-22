@@ -1,4 +1,4 @@
-import { twilioSignatureOk } from '@/lib/twilio-signature'
+import { twilioSignatureOk, twilioSignedFor } from '@/lib/twilio-signature'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { phoneVoicemailTwiml, phoneGoodbyeTwiml, aiCallMissed, NO_VOICEMAIL_SAY, TROUBLE_SAY, type PhoneCallState } from '@/lib/phone-agent'
@@ -37,6 +37,8 @@ export async function POST(req: NextRequest) {
   const db = admin()
   const { data: call } = await db.from('calls').select('id, company_id, conversation_id, routing_state').eq('id', callRowId).maybeSingle()
   if (!call || call.company_id !== companyId) return twiml('<Response><Hangup/></Response>')
+  // Signed by Colvy's account or this business's own, not another business's.
+  if (!(await twilioSignedFor(req, form, db, companyId))) return new NextResponse('Forbidden', { status: 403 })
   const state: PhoneCallState | null = call.routing_state?.phone_agent || null
   const voice: string = call.routing_state?.phone_voice || 'Polly.Olivia-Neural'
   const { data: integ } = await db.from('twilio_integrations').select('voicemail_enabled, voicemail_greeting').eq('company_id', companyId).maybeSingle()

@@ -1,8 +1,10 @@
-import { twilioSignatureOk } from '@/lib/twilio-signature'
+import { twilioSignatureOk, twilioSignedFor } from '@/lib/twilio-signature'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { xmlEscape, twilioIdentity } from '@/lib/twilio-service'
 import { parseClientIdentity } from '@/lib/call-handoff'
+import { SUPER_ADMIN, isStaffMember } from '@/lib/company-access'
+import { companyForInboundNumber } from '@/lib/inbound-company'
 
 export const dynamic = 'force-dynamic'
 
@@ -64,6 +66,44 @@ async function handoffJoinTwiml(req: NextRequest, get: (k: string) => string): P
   )
 }
 
+// The SDK's params (To, From, callRowId, companyId) are whatever the caller's
+// app sends, and every Colvy business's tokens use the same TwiML App, so
+// before dialling check they name the caller's own business: the token's
+// identity (Caller = client:<identity>) is on its team, the call row is its
+// outbound call and the caller ID is one of its numbers. Without this anyone
+// with a voice token could ring out as another business's number and point
+// the recording and status callbacks at its calls.
+async function outboundAllowed(db: any, get: (k: string) => string): Promise<boolean> {
+  const companyId = get('companyId')
+  if (!companyId) return false
+  const identity = parseClientIdentity(get('Caller')) || parseClientIdentity(get('From')) || ''
+  if (identity.startsWith('co_')) {
+    if (identity !== twilioIdentity(null, companyId)) return false
+  } else {
+    // u_<user id without its dashes> (twilioIdentity).
+    const m = /^u_([0-9a-f]{32})$/i.exec(identity)
+    if (!m) return false
+    const h = m[1].toLowerCase()
+    const userId = `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`
+    const { data: own } = await db.from('companies').select('id').eq('id', companyId).eq('owner_id', userId).maybeSingle()
+    if (!own && !(await isStaffMember(db, companyId, userId))) {
+      // The platform admin may act for any workspace (requireCompanyAccess).
+      const { data: u } = await db.auth.admin.getUserById(userId).catch(() => ({ data: null as any }))
+      if (u?.user?.email !== SUPER_ADMIN) return false
+    }
+  }
+  const callRowId = get('callRowId')
+  if (callRowId) {
+    const { data: row } = await db.from('calls').select('company_id, direction').eq('id', callRowId).maybeSingle()
+    if (!row || row.company_id !== companyId || row.direction !== 'outbound') return false
+  }
+  const from = get('From')
+  if (/^\+?\d{6,}$/.test(from.replace(/[\s()-]/g, ''))) {
+    if ((await companyForInboundNumber(db, from, 'twilio')) !== companyId) return false
+  }
+  return true
+}
+
 // TwiML for a browser-originated (SDK) outbound call. The Twilio Voice SDK hits
 // this via the company's TwiML App when the agent dials. Custom params from
 // device.connect({ params }) arrive as form fields.
@@ -100,6 +140,17 @@ export async function POST(req: NextRequest) {
   const bridge = get('bridge') === '1'
 
   if (!to) return twiml('<Response><Say>No number was provided.</Say><Hangup/></Response>')
+  try {
+    const db = dbAdmin()
+    // Signed by Colvy's account or this business's own, and for the caller's own business.
+    if (!(await twilioSignedFor(req, form, db, companyId))) return new NextResponse('Forbidden', { status: 403 })
+    if (!(await outboundAllowed(db, get))) {
+      console.warn('[twilio outbound] refused: params don\'t match the caller', { companyId, callRowId, from, caller: get('Caller') })
+      return twiml('<Response><Say>This call could not be placed.</Say><Hangup/></Response>')
+    }
+  } catch {
+    return twiml('<Response><Say>This call could not be placed.</Say><Hangup/></Response>')
+  }
 
   // Stamp the Twilio Call SID onto our outbound row at dial time — this is the
   // one point where we hold both callRowId (from the SDK params) and the parent

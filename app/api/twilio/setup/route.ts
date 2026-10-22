@@ -56,6 +56,12 @@ export async function POST(req: NextRequest) {
     }
 
     const { data: existing } = await db.from('twilio_integrations').select('*').eq('company_id', companyId).maybeSingle()
+    // A new Account SID only with its own (checked) auth token. Webhook
+    // signatures are checked with the token saved against the SID, so an
+    // unchecked SID could be paired with another account's token.
+    if (accountSid && accountSid !== existing?.account_sid && (!authToken || isMasked(authToken))) {
+      return NextResponse.json({ error: 'Enter the auth token for this Account SID.' }, { status: 400 })
+    }
 
     const payload: any = {
       company_id: companyId,

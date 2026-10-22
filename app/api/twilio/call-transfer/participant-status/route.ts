@@ -1,4 +1,4 @@
-import { twilioSignatureOk } from '@/lib/twilio-signature'
+import { twilioSignatureOk, twilioSignedFor } from '@/lib/twilio-signature'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { TwilioService } from '@/lib/twilio-service'
@@ -42,6 +42,8 @@ export async function POST(req: NextRequest) {
     const { data: rows } = await db.from('calls').select('*').eq('id', callId).limit(1)
     const call = rows?.[0]
     if (!call) return NextResponse.json({ ok: true })
+    // Signed by Colvy's account or the call's business's own, not another business's.
+    if (!(await twilioSignedFor(req, form, db, call.company_id))) return new NextResponse('Forbidden', { status: 403 })
 
     // Only react to the colleague leg we're tracking (ignore other participants).
     if (call.consult_call_control_id && callSid && call.consult_call_control_id !== callSid) {

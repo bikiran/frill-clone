@@ -1,4 +1,4 @@
-import { twilioSignatureOk } from '@/lib/twilio-signature'
+import { twilioSignatureOk, twilioSignedFor } from '@/lib/twilio-signature'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { ensureCallCard, setCallPreview } from '@/lib/call-card'
@@ -71,6 +71,12 @@ export async function POST(req: NextRequest) {
 
     if (callRowId) {
       const db = admin()
+      // Signed by Colvy's account or this business's own, not another
+      // business's, and the call row is this business's.
+      const companyId = req.nextUrl.searchParams.get('companyId') || ''
+      if (!(await twilioSignedFor(req, form, db, companyId))) return new NextResponse('Forbidden', { status: 403 })
+      const { data: own } = await db.from('calls').select('company_id').eq('id', callRowId).maybeSingle()
+      if (!own || own.company_id !== companyId) return twiml('<Response></Response>')
       // Who ended an answered call. Here CallStatus is the AGENT's leg (the SDK
       // call): completed → the agent hung up (or their app dropped); still in
       // progress → the customer hung up. Shown as "Hangup cause".
@@ -100,6 +106,7 @@ export async function POST(req: NextRequest) {
       const db = admin()
       const { data: call } = await db.from('calls').select('id, company_id, conversation_id, routing_state, status, caller_name, from_number')
         .eq('twilio_call_sid', callSid).eq('direction', 'inbound').limit(1).maybeSingle()
+      if (call && !(await twilioSignedFor(req, form, db, call.company_id))) return new NextResponse('Forbidden', { status: 403 })
       const state: PhoneCallState | null = call?.routing_state?.phone_agent || null
       if (call && state && !state.realtime && callerNeverSpoke(state) && setupOf(state).reason !== 'test') {
         missedIfCallerSilent(db, call, 'caller hung up without saying anything')
