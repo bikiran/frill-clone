@@ -11,7 +11,7 @@
 
 import { createHash } from 'crypto'
 import { getModelClient, type ModelClient, type NeutralBlock, type NeutralMessage, type ToolSpec } from './model'
-import { getAction, validateInput, FINISH_ACTION, flushKnowledgeGaps, noteReply, asksForKnowledgeGaps } from './actions'
+import { getAction, validateInput, FINISH_ACTION, flushKnowledgeGaps, noteReply, asksForKnowledgeGaps, missedHandoff } from './actions'
 import { loadExternalActions, isExternalKey } from './external-tools'
 import { guardTools, friendlyRunError, toolIndexFromError } from './tool-schema'
 import { retireStaleSuggestions } from './approvals'
@@ -119,6 +119,7 @@ function systemPrompt(role: RoleDef, companyName: string, businessText: string, 
       '- You can only act through your actions. Every action needs a short reason — the business owner reads it.',
       '- Some actions are recorded for a person to approve instead of happening straight away. Believe each action’s result: only tell the customer something is done if the result says it happened.',
       '- When in doubt, escalate_to_human. That is always allowed and never wrong.',
+      '- If you tell the customer the team will check, follow up or get back to them, escalate_to_human in the same run (or create_task for a specific job). Never promise a follow-up the team doesn’t know about.',
       // A reply alone counts as an answer (flushKnowledgeGaps), so a holding or
       // deflecting one must say so for the question to reach AI Knowledge → Unanswered.
       ...(knowledgeGaps ? ['- If the customer asks something the business’s knowledge doesn’t cover (not in your knowledge searches or in what you know about the business), and your reply says you’ll check or asks them to get in touch instead of answering, set knowledge_gap on that reply, and on escalate_to_human if you hand it over, so the owner can add the answer. Not for complaints, their own order or booking, or live details your actions look up (stock, availability, opening hours).'] : []),
@@ -363,6 +364,19 @@ export async function runAgent(db: any, runId: string, deadline: number, model: 
       return finishRun({ ...totals, status: 'failed', outcome: 'incomplete', summary: `Stopped after ${role.maxSteps} steps without finishing. A person should take a look.` })
     }
     const outcome = String(finished.outcome || 'no_action')
+    // Told the customer the team will follow up (or ended as handed over)
+    // without escalate_to_human: hand over now, so the team gets the note in
+    // the conversation and the alert, whatever channel it came in on.
+    const missed = run.mode === 'live' && run.conversation_id ? missedHandoff(actx, outcome) : null
+    if (missed) {
+      const handoff = getAction('escalate_to_human')
+      const why = String(finished.summary || '').trim().slice(0, 500) || 'The customer was told the team would follow up.'
+      const t1 = Date.now()
+      let r: any
+      try { r = handoff ? await handoff.run(actx, { message_for_team: why }) : { ok: false, error: 'No hand-off action' } } catch (e: any) { r = { ok: false, error: e?.message || 'Hand-off failed' } }
+      await trail.add({ kind: 'action', action_key: 'escalate_to_human', input: { message_for_team: why }, reason: missed, decision: 'allowed', decision_reason: `Handed over by Colvy: ${missed}`, status: r.ok ? 'ok' : 'error', output: r.ok ? (r.data ?? { summary: r.summary }) : { error: r.error }, duration_ms: Date.now() - t1 })
+      if (r.ok) { escalated = true; actx.scratch.escalated = true }
+    }
     const status = escalated || outcome === 'escalated' ? 'escalated' : approvals ? 'awaiting_approval' : 'completed'
     return finishRun({ ...totals, status, outcome, intent: finished.intent ? String(finished.intent).slice(0, 60) : null, summary: String(finished.summary || '').slice(0, 2000) || null })
   } catch (e: any) {
