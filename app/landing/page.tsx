@@ -25,6 +25,8 @@ const PURPLE = '#7c5cff'
 const PINK = '#ff4d8d'
 const CYAN = '#0891b2'
 const INK = '#0f1119'
+// Numbers, indexes and labels: a plain system monospace, for the instrument-panel details.
+const MONO = 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace'
 
 // Rotating hero noun — "Turn every chat into a ___".
 const HERO_WORDS = ['customer.', 'sale.', 'booking.', 'callback.', 'repeat order.', '5★ review.']
@@ -381,6 +383,7 @@ export default function LandingPage() {
         @keyframes blink { 0%,100%{opacity:0.25} 50%{opacity:1} }
         @keyframes wordIn { from{opacity:0;transform:translateY(0.4em)} to{opacity:1;transform:translateY(0)} }
         @keyframes hiwFill { from{width:0%} to{width:100%} }
+        @keyframes livePing { 0%{transform:scale(1);opacity:.55} 80%,100%{transform:scale(2.6);opacity:0} }
         .cv-btn-primary:hover { transform:translateY(-2px); box-shadow:0 16px 42px ${CORAL}66; }
         .cv-btn-primary,.cv-btn-ghost,.cv-card,.cv-navlink { transition:all 0.22s cubic-bezier(0.16,1,0.3,1); }
         .cv-btn-ghost:hover { border-color:${CORAL}; color:${CORAL}; }
@@ -391,7 +394,7 @@ export default function LandingPage() {
         .cv-suite-card:hover { transform:translateY(-6px) !important; box-shadow:0 40px 90px rgba(15,17,25,0.42) !important; }
         .cv-sm{ display:none; }
         @media (max-width:900px){ .cv-hero{ flex-direction:column !important; align-items:stretch !important; } .cv-big-row{ grid-template-columns:1fr !important; } .cv-hero-grid{ grid-template-columns:1fr !important; } .cv-desktop{ display:none !important; } .cv-mobile-toggle{ display:flex !important; } .cv-bubbles{ display:none !important; } .cv-brand-huge{ font-size:64px !important; } .cv-trust{ position:static !important; margin-top:32px; bottom:auto !important; width:100% !important; } .cv-lg{ display:none !important; } .cv-sm{ display:inline !important; } .cv-hero-cta{ flex-wrap:nowrap !important; } .cv-hero-cta > *{ flex:1 1 0 !important; min-width:0 !important; justify-content:center !important; padding-left:14px !important; padding-right:14px !important; white-space:nowrap !important; } }
-        @media (prefers-reduced-motion: reduce){ .cv-marquee-track{ animation:none } [class*="cv-float"]{ animation:none !important } }
+        @media (prefers-reduced-motion: reduce){ .cv-marquee-track{ animation:none } [class*="cv-float"]{ animation:none !important } .cv-live-ring{ animation:none !important } .cv-hiw-bar{ animation:none !important; width:100% !important } }
         /* Below the fold: let the browser skip layout/paint (and pause the CSS
            animations) of sections until they're near the viewport. */
         .cv-root > section:nth-of-type(n+3), .cv-root > #features > section, .cv-root > footer { content-visibility:auto; contain-intrinsic-size:auto 760px; }
@@ -427,10 +430,7 @@ export default function LandingPage() {
                 <button onClick={handleDashboard} className="cv-btn-primary" style={btnPrimary}>{user ? 'Go to dashboard' : (<><span className="cv-lg">Start free — no card</span><span className="cv-sm">Start free</span></>)} <ArrowRight /></button>
                 <a href="#features" className="cv-btn-ghost" style={btnGhost}><span className="cv-lg">See how it works ↓</span><span className="cv-sm">How it works ↓</span></a>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 26 }}>
-                <div aria-hidden style={{ display: 'flex' }}>{[CORAL, BLUE, GREEN, YELLOW, PURPLE].map((c, i) => (<div key={i} style={{ width: 34, height: 34, borderRadius: '50%', background: c, border: `2.5px solid ${bg}`, marginLeft: i ? -10 : 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: c === BLUE ? '#fff' : INK }}>{['SC', 'MW', 'PS', 'JK', 'AR'][i]}</div>))}</div>
-                <span style={{ fontSize: 13.5, color: muted }}>Loved by <strong style={{ color: text, display: 'inline-block', minWidth: '4.2em' }}>{realStats.teams > 0 ? realStats.teams.toLocaleString() + '+' : 'growing'}</strong> teams</span>
-              </div>
+              <ProofStrip dark={dark} teams={realStats.teams} messages={realStats.messages} text={text} muted={muted} border={cardBorder} />
             </div>
 
             {/* Right: product demo + opaque bubbles kept to this side */}
@@ -646,60 +646,115 @@ function HowItWorks({ dark, cardBorder }: { dark: boolean; cardBorder: string })
   const step = HIW_STEPS[active]
 
   return (
-    <section style={{ background: 'linear-gradient(155deg, #5b7cf0 0%, #6d6ef0 55%, #8b74f0 100%)', padding: 'clamp(56px, 8vw, 104px) 24px' }}>
-      <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-        <h2 style={{ color: '#fff', fontSize: 'clamp(28px, 4.4vw, 50px)', fontWeight: 900, letterSpacing: '-0.025em', textAlign: 'center', margin: '0 0 44px' }}>See how it works</h2>
-        <div className="cv-hiw" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'clamp(24px, 4vw, 56px)', alignItems: 'stretch' }}>
-          {/* Left: clickable list */}
-          <div style={{ background: '#fff', borderRadius: 24, padding: 'clamp(20px, 2.6vw, 34px)', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ flex: 1 }}>
+    <section style={{ position: 'relative', background: '#0a0b10', padding: 'clamp(64px, 9vw, 120px) 24px', overflow: 'hidden' }}>
+      {/* A faint dot grid and one warm light behind the phone: depth without decoration. */}
+      <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(rgba(255,255,255,0.075) 1px, transparent 1px)', backgroundSize: '22px 22px', WebkitMaskImage: 'radial-gradient(ellipse 75% 65% at 50% 45%, #000 25%, transparent 75%)', maskImage: 'radial-gradient(ellipse 75% 65% at 50% 45%, #000 25%, transparent 75%)' }} />
+      <div aria-hidden className="cv-hiw-glow" style={{ position: 'absolute', right: '6%', top: '24%', width: 460, height: 460, borderRadius: '50%', background: `radial-gradient(circle, ${CORAL}2e, transparent 65%)` }} />
+      <div style={{ position: 'relative', maxWidth: 1200, margin: '0 auto' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap', marginBottom: 'clamp(28px, 4vw, 52px)' }}>
+          <div>
+            <p style={{ margin: '0 0 14px', fontFamily: MONO, fontSize: 12, letterSpacing: '0.16em', textTransform: 'uppercase', color: CORAL }}>How it works</p>
+            <h2 style={{ margin: 0, color: '#fff', fontSize: 'clamp(32px, 4.8vw, 56px)', fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 1.02 }}>One conversation,<br />start to finish.</h2>
+          </div>
+          <p aria-live="polite" style={{ margin: 0, fontFamily: MONO, fontSize: 12, letterSpacing: '0.06em', color: 'rgba(255,255,255,0.45)', fontVariantNumeric: 'tabular-nums' }}>
+            {String(active + 1).padStart(2, '0')} / {String(HIW_STEPS.length).padStart(2, '0')}
+          </p>
+        </div>
+
+        <div className="cv-hiw" style={{ display: 'grid', gridTemplateColumns: '1.05fr 0.95fr', gap: 'clamp(32px, 5vw, 80px)', alignItems: 'center' }}>
+          {/* Left: the steps as an index — number, title, and the open one's detail */}
+          <div>
+            <ol style={{ listStyle: 'none', margin: 0, padding: 0, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
               {HIW_STEPS.map((s, i) => {
                 const on = i === active
                 return (
-                  <button key={s.title} onClick={() => pick(i)}
-                    style={{ display: 'block', width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer', borderRadius: 14, padding: on ? '16px 16px' : '14px 16px', marginBottom: 6, background: on ? (dark ? '#f1f3f9' : '#f4f6fb') : 'transparent', transition: 'all 0.25s' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: on ? BLUE : '#cbd2e0', flexShrink: 0, transition: 'background 0.25s' }} />
-                      <span style={{ fontSize: 'clamp(16px, 1.8vw, 19px)', fontWeight: 800, color: INK, letterSpacing: '-0.01em' }}>{s.title}</span>
-                    </span>
-                    <span style={{ display: 'grid', gridTemplateRows: on ? '1fr' : '0fr', transition: 'grid-template-rows 0.3s ease', paddingLeft: 18 }}>
-                      <span style={{ overflow: 'hidden' }}>
-                        <span style={{ display: 'block', fontSize: 14, color: 'rgba(15,17,25,0.6)', lineHeight: 1.5, margin: '6px 0 8px' }}>{s.desc}</span>
-                        <a href={s.href} onClick={e => e.stopPropagation()} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 28, padding: '4px 0', fontSize: 12.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: BLUE, textDecoration: 'none' }}>
-                          Check it out
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
-                        </a>
-                      </span>
-                    </span>
-                  </button>
+                  <li key={s.title} style={{ position: 'relative', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                    <button onClick={() => pick(i)} aria-expanded={on}
+                      style={{ display: 'grid', gridTemplateColumns: '46px 1fr auto', alignItems: 'baseline', width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: '19px 0', color: '#fff', font: 'inherit' }}>
+                      <span style={{ fontFamily: MONO, fontSize: 12.5, color: on ? CORAL : 'rgba(255,255,255,0.32)', fontVariantNumeric: 'tabular-nums', transition: 'color 0.25s' }}>{String(i + 1).padStart(2, '0')}</span>
+                      <span style={{ fontSize: 'clamp(17px, 1.9vw, 21px)', fontWeight: 800, letterSpacing: '-0.015em', lineHeight: 1.25, color: on ? '#fff' : 'rgba(255,255,255,0.5)', transition: 'color 0.25s' }}>{s.title}</span>
+                      <span aria-hidden style={{ fontFamily: MONO, fontSize: 18, lineHeight: 1, marginLeft: 12, color: on ? CORAL : 'rgba(255,255,255,0.25)', transform: on ? 'rotate(45deg)' : 'none', transition: 'transform 0.3s, color 0.25s' }}>+</span>
+                    </button>
+                    <div style={{ display: 'grid', gridTemplateRows: on ? '1fr' : '0fr', transition: 'grid-template-rows 0.35s ease' }}>
+                      <div style={{ overflow: 'hidden' }}>
+                        <div style={{ padding: '0 0 20px 46px' }}>
+                          <p style={{ margin: '0 0 12px', fontSize: 15, lineHeight: 1.55, color: 'rgba(255,255,255,0.66)', maxWidth: 440 }}>{s.desc}</p>
+                          <a href={s.href} tabIndex={on ? 0 : -1} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontFamily: MONO, fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#fff', textDecoration: 'none', paddingBottom: 3, borderBottom: `1px solid ${CORAL}` }}>
+                            Check it out
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                    {/* This step's time on screen, drawn along its own rule. */}
+                    {on && <span key={`run-${active}`} aria-hidden className="cv-hiw-bar" style={{ position: 'absolute', left: 0, bottom: -1, height: 2, width: 0, background: CORAL, boxShadow: `0 0 12px ${CORAL}`, animation: 'hiwFill 4.2s linear forwards' }} />}
+                  </li>
                 )
               })}
+            </ol>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 18, marginTop: 30, flexWrap: 'wrap' }}>
+              <a href="/signup" style={{ display: 'inline-flex', alignItems: 'center', gap: 10, padding: '14px 24px', borderRadius: 12, background: CORAL, color: '#fff', fontWeight: 800, fontSize: 15, textDecoration: 'none', boxShadow: `0 12px 32px ${CORAL}40` }}>
+                Get started free
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
+              </a>
+              <span style={{ fontFamily: MONO, fontSize: 12, letterSpacing: '0.04em', color: 'rgba(255,255,255,0.45)' }}>Free to start · no card</span>
             </div>
-            <a href="/signup" style={{ marginTop: 14, alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '13px 26px', borderRadius: 999, background: INK, color: '#fff', fontWeight: 800, fontSize: 14.5, textDecoration: 'none' }}>Get started free</a>
           </div>
 
-          {/* Right: animated phone */}
-          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 20 }}>
+          {/* Right: the conversation itself */}
+          <div style={{ position: 'relative' }}>
             <PhoneMock step={step} activeKey={active} border={cardBorder} />
-            <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: 15, fontWeight: 600, lineHeight: 1.5, borderLeft: '3px solid rgba(255,255,255,0.5)', paddingLeft: 14, margin: 0, maxWidth: 360, alignSelf: 'flex-start' }}>{step.desc}</p>
           </div>
-        </div>
-
-        {/* Progress timeline — fills as each step auto-plays; click to jump */}
-        <div style={{ display: 'flex', gap: 8, maxWidth: 620, margin: '34px auto 0' }}>
-          {HIW_STEPS.map((s, i) => (
-            <button key={s.title} onClick={() => pick(i)} aria-label={s.title}
-              style={{ flex: 1, height: 6, padding: 0, border: 'none', borderRadius: 99, background: 'rgba(255,255,255,0.28)', overflow: 'hidden', cursor: 'pointer' }}>
-              <span
-                key={i === active ? `run-${active}` : `seg-${i}`}
-                style={{ display: 'block', height: '100%', background: '#fff', borderRadius: 99, transformOrigin: 'left', width: i < active ? '100%' : '0%', animation: i === active ? 'hiwFill 4.2s linear forwards' : 'none' }}
-              />
-            </button>
-          ))}
         </div>
       </div>
-      <style>{`@media (max-width:900px){ .cv-hiw{ grid-template-columns:1fr !important; } }`}</style>
+      <style>{`@media (max-width:900px){ .cv-hiw{ grid-template-columns:1fr !important; } .cv-hiw-glow{ right:-20% !important; top:auto !important; bottom:4% } }`}</style>
     </section>
+  )
+}
+
+// Hero social proof: real numbers only, set like an instrument read-out.
+const CHANNEL_GLYPHS: { name: string; path: React.ReactNode }[] = [
+  { name: 'Instagram', path: <><rect x="3" y="3" width="18" height="18" rx="5" /><circle cx="12" cy="12" r="4" /><circle cx="17.5" cy="6.5" r="0.8" fill="currentColor" /></> },
+  { name: 'Messenger', path: <><path d="M12 3C7 3 3 6.7 3 11.3c0 2.6 1.3 4.9 3.3 6.4V21l3-1.7c.9.3 1.8.4 2.7.4 5 0 9-3.7 9-8.3S17 3 12 3z" /><polyline points="7.5 13.5 10.5 10.5 13 12.5 16.5 9" /></> },
+  { name: 'SMS', path: <><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></> },
+  { name: 'Email', path: <><rect x="3" y="5" width="18" height="14" rx="2" /><polyline points="3 7 12 13 21 7" /></> },
+  { name: 'Phone', path: <><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z" /></> },
+]
+
+function ProofStrip({ dark, teams, messages, text, muted, border }: { dark: boolean; teams: number; messages: number; text: string; muted: string; border: string }) {
+  const short = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(/\.0$/, '')}k` : String(n)
+  const cells: { value: string; label: string; live?: boolean }[] = [
+    teams > 0 ? { value: `${short(teams)}+`, label: 'teams live', live: true } : { value: 'Now', label: 'onboarding teams', live: true },
+    ...(messages > 0 ? [{ value: `${short(messages)}+`, label: 'messages' }] : []),
+  ]
+  const cell: React.CSSProperties = { display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 4, padding: '11px 16px', minWidth: 0 }
+  const label: React.CSSProperties = { fontSize: 10.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: muted, whiteSpace: 'nowrap' }
+  return (
+    <div className="cv-proof" style={{ display: 'inline-flex', alignItems: 'stretch', maxWidth: '100%', marginTop: 28, border: `1px solid ${border}`, borderRadius: 14, background: dark ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.72)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', overflow: 'hidden' }}>
+      {cells.map((c, i) => (
+        <div key={c.label} style={{ ...cell, borderLeft: i ? `1px solid ${border}` : 'none' }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontFamily: MONO, fontSize: 16, fontWeight: 700, color: text, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
+            {c.live && (
+              <span aria-hidden style={{ position: 'relative', width: 7, height: 7, flexShrink: 0 }}>
+                <span className="cv-live-ring" style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: GREEN, animation: 'livePing 2s cubic-bezier(0,0,0.2,1) infinite' }} />
+                <span style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: GREEN }} />
+              </span>
+            )}
+            {c.value}
+          </span>
+          <span style={label}>{c.label}</span>
+        </div>
+      ))}
+      <div style={{ ...cell, borderLeft: `1px solid ${border}` }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 19, color: text }}>
+          {CHANNEL_GLYPHS.map(g => (
+            <svg key={g.name} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label={g.name} style={{ opacity: 0.8 }}>{g.path}</svg>
+          ))}
+        </span>
+        <span style={label}>One inbox</span>
+      </div>
+      <style>{`@media (max-width:420px){ .cv-proof > div{ padding:10px 11px !important } }`}</style>
+    </div>
   )
 }
 
