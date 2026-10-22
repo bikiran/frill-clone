@@ -390,7 +390,9 @@ export default function PublicForm() {
     try {
       const ext = file.name.split('.').pop()
       const fileName = `form-uploads/${formId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-      const { data, error } = await supabase.storage.from('idea-images').upload(fileName, file, { upsert: true })
+      // A plain upload (the name is unique): a visitor may add files to the
+      // bucket but not overwrite one (COLVY_V412).
+      const { data, error } = await supabase.storage.from('idea-images').upload(fileName, file)
       if (error) throw error
       const { data: { publicUrl } } = supabase.storage.from('idea-images').getPublicUrl(data.path)
       setAnswer(questionId, { name: file.name, url: publicUrl })

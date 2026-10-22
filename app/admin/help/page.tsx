@@ -120,7 +120,9 @@ export default function HelpAdminPage() {
     setSeeding(true)
     try {
       await (supabase as any).from('help_articles').insert(
-        SEED_ARTICLES.map(a => ({ ...a, media: [] }))
+        // Into this workspace: a row with no company_id belongs to nobody, and
+        // only the platform admin may write those (COLVY_V412).
+        SEED_ARTICLES.map(a => ({ ...a, media: [], company_id: companyId }))
       )
       await fetchArticles()
       refreshPublicHelp(companyId)

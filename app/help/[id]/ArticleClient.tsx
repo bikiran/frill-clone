@@ -218,9 +218,12 @@ export default function HelpArticlePage({ articleId, initial }: { articleId?: st
           if (cached === 'helpful') setFeedbackSubmitted(true)
         }
         const { data: { user } } = await supabase.auth.getUser()
-        let q = (supabase as any).from('help_article_feedback').select('helpful').eq('article_id', articleId)
-        if (user) q = q.eq('user_id', user.id)
-        else { const vk = localStorage.getItem('colvy-visitor-key'); if (vk) q = q.eq('visitor_key', vk); else q = null }
+        // Only a signed-in reader can look their own row up; a guest's answer
+        // is remembered by the localStorage key above (COLVY_V412 keeps
+        // feedback rows, which can carry emails, away from the public key).
+        const q = user
+          ? (supabase as any).from('help_article_feedback').select('helpful').eq('article_id', articleId).eq('user_id', user.id)
+          : null
         if (q) {
           const { data: fb } = await q.maybeSingle()
           if (fb) { const v = fb.helpful ? 'helpful' : 'not_helpful'; setFeedback(v as any); if (fb.helpful) setFeedbackSubmitted(true) }
@@ -328,8 +331,11 @@ export default function HelpArticlePage({ articleId, initial }: { articleId?: st
         }
         const row: any = { article_id: article.id, company_id: article.company_id || null, helpful: vote === 'helpful', updated_at: new Date().toISOString() }
         if (user) row.user_id = user.id; else row.visitor_key = visitorKey
-        // Upsert on the appropriate unique key
-        await (supabase as any).from('help_article_feedback').upsert(row, { onConflict: user ? 'article_id,user_id' : 'article_id,visitor_key' })
+        // Signed in: upsert on (article, user). A guest can only add a row
+        // (COLVY_V412: the public key may insert feedback, not change it), so
+        // a second answer from the same browser is simply not stored.
+        if (user) await (supabase as any).from('help_article_feedback').upsert(row, { onConflict: 'article_id,user_id' })
+        else await (supabase as any).from('help_article_feedback').insert(row)
         try { localStorage.setItem(`colvy-help-fb-${article.id}`, vote) } catch {}
       } catch {}
     }
