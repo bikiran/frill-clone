@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { cronOr401 } from '@/lib/cron-auth'
 import { createClient } from '@supabase/supabase-js'
 import { syncGmailChannel } from '@/lib/gmail'
 import { logJobRun } from '@/lib/job-log'
@@ -31,18 +32,12 @@ function admin() {
  * five-minute schedule is an invalid config and blocks the deployment entirely.
  *
  * On Vercel Pro, add a vercel.json with a crons entry pointing at this path on a
- * five-minute schedule, and set CRON_SECRET. Vercel then sends it in the Authorization header. With no
- * CRON_SECRET set, the endpoint is open to the app itself (it only pulls mail
- * into mailboxes the business already connected, so there's nothing to leak).
+ * five-minute schedule, and set CRON_SECRET. Vercel then sends it in the Authorization header
+ * (lib/cron-auth; with no CRON_SECRET it's refused in production).
  */
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET
-  if (secret) {
-    const auth = req.headers.get('authorization') || ''
-    if (auth !== `Bearer ${secret}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-  }
+  const denied = cronOr401(req)
+  if (denied) return denied
 
   const startedAt = new Date().toISOString()
   const t0 = Date.now()

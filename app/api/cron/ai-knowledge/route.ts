@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { cronOr401 } from '@/lib/cron-auth'
 import { createClient } from '@supabase/supabase-js'
 import { logJobRun } from '@/lib/job-log'
 import { rebuildKnowledge } from '@/lib/ai-knowledge'
@@ -23,8 +24,8 @@ function admin() {
  * on, a few companies per run so no single run gets long.
  */
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET
-  if (secret && (req.headers.get('authorization') || '') !== `Bearer ${secret}`) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const denied = cronOr401(req)
+  if (denied) return denied
   const t0 = Date.now(), startedAt = new Date().toISOString()
   try {
     const db = admin()

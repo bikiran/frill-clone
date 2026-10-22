@@ -22,7 +22,7 @@ export async function linkContactIdentity(
 ): Promise<void> {
   try {
     const { data: me } = await (db as any).from('contacts')
-      .select('id, email, phone, identity_group_id, channels_seen').eq('id', contactId).maybeSingle()
+      .select('id, email, phone, identity_group_id, channels_seen').eq('id', contactId).eq('company_id', companyId).maybeSingle()
     if (!me) return
 
     const email = lower(opts.email ?? me.email)
@@ -66,10 +66,11 @@ export async function linkContactIdentity(
 // callers that need "at least this contact" fall back to it themselves.
 export async function linkedContacts(db: DB, contactId: string): Promise<any[]> {
   const { data: me } = await (db as any).from('contacts')
-    .select('identity_group_id').eq('id', contactId).maybeSingle()
+    .select('identity_group_id, company_id').eq('id', contactId).maybeSingle()
   if (!me?.identity_group_id) return []
+  // Only this contact's own workspace: a group id is never meant to span two.
   const { data } = await (db as any).from('contacts')
     .select('id, company_id, name, email, phone, channels_seen, source, meta_user_id, created_at')
-    .eq('identity_group_id', me.identity_group_id)
+    .eq('identity_group_id', me.identity_group_id).eq('company_id', me.company_id)
   return data || []
 }

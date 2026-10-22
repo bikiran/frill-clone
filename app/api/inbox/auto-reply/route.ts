@@ -1,4 +1,4 @@
-import { internalHeaders } from '@/lib/internal-call'
+import { internalHeaders, isInternalCall } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -16,6 +16,9 @@ function admin() {
 // Works for any channel (widget, SMS, Instagram, Facebook) since it's server-side.
 export async function POST(req: NextRequest) {
   try {
+    // Only our own server (widget messages, inbound SMS) calls this, with the
+    // internal header: it posts into a customer's thread (and can text them).
+    if (!isInternalCall(req)) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { conversationId } = await req.json()
     if (!conversationId) return NextResponse.json({ error: 'Missing conversationId' }, { status: 400 })
 

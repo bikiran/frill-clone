@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { cronOr401 } from '@/lib/cron-auth'
 import { createClient } from '@supabase/supabase-js'
 import { runCartRecovery } from '@/lib/cart-recovery'
 import { queueCartFollowups } from '@/lib/agent/sales'
@@ -19,11 +20,8 @@ export const maxDuration = 60
  * Runs on a schedule (see vercel.json). Honours CRON_SECRET like the others.
  */
 async function getHandler(req: NextRequest) {
-  const secret = process.env.CRON_SECRET
-  if (secret) {
-    const auth = req.headers.get('authorization') || ''
-    if (auth !== `Bearer ${secret}`) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const denied = cronOr401(req)
+  if (denied) return denied
   try {
     const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } })
     const origin = (process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com').replace(/\/$/, '')

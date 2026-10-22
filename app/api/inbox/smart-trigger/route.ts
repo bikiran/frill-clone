@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isInternalCall } from '@/lib/internal-call'
 import { createClient } from '@supabase/supabase-js'
 import { formsDb } from '@/lib/forms-server'
 
@@ -23,6 +24,9 @@ const TRIGGER_WORDS = [
 // posts a friendly offer of the pre-filled form into the conversation (once).
 export async function POST(req: NextRequest) {
   try {
+    // Only our own server (widget messages, inbound SMS) calls this, with the
+    // internal header: it posts into a customer's thread (and can text them).
+    if (!isInternalCall(req)) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { conversationId, text } = await req.json()
     if (!conversationId || !text) return NextResponse.json({ ok: true, skipped: 'missing' })
 

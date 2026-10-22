@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { cronOr401 } from '@/lib/cron-auth'
 import { createClient } from '@supabase/supabase-js'
 import { logJobRun } from '@/lib/job-log'
 
@@ -34,11 +35,8 @@ const TRASH_RETENTION_DAYS = 30
  * Runs daily (see vercel.json). Nothing here touches access-mode links.
  */
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET
-  if (secret) {
-    const auth = req.headers.get('authorization') || ''
-    if (auth !== `Bearer ${secret}`) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const denied = cronOr401(req)
+  if (denied) return denied
 
   const startedAt = new Date().toISOString()
   const t0 = Date.now()

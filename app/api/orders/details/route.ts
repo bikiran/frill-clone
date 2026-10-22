@@ -54,7 +54,10 @@ export async function GET(req: NextRequest) {
     if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 })
 
     // Company details for the invoice header
-    const { data: company } = await db.from('companies').select('*').eq('id', companyId).maybeSingle()
+    const { data: row } = await db.from('companies').select('*').eq('id', companyId).maybeSingle()
+    // Never the business's keys (stripe_secret_key, api_key… still on the row
+    // until the V351/V352 moves have run): any staff member can open an invoice.
+    const company = row ? Object.fromEntries(Object.entries(row).filter(([k]) => !/secret|api_key|token|password/i.test(k))) : null
 
     return NextResponse.json({
       order: {

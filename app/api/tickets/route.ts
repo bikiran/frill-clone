@@ -18,13 +18,14 @@ function admin() {
 // stays short however many ids there are (a few batches in flight at once).
 // Best-effort: a failed batch contributes no rows, like the old single query.
 const ID_BATCH = 150
-async function fetchByIds(db: any, table: string, cols: string, ids: string[]): Promise<any[]> {
+// Only the workspace's own rows, whatever ids a ticket carries.
+async function fetchByIds(db: any, table: string, cols: string, ids: string[], companyId: string): Promise<any[]> {
   const batches: string[][] = []
   for (let i = 0; i < ids.length; i += ID_BATCH) batches.push(ids.slice(i, i + ID_BATCH))
   const out: any[] = []
   for (let i = 0; i < batches.length; i += 6) {
     const results = await Promise.all(batches.slice(i, i + 6).map(async b => {
-      try { const { data } = await db.from(table).select(cols).in('id', b); return data || [] } catch { return [] }
+      try { const { data } = await db.from(table).select(cols).eq('company_id', companyId).in('id', b); return data || [] } catch { return [] }
     }))
     results.forEach(r => out.push(...r))
   }
@@ -51,6 +52,14 @@ export async function POST(req: NextRequest) {
     const db = admin()
     // Workspace members only.
     if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    // The chat and customer it's raised from must be this workspace's own:
+    // another workspace's ids put that customer's details on this ticket list
+    // (and a reply emailed them) and posted into their chat.
+    for (const [table, rid] of [['conversations', conversationId], ['contacts', contactId]] as const) {
+      if (!rid) continue
+      const { data: row } = await db.from(table).select('company_id').eq('id', rid).maybeSingle()
+      if (!row || row.company_id !== companyId) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
 
     // The contact's details, in case a legacy NOT NULL column (e.g. "email")
     // needs filling — see FALLBACK 0 below.
@@ -58,7 +67,7 @@ export async function POST(req: NextRequest) {
     let contactPhone: string | null = null
     if (contactId) {
       try {
-        const { data: ct } = await db.from('contacts').select('email, phone').eq('id', contactId).maybeSingle()
+        const { data: ct } = await db.from('contacts').select('email, phone').eq('id', contactId).eq('company_id', companyId).maybeSingle()
         contactEmail = ct?.email || null
         contactPhone = ct?.phone || null
       } catch {}
@@ -231,8 +240,8 @@ export async function GET(req: NextRequest) {
     const contactMap: Record<string, any> = {}
     const convMap: Record<string, any> = {}
     const [cs, cvs] = await Promise.all([
-      fetchByIds(db, 'contacts', 'id,name,email,phone', contactIds),
-      fetchByIds(db, 'conversations', 'id,channel', convIds),
+      fetchByIds(db, 'contacts', 'id,name,email,phone', contactIds, companyId),
+      fetchByIds(db, 'conversations', 'id,channel', convIds, companyId),
     ])
     cs.forEach((c: any) => { contactMap[c.id] = c })
     cvs.forEach((c: any) => { convMap[c.id] = c })

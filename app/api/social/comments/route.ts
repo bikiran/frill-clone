@@ -34,6 +34,11 @@ export async function POST(req: NextRequest) {
     // inbox (pill / timeline / thread) when auto-matching by author id missed.
     if (action === 'link_contact') {
       const { contactId } = body
+      // Only one of this workspace's own contacts.
+      if (contactId) {
+        const { data: ct } = await db.from('contacts').select('id').eq('id', contactId).eq('company_id', companyId).maybeSingle()
+        if (!ct) return NextResponse.json({ error: 'Contact not found' }, { status: 404 })
+      }
       const { error } = await db.from('social_comments')
         .update({ contact_id: contactId || null }).eq('id', commentId).eq('company_id', companyId)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })

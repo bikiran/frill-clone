@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { cronOr401 } from '@/lib/cron-auth'
 import { createClient } from '@supabase/supabase-js'
 import { getAccessToken } from '@/lib/shopify-auth'
 import { notifyCompany } from '@/lib/notify'
@@ -24,10 +25,8 @@ const WINDOW_DAYS = 30
  * flagged (needs_reauth) and the workspace is told once.
  */
 async function getHandler(req: NextRequest) {
-  const secret = process.env.CRON_SECRET
-  if (secret && (req.headers.get('authorization') || '') !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const denied = cronOr401(req)
+  if (denied) return denied
   const db = admin()
   const threshold = new Date(Date.now() + WINDOW_DAYS * 86400_000).toISOString()
   const { data: stores } = await db.from('shopify_integrations').select('*')

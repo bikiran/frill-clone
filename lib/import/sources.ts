@@ -148,6 +148,11 @@ async function zendeskList(base: string, path: string, key: string, opts: Opts, 
 
 export async function fetchZendesk(input: string, opts: Opts & { publish?: boolean }): Promise<FetchResult> {
   const base = zendeskBase(input)
+  // The name has to resolve to the public internet too (a public-looking name
+  // can still point at our own network); the preview shows what it answered.
+  const { checkPublicUrl } = await import('@/lib/integration-events')
+  const bad = await checkPublicUrl(base)
+  if (bad) throw new SourceError(bad)
   const payload = emptyPayload()
   const sections = await zendeskList(base, 'sections', 'sections', opts).catch(() => ({ items: [] as any[], complete: true }))
   const sectionName = new Map<string, string>(sections.items.map((s: any) => [String(s.id), clean(s.name, 80)]))

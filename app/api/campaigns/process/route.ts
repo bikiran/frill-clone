@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { cronOr401 } from '@/lib/cron-auth'
 import { createClient } from '@supabase/supabase-js'
 import { prepareCampaign, processCampaignBatch, campaignMaySendNow, pauseCampaign, updateCampaignIf, CampaignNotReadyError, CampaignStateChangedError, BATCH_BUDGET_MS } from '@/lib/campaign-sender'
 import { logJobRun } from '@/lib/job-log'
@@ -34,14 +35,8 @@ const admin = () => createClient(
  */
 export async function GET(req: NextRequest) {
   try {
-    const secret = process.env.CRON_SECRET
-    if (secret) {
-      // Header only: a ?secret= in the URL ends up in logs.
-      const auth = req.headers.get('authorization')
-      if (auth !== `Bearer ${secret}`) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-    }
+    const denied = cronOr401(req)
+    if (denied) return denied
 
     const startedAt = new Date().toISOString()
     const t0 = Date.now()
