@@ -1,5 +1,5 @@
 import { internalHeaders } from '@/lib/internal-call'
-import { twilioSignatureOk } from '@/lib/twilio-signature'
+import { twilioSignatureOk, twilioSignedFor } from '@/lib/twilio-signature'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { setCallPreview } from '@/lib/call-card'
@@ -64,6 +64,16 @@ export async function POST(req: NextRequest) {
     const userId = req.nextUrl.searchParams.get('userId') || ''
     const childSid = get('CallSid')
     const status = (get('CallStatus') || '').toLowerCase()
+    // Signed by Colvy's account or this business's own, not another business's,
+    // and the call row (when named) is this business's.
+    {
+      const db = admin()
+      if (!(await twilioSignedFor(req, form, db, companyId))) return new NextResponse('Forbidden', { status: 403 })
+      if (callRowId) {
+        const { data: own } = await db.from('calls').select('company_id').eq('id', callRowId).maybeSingle()
+        if (!own || own.company_id !== companyId) return NextResponse.json({ ok: true })
+      }
+    }
 
     // Record childSid → user_id for EVERY leg event (initiated/ringing/answered),
     // so the Dial action callback can resolve who answered from the answered

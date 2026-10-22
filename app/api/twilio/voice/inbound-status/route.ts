@@ -1,5 +1,5 @@
 import { internalHeaders } from '@/lib/internal-call'
-import { twilioSignatureOk } from '@/lib/twilio-signature'
+import { twilioSignatureOk, twilioSignedFor } from '@/lib/twilio-signature'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { xmlEscape } from '@/lib/twilio-service'
@@ -75,6 +75,13 @@ export async function POST(req: NextRequest) {
     const dialSid = get('DialCallSid')
     const db = admin()
     const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
+    // Signed by Colvy's account or this business's own, not another business's,
+    // and the call row (when named) is this business's.
+    if (!(await twilioSignedFor(req, form, db, companyId))) return new NextResponse('Forbidden', { status: 403 })
+    if (callRowId) {
+      const { data: own } = await db.from('calls').select('company_id').eq('id', callRowId).maybeSingle()
+      if (!own || own.company_id !== companyId) return twiml('<Response><Hangup/></Response>')
+    }
 
     // Hold / warm-transfer in flight: the agent leg was moved into a conference,
     // which ends this (customer) leg's <Dial>. Instead of hanging up or going to

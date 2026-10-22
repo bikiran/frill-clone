@@ -1,4 +1,4 @@
-import { twilioSignatureOk } from '@/lib/twilio-signature'
+import { twilioSignatureOk, twilioSignedFor } from '@/lib/twilio-signature'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { TwilioService } from '@/lib/twilio-service'
@@ -120,6 +120,8 @@ export async function POST(req: NextRequest) {
     // load that company's credentials.
     const companyId = await companyForInboundNumber(db, to, 'twilio')
     if (!companyId) return xml(EMPTY_TWIML) // not ours
+    // Signed by Colvy's account or this business's own, not another business's.
+    if (!(await twilioSignedFor(req, form, db, companyId))) return new NextResponse('Forbidden', { status: 403 })
     const { data: integ } = await db.from('twilio_integrations').select('account_sid, auth_token').eq('company_id', companyId).maybeSingle()
     if (!integ?.account_sid || !integ.auth_token) return xml(EMPTY_TWIML) // not configured
 
@@ -139,9 +141,10 @@ export async function POST(req: NextRequest) {
     // attempt so the agent can one-tap back an upload link.
     const mediaAttemptFailed = numMedia > 0 && media.length === 0
 
-    const origin = req.headers.get('host')
-      ? `${req.headers.get('x-forwarded-proto') || 'https'}://${req.headers.get('host')}`
-      : (process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com')
+    // Our own origin, not the request's Host: ingestInboundSms calls our API
+    // there with the internal header, and a Host the sender picked (a custom
+    // domain they point elsewhere) would receive it.
+    const origin = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
 
     await ingestInboundSms({
       db, companyId, from, to, text, media, mediaAttemptFailed,

@@ -1,4 +1,4 @@
-import { twilioSignatureOk } from '@/lib/twilio-signature'
+import { twilioSignatureOk, twilioSignedFor } from '@/lib/twilio-signature'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -26,6 +26,9 @@ export async function POST(req: NextRequest) {
     const childStatus = get('CallStatus')   // 'initiated' | 'ringing' | 'in-progress' | 'completed' | …
     if (callRowId && childSid) {
       const db = admin()
+      // Signed by Colvy's account or the call's business's own, not another business's.
+      const { data: own } = await db.from('calls').select('company_id').eq('id', callRowId).maybeSingle()
+      if (!own || !(await twilioSignedFor(req, form, db, own.company_id))) return new NextResponse('', { status: 204 })
       // Always keep the customer-leg SID linkable. When the customer actually
       // ANSWERS (in-progress), also stamp status + answered_at — the agent's
       // browser watches this row and stops the outbound ringback tone on it.

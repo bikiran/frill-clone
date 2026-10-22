@@ -1,4 +1,4 @@
-import { twilioSignatureOk } from '@/lib/twilio-signature'
+import { twilioSignatureOk, twilioSignedFor } from '@/lib/twilio-signature'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { screenAskTwiml, type CallCtx } from '@/lib/call-routing'
@@ -41,6 +41,8 @@ export async function POST(req: NextRequest) {
 
     const call = await readCallRow(db, callRowId)
     if (!call || call.company_id !== companyId) return twiml('<Response><Hangup/></Response>')
+    // Signed by Colvy's account or this business's own, not another business's.
+    if (!(await twilioSignedFor(req, form, db, companyId))) return new NextResponse('Forbidden', { status: 403 })
 
     if (op === 'answer') {
       if (get('Digits') !== '1') return twiml('<Response><Hangup/></Response>')

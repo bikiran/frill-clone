@@ -1,5 +1,5 @@
 import { posSaleInfo, posColumns, missingPosColumns, withoutPosColumns, orderDetail } from '@/lib/prexty-pos'
-import { wooSignatureOk } from '@/lib/woo-webhook'
+import { wooWebhookTrust } from '@/lib/woo-webhook'
 import { NextRequest, NextResponse } from 'next/server'
 import { deliverAutomatedMessage } from '@/lib/channel-fallback'
 import { linkContactIdentity, linkedContacts } from '@/lib/identity'
@@ -85,6 +85,41 @@ async function fetchLiveWooStatus(db: any, companyId: string, orderId: any): Pro
     if (!res.ok) return null
     const live = await readStoreJson(res, { provider: 'woocommerce', store: wc.store_url })
     return String(live?.status || '').toLowerCase() || null
+  } catch { return null }
+}
+
+// A product delivery: Woo names the resource in a header; a product payload
+// has stock_status + type but no line_items.
+function isProductPayload(wcResource: string, topic: string, data: any): boolean {
+  return wcResource === 'product' || topic.startsWith('product.')
+    || (!data?.line_items && data?.stock_status !== undefined && data?.type !== undefined)
+}
+
+// The store's own copy of the order or product an UNSIGNED delivery names
+// (lib/woo-webhook: only while WOO_WEBHOOK_VERIFY isn't 'enforce'). Anyone can
+// post an unsigned delivery, so its payload is never used: a made-up order
+// would otherwise text and email whoever it names, from this business. null
+// when the store has no such record (or can't be asked); 'no-key' when the
+// business saved no API key to ask with.
+async function liveWooResource(db: any, companyId: string, integrationId: string | null, kind: 'order' | 'product', data: any): Promise<any | null | 'no-key'> {
+  try {
+    let q = db.from('woocommerce_integrations').select('store_url, consumer_key, consumer_secret').eq('company_id', companyId)
+    q = integrationId ? q.eq('id', integrationId) : q.eq('is_active', true).order('created_at', { ascending: true })
+    const { data: rows } = await q.limit(1)
+    const wc = rows?.[0]
+    if (!wc?.store_url || !wc?.consumer_key || !wc?.consumer_secret) return 'no-key'
+    const id = Number(data?.id)
+    if (!Number.isInteger(id) || id <= 0) return null
+    const parent = Number(data?.parent_id)
+    const variation = kind === 'product' && Number.isInteger(parent) && parent > 0
+    const path = kind === 'order' ? `orders/${id}` : variation ? `products/${parent}/variations/${id}` : `products/${id}`
+    const auth = Buffer.from(`${wc.consumer_key}:${wc.consumer_secret}`).toString('base64')
+    const res = await fetch(`${wc.store_url}/wp-json/wc/v3/${path}`, { headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' } })
+    if (!res.ok) return null
+    const live = await readStoreJson(res, { provider: 'woocommerce', store: wc.store_url })
+    if (!live || typeof live !== 'object' || Number(live.id) !== id) return null
+    // A variation's own record may not name its product; the path it was found under does.
+    return variation ? { ...live, parent_id: live.parent_id || parent } : live
   } catch { return null }
 }
 
@@ -773,9 +808,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, ping: true, webhook_id: data.webhook_id })
     }
 
-    const resource = data.resource || (data.line_items ? 'order' : undefined)
-    const resourceId = data.id
-
     // Company ID: prefer the header, fall back to a ?company= query param since
     // WooCommerce's webhook UI can't add custom headers but can add a URL param.
     const companyId = req.headers.get('x-company-id') || req.nextUrl.searchParams.get('company')
@@ -785,15 +817,34 @@ export async function POST(req: NextRequest) {
 
     // Only WooCommerce, signed for this business (see lib/woo-webhook.ts), and
     // a store id in the URL must be this business's own.
+    const wcResource = (req.headers.get('x-wc-webhook-resource') || '').toLowerCase()
     {
       const vdb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY || '', { auth: { autoRefreshToken: false, persistSession: false } }) as any
-      if (!(await wooSignatureOk(req, payload, vdb, companyId))) return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+      const trust = await wooWebhookTrust(req, payload, vdb, companyId)
+      if (trust === 'refused') return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
       const integ = req.nextUrl.searchParams.get('integration')
       if (integ) {
         const { data: own } = await vdb.from('woocommerce_integrations').select('company_id').eq('id', integ).maybeSingle()
         if (!own || own.company_id !== companyId) return NextResponse.json({ error: 'Store does not belong to this business' }, { status: 400 })
       }
+      // Unsigned: swap the payload for the store's own copy (liveWooResource).
+      // A store with no API key saved carries on as before until its webhooks
+      // are re-registered or WOO_WEBHOOK_VERIFY=enforce is set.
+      if (trust === 'unverified') {
+        const kind = isProductPayload(wcResource, topic, data) ? 'product' : (data.resource === 'order' || data.line_items) ? 'order' : null
+        if (kind) {
+          const live = await liveWooResource(vdb, companyId, integ, kind, data)
+          if (live === null) {
+            logWebhookEvent({ source: 'woocommerce', eventType: topic || kind, companyId, status: 'rejected', error: `Unsigned delivery: the store has no such ${kind}` })
+            return NextResponse.json({ ok: true, ignored: `unsigned delivery, and the store has no such ${kind}` })
+          }
+          if (live !== 'no-key') data = live
+        }
+      }
     }
+
+    const resource = data.resource || (data.line_items ? 'order' : undefined)
+    const resourceId = data.id
 
     // The store changed something: cached order look-ups for it are stale now.
     if (topic.startsWith('order.')) forgetWooOrders(req.headers.get('x-wc-webhook-source'))
@@ -821,9 +872,7 @@ export async function POST(req: NextRequest) {
     // Product updated (stock changed) → back-in-stock waitlists. Woo sends the
     // resource in a header; a product payload has stock_status + type but no
     // line_items.
-    const wcResource = (req.headers.get('x-wc-webhook-resource') || '').toLowerCase()
-    const isProductEvent = wcResource === 'product' || topic.startsWith('product.')
-      || (!data.line_items && data.stock_status !== undefined && data.type !== undefined)
+    const isProductEvent = isProductPayload(wcResource, topic, data)
     if (isProductEvent) {
       try { await handleProductStock(supabase, companyId, data) }
       catch (e) { console.error('[Webhook] waitlist stock handling error', e) }

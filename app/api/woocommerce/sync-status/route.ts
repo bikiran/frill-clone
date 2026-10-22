@@ -33,9 +33,9 @@ export async function GET(req: NextRequest) {
     if (job.status === 'running') {
       const stale = Date.now() - new Date(job.updated_at).getTime() > 90000
       if (stale) {
-        const origin = req.headers.get('host')
-          ? `${req.headers.get('x-forwarded-proto') || 'https'}://${req.headers.get('host')}`
-          : (process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com')
+        // Our own origin, never the request's Host: the call carries the
+        // internal header (as in sync-run's origin()).
+        const origin = (process.env.NEXT_PUBLIC_SITE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://colvy.com')).replace(/\/$/, '')
         fetch(`${origin}/api/woocommerce/sync-run`, {
           method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ jobId: job.id }),

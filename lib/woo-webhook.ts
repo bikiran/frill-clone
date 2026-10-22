@@ -11,7 +11,9 @@ import { pluginKeyFor } from '@/lib/company-secrets'
  * Webhooks registered before this have no secret, so enforcement waits for
  * WOO_WEBHOOK_VERIFY=enforce (set it once every store has been re-registered:
  * WooCommerce page → Register webhooks, or the plugin's Connect button).
- * Until then failures are logged, not refused.
+ * Until then failures are logged, not refused, and the delivery is UNTRUSTED:
+ * the webhook route acts on the store's own copy of the order or product
+ * (fetched with the business's API key), never on the posted payload.
  */
 export function wooIntegrationSecret(integrationId: string): string {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
@@ -23,7 +25,15 @@ function same(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y)
 }
 
-export async function wooSignatureOk(req: NextRequest, raw: string, db: any, companyId: string): Promise<boolean> {
+export type WooWebhookTrust = 'verified' | 'unverified' | 'refused'
+
+/**
+ * verified   — signed with this business's store secret or plugin key.
+ * unverified — not signed (or wrongly), and WOO_WEBHOOK_VERIFY isn't 'enforce'
+ *              yet: handle it, but only through the store's own records.
+ * refused    — not signed, and WOO_WEBHOOK_VERIFY=enforce.
+ */
+export async function wooWebhookTrust(req: NextRequest, raw: string, db: any, companyId: string): Promise<WooWebhookTrust> {
   const sig = req.headers.get('x-wc-webhook-signature') || ''
   const secrets: string[] = []
   const integrationId = req.nextUrl.searchParams.get('integration')
@@ -42,5 +52,11 @@ export async function wooSignatureOk(req: NextRequest, raw: string, db: any, com
       `webhook #${h('x-wc-webhook-id')} ${h('x-wc-webhook-topic')} from ${h('x-wc-webhook-source')};`,
       integrationId ? 'store secret + plugin key tried' : `no ?integration= in its URL, plugin key ${secrets.length ? 'tried' : 'missing'}`)
   }
-  return ok || (process.env.WOO_WEBHOOK_VERIFY || '').toLowerCase() !== 'enforce'
+  if (ok) return 'verified'
+  return (process.env.WOO_WEBHOOK_VERIFY || '').toLowerCase() === 'enforce' ? 'refused' : 'unverified'
+}
+
+/** Back-compat: anything but a refusal. */
+export async function wooSignatureOk(req: NextRequest, raw: string, db: any, companyId: string): Promise<boolean> {
+  return (await wooWebhookTrust(req, raw, db, companyId)) !== 'refused'
 }
