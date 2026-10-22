@@ -9608,6 +9608,49 @@ export default function InboxPage() {
                 const reactions = Array.isArray((msg as any).reactions) ? (msg as any).reactions : []
                 const readBy = visibleReadBy((msg as any).read_by, (msg as any).company_id)
                 const atts = Array.isArray(msg.attachments) ? msg.attachments : []
+                // Who sent it, for agent messages ("Support Agent · approved by Roxy
+                // Aquarium · Why?"), and which teammates have read it. Shared by
+                // chat bubbles and email cards so both say the same thing.
+                const aiCredit = (msg as any).is_ai && (msg.metadata?.agent_run_id ? (
+                      // Sent by an agent (Agent Engine): who let it go out, and why.
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#8b5cf6', fontWeight: 700 }}>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z"/></svg>
+                        {msg.metadata.agent_name || 'Support Agent'} · {msg.metadata.approved_by ? `${msg.metadata.edited ? 'edited' : 'approved'} by ${msg.metadata.approved_by}` : 'sent on its own'}
+                        <span aria-hidden="true">·</span>
+                        <WhyLink companyId={companyId} runId={msg.metadata.agent_run_id} style={{ color: '#8b5cf6' }} />
+                      </span>
+                    ) : (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: '#8b5cf6', fontWeight: 700 }}>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z"/></svg>
+                        AI reply · AI can make mistakes
+                      </span>
+                    ))
+                const readByChip = readBy.length > 0 && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                        <span>Read by:</span>
+                        <span style={{ display: 'inline-flex', gap: 2 }}>
+                          {readBy.slice(0, 3).map((r: any, ri: number) => {
+                            // Prefer a real profile photo: the reader stamps
+                            // their own avatar; older entries fall back to the
+                            // team-member list, then to the initial.
+                            const rAvatar = r.avatar || teamMembers.find((t: any) => t.name === r.name)?.avatar
+                            const tip = `Read by ${r.name}${r.at ? ` · ${new Date(r.at).toLocaleString('en-AU', { hour: 'numeric', minute: '2-digit', day: 'numeric', month: 'short' })}` : ''}`
+                            return rAvatar ? (
+                              <img key={ri} src={rAvatar} alt={r.name || ''} title={tip} loading="lazy" decoding="async"
+                                style={{ width: 15, height: 15, borderRadius: '50%', objectFit: 'cover', display: 'inline-block' }} />
+                            ) : (
+                              <span key={ri} title={tip}
+                                style={{ width: 16, height: 16, borderRadius: '50%', background: companyInfo?.accent_color || 'var(--coral)', color: '#fff', fontSize: 7.5, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                                {r.name ? initialsOf(r.name) : (r.initial || '?')}
+                              </span>
+                            )
+                          })}
+                          {readBy.length > 3 && (
+                            <span style={{ fontSize: 9, fontWeight: 700, color: '#9ca3af' }}>+{readBy.length - 3}</span>
+                          )}
+                        </span>
+                      </span>
+                    )
 
                 // Email messages render as a full Coax-style card (From/To/Cc,
                 // subject, formatted body, quoted history, attachments) rather
@@ -9619,6 +9662,14 @@ export default function InboxPage() {
                       {dateDivider}
                       {/* The card shows when it was received / sent itself. */}
                       <EmailMessage msg={msg} agentColor={companyInfo?.accent_color} businessName={companyInfo?.name} onOpenMedia={(i) => openEmailMedia(msg.id, i)} showWhy={canSeeEmailWhy} />
+                      {/* The same credit line a text gets: which agent wrote it,
+                          who approved or edited it, Why?, and who has read it. */}
+                      {(aiCredit || readByChip) && (
+                        <p style={{ margin: '-2px 0 8px', fontSize: 10.5, color: '#8a8f98', display: 'flex', gap: 6, alignItems: 'center', justifyContent: isAgent ? 'flex-end' : 'flex-start', flexWrap: 'wrap' }}>
+                          {aiCredit}
+                          {readByChip}
+                        </p>
+                      )}
                     </div>
                   )
                 }
@@ -10121,52 +10172,14 @@ export default function InboxPage() {
                           )
                         })()}
 
-                        {(msg as any).is_ai && (msg.metadata?.agent_run_id ? (
-                          // Sent by an agent (Agent Engine): who let it go out, and why.
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#8b5cf6', fontWeight: 700 }}>
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z"/></svg>
-                            {msg.metadata.agent_name || 'Support Agent'} · {msg.metadata.approved_by ? `${msg.metadata.edited ? 'edited' : 'approved'} by ${msg.metadata.approved_by}` : 'sent on its own'}
-                            <span aria-hidden="true">·</span>
-                            <WhyLink companyId={companyId} runId={msg.metadata.agent_run_id} style={{ color: '#8b5cf6' }} />
-                          </span>
-                        ) : (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: '#8b5cf6', fontWeight: 700 }}>
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z"/></svg>
-                            AI reply · AI can make mistakes
-                          </span>
-                        ))}
+                        {aiCredit}
 
                         {/* Who on the team has seen it. Shown on BOTH sides — on an
                             agent message it answers "did my colleague see this?",
                             which is the question people actually have. Automated
                             (Colvy-sent) messages keep this too — seeing which
                             teammate has read an automation is genuinely useful. */}
-                        {readBy.length > 0 && (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                            <span>Read by:</span>
-                            <span style={{ display: 'inline-flex', gap: 2 }}>
-                              {readBy.slice(0, 3).map((r: any, ri: number) => {
-                                // Prefer a real profile photo: the reader stamps
-                                // their own avatar; older entries fall back to the
-                                // team-member list, then to the initial.
-                                const rAvatar = r.avatar || teamMembers.find((t: any) => t.name === r.name)?.avatar
-                                const tip = `Read by ${r.name}${r.at ? ` · ${new Date(r.at).toLocaleString('en-AU', { hour: 'numeric', minute: '2-digit', day: 'numeric', month: 'short' })}` : ''}`
-                                return rAvatar ? (
-                                  <img key={ri} src={rAvatar} alt={r.name || ''} title={tip} loading="lazy" decoding="async"
-                                    style={{ width: 15, height: 15, borderRadius: '50%', objectFit: 'cover', display: 'inline-block' }} />
-                                ) : (
-                                  <span key={ri} title={tip}
-                                    style={{ width: 16, height: 16, borderRadius: '50%', background: companyInfo?.accent_color || 'var(--coral)', color: '#fff', fontSize: 7.5, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    {r.name ? initialsOf(r.name) : (r.initial || '?')}
-                                  </span>
-                                )
-                              })}
-                              {readBy.length > 3 && (
-                                <span style={{ fontSize: 9, fontWeight: 700, color: '#9ca3af' }}>+{readBy.length - 3}</span>
-                              )}
-                            </span>
-                          </span>
-                        )}
+                        {readByChip}
                       </p>
 
                       {/* Hover actions: react + reply */}
