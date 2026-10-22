@@ -1675,8 +1675,9 @@ export default function InboxPage() {
     // It messages the customer, so confirm first (no toolbar item sends on one click).
     if (!await confirmDialog({ title: 'Send a card-save link?', message: 'The customer gets a secure Stripe link to save their card.', confirmLabel: 'Send link', tone: 'primary' })) return
     try {
-      const isWidgetActive = outboundChannel === 'widget' || outboundChannel === 'chat'
-      const d = await cardsApi({ action: 'save_card', channel: isWidgetActive ? 'chat' : outboundChannel })
+      const via = composeChannel()
+      const isWidgetActive = via === 'widget' || via === 'chat'
+      const d = await cardsApi({ action: 'save_card', channel: isWidgetActive ? 'chat' : via })
       // Off-site (SMS/email/Messenger): the in-chat card can't be tapped, so send
       // the secure save-card link over the real channel. `silent` = the card is
       // already the thread record (correct delivery_channel), no duplicate.
@@ -1808,6 +1809,10 @@ export default function InboxPage() {
     if (contact?.email || s?.customer_email) return 'email'
     return 'chat'
   }, [activeChannel, selected, contact?.phone, contact?.email])
+  // The channel the composer shows ("Sending by …"): the one picked with
+  // "Use email" / "Use SMS", else the automatic choice. Everything the
+  // composer sends — polls, payment links, card-save links — goes this way.
+  const composeChannel = (): string => (sendChannel !== 'auto' ? sendChannel : outboundChannel)
 
   // Has the customer on this SMS thread opted out of texts? Asked of the server
   // (/api/inbox/text-optout: every contact with the number, and STOPs that never
@@ -3508,7 +3513,7 @@ export default function InboxPage() {
   const deliverToCustomer = async (opts: { body: string; url?: string | null; subject?: string; silent?: boolean; checkOptOut?: boolean }): Promise<string> => {
     if (!selected || !companyId) throw new Error('No conversation selected')
     const me = myName
-    const ch = outboundChannel
+    const ch = composeChannel()
     const fullBody = opts.url ? `${opts.body}\n${opts.url}` : opts.body
 
     if (ch === 'email') {
@@ -5442,7 +5447,8 @@ export default function InboxPage() {
     // (SMS / email / Messenger / Instagram) just send a tap-to-respond LINK over
     // their real channel — like sending a photo — with no misleading "sent to
     // Live Chat" card.
-    const isWidgetActive = outboundChannel === 'widget' || outboundChannel === 'chat'
+    const via = composeChannel()
+    const isWidgetActive = via === 'widget' || via === 'chat'
 
     if (isWidgetActive) {
       await (supabase as any).from('messages').insert({
@@ -5478,10 +5484,11 @@ export default function InboxPage() {
     paySendingRef.current = true; setPaySending(true)
     const senderName = myName
     try {
-      const isWidgetActive = outboundChannel === 'widget' || outboundChannel === 'chat'
+      const via = composeChannel()
+      const isWidgetActive = via === 'widget' || via === 'chat'
       const res = await authFetch('/api/stripe/chat-payment', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, conversationId: selected.id, amount: payAmount, description: payDesc, senderName, channel: isWidgetActive ? 'chat' : outboundChannel, ...(payAddress ? { collectAddress: payAddress } : {}) }),
+        body: JSON.stringify({ companyId, conversationId: selected.id, amount: payAmount, description: payDesc, senderName, channel: isWidgetActive ? 'chat' : via, ...(payAddress ? { collectAddress: payAddress } : {}) }),
       })
       const data = await res.json()
       if (!res.ok) { alert(data.error || 'Could not create payment'); return }
