@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { provisionSubdomain } from '@/lib/provision-domain'
+import { boardSlugAllowed } from '@/lib/reserved-subdomains'
 
 const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
@@ -24,6 +25,12 @@ export async function POST(req: NextRequest) {
 
     if (!slug || !name) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    }
+    // The slug becomes {slug}.colvy.com on Vercel and Cloudflare: Colvy's own
+    // names (admin, api, support, login…) and malformed URLs are refused here,
+    // not just in the browser. The platform admin may still provision any.
+    if (!platformAdmin && !boardSlugAllowed(String(slug).toLowerCase().trim())) {
+      return NextResponse.json({ error: 'That board URL isn’t available. Please choose another.', code: 'slug_taken' }, { status: 409 })
     }
 
     // New workspaces start a 14-day trial (unless a specific plan is passed, e.g.

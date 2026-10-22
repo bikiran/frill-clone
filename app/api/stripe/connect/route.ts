@@ -1,4 +1,4 @@
-import { requireCompanyAccess } from '@/lib/company-access'
+import { requireCompanyAccess, requireCompanyAdmin } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
@@ -25,8 +25,9 @@ export async function POST(req: NextRequest) {
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 
     const db = admin()
-    // Workspace members only.
-    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    // Owner / admin only: onboarding sets where the business's payouts go.
+    const access = await requireCompanyAdmin(req, db, companyId)
+    if (!access.ok) return NextResponse.json({ error: access.notAdmin ? 'Only the owner or an admin can connect Stripe.' : 'Not authorized' }, { status: 403 })
     const s = stripe()
     const origin = req.headers.get('origin') || process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 

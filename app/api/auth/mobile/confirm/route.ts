@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createWorkspace } from '@/lib/createWorkspace'
+import { boardSlugAllowed } from '@/lib/reserved-subdomains'
 
 /**
  * Finish a mobile sign-up: confirm the emailed code, then build the workspace.
@@ -25,6 +26,11 @@ export async function POST(req: NextRequest) {
     const addr = String(email || '').trim()
     const token = String(code || '').trim()
     if (!addr || !token) return NextResponse.json({ error: 'Email and code are required' }, { status: 400 })
+    // Checked before the code is spent: Colvy's own names and malformed URLs
+    // can't become a board's {slug}.colvy.com.
+    if (slug && !boardSlugAllowed(String(slug))) {
+      return NextResponse.json({ error: 'That board URL isn’t available. Please choose another.', code: 'slug_taken' }, { status: 409 })
+    }
 
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
     const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
