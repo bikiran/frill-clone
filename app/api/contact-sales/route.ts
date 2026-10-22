@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { salesEnquiryEmail } from '@/lib/colvy-account-emails'
+import { checkBurst, callerKey } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,7 +14,14 @@ const TO = 'support@colvy.com'
  */
 export async function POST(req: NextRequest) {
   try {
-    const { name, email, company, message, plan, source } = await req.json().catch(() => ({}))
+    // Public, and each one is an email from our own sending domain.
+    if (!checkBurst(`contact-sales:${callerKey(req)}`, 3)) {
+      return NextResponse.json({ error: 'Too many requests. Please wait a minute and try again.' }, { status: 429, headers: { 'Retry-After': '60' } })
+    }
+    const body = await req.json().catch(() => ({}))
+    const clip = (v: any, n: number) => (v == null ? v : String(v).slice(0, n))
+    const name = clip(body.name, 120), email = body.email, company = clip(body.company, 160)
+    const message = clip(body.message, 5000), plan = clip(body.plan, 60), source = clip(body.source, 120)
     const cleanEmail = String(email || '').trim()
     if (!name || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(cleanEmail)) {
       return NextResponse.json({ error: 'Please enter your name and a valid email.' }, { status: 400 })

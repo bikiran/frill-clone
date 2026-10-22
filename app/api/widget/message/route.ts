@@ -44,7 +44,11 @@ export async function POST(req: NextRequest) {
     const companyId = uuid(body.companyId)
     const conversationId = uuid(body.conversationId)
     const content = typeof body.content === 'string' ? body.content.trim() : ''
-    const attachments = Array.isArray(body.attachments) ? body.attachments.slice(0, 10) : []
+    // Files the widget uploaded: objects with a web address. The inbox links and
+    // shows them, so nothing else (a javascript: link, a bare string) is kept.
+    const attachments = (Array.isArray(body.attachments) ? body.attachments : [])
+      .filter((a: any) => a && typeof a === 'object' && !Array.isArray(a) && typeof a.url === 'string' && /^https:\/\//i.test(a.url) && a.url.length <= 2000)
+      .slice(0, 10)
     // A visitor may only post as themselves or as a system event (e.g. "started
     // a chat"). Anything else — notably 'agent' — is refused, so nobody can
     // impersonate staff in a customer's thread.

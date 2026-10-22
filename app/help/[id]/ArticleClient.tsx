@@ -9,6 +9,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { toCatMap } from '@/lib/help-shared'
 import type { HelpArticleData } from '@/lib/help-public'
+import { escapeHtml, safeUrl } from '@/lib/safe-html'
 
 const ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
@@ -41,6 +42,15 @@ export function extractHeadings(content: string) {
     else if (line.startsWith('## ')) out.push({ id: headingId(line.slice(3)), text: line.slice(3), level: 2 })
   }
   return out
+}
+
+// Article text is markdown, written by the business or imported from a site.
+// It's escaped before the few markdown marks become tags, so HTML in it shows
+// as text instead of running on the help centre (which can be colvy.com).
+const md = (s: string) => escapeHtml(s)
+const mdLink = (_m: string, text: string, href: string) => {
+  const u = safeUrl(href.replace(/&amp;/g, '&'))
+  return u ? `<a href="${escapeHtml(u)}" class="underline" style="color:var(--coral)">${text}</a>` : text
 }
 
 function renderContent(content: string) {
@@ -109,7 +119,7 @@ function renderContent(content: string) {
       elements.push(<ul key={`ul-${i}`} className="mb-4 space-y-1 ml-4">{items.map((item, j) => (
         <li key={j} className="text-sm flex items-start gap-2" style={{ color: 'var(--ink)' }}>
           <span style={{ color: 'var(--coral)', marginTop: 2 }}>•</span>
-          <span dangerouslySetInnerHTML={{ __html: item.replace(/`([^`]+)`/g, '<code class="px-1 py-0.5 rounded text-xs" style="background:#f3f4f6;color:var(--ink);font-family:monospace">$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>') }} />
+          <span dangerouslySetInnerHTML={{ __html: md(item).replace(/`([^`]+)`/g, '<code class="px-1 py-0.5 rounded text-xs" style="background:#f3f4f6;color:var(--ink);font-family:monospace">$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>') }} />
         </li>
       ))}</ul>)
       continue
@@ -120,16 +130,16 @@ function renderContent(content: string) {
         i++
       }
       elements.push(<ol key={`ol-${i}`} className="mb-4 space-y-1 ml-4 list-decimal">{items.map((item, j) => (
-        <li key={j} className="text-sm" style={{ color: 'var(--ink)' }} dangerouslySetInnerHTML={{ __html: item.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>') }} />
+        <li key={j} className="text-sm" style={{ color: 'var(--ink)' }} dangerouslySetInnerHTML={{ __html: md(item).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>') }} />
       ))}</ol>)
       continue
     } else if (line === '---') {
       elements.push(<hr key={i} className="my-6" style={{ borderColor: 'var(--border)' }} />)
     } else {
-      const html = line
+      const html = md(line)
         .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
         .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded text-xs font-mono" style="background:#f3f4f6;color:var(--coral)">$1</code>')
-        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="underline" style="color:var(--coral)">$1</a>')
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, mdLink)
       elements.push(<p key={i} className="text-sm leading-relaxed mb-3" style={{ color: 'var(--ink)' }} dangerouslySetInnerHTML={{ __html: html }} />)
     }
     i++

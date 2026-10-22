@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { typeAllowed } from '@/lib/upload-scope'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,7 +31,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'This upload link has expired. Ask for a new QR code.' }, { status: 410 })
     }
 
-    const safeName = String(fileName).replace(/[^a-zA-Z0-9._-]/g, '_')
+    // Photos and videos from a phone, not pages or scripts on the public
+    // gallery bucket (the same rule as every public upload, lib/upload-scope.ts).
+    if (!typeAllowed('request', String(contentType || 'application/octet-stream')) || /\.(html?|xhtml|svgz?|xml|js|mjs)$/i.test(String(fileName))) {
+      return NextResponse.json({ error: 'That file type can’t be uploaded.' }, { status: 415 })
+    }
+    const safeName = String(fileName).replace(/[^a-zA-Z0-9._-]/g, '_').slice(-120)
     const path = `${session.company_id}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${safeName}`
 
     const { data, error } = await db.storage.from('media-gallery').createSignedUploadUrl(path)

@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { authFetch } from '@/lib/auth-fetch'
 
 interface ChatMessage {
   id: string
@@ -60,14 +61,11 @@ export default function ChatSupport() {
 
     try {
       // Send to support backend (you can implement this with a backend service)
-      await fetch('/api/chat-support', {
+      // Signed in: the server files it under the token's user.
+      await authFetch('/api/chat-support', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: input,
-          userId: (await supabase.auth.getSession()).data.session?.user.id,
-          timestamp: new Date().toISOString(),
-        }),
+        body: JSON.stringify({ message: input }),
       })
 
       // Simulate support response

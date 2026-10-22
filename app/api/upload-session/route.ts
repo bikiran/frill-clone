@@ -1,6 +1,7 @@
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { randomInt } from 'crypto'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,7 +14,8 @@ const admin = () => createClient(
 function makeToken(len = 22) {
   const A = 'abcdefghijkmnpqrstuvwxyz23456789'
   let s = ''
-  for (let i = 0; i < len; i++) s += A[Math.floor(Math.random() * A.length)]
+  // crypto RNG: the token is the only key to the upload link.
+  for (let i = 0; i < len; i++) s += A[randomInt(A.length)]
   return s
 }
 
@@ -28,7 +30,8 @@ export async function POST(req: NextRequest) {
     if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const token = makeToken()
     // Short-lived by design: a QR left on a screen shouldn't stay usable.
-    const expiresAt = new Date(Date.now() + (Number(minutes) || 30) * 60 * 1000).toISOString()
+    const mins = Math.min(Math.max(Number(minutes) || 30, 1), 24 * 60)
+    const expiresAt = new Date(Date.now() + mins * 60 * 1000).toISOString()
 
     const { data, error } = await db.from('upload_sessions').insert({
       token, company_id: companyId, folder_id: folderId || null,

@@ -81,6 +81,14 @@ export async function POST(req: NextRequest) {
     for (const [k, v] of Object.entries(b.fields || {})) {
       if (CONVERSATION_FIELDS.has(k)) patch[k] = v
     }
+    // The outlet a visitor picks must be one of this business's.
+    if (patch.assigned_location_id != null) {
+      const { data: loc } = uuid(patch.assigned_location_id)
+        ? await db.from('company_locations').select('id').eq('id', patch.assigned_location_id).eq('company_id', companyId).maybeSingle()
+        : { data: null }
+      if (!loc) { delete patch.assigned_location_id; delete patch.assigned_auto }
+    }
+    if ('assigned_auto' in patch) patch.assigned_auto = !!patch.assigned_auto
     if (Object.keys(patch).length === 0) {
       return NextResponse.json({ ok: true, skipped: true })
     }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { autoAssignTicket } from '@/lib/ticket-assign'
 import { emitTicketEvent } from '@/lib/integration-hooks'
+import { checkBurst, callerKey } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,11 +20,15 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}))
     const slug = String(body.slug || '').trim().toLowerCase()
-    const subject = String(body.subject || '').trim()
-    const message = String(body.message || '').trim()
-    const email = String(body.email || '').trim()
-    const name = String(body.name || '').trim()
+    const subject = String(body.subject || '').trim().slice(0, 300)
+    const message = String(body.message || '').trim().slice(0, 10000)
+    const email = String(body.email || '').trim().slice(0, 200)
+    const name = String(body.name || '').trim().slice(0, 120)
     if (!slug) return NextResponse.json({ error: 'Missing workspace' }, { status: 400 })
+    // Public: each ticket is assigned and fires ticket.created integrations.
+    if (!checkBurst(`help-ticket:${callerKey(req, slug)}`, 5)) {
+      return NextResponse.json({ error: 'Too many requests. Please wait a minute and try again.' }, { status: 429, headers: { 'Retry-After': '60' } })
+    }
     if (!subject) return NextResponse.json({ error: 'A subject is required.' }, { status: 400 })
     if (!email) return NextResponse.json({ error: 'Your email is required.' }, { status: 400 })
 
@@ -41,7 +46,7 @@ export async function POST(req: NextRequest) {
     if (!co?.id) return NextResponse.json({ error: 'Workspace not found' }, { status: 404 })
 
     const ticketNumber = `TICK-${Date.now().toString().slice(-6)}`
-    const description = `${message || '(no message)'}\n\n— From: ${name || 'Anonymous'} <${email}>${body.articleId ? `\nArticle: ${body.articleId}` : ''}`
+    const description = `${message || '(no message)'}\n\n— From: ${name || 'Anonymous'} <${email}>${body.articleId ? `\nArticle: ${String(body.articleId).slice(0, 80)}` : ''}`
 
     // The base payload maps to the columns the migrations create. Some older
     // instances still carry legacy NOT-NULL columns (email/name/message) that
