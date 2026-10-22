@@ -12,6 +12,7 @@ import { COLVY_CONTACT } from '@/lib/colvy-contact'
 import { COMING_SOON, soonLabel } from '@/lib/feature-availability'
 import type { PlanId } from '@/lib/plan-finder'
 import PlanFinder from './PlanFinder'
+import InviteCta from '@/components/InviteCta'
 
 const CORAL = '#ff6a4d'
 const PINK = '#ff4d8d'
@@ -196,7 +197,7 @@ export default function PricingPage() {
                   <div style={{ margin: '14px 0 20px', display: 'flex', alignItems: 'baseline', gap: 4 }}>
                     {price === 0 ? <span style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-0.03em', color: text }}>Free</span> : <><span style={{ fontSize: 42, fontWeight: 900, letterSpacing: '-0.03em', color: text }}>A${price}</span><span style={{ fontSize: 13.5, color: muted }}>/mo{annual ? ', billed yearly' : ''}</span></>}
                   </div>
-                  <button onClick={() => go(tier)} className="pr-btn" style={{ display: 'block', width: '100%', padding: '13px 0', borderRadius: 12, textAlign: 'center', background: hi ? accent : 'transparent', color: hi ? '#fff' : text, border: hi ? 'none' : `2px solid ${cardBorder}`, fontWeight: 800, fontSize: 14.5, cursor: 'pointer', marginBottom: 22 }}>{tier.cta}</button>
+                  <InviteCta onClick={() => go(tier)} idle={hi} arrow={hi ? 15 : 0} className="pr-btn" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', padding: '13px 0', borderRadius: 12, background: hi ? accent : 'transparent', color: hi ? '#fff' : text, border: hi ? 'none' : `2px solid ${cardBorder}`, fontFamily: 'inherit', fontWeight: 800, fontSize: 14.5, cursor: 'pointer', marginBottom: 22 }}>{tier.cta}</InviteCta>
                   <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {tier.features.map((f, j) => (<li key={j} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13.5, color: text }}><span style={{ width: 19, height: 19, borderRadius: '50%', background: accent + '1a', color: accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg></span>{f}</li>))}
                   </ul>
@@ -315,7 +316,7 @@ export default function PricingPage() {
           <Reveal>
             <h2 style={{ fontSize: 'clamp(30px, 5vw, 56px)', fontWeight: 900, letterSpacing: '-0.03em', color: '#fff', lineHeight: 1.04, margin: '0 0 14px' }}>Start free today</h2>
             <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.9)', margin: '0 0 30px' }}>No credit card · set up in about 45 minutes · cancel anytime</p>
-            <button onClick={() => go()} className="pr-btn" style={{ padding: '16px 38px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 17, border: 'none', cursor: 'pointer', boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>{user ? 'Go to dashboard' : 'Get started — it’s free'}</button>
+            <InviteCta onClick={() => go()} ring={CORAL} className="pr-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '16px 38px', borderRadius: 999, background: '#fff', color: INK, fontFamily: 'inherit', fontWeight: 900, fontSize: 17, border: 'none', cursor: 'pointer', boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>{user ? 'Go to dashboard' : 'Get started — it’s free'}</InviteCta>
           </Reveal>
         </div>
       </section>

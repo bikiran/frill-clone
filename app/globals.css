@@ -868,3 +868,31 @@ button:hover .action-tooltip,
   margin-top: 20px; padding: 12px 0 max(16px, env(safe-area-inset-bottom));
   background: #fff; border-top: 1px solid var(--border);
 }
+
+/* ── Inviting call-to-action (components/InviteCta.tsx) ─────────────────────
+   Hover nudges the arrow, pressing squeezes the button, and while idle the
+   component now and then sets data-invite to play one gesture: an arrow
+   nudge, a soft double beat on the label, or a glint once round the border. */
+@property --inv-a {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+.cv-inv { position: relative; isolation: isolate; -webkit-tap-highlight-color: transparent; }
+.cv-inv:active { transform: scale(0.97) !important; transition-duration: 0.08s !important; }
+.cv-inv-label { display: inline-block; }
+.cv-inv-arrow { flex-shrink: 0; transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+.cv-inv:hover .cv-inv-arrow, .cv-inv:focus-visible .cv-inv-arrow { transform: translateX(4px); }
+.cv-inv::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1.5px; pointer-events: none; opacity: 0;
+  background: conic-gradient(from var(--inv-a), transparent 0deg 250deg, var(--inv-ring, rgba(255, 255, 255, 0.95)) 320deg, transparent 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+}
+.cv-inv[data-invite='arrow'] .cv-inv-arrow { animation: invArrow 1.2s cubic-bezier(0.16, 1, 0.3, 1); }
+.cv-inv[data-invite='beat'] .cv-inv-label { animation: invBeat 1.2s ease-in-out; }
+.cv-inv[data-invite='ring']::before { animation: invRing 1.6s cubic-bezier(0.45, 0, 0.25, 1); }
+@keyframes invArrow { 0% { transform: none } 25% { transform: translateX(6px) } 40% { transform: translateX(1px) } 55% { transform: translateX(5px) } 100% { transform: none } }
+@keyframes invBeat { 0%, 100% { transform: scale(1) } 14% { transform: scale(1.05) } 28% { transform: scale(1) } 42% { transform: scale(1.03) } 70% { transform: scale(1) } }
+@keyframes invRing { 0% { --inv-a: 0deg; opacity: 0 } 12% { opacity: 1 } 85% { opacity: 1 } 100% { --inv-a: 360deg; opacity: 0 } }
+@media (prefers-reduced-motion: reduce) { .cv-inv::before { display: none; } }

@@ -1,5 +1,6 @@
 'use client'
 
+import InviteCta from '@/components/InviteCta'
 import { useEffect, useState, useRef, ReactNode } from 'react'
 import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin } from '@/lib/redirect'
@@ -427,7 +428,7 @@ export default function LandingPage() {
                 One shared inbox for Instagram, Messenger, email, SMS &amp; live chat — with WooCommerce, payments, media and AI built in. Talk to customers and close sales, all in one place.
               </p>
               <div className="cv-hero-cta" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
-                <button onClick={handleDashboard} className="cv-btn-primary" style={btnPrimary}>{user ? 'Go to dashboard' : (<><span className="cv-lg">Start free — no card</span><span className="cv-sm">Start free</span></>)} <ArrowRight /></button>
+                <InviteCta onClick={handleDashboard} className="cv-btn-primary" style={btnPrimary}>{user ? 'Go to dashboard' : (<><span className="cv-lg">Start free — no card</span><span className="cv-sm">Start free</span></>)}</InviteCta>
                 <a href="#features" className="cv-btn-ghost" style={btnGhost}><span className="cv-lg">See how it works ↓</span><span className="cv-sm">How it works ↓</span></a>
               </div>
               <ProofStrip dark={dark} teams={realStats.teams} messages={realStats.messages} text={text} muted={muted} border={cardBorder} />
@@ -565,7 +566,7 @@ export default function LandingPage() {
             <p style={{ fontSize: 18, color: 'rgba(255,255,255,0.9)', margin: '0 0 8px', fontWeight: 600 }}>Free forever for small teams. Upgrade as you grow.</p>
             <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.75)', margin: '0 0 34px' }}>No credit card · Set up in about 45 minutes · Cancel anytime</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, justifyContent: 'center' }}>
-              <button onClick={handleDashboard} className="cv-btn-primary" style={{ padding: '16px 38px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 17, border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>{user ? 'Go to dashboard' : 'Get started — it’s free'} <ArrowRight /></button>
+              <InviteCta onClick={handleDashboard} ring={CORAL} className="cv-btn-primary" style={{ padding: '16px 38px', borderRadius: 999, background: '#fff', color: INK, fontFamily: 'inherit', fontWeight: 900, fontSize: 17, border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>{user ? 'Go to dashboard' : 'Get started — it’s free'}</InviteCta>
               {!user && <a href="/pricing" style={{ padding: '16px 30px', borderRadius: 999, border: '2px solid rgba(255,255,255,0.6)', background: 'transparent', color: '#fff', fontWeight: 800, fontSize: 16, textDecoration: 'none' }}>See all plans</a>}
             </div>
           </Reveal>
@@ -693,10 +694,7 @@ function HowItWorks({ dark, cardBorder }: { dark: boolean; cardBorder: string })
               })}
             </ol>
             <div style={{ display: 'flex', alignItems: 'center', gap: 18, marginTop: 30, flexWrap: 'wrap' }}>
-              <a href="/signup" style={{ display: 'inline-flex', alignItems: 'center', gap: 10, padding: '14px 24px', borderRadius: 12, background: CORAL, color: '#fff', fontWeight: 800, fontSize: 15, textDecoration: 'none', boxShadow: `0 12px 32px ${CORAL}40` }}>
-                Get started free
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
-              </a>
+              <InviteCta href="/signup" style={{ display: 'inline-flex', alignItems: 'center', gap: 10, padding: '14px 24px', borderRadius: 12, background: CORAL, color: '#fff', fontWeight: 800, fontSize: 15, textDecoration: 'none', boxShadow: `0 12px 32px ${CORAL}40` }}>Get started free</InviteCta>
               <span style={{ fontFamily: MONO, fontSize: 12, letterSpacing: '0.04em', color: 'rgba(255,255,255,0.45)' }}>Free to start · no card</span>
             </div>
           </div>
@@ -855,7 +853,7 @@ function ParallaxBanner() {
           <p style={{ fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.14em', color: 'rgba(255,255,255,0.85)', margin: '0 0 16px' }}>Everywhere your customers are</p>
           <h2 style={{ fontSize: 'clamp(34px, 6vw, 72px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.02, margin: '0 0 18px' }}>Be there in every chat,<br />on every channel.</h2>
           <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: 'rgba(255,255,255,0.9)', lineHeight: 1.6, maxWidth: 560, margin: '0 auto 30px', fontWeight: 500 }}>From the first hello to the fifth reorder — Colvy keeps every conversation, order and sale in one lively place.</p>
-          <a href="/signup" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '15px 32px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 16, textDecoration: 'none', boxShadow: '0 16px 40px rgba(0,0,0,0.28)' }}>Start free — no card <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg></a>
+          <InviteCta href="/signup" ring={CORAL} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '15px 32px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 16, textDecoration: 'none', boxShadow: '0 16px 40px rgba(0,0,0,0.28)' }}>Start free — no card</InviteCta>
         </Reveal>
       </div>
     </section>
