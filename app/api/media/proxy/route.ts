@@ -27,15 +27,29 @@ export async function GET(req: NextRequest) {
     // A stored media URL is immutable, so let the browser and the Vercel edge
     // cache it — the editor opens instantly on repeat, instead of re-streaming
     // the full original through the server every time.
-    const upstream = await fetch(target.toString(), { cache: 'force-cache' })
-    if (!upstream.ok || !upstream.body) return NextResponse.json({ error: 'Fetch failed' }, { status: 502 })
+    // Redirects are followed only to the same storage hosts (colvy.com also
+    // serves /l/<code> short links, which can point anywhere).
+    let upstream: Response | null = null
+    let current = target
+    for (let hop = 0; hop < 4; hop++) {
+      const res = await fetch(current.toString(), { cache: 'force-cache', redirect: 'manual' })
+      const loc = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null
+      if (!loc) { upstream = res; break }
+      current = new URL(loc, current)
+      if (!/^https?:$/.test(current.protocol) || !allowedHost(current.hostname)) return NextResponse.json({ error: 'Host not allowed' }, { status: 403 })
+    }
+    if (!upstream || !upstream.ok || !upstream.body) return NextResponse.json({ error: 'Fetch failed' }, { status: 502 })
     const ct = upstream.headers.get('content-type') || 'application/octet-stream'
-    // Only proxy images — never let this stream arbitrary content types.
-    if (!ct.startsWith('image/')) return NextResponse.json({ error: 'Not an image' }, { status: 415 })
+    // Only proxy images — never let this stream arbitrary content types. Not
+    // SVG either: it's a document that can run script, and *.supabase.co
+    // includes anyone's project, so one opened from here would run on our origin.
+    if (!ct.startsWith('image/') || /svg/i.test(ct)) return NextResponse.json({ error: 'Not an image' }, { status: 415 })
     return new NextResponse(upstream.body, {
       status: 200,
       headers: {
         'Content-Type': ct,
+        'X-Content-Type-Options': 'nosniff',
+        'Content-Security-Policy': "default-src 'none'; sandbox",
         'Cache-Control': 'public, max-age=86400, s-maxage=604800, immutable',
         'Access-Control-Allow-Origin': '*',
       },

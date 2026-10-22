@@ -69,6 +69,15 @@ const nextConfig = {
           { key: 'Cache-Control', value: 'public, max-age=300, must-revalidate' },
         ],
       },
+      // The MCP consent page grants an app access to a business. Framed inside
+      // another site, a visitor could be tricked into clicking Approve.
+      {
+        source: '/oauth/:path*',
+        headers: [
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
+        ],
+      },
     ]
   },
 }

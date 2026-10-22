@@ -1,6 +1,7 @@
 import { isInternalCall } from '@/lib/internal-call'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
+import { randomBytes } from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 import { resolveAutomatedSmsSender } from '@/lib/sms-consent'
 import { companyFlagEnabled } from '@/lib/feature-flags'
@@ -15,8 +16,10 @@ function admin() {
   )
 }
 
+// The token is the only key to the upload page and its files, so it comes
+// from the crypto RNG (Math.random's output can be predicted from earlier ones).
 function genToken() {
-  return Array.from({ length: 3 }, () => Math.random().toString(36).slice(2, 10)).join('')
+  return randomBytes(12).toString('hex')
 }
 
 // POST: create a media request and post the link into the conversation.
@@ -29,6 +32,16 @@ export async function POST(req: NextRequest) {
     const db = admin()
     // Workspace members only.
     if (!isInternalCall(req) && !(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    // The thread and contact must be this workspace's own: the link is texted
+    // to the thread's number and posted into it, and uploads land there.
+    if (conversationId) {
+      const { data: cv } = await db.from('conversations').select('company_id').eq('id', conversationId).maybeSingle()
+      if (!cv || cv.company_id !== companyId) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+    }
+    if (contactId) {
+      const { data: ct } = await db.from('contacts').select('company_id').eq('id', contactId).maybeSingle()
+      if (!ct || ct.company_id !== companyId) return NextResponse.json({ error: 'Contact not found' }, { status: 404 })
+    }
 
     const token = genToken()
     const expires_at = expiryHours && Number(expiryHours) > 0 ? new Date(Date.now() + Number(expiryHours) * 3600 * 1000).toISOString() : null

@@ -5,6 +5,7 @@ import { emitIntegrationEvent } from '@/lib/integration-events'
 import { cleanClickRef } from '@/lib/link-channels'
 import { stitchLinkClick } from '@/lib/link-stitch'
 import { ilikeExact, exactEmailRow } from '@/lib/phone'
+import { checkBurst, callerKey } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,8 +22,18 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}))
     const formId = String(body.formId || '')
-    const data: Record<string, string> = body.data || {}
     if (!formId) return NextResponse.json({ error: 'Missing form' }, { status: 400 })
+    // Each submission makes a contact, an Inbox conversation and integration
+    // events (automations, webhooks), so a script can't be allowed to loop it.
+    if (!checkBurst(`contact-form:${callerKey(req, formId)}`, 5)) {
+      return NextResponse.json({ error: 'Too many submissions. Please wait a minute and try again.' }, { status: 429, headers: { 'Retry-After': '60' } })
+    }
+    // Text values only, of a sane size (a long message is fine).
+    const data: Record<string, string> = {}
+    const raw = body.data && typeof body.data === 'object' && !Array.isArray(body.data) ? body.data : {}
+    for (const [k, v] of Object.entries(raw).slice(0, 60)) {
+      if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') data[String(k).slice(0, 80)] = String(v).slice(0, 5000)
+    }
 
     const db = admin()
     const { data: form } = await db.from('contact_forms').select('*').eq('id', formId).maybeSingle()

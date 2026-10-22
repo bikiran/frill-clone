@@ -7,6 +7,7 @@ import { effectivePlan, companyHasFeature } from '@/lib/plan'
 import { emitIntegrationEvent } from '@/lib/integration-events'
 import { isPublicNow, sortForPublic, toPublicAnnouncement } from '@/lib/announcements'
 import { publicBoardUrl } from '@/lib/board-url'
+import { checkBurst, callerKey } from '@/lib/rate-limit'
 
 // A live announcement as the widget gets it: the public fields, plus the
 // names the widget already reads (description, tag, created_at).
@@ -59,7 +60,9 @@ export async function GET(req: NextRequest) {
   // back to the default Colvy coral.
   if (!slug) {
     const domain = (req.nextUrl.searchParams.get('domain') || '').toLowerCase().trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '')
-    if (domain) {
+    // A host name only: it goes into a PostgREST or() filter below, where a
+    // comma or bracket would add conditions of the caller's own.
+    if (domain && /^[a-z0-9.-]{1,253}$/.test(domain)) {
       try {
         const db = getDb()
         // A company's custom help/board domain wins — this is what makes
@@ -203,7 +206,9 @@ export async function GET(req: NextRequest) {
       company: companyOut,
       widgetTabs,
       terms,
-      ideas: (ideasRes.data || []).filter(visibleAt),
+      // A private board's ideas are for its signed-in members too (the board
+      // sends visitors to sign in); the anonymous widget gets none.
+      ideas: company.is_private ? [] : (ideasRes.data || []).filter(visibleAt),
       // A private board's updates are for its signed-in members only (the
       // widget is anonymous), so none here.
       announcements: company.is_private ? [] : sortForPublic((annRes.data || []).filter((a: any) => isPublicNow(a)).filter(visibleAt).map(widgetAnnouncement)).slice(0, 20),
@@ -234,11 +239,27 @@ export async function GET(req: NextRequest) {
   }
 }
 
+const MAX_ATTACHMENTS = 5
+const MAX_ATTACHMENT_CHARS = 8_000_000   // a ~6 MB picture as a data URL
+const IMAGE_DATA_URL = /^data:image\/(png|jpe?g|gif|webp|heic|heif|avif);base64,/i
+
 export async function POST(req: NextRequest) {
   try {
     const supabase = getDb()
-    const { slug, title, attachments, user_name, location } = await req.json()
-    if (!slug || !title) return NextResponse.json({ error: 'slug and title required' }, { status: 400 })
+    const { slug, title: rawTitle, attachments: rawAttachments, user_name: rawName, location: rawLocation } = await req.json()
+    if (!slug || !rawTitle || typeof rawTitle !== 'string') return NextResponse.json({ error: 'slug and title required' }, { status: 400 })
+    // Anyone can post here, so: a few ideas a minute per address, bounded
+    // text, and attachments that are pictures (not HTML or SVG, which would be
+    // served from our storage), a handful at a time.
+    if (!checkBurst(`widget-idea:${callerKey(req, String(slug))}`, 5)) {
+      return NextResponse.json({ error: 'Too many submissions. Please wait a moment.' }, { status: 429, headers: { 'Retry-After': '60' } })
+    }
+    const title = rawTitle.slice(0, 300)
+    const user_name = typeof rawName === 'string' ? rawName.trim().slice(0, 80) : ''
+    const location = typeof rawLocation === 'string' && /^[0-9a-f-]{36}$/i.test(rawLocation) ? rawLocation : null
+    const attachments = (Array.isArray(rawAttachments) ? rawAttachments : [])
+      .filter((a: any) => typeof a === 'string' && a.length <= MAX_ATTACHMENT_CHARS && IMAGE_DATA_URL.test(a))
+      .slice(0, MAX_ATTACHMENTS)
 
     const { data: company } = await (supabase as any)
       .from('companies').select('id').eq('slug', slug).single()

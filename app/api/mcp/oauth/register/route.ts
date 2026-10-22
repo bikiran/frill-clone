@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { adminDb, allowedRedirect, cors } from '@/lib/mcp/auth'
+import { checkBurst, callerKey } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
@@ -8,6 +9,10 @@ export const dynamic = 'force-dynamic'
 // and other MCP clients register themselves here before sending the person
 // to the Colvy sign-in/consent page. Public clients only (PKCE, no secret).
 export async function POST(req: NextRequest) {
+  // Open registration (any MCP client may register), but not in bulk.
+  if (!checkBurst(`mcp-register:${callerKey(req)}`, 10)) {
+    return NextResponse.json({ error: 'slow_down', error_description: 'Too many registrations. Try again in a minute.' }, { status: 429, headers: { ...cors, 'Retry-After': '60' } })
+  }
   const b = await req.json().catch(() => null)
   const bad = (d: string) => NextResponse.json({ error: 'invalid_client_metadata', error_description: d }, { status: 400, headers: cors })
   if (!b || typeof b !== 'object') return bad('Send the client metadata as JSON.')
