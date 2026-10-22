@@ -229,6 +229,7 @@ export default function EmailComposer({
   // 'mailbox' = the mailbox's built-in signature; '' = none; otherwise a library id.
   const [sigs, setSigs] = useState<Sig[]>([])
   const [sigId, setSigId] = useState<string>(signature ? 'mailbox' : '')
+  const [showSig, setShowSig] = useState(false)
   const [addingSig, setAddingSig] = useState(false)
   const [newSigName, setNewSigName] = useState('')
   const [newSigBody, setNewSigBody] = useState('')
@@ -311,6 +312,21 @@ export default function EmailComposer({
   const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: '1px solid var(--border)' }
 
   const sigPreview = selectedSigBody()
+  const addSigPanel = addingSig ? (
+        <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', background: 'var(--canvas)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <input value={newSigName} onChange={e => setNewSigName(e.target.value)} placeholder="Signature name (e.g. Roxy — Sales)"
+            style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none' }} />
+          <textarea value={newSigBody} onChange={e => setNewSigBody(e.target.value)} rows={3} placeholder={'Kind regards,\nRoxy Aquarium'}
+            style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none', resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} />
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button type="button" onClick={() => { setAddingSig(false); setNewSigName(''); setNewSigBody('') }}
+              style={{ border: 'none', background: 'none', color: 'var(--slate)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+            <button type="button" onClick={saveNewSig} disabled={savingSig || !newSigName.trim() || !newSigBody.trim()}
+              style={{ border: 'none', background: 'var(--coral)', color: '#fff', borderRadius: 8, padding: '7px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', opacity: (savingSig || !newSigName.trim() || !newSigBody.trim()) ? 0.6 : 1 }}>{savingSig ? 'Saving…' : 'Save signature'}</button>
+          </div>
+        </div>
+  ) : null
+
 
   return (
     <div className={header ? 'cmp-card' : undefined} style={header ? { overflow: 'hidden' } : { border: '1px solid var(--border)', borderRadius: 12, background: '#fff', overflow: 'hidden' }}>
@@ -373,7 +389,9 @@ export default function EmailComposer({
         <input value={subject} onChange={e => { subjectEdited.current = true; setSubject(e.target.value) }} style={field} placeholder="Subject" />
       </div>
 
-      {/* Signature selector + inline add (Coax-style). */}
+      {/* Signature selector + inline add (Coax-style). On a wide screen it sits
+          in the footer instead, so it doesn't cost the composer a whole row. */}
+      {compact && (
       <div style={row}>
         <span style={rowLabel}>Signature</span>
         <select value={sigId} onChange={e => setSigId(e.target.value)}
@@ -387,20 +405,8 @@ export default function EmailComposer({
           + Add
         </button>
       </div>
-      {addingSig && (
-        <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', background: 'var(--canvas)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <input value={newSigName} onChange={e => setNewSigName(e.target.value)} placeholder="Signature name (e.g. Roxy — Sales)"
-            style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none' }} />
-          <textarea value={newSigBody} onChange={e => setNewSigBody(e.target.value)} rows={3} placeholder={'Kind regards,\nRoxy Aquarium'}
-            style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none', resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} />
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <button type="button" onClick={() => { setAddingSig(false); setNewSigName(''); setNewSigBody('') }}
-              style={{ border: 'none', background: 'none', color: 'var(--slate)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
-            <button type="button" onClick={saveNewSig} disabled={savingSig || !newSigName.trim() || !newSigBody.trim()}
-              style={{ border: 'none', background: 'var(--coral)', color: '#fff', borderRadius: 8, padding: '7px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', opacity: (savingSig || !newSigName.trim() || !newSigBody.trim()) ? 0.6 : 1 }}>{savingSig ? 'Saving…' : 'Save signature'}</button>
-          </div>
-        </div>
       )}
+      {compact && addSigPanel}
       </>)}
 
       {/* Rich-text formatting toolbar */}
@@ -484,25 +490,45 @@ export default function EmailComposer({
         </div>
       )}
 
+      {/* The signature that will be added, on one quiet line; tap to see it all. */}
       {sigPreview && (!compact || showDetails) && (
         <div style={{ padding: '0 12px 8px' }}>
-          <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)', borderTop: '1px dashed var(--border)', paddingTop: 8, whiteSpace: 'pre-wrap' }}>
-            {sigPreview}
-          </p>
+          <button type="button" onClick={() => setShowSig(v => !v)} aria-expanded={showSig}
+            title={showSig ? 'Hide the signature' : 'Show the whole signature'}
+            style={{ display: 'flex', alignItems: 'flex-start', gap: 6, width: '100%', margin: 0, padding: '7px 0 0', border: 'none', borderTop: '1px dashed var(--border)', background: 'none', cursor: 'pointer', textAlign: 'left', fontSize: 11.5, lineHeight: 1.5, color: 'var(--slate)', fontFamily: 'inherit' }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0, marginTop: 3, transform: showSig ? 'rotate(90deg)' : 'none', transition: 'transform .15s ease' }}><polyline points="9 18 15 12 9 6"/></svg>
+            <span style={showSig ? { whiteSpace: 'pre-wrap', minWidth: 0 } : { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+              {showSig ? sigPreview : sigPreview.split('\n').map(l => l.trim()).filter(Boolean).join(' · ').replace(/([,;:]) · /g, '$1 ')}
+            </span>
+          </button>
         </div>
       )}
 
+      {/* New signature, opened from the footer's “+ New”. */}
+      {!compact && addSigPanel && <div style={{ borderTop: '1px solid var(--border)' }}>{addSigPanel}</div>}
       {(aiDraft.info || aiDraft.error) && (
         <div style={{ padding: '0 12px' }}>
           <AiDraftInfo info={aiDraft.info} error={aiDraft.error} busy={aiDraft.busy} onRedo={i => aiDraft.run(i)} onClose={aiDraft.clear} />
         </div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: compact ? '8px 10px' : '10px 12px', borderTop: '1px solid var(--border)', background: 'var(--canvas)', ...(compact ? { flexWrap: 'wrap', rowGap: 6 } : {}) }}>
-        {(!compact || err) && (
-        <span style={{ fontSize: 12, color: err ? '#dc2626' : 'var(--slate)' }}>
-          {err || (sigPreview ? 'Signature will be appended' : ' ')}
-        </span>
-        )}
+        {err ? (
+          <span style={{ fontSize: 12, color: '#dc2626' }}>{err}</span>
+        ) : !compact ? (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--slate)', minWidth: 0 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0 }}><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+            <select value={sigId} onChange={e => setSigId(e.target.value)} aria-label="Signature" title="Signature added to this email"
+              style={{ border: 'none', background: 'transparent', color: sigId ? 'var(--ink)' : 'var(--slate)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', maxWidth: 180, outline: 'none', padding: '2px 0', fontFamily: 'inherit' }}>
+              <option value="">No signature</option>
+              {signature && <option value="mailbox">Mailbox default</option>}
+              {sigs.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            <button type="button" onClick={() => { setAddingSig(v => !v); setErr('') }} title="Add a signature"
+              style={{ border: 'none', background: 'none', color: 'var(--coral)', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0, whiteSpace: 'nowrap' }}>
+              + New
+            </button>
+          </span>
+        ) : null}
         <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 6 : 8, ...(compact ? { marginLeft: 'auto' } : {}) }}>
           <AiDraftButton busy={aiDraft.busy} onClick={() => aiDraft.run()} height={34} />
           <button type="button" onClick={improveWithAI} disabled={aiBusy} title="Improve this draft with AI"
