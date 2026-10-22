@@ -1,7 +1,7 @@
 import { recordAssistantAction } from '@/lib/agent/record'
 import { NextRequest, NextResponse } from 'next/server'
 import { executeAction, TOOL_SAFETY } from '@/lib/ai-assistant/tools'
-import { resolveCaller } from '@/lib/ai-assistant/caller'
+import { resolveCaller, scopeContext } from '@/lib/ai-assistant/caller'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,15 +24,8 @@ export async function POST(req: NextRequest) {
     if ('error' in caller) return NextResponse.json({ error: caller.error }, { status: caller.status })
     const { db, ctx } = caller
 
-    const c = body?.context || {}
-    ctx.currentRoute = c.currentRoute || null
-    ctx.contactId = c.contactId || null
-    ctx.conversationId = c.conversationId || null
-    ctx.orderId = c.orderId || null
-    ctx.callId = c.callId || null
-    ctx.outletId = c.outletId || null
-    // An open support ticket (/admin/tickets/<id>) is context too.
-    ctx.ticketId = c.ticketId || String(c.currentRoute || '').match(/\/tickets\/([0-9a-f-]{36})/i)?.[1] || null
+    // Only this workspace's own rows count as context (lib/ai-assistant/caller).
+    await scopeContext(db, ctx, body?.context || {})
 
     // Only tools that actually go through a confirmation may be run here. An
     // 'immediate' or 'read' tool has no business arriving on the execute path.

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { cronOr401 } from '@/lib/cron-auth'
 import { logJobRun } from '@/lib/job-log'
 import { adminDb } from '@/lib/announcements-server'
 import { claimNotify, notifyAnnouncement } from '@/lib/announcement-notify'
@@ -23,8 +24,8 @@ export const maxDuration = 120
  * Honours CRON_SECRET like the other crons.
  */
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET
-  if (secret && (req.headers.get('authorization') || '') !== `Bearer ${secret}`) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const denied = cronOr401(req)
+  if (denied) return denied
   const t0 = Date.now(), startedAt = new Date().toISOString()
   const db = adminDb()
   const nowIso = new Date().toISOString()

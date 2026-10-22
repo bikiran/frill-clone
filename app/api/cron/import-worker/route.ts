@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { cronOr401 } from '@/lib/cron-auth'
 import { adminDb, drive, missingTable, STEP_BUDGET_MS } from '@/lib/import/server'
 import { claimable } from '@/lib/import/engine'
 import { logJobRun } from '@/lib/job-log'
@@ -15,10 +16,8 @@ export const maxDuration = 300
  * to ~4 minutes. Wired in vercel.json every minute. Protected by CRON_SECRET.
  */
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET
-  if (secret && (req.headers.get('authorization') || '') !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const denied = cronOr401(req)
+  if (denied) return denied
   const startedAt = new Date().toISOString()
   const t0 = Date.now()
   const deadline = t0 + STEP_BUDGET_MS

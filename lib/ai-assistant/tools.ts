@@ -14,6 +14,7 @@ import { upsertTask } from '@/lib/task-dedupe'
 import { BUILDER_TOOLS, BUILDER_TOOL_NAMES, runBuilderAction, runBuilderRead } from '@/lib/ai-assistant/builders'
 import { proposeMemory } from '@/lib/agent/business-memory'
 import { STAFF_FILTER } from '@/lib/team-list'
+import { staffUserIds } from '@/lib/company-access'
 import { resolveWaitlistProduct, unresolvedText, addToWaitlist, isInStock, wooOptions } from '@/lib/waitlist-add'
 import { assistantAddedBy, waitlistEntryHref } from '@/lib/waitlist-ai'
 
@@ -435,6 +436,23 @@ async function outletNames(db: any, companyId: string, ids: (string | null | und
   if (!want.length) return {}
   const { data } = await db.from('company_locations').select('id, label, suburb').eq('company_id', companyId).in('id', want)
   return Object.fromEntries((data || []).map((l: any) => [l.id, outletName(l)]))
+}
+
+// Only this workspace's staff can be put on a task: an id from the model (or
+// a prompt-injected message) could be any account on the platform.
+async function staffOnly(db: any, companyId: string, ids: unknown[]): Promise<string[]> {
+  const want = Array.from(new Set(ids.filter((x): x is string => typeof x === 'string' && !!x)))
+  if (!want.length) return []
+  const staff = await staffUserIds(db, companyId)
+  return want.filter(id => staff.has(id))
+}
+
+// A row id the model passed, kept only when it is this workspace's own.
+async function ownId(db: any, table: string, companyId: string, v: unknown): Promise<string | null> {
+  const id = typeof v === 'string' ? v.trim() : ''
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null
+  const { data } = await db.from(table).select('id').eq('company_id', companyId).eq('id', id).maybeSingle()
+  return data?.id ? id : null
 }
 
 async function resolveNames(db: any, userIds: string[]): Promise<Record<string, string>> {
@@ -872,7 +890,7 @@ export async function runReadTool(db: SupabaseClient, ctx: AssistantContext, nam
     const { data } = await qb
     const tickets = data || []
     const ids = tickets.map((t: any) => t.contact_id).filter(Boolean)
-    const { data: contacts } = ids.length ? await D.from('contacts').select('id, name, email').in('id', ids) : { data: [] }
+    const { data: contacts } = ids.length ? await D.from('contacts').select('id, name, email').eq('company_id', ctx.companyId).in('id', ids) : { data: [] }
     const cMap = new Map((contacts || []).map((c: any) => [c.id, c]))
     const out = []
     for (const t of tickets.slice(0, 6)) {
@@ -951,7 +969,7 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
   if (name === 'create_task') {
     const title = String(args?.title || '').trim()
     if (!title) return { ok: false, error: 'A task needs a title.' }
-    const assigneeIds: string[] = Array.isArray(args?.assigneeUserIds) ? args.assigneeUserIds.filter(Boolean) : []
+    const assigneeIds: string[] = await staffOnly(D, ctx.companyId, Array.isArray(args?.assigneeUserIds) ? args.assigneeUserIds : [])
     const names = await resolveNames(D, assigneeIds)
     const assignees = assigneeIds.map(id => ({ id, name: names[id] || 'Team member' }))
     let outlet: any = null
@@ -965,7 +983,7 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
       location_id: outlet?.id || ctx.outletId || null,
       location_ids: outlet?.id ? [outlet.id] : [],
       order_id: args?.linkOrderId || ctx.orderId || null,
-      conversation_id: args?.linkConversationId || ctx.conversationId || null,
+      conversation_id: args?.linkConversationId ? await ownId(D, 'conversations', ctx.companyId, args.linkConversationId) : (ctx.conversationId || null),
       created_by: ctx.userName, created_by_id: ctx.userId, source: 'colvy_ai',
     }
     // New, or onto the open task it duplicates (lib/task-dedupe). A person
@@ -1078,7 +1096,8 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     const row: any = {
       company_id: ctx.companyId, event_type: 'appointment', title, starts_at: args.startsAt,
       ends_at: args?.endsAt || null, is_all_day: !!args?.allDay, status: 'scheduled',
-      location_id: args?.outletId || ctx.outletId || null, contact_id: args?.contactId || ctx.contactId || null,
+      location_id: args?.outletId ? await ownId(D, 'company_locations', ctx.companyId, args.outletId) : (ctx.outletId || null),
+      contact_id: args?.contactId ? await ownId(D, 'contacts', ctx.companyId, args.contactId) : (ctx.contactId || null),
       assigned_to_id: ctx.userId, assigned_to_name: ctx.userName, created_by: ctx.userName,
     }
     const ins = await insertResilient(D, 'calendar_events', row, ['assigned_to_id', 'assigned_to_name', 'is_all_day', 'contact_id', 'location_id'])
@@ -1214,7 +1233,7 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     else if (args?.dueDate) { remember('due_date'); patch.due_date = args.dueDate; changed.push(`due ${fmtDate(args.dueDate)}`) }
     if (typeof args?.title === 'string' && args.title.trim()) { remember('title'); remember('text'); patch.title = args.title.trim(); patch.text = args.title.trim(); changed.push('renamed') }
     if (Array.isArray(args?.assigneeUserIds)) {
-      const ids = args.assigneeUserIds.filter(Boolean)
+      const ids = await staffOnly(D, ctx.companyId, args.assigneeUserIds)
       const names = await resolveNames(D, ids)
       const assignees = ids.map((id: string) => ({ id, name: names[id] || 'Team member' }))
       remember('assignees'); remember('assigned_to_id'); remember('assigned_to')

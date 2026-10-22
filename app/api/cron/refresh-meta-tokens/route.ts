@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { cronOr401 } from '@/lib/cron-auth'
 import { createClient } from '@supabase/supabase-js'
 import { isIgLoginChannel, refreshInstagramToken } from '@/lib/instagram-login'
 import { notifyCompany } from '@/lib/notify'
@@ -43,11 +44,8 @@ async function pageTokenValid(token: string): Promise<boolean> {
  * one-time in-app alert and a last_error the Channels UI surfaces.
  */
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET
-  if (secret) {
-    const auth = req.headers.get('authorization') || ''
-    if (auth !== `Bearer ${secret}`) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const denied = cronOr401(req)
+  if (denied) return denied
 
   const startedAt = new Date().toISOString()
   const t0 = Date.now()

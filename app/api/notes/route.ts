@@ -65,6 +65,18 @@ export async function POST(req: NextRequest) {
     if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     body.userId = access.userId
 
+    // Every other action is on one note, and only one this person can see (the
+    // GET rule): someone else's private note used to be editable, deletable and
+    // shareable — "share" even handed back its public link.
+    if (action !== 'create') {
+      const { data: note, error } = await db.from('notes').select('*').eq('id', body.id).eq('company_id', companyId).maybeSingle()
+      if (error && !missing(error.message)) throw error
+      if (!note) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      const uid = access.userId
+      const canSee = !!uid && (note.created_by === uid || note.shared_with_team || (Array.isArray(note.shared_members) && note.shared_members.some((m: any) => m?.id === uid)))
+      if (!canSee) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
+
     if (action === 'create') {
       const { data, error } = await db.from('notes').insert({
         company_id: companyId, title: body.title || '', body: body.body || '',

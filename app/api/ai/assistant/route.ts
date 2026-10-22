@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { runAssistant, reportFastPath, type AssistantTurn } from '@/lib/ai-assistant/run'
-import { resolveCaller } from '@/lib/ai-assistant/caller'
+import { resolveCaller, scopeContext } from '@/lib/ai-assistant/caller'
 import { guardAiRequest } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
@@ -21,7 +21,8 @@ export async function POST(req: NextRequest) {
     if (!key) return NextResponse.json({ error: 'Assistant is not configured.' }, { status: 503 })
 
     const body = await req.json().catch(() => ({}))
-    const message = String(body?.message || '').trim()
+    // Bounded, like every other AI input: a pasted novel is a large model bill.
+    const message = String(body?.message || '').trim().slice(0, 8000)
     if (!message) return NextResponse.json({ error: 'Say what you need and I\'ll help.' }, { status: 400 })
 
     const caller = await resolveCaller(req, body?.companyId)
@@ -29,18 +30,11 @@ export async function POST(req: NextRequest) {
     const { db, ctx } = caller
 
     // Only the relevant slices of page context — never a blob of everything.
-    const c = body?.context || {}
-    ctx.currentRoute = c.currentRoute || null
-    ctx.contactId = c.contactId || null
-    ctx.conversationId = c.conversationId || null
-    ctx.orderId = c.orderId || null
-    ctx.callId = c.callId || null
-    ctx.outletId = c.outletId || null
-    // An open support ticket (/admin/tickets/<id>) is context too.
-    ctx.ticketId = c.ticketId || String(c.currentRoute || '').match(/\/tickets\/([0-9a-f-]{36})/i)?.[1] || null
+    // Only this workspace's own rows count as context (lib/ai-assistant/caller).
+    await scopeContext(db, ctx, body?.context || {})
 
     const history: AssistantTurn[] = Array.isArray(body?.history)
-      ? body.history.map((h: any) => ({ role: h?.role === 'assistant' ? 'assistant' : 'user', text: String(h?.text || '') }))
+      ? body.history.map((h: any) => ({ role: h?.role === 'assistant' ? 'assistant' : 'user', text: String(h?.text || '').slice(0, 8000) }))
       : []
 
     // Deterministic fast-path for a plain report question — no model call at all.

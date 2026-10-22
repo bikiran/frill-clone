@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { adminDb, generalIntegration, integrationAccess, maskSecret } from '@/lib/integration-access'
+import { adminDb, destinationProblem, generalIntegration, integrationAccess, maskSecret, secretReuseProblem } from '@/lib/integration-access'
 import { normaliseEvents } from '@/lib/integrations-catalog'
 import { checkPublicUrl } from '@/lib/integration-events'
 
@@ -45,6 +45,9 @@ export async function POST(req: NextRequest) {
   const { data: existing, error: readErr } = await db.from('integration_configs').select('config').eq('company_id', companyId).eq('integration_id', def.id).maybeSingle()
   if (readErr && /company_id/.test(readErr.message)) return NextResponse.json({ error: NEEDS_MIGRATION }, { status: 503 })
   const prev: Record<string, any> = existing?.config || {}
+  // A saved token stays with the site it was saved for.
+  const reuse = secretReuseProblem(def, prev, b.config)
+  if (reuse) return NextResponse.json({ error: reuse }, { status: 400 })
 
   // Only this integration's fields; a blank secret keeps the saved one.
   const config: Record<string, string> = {}
@@ -65,6 +68,10 @@ export async function POST(req: NextRequest) {
       const bad = await checkPublicUrl(config[f.key])
       if (bad) return NextResponse.json({ error: `${f.label}: ${bad}` }, { status: 400 })
     }
+  }
+  {
+    const bad = await destinationProblem(config)
+    if (bad) return NextResponse.json({ error: bad }, { status: 400 })
   }
   if (def.id === 'slack' && config.webhook_url && !/^https:\/\/hooks\.slack\.com\//.test(config.webhook_url)) return NextResponse.json({ error: 'That isn’t a Slack incoming webhook URL (it starts with https://hooks.slack.com/).' }, { status: 400 })
   if (def.id === 'zapier' && config.webhook_url && !/^https:\/\/hooks\.zapier\.com\//.test(config.webhook_url)) return NextResponse.json({ error: 'That isn’t a Zapier catch hook URL (it starts with https://hooks.zapier.com/).' }, { status: 400 })
