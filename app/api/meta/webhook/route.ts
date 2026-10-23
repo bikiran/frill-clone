@@ -126,6 +126,16 @@ export async function POST(req: NextRequest) {
         // Nothing usable? (e.g. a delivery receipt, a reaction with no content)
         if (!text && attachments.length === 0 && !storyReply) continue
 
+        // Already have this message? Meta delivers at least once and retries, and
+        // an account connected two ways can get each message twice, sometimes at
+        // the same moment. Checked first so a repeat changes nothing; the unique
+        // index on meta_message_id (V413) catches two copies racing each other.
+        const mid: string | null = event.message?.mid || null
+        if (mid) {
+          const { data: seen } = await db.from('messages').select('id').eq('meta_message_id', mid).limit(1).maybeSingle()
+          if (seen) continue
+        }
+
         // Preview text for the conversation list.
         const preview = text
           || (storyReply ? 'Replied to your story' : null)
@@ -210,8 +220,11 @@ export async function POST(req: NextRequest) {
             status: 'open', is_unread: true, unread_count: 1,
             last_message: preview.slice(0, 200), last_message_at: new Date().toISOString(), last_customer_activity_at: new Date().toISOString(),
           }).select().maybeSingle()
-          conv = newConv
-        } else {
+          conv = newConv ? { ...newConv, __created: true } : null
+        }
+        // An existing conversation is marked unread / reopened only once its
+        // message is actually saved (a duplicate must not bump the count).
+        const touchConversation = conv && !conv.__created ? async () => {
           // Customer DM'd a closed enquiry — log the reopen before we flip it.
           await logEnquiryReopened(db, { conversationId: conv.id, companyId, prevStatus: conv.status, actorName: contact?.name || null, via: platform === 'instagram' ? 'Instagram message' : 'Messenger message' })
           await db.from('conversations').update({
@@ -228,28 +241,22 @@ export async function POST(req: NextRequest) {
             channel: platform,
             last_message: preview.slice(0, 200), last_message_at: new Date().toISOString(), last_customer_activity_at: new Date().toISOString(),
           }).eq('id', conv.id)
-        }
+        } : null
         if (!conv) continue
 
-        // Idempotency: Meta redelivers webhook events (retries + at-least-once
-        // delivery), which would insert the same message twice and fire a second
-        // push. Skip if we've already ingested this message id.
-        if (event.message?.mid) {
-          const { data: dupe } = await db.from('messages').select('id')
-            .eq('conversation_id', conv.id).eq('meta_message_id', event.message.mid).limit(1).maybeSingle()
-          if (dupe) continue
-        }
-
-        const { data: insertedMsg } = await db.from('messages').insert({
+        const { data: insertedMsg, error: insertErr } = await db.from('messages').insert({
           conversation_id: conv.id, company_id: companyId,
           sender_type: 'visitor',
           sender_name: contact?.name || null,
           content: text,
           delivery_channel: platform,
-          meta_message_id: event.message?.mid || null,
+          meta_message_id: mid,
           attachments: attachments.length ? attachments : [],
           metadata: storyReply ? { story_reply: storyReply } : {},
         }).select('id').maybeSingle()
+        // The other copy won the race (unique meta_message_id): nothing more to do.
+        if (insertErr && (insertErr.code === '23505' || /duplicate key/i.test(insertErr.message || ''))) continue
+        if (touchConversation) await touchConversation()
         // Small copies of any photos for the inbox tiles (after the response;
         // the payload is signed, and Meta's links expire, so do it now).
         scheduleMessageThumbs(db, insertedMsg?.id, attachments, { trusted: true })
