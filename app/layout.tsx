@@ -69,6 +69,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     // this attribute is present; without it that jump animates and can stop
     // short of the top. In-page smooth scrolling is unaffected.
     <html lang="en" data-scroll-behavior="smooth">
+      <head>
+        {/*
+          Stale-page rescue (lib/chunk-reload.ts does the same after the app has
+          started). A page restored from the browser's cache after a deploy asks
+          for CSS and JS files that no longer exist, so the app never starts and
+          the error screens can't help. If one of the app's own files fails to
+          load, reload once (not again within 30 seconds) to get the new version.
+        */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){var K='colvy-chunk-reload-at';function go(){try{var l=+sessionStorage.getItem(K)||0;if(Date.now()-l<30000)return;sessionStorage.setItem(K,String(Date.now()))}catch(e){}location.reload()}addEventListener('error',function(e){var t=e.target;if(!t||t===window||!t.tagName)return;var u=t.src||t.href||'';if((t.tagName==='SCRIPT'||t.tagName==='LINK')&&u.indexOf('/_next/static/')!==-1)go()},true);addEventListener('load',function(){var s=document.querySelectorAll('link[rel=stylesheet][href*=\"/_next/static/\"]');for(var i=0;i<s.length;i++){if(!s[i].sheet){go();return}}})})();",
+          }}
+        />
+      </head>
       <body style={{ background: 'var(--canvas)' }}>
         {/*
           Password-reset rescue. The reset email's link redirects to the site root

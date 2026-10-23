@@ -75,6 +75,12 @@ const nextConfig = {
     // /oauth/* is stricter still (no framing at all): see the consent page below.
     return [
       ...privatePages.map(source => ({ source, headers: noFraming })),
+      // The signed-in app is never served from the browser's cache. Going Back
+      // to an admin page could otherwise show HTML saved before a deploy, whose
+      // CSS and JS files no longer exist: an unstyled header and nothing else
+      // until a reload. The page shell is small, the data is fetched anyway.
+      { source: '/admin/:path*', headers: [{ key: 'Cache-Control', value: 'private, no-store' }] },
+      { source: '/admin', headers: [{ key: 'Cache-Control', value: 'private, no-store' }] },
       // The platform console host is all admin (its "/" is /platform-admin).
       { source: '/:path*', has: [{ type: 'host', value: 'admin.colvy.com' }], headers: noFraming },
       { source: '/:path*', headers: [
