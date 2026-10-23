@@ -3,6 +3,7 @@
 // (lib/import/normalize). Nothing here writes to Colvy.
 
 import { emptyPayload, mapStatus, topicSlug, htmlToMarkdown, clean, toInt, toIso, type ImportPayload } from './normalize'
+import { publicUrlProblem } from '@/lib/site-crawl'
 
 export type FetchResult = {
   payload: ImportPayload
@@ -19,7 +20,11 @@ const PAGE = 100
 const MAX_ITEMS = 20000
 
 async function getJson(url: string, init?: RequestInit) {
-  const res = await fetch(url, { ...init, signal: AbortSignal.timeout(25000), cache: 'no-store' })
+  // The Zendesk host is whatever was pasted: a public address only, and a
+  // redirect isn't followed (it could point anywhere, our own network included).
+  const bad = await publicUrlProblem(url)
+  if (bad) throw new SourceError(bad)
+  const res = await fetch(url, { ...init, redirect: 'manual', signal: AbortSignal.timeout(25000), cache: 'no-store' })
   const text = await res.text()
   let data: any = null
   try { data = text ? JSON.parse(text) : null } catch {}
@@ -148,6 +153,11 @@ async function zendeskList(base: string, path: string, key: string, opts: Opts, 
 
 export async function fetchZendesk(input: string, opts: Opts & { publish?: boolean }): Promise<FetchResult> {
   const base = zendeskBase(input)
+  // The name has to resolve to the public internet too (a public-looking name
+  // can still point at our own network); the preview shows what it answered.
+  const { checkPublicUrl } = await import('@/lib/integration-events')
+  const bad = await checkPublicUrl(base)
+  if (bad) throw new SourceError(bad)
   const payload = emptyPayload()
   const sections = await zendeskList(base, 'sections', 'sections', opts).catch(() => ({ items: [] as any[], complete: true }))
   const sectionName = new Map<string, string>(sections.items.map((s: any) => [String(s.id), clean(s.name, 80)]))

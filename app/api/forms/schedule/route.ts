@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { checkBurst, callerKey } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
@@ -49,6 +50,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'book') {
+      // Public: without a limit a script could fill the business's calendar.
+      if (!checkBurst(`form-book:${callerKey(req, form.id)}`, 6)) {
+        return NextResponse.json({ error: 'Too many attempts — please wait a minute and try again.' }, { status: 429 })
+      }
       const startsAt = body.startsAt
       if (!startsAt) return NextResponse.json({ error: 'startsAt required' }, { status: 400 })
       const start = new Date(startsAt)
@@ -57,8 +62,13 @@ export async function POST(req: NextRequest) {
       const end = new Date(start.getTime() + durationMins * 60000)
 
       // Release a previously-held slot by the same respondent (they changed pick).
+      // Only a hold this form made: any other booking of the business (from its
+      // booking page, or typed in by staff) can't be deleted by naming its id.
       if (body.releaseEventId) {
-        try { await db.from('calendar_events').delete().eq('id', body.releaseEventId).eq('event_type', 'booking').eq('company_id', form.company_id) } catch {}
+        try {
+          await db.from('calendar_events').delete().eq('id', String(body.releaseEventId)).eq('event_type', 'booking').eq('company_id', form.company_id)
+            .eq('title', `Booking — ${form.title}`).eq('notes', 'Booked from a Colvy form')
+        } catch {}
       }
 
       // Overlap check: any booking where existing.start < newEnd AND existing.end > newStart.

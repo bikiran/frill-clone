@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { cronOr401 } from '@/lib/cron-auth'
 import { createClient } from '@supabase/supabase-js'
 import { syncWooOrders } from '@/lib/orders-sync'
 import { syncPage } from '@/app/api/woocommerce/sync/route'
@@ -30,15 +31,12 @@ function admin() {
  *   2. Mirror the recently-changed rows into the operational `orders` table via
  *      syncWooOrders, which inserts only NEW orders and pushes for them.
  *
- * Auth: Vercel sends `Authorization: Bearer $CRON_SECRET`. With no CRON_SECRET
- * set the endpoint is open (it only syncs stores the business already connected).
+ * Auth: Vercel sends `Authorization: Bearer $CRON_SECRET` (lib/cron-auth; with
+ * no CRON_SECRET it's refused in production).
  */
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET
-  if (secret) {
-    const auth = req.headers.get('authorization') || ''
-    if (auth !== `Bearer ${secret}`) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const denied = cronOr401(req)
+  if (denied) return denied
 
   const startedAt = new Date().toISOString()
   const t0 = Date.now()

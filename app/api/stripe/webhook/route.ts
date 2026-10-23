@@ -211,6 +211,10 @@ export async function POST(req: NextRequest) {
           // payment identically — whichever confirms it first.)
           break
         }
+        // Everything below is a payment to Colvy itself (add-on, plan, number),
+        // which only ever happens on Colvy's own account. A connected account's
+        // checkout carries metadata Colvy doesn't control, so it never grants them.
+        if (event.account) break
         // The branding add-on: grant it and stop. It must never reach the plan
         // code below, which used to overwrite the owner's subscription row and
         // set the workspace's plan to Free (normalizePlan('branding_removal')).
@@ -321,6 +325,7 @@ export async function POST(req: NextRequest) {
       // referral qualified and credit the referrer $100 in Colvy account credit.
       case 'invoice.paid':
       case 'invoice.payment_succeeded': {
+        if (event.account) break   // a business's own customer, not Colvy's
         try {
           const invoice = event.data.object
           const subId = typeof invoice.subscription === 'string' ? invoice.subscription : invoice.subscription?.id
@@ -368,6 +373,8 @@ export async function POST(req: NextRequest) {
         break
       }
       case 'customer.subscription.updated': {
+        // Colvy's own subscriptions only (plans, the add-on), never a connected account's.
+        if (event.account) break
         const sub = event.data.object
         if (sub.metadata?.addon === BRANDING_ADDON) {
           // Lapsed payments end the add-on; a recovered one restores it.
@@ -387,6 +394,7 @@ export async function POST(req: NextRequest) {
         break
       }
       case 'customer.subscription.deleted': {
+        if (event.account) break
         const sub = event.data.object
         if (sub.metadata?.addon === BRANDING_ADDON) {
           if (sub.metadata.companyId) await setBrandingAddon(supabase, sub.metadata.companyId, false)

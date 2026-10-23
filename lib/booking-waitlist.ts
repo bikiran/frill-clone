@@ -335,7 +335,9 @@ async function housekeeping(db: any, now: number, out: ProcessResult) {
         try { await db.from('bookings').update({ status: 'expired', hold_expires_at: iso(now) }).eq('id', o.hold_booking_id).eq('status', 'pending').eq('source', 'waitlist_hold') } catch {}
       }
       if (Date.parse(o.slot_start) > now) {
-        await queueWaitlistJob(db, { companyId: o.company_id, kind: 'advance', serviceId: o.service_id, fromMs: Date.parse(o.slot_start), untilMs: Date.parse(o.slot_start), payload: { location_id: o.location_id || null, after_offer: o.id } })
+        // Due now (this run's clock), so the next person is offered it in this
+        // same run rather than at the worker's next pass.
+        await queueWaitlistJob(db, { companyId: o.company_id, kind: 'advance', serviceId: o.service_id, fromMs: Date.parse(o.slot_start), untilMs: Date.parse(o.slot_start), payload: { location_id: o.location_id || null, after_offer: o.id }, runAfterMs: now })
         out.advanced++
       }
     }

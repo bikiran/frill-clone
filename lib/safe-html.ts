@@ -53,6 +53,21 @@ const EMAIL_DISPLAY = /^(block|inline|inline-block|table|table-cell|table-row|no
 const EMAIL_ENUM: Record<string, RegExp> = {
   align: /^(left|right|center|justify)$/i, valign: /^(top|middle|bottom|baseline)$/i,
 }
+// The 'note' profile (shared notes, /n/<code>): what components/RichTextEditor
+// writes on top of a post — voice-note cards (a button with a drawn icon and a
+// hidden <audio>) and @mentions. Their SVG is only shapes with plain geometry:
+// no <use>, <foreignObject>, <animate>, links or event handlers.
+const NOTE_TAGS = new Set(['button', 'audio', 'svg', 'path', 'circle', 'line', 'polyline'])
+const NOTE_VOID = new Set(['path', 'circle', 'line', 'polyline'])
+const NOTE_COMMON = ['class', 'title', 'aria-label', 'contenteditable', 'data-voice', 'data-mention', 'data-ph']
+const NOTE_ATTRS: Record<string, string[]> = {
+  button: ['type', 'data-va'],
+  audio: ['src', 'preload', 'controls', 'data-name'],
+  svg: ['viewbox', 'width', 'height', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin'],
+  path: ['d', 'fill', 'stroke'], circle: ['cx', 'cy', 'r', 'fill'], line: ['x1', 'y1', 'x2', 'y2'], polyline: ['points'],
+}
+const SVG_GEOMETRY = new Set(['viewbox', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'd', 'cx', 'cy', 'r', 'x1', 'y1', 'x2', 'y2', 'points'])
+
 /** A data: picture an email carries inline (never SVG, which can hold script). */
 function safeDataImage(raw: string): string | null {
   const v = String(raw || '').replace(/\s+/g, '')
@@ -130,8 +145,10 @@ function sizeOk(prop: string, val: string, email = false): boolean {
   return true
 }
 
-function cleanAttrs(tag: string, raw: string, email = false): string {
-  const allowed = email ? [...new Set([...(ATTRS[tag] || []), ...(EMAIL_ATTRS[tag] || [])])] : (ATTRS[tag] || [])
+function cleanAttrs(tag: string, raw: string, email = false, note = false): string {
+  const allowed = email ? [...new Set([...(ATTRS[tag] || []), ...(EMAIL_ATTRS[tag] || [])])]
+    : note ? [...new Set([...(ATTRS[tag] || []), ...(NOTE_ATTRS[tag] || []), ...NOTE_COMMON])]
+    : (ATTRS[tag] || [])
   const out: string[] = []
   const re = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g
   let m: RegExpExecArray | null
@@ -158,6 +175,18 @@ function cleanAttrs(tag: string, raw: string, email = false): string {
       continue
     }
     if (['controls', 'playsinline', 'muted', 'loop'].includes(name)) { out.push(name); continue }
+    if (note) {
+      const v = decodeEntities(value).trim()
+      if (name === 'class') {
+        const cls = v.split(/\s+/).filter(c => /^rte-[a-z-]{1,40}$/.test(c))
+        if (cls.length) out.push(`class="${cls.join(' ')}"`)
+        continue
+      }
+      if (name === 'contenteditable') { if (v === 'false') out.push('contenteditable="false"'); continue }
+      if (name === 'type' && tag === 'button') { out.push('type="button"'); continue }
+      if (name === 'preload') { if (/^(none|metadata|auto)$/.test(v)) out.push(`preload="${v}"`); continue }
+      if (SVG_GEOMETRY.has(name)) { if (/^[a-zA-Z0-9 .,#-]{1,2000}$/.test(v)) out.push(`${name}="${v}"`); continue }
+    }
     if (EMAIL_ENUM[name]) {
       const v = decodeEntities(value).trim()
       if (EMAIL_ENUM[name].test(v)) out.push(`${name}="${v.toLowerCase()}"`)
@@ -181,15 +210,17 @@ function cleanAttrs(tag: string, raw: string, email = false): string {
 }
 
 /** Clean HTML down to safe formatting. */
-export function sanitizeHtml(input: string | null | undefined, opts: { profile?: 'post' | 'email' } = {}): string {
+export function sanitizeHtml(input: string | null | undefined, opts: { profile?: 'post' | 'email' | 'note' } = {}): string {
   if (!input) return ''
   const email = opts.profile === 'email'
+  const note = opts.profile === 'note'
   let t = String(input).slice(0, email ? 4_000_000 : 400_000)
   t = t.replace(/<!--[\s\S]*?(-->|$)/g, '').replace(/<!\[CDATA\[[\s\S]*?(\]\]>|$)/gi, '').replace(/<![^>]*>/g, '').replace(/<\?[\s\S]*?(\?>|$)/g, '')
   // Closed ones go with their content; an unclosed one loses only its tag, not
   // the rest of the post. (Safety doesn't rest on this: only ALLOWED tags
   // are ever written out below.)
   for (const tag of DROP_WITH_CONTENT) {
+    if (note && NOTE_TAGS.has(tag)) continue
     t = t.replace(new RegExp(`<${tag}\\b[\\s\\S]*?<\\/${tag}\\s*>`, 'gi'), '')
     t = t.replace(new RegExp(`<\\/?${tag}\\b[^>]*>`, 'gi'), '')
   }
@@ -203,20 +234,21 @@ export function sanitizeHtml(input: string | null | undefined, opts: { profile?:
     last = re.lastIndex
     const closing = m[1] === '/'
     let tag = m[2].toLowerCase()
-    if (!ALLOWED.has(tag)) continue
+    if (!ALLOWED.has(tag) && !(note && NOTE_TAGS.has(tag))) continue
     if (tag === 'font') tag = 'span'
+    const isVoid = VOID.has(tag) || (note && NOTE_VOID.has(tag))
     if (closing) {
-      if (VOID.has(tag)) continue
+      if (isVoid) continue
       const at = open.lastIndexOf(tag)
       if (at < 0) continue                         // a close with no open: ignored
       while (open.length > at) out.push(`</${open.pop()}>`)
       continue
     }
-    const attrs = m[2].toLowerCase() === 'font' ? fontAttrs(m[3], email) : cleanAttrs(tag, m[3], email)
+    const attrs = m[2].toLowerCase() === 'font' ? fontAttrs(m[3], email) : cleanAttrs(tag, m[3], email, note)
     // A picture or video file with no safe source is just dropped.
     if ((tag === 'img' || tag === 'source') && !/ src="/.test(attrs)) continue
-    out.push(`<${tag}${attrs}>`)
-    if (!VOID.has(tag)) open.push(tag)
+    out.push(note && NOTE_VOID.has(tag) ? `<${tag}${attrs} />` : `<${tag}${attrs}>`)
+    if (!isVoid) open.push(tag)
   }
   out.push(escapeText(t.slice(last)))
   while (open.length) out.push(`</${open.pop()}>`)

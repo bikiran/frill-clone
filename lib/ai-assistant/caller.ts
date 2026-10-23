@@ -64,3 +64,37 @@ export async function resolveCaller(req: NextRequest, companyId?: string): Promi
   }
   return { db, ctx }
 }
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * The page context the browser sends (open conversation, contact, outlet,
+ * call, ticket) is only a hint: keep an id only when it is this workspace's
+ * own row. The tools post into ctx.conversationId and link ctx.contactId, so
+ * another workspace's id here would have reached that workspace's customer.
+ * ctx.orderId stays as given: it may be an order number, and every tool
+ * resolves it within the company (resolveOrder).
+ */
+export async function scopeContext(db: any, ctx: AssistantContext, c: any): Promise<void> {
+  const own = async (table: string, v: unknown): Promise<string | null> => {
+    const id = typeof v === 'string' ? v.trim() : ''
+    if (!UUID.test(id)) return null
+    try {
+      const { data } = await db.from(table).select('id').eq('company_id', ctx.companyId).eq('id', id).maybeSingle()
+      return data?.id ? id : null
+    } catch { return null }
+  }
+  const ticketRef = c?.ticketId || String(c?.currentRoute || '').match(/\/tickets\/([0-9a-f-]{36})/i)?.[1] || null
+  const [contactId, conversationId, callId, outletId, ticketId] = await Promise.all([
+    own('contacts', c?.contactId), own('conversations', c?.conversationId), own('calls', c?.callId),
+    own('company_locations', c?.outletId), own('support_tickets', ticketRef),
+  ])
+  ctx.currentRoute = c?.currentRoute || null
+  ctx.contactId = contactId
+  ctx.conversationId = conversationId
+  ctx.orderId = c?.orderId || null
+  ctx.callId = callId
+  ctx.outletId = outletId
+  // An open support ticket (/admin/tickets/<id>) is context too.
+  ctx.ticketId = ticketId
+}

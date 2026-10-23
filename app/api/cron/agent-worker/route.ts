@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { cronOr401 } from '@/lib/cron-auth'
 import { agentDb } from '@/lib/agent/access'
 import { claimableRuns, runAgent } from '@/lib/agent/engine'
 import { expireApprovals } from '@/lib/agent/approvals'
@@ -17,10 +18,8 @@ export const maxDuration = 300
  * Protected by CRON_SECRET.
  */
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET
-  if (secret && (req.headers.get('authorization') || '') !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const denied = cronOr401(req)
+  if (denied) return denied
   const startedAt = new Date().toISOString()
   const t0 = Date.now()
   const deadline = t0 + 240_000

@@ -2,6 +2,7 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { PrextyService } from '@/lib/prexty-service'
+import { publicUrlProblem } from '@/lib/site-crawl'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,6 +31,9 @@ export async function POST(req: NextRequest) {
     // Workspace members only.
     if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const normalizedBase = (baseUrl || DEFAULT_BASE).replace(/\/+$/, '')
+    // Our servers call this address with the key: a public https one only.
+    const urlProblem = /^https:\/\//i.test(normalizedBase) ? await publicUrlProblem(normalizedBase) : 'The address must start with https://.'
+    if (urlProblem) return NextResponse.json({ error: urlProblem }, { status: 400 })
 
     // Resolve the key to test with: a freshly-entered one, or the stored one on
     // an update that only changes the base URL.

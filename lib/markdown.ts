@@ -28,7 +28,8 @@ function inline(s: string): string {
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, href) => {
       const safe = /^(https?:\/\/|\/|mailto:|#)/i.test(href) ? href : '#'
       const ext = /^https?:\/\//i.test(safe)
-      return `<a href="${safe}"${ext ? ' target="_blank" rel="noopener"' : ''}>${text}</a>`
+      // esc() leaves quotes alone, so a '"' in the address can't end the attribute.
+      return `<a href="${safe.replace(/"/g, '&quot;')}"${ext ? ' target="_blank" rel="noopener"' : ''}>${text}</a>`
     })
 }
 

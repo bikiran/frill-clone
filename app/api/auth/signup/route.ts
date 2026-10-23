@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifyTurnstile, requestIp, TURNSTILE_FAILED } from '@/lib/turnstile'
 import { confirmEmail } from '@/lib/colvy-account-emails'
+import { boardSlugAllowed } from '@/lib/reserved-subdomains'
 
 // Full server-side signup flow. This bypasses two problems with doing
 // signUp() directly from the browser:
@@ -30,6 +31,11 @@ export async function POST(req: NextRequest) {
 
     if (!email || !password) {
       return NextResponse.json({ error: 'Email and password are required' }, { status: 400 })
+    }
+    // A new board's slug is created from this on confirmation (auth/callback),
+    // so Colvy's own names and malformed URLs are refused before any account is.
+    if (!companyId && slug && !boardSlugAllowed(String(slug))) {
+      return NextResponse.json({ error: 'That board URL isn’t available. Please choose another.', code: 'slug_taken' }, { status: 409 })
     }
 
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY

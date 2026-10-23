@@ -35,7 +35,7 @@ export async function loadOpportunity(db: any, companyId: string, input: any) {
     since = p.created_at; what = `Payment request${p.description ? ` — ${p.description}` : ''}`; total = money(p.amount_cents / 100, p.currency); link = p.checkout_url || null
     if (p.status !== 'pending') return { conv, kind: 'quote', since, what, total, link, items, closed: `the payment is ${p.status}` }
   } else if (input.kind === 'quote' && input.messageId) {
-    const { data: m } = await db.from('messages').select('id, message_payload, created_at').eq('id', input.messageId).maybeSingle()
+    const { data: m } = await db.from('messages').select('id, message_payload, created_at').eq('id', input.messageId).eq('conversation_id', conv.id).maybeSingle()
     const pl = m?.message_payload || {}
     if (!m) return null
     since = m.created_at; what = `${pl.is_quote ? 'Quote' : 'Order'} #${pl.order_number || pl.order_id || ''}`.trim(); total = money(pl.total, pl.currency); link = pl.pay_link || null

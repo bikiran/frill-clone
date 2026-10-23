@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { toPublicUrl } from '@/lib/storage-url'
+import { sanitizeHtml } from '@/lib/safe-html'
 import NoteView from './NoteView'
 import NoteAttachments from './NoteAttachments'
 import AudioDock from '@/components/AudioDock'
@@ -105,7 +106,7 @@ export default async function NotePublic({ params }: { params: Promise<{ code: s
             <h1 style={{ margin: '0 0 18px', fontSize: 30, fontWeight: 800, color: '#111', lineHeight: 1.2 }}>{note.title?.trim() || 'Untitled'}</h1>
 
             <NoteView code={code} accent={accent} allowEdit={!!note.allow_public_edit}
-              initialBody={note.body || ''} initialChecklist={checklist} editLog={editLog} />
+              initialBody={sanitizeHtml(note.body || '', { profile: 'note' })} initialChecklist={checklist} editLog={editLog} />
 
             {audios.length > 0 && (
               <div style={{ marginTop: 26 }}>

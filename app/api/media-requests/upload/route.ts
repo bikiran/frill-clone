@@ -1,6 +1,7 @@
 import { r2PublicBase } from '@/lib/r2'
 import { scheduleMessageThumbs } from '@/lib/image-thumb'
 import { NextRequest, NextResponse } from 'next/server'
+import { typeAllowed, PUBLIC_MAX_BYTES } from '@/lib/upload-scope'
 import { createClient } from '@supabase/supabase-js'
 
 function admin() {
@@ -47,6 +48,10 @@ export async function POST(req: NextRequest) {
     const fileName = file ? file.name : preName
     const fileSize = file ? file.size : preSize
     const kind = kindOf(fileType)
+    // The same rules as every other public upload (lib/upload-scope.ts): no
+    // HTML or scripts on our storage, and a size cap.
+    if (!typeAllowed('request', fileType)) return NextResponse.json({ error: 'That file type can’t be uploaded.' }, { status: 415 })
+    if (fileSize > PUBLIC_MAX_BYTES) return NextResponse.json({ error: 'That file is too large.' }, { status: 413 })
     if (Array.isArray(request.accept) && request.accept.length && !request.accept.includes(kind)) {
       return NextResponse.json({ error: `${kind} files aren't accepted for this request.` }, { status: 400 })
     }

@@ -89,6 +89,37 @@ export async function twilioSignatureOk(req: NextRequest, form: FormData | null)
 }
 
 /**
+ * twilioSignatureOk takes a signature from Colvy's master account or from ANY
+ * business's connected Twilio account, so on its own it doesn't say which
+ * business a request is about: a business that connected its own Twilio
+ * account could sign a made-up inbound text or call to another business's
+ * number, or a callback naming another business's call. Once the route knows
+ * the business (from the dialled number or the callback's companyId), this
+ * checks the request was signed by Colvy's master account or by that
+ * business's own account. With no business, only the master account counts.
+ * TWILIO_WEBHOOK_VERIFY=log/off switches it off too.
+ */
+export async function twilioSignedFor(req: NextRequest, form: FormData | null, db: any, companyId: string | null | undefined): Promise<boolean> {
+  const mode = (process.env.TWILIO_WEBHOOK_VERIFY || 'enforce').toLowerCase()
+  if (mode === 'log' || mode === 'off') return true
+  const sig = req.headers.get('x-twilio-signature') || ''
+  if (!sig || !form) return false
+  const tokens: string[] = []
+  if (TWILIO_MASTER.authToken) tokens.push(TWILIO_MASTER.authToken)
+  const accountSid = String(form.get('AccountSid') || '')
+  if (companyId && accountSid && accountSid !== TWILIO_MASTER.accountSid) {
+    try {
+      const { data } = await db.from('twilio_integrations').select('account_sid, auth_token').eq('company_id', companyId).maybeSingle()
+      if (data?.auth_token && data.account_sid === accountSid && !tokens.includes(data.auth_token)) tokens.push(data.auth_token)
+    } catch {}
+  }
+  const urls = candidateUrls(req)
+  const ok = tokens.some(t => urls.some(url => same(sign(t, url, form), sig)))
+  if (!ok) console.warn('[twilio] not signed by Colvy or this business\'s own Twilio account:', new URL(req.url).pathname, 'company', companyId || '-', 'account', accountSid || '-')
+  return ok
+}
+
+/**
  * Strict check for callbacks only Colvy's own (master) Twilio account can send,
  * such as sign-up code delivery reports: the AccountSid must be the master
  * account and the signature must match its auth token. Unlike

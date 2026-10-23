@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { memberOr403 } from '@/lib/company-access'
+import { requireCompanyAdmin } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { teamInviteEmail } from '@/lib/colvy-account-emails'
 
@@ -10,11 +10,12 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { email, companyId } = body
     if (!email) return NextResponse.json({ error: 'Email required' }, { status: 400 })
-    // Members only. This sent any words and any link from invites@updates.colvy.com
-    // to anyone, so the business name now comes from the database, the link must
-    // be a Colvy join link, and everything shown is escaped.
-    { const deny = await memberOr403(req, companyId); if (deny) return deny }
+    // Owner / admin only, like making the invite (/api/team/members). This sent
+    // any words and any link from invites@updates.colvy.com to anyone, so the
+    // business name now comes from the database, the link must be a Colvy join
+    // link, and everything shown is escaped.
     const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } }) as any
+    if (!(await requireCompanyAdmin(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { data: co } = await db.from('companies').select('name').eq('id', companyId).maybeSingle()
     const companyName = String(co?.name || 'the team')
     const inviterName = String(body.inviterName || 'A teammate').slice(0, 80)

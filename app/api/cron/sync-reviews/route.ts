@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { cronOr401 } from '@/lib/cron-auth'
 import { createClient } from '@supabase/supabase-js'
 import { syncReviews } from '@/lib/google-business'
 import { logJobRun } from '@/lib/job-log'
@@ -24,11 +25,8 @@ function admin() {
  * hundred reviews is ~ceil(reviews/50) calls per run, a handful of calls each.
  */
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET
-  if (secret) {
-    const auth = req.headers.get('authorization') || ''
-    if (auth !== `Bearer ${secret}`) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const denied = cronOr401(req)
+  if (denied) return denied
 
   const startedAt = new Date().toISOString()
   const t0 = Date.now()

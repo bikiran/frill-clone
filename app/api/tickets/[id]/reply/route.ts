@@ -74,7 +74,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     if (kind === 'reply') {
       // Recipient: contact → parsed "From:" → legacy email column.
       let toEmail = ''
-      if (ticket.contact_id) { try { const { data: c } = await db.from('contacts').select('email').eq('id', ticket.contact_id).maybeSingle(); toEmail = c?.email || '' } catch {} }
+      if (ticket.contact_id) { try { const { data: c } = await db.from('contacts').select('email').eq('id', ticket.contact_id).eq('company_id', ticket.company_id).maybeSingle(); toEmail = c?.email || '' } catch {} }
       if (!toEmail) toEmail = parseFrom(ticket.description || '')?.email || ticket.email || ''
 
       if (!toEmail) {

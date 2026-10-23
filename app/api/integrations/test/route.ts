@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
-import { adminDb, generalIntegration, integrationAccess } from '@/lib/integration-access'
+import { adminDb, destinationProblem, generalIntegration, integrationAccess, secretReuseProblem } from '@/lib/integration-access'
 import { INTEGRATION_EVENTS, eventLabel } from '@/lib/integrations-catalog'
 import { adminBase, sampleEvent, send, testConnection } from '@/lib/integration-events'
 
@@ -21,11 +21,19 @@ export async function POST(req: NextRequest) {
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status })
 
   const { data: saved } = await db.from('integration_configs').select('config').eq('company_id', companyId).eq('integration_id', def.id).maybeSingle()
+  // A saved token is only tested against the site it was saved for.
+  const reuse = secretReuseProblem(def, saved?.config || {}, b.config)
+  if (reuse) return NextResponse.json({ ok: false, error: reuse, message: reuse }, { status: 400 })
   const cfg: Record<string, string> = { ...(saved?.config || {}) }
   for (const f of def.fields || []) {
     const v = typeof b.config?.[f.key] === 'string' ? b.config[f.key].trim() : ''
     if (v) cfg[f.key] = v
     else if (!f.secret) delete cfg[f.key]
+  }
+
+  {
+    const bad = await destinationProblem(cfg)
+    if (bad) return NextResponse.json({ ok: false, error: bad, message: bad }, { status: 400 })
   }
 
   if (b.mode === 'connection') {

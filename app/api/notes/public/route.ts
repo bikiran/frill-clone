@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { sanitizeHtml } from '@/lib/safe-html'
 
 export const dynamic = 'force-dynamic'
 
@@ -73,7 +74,10 @@ export async function POST(req: NextRequest) {
     // A contribution (body/checklist edit). Only when the owner allowed it.
     if (!note.allow_public_edit) return NextResponse.json({ error: 'This note is view-only' }, { status: 403 })
     const patch: any = { updated_at: new Date().toISOString() }
-    if (body !== undefined) patch.body = body
+    // The body is HTML the owner's editor (and every viewer) renders as HTML,
+    // so a contributor's copy is cleaned first: formatting, links, pictures and
+    // voice cards stay; scripts and event handlers don't (lib/safe-html.ts).
+    if (body !== undefined) patch.body = sanitizeHtml(typeof body === 'string' ? body : '', { profile: 'note' })
     if (checklist !== undefined) patch.checklist = checklist
     // Log who edited (visitor identity) and when.
     if (editor?.name) {

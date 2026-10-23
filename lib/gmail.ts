@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { sanitizeHtml } from '@/lib/safe-html'
+import { publicUrlProblem } from '@/lib/site-crawl'
 import { uploadToR2, r2Configured } from '@/lib/r2'
 import { emitInboundEvent } from '@/lib/integration-hooks'
 
@@ -684,7 +685,9 @@ export async function syncGmailChannel(
 // or if the file is too large — a bad attachment must never fail the whole send.
 async function attachmentPart(a: { url: string; name?: string; type?: string }): Promise<string | null> {
   try {
-    const res = await fetch(a.url)
+    // The URL comes with the reply: never fetch (and mail out) our own network.
+    if (await publicUrlProblem(a.url)) return null
+    const res = await fetch(a.url, { redirect: 'manual' })
     if (!res.ok) return null
     const buf = Buffer.from(await res.arrayBuffer())
     if (!buf.length || buf.length > 20 * 1024 * 1024) return null   // skip empty / >20MB

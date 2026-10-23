@@ -1,4 +1,4 @@
-import { twilioSignatureOk } from '@/lib/twilio-signature'
+import { twilioSignatureOk, twilioSignedFor } from '@/lib/twilio-signature'
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { companyForInboundNumber } from '@/lib/inbound-company'
@@ -53,6 +53,8 @@ export async function POST(req: NextRequest) {
       // Not a number we manage — say so rather than hanging silently.
       return twiml('<Response><Say>This number is not configured.</Say><Hangup/></Response>')
     }
+    // Signed by Colvy's account or this business's own, not another business's.
+    if (!(await twilioSignedFor(req, form, db, companyId))) return new NextResponse('Forbidden', { status: 403 })
     // The AI phone agent's settings and the business name, read alongside the
     // caller lookups below rather than after them (the caller hears ringing
     // until we answer). What it needs to answer straight away (product names,

@@ -1,4 +1,4 @@
-import { twilioSignatureOk } from '@/lib/twilio-signature'
+import { twilioSignatureOk, twilioSignedFor } from '@/lib/twilio-signature'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { setCallPreview } from '@/lib/call-card'
@@ -62,6 +62,8 @@ export async function POST(req: NextRequest) {
 
     const call = await readCallRow(db, callRowId)
     if (!call || call.company_id !== companyId) return twiml('<Response><Say>Sorry, something went wrong.</Say><Hangup/></Response>')
+    // Signed by Colvy's account or this business's own, not another business's.
+    if (!(await twilioSignedFor(req, form, db, companyId))) return new NextResponse('Forbidden', { status: 403 })
     const [routing, { data: co }, { data: integ }] = await Promise.all([
       getCallRouting(db, companyId, call.to_number || ''),
       db.from('companies').select('name').eq('id', companyId).maybeSingle(),

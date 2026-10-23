@@ -11,11 +11,13 @@ function admin() {
   )
 }
 
-function origin(req: NextRequest) {
-  const proto = req.headers.get('x-forwarded-proto') || 'https'
-  const host = req.headers.get('host')
-  if (host) return `${proto}://${host}`
-  return process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+// Our own origin, never the request's Host: the batch call carries the
+// internal header (as in sync-run's origin()).
+function origin(_req: NextRequest) {
+  const site = process.env.NEXT_PUBLIC_SITE_URL
+  if (site) return site.replace(/\/$/, '')
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`
+  return 'https://colvy.com'
 }
 
 // Starts a background sync: creates a job and kicks off the first batch.

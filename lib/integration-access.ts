@@ -34,3 +34,35 @@ export const maskSecret = (v: any) => {
   const s = String(v || '')
   return s ? `••••${s.slice(-4)}` : ''
 }
+
+// Where a saved token is sent: the Jira site, the Zendesk subdomain, the
+// webhook address. The browser never sees a saved token, so it may only be
+// reused (a secret left blank) with the destination it was saved for —
+// otherwise pointing the site at another host and pressing Test (or waiting
+// for an event) would hand that host the token.
+const DESTINATION_KEYS = ['domain', 'subdomain', 'url']
+
+export function secretReuseProblem(def: { fields?: { key: string; label: string; secret?: boolean }[] } | null, saved: Record<string, any>, incoming: Record<string, any> | null | undefined): string | null {
+  const fields = def?.fields || []
+  const val = (o: any, k: string) => (typeof o?.[k] === 'string' || typeof o?.[k] === 'number' ? String(o[k]).trim() : '')
+  const reused = fields.filter(f => f.secret && !val(incoming, f.key) && val(saved, f.key))
+  if (!reused.length) return null
+  const moved = fields.find(f => DESTINATION_KEYS.includes(f.key) && val(incoming, f.key).toLowerCase() !== val(saved, f.key).toLowerCase())
+  return moved ? `Enter the ${reused[0].label.toLowerCase()} again to use a different ${moved.label.toLowerCase()}.` : null
+}
+
+// A Jira site or Zendesk subdomain typed in must stay a plain public host
+// (lib/integration-events builds https://<site>/… and https://<sub>.zendesk.com
+// from them, and calls them with the token).
+export async function destinationProblem(cfg: Record<string, any>): Promise<string | null> {
+  const sub = String(cfg?.subdomain || '').trim().replace(/^https?:\/\//, '').replace(/\.zendesk\.com.*$/i, '')
+  if (sub && !/^[a-z0-9][a-z0-9-]*$/i.test(sub)) return 'Zendesk subdomain: use just the part before .zendesk.com.'
+  const domain = String(cfg?.domain || '').trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '')
+  if (domain) {
+    if (!/^[a-z0-9.-]+$/i.test(domain)) return 'Jira site: enter just the address, like yourcompany.atlassian.net.'
+    const { checkPublicUrl } = await import('@/lib/integration-events')
+    const bad = await checkPublicUrl(`https://${domain.includes('.') ? domain : `${domain}.atlassian.net`}`)
+    if (bad) return `Jira site: ${bad}`
+  }
+  return null
+}

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { resolveCompanyUser } from '@/lib/client-cache'
 import ConfirmModal from '@/components/ConfirmModal'
 import { TrashIcon, PlusIcon } from '@/components/Icons'
 import { SkeletonList } from '@/components/Skeleton'
@@ -24,18 +25,26 @@ export default function StatusesPage() {
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; label: string } | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [companyId, setCompanyId] = useState<string | null>(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       const u = data.session?.user
       setUser(u)
     })
-    fetchStatuses()
+    // Statuses belong to a workspace: the board and roadmap only show the
+    // ones with its company_id, and only its staff may change them (COLVY_V412).
+    resolveCompanyUser().then(({ companyId }) => {
+      setCompanyId(companyId)
+      fetchStatuses(companyId)
+    })
   }, [router])
 
-  const fetchStatuses = async () => {
+  const fetchStatuses = async (cid: string | null = companyId) => {
     try {
-      const { data, error } = await supabase.from('statuses').select('*').order('order_index', { ascending: true })
+      let q = (supabase as any).from('statuses').select('*').order('order_index', { ascending: true })
+      if (cid) q = q.eq('company_id', cid)
+      const { data, error } = await q
       if (!error && data) setStatuses(data)
     } catch {}
     setLoading(false)
@@ -46,6 +55,7 @@ export default function StatusesPage() {
     setSaving(true)
     const key = newLabel.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_')
     const { error } = await supabase.from('statuses').insert({
+      company_id: companyId,
       key,
       label: newLabel.trim(),
       color: newColor,
