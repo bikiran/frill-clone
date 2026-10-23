@@ -110,6 +110,17 @@ const ago = (ms: number) => {
   const d = Math.round(h / 24); return `${d} day${d === 1 ? '' : 's'}`
 }
 
+/** Conversations with contacts marked as suppliers (customer profile → Relationship): not customers waiting on an answer. */
+async function supplierConversations(db: any, companyId: string): Promise<Set<string>> {
+  try {
+    const { data: contacts } = await db.from('contacts').select('id').eq('company_id', companyId).eq('relationship_type', 'supplier').limit(1000)
+    const ids = (contacts || []).map((c: any) => c.id)
+    if (!ids.length) return new Set()
+    const { data: convs } = await db.from('conversations').select('id').eq('company_id', companyId).in('contact_id', ids).limit(5000)
+    return new Set((convs || []).map((c: any) => c.id))
+  } catch { return new Set() }
+}
+
 /**
  * Measure every goal over the last `days` days and list what's missing one
  * right now. `now` is injectable for tests.
@@ -133,13 +144,14 @@ export async function evaluateGoals(db: any, companyId: string, settings: GoalSe
     const limit = targetMs(key, settings[key].target)
     let met = 0, missed = 0, open = 0
     try {
-      const [hours, msgs] = await Promise.all([
+      const [hours, msgs, suppliers] = await Promise.all([
         loadBusinessHours(db, companyId, { google: false }).catch(() => null),
         pageAll(from => db.from('messages').select('conversation_id, sender_type, is_internal, created_at, content, sender_email')
           .eq('company_id', companyId).in('sender_type', ['visitor', 'agent', 'ai']).gte('created_at', since).order('created_at', { ascending: true }).range(from, from + 999)),
+        supplierConversations(db, companyId),
       ])
       const byConv = new Map<string, any[]>()
-      for (const m of msgs) { if (!m.conversation_id || m.is_internal || m.sender_type === 'system') continue; (byConv.get(m.conversation_id) || byConv.set(m.conversation_id, []).get(m.conversation_id)!).push(m) }
+      for (const m of msgs) { if (!m.conversation_id || m.is_internal || m.sender_type === 'system' || suppliers.has(m.conversation_id)) continue; (byConv.get(m.conversation_id) || byConv.set(m.conversation_id, []).get(m.conversation_id)!).push(m) }
       const waiting: { conv: string; at: string; ms: number }[] = []
       for (const [conv, list] of byConv) {
         list.sort((a, b) => (a.created_at < b.created_at ? -1 : 1))

@@ -56,6 +56,11 @@ export async function startSupportAgentForConversation(db: any, conversationId: 
   const { data: roleRows } = await db.from('agent_roles').select('role_key, enabled').eq('company_id', conv.company_id).in('role_key', ['support', 'reception']).then((r: any) => r, () => ({ data: [] }))
   const enabled = new Set<string>((roleRows || []).filter((r: any) => r.enabled).map((r: any) => r.role_key))
   if (!enabled.size) return { started: false, reason: 'off' }
+  // Suppliers (customer profile → Relationship) aren't customers: the agent leaves them to the team.
+  if (conv.contact_id) {
+    const { data: ct } = await db.from('contacts').select('relationship_type').eq('id', conv.contact_id).maybeSingle().then((r: any) => r, () => ({ data: null }))
+    if (ct?.relationship_type === 'supplier') return { started: false, reason: 'supplier' }
+  }
   if (!(await getAgentChannels(db, conv.company_id)).includes(key)) return { started: false, reason: 'channel off' }
   if ((await agentsPaused(db, conv.company_id)).paused) return { started: false, reason: 'paused' }
   if (!(await agentsOnPlan(db, conv.company_id))) return { started: false, reason: 'plan' }

@@ -790,7 +790,10 @@ export class WooCommerceService {
   /** Test the store and key, with a reason people can act on when it fails. Never waits on the back-off. */
   async checkConnection(): Promise<{ ok: boolean; error?: string; status?: number }> {
     try {
-      const response = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/system_status`, { method: 'GET', headers: this.wcHeaders(), signal: AbortSignal.timeout(12_000) })
+      // One order id, not system_status: that report makes WordPress gather every
+      // plugin, table and setting and often takes longer than the timeout on a busy
+      // store. This asks the same questions (store reachable, key accepted, API on).
+      const response = await fetch(`${this.config.storeUrl}/wp-json/wc/v3/orders?per_page=1&_fields=id`, { method: 'GET', headers: this.wcHeaders(), signal: AbortSignal.timeout(15_000) })
       const data = await readStoreJson(response, { provider: 'woocommerce', store: this.config.storeUrl })
       if (response.ok) return { ok: true, status: response.status }
       if (response.status === 401 || response.status === 403) return { ok: false, status: response.status, error: `WooCommerce refused the API key (${response.status}). Check the consumer key and secret, and that the key has Read/Write access.${data?.message ? ` ${String(data.message).slice(0, 160)}` : ''}` }
@@ -798,8 +801,9 @@ export class WooCommerceService {
       return { ok: false, status: response.status, error: `WooCommerce answered ${response.status}${data?.message ? `: ${String(data.message).slice(0, 160)}` : ''}` }
     } catch (error: any) {
       if (isStoreResponseError(error)) return { ok: false, status: error.status, error: error.message }
-      console.error('WooCommerce connection test failed:', error)
-      return { ok: false, error: error?.name === 'TimeoutError' ? 'The store took too long to answer.' : `Couldn’t reach the store: ${String(error?.message || error).slice(0, 160)}` }
+      // A slow or unreachable store is the store's problem, not an error in Colvy.
+      console.warn('WooCommerce connection test failed:', this.config.storeUrl, error?.name || '', String(error?.message || error).slice(0, 160))
+      return { ok: false, error: error?.name === 'TimeoutError' ? 'The store took too long to answer. If it keeps happening, check the website is up and not overloaded.' : `Couldn’t reach the store: ${String(error?.message || error).slice(0, 160)}` }
     }
   }
 }
