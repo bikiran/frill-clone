@@ -13,7 +13,7 @@ export type Item = {
   key: string; kind: 'approval' | 'reply' | 'review' | 'order' | 'quote' | 'handover' | 'failed'; urgency: Urgency; title: string; detail: string; at: string; href: string
   conversationId?: string | null; runId?: string | null; approval?: any
   // Added for the page (lib/agent/needs-you-enrich.ts)
-  customer?: { name: string | null; phone: string | null; email: string | null } | null
+  customer?: { name: string | null; phone: string | null; email: string | null; contactId?: string | null } | null
   channel?: string | null; preview?: string | null; previewAt?: string | null; value?: number | null
 }
 export type GoalLite = { key: string; label: string; rate: number | null; open: number; met: number; missed: number }

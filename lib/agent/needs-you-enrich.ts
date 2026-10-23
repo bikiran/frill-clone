@@ -6,7 +6,7 @@
 
 import type { NeedItem } from './needs-you'
 
-export type NeedCustomer = { name: string | null; phone: string | null; email: string | null }
+export type NeedCustomer = { name: string | null; phone: string | null; email: string | null; contactId?: string | null }
 export type EnrichedNeed = NeedItem & {
   customer?: NeedCustomer | null
   channel?: string | null
@@ -47,7 +47,7 @@ export async function enrichNeeds(db: any, companyId: string, items: NeedItem[])
       const conv = i.conversationId ? convs.get(i.conversationId) : null
       const ct = conv?.contact_id ? contactById.get(conv.contact_id) : null
       const name = ct?.name || i.approval?.conversation?.customer || input.name || input.reviewer || input.author || null
-      i.customer = (name || ct) ? { name: name || ct?.phone || ct?.email || null, phone: ct?.phone || null, email: ct?.email || null } : null
+      i.customer = (name || ct) ? { name: name || ct?.phone || ct?.email || null, phone: ct?.phone || null, email: ct?.email || null, contactId: ct?.id || null } : null
       i.channel = conv?.channel || i.approval?.conversation?.channel
         || (input.kind === 'review' || i.kind === 'review' ? 'google' : input.kind === 'comment' ? (input.platform || 'facebook') : null)
       const m = i.conversationId ? lastMsg.get(i.conversationId) : null

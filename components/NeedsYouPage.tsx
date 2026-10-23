@@ -101,6 +101,13 @@ async function closeNoReply(companyId: string, conversationId: string) {
   await (supabase as any).from('conversation_events').insert({ conversation_id: conversationId, company_id: companyId, event_type: 'closed', actor_name: actor, detail: 'Closed from Needs you: no reply needed.' })
 }
 
+// "Supplier": sets the contact's relationship (as on their profile), so their
+// messages stop counting as customers waiting and the agents leave them alone.
+async function markSupplier(companyId: string, contactId: string) {
+  const { error } = await (supabase as any).from('contacts').update({ relationship_type: 'supplier', subscribed_to_marketing: false }).eq('id', contactId).eq('company_id', companyId)
+  if (error) throw error
+}
+
 function Detail({ item, companyId, now, onDone, inline }: { item: Item; companyId: string; now: number; onDone: () => void; inline?: boolean }) {
   const [tab, setTab] = useState<'next' | 'customer'>('next')
   const [closing, setClosing] = useState<'' | 'busy' | 'error'>('')
@@ -110,6 +117,12 @@ function Detail({ item, companyId, now, onDone, inline }: { item: Item; companyI
     if (!item.conversationId) return
     setClosing('busy')
     try { await closeNoReply(companyId, item.conversationId); onDone() } catch { setClosing('error') }
+  }
+  const canSupplier = canClose && !!item.customer?.contactId
+  const supplier = async () => {
+    if (!item.customer?.contactId) return
+    setClosing('busy')
+    try { await markSupplier(companyId, item.customer.contactId); onDone() } catch { setClosing('error') }
   }
   const ch = channelName(item.channel)
   const name = who(item)
@@ -144,9 +157,10 @@ function Detail({ item, companyId, now, onDone, inline }: { item: Item; companyI
               {item.value ? <p className="nyp-d-value">{money(item.value)} waiting on this</p> : null}
               <div className="nyp-actions">
                 <a className="nyp-primary" href={item.href}>{OPEN[item.kind]} <Arrow /></a>
-                {canClose && <button type="button" className="nyp-secondary" onClick={close} disabled={closing === 'busy'} title="Closes the enquiry. If they write again, it comes back.">{closing === 'busy' ? 'Closing…' : 'No reply needed'}</button>}
+                {canClose && <button type="button" className="nyp-secondary" onClick={close} disabled={closing === 'busy'} title="Closes the enquiry. If they write again, it comes back.">{closing === 'busy' ? 'Saving…' : 'No reply needed'}</button>}
+                {canSupplier && <button type="button" className="nyp-secondary" onClick={supplier} disabled={closing === 'busy'} title="Marks this contact as a supplier. Their messages stop showing here and the agents won’t reply to them.">It’s a supplier</button>}
               </div>
-              {closing === 'error' && <p className="nyp-d-text" style={{ color: '#b42318' }} role="alert">Couldn’t close it. Try again, or close it from the inbox.</p>}
+              {closing === 'error' && <p className="nyp-d-text" style={{ color: '#b42318' }} role="alert">Couldn’t save that. Try again, or do it from the inbox.</p>}
             </>
           )}
         </div>
