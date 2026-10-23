@@ -19,6 +19,9 @@ export default function WooCommerceIntegration() {
   const [configuring, setConfiguring] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [registeringHooks, setRegisteringHooks] = useState(false)
+  // The outcome of Order → chat, shown under its button (the page-top notice is
+  // out of view down there, so the button looked like it did nothing).
+  const [hookResult, setHookResult] = useState<{ ok: boolean; lines: string[] } | null>(null)
 
   // Ask WooCommerce to push order events to Colvy. Without these webhooks, a new
   // order never reaches Colvy and no chat is created — this is the fix for
@@ -26,6 +29,7 @@ export default function WooCommerceIntegration() {
   const registerWebhooks = async () => {
     if (!companyId) return
     setRegisteringHooks(true)
+    setHookResult(null)
     try {
       const res = await authFetch('/api/woocommerce/register-webhooks', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -33,16 +37,23 @@ export default function WooCommerceIntegration() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed')
+      const TOPIC: Record<string, string> = { 'order.created': 'New orders', 'order.updated': 'Order updates', 'product.updated': 'Product updates' }
+      const ACTION: Record<string, string> = { secured: 'connected and secured', reactivated: 'reconnected', created: 'connected', 'already active': 'already connected' }
       const lines: string[] = []
+      let failed = false
+      const many = (data.summary || []).length > 1
       for (const s of data.summary || []) {
-        if (s.error) { lines.push(`${s.store}: ${s.error}`); continue }
+        const store = String(s.store || '').replace(/^https?:\/\//, '').replace(/\/$/, '')
+        if (s.error) { failed = true; lines.push(`${store}: ${s.error}`); continue }
         for (const r of s.results || []) {
-          lines.push(`${r.topic}: ${r.action}${r.error ? ' — ' + r.error : ''}`)
+          if (r.error || r.action === 'failed') failed = true
+          const what = `${TOPIC[r.topic] || r.topic}: ${ACTION[r.action] || r.action}${r.error ? ` (${r.error})` : ''}`
+          lines.push(many ? `${store} · ${what}` : what)
         }
       }
-      setSuccess('Order → chat: ' + (lines.join(' · ') || 'done'))
+      setHookResult({ ok: !failed, lines: lines.length ? lines : ['Done'] })
     } catch (e: any) {
-      setError('Could not register webhooks: ' + e.message)
+      setHookResult({ ok: false, lines: ['Could not connect: ' + e.message] })
     } finally {
       setRegisteringHooks(false)
     }
@@ -387,6 +398,14 @@ export default function WooCommerceIntegration() {
                   </button>
                 </div>
               ))}
+              {hookResult && (
+                <div className="pt-3">
+                  <Notice tone={hookResult.ok ? 'success' : 'error'}>
+                    <b>{hookResult.ok ? 'Order → chat is on.' : 'Order → chat needs attention.'}</b>
+                    <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>{hookResult.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>
+                  </Notice>
+                </div>
+              )}
             </div>
           </Card>
         </div>
