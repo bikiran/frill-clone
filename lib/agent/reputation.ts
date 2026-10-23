@@ -8,6 +8,7 @@
 
 import { enqueueRun } from './engine'
 import { agentsPaused } from './pilot'
+import { agentsOnPlan } from './access'
 
 const RECENT_MS = 3 * 86_400_000
 const MAX_PER_SYNC = 20
@@ -18,6 +19,7 @@ export async function startReputationAgentForReviews(db: any, companyId: string,
   const { data: role } = await db.from('agent_roles').select('enabled').eq('company_id', companyId).eq('role_key', 'reputation').maybeSingle().then((r: any) => r, () => ({ data: null }))
   if (!role?.enabled) return { queued: 0, reason: 'off' }
   if ((await agentsPaused(db, companyId)).paused) return { queued: 0, reason: 'paused' }
+  if (!(await agentsOnPlan(db, companyId))) return { queued: 0, reason: 'plan' }
 
   let queued = 0
   for (const r of fresh) {
@@ -46,6 +48,7 @@ export async function queueCommentReplies(db: any, companyId: string, commentIds
   const { getCommentAuto } = await import('./pilot')
   if (!(await getCommentAuto(db, companyId)).on) return { queued: 0, reason: 'comments off' }
   if ((await agentsPaused(db, companyId)).paused) return { queued: 0, reason: 'paused' }
+  if (!(await agentsOnPlan(db, companyId))) return { queued: 0, reason: 'plan' }
 
   let q = db.from('social_comments').select('id, platform, author_name, message, contact_id, commented_at, is_replied, is_hidden, is_archived')
     .eq('company_id', companyId).eq('is_replied', false).gte('commented_at', new Date(Date.now() - RECENT_MS).toISOString())

@@ -16,6 +16,7 @@
 
 import { enqueueRun, runAgent } from './engine'
 import { agentsPaused, getAgentChannels, channelKey } from './pilot'
+import { agentsOnPlan } from './access'
 import { retireStaleSuggestions } from './approvals'
 
 // Where Colvy AI's older auto-reply also runs — it stands down here once the
@@ -57,6 +58,7 @@ export async function startSupportAgentForConversation(db: any, conversationId: 
   if (!enabled.size) return { started: false, reason: 'off' }
   if (!(await getAgentChannels(db, conv.company_id)).includes(key)) return { started: false, reason: 'channel off' }
   if ((await agentsPaused(db, conv.company_id)).paused) return { started: false, reason: 'paused' }
+  if (!(await agentsOnPlan(db, conv.company_id))) return { started: false, reason: 'plan' }
 
   await new Promise(r => setTimeout(r, opts.debounceMs ?? DEBOUNCE_MS))
 

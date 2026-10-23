@@ -17,6 +17,7 @@ import { guardTools, friendlyRunError, toolIndexFromError } from './tool-schema'
 import { retireStaleSuggestions } from './approvals'
 import { decide, loadPolicies } from './policy'
 import { agentsPaused, pauseFrom } from './pilot'
+import { agentsOnPlan, AGENTS_PLAN_MESSAGE } from './access'
 import { loadRole } from './roles'
 import { buildContext } from './memory'
 import { localNow, prettyDate, prettyTime, addDays } from '@/lib/business-hours'
@@ -188,6 +189,7 @@ export async function runAgent(db: any, runId: string, deadline: number, model: 
       : baseRole
     const findAction = (key: string) => getAction(key) || extByKey.get(key) || null
     if (run.mode === 'live' && !role.enabled) return finishRun({ status: 'cancelled', summary: `${role.name} is switched off for this business.` })
+    if (!(await agentsOnPlan(db, run.company_id))) return finishRun({ status: 'cancelled', summary: `${AGENTS_PLAN_MESSAGE} This workspace’s plan doesn’t include them.` })
 
     const pack = await buildContext(db, run.company_id, { conversationId: run.conversation_id, contactId: run.contact_id })
     if (!run.started_at) {

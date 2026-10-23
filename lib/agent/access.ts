@@ -5,6 +5,7 @@ import type { NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { bearerToken, isStaffRow, SUPER_ADMIN, verifyToken } from '@/lib/company-access'
 import { canUseFeature, hasFullAccess } from '@/lib/permissions'
+import { companyHasFeature } from '@/lib/plan'
 
 export function agentDb() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } }) as any
@@ -29,6 +30,19 @@ export async function agentAccess(req: NextRequest, companyId: string | null | u
     const ok = hasFullAccess(role) || canUseFeature(role, row.permissions && typeof row.permissions === 'object' ? row.permissions : null, 'agents')
     return { ok, db, userId: user.id }
   } catch { return { ok: false, db } }
+}
+
+// The agents come with the Inbox and Everything plans (and a trial, or a
+// super-admin override in company_entitlements). Checked before any agent work
+// starts, briefly cached so a busy inbox doesn't ask on every message.
+export const AGENTS_PLAN_MESSAGE = 'AI agents are included on the Inbox and Everything plans.'
+const planCache = new Map<string, { at: number; ok: boolean }>()
+export async function agentsOnPlan(db: any, companyId: string): Promise<boolean> {
+  const hit = planCache.get(companyId)
+  if (hit && Date.now() - hit.at < 60_000) return hit.ok
+  const ok = await companyHasFeature(db, companyId, 'aiAgents')
+  planCache.set(companyId, { at: Date.now(), ok })
+  return ok
 }
 
 export const missingAgentTables = (e: any) => /agent_runs|agent_steps|agent_approvals/i.test(String(e?.message || '')) && /does not exist|schema cache|relation/i.test(String(e?.message || ''))

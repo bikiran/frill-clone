@@ -10,6 +10,7 @@
 
 import { enqueueRun } from './engine'
 import { agentsPaused } from './pilot'
+import { agentsOnPlan } from './access'
 import { cartPrecheck } from '@/lib/cart-recovery'
 import { resolveCartRecovery, cartItemsText } from '@/lib/cart-recovery-shared'
 import { isWithinSendingHours } from '@/lib/campaign-sender'
@@ -22,6 +23,7 @@ export async function queueCartFollowups(db: any, now = new Date()): Promise<{ c
   for (const role of roles || []) {
     const companyId = role.company_id
     if ((await agentsPaused(db, companyId)).paused) continue
+    if (!(await agentsOnPlan(db, companyId))) continue
     const { data: co } = await db.from('companies').select('order_chat_automation').eq('id', companyId).maybeSingle()
     const s = resolveCartRecovery(co?.order_chat_automation?.cart_recovery)
     if (!isWithinSendingHours(now, s.timezone)) continue

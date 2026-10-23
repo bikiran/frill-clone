@@ -13,6 +13,7 @@
 
 import { enqueueRun } from './engine'
 import { agentsPaused } from './pilot'
+import { agentsOnPlan } from './access'
 import { OPS_ORDER_COLS } from './ops-actions'
 import { getOrderTracking } from '@/lib/tracking'
 import { assessOrder, loadThresholds } from '@/lib/order-assess'
@@ -28,6 +29,7 @@ export async function queueOpsChecks(db: any, now = new Date(), opts: { checks?:
   for (const role of roles || []) {
     const companyId = role.company_id
     if ((await agentsPaused(db, companyId)).paused) continue
+    if (!(await agentsOnPlan(db, companyId))) continue
     out.companies++
     let queued = 0
     const th = await loadThresholds(db, companyId)
