@@ -6,6 +6,7 @@
 // Google reviews, Operations Agent runs, payment requests). Nothing new is
 // recorded; settings live in agent_policies (pilot.ts getGoals / setGoals).
 
+import { noReplyNeeded } from '@/lib/needs-reply'
 import { loadBusinessHours, localNow, dayHours, type BusinessHours } from '@/lib/business-hours'
 
 export type GoalKey = 'reply_time' | 'approval_wait' | 'review_reply' | 'order_updates' | 'quote_followup'
@@ -134,7 +135,7 @@ export async function evaluateGoals(db: any, companyId: string, settings: GoalSe
     try {
       const [hours, msgs] = await Promise.all([
         loadBusinessHours(db, companyId, { google: false }).catch(() => null),
-        pageAll(from => db.from('messages').select('conversation_id, sender_type, is_internal, created_at')
+        pageAll(from => db.from('messages').select('conversation_id, sender_type, is_internal, created_at, content, sender_email')
           .eq('company_id', companyId).in('sender_type', ['visitor', 'agent', 'ai']).gte('created_at', since).order('created_at', { ascending: true }).range(from, from + 999)),
       ])
       const byConv = new Map<string, any[]>()
@@ -146,6 +147,10 @@ export async function evaluateGoals(db: any, companyId: string, settings: GoalSe
           const m = list[i]
           if (m.sender_type !== 'visitor') continue
           if (i > 0 && list[i - 1].sender_type === 'visitor') continue          // only the first message of each customer turn
+          // A turn that's only a sign-off ("Thank you", 👍), a reaction ("Loved “…”")
+          // or mail from an automated / accounts address doesn't call for an answer.
+          let end = i; while (end + 1 < list.length && list[end + 1].sender_type === 'visitor') end++
+          if (list.slice(i, end + 1).every(noReplyNeeded)) continue
           const at = new Date(m.created_at)
           if (openAt(hours, at) === false) continue                           // arrived while closed
           const reply = list.slice(i + 1).find(x => REPLY_SENDERS.has(x.sender_type))
