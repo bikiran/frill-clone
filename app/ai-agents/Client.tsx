@@ -112,6 +112,9 @@ export default function AiAgentsPage() {
   return (
     <div style={{ background: bg, color: text, fontFamily: font, minHeight: '100vh', overflowX: 'hidden' }}>
       <style>{`
+        .ag-faq::before{ display:none }
+        .ag-faq:hover{ color:${CORAL} !important }
+        .ag-faq:focus-visible{ outline:2px solid ${CORAL}; outline-offset:4px; border-radius:6px }
         @media (max-width: 900px){ .ag-hero{ grid-template-columns:1fr !important } .ag-row{ grid-template-columns:1fr !important } .ag-row > *{ order:0 !important } .ag-steps{ grid-template-columns:1fr !important } }
       `}</style>
       <MarketingNav dark={dark} onToggleDark={() => setDark(v => !v)} />
@@ -179,7 +182,7 @@ export default function AiAgentsPage() {
           <h2 style={{ fontSize: 'clamp(26px, 3.6vw, 40px)', fontWeight: 900, letterSpacing: '-0.02em', textAlign: 'center', margin: '0 0 28px' }}>Questions, answered</h2>
           {FAQ.map((f, i) => (
             <div key={f.q} style={{ borderTop: `1px solid ${line}` }}>
-              <button type="button" aria-expanded={open === i} onClick={() => setOpen(open === i ? null : i)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, width: '100%', padding: '18px 0', background: 'none', border: 'none', cursor: 'pointer', color: text, fontFamily: 'inherit', fontSize: 16.5, fontWeight: 700, textAlign: 'left' }}>
+              <button type="button" className="ag-faq" aria-expanded={open === i} onClick={() => setOpen(open === i ? null : i)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, width: '100%', padding: '18px 0', background: 'none', border: 'none', cursor: 'pointer', color: text, fontFamily: 'inherit', transition: 'color .2s', fontSize: 16.5, fontWeight: 700, textAlign: 'left' }}>
                 {f.q}<span aria-hidden style={{ color: CORAL, fontSize: 20, transform: open === i ? 'rotate(45deg)' : 'none', transition: 'transform .25s' }}>+</span>
               </button>
               {open === i && <p style={{ margin: '0 0 18px', fontSize: 15.5, lineHeight: 1.65, color: muted }}>{f.a}</p>}
