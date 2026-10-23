@@ -2,21 +2,26 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { authFetch } from '@/lib/auth-fetch'
-import { SuggestionCard } from '@/components/AgentSuggestion'
 
 // "Needs you": everything waiting on a person, most urgent first — drafts to
-// approve (right here), goals being missed now, hand-overs nobody picked up,
-// and agent runs that went wrong. NeedsYouView is the page; NeedsYouCard sits
-// at the top of the Agents page.
+// approve, goals being missed now, hand-overs nobody picked up, and agent runs
+// that went wrong. useNeedsYou loads it; NeedsYouCard sits at the top of the
+// Agents page; the page itself is components/NeedsYouPage.tsx.
 
-type Urgency = 'now' | 'soon' | 'fyi'
-type Item = { key: string; kind: 'approval' | 'reply' | 'review' | 'order' | 'quote' | 'handover' | 'failed'; urgency: Urgency; title: string; detail: string; at: string; href: string; conversationId?: string | null; runId?: string | null; approval?: any }
-type GoalLite = { key: string; label: string; rate: number | null; open: number; met: number; missed: number }
-type Payload = { items: Item[]; counts: Record<Urgency, number>; alerts: { enabled: boolean }; goals?: GoalLite[] }
+export type Urgency = 'now' | 'soon' | 'fyi'
+export type Item = {
+  key: string; kind: 'approval' | 'reply' | 'review' | 'order' | 'quote' | 'handover' | 'failed'; urgency: Urgency; title: string; detail: string; at: string; href: string
+  conversationId?: string | null; runId?: string | null; approval?: any
+  // Added for the page (lib/agent/needs-you-enrich.ts)
+  customer?: { name: string | null; phone: string | null; email: string | null } | null
+  channel?: string | null; preview?: string | null; previewAt?: string | null; value?: number | null
+}
+export type GoalLite = { key: string; label: string; rate: number | null; open: number; met: number; missed: number }
+export type Payload = { items: Item[]; counts: Record<Urgency, number>; alerts: { enabled: boolean }; goals?: GoalLite[] }
 
-const EASE = 'cubic-bezier(.22,1,.36,1)'
-const ico = (d: React.ReactNode, s = 16) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ display: 'inline-block', flexShrink: 0 }}>{d}</svg>
-const ICON: Record<Item['kind'], React.ReactNode> = {
+export const EASE = 'cubic-bezier(.22,1,.36,1)'
+export const ico = (d: React.ReactNode, s = 16) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ display: 'inline-block', flexShrink: 0 }}>{d}</svg>
+export const ICON: Record<Item['kind'], React.ReactNode> = {
   approval: ico(<><path d="M12 3l1.8 4.6L18.5 9l-4.7 1.4L12 15l-1.8-4.6L5.5 9l4.7-1.4z" /></>),
   reply: ico(<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />),
   review: ico(<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />),
@@ -25,17 +30,10 @@ const ICON: Record<Item['kind'], React.ReactNode> = {
   handover: ico(<><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /></>),
   failed: ico(<><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></>),
 }
-const Check = () => ico(<polyline points="20 6 9 17 4 12" />, 18)
-const Bell = () => ico(<><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></>)
-const Target = () => ico(<><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></>)
-const Arrow = () => ico(<><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></>, 14)
-const OPEN: Record<Item['kind'], string> = { approval: 'Open conversation', reply: 'Reply', review: 'Reply to review', order: 'Open', quote: 'Follow up', handover: 'Take over', failed: 'See what happened' }
-const GROUPS: { key: Urgency; label: string; hint: string }[] = [
-  { key: 'now', label: 'Now', hint: 'Missing a goal, or a customer is waiting' },
-  { key: 'soon', label: 'Soon', hint: 'Waiting for you, still within your goals' },
-  { key: 'fyi', label: 'For your information', hint: 'Worth a look when you have a minute' },
-]
-
+export const Check = () => ico(<polyline points="20 6 9 17 4 12" />, 18)
+export const Bell = () => ico(<><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></>)
+export const Target = () => ico(<><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></>)
+export const Arrow = () => ico(<><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></>, 14)
 // The last list is kept in this browser, so the page shows it at once and refreshes underneath.
 const cacheKey = (companyId: string) => `colvy:needs-you:${companyId}`
 const readCache = (companyId: string | null): Payload | null => {
@@ -58,130 +56,6 @@ export function useNeedsYou(companyId: string | null) {
   return { data, reload: load, setData }
 }
 
-function Row({ item, companyId, onDone }: { item: Item; companyId: string; onDone: () => void }) {
-  return (
-    <li className={`ny-item ${item.urgency}`}>
-      <div className="ny-row">
-        <span className={`ny-ic ${item.kind}`}>{ICON[item.kind]}</span>
-        <div className="ny-txt">
-          <p className="ny-t">{item.title}</p>
-          <p className="ny-d">{item.detail}</p>
-        </div>
-        {item.kind !== 'approval' && <a className="ny-open" href={item.href}>{OPEN[item.kind]} <Arrow /></a>}
-      </div>
-      {item.kind === 'approval' && item.approval && (
-        <div className="ny-sg">
-          <SuggestionCard s={item.approval} companyId={companyId} compact onDone={onDone} />
-          {item.conversationId && <a className="ny-link" href={item.href}>Open the conversation <Arrow /></a>}
-        </div>
-      )}
-    </li>
-  )
-}
-
-/** The full "Needs you" page. */
-export function NeedsYouView({ companyId }: { companyId: string | null }) {
-  const { data, reload, setData } = useNeedsYou(companyId)
-  const [saving, setSaving] = useState(false)
-  const toggleAlerts = async () => {
-    if (!data || !companyId) return
-    const enabled = !data.alerts.enabled
-    setSaving(true)
-    try { const r = await authFetch('/api/agent/needs-you', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'alerts', enabled }) }); if (r.ok) setData({ ...data, alerts: { enabled } }) } finally { setSaving(false) }
-  }
-  const remove = (key: string) => { if (data) setData({ ...data, items: data.items.filter(i => i.key !== key) }); setTimeout(reload, 900) }
-
-  const total = data?.items.length || 0
-  return (
-    <div className="ny" style={{ minHeight: '100%', background: 'var(--canvas, #f6f7f9)' }}>
-      <style>{CSS}</style>
-      <div className="ny-page">
-        <nav className="ny-crumbs" aria-label="Breadcrumb"><a href="/admin/agents">AI Agents</a><span aria-hidden="true">/</span><span>Needs you</span></nav>
-        <h1 className="ny-title">Needs you</h1>
-        <p className="ny-sub">Everything your agents and goals need a person for, most urgent first. When this is empty, you can get on with your day.</p>
-
-        {!data && (
-          <div className="ny-cols" aria-busy="true" aria-label="Loading">
-            <div className="ny-main"><ul className="ny-list">{[0, 1, 2].map(n => <li key={n} className="ny-item ny-skel"><span className="ny-sk ic" /><span style={{ flex: 1 }}><span className="ny-sk t" /><span className="ny-sk d" /></span></li>)}</ul></div>
-            <aside className="ny-side"><div className="ny-card ny-skel" style={{ height: 150 }} /></aside>
-          </div>
-        )}
-        {data && (
-          <div className="ny-cols">
-            <div className="ny-main">
-              {total === 0 && (
-                <div className="ny-card ny-empty">
-                  <span className="ny-ok"><Check /></span>
-                  <div><p className="ny-t">Nothing needs you right now</p><p className="ny-d">Your agents are on it and every goal is on track.</p></div>
-                </div>
-              )}
-              {GROUPS.map(g => {
-                const list = data.items.filter(i => i.urgency === g.key)
-                if (!list.length) return null
-                return (
-                  <section key={g.key} id={`ny-${g.key}`} className="ny-group">
-                    <p className="ny-gh"><span className={`ny-dot ${g.key}`} />{g.label} <span className="ny-count">{list.length}</span><span className="ny-ghint">{g.hint}</span></p>
-                    <ul className="ny-list">{list.map(i => <Row key={i.key} item={i} companyId={companyId!} onDone={() => remove(i.key)} />)}</ul>
-                  </section>
-                )
-              })}
-            </div>
-
-            <aside className="ny-side">
-              <div className="ny-card ny-overview">
-                <p className="ny-t">Overview</p>
-                <ul className="ny-sum">
-                  {GROUPS.map(g => {
-                    const n = data.counts[g.key] || 0
-                    return (
-                      <li key={g.key}>
-                        <a href={n ? `#ny-${g.key}` : undefined} className={n ? '' : 'none'}>
-                          <span className={`ny-dot ${g.key}`} /><span className="ny-sum-l">{g.label}</span><span className="ny-sum-n">{n}</span>
-                        </a>
-                      </li>
-                    )
-                  })}
-                </ul>
-              </div>
-
-              {!!data.goals?.length && (
-                <div className="ny-card">
-                  <div className="ny-head"><p className="ny-t" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span className="ny-side-ic"><Target /></span>Goals · last 2 weeks</p></div>
-                  <ul className="ny-goals">
-                    {data.goals.map(g => {
-                      const pct = g.rate == null ? null : Math.round(g.rate * 100)
-                      return (
-                        <li key={g.key}>
-                          <div className="ny-goal-top">
-                            <span className="ny-goal-l">{g.label}</span>
-                            <span className={`ny-goal-p ${pct == null ? '' : pct >= 90 ? 'good' : pct >= 70 ? 'ok' : 'bad'}`}>{pct == null ? '—' : `${pct}%`}</span>
-                          </div>
-                          <span className="ny-goal-m" aria-hidden="true"><span style={{ width: `${pct ?? 0}%` }} /></span>
-                          {g.open > 0 && <span className="ny-goal-o">{g.open} missing now</span>}
-                        </li>
-                      )
-                    })}
-                  </ul>
-                  <a className="ny-link" href="/admin/agents/results">Change goals <Arrow /></a>
-                </div>
-              )}
-
-              <div className="ny-card ny-alerts">
-                <span className="ny-side-ic"><Bell /></span>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <p className="ny-t">Phone alerts</p>
-                  <p className="ny-d">A notification on the Colvy app when something lands in “Now” — once per item, a few at a time.</p>
-                </div>
-                <button type="button" role="switch" aria-checked={data.alerts.enabled} aria-label="Phone alerts" className={`ny-switch ${data.alerts.enabled ? 'on' : ''}`} onClick={toggleAlerts} disabled={saving}><span /></button>
-              </div>
-            </aside>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
 /** Agents page: the count and the first few things that need a person. */
 export function NeedsYouCard({ companyId }: { companyId: string }) {
   const { data } = useNeedsYou(companyId)
@@ -189,7 +63,7 @@ export function NeedsYouCard({ companyId }: { companyId: string }) {
   const top = data.items.slice(0, 3)
   return (
     <div className="ny ny-card ny-mini ag-fade">
-      <style>{CSS}</style>
+      <style>{NY_CSS}</style>
       <div className="ny-head">
         <p className="ny-t" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {data.items.length ? <>Needs you <span className={`ny-pill ${data.counts.now ? 'now' : 'soon'}`}>{data.items.length}</span></> : <><span className="ny-ok sm"><Check /></span> Nothing needs you right now</>}
@@ -209,7 +83,7 @@ export function NeedsYouCard({ companyId }: { companyId: string }) {
   )
 }
 
-const CSS = `
+export const NY_CSS = `
 .ny .ny-card,.ny.ny-card{background:#fff;border:1px solid var(--border);border-radius:20px;padding:18px}
 .ny-mini{margin-bottom:16px}
 .ny-page{max-width:1240px;margin:0 auto;padding:20px 16px 120px}

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { resolveCompanyUser, peekCompanyUser } from '@/lib/client-cache'
-import { NeedsYouView } from '@/components/NeedsYou'
+import { NeedsYouView } from '@/components/NeedsYouPage'
 
 // Agents → Needs you: everything waiting on a person, most urgent first (Phase 10).
 export default function NeedsYouPage() {
