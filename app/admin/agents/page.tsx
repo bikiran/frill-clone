@@ -155,10 +155,13 @@ export default function AgentsPage() {
   // Operations Agent switch: late, stuck and out-of-stock orders.
   const [opsOn, setOpsOn] = useState<boolean | null>(cachedRoles ? !!cachedRoles.operations : null)
   const [savingRole, setSavingRole] = useState(false)
+  // false: this workspace's plan doesn't include the agents (Inbox and Everything do).
+  const [onPlan, setOnPlan] = useState<boolean | null>(null)
   useEffect(() => {
     if (!companyId) return
     authFetch(`/api/agent/roles?companyId=${companyId}`).then(r => r.json()).then(d => {
       if (!Array.isArray(d.roles)) return
+      if (typeof d.onPlan === 'boolean') setOnPlan(d.onPlan)
       const on = (k: string) => !!d.roles.find((x: any) => x.key === k)?.enabled
       setSupportOn(on('support')); setRepOn(on('reputation')); setRecOn(on('reception')); setSalesOn(on('sales')); setOpsOn(on('operations'))
       writeStored(`agents-roles:${companyId}`, Object.fromEntries(['support', 'reputation', 'reception', 'sales', 'operations'].map(k => [k, on(k)])))
@@ -319,6 +322,15 @@ export default function AgentsPage() {
         )}
 
         {needsMigration && <div className="ag-note warn ag-fade" style={{ marginBottom: 16 }}>{I.alert}<span>Agents need a one-time database update (<b>COLVY_V353_AGENT_ENGINE.sql</b>).</span></div>}
+        {onPlan === false && (
+          <div className="ag-card ag-fade" style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', borderColor: 'color-mix(in srgb, var(--coral) 35%, var(--border))', background: 'color-mix(in srgb, var(--coral) 5%, #fff)' }}>
+            <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+              <p className="ag-h">AI agents come with the Inbox and Everything plans</p>
+              <p className="ag-p">Your workspace’s plan doesn’t include them, so they won’t answer, follow up or draft anything. Upgrade to switch on the Support, Reception, Sales, Operations and Reputation agents. Everything you’ve set up here stays as it is.</p>
+            </div>
+            <a href="/upgrade?plan=omnichannel" className="ag-primary" style={{ display: 'inline-flex', alignItems: 'center', height: 40, padding: '0 18px', textDecoration: 'none', flexShrink: 0 }}>See plans</a>
+          </div>
+        )}
         {error && <div className="ag-note err ag-fade" style={{ marginBottom: 16 }} role="alert">{I.alert}<span>{error}</span></div>}
 
         {/* What needs a person right now (Phase 10) */}

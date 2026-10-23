@@ -23,13 +23,13 @@ const EVERYTHING_FEATURES = [
   'feedbackSuite', 'polls', 'surveys', 'removeBranding',
   'inbox', 'channels', 'campaigns', 'reviewDashboard', 'ecommerceSync',
   'aiAutomation', 'aiWriting', 'whiteLabel', 'customDomain',
-  'advancedAnalytics', 'prioritySupport',
+  'advancedAnalytics', 'prioritySupport', 'aiAgents',
 ]
 
 export const PLAN_FEATURES: Record<Plan, string[]> = {
   free: ['feedbackSuite'],
   feedback: ['feedbackSuite', 'polls', 'surveys', 'removeBranding'],
-  omnichannel: ['inbox', 'channels', 'campaigns', 'reviewDashboard', 'ecommerceSync', 'aiAutomation', 'prioritySupport'],
+  omnichannel: ['inbox', 'channels', 'campaigns', 'reviewDashboard', 'ecommerceSync', 'aiAutomation', 'prioritySupport', 'aiAgents'],
   everything: EVERYTHING_FEATURES,
   trial: EVERYTHING_FEATURES,
   pro: EVERYTHING_FEATURES,        // legacy full-paid alias
@@ -73,6 +73,7 @@ export const OVERRIDABLE_FEATURES: { key: string; label: string }[] = [
   { key: 'reviewDashboard', label: 'Review dashboard' },
   { key: 'ecommerceSync', label: 'WooCommerce / Shopify sync' },
   { key: 'aiAutomation', label: 'AI flow automation' },
+  { key: 'aiAgents', label: 'AI agents' },
   { key: 'aiWriting', label: 'AI writing assistant' },
   { key: 'advancedAnalytics', label: 'Advanced analytics' },
   { key: 'polls', label: 'Polls' },

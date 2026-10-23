@@ -13,6 +13,7 @@
 
 import { enqueueRun } from './engine'
 import { agentsPaused, getSalesFollowup } from './pilot'
+import { agentsOnPlan } from './access'
 import { loadOpportunity } from './followup-actions'
 import { businessTimezone } from './ops-actions'
 import { isWithinSendingHours } from '@/lib/campaign-sender'
@@ -30,6 +31,7 @@ export async function queueSalesFollowups(db: any, now = new Date()): Promise<{ 
     const cfg = await getSalesFollowup(db, companyId)
     if (!cfg.on) continue
     if ((await agentsPaused(db, companyId)).paused) continue
+    if (!(await agentsOnPlan(db, companyId))) continue
     if (!isWithinSendingHours(now, await businessTimezone(db, companyId))) continue
     out.companies++
     const dueBefore = new Date(now.getTime() - cfg.after_days * DAY).toISOString()
