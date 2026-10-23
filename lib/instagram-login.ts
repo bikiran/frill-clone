@@ -118,6 +118,21 @@ export async function subscribeInstagramWebhooks(igId: string, token: string): P
   }
 }
 
+// The same check for an Instagram-Login account: GET /{ig-user-id}/subscribed_apps.
+export async function getInstagramSubscription(igId: string, token: string): Promise<{ subscribed: boolean; fields: string[]; app: { id: string | null; name: string | null } | null; raw: any; error?: string }> {
+  try {
+    const res = await fetch(`${IG_GRAPH_V}/${igId}/subscribed_apps?access_token=${encodeURIComponent(token)}`)
+    const raw = await res.json().catch(() => ({}))
+    if (!res.ok) return { subscribed: false, fields: [], app: null, raw, error: raw?.error?.message || `Instagram answered ${res.status}` }
+    const apps: any[] = Array.isArray(raw?.data) ? raw.data : []
+    const ours = apps.find(a => INSTAGRAM_APP_ID && String(a.id) === INSTAGRAM_APP_ID) || apps[0] || null
+    const fields = Array.isArray(ours?.subscribed_fields) ? ours.subscribed_fields : []
+    return { subscribed: !!ours && fields.length > 0, fields, app: ours ? { id: ours.id ? String(ours.id) : null, name: ours.name || null } : null, raw }
+  } catch (e: any) {
+    return { subscribed: false, fields: [], app: null, raw: null, error: e?.message || 'Could not reach Instagram' }
+  }
+}
+
 // Send a DM reply from an Instagram-Login account (Instagram Send API on
 // graph.instagram.com, keyed by the account's own token — `me/messages`).
 export async function sendInstagramMessage(token: string, recipientId: string, text: string, tag?: string): Promise<{ id?: string; error?: string }> {

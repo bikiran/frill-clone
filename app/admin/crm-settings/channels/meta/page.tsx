@@ -8,6 +8,67 @@ import { peekCompanyUser } from '@/lib/client-cache'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { currentSetupReturn, addQuery } from '@/lib/setup-return'
 
+// Whether Meta is sending this account's messages to Colvy, asked live from
+// Meta (GET /{page-id}/subscribed_apps) each time the page opens. Colvy
+// subscribes a Page automatically when it's connected; this shows the result,
+// lets you subscribe again, and shows Meta's response as returned.
+type SubStatus = { subscribed: boolean; fields: string[]; app: { id: string | null; name: string | null } | null; raw: any; error?: string; subscribeError?: string | null; checkedAt?: string; endpoint?: string; via?: string }
+function WebhookStatus({ channelId, active, onChanged }: { channelId: string; active: boolean; onChanged: () => void }) {
+  const [st, setSt] = useState<SubStatus | null>(null)
+  const [busy, setBusy] = useState<'' | 'check' | 'subscribe'>('check')
+  const [showRaw, setShowRaw] = useState(false)
+  const run = async (action: 'webhook_status' | 'resubscribe') => {
+    setBusy(action === 'resubscribe' ? 'subscribe' : 'check')
+    try {
+      const r = await authFetch('/api/meta/channels', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, id: channelId }) })
+      const d = await r.json().catch(() => ({}))
+      setSt(r.ok ? d : { subscribed: false, fields: [], app: null, raw: d, error: d?.error || 'Could not check' })
+      onChanged()   // the row's error line follows what Meta just said
+    } catch (e: any) { setSt({ subscribed: false, fields: [], app: null, raw: null, error: e?.message || 'Could not reach Colvy' }) } finally { setBusy('') }
+  }
+  useEffect(() => { run('webhook_status') }, [channelId])   // eslint-disable-line react-hooks/exhaustive-deps
+  const time = st?.checkedAt ? new Date(st.checkedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' }) : ''
+  const tone = busy === 'check' && !st ? 'wait' : st?.subscribed ? 'ok' : st?.error ? 'warn' : 'bad'
+  const C = { ok: { bg: '#ecfdf3', bd: '#abefc6', fg: '#067647', dot: '#12b76a' }, bad: { bg: '#fef3f2', bd: '#fecdca', fg: '#b42318', dot: '#f04438' }, warn: { bg: '#fffaeb', bd: '#fedf89', fg: '#b54708', dot: '#f79009' }, wait: { bg: 'var(--canvas, #f8f8fa)', bd: 'var(--border)', fg: 'var(--slate)', dot: '#98a2b3' } }[tone]
+  const link: React.CSSProperties = { background: 'none', border: 'none', padding: 0, font: 'inherit', fontSize: 12, fontWeight: 700, color: 'var(--ink)', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 2 }
+  return (
+    <div style={{ flexBasis: '100%', marginTop: 4, padding: '10px 12px', borderRadius: 10, background: C.bg, border: `1px solid ${C.bd}` }} aria-live="polite">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', background: C.dot, flexShrink: 0 }} />
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: C.fg }}>
+          {tone === 'wait' ? 'Checking webhook subscription with Meta…'
+            : tone === 'ok' ? 'Webhook subscribed'
+            : tone === 'warn' ? 'Couldn’t check the webhook subscription'
+            : 'Not subscribed to webhooks: new messages won’t arrive'}
+        </span>
+        {tone === 'ok' && st?.app?.name && <span style={{ fontSize: 12, color: C.fg }}>· app “{st.app.name}”</span>}
+        <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 12, alignItems: 'center' }}>
+          {(tone === 'bad' || tone === 'warn') && active && (
+            <button type="button" onClick={() => run('resubscribe')} disabled={!!busy} style={{ padding: '5px 11px', borderRadius: 8, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{busy === 'subscribe' ? 'Subscribing…' : 'Subscribe now'}</button>
+          )}
+          {st && <button type="button" onClick={() => run('webhook_status')} disabled={!!busy} style={link}>{busy === 'check' ? 'Checking…' : 'Re-check'}</button>}
+          {st?.raw && <button type="button" onClick={() => setShowRaw(v => !v)} style={link}>{showRaw ? 'Hide API response' : 'View API response'}</button>}
+        </span>
+      </div>
+      {st && (
+        <p style={{ margin: '5px 0 0 16px', fontSize: 12, color: 'var(--slate)', lineHeight: 1.5 }}>
+          {tone === 'ok'
+            ? <>Receiving: <b style={{ color: 'var(--ink)' }}>{st.fields.length ? st.fields.join(', ') : 'all events'}</b>{st.via === 'page' ? ' (through the linked Facebook Page)' : ''}. </>
+            : st.error ? <>{st.error}. </> : <>Colvy’s app isn’t in this account’s webhook subscriptions. </>}
+          {time && <>Checked with Meta at {time}.</>}
+          {st.subscribeError && <span style={{ color: '#b42318' }}> Subscribing failed: {st.subscribeError}</span>}
+        </p>
+      )}
+      {showRaw && st?.raw && (
+        <div style={{ marginTop: 8 }}>
+          {st.endpoint && <p style={{ margin: '0 0 4px', fontSize: 11, fontFamily: 'ui-monospace, Menlo, monospace', color: 'var(--slate)' }}>{st.endpoint}</p>}
+          <pre style={{ margin: 0, padding: 10, borderRadius: 8, background: '#0f1119', color: '#e6e8ef', fontSize: 11.5, lineHeight: 1.5, overflowX: 'auto', maxHeight: 260 }}>{JSON.stringify(st.raw, null, 2)}</pre>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function MetaChannelsPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -215,7 +276,12 @@ export default function MetaChannelsPage() {
         </div>
       )}
 
-      <p style={{ margin: '0 0 10px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--slate)' }}>Connected accounts</p>
+      <p style={{ margin: '0 0 6px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--slate)' }}>Connected accounts</p>
+      {channels.length > 0 && (
+        <p style={{ margin: '0 0 12px', fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.5 }}>
+          When you connect a Facebook Page, Colvy subscribes it to Meta’s webhooks automatically, so new Messenger and Instagram messages arrive in your shared inbox. The status under each account is checked live with Meta.
+        </p>
+      )}
       {channels.length === 0 ? (
         <div style={{ padding: '34px 28px', borderRadius: 14, border: '1px dashed var(--border)', textAlign: 'center', background: 'var(--canvas, #fafafa)' }}>
           <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#fff', border: '1px solid var(--border)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
@@ -264,6 +330,7 @@ export default function MetaChannelsPage() {
                     style={{ padding: '6px 11px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: '#dc2626', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
                     Disconnect
                   </button>
+                  <WebhookStatus channelId={c.id} active={c.is_active !== false} onChanged={() => companyId && load(companyId)} />
                 </div>
               ))}
             </div>

@@ -142,6 +142,24 @@ export async function subscribePageWebhooks(pageId: string, pageToken: string): 
   return { ok: true }
 }
 
+// Which apps this Page sends webhooks to, read live from Meta
+// (GET /{page-id}/subscribed_apps). `subscribed` is true when Colvy's app is
+// among them; `fields` are the events it receives. `raw` is Meta's response as
+// returned (it carries no tokens), for the Channels page's "API response" view.
+export type WebhookSubscription = { subscribed: boolean; fields: string[]; app: { id: string | null; name: string | null } | null; raw: any; error?: string }
+export async function getPageSubscription(pageId: string, pageToken: string): Promise<WebhookSubscription> {
+  try {
+    const res = await fetch(`${GRAPH}/${pageId}/subscribed_apps?access_token=${encodeURIComponent(pageToken)}`)
+    const raw = await res.json().catch(() => ({}))
+    if (!res.ok) return { subscribed: false, fields: [], app: null, raw, error: raw?.error?.message || `Meta answered ${res.status}` }
+    const apps: any[] = Array.isArray(raw?.data) ? raw.data : []
+    const ours = apps.find(a => META_APP_ID && String(a.id) === META_APP_ID) || (!META_APP_ID ? apps[0] : null)
+    return { subscribed: !!ours, fields: Array.isArray(ours?.subscribed_fields) ? ours.subscribed_fields : [], app: ours ? { id: String(ours.id), name: ours.name || null } : null, raw }
+  } catch (e: any) {
+    return { subscribed: false, fields: [], app: null, raw: null, error: e?.message || 'Could not reach Meta' }
+  }
+}
+
 // Send a message via the Send API. Works for both Messenger (PSID) and
 // Instagram (IGSID) — same endpoint, keyed by the Page.
 // `tag` (e.g. 'HUMAN_AGENT') sends outside the standard 24h window — the Human
