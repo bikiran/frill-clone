@@ -21,6 +21,7 @@ export const STATIC_MARKETING_ROUTES: string[] = [
   'all-in-one-customer-platform',
   'integrations',
   'ai-assistant',
+  'ai-agents',
   'phones',
   'compare',
   'about',

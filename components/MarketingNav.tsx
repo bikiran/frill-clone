@@ -120,24 +120,27 @@ const MENUS: Menu[] = [
   {
     key: 'ai', label: 'AI', accent: PURPLE,
     columns: [
-      { heading: 'Assist', items: [
+      { heading: 'AI agents', items: [
+        { icon: 'chat', title: 'Support Agent', desc: 'Orders, stock and hours, answered', href: '/ai-agents#support' },
+        { icon: 'calendar', title: 'Reception Agent', desc: 'Books and moves appointments', href: '/ai-agents#reception' },
+        { icon: 'tag', title: 'Sales Agent', desc: 'Follows up carts and quotes', href: '/ai-agents#sales' },
+        { icon: 'kanban', title: 'Operations Agent', desc: 'Catches late and stuck orders', href: '/ai-agents#operations' },
+        { icon: 'star', title: 'Reputation Agent', desc: 'Replies to reviews and comments', href: '/ai-agents#reputation' },
+      ] },
+      { heading: 'Assist your team', items: [
         { icon: 'ai', title: 'AI replies', desc: 'Draft answers in a blink', href: '/ai-assistant/ai-replies' },
         { icon: 'book', title: 'Knowledge base', desc: 'Teach it your docs', href: '/ai-assistant/knowledge-base' },
         { icon: 'pen', title: 'Auto-summaries', desc: 'Every thread, TL;DR’d', href: '/ai-assistant/auto-summaries' },
         { icon: 'mic', title: 'Voice typing', desc: 'Speak it, send it polished', href: '/product/voice-typing' },
       ] },
-      { heading: 'Act', items: [
+      { heading: 'Stay in control', items: [
+        { icon: 'lock', title: 'Drafts, limits & pause', desc: 'You decide what goes out alone', href: '/ai-agents#control' },
+        { icon: 'book', title: 'Business Memory', desc: 'Your tone, policies and rules', href: '/ai-agents#memory' },
         { icon: 'bolt', title: 'AI actions', desc: 'Look up orders, take action', href: '/ai-assistant/ai-actions' },
-        { icon: 'target', title: 'Auto-routing', desc: 'Right team, every time', href: '/ai-assistant/auto-routing' },
-        { icon: 'bell', title: 'Follow-ups', desc: 'Nudge at the right moment', href: '/ai-assistant/follow-ups' },
-      ] },
-      { heading: 'Automate', items: [
-        { icon: 'calendar', title: 'Tasks & reminders', desc: 'Turn chats into to-dos', href: '/ai-assistant/tasks-reminders' },
         { icon: 'link', title: 'Workflows', desc: 'Trigger actions on events', href: '/ai-assistant/workflows' },
-        { icon: 'lock', title: 'You stay in control', desc: 'Approve every action', href: '/ai-assistant/human-in-control' },
       ] },
     ],
-    feature: { eyebrow: 'Always-on AI', title: 'Replies drafted in a blink', desc: 'An assistant that knows your docs, drafts replies and takes real actions.', icon: 'ai', chips: ['Auto-reply', 'Summarise', 'Take action'], href: '/ai-assistant', cta: 'Meet the AI' },
+    feature: { eyebrow: 'New · AI agents', title: 'Your AI team, your rules', desc: 'Five agents that answer, book, follow up, chase orders and reply to reviews, and hand your team the rest.', icon: 'ai', chips: ['Support', 'Sales', 'Reviews'], href: '/ai-agents', cta: 'Meet the agents' },
   },
   {
     key: 'features', label: 'Features', accent: TEAL,
@@ -277,7 +280,7 @@ export default function MarketingNav({ dark = false, onToggleDark }: { dark?: bo
   // under /product (the feedback suite + hub) belongs to Product.
   const FEATURE_SLUGS = ['inbox', 'crm', 'gallery', 'notes', 'orders', 'payments', 'links', 'insights', 'calendar', 'tasks', 'broadcasts', 'automation']
   const onFeaturePage = FEATURE_SLUGS.some(s => pathname === `/product/${s}` || pathname.startsWith(`/product/${s}/`)) || pathname.startsWith('/features')
-  const isActive = (k: string) => (k === 'product' && pathname.startsWith('/product') && !onFeaturePage) || (k === 'solutions' && pathname.startsWith('/solutions')) || (k === 'channels' && (pathname.startsWith('/inbox-crm') || pathname.startsWith('/channels'))) || (k === 'phones' && pathname.startsWith('/phones')) || (k === 'integrations' && pathname.startsWith('/integrations')) || (k === 'ai' && pathname.startsWith('/ai-assistant')) || (k === 'features' && onFeaturePage) || (k === 'pricing' && pathname.startsWith('/pricing')) || (k === 'industries' && (pathname.startsWith('/industries') || pathname === '/for' || pathname.startsWith('/for/'))) || (k === 'phones' && pathname.startsWith('/business-phone-number'))
+  const isActive = (k: string) => (k === 'product' && pathname.startsWith('/product') && !onFeaturePage) || (k === 'solutions' && pathname.startsWith('/solutions')) || (k === 'channels' && (pathname.startsWith('/inbox-crm') || pathname.startsWith('/channels'))) || (k === 'phones' && pathname.startsWith('/phones')) || (k === 'integrations' && pathname.startsWith('/integrations')) || (k === 'ai' && (pathname.startsWith('/ai-assistant') || pathname.startsWith('/ai-agents'))) || (k === 'features' && onFeaturePage) || (k === 'pricing' && pathname.startsWith('/pricing')) || (k === 'industries' && (pathname.startsWith('/industries') || pathname === '/for' || pathname.startsWith('/for/'))) || (k === 'phones' && pathname.startsWith('/business-phone-number'))
   const moreActive = MORE_LINKS.some(n => pathname.startsWith(n.href))
 
   const handleDashboard = async () => {

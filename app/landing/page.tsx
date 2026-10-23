@@ -1,6 +1,7 @@
 'use client'
 
 import InviteCta from '@/components/InviteCta'
+import AgentTeamBand from '@/components/AgentTeamBand'
 import { useEffect, useState, useRef, ReactNode } from 'react'
 import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin } from '@/lib/redirect'
@@ -425,7 +426,7 @@ export default function LandingPage() {
                 </span>
               </h1>
               <p style={{ fontSize: 'clamp(16px, 1.7vw, 20px)', color: muted, lineHeight: 1.6, maxWidth: 520, margin: '0 0 32px' }}>
-                One shared inbox for Instagram, Messenger, email, SMS &amp; live chat — with WooCommerce, payments, media and AI built in. Talk to customers and close sales, all in one place.
+                One shared inbox for Instagram, Messenger, email, SMS &amp; live chat — with WooCommerce, payments, media and AI agents built in. Talk to customers and close sales, all in one place.
               </p>
               <div className="cv-hero-cta" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
                 <InviteCta onClick={handleDashboard} className="cv-btn-primary" style={btnPrimary}>{user ? 'Go to dashboard' : (<><span className="cv-lg">Start free — no card</span><span className="cv-sm">Start free</span></>)}</InviteCta>
@@ -542,6 +543,9 @@ export default function LandingPage() {
           )
         })}
       </div>
+
+      {/* AI TEAM — the five agents, linking to /ai-agents */}
+      <AgentTeamBand dark={dark} />
 
       {/* BEYOND THE INBOX — engagement suite carousel (slides in from the right) */}
       <FeatureSuite dark={dark} text={text} muted={muted} cardBorder={cardBorder} canvas={canvas} />

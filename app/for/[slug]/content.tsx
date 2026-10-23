@@ -89,7 +89,7 @@ export const FOR_CONTENT: Record<string, ForContent> = {
     steps: [
       { title: 'Every channel in one inbox', body: 'Instagram and Messenger DMs, SMS, email and your website chat arrive in one shared inbox, linked to the same customer profile.', uses: 'Shared inbox', href: '/inbox-crm' },
       { title: 'See their orders', body: 'Connect Shopify or WooCommerce and each buyer’s orders and spend sit beside the chat, with tracking from WooCommerce, ShipStation or labels made in Colvy.', uses: 'Orders in the inbox', href: '/product/orders' },
-      { title: 'Answer with AI, approve with a tap', body: 'The AI drafts replies from your product info and stock. You decide what it may send by itself.', uses: 'AI agents', href: '/ai-assistant' },
+      { title: 'Answer with AI, approve with a tap', body: 'The AI drafts replies from your product info and stock. You decide what it may send by itself.', uses: 'AI agents', href: '/ai-agents' },
       { title: 'Take payment in the chat', body: 'Send a secure payment link, or create the order and send its link. Payments are recorded on the conversation, and orders you create are marked paid in your store.', uses: 'Payment links', href: '/product/payments' },
       { title: 'Keep them updated', body: 'Order updates and delay notices go out by SMS, and order-status questions get answered from the real order.', uses: 'Order automation', href: '/product/orders' },
       { title: 'Win back and grow', body: 'Follow up abandoned carts, text waiting customers when stock is back and ask happy buyers for a review.', uses: 'Carts, waitlists & reviews', href: '/product/abandoned-carts' },
@@ -230,7 +230,7 @@ export const FOR_CONTENT: Record<string, ForContent> = {
     steps: [
       { title: 'A number for every store', body: 'Buy Australian local numbers in minutes and assign each to its location, plus an 04 mobile for texting. Calls ring in the browser and the mobile app.', uses: 'Business numbers', href: '/business-phone-number-australia' },
       { title: 'One shared inbox', body: 'Calls, texts, DMs and email for every store in one place, with the customer’s history beside each conversation.', uses: 'Shared inbox', href: '/inbox-crm' },
-      { title: 'Live stock', body: 'Your team and the AI agents check live stock before they answer.', uses: 'AI agents', href: '/ai-assistant' },
+      { title: 'Live stock', body: 'Your team and the AI agents check live stock before they answer.', uses: 'AI agents', href: '/ai-agents' },
       { title: 'Paid before pickup', body: 'Create the order in the conversation and send its payment link; once paid it’s ready to collect.', uses: 'Payment links', href: '/product/payments' },
       { title: 'Answer every review', body: 'Google reviews come into Colvy, with AI-drafted replies in your voice.', uses: 'Reviews', href: '/solutions/reviews' },
       { title: 'Compare locations', body: 'Link Reports by outlet show how each store’s links convert, and order reports and the call Command Centre can be filtered by store.', uses: 'Link Reports', href: '/product/links' },
@@ -369,7 +369,7 @@ export const FOR_CONTENT: Record<string, ForContent> = {
     steps: [
       { title: 'One inbox for the floor', body: 'Calls, Instagram, Facebook, texts and email in one place your whole team can check.', uses: 'Shared inbox', href: '/inbox-crm' },
       { title: 'Text back missed calls', body: 'Callers you miss during service get an automatic text so they don’t book elsewhere.', uses: 'Business phone', href: '/business-phone-number-australia' },
-      { title: 'Instant answers', body: 'The AI answers hours, holiday hours and menu questions from your notes.', uses: 'AI agents', href: '/ai-assistant' },
+      { title: 'Instant answers', body: 'The AI answers hours, holiday hours and menu questions from your notes.', uses: 'AI agents', href: '/ai-agents' },
       { title: 'Functions with deposits', body: 'Collect function details with a form, then take the deposit with a payment link.', uses: 'Forms & payments', href: '/product/payments' },
       { title: 'Reply to every review', body: 'Google reviews in one list, with AI-drafted replies in your voice.', uses: 'Reviews', href: '/solutions/reviews' },
       { title: 'Text your regulars', body: 'SMS broadcasts to customers who opted in, with delivery and clicks tracked.', uses: 'Broadcasts', href: '/product/broadcasts' },

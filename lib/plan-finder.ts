@@ -30,6 +30,7 @@ export const EXTRAS = [
   { id: 'bookings', label: 'Bookings & deposits', suite: 'inbox' },
   { id: 'store', label: 'Online store orders', suite: 'inbox' },
   { id: 'campaigns', label: 'SMS campaigns', suite: 'inbox' },
+  { id: 'agents', label: 'AI agents', suite: 'inbox' },
   { id: 'ideas', label: 'Ideas & roadmap', suite: 'feedback' },
   { id: 'surveys', label: 'Surveys, polls & forms', suite: 'feedback' },
   { id: 'help', label: 'Help center', suite: 'feedback' },
@@ -62,6 +63,7 @@ export function recommendPlan(a: FinderAnswers): { plan: PlanId; reasons: string
 
   if ((inbox && feedback) || whiteLabel || insights) {
     if (inbox && feedback) reasons.push('Inbox and the Feedback suite, working as one')
+    if (a.extras.includes('agents')) reasons.push('All five AI agents')
     else if (inbox) reasons.push('Every channel in one shared inbox')
     else if (feedback) reasons.push('The full Feedback suite')
     if (a.brand === 'domain') reasons.push('Your brand on your own domain')
@@ -73,7 +75,8 @@ export function recommendPlan(a: FinderAnswers): { plan: PlanId; reasons: string
 
   if (inbox) {
     reasons.push(a.channels.length > 1 ? 'Every channel in one shared inbox' : 'A shared inbox with contacts and CRM')
-    if (a.extras.includes('bookings')) reasons.push('Online booking, deposits and reminders')
+    if (a.extras.includes('agents')) reasons.push('Five AI agents that answer, book and follow up')
+    else if (a.extras.includes('bookings')) reasons.push('Online booking, deposits and reminders')
     else if (a.extras.includes('store')) reasons.push('WooCommerce and Shopify orders beside each chat')
     else reasons.push('AI flow automation that answers out of hours')
     reasons.push(a.channels.includes('sms') || a.extras.includes('campaigns')

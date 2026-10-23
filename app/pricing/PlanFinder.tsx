@@ -21,6 +21,7 @@ const GLYPHS: Record<string, ReactNode> = {
   bookings: <><rect x="3" y="4" width="18" height="17" rx="2" /><line x1="3" y1="9" x2="21" y2="9" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="16" y1="2" x2="16" y2="6" /></>,
   store: <><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" /><line x1="3" y1="6" x2="21" y2="6" /><path d="M16 10a4 4 0 0 1-8 0" /></>,
   campaigns: <><path d="M3 11v2a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1z" /><path d="M16 8a5 5 0 0 1 0 8" /><path d="M19 5a9 9 0 0 1 0 14" /></>,
+  agents: <><rect x="4" y="7" width="16" height="12" rx="3" /><line x1="12" y1="3" x2="12" y2="7" /><circle cx="9" cy="13" r="1.2" fill="currentColor" /><circle cx="15" cy="13" r="1.2" fill="currentColor" /></>,
   ideas: <><path d="M9 18h6" /><path d="M10 22h4" /><path d="M12 2a7 7 0 0 0-4 12.7V16h8v-1.3A7 7 0 0 0 12 2z" /></>,
   surveys: <><rect x="5" y="3" width="14" height="18" rx="2" /><polyline points="8.5 9 10 10.5 12.5 8" /><line x1="14" y1="9.5" x2="16" y2="9.5" /><polyline points="8.5 15 10 16.5 12.5 14" /><line x1="14" y1="15.5" x2="16" y2="15.5" /></>,
   help: <><circle cx="12" cy="12" r="9" /><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2.5-3 4" /><line x1="12" y1="17" x2="12.01" y2="17" /></>,
