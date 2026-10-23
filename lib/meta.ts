@@ -224,17 +224,41 @@ export async function fetchPageComment(
 }
 
 // Fetch a sender's profile (name, avatar) so the contact isn't just an opaque id.
+// The sender's name and photo. The profile endpoint needs Meta's "Business
+// Asset User Profile Access" (granted in App Review); until then Meta refuses
+// it for anyone without a role on the app. So when it gives no name, ask the
+// Page's conversation list instead, whose participants carry the name with the
+// messaging permission alone. Meta's refusal is logged so it can be seen.
 export async function fetchMetaProfile(
-  userId: string, pageToken: string, platform: 'facebook' | 'instagram'
-): Promise<{ name?: string; avatar?: string }> {
+  userId: string, pageToken: string, platform: 'facebook' | 'instagram', pageId?: string | null
+): Promise<{ name?: string; avatar?: string; error?: string }> {
+  let name: string | undefined, avatar: string | undefined, error: string | undefined
   try {
     const fields = platform === 'instagram' ? 'name,username,profile_pic' : 'first_name,last_name,profile_pic'
     const res = await fetch(`${GRAPH}/${userId}?fields=${fields}&access_token=${encodeURIComponent(pageToken)}`)
-    if (!res.ok) return {}
-    const d = await res.json()
-    const name = platform === 'instagram'
-      ? (d.name || d.username)
-      : [d.first_name, d.last_name].filter(Boolean).join(' ')
-    return { name: name || undefined, avatar: d.profile_pic || undefined }
-  } catch { return {} }
+    const d = await res.json().catch(() => ({}))
+    if (res.ok) {
+      name = (platform === 'instagram' ? (d.name || d.username) : [d.first_name, d.last_name].filter(Boolean).join(' ')) || undefined
+      avatar = d.profile_pic || undefined
+    } else {
+      error = d?.error?.message || `Meta answered ${res.status}`
+    }
+  } catch (e: any) { error = e?.message || 'profile fetch failed' }
+  if (!name && pageId && !String(pageId).startsWith('iglogin:')) {
+    try {
+      const q = new URLSearchParams({ platform: platform === 'instagram' ? 'instagram' : 'messenger', user_id: userId, fields: 'participants', access_token: pageToken })
+      const res = await fetch(`${GRAPH}/${pageId}/conversations?${q.toString()}`)
+      const d = await res.json().catch(() => ({}))
+      const people: any[] = d?.data?.[0]?.participants?.data || []
+      const them = people.find(p => String(p.id) === String(userId))
+      const found = them?.name || them?.username
+      if (found) { name = found; error = undefined }
+      else if (!res.ok && !error) error = d?.error?.message || `Meta answered ${res.status}`
+    } catch { /* keep the first error */ }
+  }
+  if (!name && error) console.warn('[meta] no name for', platform, 'sender', userId, '—', error)
+  return { name, avatar, error }
 }
+
+/** The stand-in names used when Meta gives none, so a later message can try again. */
+export const PLACEHOLDER_META_NAMES = new Set(['Messenger user', 'Instagram user', 'Facebook user'])

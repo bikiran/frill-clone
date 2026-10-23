@@ -2,7 +2,7 @@ import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
-import { META_VERIFY_TOKEN, META_APP_SECRET, fetchMetaProfile, fetchPageComment } from '@/lib/meta'
+import { META_VERIFY_TOKEN, META_APP_SECRET, fetchMetaProfile, fetchPageComment, PLACEHOLDER_META_NAMES } from '@/lib/meta'
 import { isIgLoginChannel, fetchInstagramUserProfile, fetchInstagramComment, INSTAGRAM_APP_SECRET } from '@/lib/instagram-login'
 import { linkContactIdentity } from '@/lib/identity'
 import { rehostRemoteMedia } from '@/lib/media-rehost'
@@ -165,26 +165,31 @@ export async function POST(req: NextRequest) {
         const { data: existing } = await db.from('contacts').select('*')
           .eq('company_id', companyId).eq('meta_user_id', senderId).maybeSingle()
         contact = existing
+        const lookUp = () => isIgLoginChannel(channel)
+          ? fetchInstagramUserProfile(senderId, channel.page_access_token)
+          : fetchMetaProfile(senderId, channel.page_access_token, platform, channel.page_id)
         if (!contact) {
-          const prof = isIgLoginChannel(channel)
-            ? await fetchInstagramUserProfile(senderId, channel.page_access_token)
-            : await fetchMetaProfile(senderId, channel.page_access_token, platform)
-          const { data: created } = await db.from('contacts').insert({
+          const prof: any = await lookUp()
+          const { data: created, error: createErr } = await db.from('contacts').insert({
             company_id: companyId,
             name: prof.name || (platform === 'instagram' ? 'Instagram user' : 'Messenger user'),
             avatar_url: prof.avatar || null,
             meta_user_id: senderId,
             source: platform,
           }).select().maybeSingle()
+          if (createErr) console.warn('[meta] contact not created', createErr.message)
           contact = created
-        } else if (!contact.avatar_url) {
-          // Backfill the photo for an existing contact that doesn't have one.
-          const prof = isIgLoginChannel(channel)
-            ? await fetchInstagramUserProfile(senderId, channel.page_access_token)
-            : await fetchMetaProfile(senderId, channel.page_access_token, platform)
-          if (prof.avatar) {
-            await db.from('contacts').update({ avatar_url: prof.avatar }).eq('id', contact.id)
-            contact.avatar_url = prof.avatar
+        } else if (!contact.name || PLACEHOLDER_META_NAMES.has(contact.name) || !contact.avatar_url) {
+          // No real name (Meta refused it last time) or no photo yet: ask again,
+          // and only fill what's missing; a name someone typed in is kept.
+          const prof: any = await lookUp()
+          const patch: Record<string, any> = {}
+          if (prof.name && (!contact.name || PLACEHOLDER_META_NAMES.has(contact.name))) patch.name = prof.name
+          if (prof.avatar && !contact.avatar_url) patch.avatar_url = prof.avatar
+          if (Object.keys(patch).length) {
+            await db.from('contacts').update(patch).eq('id', contact.id)
+            Object.assign(contact, patch)
+            if (patch.name) await db.from('conversations').update({ subject: `${platform === 'instagram' ? 'Instagram' : 'Messenger'} — ${patch.name}` }).eq('company_id', companyId).eq('meta_user_id', senderId).then(() => {}, () => {})
           }
         }
 
