@@ -10,6 +10,8 @@ import Pagination, { usePagination } from '@/components/Pagination'
 
 type Comment = {
   id: string
+  platform?: string | null
+  post_id?: string | null
   contact_id?: string | null
   contact_name?: string | null
   external_comment_id: string
@@ -28,6 +30,27 @@ type Comment = {
   commented_at: string | null
 }
 
+type Post = { id: string; platform: string | null; permalink: string | null; message: string | null; media_url: string | null; post_type: string | null }
+
+const PLATFORM: Record<string, { label: string; color: string; bg: string }> = {
+  instagram: { label: 'Instagram', color: '#C13584', bg: 'linear-gradient(45deg,#F58529 0%,#DD2A7B 50%,#8134AF 80%,#515BD4 100%)' },
+  facebook: { label: 'Facebook', color: '#1877F2', bg: '#1877F2' },
+}
+const platformOf = (c: { platform?: string | null }) => (c.platform === 'instagram' ? 'instagram' : 'facebook')
+
+/** The Instagram / Facebook mark, white on the brand colour. */
+function PlatformMark({ platform, size = 16 }: { platform: string; size?: number }) {
+  const p = PLATFORM[platform] || PLATFORM.facebook
+  const g = Math.round(size * 0.62)
+  return (
+    <span aria-label={p.label} title={p.label} style={{ width: size, height: size, borderRadius: platform === 'instagram' ? Math.round(size * 0.3) : '50%', background: p.bg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+      {platform === 'instagram'
+        ? <svg width={g} height={g} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5" /><circle cx="12" cy="12" r="4.2" /><circle cx="17.4" cy="6.6" r="1.1" fill="#fff" stroke="none" /></svg>
+        : <svg width={g} height={g} viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M14 8.5V6.8c0-.8.2-1.3 1.4-1.3H17V2.3C16.7 2.2 15.7 2 14.6 2 12.2 2 10.6 3.5 10.6 6.1v2.4H8V12h2.6v10H14V12h2.7l.4-3.5H14z" /></svg>}
+    </span>
+  )
+}
+
 export default function SocialEngagementPage() {
   const { companyId, loading } = useCompanyUser()
   const [isMobile, setIsMobile] = useState(false)
@@ -40,6 +63,7 @@ export default function SocialEngagementPage() {
   const [checked, setChecked] = useState(false)
   const [comments, setComments] = useState<Comment[]>([])
   const [postCount, setPostCount] = useState(0)
+  const [posts, setPosts] = useState<Record<string, Post>>({})
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState('')
 
@@ -48,6 +72,7 @@ export default function SocialEngagementPage() {
   const [risk, setRisk] = useState<'all' | 'safe' | 'critical'>('all')
   const [type, setType] = useState<'all' | 'unreplied' | 'replied'>('all')
   const [cat, setCat] = useState('')
+  const [platform, setPlatform] = useState<'all' | 'instagram' | 'facebook'>('all')
   const [showArchived, setShowArchived] = useState(false)
   // Deep-link from the inbox: ?comment=<id> → jump to and highlight that comment.
   const [highlightCommentId, setHighlightCommentId] = useState<string | null>(null)
@@ -55,7 +80,7 @@ export default function SocialEngagementPage() {
   useEffect(() => {
     if (!highlightCommentId || comments.length === 0) return
     // Clear filters so the target is never hidden, then scroll to it.
-    setSearch(''); setRisk('all'); setType('all'); setCat(''); setShowArchived(true)
+    setSearch(''); setRisk('all'); setType('all'); setCat(''); setPlatform('all'); setShowArchived(true)
     const t = setTimeout(() => { try { document.getElementById(`comment-${highlightCommentId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }) } catch {} }, 300)
     const clear = setTimeout(() => setHighlightCommentId(null), 6000)
     return () => { clearTimeout(t); clearTimeout(clear) }
@@ -124,14 +149,15 @@ export default function SocialEngagementPage() {
 
   const load = useCallback(async () => {
     if (!companyId) return
-    const [{ data: chans }, cmts, posts] = await Promise.all([
+    const [{ data: chans }, cmts, postRes] = await Promise.all([
       (supabase as any).from('meta_channels').select('page_name').eq('company_id', companyId).in('platform', ['facebook', 'instagram']).eq('is_active', true).limit(1),
       (supabase as any).from('social_comments').select('*').eq('company_id', companyId).order('commented_at', { ascending: false }).limit(2000),
-      (supabase as any).from('social_posts').select('*', { count: 'exact', head: true }).eq('company_id', companyId),
+      (supabase as any).from('social_posts').select('id, platform, permalink, message, media_url, post_type', { count: 'exact' }).eq('company_id', companyId).order('posted_at', { ascending: false }).limit(1000),
     ])
     setConnected(chans?.[0] || null)
     setComments(cmts.data || [])
-    setPostCount(posts.count || 0)
+    setPostCount(postRes.count || 0)
+    setPosts(Object.fromEntries((postRes.data || []).map((p: Post) => [p.id, p])))
     setChecked(true)
   }, [companyId])
 
@@ -219,7 +245,10 @@ export default function SocialEngagementPage() {
     } catch {} finally { setDrafting(null) }
   }
 
-  const active = comments.filter(c => showArchived ? c.is_archived : !c.is_archived)
+  const shown = comments.filter(c => showArchived ? c.is_archived : !c.is_archived)
+  const platformCounts = { instagram: 0, facebook: 0 }
+  for (const c of shown) platformCounts[platformOf(c)]++
+  const active = platform === 'all' ? shown : shown.filter(c => platformOf(c) === platform)
   const stats = {
     posts: postCount,
     comments: comments.filter(c => !c.is_archived).length,
@@ -242,7 +271,7 @@ export default function SocialEngagementPage() {
   })
 
   // 2,000 comments in one scroll was unworkable — page them like Reviews.
-  const pg = usePagination(filtered, { key: 'social', defaultSize: 25, resetOn: [risk, type, cat, search, showArchived] })
+  const pg = usePagination(filtered, { key: 'social', defaultSize: 25, resetOn: [risk, type, cat, search, showArchived, platform] })
   // A deep link to one comment opens the page it's on.
   const highlightIndex = highlightCommentId ? filtered.findIndex(c => c.id === highlightCommentId) : -1
   useEffect(() => {
@@ -271,6 +300,8 @@ export default function SocialEngagementPage() {
         .se-btn:disabled { opacity:.6; cursor:default; }
         .se-fchip { padding:6px 11px; border-radius:999px; border:1px solid var(--border); background:#fff; color:var(--slate); font-size:12px; font-weight:700; cursor:pointer; }
         .se-fchip.on { background:var(--peach); border-color:var(--coral); color:var(--coral); }
+        .se-post { display:inline-flex; align-items:center; gap:8px; max-width:100%; box-sizing:border-box; margin:0 0 10px; padding:5px 10px 5px 5px; border-radius:10px; border:1px solid var(--border); background:var(--canvas); color:var(--slate); font-size:11.5px; font-weight:600; text-decoration:none; }
+        .se-post:hover { color:var(--ink); border-color:#d6d3d1; }
       `}</style>
 
       <PageHeader
@@ -313,16 +344,22 @@ export default function SocialEngagementPage() {
             ) : pg.items.map(c => {
               const critical = (c.risk_level || 'safe') === 'critical'
               const hot = c.id === highlightCommentId
+              const plat = platformOf(c)
+              const post = c.post_id ? posts[c.post_id] : undefined
+              const postText = (post?.message || '').replace(/\s+/g, ' ').trim()
               return (
               <div key={c.id} id={`comment-${c.id}`} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '16px 18px', marginBottom: 14, opacity: c.is_hidden ? 0.6 : 1, boxShadow: hot ? '0 0 0 3px var(--coral)' : undefined, transition: 'box-shadow 0.4s' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                    {c.author_photo
-                      ? <img src={c.author_photo} alt="" referrerPolicy="no-referrer" style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover' }} />
-                      : <span style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13 }}>{(c.author_name || '?').charAt(0).toUpperCase()}</span>}
+                    <span style={{ position: 'relative', flexShrink: 0 }}>
+                      {c.author_photo
+                        ? <img src={c.author_photo} alt="" referrerPolicy="no-referrer" style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', display: 'block' }} />
+                        : <span style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13 }}>{(c.author_name || '?').charAt(0).toUpperCase()}</span>}
+                      <span style={{ position: 'absolute', right: -3, bottom: -3, borderRadius: plat === 'instagram' ? 6 : '50%', boxShadow: '0 0 0 2px #fff', display: 'flex' }}><PlatformMark platform={plat} size={16} /></span>
+                    </span>
                     <div style={{ minWidth: 0 }}>
-                      <p style={{ margin: 0, fontWeight: 800, fontSize: 14 }}>{c.author_name || 'Facebook user'}</p>
-                      <p style={{ margin: 0, fontSize: 11, color: 'var(--slate)' }}>{c.commented_at ? new Date(c.commented_at).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}{c.is_hidden ? ' · hidden' : ''}{c.is_replied ? ' · replied' : ''}</p>
+                      <p style={{ margin: 0, fontWeight: 800, fontSize: 14 }}>{c.author_name || `${PLATFORM[plat].label} user`}</p>
+                      <p style={{ margin: 0, fontSize: 11, color: 'var(--slate)' }}><span style={{ color: PLATFORM[plat].color, fontWeight: 700 }}>{PLATFORM[plat].label}</span> · {c.commented_at ? new Date(c.commented_at).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}{c.is_hidden ? ' · hidden' : ''}{c.is_replied ? ' · replied' : ''}</p>
                       <button onClick={() => openLink(c)} title="Match this commenter to a customer"
                         style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 3, padding: '2px 8px', borderRadius: 999, border: '1px solid var(--border)', background: c.contact_id ? 'var(--peach)' : '#fff', color: c.contact_id ? 'var(--coral)' : 'var(--slate)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
@@ -339,6 +376,18 @@ export default function SocialEngagementPage() {
 
                 <p style={{ margin: '0 0 8px', fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.55 }}>{c.message || <span style={{ color: 'var(--slate)', fontStyle: 'italic' }}>(no text)</span>}</p>
                 {c.attachment_url && <img src={c.attachment_url} alt="" referrerPolicy="no-referrer" style={{ maxWidth: 200, borderRadius: 10, marginBottom: 8 }} />}
+                {post && (
+                  <a href={post.permalink || undefined} target="_blank" rel="noopener noreferrer" className="se-post" title={post.permalink ? `Open the ${post.post_type || 'post'} on ${PLATFORM[plat].label}` : undefined}
+                    style={{ pointerEvents: post.permalink ? undefined : 'none' }}>
+                    {post.media_url
+                      ? <img src={post.media_url} alt="" referrerPolicy="no-referrer" onError={e => { e.currentTarget.style.display = 'none' }} style={{ width: 30, height: 30, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />
+                      : <PlatformMark platform={plat} size={18} />}
+                    <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      On {post.post_type && post.post_type !== 'post' ? `a ${post.post_type.toLowerCase().replace(/_/g, ' ')}` : 'a post'}{postText ? `: “${postText.slice(0, 90)}${postText.length > 90 ? '…' : ''}”` : ''}
+                    </span>
+                    {post.permalink && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}><path d="M14 4h6v6" /><path d="M10 14L20 4" /><path d="M19 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h6" /></svg>}
+                  </a>
+                )}
 
                 {c.category && <span style={{ display: 'inline-block', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 8, background: 'var(--canvas)', color: 'var(--slate)' }}>{c.category}</span>}
 
@@ -385,6 +434,16 @@ export default function SocialEngagementPage() {
           <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: 16, position: 'sticky', top: 16 }}>
             <p style={{ margin: '0 0 10px', fontWeight: 800, fontSize: 14 }}>Filter</p>
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…" style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, outline: 'none', marginBottom: 14 }} />
+
+            <p style={{ margin: '0 0 6px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', color: 'var(--slate)' }}>Platform</p>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+              <button className={'se-fchip' + (platform === 'all' ? ' on' : '')} onClick={() => setPlatform('all')}>All</button>
+              {(['instagram', 'facebook'] as const).map(v => (
+                <button key={v} className={'se-fchip' + (platform === v ? ' on' : '')} onClick={() => setPlatform(platform === v ? 'all' : v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <PlatformMark platform={v} size={14} />{PLATFORM[v].label}<span style={{ opacity: 0.7 }}>{platformCounts[v]}</span>
+                </button>
+              ))}
+            </div>
 
             <p style={{ margin: '0 0 6px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', color: 'var(--slate)' }}>Risk level</p>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
