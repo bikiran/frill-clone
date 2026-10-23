@@ -137,6 +137,41 @@ export default function SocialEngagementPage() {
 
   useEffect(() => { load() }, [load])
 
+  // Live: comments arrive by webhook, then get classified and maybe answered by
+  // the AI. Merge those changes in as they happen instead of needing a reload.
+  useEffect(() => {
+    if (!companyId) return
+    // The Reputation Agent's draft lands just after the comment does.
+    let draftsTimer: ReturnType<typeof setTimeout> | undefined
+    const ch = (supabase as any).channel(`social-comments-${companyId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'social_comments', filter: `company_id=eq.${companyId}` }, (p: any) => {
+        if (p.eventType === 'DELETE') { setComments(cs => cs.filter(c => c.id !== p.old?.id)); return }
+        const row = p.new; if (!row?.id) return
+        setComments(cs => {
+          const i = cs.findIndex(c => c.id === row.id)
+          if (i >= 0) { const nx = cs.slice(); nx[i] = { ...nx[i], ...row }; return nx }
+          return [row, ...cs].sort((a, b) => String(b.commented_at || '').localeCompare(String(a.commented_at || '')))
+        })
+        clearTimeout(draftsTimer); draftsTimer = setTimeout(loadDrafts, 2500)
+      })
+      .subscribe()
+    return () => { clearTimeout(draftsTimer); try { (supabase as any).removeChannel(ch) } catch {} }
+  }, [companyId, loadDrafts])
+
+  // Coming back to the tab (or if realtime isn't available) catches up quietly.
+  useEffect(() => {
+    if (!companyId) return
+    let last = Date.now()
+    const catchUp = () => {
+      if (document.visibilityState !== 'visible' || Date.now() - last < 15_000) return
+      last = Date.now(); load(); loadDrafts()
+    }
+    document.addEventListener('visibilitychange', catchUp)
+    window.addEventListener('focus', catchUp)
+    const t = setInterval(catchUp, 60_000)
+    return () => { document.removeEventListener('visibilitychange', catchUp); window.removeEventListener('focus', catchUp); clearInterval(t) }
+  }, [companyId, load, loadDrafts])
+
   const sync = async () => {
     if (!companyId || syncing) return
     setSyncing(true); setSyncMsg('')
