@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { authFetch } from '@/lib/auth-fetch'
+import { supabase } from '@/lib/supabase'
 import { SuggestionCard } from '@/components/AgentSuggestion'
 import { useNeedsYou, ICON, Check, Bell, Target, Arrow, ico, EASE, NY_CSS, type Item, type Payload } from '@/components/NeedsYou'
 
@@ -90,9 +91,26 @@ function Stat({ icon, tone, value, label, chip, chipTone, bar }: { icon: React.R
   )
 }
 
+// "No reply needed": closes the enquiry, as Close does in the inbox. A new
+// message from the customer opens it again, and it comes back here if unanswered.
+async function closeNoReply(companyId: string, conversationId: string) {
+  const { data: { session } } = await supabase.auth.getSession()
+  const actor = session?.user?.user_metadata?.display_name || session?.user?.email?.split('@')[0] || 'Your team'
+  const { error } = await (supabase as any).from('conversations').update({ status: 'closed' }).eq('id', conversationId).eq('company_id', companyId)
+  if (error) throw error
+  await (supabase as any).from('conversation_events').insert({ conversation_id: conversationId, company_id: companyId, event_type: 'closed', actor_name: actor, detail: 'Closed from Needs you: no reply needed.' })
+}
+
 function Detail({ item, companyId, now, onDone, inline }: { item: Item; companyId: string; now: number; onDone: () => void; inline?: boolean }) {
   const [tab, setTab] = useState<'next' | 'customer'>('next')
-  useEffect(() => { setTab('next') }, [item.key])
+  const [closing, setClosing] = useState<'' | 'busy' | 'error'>('')
+  useEffect(() => { setTab('next'); setClosing('') }, [item.key])
+  const canClose = !!item.conversationId && (item.kind === 'reply' || item.kind === 'handover')
+  const close = async () => {
+    if (!item.conversationId) return
+    setClosing('busy')
+    try { await closeNoReply(companyId, item.conversationId); onDone() } catch { setClosing('error') }
+  }
   const ch = channelName(item.channel)
   const name = who(item)
   return (
@@ -124,7 +142,11 @@ function Detail({ item, companyId, now, onDone, inline }: { item: Item; companyI
               <p className="nyp-d-title"><span className={`ny-ic ${item.kind}`}>{ICON[item.kind]}</span>{item.title}</p>
               <p className="nyp-d-text">{item.detail}</p>
               {item.value ? <p className="nyp-d-value">{money(item.value)} waiting on this</p> : null}
-              <a className="nyp-primary" href={item.href}>{OPEN[item.kind]} <Arrow /></a>
+              <div className="nyp-actions">
+                <a className="nyp-primary" href={item.href}>{OPEN[item.kind]} <Arrow /></a>
+                {canClose && <button type="button" className="nyp-secondary" onClick={close} disabled={closing === 'busy'} title="Closes the enquiry. If they write again, it comes back.">{closing === 'busy' ? 'Closing…' : 'No reply needed'}</button>}
+              </div>
+              {closing === 'error' && <p className="nyp-d-text" style={{ color: '#b42318' }} role="alert">Couldn’t close it. Try again, or close it from the inbox.</p>}
             </>
           )}
         </div>
@@ -451,6 +473,11 @@ const CSS = `
 .nyp-d-title .ny-ic{width:30px;height:30px;border-radius:10px}
 .nyp-d-text{margin:8px 0 0;font-size:13.5px;color:var(--slate);line-height:1.5}
 .nyp-d-value{margin:8px 0 0;font-size:13.5px;font-weight:800;color:var(--ink)}
+.nyp-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px}
+.nyp-actions .nyp-primary{margin-top:0}
+.nyp-secondary{display:inline-flex;align-items:center;height:40px;padding:0 14px;border-radius:12px;border:1px solid var(--border);background:#fff;color:var(--ink);font:inherit;font-size:14px;font-weight:700;cursor:pointer;transition:border-color .2s ease,transform .15s ${EASE}}
+.nyp-secondary::before{display:none}
+.nyp-secondary:hover{border-color:var(--slate)}.nyp-secondary:active{transform:scale(.97)}.nyp-secondary:disabled{opacity:.6;cursor:default}
 .nyp-primary{display:inline-flex;align-items:center;gap:6px;margin-top:14px;height:40px;padding:0 16px;border-radius:12px;background:var(--coral);color:#fff;font-size:14px;font-weight:800;text-decoration:none;transition:transform .15s ${EASE}}
 .nyp-primary:active{transform:scale(.97)}
 .nyp-facts{margin:0;display:grid;gap:10px}
