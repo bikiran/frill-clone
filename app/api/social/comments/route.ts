@@ -3,7 +3,7 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { admin, getFacebookChannel, setCommentHidden, privateReply, setIgCommentHidden } from '@/lib/social-sync'
 import { isIgLoginChannel, hideInstagramComment, sendInstagramCommentPrivateReply } from '@/lib/instagram-login'
-import { postCommentReply } from '@/lib/social-reply'
+import { IG_COMMENTS_PERMISSION, postCommentReply } from '@/lib/social-reply'
 import { modelFor, trackAi } from '@/lib/ai-models'
 import { memoryForPrompt, memoryBlock } from '@/lib/agent/business-memory'
 
@@ -136,6 +136,8 @@ Write a short, warm, human reply (1-2 sentences). Don't invent facts or offers. 
 
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+    // A page-linked Instagram action Meta refused for want of a permission: say what to do.
+    const msg = /missing permission/i.test(String(e?.message || '')) ? IG_COMMENTS_PERMISSION : e.message
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

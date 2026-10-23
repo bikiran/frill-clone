@@ -39,6 +39,10 @@ export const META_MESSAGING_SCOPES = [
   'pages_messaging',
   'instagram_basic',
   'instagram_manage_messages',
+  // Replying to / hiding comments on a page-linked Instagram account
+  // (POST /{ig-comment-id}/replies): without it Meta answers "(#100) Missing
+  // Permission". Part of the same Instagram use case as the DM scopes.
+  'instagram_manage_comments',
   'business_management',
 ]
 
