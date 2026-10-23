@@ -1,8 +1,8 @@
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { isMetaConfigured } from '@/lib/meta'
-import { isInstagramLoginConfigured, INSTAGRAM_REDIRECT_URI } from '@/lib/instagram-login'
+import { isMetaConfigured, getPageSubscription, subscribePageWebhooks } from '@/lib/meta'
+import { isInstagramLoginConfigured, INSTAGRAM_REDIRECT_URI, isIgLoginChannel, getInstagramSubscription, subscribeInstagramWebhooks } from '@/lib/instagram-login'
 
 export const dynamic = 'force-dynamic'
 
@@ -70,6 +70,30 @@ export async function POST(req: NextRequest) {
     if (action === 'toggle') {
       await db.from('meta_channels').update({ is_active: body.is_active !== false }).eq('id', id)
       return NextResponse.json({ ok: true })
+    }
+    // Is this account sending its messages to Colvy? Asked live from Meta, so the
+    // status shown is Meta's own answer. 'resubscribe' subscribes again first.
+    if (action === 'webhook_status' || action === 'resubscribe') {
+      const { data: row } = await db.from('meta_channels').select('id, platform, page_id, ig_account_id, page_access_token').eq('id', id).maybeSingle()
+      if (!row?.page_access_token) return NextResponse.json({ error: 'This account has no access token. Connect it again.' }, { status: 400 })
+      const igLogin = isIgLoginChannel(row)
+      let subscribeError: string | null = null
+      if (action === 'resubscribe') {
+        const r = igLogin
+          ? await subscribeInstagramWebhooks(String(row.ig_account_id), row.page_access_token)
+          : await subscribePageWebhooks(String(row.page_id), row.page_access_token)
+        subscribeError = r.ok ? null : (r.error || 'Subscription failed')
+      }
+      const status = igLogin
+        ? await getInstagramSubscription(String(row.ig_account_id), row.page_access_token)
+        : await getPageSubscription(String(row.page_id), row.page_access_token)
+      // Keep the connection's error line in step with what Meta just said.
+      await db.from('meta_channels').update({ last_error: status.subscribed ? null : (subscribeError || status.error || 'Not subscribed to webhooks: new messages won’t arrive.') }).eq('id', id)
+      return NextResponse.json({
+        ...status, subscribeError, checkedAt: new Date().toISOString(),
+        endpoint: igLogin ? `GET graph.instagram.com/${row.ig_account_id}/subscribed_apps` : `GET graph.facebook.com/${row.page_id}/subscribed_apps`,
+        via: igLogin ? 'instagram' : row.platform === 'instagram' ? 'page' : 'facebook',
+      })
     }
     if (action === 'disconnect') {
       await db.from('meta_channels').delete().eq('id', id)

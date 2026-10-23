@@ -101,7 +101,9 @@ export async function GET(req: NextRequest) {
 
       // Subscribe the Page to messaging webhooks (best-effort; App Review may
       // gate this until approved).
-      await subscribePageWebhooks(page.id, pageToken).catch(() => {})
+      // Shown on the Channels page if it fails (it used to be dropped silently).
+      const sub = await subscribePageWebhooks(page.id, pageToken).catch((e: any) => ({ ok: false, error: e?.message || 'failed' }))
+      const subError = sub.ok ? null : `Webhook subscription failed: ${sub.error || 'unknown error'}. Use “Subscribe now” below.`
 
       const ig = page.instagram_business_account
 
@@ -114,7 +116,7 @@ export async function GET(req: NextRequest) {
         page_access_token: pageToken,
         token_expires_at: new Date(Date.now() + 55 * 24 * 3600 * 1000).toISOString(),
         is_active: true,
-        last_error: null,
+        last_error: subError,
       }, { onConflict: 'company_id,platform,page_id' })
       connected++
 
@@ -130,7 +132,7 @@ export async function GET(req: NextRequest) {
           page_access_token: pageToken,
           token_expires_at: new Date(Date.now() + 55 * 24 * 3600 * 1000).toISOString(),
           is_active: true,
-          last_error: null,
+          last_error: subError,
         }, { onConflict: 'company_id,platform,page_id' })
         connected++
       }
