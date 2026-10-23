@@ -28,6 +28,111 @@ export type BlogPost = {
 
 export const POSTS: BlogPost[] = [
   {
+    slug: 'meet-your-ai-team',
+    title: "Meet your AI team: a Saturday at an aquarium shop, run with five AI agents",
+    excerpt: "Order questions, bookings, reviews, a stuck parcel and an abandoned cart: one day at a busy store, and how Colvy’s Support, Reception, Reputation, Operations and Sales agents handle it while the team handles the exceptions.",
+    category: 'Product', accent: PURPLE, icon: 'ai',
+    date: '2026-10-23T10:00:00+11:00', dateLabel: 'Oct 23, 2026', readTime: '7 min read', author: 'The Colvy Team',
+    takeaways: [
+      "Five agents, one job each: support, bookings, sales follow-ups, order problems and reviews.",
+      "They look things up first. A reply only goes out on its own when a live lookup backs it.",
+      "Everything starts as a draft. You choose what each agent may send alone, and one switch pauses them all.",
+      "Your team works from Needs you: the exceptions, with a “Why?” behind every action.",
+      "Business Memory holds your tone, facts and rules, and only changes when the owner says so.",
+    ],
+    content: `It’s Saturday at Reef & Fin Aquatics. The shipment from the wholesaler landed at nine, two people are on the floor, and the inbox is doing what it always does on a Saturday: filling up faster than anyone can read it.
+
+This is what that day looks like when Colvy’s AI agents are switched on. Not a robot running the shop: five specialists that each take one kind of work, check the facts before they say anything, and hand the rest to the people behind the counter.
+
+## 8:52am · The Support Agent answers “where’s my order?”
+
+The first message of the day is the most common one any online store gets.
+
+\`\`\`chat
+title: Reef & Fin Aquatics · SMS
+them: Hi, any update on my order? Placed it Monday
+event: Support Agent checked order #4821 and the AusPost tracking
+ai: Hi Mia, your order #4821 is on its way and due tomorrow. You can track it here: auspost.com.au/track/…
+\`\`\`
+
+Before it wrote a word, the agent found Mia’s order in the store, checked it was hers, and looked up the tracking. That’s the rule: a reply only goes out on its own when it’s backed by a live lookup made for that message. If the tracking had shown a problem (returned to sender, a week without a scan), it would have handed the conversation to the team instead, with a note saying what it found.
+
+The same agent answers stock questions for each store (“have you got the otos at Oakleigh?”), opening hours straight from Google Business Profile, and puts people on the back-in-stock list when something has sold out.
+
+> [!TIP] Start with drafts
+> On day one every agent drafts and your team sends. Once you’ve read a week of drafts and you’re nodding along, let the Support Agent send order-status and opening-hours replies on its own, with a daily limit. You can pause every agent with one switch at any time.
+
+## 10:15am · The Reception Agent books a tank consult
+
+Reef & Fin offers a paid aquascaping consult, and people ask about it by text.
+
+\`\`\`chat
+title: Reef & Fin Aquatics · Website chat
+them: Can I book one of those tank consults this week?
+event: Reception Agent checked the calendar
+draft: We’ve got Thursday at 4:30 or Saturday at 11:00. Pick one and pay the $30 deposit here: book.colvy.com/…
+\`\`\`
+
+It only offers times that are actually free, and quotes the price and deposit from the service list, never from memory. It can’t take money itself: the customer picks the time and pays on the booking page in a minute. If someone asks to move or cancel, it offers their own manage link first, and anything past the change-by time goes to a person.
+
+## 1:40pm · The Reputation Agent replies to a review
+
+\`\`\`chat
+title: Google review · ★★★★★
+them: Great advice on my new tank, the staff really know their stuff!
+ai: Thanks so much, Priya! We’re glad the advice helped, and we’d love to see the tank once it’s settled in. The Reef & Fin team
+\`\`\`
+
+Five-star thank-yous can go out on their own if you allow it. A one-to-three star review never gets an automatic reply: the agent drafts an apology that invites them to get in touch, and tells the team what went wrong. Public replies never mention order numbers, prices or refunds.
+
+It does the same for comments on your Facebook and Instagram posts: short, friendly answers to questions it can confirm, and spam or anything sensitive flagged to a person.
+
+## 3:05pm · The Operations Agent spots a stuck order
+
+Nobody asked about this one. That’s the point.
+
+\`\`\`chat
+title: Colvy · Task for the team
+event: Order #3310 hasn’t moved in 6 days
+card: Chase AusPost on #3310 | Stuck at the Sydney depot since Tuesday. Customer told it’s being looked into. | High priority
+\`\`\`
+
+The Operations Agent watches for orders that are late, stuck or waiting on an out-of-stock item. It checks the carrier and the stock, then creates one task with the facts and a clear next step, adding to an existing task instead of making a duplicate. Where the customer would otherwise be left wondering, it drafts them an honest update. It never promises a refund or a date it can’t confirm.
+
+## 7:30pm · The Sales Agent follows up a cart
+
+\`\`\`chat
+title: Reef & Fin Aquatics · SMS
+event: Cart left at checkout: Fluval 307 canister filter
+draft: Hi Josh, your Fluval 307 is still in your cart, and we’ve only got 2 left. Shipping’s free on this one: reefandfin.com.au/cart/…
+\`\`\`
+
+One message, never pushy. It only says “only a few left” when the stock check shows it, and it only offers a discount if your rules in Business Memory say it may. It does the same for quotes and payment requests that went quiet, and for product enquiries that never turned into an order.
+
+## What the team saw at the end of the day
+
+The team didn’t read every conversation. They read the exceptions.
+
+- **Needs you** listed what was waiting on a person: two drafts to approve, one hand-over from a customer whose fish arrived unwell, and the stuck order.
+- **“Why?”** sat under every agent reply and task: what the customer asked, what the agent checked, what it found, and which setting let it act.
+- **Results** counted what the agents handled, what they handed over, and the carts that turned into orders after a follow-up. A summary arrives by email every week.
+
+## Teaching it your shop
+
+The agents sound like you because you tell them how. **Business Memory** holds your tone (“friendly, first names, sign off as the Reef & Fin team”), the facts that must never be wrong (“we don’t ship live fish to WA”, “livestock has a 48-hour guarantee with a photo”) and your rules (“never offer discounts on livestock”).
+
+When someone on the team edits a draft before sending it, Colvy looks at what changed and may suggest a lesson for Business Memory. Nothing sticks until the owner keeps it. The agents never teach themselves.
+
+> [!TIP] Write down the three things you repeat most
+> Most of the value comes from a handful of facts: your shipping cut-off, your livestock guarantee and your pickup hours. Put them in Business Memory before you switch anything on.
+
+## Getting started
+
+The AI agents are included on the Inbox and Everything plans. Turn them on in **AI Agents**, leave them on drafts for the first week, and move each one to live as you come to trust it.
+
+[Meet the agents](/ai-agents) or [start free](/signup).`,
+  },
+  {
     slug: 'online-store-wheres-my-order',
     cover: '/blog/online-store-wheres-my-order/cover.jpg',
     title: "“Where’s my order?”: how online stores answer it before customers ask",

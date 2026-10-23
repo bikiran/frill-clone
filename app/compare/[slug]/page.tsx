@@ -9,6 +9,7 @@ import MarketingFooter from '@/components/MarketingFooter'
 import FeatureIcon from '@/components/FeatureIcon'
 import ContactSalesModal from '@/components/ContactSalesModal'
 import { COMING_SOON } from '@/lib/feature-availability'
+import AgentTeamBand from '@/components/AgentTeamBand'
 
 // Landing-styled competitor comparison pages (Colvy vs Podium / Gorgias / Gladly
 // / Intercom / Zendesk / Freshdesk). Data-driven so every comparison shares the
@@ -331,6 +332,9 @@ export default function ComparePage() {
           ))}
         </div>
       </section>
+
+      {/* AI AGENTS — Colvy's own, no claims about the competitor's */}
+      <AgentTeamBand dark={dark} title="Five AI agents included, not bolted on" />
 
       {/* SWITCHING OFFER — money back + free migration */}
       <section style={{ maxWidth: 1000, margin: '0 auto', padding: '10px 24px 20px' }}>

@@ -21,7 +21,7 @@ const AREAS = [
   { icon: 'inbox', color: CORAL, title: 'Shared inbox & CRM', desc: 'Instagram, Messenger, SMS, email and live chat in one thread per customer, with their full history beside it.', href: '/inbox-crm' },
   { icon: 'phone', color: GREEN, title: 'Business phone & AI receptionist', desc: 'Local numbers, browser and mobile calling, recordings and transcripts. AI answers when you can’t and texts the caller back.', href: '/phones' },
   { icon: 'cart', color: BLUE, title: 'Orders & payments', desc: 'WooCommerce and Shopify orders in the chat. Send payment links, refund and update orders without switching tabs.', href: '/solutions/payments' },
-  { icon: 'ai', color: PURPLE, title: 'AI agents', desc: 'Agents that answer questions, chase carts, reply to reviews and hand off to your team, within limits you set.', href: '/ai-assistant' },
+  { icon: 'ai', color: PURPLE, title: 'AI agents', desc: 'Agents that answer questions, chase carts, reply to reviews and hand off to your team, within limits you set.', href: '/ai-agents' },
   { icon: 'calendar', color: CYAN, title: 'Bookings', desc: 'Online booking with deposits and reminders, in the same place as the conversation.', href: '/product/booking' },
   { icon: 'idea', color: PINK, title: 'Feedback, roadmap & help center', desc: 'Idea boards, a public roadmap, a changelog and a help center your customers can use themselves.', href: '#feedback' },
 ]

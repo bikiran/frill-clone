@@ -130,6 +130,13 @@ export default function AiAssistantPage() {
 
       <MarketingNav dark={dark} onToggleDark={() => setDark(v => !v)} />
 
+      {/* Pointer to the agents, which do this work on their own */}
+      <a href="/ai-agents" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '84px 16px -60px', padding: '10px 16px', borderRadius: 999, border: `1px solid ${cardBorder}`, background: cardBg, color: text, textDecoration: 'none', fontSize: 14, position: 'relative', zIndex: 1, maxWidth: 640, marginLeft: 'auto', marginRight: 'auto' }}>
+        <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: ACCENT }}>New</span>
+        <span>Five AI agents that work on their own, within your rules</span>
+        <b style={{ color: ACCENT }}>Meet the agents →</b>
+      </a>
+
       {/* HERO */}
       <section className="ai-hero" style={{ position: 'relative', display: 'grid', gridTemplateColumns: '1.02fr 0.98fr', gap: 48, alignItems: 'center', maxWidth: 1280, margin: '0 auto', padding: 'clamp(100px, 13vw, 150px) 24px 60px' }}>
         <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: gridImg, backgroundSize: '54px 54px', WebkitMaskImage: 'radial-gradient(ellipse 70% 60% at 40% 40%, #000 40%, transparent 80%)', maskImage: 'radial-gradient(ellipse 70% 60% at 40% 40%, #000 40%, transparent 80%)', pointerEvents: 'none' }} />
