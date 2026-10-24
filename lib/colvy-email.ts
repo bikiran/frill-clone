@@ -40,6 +40,14 @@ const C = {
   border: '#e4e4e7',
   soft: '#fafafa',
 }
+const GOLD = '#f5b301'
+const STAR_OFF = '#d4d4d8'
+/** ★★★★☆ as coloured text: works in every mail client, no images. */
+const starsHtml = (n: number, size: number) => {
+  const k = Math.max(0, Math.min(5, Math.round(n || 0)))
+  return `<span style="font-family:Arial,Helvetica,sans-serif;font-size:${size}px;line-height:1;letter-spacing:${Math.round(size / 8)}px;color:${GOLD}">${'&#9733;'.repeat(k)}</span>${k < 5 ? `<span style="font-family:Arial,Helvetica,sans-serif;font-size:${size}px;line-height:1;letter-spacing:${Math.round(size / 8)}px;color:${STAR_OFF}">${'&#9733;'.repeat(5 - k)}</span>` : ''}`
+}
+const starsText = (n: number) => { const k = Math.max(0, Math.min(5, Math.round(n || 0))); return '★'.repeat(k) + '☆'.repeat(5 - k) }
 const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
 const MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono','Courier New',monospace"
 /** Small coloured squares for list rows (the marketing site's palette). */
@@ -68,6 +76,8 @@ export type EmailBlock =
   | { type: 'cards'; items: EmailListItem[] }
   /** "Button not working?" with the full link to copy. */
   | { type: 'link'; url: string; label?: string }
+  /** A customer review: their name, gold stars and what they wrote. */
+  | { type: 'review'; reviewer: string; rating: number; comment?: string | null }
   /** A boxed aside. */
   | { type: 'note'; text: string }
   | { type: 'divider' }
@@ -76,6 +86,8 @@ export type ColvyEmailInput = {
   /** The preview line inboxes show after the subject. Hidden in the email. */
   preheader: string
   title: string
+  /** Big gold stars above everything else (a review's rating, 1–5). */
+  stars?: number
   /** Small line above the title, e.g. the business name. */
   kicker?: string
   intro?: string | string[]
@@ -165,7 +177,7 @@ ${b.rows.map(([k, v], i) => `  <tr>
     case 'quote':
       return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px">
   <tr>
-    <td bgcolor="${C.soft}" style="background-color:${C.soft};border-left:4px solid ${C.coral};border-radius:4px;padding:12px 16px;font-family:${FONT};font-size:15px;line-height:1.6;color:${C.ink};white-space:pre-wrap;word-break:break-word">${escapeHtml(b.text)}</td>
+    <td bgcolor="${C.soft}" style="background-color:${C.soft};border:1px solid ${C.border};border-radius:10px;padding:12px 16px;font-family:${FONT};font-size:15px;line-height:1.6;color:${C.ink};white-space:pre-wrap;word-break:break-word">${escapeHtml(b.text)}</td>
   </tr>
 </table>`
     case 'stats': {
@@ -203,6 +215,16 @@ ${rows.map(r => `  <tr>
   </tr>
 </table>`
     }
+    case 'review':
+      return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px">
+  <tr>
+    <td bgcolor="${C.soft}" style="background-color:${C.soft};border:1px solid ${C.border};border-radius:12px;padding:16px 18px">
+      <div style="font-family:${FONT};font-size:16px;line-height:1.4;font-weight:700;color:${C.ink}">${escapeHtml(b.reviewer)}</div>
+      ${b.rating ? `<div style="margin:6px 0 2px">${starsHtml(b.rating, 18)}</div>` : ''}
+      <div style="margin-top:8px;font-family:${FONT};font-size:15px;line-height:1.6;color:${b.comment ? C.ink : C.muted};white-space:pre-wrap;word-break:break-word">${escapeHtml(b.comment || '(no written comment)')}</div>
+    </td>
+  </tr>
+</table>`
     case 'note':
       return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px">
   <tr>
@@ -225,6 +247,7 @@ function blockText(b: EmailBlock): string {
     case 'stats': return b.tiles.map(t => `${t.label}: ${t.value}${t.note ? ` (${t.note})` : ''}`).join('\n')
     case 'cards': return b.items.map(it => `- ${plain(it.title)}${it.detail ? `: ${plain(it.detail)}` : ''}`).join('\n')
     case 'link': return `${b.label || 'Or copy this link into your browser:'}\n${safeEmailUrl(b.url)}`
+    case 'review': return `${b.reviewer}${b.rating ? ` ${starsText(b.rating)}` : ''}\n${b.comment || '(no written comment)'}`
     case 'note': return plain(b.text)
     case 'divider': return '---'
   }
@@ -241,6 +264,7 @@ export function colvyEmail(input: ColvyEmailInput): ColvyEmail {
   const pad = ' &#847;&zwnj;&nbsp;'.repeat(40)
 
   const body = [
+    input.stars ? `<div style="margin:0 0 14px">${starsHtml(input.stars, 30)}</div>` : '',
     input.kicker ? P(escapeHtml(input.kicker), { size: 13, color: C.muted, margin: '0 0 6px' }) : '',
     `<h1 style="margin:0 0 14px;font-family:${FONT};font-size:24px;line-height:1.3;font-weight:700;color:${C.ink}">${escapeHtml(input.title)}</h1>`,
     ...intro.map(t => P(inline(t))),
@@ -274,10 +298,7 @@ export function colvyEmail(input: ColvyEmailInput): ColvyEmail {
       <!--[if mso]><table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px">
         <tr>
-          <td height="4" bgcolor="${C.coral}" style="height:4px;background-color:${C.coral};border-radius:12px 12px 0 0;font-size:0;line-height:0">&nbsp;</td>
-        </tr>
-        <tr>
-          <td class="cv-pad" bgcolor="${C.card}" style="background-color:${C.card};padding:24px 36px 4px;border-left:1px solid ${C.border};border-right:1px solid ${C.border}">
+          <td class="cv-pad" bgcolor="${C.card}" style="background-color:${C.card};padding:28px 36px 4px;border-top:1px solid ${C.border};border-left:1px solid ${C.border};border-right:1px solid ${C.border};border-radius:12px 12px 0 0">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0">
               <tr>
                 <td valign="middle" style="padding-right:10px"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="36" height="36" bgcolor="#1a1a1a" style="width:36px;height:36px;background-color:#1a1a1a;border-radius:9px"><img src="${COLVY_LOGO_URL}" width="36" height="36" alt="" style="display:block;width:36px;height:36px;border:0;border-radius:9px"></td></tr></table></td>
@@ -310,6 +331,7 @@ ${body}
     `© ${copyright} · ${COLVY_SITE}`,
   ].filter(Boolean)
   const text = [
+    input.stars ? starsText(input.stars) : '',
     input.kicker || '',
     input.title,
     ...intro.map(plain),
