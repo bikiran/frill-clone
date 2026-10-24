@@ -20,7 +20,7 @@ export interface ChatPaymentRow {
 export async function confirmChatPayment(
   db: any,
   pay: ChatPaymentRow,
-  opts?: { receiptUrl?: string | null; paymentIntent?: string | null; orderId?: string | number | null; orderNumber?: string | null; cardBrand?: string | null; cardLast4?: string | null },
+  opts?: { receiptUrl?: string | null; paymentIntent?: string | null; orderId?: string | number | null; orderNumber?: string | null; cardBrand?: string | null; cardLast4?: string | null; notifyCustomer?: boolean },
 ): Promise<{ confirmed: boolean }> {
   // ── 1. Claim the transition. Only proceeds if the row is still pending, so a
   // webhook and a verify-payment poll racing each other confirm exactly once.
@@ -48,6 +48,16 @@ export async function confirmChatPayment(
 
   // ── 2. Flip the in-chat payment card to paid, and learn the channel it was
   // sent on (so the customer-facing confirmation goes back the same way).
+  // A link sent as text in an SMS / email reply has no card yet: find the
+  // message that carried it and make it the card (lib/payment-links).
+  if (!pay.message_id && pay.conversation_id) {
+    try {
+      const { linkPaymentMessages } = await import('@/lib/payment-links')
+      await linkPaymentMessages(db, { paymentIds: [pay.id] })
+      const { data: row } = await db.from('chat_payments').select('message_id').eq('id', pay.id).maybeSingle()
+      if (row?.message_id) pay = { ...pay, message_id: row.message_id }
+    } catch {}
+  }
   let paidChannel = ''
   let checkoutUrl = ''
   if (pay.message_id) {
@@ -55,8 +65,13 @@ export async function confirmChatPayment(
       const { data: m } = await db.from('messages').select('message_payload, delivery_channel').eq('id', pay.message_id).maybeSingle()
       paidChannel = String((m as any)?.delivery_channel || '').toLowerCase()
       checkoutUrl = String((m as any)?.message_payload?.checkout_url || '')
+      // When, with what card, and the receipt, for the card in the inbox.
       await db.from('messages').update({
-        message_payload: { ...((m as any)?.message_payload || {}), status: 'paid' },
+        message_payload: {
+          ...((m as any)?.message_payload || {}), status: 'paid', paid_at: patch.paid_at,
+          ...(opts?.cardBrand ? { card_brand: opts.cardBrand } : {}), ...(opts?.cardLast4 ? { card_last4: opts.cardLast4 } : {}),
+          ...(opts?.receiptUrl ? { receipt_url: opts.receiptUrl } : {}),
+        },
       }).eq('id', pay.message_id)
     } catch {}
   }
@@ -114,8 +129,9 @@ export async function confirmChatPayment(
   }
 
   // ── 4. Send the customer a confirmation over their own channel, so it lands
-  // in the thread as a sent message AND reaches them by SMS/email/DM.
-  if (pay.conversation_id) {
+  // in the thread as a sent message AND reaches them by SMS/email/DM. Not for
+  // a payment found days later by the reconciler (notifyCustomer: false).
+  if (pay.conversation_id && opts?.notifyCustomer !== false) {
     const custMsg = `Your payment of ${amountStr || 'the requested amount'} has been received. Thank you!`
     const senderName = company || 'Support'
     try {

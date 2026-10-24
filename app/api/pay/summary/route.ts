@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { chatStripe } from '@/lib/chat-checkout'
 
@@ -44,6 +44,20 @@ export async function GET(req: NextRequest) {
     const charge = typeof session?.payment_intent === 'object' ? session.payment_intent?.latest_charge : null
     const receiptsOn = company.payment_settings?.paylink_receipt !== false
     const email = session?.customer_details?.email || null
+    // The customer is looking at "payment received": make sure Colvy knows too
+    // (card → PAID, "Payment received" in the thread, the customer and team
+    // told). The webhook usually got there first; confirming twice is a no-op.
+    if (session?.payment_status === 'paid' && (session?.metadata?.kind || 'chat_payment') === 'chat_payment') {
+      after(async () => {
+        try {
+          const { data: pending } = await db.from('chat_payments').select('*').eq('stripe_session_id', sessionId).eq('company_id', companyId).eq('status', 'pending').limit(1)
+          if (pending?.length) {
+            const { reconcilePayments } = await import('@/lib/payment-links')
+            await reconcilePayments(db, pending)
+          }
+        } catch (e: any) { console.warn('[pay/summary] confirm', e?.message || e) }
+      })
+    }
     return NextResponse.json({
       brand,
       payment: {
