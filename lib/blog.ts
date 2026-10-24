@@ -1718,7 +1718,9 @@ Outside the 24-hour window after a customer messages you, WhatsApp requires pre-
 
 ## Where Colvy fits
 
-WhatsApp support is coming to Colvy, but it isn’t available yet. Today Colvy gives your team one shared inbox for Instagram, Messenger, SMS, email, live chat and phone calls, with assignment, customer history and saved replies beside every conversation. Many customers who would message you on WhatsApp are just as happy to text your business number, and those texts land in the same queue as everything else.`,
+WhatsApp support is coming to Colvy, but it isn’t available yet. Today Colvy gives your team one shared inbox for Instagram, Messenger, SMS, email, live chat and phone calls, with assignment, customer history and saved replies beside every conversation. Many customers who would message you on WhatsApp are just as happy to text your business number, and those texts land in the same queue as everything else.
+
+More on how it works: [WhatsApp shared inbox for teams](/whatsapp-shared-inbox).`,
   },
 ]
 
