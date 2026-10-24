@@ -55,7 +55,7 @@ const Arrow = ({ s }: { s: number }) => (
   <svg className="cv-inv-arrow" width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
 )
 
-export default function InviteCta({ href, onClick, children, style, className = '', arrow = 16, ring, idle = true }: {
+export default function InviteCta({ href, onClick, children, style, className = '', arrow = 16, ring, idle = true, cta }: {
   href?: string
   onClick?: () => void
   children: ReactNode
@@ -67,13 +67,21 @@ export default function InviteCta({ href, onClick, children, style, className = 
   ring?: string
   /** false keeps the press and hover feel but skips the idle gestures. */
   idle?: boolean
+  /** Analytics: sends cta_clicked with this id (and plan / billing / location) — components/Analytics. */
+  cta?: { id: string; location?: string; plan?: string; billing?: string }
 }) {
+  const ctaAttrs: Record<string, string> = cta ? {
+    'data-cta': cta.id,
+    ...(cta.location ? { 'data-cta-location': cta.location } : {}),
+    ...(cta.plan ? { 'data-cta-plan': cta.plan } : {}),
+    ...(cta.billing ? { 'data-cta-billing': cta.billing } : {}),
+  } : {}
   const aRef = useInvite<HTMLAnchorElement>(idle && !!href)
   const bRef = useInvite<HTMLButtonElement>(idle && !href)
   const s = { ...style, ...(ring ? { ['--inv-ring' as any]: ring } : null) } as CSSProperties
   const inner = <><span className="cv-inv-label">{children}</span>{arrow > 0 && <Arrow s={arrow} />}</>
   const cls = `cv-inv ${className}`.trim()
   return href
-    ? <a ref={aRef} href={href} onClick={onClick} className={cls} style={s}>{inner}</a>
-    : <button ref={bRef} type="button" onClick={onClick} className={cls} style={s}>{inner}</button>
+    ? <a ref={aRef} href={href} onClick={onClick} className={cls} style={s} {...ctaAttrs}>{inner}</a>
+    : <button ref={bRef} type="button" onClick={onClick} className={cls} style={s} {...ctaAttrs}>{inner}</button>
 }

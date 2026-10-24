@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { logSuperAdminAudit } from '@/lib/super-admin-audit'
+import { isSuperAdminEmail } from '@/lib/super-admin'
 
 export const dynamic = 'force-dynamic'
 
-const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
 function admin() {
   return createClient(
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     if (action === 'start') {
       const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
       const { data: u } = await db.auth.getUser(token)
-      if (u?.user?.email !== SUPER_ADMIN) {
+      if (!isSuperAdminEmail(u?.user?.email)) {
         return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
       }
       const { companyId, slug, name, reason, mode, minutes } = body
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
       const { id } = body
       if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
       const { data: sess } = await db.from('impersonation_sessions').select('admin_id, admin_email, company_id, company_name, company_slug, ended_at').eq('id', id).maybeSingle()
-      if (sess && !sess.ended_at && (email === sess.admin_email || email === SUPER_ADMIN)) {
+      if (sess && !sess.ended_at && (email === sess.admin_email || isSuperAdminEmail(email))) {
         await db.from('impersonation_sessions').update({ ended_at: new Date().toISOString() }).eq('id', id)
         await logSuperAdminAudit(db, {
           adminId: sess.admin_id || null, adminEmail: email || sess.admin_email || null, companyId: sess.company_id || null,

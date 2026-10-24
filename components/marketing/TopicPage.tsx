@@ -41,7 +41,7 @@ export default function TopicPage({ slug }: { slug: string }) {
           <h1 style={{ fontSize: 'clamp(40px, 5.6vw, 70px)', fontWeight: 900, letterSpacing: '-0.045em', lineHeight: 1, margin: '20px 0 22px' }}>{p.h1}</h1>
           <p style={{ fontSize: 'clamp(17px, 1.6vw, 20px)', lineHeight: 1.6, color: t.muted, maxWidth: 580, margin: '0 0 30px' }}>{p.sub}</p>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <button onClick={t.go} style={t.btnPrimary}>{t.user ? 'Go to your dashboard' : p.primaryCta} <Arrow /></button>
+            <button onClick={t.go} style={t.btnPrimary} data-cta={`topic_${slug}_hero`} data-cta-location="topic_hero">{t.user ? 'Go to your dashboard' : p.primaryCta} <Arrow /></button>
             <a href="#how" style={t.btnGhost}>How it works</a>
           </div>
         </div>

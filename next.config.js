@@ -50,8 +50,17 @@ const nextConfig = {
   // Colvy MCP: OAuth discovery documents live under /.well-known. The path-
   // suffixed forms (…/oauth-protected-resource/api/mcp) are what newer MCP
   // clients ask for first.
+  // PostHog's API paths end in a slash (/ingest/e/); don't redirect them.
+  skipTrailingSlashRedirect: true,
   async rewrites() {
+    // PostHog through our own domain (/ingest), so ad blockers that block
+    // PostHog's address don't drop Colvy's analytics (components/Analytics).
+    const phIngest = (process.env.NEXT_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com').replace(/\/$/, '')
+    const phAssets = phIngest.replace('://us.i.posthog.com', '://us-assets.i.posthog.com').replace('://eu.i.posthog.com', '://eu-assets.i.posthog.com')
     return [
+      { source: '/ingest/static/:path*', destination: `${phAssets}/static/:path*` },
+      { source: '/ingest/array/:path*', destination: `${phAssets}/array/:path*` },
+      { source: '/ingest/:path*', destination: `${phIngest}/:path*` },
       { source: '/.well-known/oauth-protected-resource', destination: '/api/mcp/oauth/protected-resource' },
       { source: '/.well-known/oauth-protected-resource/:path*', destination: '/api/mcp/oauth/protected-resource' },
       { source: '/.well-known/oauth-authorization-server', destination: '/api/mcp/oauth/metadata' },

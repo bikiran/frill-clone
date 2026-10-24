@@ -12,6 +12,8 @@
 // order shipped. These explicit events are what fulfilment funnels and
 // throughput dashboards are built from.
 
+import { setAnalyticsOptOut } from '@/lib/analytics-privacy'
+
 let ph: any = null
 
 // Called once by Analytics.tsx after posthog.init(). Safe to call again on
@@ -50,9 +52,25 @@ export type ColvyEvent =
   | 'team_invited'          // a teammate joined or was invited (props: minutes_since_signup)
   | 'automation_enabled'    // first automation switched on (props: minutes_since_signup)
   | 'setup_completed'       // every setup step done or skipped (props: minutes_since_signup, skipped)
+  // Website (Super Admin → Intelligence). Clicks come from data-cta attributes
+  // (components/Analytics), so buttons opt in without code.
+  | 'cta_clicked'           // a tagged button or link (props: cta_id, location, plan?, billing?, destination?)
+  | 'pricing_cta_clicked'   // a plan's button on /pricing (props: cta_id, plan, billing)
+  | 'billing_toggled'       // monthly / annual switch on /pricing (props: billing)
+  | 'signup_step_completed' // a signup wizard step finished (props: step, name)
+  | 'signup_error'          // signup stopped on an error (props: step, code) — a code, never the message or the email
+  | 'demo_requested'        // the demo / contact-sales form was sent (props: source)
   | 'board_viewed'          // a tenant ideas board was opened (props: idea_count)
   | 'idea_submitted'        // a customer submitted an idea (props: topics)
 
 export function track(event: ColvyEvent, props?: Record<string, any>): void {
   try { ph?.capture?.(event, props) } catch { /* analytics must never break the app */ }
+}
+
+/** The Privacy page's switch: stop (or resume) Colvy's analytics in this browser. */
+export function setAnalyticsOptedOut(out: boolean): void {
+  try {
+    setAnalyticsOptOut(out)
+    if (out) ph?.opt_out_capturing?.(); else ph?.opt_in_capturing?.()
+  } catch { /* never break the page */ }
 }

@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { provisionSubdomain } from './provision-domain'
+import { captureServer } from '@/lib/analytics-server'
 
 export type CreateWorkspaceInput = {
   userId: string
@@ -88,6 +89,7 @@ export async function createWorkspace(input: CreateWorkspaceInput): Promise<Crea
   }
 
   await ensureOwnerMembership(admin, company.id, input.userId, input.email)
+  await captureServer('business_created', input.userId, { company_id: company.id, plan: 'trial', $groups: { company: company.id } }, `business_created:${company.id}`)
 
   let domain: any = null
   try { domain = await provisionSubdomain(`${company.slug}.colvy.com`) }

@@ -10,6 +10,8 @@
 //     are up. Tax invoices, credit notes and billing ledgers are kept (legal
 //     retention); so are platform-wide tables.
 
+import { deleteAnalyticsPerson } from '@/lib/analytics-server'
+
 export const PURGE_AFTER_DAYS = 30
 
 // Every table that holds a workspace's own data, by company_id. Deleted
@@ -100,6 +102,8 @@ export async function deleteAccount(db: any, user: { id: string; email?: string 
   if (accessToken) { try { await db.auth.admin.signOut(accessToken, 'global') } catch {} }
 
   // The login itself, last: everything above needed it to find their rows.
+  // Their analytics profile and events go too (Colvy's PostHog).
+  await deleteAnalyticsPerson(user.id)
   const { error: delErr } = await db.auth.admin.deleteUser(user.id)
   if (delErr) {
     // Older rows can still point at the login (a foreign key with no ON DELETE

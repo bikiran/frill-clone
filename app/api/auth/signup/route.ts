@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { verifyTurnstile, requestIp, TURNSTILE_FAILED } from '@/lib/turnstile'
 import { confirmEmail } from '@/lib/colvy-account-emails'
 import { boardSlugAllowed } from '@/lib/reserved-subdomains'
+import { captureServer } from '@/lib/analytics-server'
 
 // Full server-side signup flow. This bypasses two problems with doing
 // signUp() directly from the browser:
@@ -106,6 +107,8 @@ export async function POST(req: NextRequest) {
 
     const user = created?.user || null
     if (!user && !resumed) return NextResponse.json({ error: 'User creation failed' }, { status: 500 })
+    // Super Admin → Intelligence: the account exists (counted once per user).
+    if (user && !resumed) await captureServer('account_created', user.id, { via: wantCode ? 'app_code' : 'email', industry: industry || undefined }, `account_created:${user.id}`)
 
     // 2. Generate the confirmation link for this exact user
     const baseUrl = 'https://colvy.com'

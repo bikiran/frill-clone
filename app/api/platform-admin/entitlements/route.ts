@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { logSuperAdminAudit } from '@/lib/super-admin-audit'
+import { isSuperAdminEmail } from '@/lib/super-admin'
 
 export const dynamic = 'force-dynamic'
 
-const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
 function admin() {
   return createClient(
@@ -20,7 +20,7 @@ async function superAdmin(req: NextRequest, db: any): Promise<{ id: string; emai
     if (!token) return null
     const { data } = await db.auth.getUser(token)
     const u = data?.user
-    return u?.email === SUPER_ADMIN ? { id: u.id, email: u.email } : null
+    return isSuperAdminEmail(u?.email) ? { id: u.id, email: u.email } : null
   } catch { return null }
 }
 

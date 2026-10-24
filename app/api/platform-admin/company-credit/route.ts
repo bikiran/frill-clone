@@ -3,10 +3,10 @@ import { createClient } from '@supabase/supabase-js'
 import Stripe from 'stripe'
 import { creditBalanceCents, ensureReferralCode, REFERRAL_CURRENCY } from '@/lib/referrals'
 import { logSuperAdminAudit } from '@/lib/super-admin-audit'
+import { isSuperAdminEmail } from '@/lib/super-admin'
 
 export const dynamic = 'force-dynamic'
 
-const SUPER_ADMIN = 'bishalstha76@gmail.com'
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com').replace(/\/$/, '')
 
 function admin() {
@@ -23,7 +23,7 @@ async function requireSuperAdmin(req: NextRequest, db: any): Promise<{ ok: boole
     if (!token) return { ok: false }
     const { data } = await db.auth.getUser(token)
     const email = data?.user?.email
-    return { ok: email === SUPER_ADMIN, email }
+    return { ok: isSuperAdminEmail(email), email }
   } catch { return { ok: false } }
 }
 

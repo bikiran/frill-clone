@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { provisionSubdomain } from '@/lib/provision-domain'
 import { boardSlugAllowed } from '@/lib/reserved-subdomains'
 import { recordSignupLater, cleanProfile } from '@/lib/signup-attempts'
+import { captureServer } from '@/lib/analytics-server'
 
 export const dynamic = 'force-dynamic'
 
@@ -126,6 +127,8 @@ export async function POST(req: NextRequest) {
       failed(`Workspace not created: ${coErr.message}`)
       return NextResponse.json({ error: coErr.message }, { status: 400 })
     }
+
+    await captureServer('business_created', user.id, { company_id: company.id, via: 'signup', $groups: { company: company.id } }, `business_created:${company.id}`)
 
     // 4. Owner membership with the person's name (so it shows across the app).
     try {

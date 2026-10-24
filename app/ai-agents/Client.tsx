@@ -127,7 +127,7 @@ export default function AiAgentsPage() {
             <h1 style={{ fontSize: 'clamp(40px, 6vw, 74px)', fontWeight: 900, letterSpacing: '-0.04em', lineHeight: 0.98, margin: '0 0 20px' }}>Your AI team.<br /><span style={{ color: CORAL }}>Your rules.</span></h1>
             <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', lineHeight: 1.6, color: muted, margin: '0 0 30px', maxWidth: 540 }}>Five agents that answer customers, book appointments, follow up carts, chase late orders and reply to reviews. They check your real orders, stock and calendar first, and hand your team anything that needs a person.</p>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-              <InviteCta href="/signup" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '15px 28px', borderRadius: 999, background: CORAL, color: '#fff', fontWeight: 800, fontSize: 16, textDecoration: 'none', boxShadow: `0 12px 32px ${CORAL}55` }}>Start free</InviteCta>
+              <InviteCta cta={{ id: 'agents_hero_start_free', location: 'ai_agents' }} href="/signup" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '15px 28px', borderRadius: 999, background: CORAL, color: '#fff', fontWeight: 800, fontSize: 16, textDecoration: 'none', boxShadow: `0 12px 32px ${CORAL}55` }}>Start free</InviteCta>
               <a href="#support" style={{ padding: '15px 24px', borderRadius: 999, border: `1.5px solid ${line}`, color: text, fontWeight: 700, fontSize: 15, textDecoration: 'none' }}>Meet the agents ↓</a>
             </div>
           </div>
@@ -195,7 +195,7 @@ export default function AiAgentsPage() {
       <section style={{ padding: 'clamp(60px, 8vw, 100px) 24px', textAlign: 'center', background: `linear-gradient(135deg, ${CORAL}, #ff4d8d 55%, #7c5cff)` }}>
         <h2 style={{ fontSize: 'clamp(30px, 5vw, 56px)', fontWeight: 900, letterSpacing: '-0.03em', color: '#fff', lineHeight: 1.04, margin: '0 0 14px' }}>Put your AI team to work</h2>
         <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.9)', margin: '0 0 28px' }}>Included on the Inbox and Everything plans · 14-day free trial, no card</p>
-        <InviteCta href="/signup" ring={CORAL} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '16px 36px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 17, textDecoration: 'none', boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>Start free trial</InviteCta>
+        <InviteCta cta={{ id: 'agents_band_start_trial', location: 'ai_agents' }} href="/signup" ring={CORAL} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '16px 36px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 17, textDecoration: 'none', boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>Start free trial</InviteCta>
         <div style={{ marginTop: 16 }}><a href="/pricing" style={{ color: '#fff', fontWeight: 700, fontSize: 14.5 }}>See plans and pricing</a></div>
       </section>
 
