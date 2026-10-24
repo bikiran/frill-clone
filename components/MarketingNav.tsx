@@ -377,7 +377,7 @@ export default function MarketingNav({ dark = false, onToggleDark }: { dark?: bo
           ) : (
             <>
               <a href="/signin" className="mn-link mn-desktop" style={{ fontSize: 14, fontWeight: 600, color: muted, textDecoration: 'none', padding: '0 6px' }}>Sign in</a>
-              <a href="/signup" className="mn-cta mn-desktop" style={primaryBtn}>Get started</a>
+              <a href="/signup" className="mn-cta mn-desktop" style={primaryBtn} data-cta="nav_get_started" data-cta-location="nav">Get started</a>
             </>
           )}
           <button className="mn-mtoggle" onClick={() => setMobileOpen(v => !v)} aria-label="Menu" style={{ width: 38, height: 38, borderRadius: 11, border: `1px solid ${cardBorder}`, background: cardBg, alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: text }}>{mobileOpen ? <CloseIcon /> : <MenuIcon />}</button>
@@ -460,7 +460,7 @@ export default function MarketingNav({ dark = false, onToggleDark }: { dark?: bo
             <a key={n.label} href={n.href} onClick={() => setMobileOpen(false)} style={{ display: 'block', padding: '15px 0', fontSize: 16, fontWeight: 700, color: text, textDecoration: 'none', borderBottom: `1px solid ${cardBorder}` }}>{n.label}</a>
           ))}
           {!user && <a href="/signin" onClick={() => setMobileOpen(false)} style={{ display: 'block', padding: '15px 0', fontSize: 16, fontWeight: 600, color: muted, textDecoration: 'none', borderBottom: `1px solid ${cardBorder}` }}>Sign in</a>}
-          <button onClick={handleDashboard} style={{ ...primaryBtn, marginTop: 16, width: '100%', justifyContent: 'center', padding: '13px 0', fontSize: 15 }}>{user ? 'Dashboard →' : 'Get started free'}</button>
+          <button onClick={handleDashboard} data-cta="nav_get_started" data-cta-location="nav_mobile" style={{ ...primaryBtn, marginTop: 16, width: '100%', justifyContent: 'center', padding: '13px 0', fontSize: 15 }}>{user ? 'Dashboard →' : 'Get started free'}</button>
         </div>
       )}
     </nav>

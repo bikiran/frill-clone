@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { RESERVED_SUBDOMAINS } from './lib/reserved-subdomains'
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon\\.png|logo\\.png|.*\\..*).*)',],
+  // /ingest is the PostHog rewrite (next.config.js): never a tenant or custom-domain page.
+  matcher: ['/((?!_next/static|_next/image|ingest/|favicon\\.png|logo\\.png|.*\\..*).*)',],
 }
 
 const ADMIN_PATHS = [

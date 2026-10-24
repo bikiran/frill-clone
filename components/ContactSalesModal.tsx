@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { COLVY_CONTACT } from '@/lib/colvy-contact'
+import { track } from '@/lib/analytics'
 
 const CORAL = '#ff6a4d'
 
@@ -57,6 +58,7 @@ export default function ContactSalesModal({
       const j = await res.json().catch(() => ({}))
       if (!res.ok) { setErr(j.error || 'Could not send — please email support@colvy.com.'); setState('error'); return }
       setState('done')
+      track('demo_requested', { source: source || 'contact_sales', plan: plan || undefined })
     } catch { setErr('Could not send — please email support@colvy.com.'); setState('error') }
   }
 

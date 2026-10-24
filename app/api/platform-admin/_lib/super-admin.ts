@@ -4,6 +4,10 @@ import { createClient } from '@supabase/supabase-js'
 // Shared by the platform-admin routes added for the console's operations views.
 // The folder is private (leading underscore), so Next never routes it.
 
+// The list lives in lib/super-admin (SUPER_ADMIN_EMAILS). SUPER_ADMIN is the
+// founder's address, kept for the older helpers that still compare to it.
+export { superAdminEmails, isSuperAdminEmail } from '@/lib/super-admin'
+import { isSuperAdminEmail } from '@/lib/super-admin'
 export const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
 /** Service-role client: these views read across every business. Falls back to
@@ -24,7 +28,7 @@ export async function superAdmin(req: NextRequest, db: any): Promise<{ id: strin
     if (!token) return null
     const { data } = await db.auth.getUser(token)
     const u = data?.user
-    return u && (u.email || '').toLowerCase() === SUPER_ADMIN ? { id: u.id, email: u.email } : null
+    return u && isSuperAdminEmail((u.email || '').toLowerCase()) ? { id: u.id, email: u.email } : null
   } catch { return null }
 }
 

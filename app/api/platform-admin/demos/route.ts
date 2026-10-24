@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { demoAdmin, seedSampleData, wipeDemoData } from '@/lib/demo-seed'
+import { isSuperAdminEmail } from '@/lib/super-admin'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
 const TEMPLATE_META: Record<string, { industry: string; accent: string }> = {
   cafe: { industry: 'Café & Hospitality', accent: '#0b8457' },
@@ -16,7 +16,7 @@ const TEMPLATE_META: Record<string, { industry: string; accent: string }> = {
 async function requireSuperAdmin(req: NextRequest, db: any): Promise<boolean> {
   const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
   if (!token) return false
-  try { const { data } = await db.auth.getUser(token); return data?.user?.email === SUPER_ADMIN } catch { return false }
+  try { const { data } = await db.auth.getUser(token); return isSuperAdminEmail(data?.user?.email) } catch { return false }
 }
 
 function slugify(s: string) {

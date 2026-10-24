@@ -1,6 +1,7 @@
 import { provisionSubdomain } from '@/lib/provision-domain'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { captureServer } from '@/lib/analytics-server'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -70,6 +71,7 @@ export async function GET(req: NextRequest) {
       //   2. Seed sample statuses, topics, ideas, announcements, help articles
       //      and a feedback form, so the new board isn't blank.
       // Both non-blocking — a failure here must never break email confirmation.
+      if (co.data?.id) await captureServer('business_created', data.user.id, { company_id: co.data.id, via: 'email_confirm', $groups: { company: co.data.id } }, `business_created:${co.data.id}`)
       if (co.data?.id) {
         try {
           const { data: existingMember } = await (adminClient as any).from('team_members')

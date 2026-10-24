@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { AI_JOBS, AI_MODELS, modelsForJob, getAiSettings, clearAiSettingsCache, estimateCost, type AiJob } from '@/lib/ai-models'
 import { logSuperAdminAudit } from '@/lib/super-admin-audit'
+import { isSuperAdminEmail } from '@/lib/super-admin'
 
 export const dynamic = 'force-dynamic'
 
-const SUPER_ADMIN = 'bishalstha76@gmail.com'
 const admin = () => createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { autoRefreshToken: false, persistSession: false } })
 
 async function superAdmin(req: NextRequest, db: any): Promise<{ id: string; email: string } | null> {
@@ -13,7 +13,7 @@ async function superAdmin(req: NextRequest, db: any): Promise<{ id: string; emai
     const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
     if (!token) return null
     const { data } = await db.auth.getUser(token)
-    return data?.user?.email === SUPER_ADMIN ? { id: data.user.id, email: data.user.email } : null
+    return isSuperAdminEmail(data?.user?.email) ? { id: data.user.id, email: data.user.email } : null
   } catch { return null }
 }
 

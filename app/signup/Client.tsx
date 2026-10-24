@@ -18,6 +18,23 @@ import { signupProfilePayload } from '@/lib/signup-profile'
 
 const CORAL = '#ff7a6b'
 const TOTAL_STEPS = 7
+// Step names for the signup funnel in Super Admin → Intelligence.
+const SIGNUP_STEP_NAMES: Record<number, string> = { 1: 'about_you', 2: 'business', 3: 'business_details', 4: 'contact', 5: 'verify_email', 6: 'verify_mobile', 7: 'password' }
+/** A short, fixed code for an error shown on the signup form (never its text). */
+function signupErrorCode(msg: string): string {
+  const m = msg.toLowerCase()
+  if (/valid email/.test(m)) return 'invalid_email'
+  if (/already|exists|registered|in use/.test(m)) return 'account_exists'
+  if (/6-digit|code/.test(m)) return /expired/.test(m) ? 'code_expired' : 'code_invalid'
+  if (/at least 6/.test(m)) return 'password_too_short'
+  if (/do not match/.test(m)) return 'password_mismatch'
+  if (/address is taken|slug/.test(m)) return 'slug_taken'
+  if (/business name|industry/.test(m)) return 'details_missing'
+  if (/mobile|phone/.test(m)) return 'phone_invalid'
+  if (/too many|rate|wait/.test(m)) return 'rate_limited'
+  if (/network|fetch|failed to|timeout/.test(m)) return 'network'
+  return 'other'
+}
 
 // AU-friendly mobile normalisation (lib/signup-delivery, the same rules the
 // server applies): "0466 077 557", "+61 0466 077 557" and "61466077557" all
@@ -145,6 +162,19 @@ function SignUpForm() {
   const planParam = searchParams.get('plan')
   const billingParam = searchParams.get('billing') === 'annual' ? 'annual' : 'monthly'
   const refParam = searchParams.get('ref')
+
+  // Funnel analytics (Super Admin → Intelligence): each step finished, and the
+  // kind of error someone hit. Only a short code is sent, never the message
+  // (which can echo an email address) or anything typed.
+  const lastStep = useRef(step)
+  useEffect(() => {
+    if (step > lastStep.current) track('signup_step_completed', { step: lastStep.current, name: SIGNUP_STEP_NAMES[lastStep.current] || String(lastStep.current) })
+    lastStep.current = step
+  }, [step])
+  useEffect(() => {
+    if (error) track('signup_error', { step, code: signupErrorCode(error) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [error])
 
   useEffect(() => {
     track('signup_started', planParam ? { plan: planParam, billing: billingParam } : undefined)

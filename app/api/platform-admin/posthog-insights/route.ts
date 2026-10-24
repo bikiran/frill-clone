@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { isSuperAdminEmail } from '@/lib/super-admin'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
 
-const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
 function admin() {
   return createClient(
@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
     const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
     if (!token) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
     const { data: auth } = await admin().auth.getUser(token)
-    if ((auth?.user?.email || '').toLowerCase() !== SUPER_ADMIN) {
+    if (!isSuperAdminEmail((auth?.user?.email || '').toLowerCase())) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

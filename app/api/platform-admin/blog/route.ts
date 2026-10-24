@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { readingMinutes } from '@/lib/markdown'
 import { POSTS } from '@/lib/blog'
+import { isSuperAdminEmail } from '@/lib/super-admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,7 +30,6 @@ function seedPosts(existingSlugs: Set<string>) {
   }))
 }
 
-const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
 function admin() {
   return createClient(
@@ -42,7 +42,7 @@ function admin() {
 async function requireSuperAdmin(req: NextRequest, db: any): Promise<boolean> {
   const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
   if (!token) return false
-  try { const { data } = await db.auth.getUser(token); return data?.user?.email === SUPER_ADMIN } catch { return false }
+  try { const { data } = await db.auth.getUser(token); return isSuperAdminEmail(data?.user?.email) } catch { return false }
 }
 
 function slugify(s: string) {

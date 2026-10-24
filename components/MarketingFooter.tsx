@@ -22,7 +22,7 @@ export default function MarketingFooter({ dark = false }: { dark?: boolean }) {
     { title: 'Who it’s for', links: [{ l: 'Ecommerce', h: '/for/ecommerce' }, { l: 'Multi-location retail', h: '/for/multi-location-retail' }, { l: 'Service businesses', h: '/for/service-businesses' }, { l: 'Restaurants', h: '/for/restaurants' }, { l: 'Real estate', h: '/for/real-estate' }, { l: 'All industries', h: '/industries' }] },
     { title: 'Channels', links: [{ l: soonLabel('WhatsApp', 'whatsapp'), h: '/channels/whatsapp' }, { l: 'Instagram & Messenger', h: '/channels/meta' }, { l: 'Email', h: '/channels/email' }, { l: 'Two-way SMS', h: '/channels/sms' }, { l: 'Live chat', h: '/channels/chat-widget' }, { l: 'Google Reviews', h: '/channels/google-reviews' }] },
     { title: 'Company', links: [{ l: 'About', h: '/about' }, { l: 'Careers', h: '/careers' }, { l: 'Blog', h: '/blog' }, { l: 'Referrals', h: '/referrals' }, { l: 'Changelog', h: '/changelog' }, { l: 'Solutions', h: '/solutions' }, { l: 'Pricing', h: '/pricing' }] },
-    { title: 'Legal', links: [{ l: 'Security', h: '/security' }, { l: 'Status', h: '/status' }, { l: 'Privacy', h: '/privacy' }, { l: 'Terms', h: '/terms' }] },
+    { title: 'Legal', links: [{ l: 'Security', h: '/security' }, { l: 'Status', h: '/status' }, { l: 'Privacy', h: '/privacy' }, { l: 'Analytics opt-out', h: '/privacy#analytics' }, { l: 'Terms', h: '/terms' }] },
   ]
 
   const social: { name: string; h: string; d: string }[] = [
