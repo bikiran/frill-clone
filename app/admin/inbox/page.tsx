@@ -2246,9 +2246,17 @@ export default function InboxPage() {
 
   const forwardTo = async (contactTarget: any) => {
     if (!companyId || !forwarding || !user) return
+    // Only the file itself goes on: the original's expiry and viewer link
+    // belonged to that conversation.
     const picked = forwarding.filter((_, i) => forwardPicked[i])
+      .map((a: any) => ({ url: a.url, name: a.name, type: a.type, kind: a.kind, ...(a.size ? { size: a.size } : {}) }))
     if (!picked.length) return
+    const who = contactTarget.name || contactTarget.email || contactTarget.phone
+    // Close straight away and carry on in the background: the agent shouldn't
+    // sit watching a dialog while the photos go out.
     setForwardBusy(true)
+    setForwarding(null); setForwardSearch(''); setForwardResults([])
+    showToast(`Forwarding ${picked.length > 1 ? `${picked.length} items` : 'it'} to ${who}…`)
     try {
       // Find-or-create a conversation with that person, so the media lands in a
       // real thread rather than nowhere.
@@ -2270,6 +2278,27 @@ export default function InboxPage() {
       if (!convId) throw new Error('Could not open a conversation with that contact')
 
       const me = myName
+      const media = picked.filter(a => a.kind === 'image' || a.kind === 'video')
+      const plainFiles = picked.filter(a => a.kind !== 'image' && a.kind !== 'video')
+
+      // One branded gallery link for all the photos and videos, the same as
+      // sending them from the composer. Passing the files to the SMS route
+      // instead made a link per file, one after another, and texted them all.
+      let galleryUrl = ''
+      if (media.length) {
+        try {
+          const res = await authFetch('/api/short-links/create', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              companyId, kind: 'media', url: media[0].url, mediaUrls: media,
+              label: media.length > 1 ? `${media.length} photos` : (media[0].kind === 'video' ? 'Video' : 'Photo'),
+              conversationId: convId, sentBy: me,
+            }),
+          })
+          const d = await readJsonSafe(res)
+          if (res.ok && d.url) galleryUrl = d.url
+        } catch { /* fall back to the files' own links below */ }
+      }
 
       // Text it too, if that's how we talk to them. A failed text must not lose
       // the forward — the message still goes in the thread below — but it must
@@ -2278,12 +2307,16 @@ export default function InboxPage() {
       const phone = contactTarget.phone
       let smsError = ''
       if (phone) {
+        const parts: string[] = []
+        if (galleryUrl) parts.push(galleryUrl)
+        else for (const m of media) parts.push(m.url)
+        for (const f of plainFiles) parts.push(`📎 ${f.name}: ${f.url}`)
         try {
           const res = await authFetch('/api/telnyx/sms/send', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               companyId, conversationId: convId, to: phone,
-              text: '', attachments: picked, senderName: me, skipChatMessage: true,
+              text: parts.join('\n'), attachments: [], senderName: me, skipChatMessage: true,
             }),
           })
           if (!res.ok) {
@@ -2295,21 +2328,24 @@ export default function InboxPage() {
         }
       }
 
-      await (supabase as any).from('messages').insert({
-        conversation_id: convId, company_id: companyId,
-        sender_type: 'agent', sender_id: user.id, sender_name: me, sender_email: user.email,
-        content: '', attachments: picked,
-        delivery_channel: phone ? 'sms' : 'chat',
-        metadata: { forwarded: true },
-      })
-      await (supabase as any).from('conversations').update({
-        last_message: picked.length === 1 ? '📎 Attachment' : `📎 ${picked.length} attachments`, last_message_at: new Date().toISOString(),
-      }).eq('id', convId)
+      const now = new Date().toISOString()
+      await Promise.all([
+        (supabase as any).from('messages').insert({
+          conversation_id: convId, company_id: companyId,
+          sender_type: 'agent', sender_id: user.id, sender_name: me, sender_email: user.email,
+          content: '', attachments: galleryUrl ? picked.map(a => ({ ...a, viewer_url: galleryUrl })) : picked,
+          delivery_channel: phone ? 'sms' : 'chat',
+          metadata: { forwarded: true, ...(galleryUrl ? { gallery_url: galleryUrl } : {}) },
+        }),
+        (supabase as any).from('conversations').update({
+          last_message: media.length ? (media.length > 1 ? `🖼️ ${media.length} photos` : '🖼️ Photo') : (picked.length === 1 ? '📎 Attachment' : `📎 ${picked.length} attachments`),
+          last_message_at: now, updated_at: now,
+        }).eq('id', convId),
+      ])
 
-      setForwarding(null); setForwardSearch(''); setForwardResults([])
       showToast(smsError
-        ? `Forwarded to ${contactTarget.name || contactTarget.email}, but the text did not go out: ${smsError}`
-        : `Forwarded to ${contactTarget.name || contactTarget.email}`)
+        ? `Forwarded to ${who}, but the text did not go out: ${smsError}`
+        : `Forwarded to ${who}`)
       loadConversations()
     } catch (e: any) {
       showToast('Could not forward: ' + e.message)
