@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { adminDb, superAdmin, safe } from '../_lib/super-admin'
 import { hogql, funnel, cached, posthogConfig } from '@/lib/intel/posthog'
 import { channelOf } from '@/lib/intel/channel'
+import { businessReport, healthReport } from '@/lib/intel/business-report'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-// GET /api/platform-admin/intel?report=overview|live|traffic|pages|journeys|funnels
+// GET /api/platform-admin/intel?report=overview|live|traffic|pages|journeys|funnels|business|health
 //   &range=24h|7d|28d|90d|custom&from=YYYY-MM-DD&to=YYYY-MM-DD&fresh=1
 //
 // Super Admin → Intelligence. Website and product analytics come from
@@ -294,6 +295,19 @@ export async function GET(req: NextRequest) {
   const p = period(sp)
   const fresh = sp.get('fresh') === '1'
   const meta = { report, range: p.label, from: p.from.toISOString(), to: p.to.toISOString(), prevFrom: p.prevFrom.toISOString(), prevTo: p.prevTo.toISOString(), posthog: cfg }
+
+  // Business and Customer health come from Supabase alone (V415 + the hourly
+  // intel job), PostHog or not.
+  if (report === 'business' || report === 'health') {
+    try {
+      const key = `${report}:${p.label}:${sp.get('from') || ''}:${sp.get('to') || ''}`
+      const data = await cached(key, 60_000, fresh, async () => ({ data: report === 'business' ? await businessReport(db, p) : await healthReport(db), errors: [] as string[] }))
+      return NextResponse.json({ ...meta, configured: true, ...data })
+    } catch (e: any) {
+      console.error('[intel]', report, e?.message || e)
+      return NextResponse.json({ ...meta, configured: true, error: e?.message || 'failed' }, { status: 500 })
+    }
+  }
 
   // Without the PostHog read key, only the Supabase-backed parts can answer.
   if (!cfg.ok && report !== 'funnels') return NextResponse.json({ ...meta, configured: false })
