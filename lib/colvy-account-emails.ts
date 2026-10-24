@@ -154,9 +154,10 @@ export function newReviewEmail(o: { business: string; reviewer?: string | null; 
   const who = o.reviewer || 'A customer'
   const { html, text } = colvyEmail({
     preheader: `${who}${n ? ` gave ${o.business} ${n} out of 5 stars` : ` reviewed ${o.business}`}.`,
+    center: true,
     stars: n || undefined,
-    kicker: o.business,
-    title: `You got a new ${n ? `${n}-star ` : ''}review${n >= 4 ? '. Nice work!' : ''}`,
+    title: `You got a new ${n ? `${n}-star ` : ''}review${n >= 4 ? '! 🎉' : ''}`,
+    subtitle: `for ${o.business}`,
     blocks: [{ type: 'review', reviewer: who, rating: n, comment: o.comment }],
     cta: { label: 'Read and reply', url: o.reviewsUrl },
     secondary: 'Replying to reviews builds trust, and Colvy can draft the reply for you.',
