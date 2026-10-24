@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { signInWithGoogle, signInWithGitHub } from '@/lib/auth'
 import { isValidSlug, isSlugAvailable } from '@/lib/board'
 import { track } from '@/lib/analytics'
+import { readFirstTouch } from '@/lib/analytics-privacy'
 import { useRouter, useSearchParams } from 'next/navigation'
 import AddressAutocomplete, { AddressParts } from '@/components/AddressAutocomplete'
 import BusinessAutocomplete, { BusinessDetails, BusinessHours, emptyHours } from '@/components/BusinessAutocomplete'
@@ -190,7 +191,13 @@ function SignUpForm() {
       if (!sessionStorage.getItem('colvy_signup_attr')) {
         const utm: Record<string, string> = {}
         for (const k of ['source', 'medium', 'campaign', 'term', 'content']) { const v = searchParams.get(`utm_${k}`); if (v) utm[k] = v }
-        sessionStorage.setItem('colvy_signup_attr', JSON.stringify({ utm, referrer: document.referrer || '', landing: window.location.pathname + window.location.search }))
+        // The visit that first found Colvy (kept by components/Analytics for
+        // 90 days) wins over this page's own referrer, which is usually our
+        // pricing page.
+        const ft = readFirstTouch()
+        sessionStorage.setItem('colvy_signup_attr', JSON.stringify(ft
+          ? { utm: ft.utm && Object.keys(ft.utm).length ? ft.utm : utm, referrer: ft.referrer || '', landing: ft.landing || '', first_seen: ft.at, click: ft.click || '' }
+          : { utm, referrer: document.referrer || '', landing: window.location.pathname + window.location.search }))
       }
     } catch {}
   }, [planParam, billingParam, refParam, searchParams])

@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
 import { setPosthog, track } from '@/lib/analytics'
-import { analyticsScope, analyticsOptedOut, beforeSend } from '@/lib/analytics-privacy'
+import { analyticsScope, analyticsOptedOut, beforeSend, recordFirstTouch } from '@/lib/analytics-privacy'
 import { getEffectiveEntitlements } from '@/lib/entitlements-client'
 import { flagEnabled } from '@/lib/feature-flags'
 
@@ -109,6 +109,10 @@ export default function Analytics() {
       if (!phRef.current) started = false
     }
   }, [pathname])
+
+  // Where this visitor first came from, kept in the browser for the sign-up
+  // form (lib/analytics-privacy). Works without PostHog.
+  useEffect(() => { recordFirstTouch() }, [pathname])
 
   // Pageview on client-side navigation.
   useEffect(() => {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { adminDb, superAdmin, safe } from '../_lib/super-admin'
 import { hogql, funnel, cached, posthogConfig } from '@/lib/intel/posthog'
+import { channelOf } from '@/lib/intel/channel'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -44,21 +45,6 @@ const num = (v: any) => Number(v || 0)
 /** Run a query; on failure record the error and return the fallback. */
 async function attempt<T>(errors: string[], label: string, fn: () => Promise<T>, fallback: T): Promise<T> {
   try { return await fn() } catch (e: any) { errors.push(`${label}: ${e?.message || 'failed'}`); return fallback }
-}
-
-// ── Channel grouping for traffic sources ────────────────────────────────────
-const SEARCH = /(^|\.)(google|bing|duckduckgo|yahoo|ecosia|baidu|yandex|search\.brave)\./i
-const SOCIAL = /(^|\.)(facebook|instagram|t\.co|twitter|x\.com|linkedin|lnkd|youtube|tiktok|reddit|pinterest|threads)\./i
-const AI = /(chatgpt|openai|perplexity|claude|anthropic|gemini|copilot|you\.com)/i
-function channelOf(s: { src?: string; med?: string; ref?: string }): string {
-  const med = String(s.med || '').toLowerCase(), src = String(s.src || '').toLowerCase(), ref = String(s.ref || '').toLowerCase()
-  if (/cpc|ppc|paid|ads?$/.test(med)) return 'Paid'
-  if (/email|newsletter/.test(med) || /email|newsletter/.test(src)) return 'Email'
-  if (med === 'social' || SOCIAL.test(ref) || /facebook|instagram|linkedin|tiktok/.test(src)) return 'Social'
-  if (AI.test(ref) || AI.test(src)) return 'AI assistants'
-  if (SEARCH.test(ref) || /google|bing/.test(src)) return 'Organic search'
-  if (!ref || ref === '$direct' || /colvy\.com$/.test(ref)) return src ? 'Campaign' : 'Direct'
-  return 'Referral'
 }
 
 function rollup(rows: any[], keyOf: (r: any) => string, converted: Set<string>, limit = 25) {
