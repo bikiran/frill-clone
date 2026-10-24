@@ -112,6 +112,13 @@ export function billingConfigStatus(env: Env): BillingStatus {
     problem: !wh ? 'Not set: customers would pay but their plan wouldn’t switch on.' : wh.startsWith('whsec_') ? '' : 'Must start with whsec_.',
     where: 'Stripe → Developers → Webhooks → endpoint https://colvy.com/api/stripe/webhook → Signing secret → Reveal.',
   })
+  const cwh = clean(env.STRIPE_CONNECT_WEBHOOK_SECRET)
+  checks.push({
+    envVar: 'STRIPE_CONNECT_WEBHOOK_SECRET', label: 'Connected accounts webhook secret', group: 'keys', required: false,
+    state: !cwh ? 'warn' : cwh.startsWith('whsec_') ? 'ok' : 'invalid',
+    problem: !cwh ? 'Not set: payment links paid on a business’s connected Stripe account are confirmed by Colvy’s 10-minute check instead of instantly.' : cwh.startsWith('whsec_') ? '' : 'Must start with whsec_.',
+    where: 'Stripe → Developers → Webhooks → Add destination → Connected accounts → https://colvy.com/api/stripe/webhook → Signing secret → Reveal.',
+  })
   const pk = clean(env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
   checks.push({
     envVar: 'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY', label: 'Publishable key (optional)', group: 'keys', required: false,
