@@ -36,7 +36,7 @@ function Skip({ dir }: { dir: -1 | 1 }) {
 // it a small clip — a 176×320 picture-message video — plays at its own tiny size
 // with the controls crammed on top; with it, it's scaled up (aspect kept) to
 // fill the box like any other video.
-export default function VideoPlayer({ src, style, autoPlay = true, poster, ambient = false, fit }: { src: string; style?: React.CSSProperties; autoPlay?: boolean; poster?: string; ambient?: boolean; fit?: { w: string; h: string } }) {
+export default function VideoPlayer({ src, style, autoPlay = true, poster, ambient = false, fit, onError }: { src: string; style?: React.CSSProperties; autoPlay?: boolean; poster?: string; ambient?: boolean; fit?: { w: string; h: string }; onError?: () => void }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const vRef = useRef<HTMLVideoElement>(null)
   const previewRef = useRef<HTMLVideoElement>(null)
@@ -167,7 +167,7 @@ export default function VideoPlayer({ src, style, autoPlay = true, poster, ambie
         <canvas ref={bgRef} width={64} height={36} aria-hidden
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(34px) saturate(1.5)', transform: 'scale(1.25)', zIndex: 0, pointerEvents: 'none' }} />
       )}
-      <video ref={vRef} src={src} playsInline autoPlay={autoPlay} poster={poster} preload={autoPlay ? 'auto' : 'metadata'} onClick={toggle}
+      <video ref={vRef} src={src} playsInline autoPlay={autoPlay} poster={poster} preload={autoPlay ? 'auto' : 'metadata'} onClick={toggle} onError={onError}
         onLoadedData={() => setFirstFrame(true)} onPlaying={() => setFirstFrame(true)}
         onLoadedMetadata={e => { const v = e.currentTarget; if (v.videoWidth && v.videoHeight) setAspect(v.videoWidth / v.videoHeight) }}
         style={{ display: 'block', maxWidth: '100%', maxHeight: '100%', position: 'relative', zIndex: 1, ...style,
