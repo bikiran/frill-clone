@@ -24,6 +24,7 @@ import CompanyWhatsApp from '@/components/platform-admin/CompanyWhatsApp'
 import WhatsAppPage from '@/components/platform-admin/WhatsAppPage'
 import StatusIncidentsPage from '@/components/platform-admin/StatusIncidentsPage'
 import { COLVY_CONTACT, isColvyNumber } from '@/lib/colvy-contact'
+import Intelligence, { type IntelView } from './intelligence/Intelligence'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
@@ -113,6 +114,13 @@ const I = {
 
 const NAV = [
   { key: 'overview',   label: 'Overview',        icon: 'overview' },
+  { section: 'Intelligence' },
+  { key: 'intel',          label: 'Executive overview', icon: 'analytics' },
+  { key: 'intel_live',     label: 'Live visitors',      icon: 'users' },
+  { key: 'intel_traffic',  label: 'Traffic',            icon: 'signups' },
+  { key: 'intel_pages',    label: 'Pages & clicks',     icon: 'overview' },
+  { key: 'intel_journeys', label: 'Journeys',           icon: 'roadmap' },
+  { key: 'intel_funnels',  label: 'Signup funnels',     icon: 'subs' },
   { section: 'Workspace' },
   { key: 'companies',  label: 'Companies',        icon: 'companies' },
   { key: 'users',      label: 'Users',            icon: 'users' },
@@ -5062,6 +5070,7 @@ export default function SuperAdmin() {
           {page === 'users'      && <UsersPage />}
           {page === 'signups'    && <SignupsPage />}
           {page === 'analytics'  && <AnalyticsPage />}
+          {(page === 'intel' || page === 'intel_live' || page === 'intel_traffic' || page === 'intel_pages' || page === 'intel_journeys' || page === 'intel_funnels') && <Intelligence view={page as IntelView} />}
           {page === 'flags'      && <FeatureFlagsPage />}
           {page === 'system'     && <SystemPage onGo={setPage} />}
           {page === 'audit'      && <AuditPage />}
