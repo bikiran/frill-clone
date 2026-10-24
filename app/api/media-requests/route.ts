@@ -182,7 +182,7 @@ export async function GET(req: NextRequest) {
     // links sent before they were shortened. Skip if the /l/ redirect just
     // logged this same open.
     try {
-      const { data: sl } = await db.from('short_links').select('id, company_id, contact_id, clicks, last_clicked_at')
+      const { data: sl } = await db.from('short_links').select('id, company_id, contact_id, clicks, last_clicked_at, created_at')
         .eq('company_id', request.company_id).like('target_url', `%/u/${token}`).limit(1)
       const link = sl?.[0]
       if (link && (!link.last_clicked_at || Date.now() - Date.parse(link.last_clicked_at) > 60_000)) await recordLinkClick(db, link, req.headers)
