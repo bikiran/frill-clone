@@ -30,7 +30,7 @@ type Comment = {
   commented_at: string | null
 }
 
-type Post = { id: string; platform: string | null; permalink: string | null; message: string | null; media_url: string | null; post_type: string | null }
+type Post = { id: string; platform: string | null; permalink: string | null; message: string | null; media_url: string | null; post_type: string | null; thumb?: string | null; mtype?: string | null }
 
 const PLATFORM: Record<string, { label: string; color: string; bg: string }> = {
   instagram: { label: 'Instagram', color: '#C13584', bg: 'linear-gradient(45deg,#F58529 0%,#DD2A7B 50%,#8134AF 80%,#515BD4 100%)' },
@@ -51,6 +51,75 @@ function PlatformMark({ platform, size = 16 }: { platform: string; size?: number
   )
 }
 
+const PLACEHOLDER_AUTHOR = /^(instagram|facebook) user$/i
+
+/** A round avatar; falls back to the initial when there's no photo or it has expired. */
+function Avatar({ src, name }: { src?: string | null; name: string }) {
+  const [broken, setBroken] = useState(false)
+  if (src && !broken) return <img src={src} alt="" referrerPolicy="no-referrer" onError={() => setBroken(true)} style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', display: 'block' }} />
+  return <span style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13 }}>{(name || '?').charAt(0).toUpperCase()}</span>
+}
+
+/**
+ * The post a comment is on: a thumbnail and the caption, and for a reel or
+ * video a play button that plays it right here. Instagram videos play from
+ * the file itself and fall back to Instagram's own embed when that link has
+ * expired; Facebook videos use Facebook's embedded player. A photo opens
+ * bigger. The arrow still opens the post on Instagram / Facebook.
+ */
+function PostPreview({ post, platform }: { post: Post; platform: string }) {
+  const [open, setOpen] = useState(false)
+  const [embed, setEmbed] = useState(false)
+  const [thumbBroken, setThumbBroken] = useState(false)
+  const label = PLATFORM[platform]?.label || 'Facebook'
+  const isVideo = post.post_type === 'reel' || /video|reel/i.test(post.mtype || '')
+  const igVideoFile = platform === 'instagram' && isVideo && /^VIDEO$/i.test(post.mtype || '') ? post.media_url : null
+  const thumb = platform === 'instagram' && isVideo ? (post.thumb || null) : (post.media_url || post.thumb || null)
+  const text = (post.message || '').replace(/\s+/g, ' ').trim()
+  const kind = post.post_type && post.post_type !== 'post' ? `a ${post.post_type.toLowerCase().replace(/_/g, ' ')}` : 'a post'
+  const canOpen = isVideo ? !!(igVideoFile || post.permalink) : !!thumb
+  const igEmbed = post.permalink ? post.permalink.replace(/\?.*$/, '').replace(/\/?$/, '/') + 'embed' : null
+  const fbEmbed = post.permalink ? `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(post.permalink)}&show_text=false&width=320` : null
+  return (
+    <div style={{ margin: '0 0 10px' }}>
+      <div className="se-post">
+        <button type="button" onClick={() => canOpen && setOpen(o => !o)} disabled={!canOpen} title={canOpen ? (open ? 'Close' : isVideo ? `Play the ${post.post_type || 'video'}` : 'View the photo') : undefined}
+          style={{ position: 'relative', width: 44, height: 44, borderRadius: 8, overflow: 'hidden', flexShrink: 0, border: 'none', padding: 0, background: '#e7e5e4', cursor: canOpen ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {thumb && !thumbBroken
+            ? <img src={thumb} alt="" referrerPolicy="no-referrer" onError={() => setThumbBroken(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            : <PlatformMark platform={platform} size={20} />}
+          {isVideo && canOpen && (
+            <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.28)' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff" aria-hidden="true">{open ? <><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></> : <path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" />}</svg>
+            </span>
+          )}
+        </button>
+        <span style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          On {kind}{text ? `: “${text.slice(0, 90)}${text.length > 90 ? '…' : ''}”` : ''}
+        </span>
+        {post.permalink && (
+          <a href={post.permalink} target="_blank" rel="noopener noreferrer" title={`Open on ${label}`} className="se-post-open">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 4h6v6" /><path d="M10 14L20 4" /><path d="M19 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h6" /></svg>
+          </a>
+        )}
+      </div>
+      {open && (
+        <div style={{ marginTop: 8, width: '100%', maxWidth: isVideo ? 300 : 360, borderRadius: 12, overflow: 'hidden', background: '#000', aspectRatio: isVideo ? '9 / 16' : undefined }}>
+          {!isVideo
+            ? <img src={thumb || ''} alt="" referrerPolicy="no-referrer" style={{ width: '100%', display: 'block' }} />
+            : igVideoFile && !embed
+              ? <video src={igVideoFile} poster={thumb || undefined} controls autoPlay playsInline onError={() => setEmbed(true)} style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }} />
+              : platform === 'instagram' && igEmbed
+                ? <iframe src={igEmbed} title="Instagram post" allow="autoplay; encrypted-media; picture-in-picture" style={{ width: '100%', height: '100%', border: 0, background: '#fff' }} />
+                : fbEmbed
+                  ? <iframe src={fbEmbed} title="Facebook video" allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen style={{ width: '100%', height: '100%', border: 0 }} />
+                  : null}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function SocialEngagementPage() {
   const { companyId, loading } = useCompanyUser()
   const [isMobile, setIsMobile] = useState(false)
@@ -64,6 +133,7 @@ export default function SocialEngagementPage() {
   const [comments, setComments] = useState<Comment[]>([])
   const [postCount, setPostCount] = useState(0)
   const [posts, setPosts] = useState<Record<string, Post>>({})
+  const [contactInfo, setContactInfo] = useState<Record<string, { name?: string | null; avatar?: string | null }>>({})
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState('')
 
@@ -155,10 +225,18 @@ export default function SocialEngagementPage() {
     const [{ data: chans }, cmts, postRes] = await Promise.all([
       (supabase as any).from('meta_channels').select('page_name').eq('company_id', companyId).in('platform', ['facebook', 'instagram']).eq('is_active', true).limit(1),
       (supabase as any).from('social_comments').select('*').eq('company_id', companyId).order('commented_at', { ascending: false }).limit(2000),
-      (supabase as any).from('social_posts').select('id, platform, permalink, message, media_url, post_type', { count: 'exact' }).eq('company_id', companyId).order('posted_at', { ascending: false }).limit(1000),
+      (supabase as any).from('social_posts').select('id, platform, permalink, message, media_url, post_type, thumb:raw->>thumbnail_url, mtype:raw->>media_type', { count: 'exact' }).eq('company_id', companyId).order('posted_at', { ascending: false }).limit(1000),
     ])
     setConnected(chans?.[0] || null)
     setComments(cmts.data || [])
+    // Linked customers' names and photos: Instagram doesn't share a commenter's
+    // profile picture with comments, but people who've messaged the business
+    // have one on their contact.
+    const ids = Array.from(new Set((cmts.data || []).map((c: Comment) => c.contact_id).filter(Boolean))) as string[]
+    if (ids.length) {
+      const { data: cts } = await (supabase as any).from('contacts').select('id, name, avatar_url').in('id', ids.slice(0, 500))
+      setContactInfo(Object.fromEntries((cts || []).map((x: any) => [x.id, { name: x.name, avatar: x.avatar_url }])))
+    }
     setPostCount(postRes.count || 0)
     setPosts(Object.fromEntries((postRes.data || []).map((p: Post) => [p.id, p])))
     setChecked(true)
@@ -303,8 +381,9 @@ export default function SocialEngagementPage() {
         .se-btn:disabled { opacity:.6; cursor:default; }
         .se-fchip { padding:6px 11px; border-radius:999px; border:1px solid var(--border); background:#fff; color:var(--slate); font-size:12px; font-weight:700; cursor:pointer; }
         .se-fchip.on { background:var(--peach); border-color:var(--coral); color:var(--coral); }
-        .se-post { display:inline-flex; align-items:center; gap:8px; max-width:100%; box-sizing:border-box; margin:0 0 10px; padding:5px 10px 5px 5px; border-radius:10px; border:1px solid var(--border); background:var(--canvas); color:var(--slate); font-size:11.5px; font-weight:600; text-decoration:none; }
-        .se-post:hover { color:var(--ink); border-color:#d6d3d1; }
+        .se-post { display:inline-flex; align-items:center; gap:10px; max-width:100%; box-sizing:border-box; margin:0; padding:4px 4px 4px 4px; border-radius:10px; border:1px solid var(--border); background:var(--canvas); color:var(--slate); font-size:11.5px; font-weight:600; text-decoration:none; }
+        .se-post-open { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:7px; color:var(--slate); }
+        .se-post-open:hover { color:var(--ink); background:#fff; }
       `}</style>
 
       <PageHeader
@@ -349,19 +428,18 @@ export default function SocialEngagementPage() {
               const hot = c.id === highlightCommentId
               const plat = platformOf(c)
               const post = c.post_id ? posts[c.post_id] : undefined
-              const postText = (post?.message || '').replace(/\s+/g, ' ').trim()
+              const linked = c.contact_id ? contactInfo[c.contact_id] : undefined
+              const authorName = (c.author_name && !PLACEHOLDER_AUTHOR.test(c.author_name) ? c.author_name : linked?.name) || c.author_name || `${PLATFORM[plat].label} user`
               return (
               <div key={c.id} id={`comment-${c.id}`} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '16px 18px', marginBottom: 14, opacity: c.is_hidden ? 0.6 : 1, boxShadow: hot ? '0 0 0 3px var(--coral)' : undefined, transition: 'box-shadow 0.4s' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                     <span style={{ position: 'relative', flexShrink: 0 }}>
-                      {c.author_photo
-                        ? <img src={c.author_photo} alt="" referrerPolicy="no-referrer" style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', display: 'block' }} />
-                        : <span style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13 }}>{(c.author_name || '?').charAt(0).toUpperCase()}</span>}
+                      <Avatar key={c.author_photo || linked?.avatar || c.id} src={c.author_photo || linked?.avatar} name={authorName} />
                       <span style={{ position: 'absolute', right: -3, bottom: -3, borderRadius: plat === 'instagram' ? 6 : '50%', boxShadow: '0 0 0 2px #fff', display: 'flex' }}><PlatformMark platform={plat} size={16} /></span>
                     </span>
                     <div style={{ minWidth: 0 }}>
-                      <p style={{ margin: 0, fontWeight: 800, fontSize: 14 }}>{c.author_name || `${PLATFORM[plat].label} user`}</p>
+                      <p style={{ margin: 0, fontWeight: 800, fontSize: 14 }}>{authorName}</p>
                       <p style={{ margin: 0, fontSize: 11, color: 'var(--slate)' }}><span style={{ color: PLATFORM[plat].color, fontWeight: 700 }}>{PLATFORM[plat].label}</span> · {c.commented_at ? new Date(c.commented_at).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}{c.is_hidden ? ' · hidden' : ''}{c.is_replied ? ' · replied' : ''}</p>
                       <button onClick={() => openLink(c)} title="Match this commenter to a customer"
                         style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 3, padding: '2px 8px', borderRadius: 999, border: '1px solid var(--border)', background: c.contact_id ? 'var(--peach)' : '#fff', color: c.contact_id ? 'var(--coral)' : 'var(--slate)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
@@ -379,18 +457,7 @@ export default function SocialEngagementPage() {
 
                 <p style={{ margin: '0 0 8px', fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.55 }}>{c.message || <span style={{ color: 'var(--slate)', fontStyle: 'italic' }}>(no text)</span>}</p>
                 {c.attachment_url && <img src={c.attachment_url} alt="" referrerPolicy="no-referrer" style={{ maxWidth: 200, borderRadius: 10, marginBottom: 8 }} />}
-                {post && (
-                  <a href={post.permalink || undefined} target="_blank" rel="noopener noreferrer" className="se-post" title={post.permalink ? `Open the ${post.post_type || 'post'} on ${PLATFORM[plat].label}` : undefined}
-                    style={{ pointerEvents: post.permalink ? undefined : 'none' }}>
-                    {post.media_url
-                      ? <img src={post.media_url} alt="" referrerPolicy="no-referrer" onError={e => { e.currentTarget.style.display = 'none' }} style={{ width: 30, height: 30, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />
-                      : <PlatformMark platform={plat} size={18} />}
-                    <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      On {post.post_type && post.post_type !== 'post' ? `a ${post.post_type.toLowerCase().replace(/_/g, ' ')}` : 'a post'}{postText ? `: “${postText.slice(0, 90)}${postText.length > 90 ? '…' : ''}”` : ''}
-                    </span>
-                    {post.permalink && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}><path d="M14 4h6v6" /><path d="M10 14L20 4" /><path d="M19 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h6" /></svg>}
-                  </a>
-                )}
+                {post && <PostPreview key={post.id} post={post} platform={plat} />}
 
                 {c.category && <span style={{ display: 'inline-block', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 8, background: 'var(--canvas)', color: 'var(--slate)' }}>{c.category}</span>}
 
