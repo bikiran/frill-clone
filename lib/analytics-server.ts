@@ -14,6 +14,7 @@ export type ServerEvent =
   | 'account_created'     // signup route: the user row exists (props: via)
   | 'business_created'    // a business's workspace row was created (props: company_id, via, plan) — the client's workspace_created stays as is
   | 'milestone_reached'   // a business did something for the first time (props: milestone, company_id) — lib/intel/business-job
+  | 'billing_event'       // Colvy billing changed (props: kind, product, plan, mrr_before/after in AUD cents) — lib/intel/billing
 
 const INGEST = (process.env.NEXT_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com').replace(/\/$/, '')
 

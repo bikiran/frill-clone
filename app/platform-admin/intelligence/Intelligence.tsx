@@ -8,15 +8,15 @@ import { supabase } from '@/lib/supabase'
 // Every number on these pages is a real count of collected data; with nothing
 // collected yet a page says so instead of showing anything made up.
 
-export type IntelView = 'intel' | 'intel_live' | 'intel_traffic' | 'intel_pages' | 'intel_journeys' | 'intel_funnels' | 'intel_business' | 'intel_health'
-export const INTEL_VIEWS: IntelView[] = ['intel', 'intel_live', 'intel_traffic', 'intel_pages', 'intel_journeys', 'intel_funnels', 'intel_business', 'intel_health']
+export type IntelView = 'intel' | 'intel_live' | 'intel_traffic' | 'intel_pages' | 'intel_journeys' | 'intel_funnels' | 'intel_business' | 'intel_health' | 'intel_revenue' | 'intel_system'
+export const INTEL_VIEWS: IntelView[] = ['intel', 'intel_live', 'intel_traffic', 'intel_pages', 'intel_journeys', 'intel_funnels', 'intel_business', 'intel_health', 'intel_revenue', 'intel_system']
 
 const CORAL = '#ff7a6b'
 const GREEN = '#16a34a'
 const RED = '#dc2626'
 const AMBER = '#d97706'
 const INDIGO = '#6366f1'
-const REPORT: Record<IntelView, string> = { intel: 'overview', intel_live: 'live', intel_traffic: 'traffic', intel_pages: 'pages', intel_journeys: 'journeys', intel_funnels: 'funnels', intel_business: 'business', intel_health: 'health' }
+const REPORT: Record<IntelView, string> = { intel: 'overview', intel_live: 'live', intel_traffic: 'traffic', intel_pages: 'pages', intel_journeys: 'journeys', intel_funnels: 'funnels', intel_business: 'business', intel_health: 'health', intel_revenue: 'revenue', intel_system: 'system' }
 const TITLES: Record<IntelView, [string, string]> = {
   intel: ['Executive overview', 'Visitors, engagement and conversion on colvy.com, against the previous period'],
   intel_live: ['Live visitors', 'Who is on colvy.com and in the app right now. Refreshes every 15 seconds'],
@@ -26,6 +26,8 @@ const TITLES: Record<IntelView, [string, string]> = {
   intel_funnels: ['Signup funnels', 'From first visit to a working workspace, and where people drop off'],
   intel_business: ['Business analytics', 'New workspaces, how far they get, where they came from and what they use'],
   intel_health: ['Customer health', 'Which businesses are thriving, which need a hand, and what’s broken'],
+  intel_revenue: ['Revenue', 'MRR and how it moves, who pays, what’s at risk, and what it costs to serve'],
+  intel_system: ['System health', 'Jobs, webhooks, errors, status and alerts across the platform'],
 }
 const RANGES = [['24h', '24h'], ['7d', '7d'], ['28d', '28d'], ['90d', '90d'], ['custom', 'Custom']] as const
 
@@ -156,7 +158,7 @@ function AreaChart({ points, series, height = 180 }: { points: { label: string; 
 }
 
 /** Ranked rows with a soft proportional bar behind each. */
-function BarList({ rows, value = 'sessions', label = 'key', extra, limit = 10, color = CORAL }: { rows: any[]; value?: string; label?: string; extra?: (r: any) => React.ReactNode; limit?: number; color?: string }) {
+function BarList({ rows, value = 'sessions', label = 'key', extra, limit = 10, color = CORAL, format = fmt }: { rows: any[]; value?: string; label?: string; extra?: (r: any) => React.ReactNode; limit?: number; color?: string; format?: (n: number) => string }) {
   const [all, setAll] = useState(false)
   if (!rows?.length) return <Empty />
   const max = Math.max(1, ...rows.map(r => Number(r[value]) || 0))
@@ -168,7 +170,7 @@ function BarList({ rows, value = 'sessions', label = 'key', extra, limit = 10, c
           <div aria-hidden style={{ position: 'absolute', inset: 0, width: `${(Number(r[value]) / max) * 100}%`, background: color, opacity: 0.1, borderRadius: 9 }} />
           <span style={{ position: 'relative', flex: 1, minWidth: 0, fontSize: 12.5, color: 'var(--sa-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={String(r[label])}>{String(r[label])}</span>
           {extra && <span style={{ position: 'relative', fontSize: 11.5, color: 'var(--sa-muted)', whiteSpace: 'nowrap' }}>{extra(r)}</span>}
-          <span style={{ position: 'relative', fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', fontVariantNumeric: 'tabular-nums', minWidth: 36, textAlign: 'right' }}>{fmt(Number(r[value]))}</span>
+          <span style={{ position: 'relative', fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', fontVariantNumeric: 'tabular-nums', minWidth: 36, textAlign: 'right' }}>{format(Number(r[value]))}</span>
         </div>
       ))}
       {rows.length > limit && <button onClick={() => setAll(v => !v)} style={{ alignSelf: 'flex-start', marginTop: 4, background: 'none', border: 'none', color: CORAL, fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: '2px 10px' }}>{all ? 'Show less' : `Show all ${rows.length}`}</button>}
@@ -605,9 +607,323 @@ function HealthView({ d, onOpen }: { d: any; onOpen?: (id: string) => void }) {
   )
 }
 
+// ── Revenue ──────────────────────────────────────────────────────────────────
+
+const money = (cents: number | null | undefined, exact = false) => {
+  if (cents == null || !Number.isFinite(cents)) return '—'
+  const d = cents / 100
+  const neg = d < 0 ? '−' : ''
+  const a = Math.abs(d)
+  return `${neg}A$${a === 0 || a >= 1000 || (!exact && a >= 10) ? Math.round(a).toLocaleString('en-AU') : a.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+const MOVE = [
+  { key: 'new', label: 'New', color: GREEN, sign: 1 },
+  { key: 'expansion', label: 'Expansion', color: '#0d9488', sign: 1 },
+  { key: 'reactivation', label: 'Reactivation', color: INDIGO, sign: 1 },
+  { key: 'contraction', label: 'Contraction', color: AMBER, sign: -1 },
+  { key: 'churned', label: 'Churn', color: RED, sign: -1 },
+] as const
+
+function MovementChart({ buckets, size }: { buckets: any[]; size: string }) {
+  const [hover, setHover] = useState<number | null>(null)
+  if (!buckets.length || buckets.every(b => MOVE.every(m => !b[m.key]))) return <Empty text="No MRR movements in this period." />
+  const up = buckets.map(b => b.new + b.expansion + b.reactivation), down = buckets.map(b => b.contraction + b.churned)
+  const max = Math.max(1, ...up, ...down)
+  const H = 160, mid = H / 2
+  return (
+    <div style={{ position: 'relative' }} onMouseLeave={() => setHover(null)}>
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 11.5, color: 'var(--sa-muted)', marginBottom: 8 }}>
+        {MOVE.map(m => <span key={m.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: 3, background: m.color }} />{m.label}</span>)}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'stretch', gap: 3, height: H, borderBottom: 'none', position: 'relative' }}>
+        <div aria-hidden style={{ position: 'absolute', left: 0, right: 0, top: mid, height: 1, background: 'var(--sa-border)' }} />
+        {buckets.map((b, i) => {
+          let yUp = mid, yDown = mid
+          return (
+            <div key={i} onMouseEnter={() => setHover(i)} style={{ flex: 1, position: 'relative', minWidth: 2, cursor: 'default' }}>
+              {MOVE.map(m => {
+                const v = b[m.key] || 0
+                if (!v) return null
+                const h = (v / max) * (mid - 4)
+                const top = m.sign > 0 ? (yUp -= h) : yDown
+                if (m.sign < 0) yDown += h
+                return <div key={m.key} style={{ position: 'absolute', left: 0, right: 0, top, height: Math.max(1, h), background: m.color, opacity: hover === null || hover === i ? 0.9 : 0.45, borderRadius: 2 }} />
+              })}
+            </div>
+          )
+        })}
+      </div>
+      {hover !== null && (
+        <div style={{ position: 'absolute', top: 24, left: `${((hover + 0.5) / buckets.length) * 100}%`, transform: `translateX(${hover > buckets.length / 2 ? '-105%' : '5%'})`, background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 10, padding: '8px 10px', fontSize: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 2 }}>
+          <div style={{ fontWeight: 700, color: 'var(--sa-text)', marginBottom: 4 }}>{size === 'week' ? 'Week of ' : ''}{new Date(`${buckets[hover].bucket}T00:00:00Z`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</div>
+          {MOVE.map(m => <div key={m.key} style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--sa-muted)' }}><span style={{ width: 8, height: 8, borderRadius: 2, background: m.color }} />{m.label}: <b style={{ color: 'var(--sa-text)' }}>{m.sign < 0 && buckets[hover][m.key] ? '−' : ''}{money(buckets[hover][m.key] || 0)}</b></div>)}
+        </div>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: 'var(--sa-muted)', marginTop: 6 }}>
+        <span>{new Date(`${buckets[0].bucket}T00:00:00Z`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</span>
+        <span>{new Date(`${buckets[buckets.length - 1].bucket}T00:00:00Z`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</span>
+      </div>
+    </div>
+  )
+}
+
+function MoneyBars({ rows, value = 'mrr', extra }: { rows: any[]; value?: string; extra?: (r: any) => React.ReactNode }) {
+  return <BarList rows={rows} value={value} format={money} extra={extra} />
+}
+
+function NeedsMigration({ file, what }: { file: string; what: string }) {
+  return (
+    <Card title={`${what} isn’t switched on yet`} note="It needs one database update, then fills itself in every hour.">
+      <ol style={{ margin: '4px 0 0', paddingLeft: 20, listStyle: 'decimal', fontSize: 13, lineHeight: 1.8, color: 'var(--sa-text)' }}>
+        <li>Run <code>migrations/{file}</code> in the Supabase SQL editor.</li>
+        <li>The hourly <code>intel</code> job then copies Colvy’s subscriptions from Stripe, records MRR every day (rebuilding the history before that once), works out costs, and watches the system for problems.</li>
+      </ol>
+    </Card>
+  )
+}
+
+function RevenueView({ d, onOpen }: { d: any; onOpen?: (id: string) => void }) {
+  if (!d.migrated) return <NeedsMigration file="COLVY_V416_INTEL_REVENUE.sql" what="Revenue analytics" />
+  if (!d.ran) return (
+    <Card title="The first revenue snapshot hasn’t run yet" note={d.stripe ? 'The hourly intel job copies subscriptions from Stripe and records MRR. Check back within the hour.' : 'STRIPE_SECRET_KEY isn’t set, so there are no Stripe subscriptions to read. Shopify-billed plans still count.'}><span /></Card>
+  )
+  const k = d.kpis
+  const recon = d.reconstructedUntil
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={grid(170)}>
+        <Kpi label="MRR" value={money(k.mrr)} cur={k.mrr} prev={k.startMrr} hint="Monthly recurring revenue now: active and past-due subscriptions, after discounts" />
+        <Kpi label="ARR" value={money(k.arr)} cur={k.arr} hint="MRR × 12" />
+        <Kpi label="Paying businesses" value={fmt(k.paying)} cur={k.paying} prev={k.startPaying} />
+        <Kpi label="ARPA" value={money(k.arpa)} cur={k.arpa || 0} hint="Average MRR per paying business" />
+        <Kpi label="On a free trial" value={fmt(k.trialing)} cur={k.trialing} />
+        <Kpi label="Trial → paid" value={k.trialConversion == null ? '—' : pct(k.trialConversion, 0)} cur={0} hint="Workspaces 14–104 days old that have ever paid" />
+      </div>
+      <div style={grid(170)}>
+        <Kpi label="Net new MRR" value={money(k.netNew)} cur={k.netNew} prev={k.netNewPrev || undefined} hint="New + expansion + reactivation − contraction − churn, this period" />
+        <Kpi label="Collected" value={money(k.collected)} cur={k.collected} prev={k.collectedPrev} hint="Paid to Colvy in this period (tax invoices), including SMS credit and numbers" />
+        <Kpi label="Revenue churn" value={k.revenueChurn == null ? '—' : pct(k.revenueChurn)} cur={k.revenueChurn || 0} hint="MRR lost to cancellations ÷ MRR at the start of the period" />
+        <Kpi label="Customer churn" value={k.logoChurn == null ? '—' : pct(k.logoChurn)} cur={k.logoChurn || 0} hint="Paying businesses lost ÷ paying at the start of the period" />
+        <Kpi label="Net revenue retention" value={k.nrr == null ? '—' : pct(k.nrr, 0)} cur={k.nrr || 0} hint="(Start MRR + expansion − contraction − churn) ÷ start MRR" />
+        <Kpi label="Lifetime value" value={k.ltv == null ? '—' : money(k.ltv)} cur={k.ltv || 0} hint={k.ltv == null ? 'Needs at least 5 paying businesses and a cancellation in the last 90 days' : `ARPA ÷ monthly customer churn (${pct(k.monthlyChurn)} over the last 90 days)`} />
+      </div>
+
+      {(k.pastDue > 0 || k.cancelling > 0) && (
+        <p style={{ ...sub, margin: '-2px 2px 0' }}>
+          {k.pastDue > 0 && <b style={{ color: RED }}>{k.pastDue} with failing payments ({money(k.pastDueCents)}/mo)</b>}
+          {k.pastDue > 0 && k.cancelling > 0 && ' · '}
+          {k.cancelling > 0 && <b style={{ color: AMBER }}>{k.cancelling} cancelling at period end ({money(k.cancellingCents)}/mo)</b>}
+        </p>
+      )}
+
+      <Card title="MRR" note={recon ? `Days up to ${day(`${recon}T00:00:00Z`)} are rebuilt from Stripe’s subscription history at each subscription’s current price; daily snapshots after that` : 'Recorded every hour from Stripe and Shopify'}>
+        <AreaChart points={(d.series || []).map((s: any) => ({ label: new Date(`${s.day}T00:00:00Z`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }), values: [s.mrr / 100] }))} series={[{ name: 'MRR (A$)', color: CORAL }]} />
+      </Card>
+
+      <div style={grid(360)}>
+        <Card title="MRR movements" note={`Per ${d.bucketSize}, this period`}>
+          <MovementChart buckets={d.buckets || []} size={d.bucketSize} />
+        </Card>
+        <Card title="Where MRR changed" note="This period">
+          <MoneyBars rows={MOVE.map(m => ({ key: m.label, mrr: d.movement?.[m.key] || 0, sign: m.sign })).filter(r => r.mrr > 0)} extra={r => (r.sign < 0 ? 'lost' : 'gained')} />
+        </Card>
+      </div>
+
+      <div style={grid(300)}>
+        <Card title="By product" note={d.shopifyCents ? `${money(d.shopifyCents)} of it billed through Shopify` : 'Plans, phone numbers and add-ons'}><MoneyBars rows={d.byProduct || []} /></Card>
+        <Card title="By plan"><MoneyBars rows={d.byPlan || []} extra={r => `${fmt(r.subs)} paying`} /></Card>
+        <Card title="By how they found Colvy" note="Paying businesses, by first-visit channel"><MoneyBars rows={d.byChannel || []} extra={r => `${fmt(r.paying)} paying`} /></Card>
+      </div>
+
+      <Card title="Signup cohorts" note="Workspaces by the month they were created: how many have ever paid, and pay now">
+        <Table name="colvy-revenue-cohorts" rows={d.cohorts || []} cols={[
+          { key: 'month', label: 'Month', render: r => new Date(`${r.month}-01T00:00:00Z`).toLocaleDateString('en-AU', { month: 'short', year: 'numeric' }) },
+          { key: 'workspaces', label: 'Workspaces', num: true },
+          { key: 'everPaid', label: 'Ever paid', num: true, render: r => `${fmt(r.everPaid)} · ${r.workspaces ? pct(r.everPaid / r.workspaces, 0) : '—'}` },
+          { key: 'payingNow', label: 'Paying now', num: true },
+          { key: 'mrr', label: 'MRR now', num: true, render: r => money(r.mrr) },
+        ]} />
+      </Card>
+
+      <div style={grid(420)}>
+        <Card title="Top customers" note="By MRR now">
+          <Table name="colvy-top-customers" rows={d.top || []} cols={[
+            { key: 'name', label: 'Business', render: r => <CompanyLink id={r.id} name={r.name} onOpen={onOpen} /> },
+            { key: 'plan', label: 'Plan' },
+            { key: 'mrr', label: 'MRR', num: true, render: r => money(r.mrr) },
+            { key: 'since', label: 'Since', render: r => (r.since ? day(r.since) : '—') },
+            { key: 'health', label: 'Health', render: r => r.health || '—' },
+          ]} />
+        </Card>
+        <Card title="Revenue at risk" note="Failing payments and cancellations scheduled">
+          <Table name="colvy-revenue-at-risk" rows={d.atRisk || []} cols={[
+            { key: 'name', label: 'Business', render: r => (r.id ? <CompanyLink id={r.id} name={r.name} onOpen={onOpen} /> : r.name) },
+            { key: 'why', label: 'Why', render: r => <span style={{ color: r.why === 'Payment failing' ? RED : AMBER, fontWeight: 600 }}>{r.why}</span> },
+            { key: 'mrr', label: 'MRR', num: true, render: r => money(r.mrr) },
+            { key: 'periodEnd', label: 'Period ends', render: r => (r.periodEnd ? day(r.periodEnd) : '—') },
+          ]} />
+        </Card>
+      </div>
+
+      <Card title="Billing activity" note="From Stripe, this period">
+        <Table name="colvy-billing-activity" rows={d.events || []} cols={[
+          { key: 'at', label: 'When', render: r => ago(r.at) },
+          { key: 'name', label: 'Business', render: r => (r.id ? <CompanyLink id={r.id} name={r.name} onOpen={onOpen} /> : r.name) },
+          { key: 'kind', label: 'What', render: r => BILLING_KIND[r.kind] || r.kind },
+          { key: 'plan', label: 'Plan' },
+          { key: 'after', label: 'MRR', num: true, render: r => (r.before != null && r.after != null && r.before !== r.after ? `${money(r.before)} → ${money(r.after)}` : r.amount ? money(r.amount, true) : r.after != null ? money(r.after) : '—') },
+        ]} />
+      </Card>
+
+      <CostsCard c={d.costs} onOpen={onOpen} />
+    </div>
+  )
+}
+
+const BILLING_KIND: Record<string, string> = {
+  started: 'Subscribed', trial_started: 'Trial started', trial_converted: 'Trial converted', plan_changed: 'Plan changed',
+  payment_failed: 'Payment failed', payment_failing: 'Payment failing', payment_recovered: 'Payment recovered',
+  cancel_scheduled: 'Cancellation scheduled', cancel_withdrawn: 'Cancellation withdrawn', canceled: 'Cancelled',
+}
+
+function CostsCard({ c, onOpen }: { c: any; onOpen?: (id: string) => void }) {
+  if (!c) return null
+  const rates = c.rates || {}
+  return (
+    <Card title={`Cost to serve · ${new Date(`${c.month}-01T00:00:00Z`).toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })} so far`}
+      note={`From usage Colvy records: AI tokens at each model’s price (super admin → AI)${c.aiUnpricedTokens ? `, except ${fmt(c.aiUnpricedTokens)} tokens on models with no price` : ''}, SMS parts at the carrier cost in SMS pricing. ${rates.voicePerMin != null ? `Calls at A$${rates.voicePerMin}/min. ` : 'Calls: minutes only (set INTEL_VOICE_COST_PER_MIN to cost them). '}${rates.numberMonthly != null ? `Numbers at A$${rates.numberMonthly}/month.` : 'Numbers: count only (set INTEL_NUMBER_COST_MONTHLY).'}`}>
+      <div style={{ ...grid(150), marginBottom: 14 }}>
+        <Kpi label="Known cost" value={money(c.total)} cur={c.total} />
+        <Kpi label="AI" value={money(c.ai)} cur={c.ai} hint={c.aiUnpricedTokens ? `${fmt(c.aiUnpricedTokens)} tokens on models with no price aren’t included: set prices in super admin → AI` : undefined} />
+        <Kpi label="SMS" value={money(c.sms)} cur={c.sms} hint={`${fmt(c.smsParts)} parts`} />
+        <Kpi label="Call minutes" value={fmt(c.callMinutes)} cur={c.callMinutes} />
+        <Kpi label="Collected" value={money(c.collected)} cur={c.collected} hint="Paid to Colvy this month" />
+      </div>
+      <Table name="colvy-cost-to-serve" rows={c.rows || []} cols={[
+        { key: 'name', label: 'Business', render: r => <CompanyLink id={r.id} name={r.name} onOpen={onOpen} /> },
+        { key: 'mrr', label: 'MRR', num: true, render: r => money(r.mrr) },
+        { key: 'collected', label: 'Collected', num: true, render: r => money(r.collected) },
+        { key: 'cost', label: 'Known cost', num: true, render: r => money(r.cost, true) },
+        { key: 'ai', label: 'AI', num: true, render: r => money(r.ai, true) },
+        { key: 'sms', label: 'SMS', num: true, render: r => money(r.sms, true) },
+        { key: 'callMinutes', label: 'Call min', num: true },
+        { key: 'numbers', label: 'Numbers', num: true },
+      ]} />
+    </Card>
+  )
+}
+
+// ── System health ────────────────────────────────────────────────────────────
+
+const SEV_COLOR: Record<string, string> = { critical: RED, warning: AMBER, info: INDIGO }
+const HEALTH_COLOR: Record<string, string> = { operational: GREEN, degraded: AMBER, outage: RED, unknown: 'var(--sa-muted)' }
+const JOB_STATE: Record<string, [string, string]> = { failing: ['Failing', RED], overdue: ['Stopped', RED], error: ['Last run failed', AMBER], ok: ['OK', GREEN], not_logged: ['Not logged', 'var(--sa-muted)'] }
+const everyLabel = (m: number) => (m < 60 ? `${m} min` : m < 1440 ? `${Math.round(m / 60)} h` : m < 10080 ? 'daily' : 'weekly')
+
+function Dot({ color }: { color: string }) { return <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 99, background: color, flex: 'none' }} /> }
+
+function SystemView({ d, onNavigate }: { d: any; onNavigate?: (page: string) => void }) {
+  const open = d.alerts?.open || []
+  const go = (page: string) => onNavigate && <button onClick={() => onNavigate(page)} style={{ background: 'none', border: 'none', color: CORAL, fontWeight: 700, fontSize: 12, cursor: 'pointer', padding: 0, whiteSpace: 'nowrap' }}>Open →</button>
+  const jobOrder: Record<string, number> = { failing: 0, overdue: 1, error: 2, ok: 3, not_logged: 4 }
+  const jobs = [...(d.jobs || [])].sort((a, b) => jobOrder[a.state] - jobOrder[b.state] || a.job.localeCompare(b.job))
+  const crit = open.filter((a: any) => a.severity === 'critical').length
+  const sms = d.signupSms?.day
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {!d.migrated && <NeedsMigration file="COLVY_V416_INTEL_REVENUE.sql" what="Alerts" />}
+      <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', borderColor: crit ? `${RED}55` : open.length ? `${AMBER}55` : 'var(--sa-border)' }}>
+        <span style={{ width: 38, height: 38, borderRadius: 12, display: 'grid', placeItems: 'center', background: `${crit ? RED : open.length ? AMBER : GREEN}1a`, color: crit ? RED : open.length ? AMBER : GREEN, fontSize: 18, fontWeight: 800 }}>{crit ? '!' : open.length ? '•' : '✓'}</span>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--sa-text)' }}>{crit ? `${crit} critical alert${crit === 1 ? '' : 's'}` : open.length ? `${open.length} alert${open.length === 1 ? '' : 's'} need a look` : 'Everything looks healthy'}</div>
+          <div style={sub}>{d.status?.overall?.title ? `Public status: ${d.status.overall.title}` : 'Public status unavailable'} · checked {ago(d.now)}</div>
+        </div>
+      </div>
+
+      <Card title="Alerts" note="Raised by the hourly check; critical ones are sent to the Colvy team (bell and email), once a day each">
+        {!open.length ? <Empty text="No open alerts." /> : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {open.map((a: any) => (
+              <div key={a.fingerprint} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 12, background: `${SEV_COLOR[a.severity]}0f`, border: `1px solid ${SEV_COLOR[a.severity]}33` }}>
+                <span style={{ marginTop: 5 }}><Dot color={SEV_COLOR[a.severity]} /></span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)' }}>{a.title}</div>
+                  <div style={{ fontSize: 12, color: 'var(--sa-muted)', marginTop: 2, overflowWrap: 'anywhere' }}>{a.detail}</div>
+                  <div style={{ fontSize: 11, color: 'var(--sa-muted)', marginTop: 4 }}>Since {ago(a.first_seen_at)}{a.notified_at ? ' · team notified' : ''}</div>
+                </div>
+                {a.link && go(a.link)}
+              </div>
+            ))}
+          </div>
+        )}
+        {(d.alerts?.resolved || []).length > 0 && (
+          <details style={{ marginTop: 12 }}>
+            <summary style={{ cursor: 'pointer', fontSize: 12, fontWeight: 700, color: 'var(--sa-muted)' }}>Resolved in the last 7 days ({d.alerts.resolved.length})</summary>
+            <Table name="colvy-resolved-alerts" rows={d.alerts.resolved} cols={[
+              { key: 'title', label: 'Alert' },
+              { key: 'first_seen_at', label: 'Raised', render: r => ago(r.first_seen_at) },
+              { key: 'resolved_at', label: 'Resolved', render: r => ago(r.resolved_at) },
+              { key: 'occurrences', label: 'Checks', num: true },
+            ]} />
+          </details>
+        )}
+      </Card>
+
+      {d.status?.components && (
+        <div style={grid(220)}>
+          {d.status.components.map((c: any) => (
+            <div key={c.key} style={{ ...card, padding: '14px 16px', minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Dot color={HEALTH_COLOR[c.status] || 'var(--sa-muted)'} /><span style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)' }}>{c.name}</span></div>
+              <div style={{ ...sub, marginTop: 6 }}>{c.note || (c.status === 'operational' ? 'Operational' : c.status)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Card title="Scheduled jobs" note="Every job in vercel.json against its runs in the last 24 hours. “Stopped” means no run for three times its schedule" action={go('jobs')}>
+        <Table name="colvy-jobs" rows={jobs} cols={[
+          { key: 'job', label: 'Job' },
+          { key: 'everyMin', label: 'Every', render: r => everyLabel(r.everyMin) },
+          { key: 'state', label: 'State', render: r => <span style={{ color: JOB_STATE[r.state][1], fontWeight: 700 }}>{JOB_STATE[r.state][0]}</span> },
+          { key: 'lastAt', label: 'Last run', render: r => (r.lastAt ? ago(r.lastAt) : '—') },
+          { key: 'runs24h', label: 'Runs 24h', num: true },
+          { key: 'failed24h', label: 'Failed', num: true, render: r => <span style={{ color: r.failed24h ? RED : 'var(--sa-text)' }}>{fmt(r.failed24h)}</span> },
+          { key: 'avgMs', label: 'Avg time', num: true, render: r => (r.avgMs == null ? '—' : r.avgMs < 1000 ? `${r.avgMs} ms` : `${(r.avgMs / 1000).toFixed(1)} s`) },
+        ]} />
+      </Card>
+
+      <div style={grid(420)}>
+        <Card title="Webhooks" note={`Last 24 hours, by source${d.webhooksSampled ? ' (latest 5,000 events)' : ''}`} action={go('webhooks')}>
+          <Table name="colvy-webhooks" rows={d.webhooks || []} cols={[
+            { key: 'source', label: 'Source' },
+            { key: 'total', label: 'Events', num: true },
+            { key: 'errors', label: 'Errors', num: true, render: r => <span style={{ color: r.errors ? RED : 'var(--sa-text)' }}>{fmt(r.errors)}</span> },
+            { key: 'rejected', label: 'Rejected', num: true, render: r => <span style={{ color: r.rejected ? AMBER : 'var(--sa-text)' }}>{fmt(r.rejected)}</span> },
+            { key: 'lastError', label: 'Latest problem', render: r => r.lastError || '—' },
+          ]} />
+        </Card>
+        <Card title="API errors" note={`${fmt(d.api?.errors24h || 0)} in 24 hours · ${fmt(d.api?.errors1h || 0)} in the last hour`} action={go('apilogs')}>
+          <AreaChart height={90} points={(d.api?.perHour || []).map((h: any) => ({ label: `${h.hour.slice(11, 13)}:00`, values: [h.errors] }))} series={[{ name: 'Errors', color: RED }]} />
+          <div style={{ marginTop: 12 }}><BarList rows={d.api?.bySource || []} value="errors" color={RED} limit={6} /></div>
+        </Card>
+      </div>
+
+      <div style={grid(170)}>
+        <Kpi label="AI agent runs (24h)" value={fmt(d.agents?.runs24h)} cur={0} hint={`${d.agents?.failed24h || 0} failed · ${d.agents?.stuck || 0} stuck${d.agents?.paused ? ' · paused platform-wide' : ''}`} />
+        <Kpi label="Failed agent runs" value={fmt(d.agents?.failed24h)} cur={0} />
+        <Kpi label="Stripe events (24h)" value={fmt(d.billing?.stripeEvents24h)} cur={0} />
+        <Kpi label="Failing payments" value={fmt(d.billing?.pastDue)} cur={0} hint={money(d.billing?.pastDueCents) + '/mo'} />
+        <Kpi label="Sign-up texts delivered" value={sms && sms.sent ? pct(sms.delivered / sms.sent, 0) : '—'} cur={0} hint={sms ? `${sms.delivered} of ${sms.sent} in 24 hours` : undefined} />
+        <Kpi label="AI this month" value={`US$${(d.usage?.aiUsdMonth || 0).toFixed(2)}`} cur={0} hint={`${fmt(d.usage?.aiTokensMonth || 0)} tokens${d.usage?.aiUnpricedTokensMonth ? `; ${fmt(d.usage.aiUnpricedTokensMonth)} on models with no price (set in super admin → AI)` : ''}`} />
+        <Kpi label="SMS parts this month" value={fmt(d.usage?.smsPartsMonth)} cur={0} />
+      </div>
+    </div>
+  )
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
-export default function Intelligence({ view, onOpenCompany }: { view: IntelView; onOpenCompany?: (id: string) => void }) {
+export default function Intelligence({ view, onOpenCompany, onNavigate }: { view: IntelView; onOpenCompany?: (id: string) => void; onNavigate?: (page: string) => void }) {
   const [r, setR] = useState<Range>(() => {
     try { const s = JSON.parse(localStorage.getItem('colvy_intel_range') || 'null'); if (s?.range) return s } catch {}
     return { range: '7d' }
@@ -617,7 +933,7 @@ export default function Intelligence({ view, onOpenCompany }: { view: IntelView;
   const { res, loading, reload } = useIntel(report, r, view === 'intel_live' ? 15_000 : 0)
   const [title, note] = TITLES[view]
   const d = res?.data
-  const showRange = view !== 'intel_live' && view !== 'intel_health'
+  const showRange = view !== 'intel_live' && view !== 'intel_health' && view !== 'intel_system'
 
   return (
     <div>
@@ -664,6 +980,8 @@ export default function Intelligence({ view, onOpenCompany }: { view: IntelView;
           {view === 'intel_funnels' && <FunnelsView d={d} configured={!!res.configured} />}
           {view === 'intel_business' && <BusinessView d={d} onOpen={onOpenCompany} />}
           {view === 'intel_health' && <HealthView d={d} onOpen={onOpenCompany} />}
+          {view === 'intel_revenue' && <RevenueView d={d} onOpen={onOpenCompany} />}
+          {view === 'intel_system' && <SystemView d={d} onNavigate={onNavigate} />}
           {Array.isArray(res.errors) && res.errors.length > 0 && res.configured && (
             <p style={{ ...sub, marginTop: 14 }}>Some figures couldn’t load: {res.errors.slice(0, 3).join(' · ')}</p>
           )}
