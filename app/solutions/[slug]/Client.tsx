@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
+import SeoFaqSection from '@/components/marketing/SeoFaqSection'
 import FeatureIcon from '@/components/FeatureIcon'
 
 // Use-case Solutions pages — "Colvy for <the job you're trying to do>": customer
@@ -308,6 +309,8 @@ export default function SolutionPage() {
           ))}
         </div>
       </section>
+
+      <SeoFaqSection path={`solutions/${slug}`} accent={accent} dark={dark} />
 
       {/* CTA */}
       <section style={{ padding: 'clamp(48px, 8vw, 96px) 24px', textAlign: 'center', background: `linear-gradient(135deg, ${accent}, ${PINK} 60%, ${PURPLE})`, overflow: 'hidden' }}>

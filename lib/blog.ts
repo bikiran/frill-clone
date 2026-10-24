@@ -28,6 +28,176 @@ export type BlogPost = {
 
 export const POSTS: BlogPost[] = [
   {
+    slug: 'how-to-reply-to-google-reviews',
+    cover: '/channels/google-reviews.jpg',
+    title: 'How to reply to Google reviews: 12 examples for Australian small businesses',
+    excerpt: 'Copy-ready replies for five-star, mixed and negative Google reviews, what to never write, and how to answer every review without it eating your week.',
+    category: 'Playbooks', accent: CORAL, icon: 'star',
+    date: '2026-10-24T09:00:00+11:00', dateLabel: 'Oct 24, 2026', readTime: '7 min read', author: 'The Colvy Team',
+    takeaways: [
+      'Reply to every review, good and bad, within a day or two if you can.',
+      'Thank them by name, mention something specific, and keep it short.',
+      'Take complaints offline with a real name and a way to reach you.',
+      'Never argue, share private details or offer a reward for a review.',
+      'A template is a starting point: change one line so it sounds like you.',
+    ],
+    content: `When someone searches for a business like yours, your Google reviews are often the first thing they read, and your replies sit right under them. A good reply thanks the person who wrote it, but it’s really written for the next customer reading over their shoulder.
+
+Here’s how to answer every kind of review, with examples you can adapt.
+
+## Why replying matters
+
+- **New customers read your replies.** A calm, helpful answer to a complaint can reassure someone more than another five-star review.
+- **It shows you’re open and paying attention.** A profile full of unanswered reviews looks unattended.
+- **It brings people back.** Someone who had a rough experience and got a genuine reply is far more likely to give you another go.
+
+## The simple formula
+
+1. **Thank them, by name if it’s shown.**
+2. **Mention something specific** from their review, so it’s clearly not a copy-paste.
+3. **Add one useful line**: an invitation back, a tip, or what you’re doing about a problem.
+4. **Sign off as a person**, not “The Management”.
+
+Keep it to two to four sentences. Long replies read as defensive.
+
+## Replies to five-star reviews
+
+**1. The general thank-you**
+> Thanks so much, Priya! We’re really glad the new filter is running quietly. Enjoy the tank, and say hi next time you’re in. — Sam
+
+**2. When they mention a staff member**
+> Thanks for the lovely words, Tom. I’ll make sure Jess sees this, she’ll be thrilled. See you at the next service! — Mel
+
+**3. A first-time customer**
+> Welcome aboard, Aisha, and thanks for taking the time to leave a review. If you need anything at all, just text us on the number on your receipt. — Dan
+
+**4. A loyal regular**
+> Ten years and still coming back, Bob! Thank you. It’s customers like you who keep the doors open. — The team at Reef & Fin
+
+## Replies to four-star and mixed reviews
+
+**5. Happy, with a small gripe**
+> Thanks, Chloe. Glad you loved the cut, and you’re right that the wait was longer than it should have been on Saturday. We’ve added another stylist on weekends, so it should be quicker next time. — Lena
+
+**6. Price feedback**
+> Thanks for the honest review, Marcus. We price on quality parts and a 12-month warranty, but we hear you, and we’re always happy to talk through options before we start a job. — Chris
+
+**7. Stars with no words**
+> Thanks for the five stars, Wei! We appreciate you taking a moment to leave a rating.
+
+## Replies to negative reviews
+
+The goal isn’t to win the argument. It’s to show the next reader that you take problems seriously, and to move the conversation somewhere you can actually fix it.
+
+**8. A genuine mistake**
+> Hi Laura, I’m sorry. Sending the wrong size was our mistake, and having to wait another week isn’t good enough. I’ve sent you a text so we can get the right one out today. — Nick, owner
+
+**9. A slow reply or missed call**
+> Hi Raj, you’re right, and I apologise. We missed your calls during a busy weekend. We now text back every missed call, but that doesn’t fix your experience, so please call me directly on the number on our website. — Anna
+
+**10. Something you don’t recognise**
+> Hi Jordan, I’m sorry to read this, but I can’t find a booking or order under your name. Could you text us the date and details so we can look into it properly? — Ben
+
+**11. A rude or unfair review**
+> Thanks for your feedback, Kevin. We’re sorry the visit didn’t meet your expectations. We’d genuinely like to understand what happened, so please get in touch on the number on our website. — The team
+
+**12. After you’ve fixed it**
+> Thanks for giving us the chance to make it right, Laura, and for updating your review. Enjoy the new tank stand! — Nick
+
+## What never to write
+
+- **Arguments or sarcasm.** Even when the review is unfair, readers side with the calm one.
+- **Private details.** Don’t mention what someone bought, their health, their address or anything they didn’t share themselves.
+- **Rewards for reviews.** Don’t offer discounts or gifts in exchange for reviews or for changing one; it breaks Google’s rules.
+- **The same reply on every review.** Google readers spot it instantly.
+
+## Fake or abusive reviews
+
+If a review breaks Google’s policies (spam, hate speech, conflicts of interest, or someone who was never a customer), you can report it from your Google Business Profile. Reply calmly anyway while you wait, so readers see your side.
+
+## Making it a habit
+
+The hard part isn’t writing one good reply. It’s doing it every time, on a busy week.
+
+- **Answer from where you already work.** In [Colvy](/channels/google-reviews), new Google reviews arrive in the same inbox as your texts, Instagram messages and emails.
+- **Let AI draft, you approve.** Colvy’s Reputation Agent writes a reply in your tone for each review; you can let it post replies to happy reviews on its own and keep anything negative for a person.
+- **Ask for reviews at the right moment.** A short text after an order, booking or finished job, with a direct link, brings in far more reviews than a sign at the counter.
+
+[See how Colvy handles reviews](/solutions/reviews) or [start free](/signup).`,
+  },
+  {
+    slug: 'abandoned-cart-sms-woocommerce-shopify',
+    title: 'Abandoned cart texts for WooCommerce and Shopify: what to send, and when',
+    excerpt: 'Most shoppers who leave a cart weren’t saying no. Here’s how to follow up by SMS without being pushy, with message examples and the timing that works.',
+    category: 'Growth', accent: GREEN, icon: 'cart',
+    date: '2026-10-24T08:00:00+11:00', dateLabel: 'Oct 24, 2026', readTime: '6 min read', author: 'The Colvy Team',
+    takeaways: [
+      'Most abandoned carts are interruptions, not rejections.',
+      'One helpful text, sent within a few hours, beats a series of reminders.',
+      'Write like a person from the shop, and invite a reply.',
+      'Only text people who gave you their number for this, and make it easy to opt out.',
+      'Discounts are a last resort, not the opening line.',
+    ],
+    content: `Someone found a product they liked, added it to the cart, got as far as checkout and then left. On most online stores, that happens far more often than a finished order.
+
+The good news: most of those shoppers weren’t saying no. The kids needed picking up, the delivery cost surprised them, or they wanted to check one thing first. A short, friendly follow-up gets a surprising number of them back.
+
+## Why a text, not just an email
+
+Abandoned-cart emails are the standard, and they’re worth having. But texts are usually read within minutes, and people reply to them. A text that sounds like it came from a person invites a question (“does it come in black?”), and answering that question is often all it takes to close the sale.
+
+## Who you can text
+
+In Australia, marketing texts need consent under the Spam Act: the person has to have agreed to hear from you, the message has to say who it’s from, and it needs an easy way to opt out. In practice, that means:
+
+- Only text shoppers who gave their mobile number and agreed to messages, for example with a tick box at checkout.
+- Always name your business.
+- Include a simple opt-out, like “Reply STOP to opt out”, and honour it.
+
+We cover this in more detail in [SMS marketing and consent in Australia](/blog/sms-marketing-consent-australia).
+
+## When to send
+
+- **First message: one to three hours after they leave.** Soon enough that they remember, late enough that they’re not still deciding.
+- **Optional second message: the next day**, only if it adds something new, like an answer to a common question or a heads-up that stock is low.
+- **Then stop.** Three reminders feel like chasing.
+
+Avoid texting late at night. Send during normal waking hours in the customer’s time zone.
+
+## What to say
+
+Keep it short, personal and easy to reply to. A few examples:
+
+**The helpful nudge**
+> Hi Sarah, it’s Mia from Reef & Fin. Looks like the Fluval filter is still in your cart. Any questions before you order? Just reply here. Reply STOP to opt out.
+
+**Answering the usual worry**
+> Hi James, Tom from Trailhead Outdoors here. Saw you were looking at the 3-person tent. It’s in stock at our Brunswick store if you’d rather pick it up today. Here’s your cart: [link]. Reply STOP to opt out.
+
+**Low stock, only if it’s true**
+> Hi Ana, just a heads-up from Bloom & Co: we’ve only got two of the ceramic planters left in sage. Your cart’s saved here: [link]. Reply STOP to opt out.
+
+**The discount (last resort)**
+> Hi Dev, it’s Lisa at Coastline Coffee. If shipping was the sticking point, use CART10 for 10% off today: [link]. Reply STOP to opt out.
+
+Lead with help. If you open with a discount, you teach shoppers to abandon carts on purpose.
+
+## Mistakes to avoid
+
+- **Sounding like a robot.** “Your cart is waiting!!!” reads like spam. A name and a normal sentence read like service.
+- **No way to reply.** If replies go to a number nobody checks, you’ve wasted the best part of SMS.
+- **Texting people who already bought.** Check the order came through before following up, including orders placed by phone or in store.
+- **Fake urgency.** Only say stock is low when it is.
+
+## Doing it without spreadsheets
+
+Colvy connects to [WooCommerce and Shopify](/product/abandoned-carts) and shows every abandoned checkout in your inbox, with the customer and what was in the cart. You can send a personal text or email in one tap, or let the Sales Agent draft follow-ups for you to approve, and replies come straight back to the same inbox. When the order comes through, you can see the revenue you won back.
+
+For sold-out products, [back-in-stock texts](/product/waitlists) do the same job in reverse: everyone who asked gets a text the moment stock returns.
+
+[Start free](/signup) and see your abandoned carts in one place.`,
+  },
+  {
     slug: 'meet-your-ai-team',
     title: "Meet your AI team: a Saturday at an aquarium shop, run with five AI agents",
     excerpt: "Order questions, bookings, reviews, a stuck parcel and an abandoned cart: one day at a busy store, and how Colvy’s Support, Reception, Reputation, Operations and Sales agents handle it while the team handles the exceptions.",

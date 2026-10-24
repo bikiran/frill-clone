@@ -27,6 +27,7 @@ function sourceFile(path: string): string {
   if (path.startsWith('solutions/')) return 'app/solutions/[slug]/Client.tsx'
   if (path.startsWith('industries/')) return 'app/industries/[slug]/Client.tsx'
   if (path.startsWith('for/')) return 'app/for/[slug]/content.tsx'
+  if (path.startsWith('compare/')) return 'app/compare/[slug]/Client.tsx'
   return `app/${path}/Client.tsx` // static wrapped pages keep their UI in Client.tsx
 }
 

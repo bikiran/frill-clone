@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, ReactNode } from 'react'
 import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin } from '@/lib/redirect'
 import MarketingFooter from '@/components/MarketingFooter'
+import SeoFaqSection from '@/components/marketing/SeoFaqSection'
 import MarketingNav from '@/components/MarketingNav'
 import FeatureMockup, { MockKind } from '@/components/FeatureMockups'
 import FeatureIcon from '@/components/FeatureIcon'
@@ -470,6 +471,8 @@ export default function FeaturePage() {
           </div>
         </div>
       </section>
+
+      <SeoFaqSection path={`product/${feature}`} accent={color} dark={dark} />
 
       {/* CTA */}
       <section style={{ position: 'relative', padding: 'clamp(64px, 9vw, 120px) 24px', textAlign: 'center', background: `linear-gradient(135deg, ${color}, ${color}bb)`, overflow: 'hidden' }}>

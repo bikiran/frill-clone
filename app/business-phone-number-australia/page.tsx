@@ -2,12 +2,13 @@ import type { Metadata } from 'next'
 import JsonLd from '@/components/JsonLd'
 import { BUSINESS_NUMBER_FAQS } from '@/lib/business-number-faqs'
 import Client from './Client'
+import { pageMeta } from '@/lib/seo'
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMeta({
   title: 'Get a Business Phone Number Online in Australia',
   description: 'Get a local 02, 03, 07 or 08 business number for calls, or an 04 mobile for calls and texts, online in minutes. Answer in one shared inbox on your browser or phone, from $15 a month.',
-  alternates: { canonical: '/business-phone-number-australia' },
-}
+  path: 'business-phone-number-australia',
+})
 
 const faqLd = {
   '@context': 'https://schema.org',
