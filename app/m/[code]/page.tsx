@@ -35,11 +35,11 @@ export default async function MediaView({ params }: { params: Promise<{ code: st
   let lookupError: string | null = null
   {
     const full = await db.from('short_links')
-      .select('id, clicks, contact_id, target_url, label, company_id, kind, conversation_id, media_urls, note, expires_at')
+      .select('id, clicks, contact_id, target_url, label, company_id, kind, conversation_id, media_urls, note, expires_at, created_at')
       .eq('code', code).maybeSingle()
     if (full.error) {
       const base = await db.from('short_links')
-        .select('id, clicks, contact_id, target_url, label, company_id, kind, conversation_id')
+        .select('id, clicks, contact_id, target_url, label, company_id, kind, conversation_id, created_at')
         .eq('code', code).maybeSingle()
       link = base.data
       lookupError = base.error?.message || full.error.message

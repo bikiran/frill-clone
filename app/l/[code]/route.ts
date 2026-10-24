@@ -17,7 +17,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ code
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
     const { data } = await db.from('short_links')
-      .select('id, company_id, target_url, clicks, contact_id, kind, channel, campaign_id').eq('code', code).maybeSingle()
+      .select('id, company_id, target_url, clicks, contact_id, kind, channel, campaign_id, created_at').eq('code', code).maybeSingle()
     if (!data?.target_url) {
       return new NextResponse('Link not found', { status: 404 })
     }

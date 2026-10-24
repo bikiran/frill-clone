@@ -10,15 +10,46 @@ type HeaderBag = { get(name: string): string | null }
 // aren't the customer opening it.
 const BOT_RE = /bot|crawler|spider|facebookexternalhit|whatsapp|slackbot|twitterbot|telegrambot|discordbot|skypeuripreview|linkedinbot|embedly|preview|headless/i
 
+// Phone carriers and security filters open links in texts and emails the
+// moment they're sent, to check them for scams. They pretend to be a normal
+// browser (Windows Firefox, Android Chrome), so the user agent alone doesn't
+// catch them, but they give themselves away:
+//   • no Accept-Language header: every real browser sends one;
+//   • a Chrome / Firefox / Edge user agent without Sec-Fetch-Mode, which those
+//     browsers always send when a person opens a page (iPhones are left out:
+//     older iOS and some in-app browsers don't send it);
+//   • opened from overseas within two minutes of the link being made (the
+//     checks seen so far come from London data centres seconds after sending).
+// Any of these and the open isn't counted.
+const HOME_COUNTRY = 'AU'
+const SCAN_WINDOW_MS = 2 * 60_000
+
+export function automatedOpenReason(headers: HeaderBag, link: { created_at?: string | null }): string | null {
+  const ua = headers.get('user-agent') || ''
+  if (!ua) return 'no user agent'
+  if (BOT_RE.test(ua)) return 'bot user agent'
+  if (!headers.get('accept-language')) return 'no accept-language'
+  const ios = /iPhone|iPad|iPod/i.test(ua)
+  if (!ios && /Chrome\/|Firefox\/|Edg\//.test(ua) && !headers.get('sec-fetch-mode')) return 'no sec-fetch-mode'
+  const country = headers.get('x-vercel-ip-country')
+  const made = link.created_at ? Date.parse(link.created_at) : NaN
+  if (country && country !== HOME_COUNTRY && Number.isFinite(made) && Date.now() - made < SCAN_WINDOW_MS) return `opened from ${country} straight after sending`
+  return null
+}
+
 /**
  * Returns the new click's id (null for a bot, or if it couldn't be saved), so
  * the /l/ redirect can hand it on as ?clv= for click stitching.
  */
-export async function recordLinkClick(db: any, link: { id: string; company_id: string; contact_id?: string | null; clicks?: number | null; code?: string }, headers: HeaderBag): Promise<string | null> {
+export async function recordLinkClick(db: any, link: { id: string; company_id: string; contact_id?: string | null; clicks?: number | null; code?: string; created_at?: string | null }, headers: HeaderBag): Promise<string | null> {
+  const automated = automatedOpenReason(headers, link)
+  if (automated) {
+    console.info(`[link] not counted (${automated}): ${link.code || link.id} ${headers.get('user-agent') || ''} ${headers.get('x-vercel-ip-city') || ''} ${headers.get('x-vercel-ip-country') || ''}`)
+    return null
+  }
   let clickId: string | null = null
   try {
     const ua = headers.get('user-agent') || ''
-    if (BOT_RE.test(ua)) return null
     const { device, os, browser } = parseUserAgent(ua)
     const ip = headers.get('x-forwarded-for')?.split(',')[0]?.trim() || headers.get('x-real-ip') || null
     // Vercel supplies coarse geo headers at the edge (URL-encoded city names).
