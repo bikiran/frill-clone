@@ -88,6 +88,10 @@ export type ColvyEmailInput = {
   title: string
   /** Big gold stars above everything else (a review's rating, 1–5). */
   stars?: number
+  /** Centre the header, title, text and button (blocks keep their own layout inside). */
+  center?: boolean
+  /** Line under the title, e.g. "for Roxy Aquarium". */
+  subtitle?: string
   /** Small line above the title, e.g. the business name. */
   kicker?: string
   intro?: string | string[]
@@ -127,13 +131,13 @@ export function safeEmailUrl(raw: string, allowContact = false): string {
 }
 const attr = (url: string, allowContact = false) => escapeHtml(safeEmailUrl(url, allowContact))
 
-const P = (html: string, opts: { size?: number; color?: string; margin?: string } = {}) =>
-  `<p style="margin:${opts.margin || '0 0 16px'};font-family:${FONT};font-size:${opts.size || 16}px;line-height:1.6;color:${opts.color || C.body}">${html}</p>`
+const P = (html: string, opts: { size?: number; color?: string; margin?: string; center?: boolean } = {}) =>
+  `<p style="margin:${opts.margin || '0 0 16px'};font-family:${FONT};font-size:${opts.size || 16}px;line-height:1.6;color:${opts.color || C.body}${opts.center ? ';text-align:center' : ''}">${html}</p>`
 
 /** A bulletproof button: the coloured cell is the button, so it shows even with images and CSS off. */
-export function emailButton(cta: EmailLink): string {
+export function emailButton(cta: EmailLink, center = false): string {
   const href = attr(cta.url)
-  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 24px">
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0"${center ? ' align="center"' : ''} style="margin:8px ${center ? 'auto' : '0'} 24px">
   <tr>
     <td align="center" bgcolor="${C.coral}" style="background-color:${C.coral};border-radius:10px">
       <a href="${href}" target="_blank" style="display:inline-block;padding:14px 28px;font-family:${FONT};font-size:16px;font-weight:700;line-height:20px;color:#ffffff;text-decoration:none;border-radius:10px;border:1px solid ${C.coral}">${escapeHtml(cta.label)}</a>
@@ -263,15 +267,18 @@ export function colvyEmail(input: ColvyEmailInput): ColvyEmail {
   const more = input.more || []
   const pad = ' &#847;&zwnj;&nbsp;'.repeat(40)
 
+  const center = !!input.center
+  const ta = center ? ';text-align:center' : ''
   const body = [
-    input.stars ? `<div style="margin:0 0 14px">${starsHtml(input.stars, 30)}</div>` : '',
-    input.kicker ? P(escapeHtml(input.kicker), { size: 13, color: C.muted, margin: '0 0 6px' }) : '',
-    `<h1 style="margin:0 0 14px;font-family:${FONT};font-size:24px;line-height:1.3;font-weight:700;color:${C.ink}">${escapeHtml(input.title)}</h1>`,
-    ...intro.map(t => P(inline(t))),
+    input.stars ? `<div style="margin:0 0 14px${ta}">${starsHtml(input.stars, center ? 34 : 30)}</div>` : '',
+    input.kicker ? P(escapeHtml(input.kicker), { size: 13, color: C.muted, margin: '0 0 6px', center }) : '',
+    `<h1 style="margin:0 0 ${input.subtitle ? '6px' : '14px'};font-family:${FONT};font-size:${center ? 26 : 24}px;line-height:1.3;font-weight:700;color:${C.ink}${ta}">${escapeHtml(input.title)}</h1>`,
+    input.subtitle ? P(escapeHtml(input.subtitle), { size: 16, color: C.muted, margin: '0 0 22px', center }) : '',
+    ...intro.map(t => P(inline(t), { center })),
     ...blocks.map(blockHtml),
-    input.cta ? emailButton(input.cta) : '',
+    input.cta ? emailButton(input.cta, center) : '',
     ...more.map(blockHtml),
-    ...secondary.map(t => P(inline(t), { size: 14, color: C.muted })),
+    ...secondary.map(t => P(inline(t), { size: 14, color: C.muted, center })),
   ].filter(Boolean).join('\n')
 
   const html = `<!doctype html>
@@ -299,7 +306,7 @@ export function colvyEmail(input: ColvyEmailInput): ColvyEmail {
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px">
         <tr>
           <td class="cv-pad" bgcolor="${C.card}" style="background-color:${C.card};padding:28px 36px 4px;border-top:1px solid ${C.border};border-left:1px solid ${C.border};border-right:1px solid ${C.border};border-radius:12px 12px 0 0">
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0"${center ? ' align="center"' : ''}>
               <tr>
                 <td valign="middle" style="padding-right:10px"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="36" height="36" bgcolor="#1a1a1a" style="width:36px;height:36px;background-color:#1a1a1a;border-radius:9px"><img src="${COLVY_LOGO_URL}" width="36" height="36" alt="" style="display:block;width:36px;height:36px;border:0;border-radius:9px"></td></tr></table></td>
                 <td valign="middle" style="font-family:${FONT};font-size:20px;line-height:24px;font-weight:800;letter-spacing:-0.3px;color:${C.ink}">Colvy</td>
@@ -313,7 +320,7 @@ ${body}
           </td>
         </tr>
         <tr>
-          <td class="cv-pad" style="padding:20px 36px 8px;font-family:${FONT};font-size:12px;line-height:1.6;color:${C.faint}">
+          <td class="cv-pad"${center ? ' align="center"' : ''} style="padding:20px 36px 8px;font-family:${FONT};font-size:12px;line-height:1.6;color:${C.faint}${ta}">
             ${input.footerNote ? `<p style="margin:0 0 10px;font-family:${FONT};font-size:12px;line-height:1.6;color:${C.faint}">${inline(input.footerNote)}</p>` : ''}
             <p style="margin:0;font-family:${FONT};font-size:12px;line-height:1.6;color:${C.faint}">&copy; ${copyright} &middot; <a href="${COLVY_SITE}" target="_blank" style="color:${C.faint};text-decoration:underline">colvy.com</a> &middot; <a href="${COLVY_SITE}/privacy" target="_blank" style="color:${C.faint};text-decoration:underline">Privacy</a></p>
           </td>
@@ -334,6 +341,7 @@ ${body}
     input.stars ? starsText(input.stars) : '',
     input.kicker || '',
     input.title,
+    input.subtitle || '',
     ...intro.map(plain),
     ...blocks.map(blockText),
     input.cta ? `${input.cta.label}: ${safeEmailUrl(input.cta.url)}` : '',
