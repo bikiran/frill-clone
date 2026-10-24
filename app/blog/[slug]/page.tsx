@@ -4,6 +4,7 @@ import { getArticle, listArticles } from '@/lib/blog-store'
 import BlogChrome from '@/components/BlogChrome'
 import BlogArticleView from '@/components/BlogArticleView'
 import JsonLd from '@/components/JsonLd'
+import { breadcrumbJsonLd } from '@/lib/seo-faqs'
 
 export const revalidate = 300
 
@@ -56,7 +57,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
 
   return (
     <>
-      <JsonLd data={articleLd} />
+      <JsonLd data={[articleLd, breadcrumbJsonLd(SITE_URL, [{ name: 'Blog', path: 'blog' }, { name: a.title, path: `blog/${a.slug}` }])]} />
       <BlogChrome>
         <BlogArticleView article={a} related={related} recent={recent} url={url} />
       </BlogChrome>

@@ -3,6 +3,9 @@ import JsonLd from '@/components/JsonLd'
 import { BUSINESS_NUMBER_FAQS } from '@/lib/business-number-faqs'
 import Client from './Client'
 import { pageMeta } from '@/lib/seo'
+import { breadcrumbJsonLd } from '@/lib/seo-faqs'
+
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
 export const metadata: Metadata = pageMeta({
   title: 'Get a Business Phone Number Online in Australia',
@@ -19,7 +22,7 @@ const faqLd = {
 export default function Page() {
   return (
     <>
-      <JsonLd data={faqLd} />
+      <JsonLd data={[faqLd, breadcrumbJsonLd(SITE_URL, [{ name: 'Business Phone Number Australia', path: 'business-phone-number-australia' }])]} />
       <Client />
     </>
   )

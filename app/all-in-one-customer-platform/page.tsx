@@ -3,6 +3,9 @@ import JsonLd from '@/components/JsonLd'
 import { PLATFORM_FAQS } from '@/lib/platform-faqs'
 import Client from './Client'
 import { pageMeta } from '@/lib/seo'
+import { breadcrumbJsonLd } from '@/lib/seo-faqs'
+
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
 export const metadata: Metadata = pageMeta({
   title: 'All-in-One Customer Platform for Small Business',
@@ -19,7 +22,7 @@ const faqLd = {
 export default function Page() {
   return (
     <>
-      <JsonLd data={faqLd} />
+      <JsonLd data={[faqLd, breadcrumbJsonLd(SITE_URL, [{ name: 'All-in-One Customer Platform', path: 'all-in-one-customer-platform' }])]} />
       <Client />
     </>
   )
