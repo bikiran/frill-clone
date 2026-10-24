@@ -79,8 +79,11 @@ export default function SocialEngagementPage() {
   useEffect(() => { try { const id = new URLSearchParams(window.location.search).get('comment'); if (id) setHighlightCommentId(id) } catch {} }, [])
   useEffect(() => {
     if (!highlightCommentId || comments.length === 0) return
-    // Clear filters so the target is never hidden, then scroll to it.
-    setSearch(''); setRisk('all'); setType('all'); setCat(''); setPlatform('all'); setShowArchived(true)
+    // Clear filters so the target is never hidden, then scroll to it. "Show
+    // archived" lists only archived comments, so it follows the target: it
+    // used to be switched on always, which hid every comment that wasn't.
+    const target = comments.find(c => c.id === highlightCommentId)
+    setSearch(''); setRisk('all'); setType('all'); setCat(''); setPlatform('all'); setShowArchived(!!target?.is_archived)
     const t = setTimeout(() => { try { document.getElementById(`comment-${highlightCommentId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }) } catch {} }, 300)
     const clear = setTimeout(() => setHighlightCommentId(null), 6000)
     return () => { clearTimeout(t); clearTimeout(clear) }
