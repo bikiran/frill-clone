@@ -131,5 +131,76 @@ export function analyticsOptedOut(): boolean {
 }
 
 export function setAnalyticsOptOut(out: boolean) {
-  try { if (out) window.localStorage.setItem(OPT_OUT_KEY, '1'); else window.localStorage.removeItem(OPT_OUT_KEY) } catch { /* storage blocked */ }
+  try {
+    if (out) { window.localStorage.setItem(OPT_OUT_KEY, '1'); window.localStorage.removeItem(FIRST_TOUCH_KEY) }
+    else window.localStorage.removeItem(OPT_OUT_KEY)
+  } catch { /* storage blocked */ }
+}
+
+// ── First visit ──────────────────────────────────────────────────────────────
+// Where a visitor first came from (campaign tags, the referring site, the page
+// they landed on), kept in this browser for 90 days so a sign-up days later is
+// credited to the visit that found Colvy, not the pricing page they signed up
+// from. It never leaves the browser on its own: the sign-up form sends it with
+// the first code request, and it becomes the business's acquisition record
+// (server only). Nothing personal, the referring site's name only, ids masked.
+// Not kept for visitors who opt out.
+
+export const FIRST_TOUCH_KEY = 'colvy_first_touch'
+const FIRST_TOUCH_DAYS = 90
+
+export type FirstTouch = {
+  utm?: Record<string, string>
+  referrer?: string   // the referring site's host, e.g. www.google.com
+  landing?: string    // the first page, cleaned (cleanPath)
+  click?: 'google' | 'meta' | 'microsoft'
+  at: string
+}
+
+const FT_UTM = ['source', 'medium', 'campaign', 'term', 'content'] as const
+
+/** The first visit as recorded from this address (pure, for tests). */
+export function firstTouchFrom(href: string, referrer: string, now = new Date()): FirstTouch | null {
+  try {
+    const u = new URL(href)
+    const utm: Record<string, string> = {}
+    for (const k of FT_UTM) { const v = u.searchParams.get(`utm_${k}`); if (v) utm[k] = v.slice(0, 120) }
+    let ref = ''
+    try { ref = referrer ? new URL(referrer).hostname.toLowerCase() : '' } catch { ref = '' }
+    // Moving around colvy.com (or a business's Colvy page) isn't a source.
+    if (ref === u.hostname.toLowerCase() || /(^|\.)colvy\.com$/.test(ref)) ref = ''
+    const click = u.searchParams.get('gclid') || u.searchParams.get('gbraid') || u.searchParams.get('wbraid') ? 'google'
+      : u.searchParams.get('fbclid') ? 'meta' : u.searchParams.get('msclkid') ? 'microsoft' : undefined
+    const out: FirstTouch = { landing: cleanPath(u.pathname).slice(0, 200), at: now.toISOString() }
+    if (Object.keys(utm).length) out.utm = utm
+    if (ref) out.referrer = ref.slice(0, 120)
+    if (click) out.click = click
+    return out
+  } catch { return null }
+}
+
+/** Keep this visit as the first one, unless one from the last 90 days is already kept. */
+export function recordFirstTouch(): void {
+  if (typeof window === 'undefined' || analyticsOptedOut()) return
+  if (analyticsScope(window.location.hostname, window.location.pathname) !== 'marketing') return
+  try {
+    const prev = readFirstTouch()
+    if (prev) return
+    const ft = firstTouchFrom(window.location.href, document.referrer)
+    if (ft) window.localStorage.setItem(FIRST_TOUCH_KEY, JSON.stringify(ft))
+  } catch { /* storage blocked */ }
+}
+
+export function readFirstTouch(): FirstTouch | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.localStorage.getItem(FIRST_TOUCH_KEY)
+    if (!raw) return null
+    const ft = JSON.parse(raw)
+    if (!ft?.at || Date.now() - new Date(ft.at).getTime() > FIRST_TOUCH_DAYS * 86400000) {
+      window.localStorage.removeItem(FIRST_TOUCH_KEY)
+      return null
+    }
+    return ft
+  } catch { return null }
 }

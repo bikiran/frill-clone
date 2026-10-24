@@ -58,6 +58,8 @@ export type SignupStatus = 'code_sent' | 'verified' | 'account_created' | 'aband
 
 export type SignupAttribution = {
   utm?: Record<string, string>; referrer?: string; landing?: string; plan?: string; ref?: string
+  /** When the visit that first found Colvy happened, and the ad network it came from (V415). */
+  firstSeen?: string; click?: 'google' | 'meta' | 'microsoft'
 }
 
 type HeaderBag = { get(name: string): string | null }
@@ -109,6 +111,9 @@ export function cleanAttribution(raw: any): SignupAttribution {
   const landing = str(raw.landing, 300); if (landing) out.landing = landing
   const plan = str(raw.plan, 30); if (plan) out.plan = plan
   const ref = str(raw.ref, 40); if (ref) out.ref = ref.toUpperCase()
+  const seen = str(raw.first_seen, 40)
+  if (seen && Number.isFinite(Date.parse(seen)) && Date.parse(seen) <= Date.now() + 60_000) out.firstSeen = new Date(seen).toISOString()
+  if (raw.click === 'google' || raw.click === 'meta' || raw.click === 'microsoft') out.click = raw.click
   return out
 }
 
@@ -440,6 +445,8 @@ export async function recordSignupEvent(db: any, ev: SignupEvent, attempt = 0): 
     if (a.utm && !row.utm) row.utm = a.utm
     if (a.referrer && !row.referrer) row.referrer = a.referrer
     if (a.landing && !row.landing_path) row.landing_path = a.landing
+    if (a.firstSeen && !row.first_touch_at) row.first_touch_at = a.firstSeen
+    if (a.click && !row.click_id_type) row.click_id_type = a.click
     set('plan', a.plan); set('ref_code', a.ref)
 
     if (meta) {
@@ -515,6 +522,11 @@ export async function recordSignupEvent(db: any, ev: SignupEvent, attempt = 0): 
       unsavedBusiness = row.business
       delete row.business
       if (biz) event.business_hash = businessHash(unsavedBusiness)
+      saved = await write(row)
+    }
+    // Before V415 there are no first-visit columns: save without them.
+    if (saved.error && (missingColumn(saved.error, 'first_touch_at') || missingColumn(saved.error, 'click_id_type'))) {
+      delete row.first_touch_at; delete row.click_id_type
       saved = await write(row)
     }
     if (saved.error) {

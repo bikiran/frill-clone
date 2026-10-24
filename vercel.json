@@ -121,6 +121,10 @@
       "schedule": "*/5 * * * *"
     },
     {
+      "path": "/api/cron/intel",
+      "schedule": "17 * * * *"
+    },
+    {
       "path": "/api/cron/purge-closed-accounts",
       "schedule": "30 17 * * *"
     }

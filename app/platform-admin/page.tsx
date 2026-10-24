@@ -24,7 +24,7 @@ import CompanyWhatsApp from '@/components/platform-admin/CompanyWhatsApp'
 import WhatsAppPage from '@/components/platform-admin/WhatsAppPage'
 import StatusIncidentsPage from '@/components/platform-admin/StatusIncidentsPage'
 import { COLVY_CONTACT, isColvyNumber } from '@/lib/colvy-contact'
-import Intelligence, { type IntelView } from './intelligence/Intelligence'
+import Intelligence, { type IntelView, INTEL_VIEWS } from './intelligence/Intelligence'
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
@@ -121,6 +121,8 @@ const NAV = [
   { key: 'intel_pages',    label: 'Pages & clicks',     icon: 'overview' },
   { key: 'intel_journeys', label: 'Journeys',           icon: 'roadmap' },
   { key: 'intel_funnels',  label: 'Signup funnels',     icon: 'subs' },
+  { key: 'intel_business', label: 'Business',           icon: 'companies' },
+  { key: 'intel_health',   label: 'Customer health',    icon: 'agent' },
   { section: 'Workspace' },
   { key: 'companies',  label: 'Companies',        icon: 'companies' },
   { key: 'users',      label: 'Users',            icon: 'users' },
@@ -5070,7 +5072,7 @@ export default function SuperAdmin() {
           {page === 'users'      && <UsersPage />}
           {page === 'signups'    && <SignupsPage />}
           {page === 'analytics'  && <AnalyticsPage />}
-          {(page === 'intel' || page === 'intel_live' || page === 'intel_traffic' || page === 'intel_pages' || page === 'intel_journeys' || page === 'intel_funnels') && <Intelligence view={page as IntelView} />}
+          {INTEL_VIEWS.includes(page as IntelView) && <Intelligence view={page as IntelView} onOpenCompany={id => { try { window.history.replaceState(null, '', `#companies/${id}`) } catch {} ; setPageState('companies') }} />}
           {page === 'flags'      && <FeatureFlagsPage />}
           {page === 'system'     && <SystemPage onGo={setPage} />}
           {page === 'audit'      && <AuditPage />}

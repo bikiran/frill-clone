@@ -13,6 +13,7 @@ import { createHash } from 'crypto'
 export type ServerEvent =
   | 'account_created'     // signup route: the user row exists (props: via)
   | 'business_created'    // a business's workspace row was created (props: company_id, via, plan) — the client's workspace_created stays as is
+  | 'milestone_reached'   // a business did something for the first time (props: milestone, company_id) — lib/intel/business-job
 
 const INGEST = (process.env.NEXT_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com').replace(/\/$/, '')
 
@@ -43,6 +44,42 @@ export async function captureServer(event: ServerEvent, distinctId: string, prop
     }).catch(() => null)
     clearTimeout(timer)
   } catch { /* analytics must never break a request */ }
+}
+
+/**
+ * Several events in one request, each at the time it happened (PostHog's
+ * batch endpoint). Same stable ids as captureServer. Never throws.
+ */
+export async function captureServerBatch(events: { event: ServerEvent; distinctId: string; properties?: Record<string, any>; insertId: string; timestamp?: string }[]): Promise<{ sent: number }> {
+  const key = process.env.NEXT_PUBLIC_POSTHOG_KEY
+  const list = events.filter(e => e.distinctId)
+  if (!key || !list.length) return { sent: 0 }
+  let sent = 0
+  for (let i = 0; i < list.length; i += 500) {
+    const chunk = list.slice(i, i + 500)
+    try {
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), 8000)
+      const res = await fetch(`${INGEST}/batch/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          api_key: key,
+          batch: chunk.map(e => ({
+            event: e.event,
+            distinct_id: e.distinctId,
+            uuid: uuidFrom(e.insertId),
+            timestamp: e.timestamp || new Date().toISOString(),
+            properties: { ...(e.properties || {}), $lib: 'colvy-server', source: 'server' },
+          })),
+        }),
+        signal: ctrl.signal,
+      }).catch(() => null)
+      clearTimeout(timer)
+      if (res?.ok) sent += chunk.length
+    } catch { /* analytics must never break a job */ }
+  }
+  return { sent }
 }
 
 /**

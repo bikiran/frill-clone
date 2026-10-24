@@ -3,17 +3,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
-// Super Admin → Intelligence (Phase 1: website analytics). Reads
-// /api/platform-admin/intel, which queries PostHog and Supabase on the server.
+// Super Admin → Intelligence: website analytics (PostHog) and business
+// analytics (Supabase). Reads /api/platform-admin/intel on the server.
 // Every number on these pages is a real count of collected data; with nothing
 // collected yet a page says so instead of showing anything made up.
 
-export type IntelView = 'intel' | 'intel_live' | 'intel_traffic' | 'intel_pages' | 'intel_journeys' | 'intel_funnels'
+export type IntelView = 'intel' | 'intel_live' | 'intel_traffic' | 'intel_pages' | 'intel_journeys' | 'intel_funnels' | 'intel_business' | 'intel_health'
+export const INTEL_VIEWS: IntelView[] = ['intel', 'intel_live', 'intel_traffic', 'intel_pages', 'intel_journeys', 'intel_funnels', 'intel_business', 'intel_health']
 
 const CORAL = '#ff7a6b'
 const GREEN = '#16a34a'
 const RED = '#dc2626'
-const REPORT: Record<IntelView, string> = { intel: 'overview', intel_live: 'live', intel_traffic: 'traffic', intel_pages: 'pages', intel_journeys: 'journeys', intel_funnels: 'funnels' }
+const AMBER = '#d97706'
+const INDIGO = '#6366f1'
+const REPORT: Record<IntelView, string> = { intel: 'overview', intel_live: 'live', intel_traffic: 'traffic', intel_pages: 'pages', intel_journeys: 'journeys', intel_funnels: 'funnels', intel_business: 'business', intel_health: 'health' }
 const TITLES: Record<IntelView, [string, string]> = {
   intel: ['Executive overview', 'Visitors, engagement and conversion on colvy.com, against the previous period'],
   intel_live: ['Live visitors', 'Who is on colvy.com and in the app right now. Refreshes every 15 seconds'],
@@ -21,6 +24,8 @@ const TITLES: Record<IntelView, [string, string]> = {
   intel_pages: ['Pages & clicks', 'The pages people view, how long they stay, and the buttons they press'],
   intel_journeys: ['Visitor journeys', 'The paths people take through the site, where they arrive and where they leave'],
   intel_funnels: ['Signup funnels', 'From first visit to a working workspace, and where people drop off'],
+  intel_business: ['Business analytics', 'New workspaces, how far they get, where they came from and what they use'],
+  intel_health: ['Customer health', 'Which businesses are thriving, which need a hand, and what’s broken'],
 }
 const RANGES = [['24h', '24h'], ['7d', '7d'], ['28d', '28d'], ['90d', '90d'], ['custom', 'Custom']] as const
 
@@ -31,7 +36,7 @@ const dur = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m ${Math.round(s % 6
 const ago = (iso?: string) => {
   if (!iso) return ''
   const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000))
-  return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`
+  return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : s < 172800 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86400)}d ago`
 }
 
 function downloadCsv(name: string, rows: Record<string, any>[], cols: { key: string; label: string }[]) {
@@ -202,7 +207,7 @@ const ExportButton = ({ onClick }: { onClick: () => void }) => (
   </button>
 )
 
-function Funnel({ steps, name }: { steps: { label: string; count: number }[]; name: string }) {
+function Funnel({ steps, name }: { steps: { label: string; count: number; hint?: string }[]; name: string }) {
   if (!steps.length || !steps[0].count) return <Empty text="Nobody has reached the first step in this period yet." />
   const first = steps[0].count
   return (
@@ -213,8 +218,8 @@ function Funnel({ steps, name }: { steps: { label: string; count: number }[]; na
           const conv = prev ? s.count / prev : 0
           return (
             <div key={i}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5, gap: 10 }}>
-                <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)' }}><span style={{ color: 'var(--sa-muted)', marginRight: 6 }}>{i + 1}</span>{s.label}</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', marginBottom: 5, columnGap: 10, rowGap: 2 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)' }}><span style={{ color: 'var(--sa-muted)', marginRight: 6 }}>{i + 1}</span>{s.label}{s.hint && <span style={{ fontWeight: 500, color: 'var(--sa-muted)', marginLeft: 8, fontSize: 11.5 }}>{s.hint}</span>}</span>
                 <span style={{ fontSize: 12, color: 'var(--sa-muted)', whiteSpace: 'nowrap' }}>
                   <b style={{ color: 'var(--sa-text)', fontSize: 13 }}>{fmt(s.count)}</b> · {pct(s.count / first, 0)} of start{i > 0 && <> · <span style={{ color: conv < 0.3 ? RED : 'var(--sa-muted)' }}>{pct(conv, 0)} from previous</span></>}
                 </span>
@@ -440,9 +445,169 @@ function FunnelsView({ d, configured }: { d: any; configured: boolean }) {
   )
 }
 
+// ── Business analytics ───────────────────────────────────────────────────────
+
+const hrs = (h: number | null) => (h == null ? '' : h < 1 ? 'within the hour' : h < 48 ? `median ${Math.round(h)}h` : `median ${Math.round(h / 24)} days`)
+const rateOrDash = (v: number | null) => (v == null ? '—' : pct(v, 0))
+const day = (iso: string) => new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
+
+function NotMigrated() {
+  return (
+    <Card title="Business analytics isn’t switched on yet" note="It needs one database update, then fills itself in every hour.">
+      <ol style={{ margin: '4px 0 0', paddingLeft: 20, listStyle: 'decimal', fontSize: 13, lineHeight: 1.8, color: 'var(--sa-text)' }}>
+        <li>Run <code>migrations/COLVY_V415_INTEL_BUSINESS.sql</code> in the Supabase SQL editor.</li>
+        <li>The hourly <code>intel</code> job then records every business’s milestones (going back to the start), where it came from, and a health score. Nothing is estimated.</li>
+      </ol>
+    </Card>
+  )
+}
+
+function CompanyLink({ id, name, onOpen }: { id: string; name: string; onOpen?: (id: string) => void }) {
+  if (!onOpen) return <>{name}</>
+  return <button onClick={() => onOpen(id)} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--sa-text)', fontWeight: 600, fontSize: 12.5, cursor: 'pointer', textAlign: 'left' }}>{name}</button>
+}
+
+function BusinessView({ d, onOpen }: { d: any; onOpen?: (id: string) => void }) {
+  if (!d.migrated) return <NotMigrated />
+  const k = d.kpis || {}
+  const live = Math.max(1, k.live || 0)
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={grid(170)}>
+        <Kpi label="Live businesses" value={fmt(k.live)} cur={k.live} hint="Not closed, not demo workspaces" />
+        <Kpi label="New workspaces" value={fmt(k.created)} cur={k.created} prev={k.createdPrev} />
+        <Kpi label="Connected a channel" value={rateOrDash(k.channelRate)} cur={k.channelRate || 0} prev={k.channelRatePrev ?? undefined} hint="Of workspaces created in this period" />
+        <Kpi label="Activated" value={rateOrDash(k.activation)} cur={k.activation || 0} prev={k.activationPrev ?? undefined} hint="A channel connected, a customer message in, and a reply out" />
+        <Kpi label="Days to activate" value={k.medianDaysToActivate == null ? '—' : k.medianDaysToActivate < 1 ? '< 1' : k.medianDaysToActivate.toFixed(1)} cur={0} hint="Median, businesses activated in the last 90 days" />
+        <Kpi label="On a paid plan" value={fmt(k.paying)} cur={k.paying} hint="Live businesses on a paid plan, not complimentary" />
+      </div>
+
+      <div style={grid(360)}>
+        <Card title="Onboarding" note="Workspaces created in this period, and how far they got">
+          <Funnel name="colvy-onboarding" steps={(d.funnel || []).map((s: any) => ({ label: s.label, count: s.count, hint: hrs(s.medianHours) }))} />
+        </Card>
+        <Card title="Where they came from" note={`By channel, from each business’s first visit${k.unknownSource ? ` · ${fmt(k.unknownSource)} unknown (signed up before tracking, or no record)` : ''}`}>
+          <BarList rows={(d.channels || []).filter((r: any) => r.key !== '(unknown)')} value="workspaces" extra={r => `${fmt(r.activated)} activated · ${fmt(r.paying)} paying`} />
+        </Card>
+      </div>
+
+      <Card title="Weekly cohorts" note="Workspaces by the week they were created (Monday start). A dash means it’s too early to tell">
+        <Table name="colvy-weekly-cohorts" rows={d.cohorts || []} cols={[
+          { key: 'week', label: 'Week of', render: r => day(`${r.week}T00:00:00Z`) },
+          { key: 'signups', label: 'Workspaces', num: true },
+          { key: 'channel7d', label: 'Channel in 7 days', num: true, render: r => r.signups ? rateOrDash(r.channel7d) : '—' },
+          { key: 'activated14d', label: 'Activated in 14 days', num: true, render: r => r.signups ? rateOrDash(r.activated14d) : '—' },
+          { key: 'paying', label: 'Paying now', num: true, render: r => r.signups ? rateOrDash(r.paying) : '—' },
+        ]} />
+      </Card>
+
+      <div style={grid(300)}>
+        <Card title="Sources" note="utm_source, or the referring site"><BarList rows={(d.sources || []).filter((r: any) => r.key !== '(unknown)')} value="workspaces" extra={r => `${fmt(r.paying)} paying`} /></Card>
+        <Card title="Campaigns" note="utm_campaign"><BarList rows={d.campaigns || []} value="workspaces" extra={r => `${fmt(r.activated)} activated`} /></Card>
+        <Card title="First pages" note="The page that first brought them in"><BarList rows={(d.landing || []).filter((r: any) => r.key !== '(unknown)')} value="workspaces" /></Card>
+      </div>
+
+      <div style={grid(360)}>
+        <Card title="What businesses use" note="Share of live businesses that have ever done each">
+          <BarList rows={d.adoption || []} value="count" label="label" limit={12} extra={r => pct(r.count / live, 0)} />
+        </Card>
+        <Card title="Plans" note="Live businesses, by the plan that applies today">
+          <BarList rows={d.plans || []} value="workspaces" color={INDIGO} />
+        </Card>
+      </div>
+
+      <Card title="New workspaces" note="The latest created in this period">
+        <Table name="colvy-new-workspaces" rows={d.recent || []} cols={[
+          { key: 'name', label: 'Business', render: r => <CompanyLink id={r.id} name={r.name} onOpen={onOpen} /> },
+          { key: 'createdAt', label: 'Created', render: r => day(r.createdAt) },
+          { key: 'plan', label: 'Plan' },
+          { key: 'channel', label: 'Channel', render: r => r.channel || '—' },
+          { key: 'source', label: 'Source', render: r => r.source || '—' },
+          { key: 'steps', label: 'Milestones', num: true },
+          { key: 'activated', label: 'Activated', render: r => (r.closed ? <span style={{ color: 'var(--sa-muted)' }}>Closed</span> : r.activated ? <span style={{ color: GREEN, fontWeight: 700 }}>Yes</span> : <span style={{ color: 'var(--sa-muted)' }}>Not yet</span>) },
+        ]} />
+      </Card>
+    </div>
+  )
+}
+
+// ── Customer health ──────────────────────────────────────────────────────────
+
+const BAND_COLOR: Record<string, string> = { healthy: GREEN, attention: AMBER, at_risk: RED, new: INDIGO }
+const TONE_COLOR: Record<string, string> = { bad: RED, warn: AMBER, good: GREEN }
+
+function ScorePill({ score, band }: { score: number; band: string }) {
+  const c = BAND_COLOR[band] || 'var(--sa-muted)'
+  return <span style={{ display: 'inline-block', minWidth: 34, textAlign: 'center', padding: '2px 8px', borderRadius: 999, background: `${c}1a`, color: c, fontWeight: 800, fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>{score}</span>
+}
+
+function HealthView({ d, onOpen }: { d: any; onOpen?: (id: string) => void }) {
+  const [band, setBand] = useState<string>('all')
+  const [q, setQ] = useState('')
+  if (!d.migrated) return <NotMigrated />
+  const b = d.bands || {}
+  const rows = (d.rows || [])
+    .filter((r: any) => band === 'all' || r.band === band)
+    .filter((r: any) => !q || String(r.name).toLowerCase().includes(q.toLowerCase()))
+    .map((r: any) => ({ ...r, why: (r.reasons || []).map((x: any) => x.text).join(' · '), signIn: r.lastSignInAt || '' }))
+  const FILTERS: [string, string, number | undefined][] = [['all', 'All', d.rows?.length], ['at_risk', 'At risk', b.at_risk], ['attention', 'Needs attention', b.attention], ['healthy', 'Healthy', b.healthy], ['new', 'New', b.new]]
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {!d.ran ? (
+        <Card title="The first health check hasn’t run yet" note="The hourly intel job scores every live business. Check back within the hour." ><span /></Card>
+      ) : (
+        <>
+          <div style={grid(160)}>
+            <Kpi label="Healthy" value={fmt(b.healthy)} cur={b.healthy} />
+            <Kpi label="Needs attention" value={fmt(b.attention)} cur={b.attention} />
+            <Kpi label="At risk" value={fmt(b.at_risk)} cur={b.at_risk} hint={d.worsened ? `${d.worsened} moved to at risk this week` : undefined} />
+            <Kpi label="New (first 14 days)" value={fmt(b.new)} cur={b.new} />
+            <Kpi label="Average score" value={d.avgScore == null ? '—' : String(d.avgScore)} cur={d.avgScore || 0} />
+          </div>
+          {(d.worsened > 0 || d.improved > 0) && (
+            <p style={{ ...sub, margin: '-2px 2px 0' }}>
+              This week: {d.worsened > 0 && <b style={{ color: RED }}>{d.worsened} moved to at risk</b>}{d.worsened > 0 && d.improved > 0 && ' · '}{d.improved > 0 && <b style={{ color: GREEN }}>{d.improved} recovered</b>}
+            </p>
+          )}
+          <Card title="Businesses" note={`Scored from sign-ins, customer messages and replies, setup and broken connections · updated ${ago(d.updatedAt)}`}
+            action={<input value={q} onChange={e => setQ(e.target.value)} placeholder="Search" style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--sa-border)', background: 'var(--sa-card)', color: 'var(--sa-text)', fontSize: 12, width: 150 }} />}>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+              {FILTERS.map(([k, l, n]) => (
+                <button key={k} onClick={() => setBand(k)} style={{ padding: '5px 11px', borderRadius: 999, border: '1px solid var(--sa-border)', background: band === k ? 'var(--sa-text)' : 'transparent', color: band === k ? 'var(--sa-card)' : 'var(--sa-muted)', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  {l}{n != null ? ` ${n}` : ''}
+                </button>
+              ))}
+            </div>
+            <Table name="colvy-customer-health" rows={rows} cols={[
+              { key: 'name', label: 'Business', render: r => <CompanyLink id={r.id} name={r.name} onOpen={onOpen} /> },
+              { key: 'plan', label: 'Plan' },
+              { key: 'score', label: 'Score', num: true, render: r => <ScorePill score={r.score} band={r.band} /> },
+              { key: 'bandLabel', label: 'Status', render: r => <span style={{ color: BAND_COLOR[r.band], fontWeight: 600 }}>{r.bandLabel}</span> },
+              { key: 'change', label: '7 days', num: true, render: r => (r.change == null ? <span style={{ color: 'var(--sa-muted)' }}>—</span> : <span style={{ color: r.change > 0 ? GREEN : r.change < 0 ? RED : 'var(--sa-muted)', fontWeight: 700 }}>{r.change > 0 ? `+${r.change}` : r.change}</span>) },
+              { key: 'why', label: 'Why', render: r => (r.reasons || []).slice(0, 2).map((x: any, i: number) => <span key={i} style={{ color: TONE_COLOR[x.tone] || 'var(--sa-text)' }}>{i ? ' · ' : ''}{x.text}</span>) },
+              { key: 'signIn', label: 'Last sign-in', render: r => (r.lastSignInAt ? ago(r.lastSignInAt) : 'Never') },
+              { key: 'inbound', label: 'Customer msgs', num: true },
+              { key: 'replies', label: 'Replies', num: true },
+            ]} />
+          </Card>
+        </>
+      )}
+      <Card title="Connections that need attention" note="Live from every business’s channels and stores: expired tokens, sync errors, stale syncs">
+        <Table name="colvy-connection-problems" rows={d.problems || []} cols={[
+          { key: 'company', label: 'Business', render: r => <CompanyLink id={r.company_id} name={r.company} onOpen={onOpen} /> },
+          { key: 'type', label: 'Connection' },
+          { key: 'note', label: 'Problem', render: r => <span style={{ color: RED, fontWeight: 600 }}>{r.note}</span> },
+          { key: 'detail', label: 'Detail' },
+          { key: 'last', label: 'Last activity', render: r => (r.last ? ago(r.last) : '—') },
+        ]} />
+      </Card>
+    </div>
+  )
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
-export default function Intelligence({ view }: { view: IntelView }) {
+export default function Intelligence({ view, onOpenCompany }: { view: IntelView; onOpenCompany?: (id: string) => void }) {
   const [r, setR] = useState<Range>(() => {
     try { const s = JSON.parse(localStorage.getItem('colvy_intel_range') || 'null'); if (s?.range) return s } catch {}
     return { range: '7d' }
@@ -452,7 +617,7 @@ export default function Intelligence({ view }: { view: IntelView }) {
   const { res, loading, reload } = useIntel(report, r, view === 'intel_live' ? 15_000 : 0)
   const [title, note] = TITLES[view]
   const d = res?.data
-  const showRange = view !== 'intel_live'
+  const showRange = view !== 'intel_live' && view !== 'intel_health'
 
   return (
     <div>
@@ -497,6 +662,8 @@ export default function Intelligence({ view }: { view: IntelView }) {
           {view === 'intel_pages' && <PagesView d={d} />}
           {view === 'intel_journeys' && <JourneysView d={d} />}
           {view === 'intel_funnels' && <FunnelsView d={d} configured={!!res.configured} />}
+          {view === 'intel_business' && <BusinessView d={d} onOpen={onOpenCompany} />}
+          {view === 'intel_health' && <HealthView d={d} onOpen={onOpenCompany} />}
           {Array.isArray(res.errors) && res.errors.length > 0 && res.configured && (
             <p style={{ ...sub, marginTop: 14 }}>Some figures couldn’t load: {res.errors.slice(0, 3).join(' · ')}</p>
           )}
