@@ -10,6 +10,7 @@ import { scheduleMessageThumbs } from '@/lib/image-thumb'
 import { detectContactInfo, emailKey, phoneKey } from '@/lib/phone'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
+import { protectInbound } from '@/lib/conversation-protection'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 import { classifyOne } from '@/lib/social-sync'
 import { emitInboundEvent } from '@/lib/integration-hooks'
@@ -262,6 +263,9 @@ export async function POST(req: NextRequest) {
         // The other copy won the race (unique meta_message_id): nothing more to do.
         if (insertErr && (insertErr.code === '23505' || /duplicate key/i.test(insertErr.message || ''))) continue
         if (touchConversation) await touchConversation()
+        // Spam and inappropriate messages (lib/conversation-protection): checked
+        // before anyone is notified or the agents answer.
+        if (text) await protectInbound(db, { companyId, conversationId: conv.id, messageId: insertedMsg?.id || null, contactId: contact?.id || null, text })
         // Small copies of any photos for the inbox tiles (after the response;
         // the payload is signed, and Meta's links expire, so do it now).
         scheduleMessageThumbs(db, insertedMsg?.id, attachments, { trusted: true })

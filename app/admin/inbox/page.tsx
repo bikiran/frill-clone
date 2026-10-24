@@ -81,6 +81,7 @@ import { pickReviewChannel, REVIEW_REQUEST_SUBJECT, type ReviewChannel } from '@
 import { fillTemplateVars, type TemplateVars } from '@/lib/composer-templates'
 import WhatsAppComposerBar from '@/components/inbox/WhatsAppComposerBar'
 import { STATUS_LABEL as WA_STATUS_LABEL } from '@/lib/whatsapp-core'
+import { ProtectionCard, ProtectionBanner } from '@/components/inbox/ProtectionCard'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -1725,6 +1726,9 @@ export default function InboxPage() {
   // Message ids currently showing the ORIGINAL (untranslated) text — the default
   // is the English translation for a non-English inbound message.
   const [showOriginalMsgs, setShowOriginalMsgs] = useState<Set<string>>(new Set())
+  // Flagged messages (conversation protection) someone chose to look at.
+  const [revealedMsgs, setRevealedMsgs] = useState<Set<string>>(new Set())
+  const [protectionBusy, setProtectionBusy] = useState(false)
   const toggleMsgOriginal = (id: string) => setShowOriginalMsgs(prev => {
     const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
   })
@@ -6817,6 +6821,31 @@ export default function InboxPage() {
     }
   }
 
+  // Conversation protection (lib/conversation-protection): the team says a
+  // held-back message is fine. Clears it, takes the conversation out of Spam
+  // and trusts this customer from now on.
+  const markNotSpam = async () => {
+    if (!selected || !companyId || protectionBusy) return
+    setProtectionBusy(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/inbox/protection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+        body: JSON.stringify({ companyId, conversationId: selected.id, action: 'not_spam' }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(j.error || 'Could not update')
+      const at = new Date().toISOString()
+      setMessages(prev => prev.map((m: any) => m.metadata?.protection && !m.metadata.protection.cleared ? { ...m, metadata: { ...m.metadata, protection: { ...m.metadata.protection, cleared: { by: myName || 'You', at } } } } : m))
+      setSelected({ ...(selected as any), is_spam: false, last_message: j.lastMessage ?? (selected as any).last_message } as any)
+      if (contact?.id) setContact({ ...(contact as any), trusted_at: at } as any)
+      showToast('Marked as not spam')
+    } catch (e: any) {
+      showToast(e.message || 'Could not update')
+    } finally { setProtectionBusy(false) }
+  }
+
   const reportSpam = async () => {
     if (!selected || !companyId) return
     if (!await confirmDialog('Report this conversation as spam? It will be marked spam and closed.')) return
@@ -9389,6 +9418,12 @@ export default function InboxPage() {
                   .map((c: any) => ({ __call: true, ...c }))
 
                 const liveBanner = <LiveCallBanner key="live-call-banner" conversationId={selected.id} accent={companyInfo?.accent_color || 'var(--coral)'} />
+                // A flagged customer message nobody has decided on yet (conversation protection).
+                const undecided = (list as any[]).filter((m: any) => m.sender_type === 'visitor' && m.metadata?.protection?.verdict && m.metadata.protection.verdict !== 'clean' && !m.metadata.protection.cleared)
+                const protectionBanner = (undecided.length > 0 || (contact as any)?.is_blocked) ? (
+                  <ProtectionBanner key="protection-banner" verdict={(contact as any)?.is_blocked ? 'blocked' : undecided[undecided.length - 1].metadata.protection.verdict}
+                    busy={protectionBusy} blocked={!!(contact as any)?.is_blocked} onNotSpam={markNotSpam} onBlock={contact?.id ? toggleBlockContact : undefined} />
+                ) : null
                 // Synthetic thread events for this customer's off-inbox engagement
                 // (Google reviews + FB/IG comments), sorted in among the messages
                 // by their own timestamp so the thread shows the whole relationship.
@@ -9397,7 +9432,7 @@ export default function InboxPage() {
                   ...contactReviews.socialComments.map((c: any) => ({ id: `cmt-${c.id}`, event_type: 'social_comment', created_at: c.commentedAt || new Date().toISOString(), __engPlatform: c.platform, __engComment: c.message, __engCommentId: c.id })),
                 ]
                 const threadEvents = windowStart ? [...events, ...engagementEvents].filter(inWindow) : [...events, ...engagementEvents]
-                return [header, liveBanner, ...mergeEvents(list, threadEvents, extraCalls).map((item: any) => {
+                return [header, liveBanner, protectionBanner, ...mergeEvents(list, threadEvents, extraCalls).map((item: any) => {
                 if (item.__call) {
                   const thisDay = dayLabel(item.created_at)
                   const showDivider = thisDay && thisDay !== lastDay
@@ -9709,6 +9744,22 @@ export default function InboxPage() {
                         </span>
                       </span>
                     )
+
+                // Held back as possible spam (conversation protection): hidden until
+                // someone chooses to review it.
+                const prot = !isAgent && (msg as any).metadata?.protection
+                if (prot && prot.verdict && prot.verdict !== 'clean' && !prot.cleared && !revealedMsgs.has(msg.id)) {
+                  return (
+                    <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
+                      {dateDivider}
+                      <ProtectionCard name={contact?.name || msg.sender_name || 'Visitor'} verdict={prot.verdict} reasons={prot.reasons}
+                        firstContact={(prot.reasons || []).includes('First message from an unknown sender')}
+                        blocked={!!(contact as any)?.is_blocked} busy={protectionBusy}
+                        onReview={() => setRevealedMsgs(prev => new Set(prev).add(msg.id))}
+                        onNotSpam={markNotSpam} onBlock={contact?.id ? toggleBlockContact : undefined} />
+                    </div>
+                  )
+                }
 
                 // Email messages render as a full Coax-style card (From/To/Cc,
                 // subject, formatted body, quoted history, attachments) rather

@@ -10,6 +10,7 @@
 import { internalHeaders } from '@/lib/internal-call'
 import { notifyCompany } from './notify'
 import { runKeywordReply } from './keyword-reply'
+import { protectInbound, HIDDEN_PREVIEW } from './conversation-protection'
 import { handleBookingSmsReply } from './booking-replies'
 import { emitInboundEvent } from '@/lib/integration-hooks'
 import { queueMediaUploadReply } from '@/lib/media-upload-reply'
@@ -103,6 +104,7 @@ export async function ingestInboundSms(params: {
     }
   }
 
+  let startedConversation = false
   if (!conv) {
     const { data: newConv } = await db.from('conversations').insert({
       company_id: companyId, channel: 'sms',
@@ -115,11 +117,8 @@ export async function ingestInboundSms(params: {
       last_message: summary, last_message_at: new Date().toISOString(),
     }).select().maybeSingle()
     conv = newConv
-    if (newConv && !optingOut) {
-      try {
-        fetch(`${origin}/api/inbox/auto-reply`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ conversationId: newConv.id }) })
-      } catch {}
-    }
+    // The thank-you auto-reply goes out once the message is saved and checked (below).
+    startedConversation = !!newConv && !optingOut
   } else if (!conv.sms_number || conv.contact_id !== matchedContactId) {
     await db.from('conversations').update({
       sms_number: conv.sms_number || from,
@@ -157,6 +156,15 @@ export async function ingestInboundSms(params: {
     unread_count: (conv.unread_count || 0) + 1, updated_at: new Date().toISOString(),
   }).eq('id', conv.id)
 
+  // Spam and inappropriate texts (lib/conversation-protection): checked before
+  // anyone is notified or anything answers it.
+  const guard = await protectInbound(db, { companyId, conversationId: conv.id, messageId: insertedMsg?.id || null, contactId: conv.contact_id || matchedContactId || null, text })
+  if (startedConversation && !guard.quiet) {
+    try {
+      fetch(`${origin}/api/inbox/auto-reply`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ conversationId: conv.id }) })
+    } catch {}
+  }
+
   // Alert agents' phones + run smart triggers. The sender name is the PERSON —
   // their saved contact name, else the raw number. Never the conversation
   // subject: that's a system label (e.g. "Abandoned cart", "Cart recovered"), so
@@ -173,7 +181,7 @@ export async function ingestInboundSms(params: {
   }
   if (!senderLabel || /^\+?\d[\d\s-]*$/.test(senderLabel)) senderLabel = from
   try {
-    fetch(`${origin}/api/push/send`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ companyId, title: `New SMS from ${senderLabel}`, body: summary, conversationId: conv.id, from }) })
+    if (guard.verdict === 'clean' || guard.verdict === 'suspect') fetch(`${origin}/api/push/send`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ companyId, title: `New SMS from ${senderLabel}`, body: guard.quiet ? `${HIDDEN_PREVIEW}. Open Colvy to review it.` : summary, conversationId: conv.id, from }) })
     fetch(`${origin}/api/inbox/smart-trigger`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ conversationId: conv.id, text }) })
     // Colvy AI: extract the sender's name/suburb and create/link their contact.
     // Fire-and-forget so the LLM call never delays ingestion.

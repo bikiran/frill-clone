@@ -1,6 +1,7 @@
 import { internalHeaders, isInternalCall } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { quietVerdict } from '@/lib/conversation-protection'
 
 function admin() {
   return createClient(
@@ -26,6 +27,9 @@ export async function POST(req: NextRequest) {
     const { data: conv } = await db.from('conversations').select('*').eq('id', conversationId).maybeSingle()
     if (!conv) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
     if (conv.auto_replied) return NextResponse.json({ ok: true, skipped: 'already replied' })
+    // Spam, a blocked sender, or a message Colvy hid for review: no thank-you (lib/conversation-protection).
+    const quiet = await quietVerdict(db, conversationId)
+    if (quiet) return NextResponse.json({ ok: true, skipped: `protection: ${quiet}` })
 
     // Don't fire the "Thank you for contacting us" auto-reply when a human has
     // ALREADY texted the customer in this thread (e.g. the agent proactively

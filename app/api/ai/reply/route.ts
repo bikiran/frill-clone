@@ -6,6 +6,7 @@ import { startSupportAgentForConversation, AGENT_CHANNELS } from '@/lib/agent/in
 import { supportAutoSends, getAgentChannels, channelKey } from '@/lib/agent/pilot'
 import { createClient } from '@supabase/supabase-js'
 import { textOptOut } from '@/lib/sms-consent'
+import { quietVerdict } from '@/lib/conversation-protection'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -31,6 +32,9 @@ export async function POST(req: NextRequest) {
     if (!conversationId) return NextResponse.json({ error: 'conversationId required' }, { status: 400 })
     const { data: owner } = await admin().from('conversations').select('company_id, channel, sms_number, contact_id').eq('id', conversationId).maybeSingle()
     if (!owner?.company_id) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+    // Spam, a blocked sender, or a message Colvy hid for review: the AI stays out of it.
+    const quiet = await quietVerdict(admin(), conversationId)
+    if (quiet) return NextResponse.json({ ok: true, skipped: `protection: ${quiet}` })
 
     // An SMS customer who opted out (or can't be checked) gets no AI run at all:
     // the reply would be refused anyway, and the AI could already have issued a

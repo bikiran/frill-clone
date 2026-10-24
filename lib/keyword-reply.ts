@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { trackLinksInText } from '@/lib/link-tracking'
 import { modelFor, trackAi } from '@/lib/ai-models'
+import { quietVerdict } from '@/lib/conversation-protection'
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -134,6 +135,8 @@ export async function runKeywordReply(opts: {
   if (!conversationId || !text) return { matched: false }
 
   const db = admin()
+  // Spam, a blocked sender, or a message Colvy hid for review: no automatic answer.
+  if (await quietVerdict(db, conversationId)) return { matched: false }
 
   let companyId = opts.companyId
   if (!companyId) {
