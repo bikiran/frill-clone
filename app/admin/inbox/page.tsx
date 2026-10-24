@@ -5846,6 +5846,12 @@ export default function InboxPage() {
     const sentFrom = selected.id
     const sendDone = () => {
       draft.discard()
+      // A payment link went out in this reply: that message becomes the
+      // payment's card, which turns PAID when the money arrives (lib/payment-links).
+      if (!internalMode && companyId && /\/(?:l|pay)\/[A-Za-z0-9_-]+/.test(content)) {
+        authFetch('/api/stripe/chat-payment/attach', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, conversationId: sentFrom }) })
+          .then(r => r.json()).then(d => { if (d?.linked && selectedIdRef.current === sentFrom) reloadThread(sentFrom) }).catch(() => {})
+      }
       if (selectedIdRef.current !== sentFrom) return
       setReply(''); setReplyTo(null); setSending(false)
     }
@@ -10170,16 +10176,32 @@ export default function InboxPage() {
                             </button>
                           </div>
                         )}
-                        {msg.message_type === 'payment' && msg.message_payload && (
-                          <div style={{ marginTop: 6, padding: '10px 12px', borderRadius: 10, background: '#fff', border: '1px solid var(--border)', color: 'var(--ink)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={msg.message_payload.status === 'paid' ? '#059669' : '#635BFF'} strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-                              <span style={{ fontSize: 13, fontWeight: 700 }}>${(msg.message_payload.amount_cents / 100).toFixed(2)} AUD</span>
-                              <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 6, background: msg.message_payload.status === 'paid' ? '#dcfce7' : '#ede9fe', color: msg.message_payload.status === 'paid' ? '#059669' : '#635BFF', textTransform: 'uppercase' }}>{msg.message_payload.status || 'pending'}</span>
+                        {msg.message_type === 'payment' && msg.message_payload && (() => {
+                          // The payment's card: amount, what it's for, and whether it's
+                          // been paid (checked with Stripe while pending, see above).
+                          const pp = msg.message_payload
+                          const paid = pp.status === 'paid', refunded = pp.status === 'refunded'
+                          const tone = paid ? '#059669' : refunded ? '#64748b' : '#635BFF'
+                          return (
+                            <div style={{ marginTop: 6, padding: '10px 12px', borderRadius: 10, background: '#fff', border: `1px solid ${paid ? '#bbf7d0' : 'var(--border)'}`, color: 'var(--ink)', whiteSpace: 'normal' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={tone} strokeWidth="2" style={{ flexShrink: 0 }}><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                                <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>${(pp.amount_cents / 100).toFixed(2)} {String(pp.currency || 'aud').toUpperCase()}</span>
+                                <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 6, background: paid ? '#dcfce7' : refunded ? '#f1f5f9' : '#ede9fe', color: tone, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{paid ? '✓ Paid' : refunded ? 'Refunded' : 'Awaiting payment'}</span>
+                              </div>
+                              {pp.description && <p style={{ margin: 0, fontSize: 12, color: 'var(--slate)' }}>{pp.description}</p>}
+                              {paid && (pp.paid_at || pp.card_last4 || pp.receipt_url) && (
+                                <p style={{ margin: '6px 0 0', fontSize: 11.5, color: '#059669', display: 'flex', columnGap: 8, rowGap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+                                  <span>{[
+                                    pp.paid_at ? `Paid ${new Date(pp.paid_at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}` : 'Paid',
+                                    pp.card_last4 ? `${String(pp.card_brand || 'Card').replace(/^./, (c: string) => c.toUpperCase())} ····${pp.card_last4}` : '',
+                                  ].filter(Boolean).join(' · ')}</span>
+                                  {pp.receipt_url && <a href={pp.receipt_url} target="_blank" rel="noopener noreferrer" style={{ color: '#059669', fontWeight: 700 }}>Receipt</a>}
+                                </p>
+                              )}
                             </div>
-                            {msg.message_payload.description && <p style={{ margin: 0, fontSize: 12, color: 'var(--slate)' }}>{msg.message_payload.description}</p>}
-                          </div>
-                        )}
+                          )
+                        })()}
                         {['poll', 'survey', 'form'].includes(msg.message_type) && (
                           <div style={{ marginTop: 6, padding: '8px 12px', borderRadius: 10, background: '#fff', border: '1px solid var(--border)', color: 'var(--slate)', fontSize: 12 }}>
                             Interactive {msg.message_type} sent — the customer can respond in the widget.

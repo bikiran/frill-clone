@@ -2,10 +2,7 @@ import { isInternalCall } from '@/lib/internal-call'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import Stripe from 'stripe'
-import { confirmChatPayment } from '@/lib/chat-payment-confirm'
-import { captureFromPayLink } from '@/lib/paylink-capture'
-import { stripeSecretFor } from '@/lib/company-secrets'
+import { reconcilePayments } from '@/lib/payment-links'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,55 +37,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    let updated = 0
-    const results: any[] = []
-
-    for (const pay of pending) {
-      try {
-        const { data: company } = await db.from('companies').select('*').eq('id', pay.company_id).maybeSingle()
-        const ownKey = await stripeSecretFor(company)
-        const useOwnKeys = !!ownKey
-        const key = ownKey || process.env.STRIPE_SECRET_KEY
-        if (!key) { results.push({ id: pay.id, error: 'No Stripe key' }); continue }
-
-        const s = new Stripe(String(key).trim(), { apiVersion: '2024-06-20' as any })
-        const opts: any = useOwnKeys ? undefined : (company?.stripe_account_id ? { stripeAccount: company.stripe_account_id } : undefined)
-
-        // We stored the Checkout Session id when the payment was created.
-        const sessionId = pay.stripe_session_id || pay.session_id
-        if (!sessionId) { results.push({ id: pay.id, error: 'No Stripe session id stored' }); continue }
-
-        const session: any = await s.checkout.sessions.retrieve(sessionId, { expand: ['payment_intent.latest_charge'] } as any, opts)
-        const isPaid = session?.payment_status === 'paid' || session?.status === 'complete'
-
-        if (!isPaid) { results.push({ id: pay.id, status: session?.payment_status || 'unpaid' }); continue }
-
-        // Card brand + last-4 for the Payments list, captured once at confirm.
-        const card = session?.payment_intent?.latest_charge?.payment_method_details?.card || null
-
-        // Mark paid + flip the card + post confirmation + push — shared with the
-        // webhook so the two paths confirm exactly once (whichever wins the race).
-        const res = await confirmChatPayment(db, {
-          id: pay.id, company_id: pay.company_id, conversation_id: pay.conversation_id,
-          message_id: pay.message_id, amount_cents: pay.amount_cents,
-        }, {
-          receiptUrl: session?.receipt_url || null,
-          paymentIntent: (typeof session?.payment_intent === 'string' ? session.payment_intent : session?.payment_intent?.id) || null,
-          cardBrand: card?.brand || null, cardLast4: card?.last4 || null,
-        })
-
-        if (res.confirmed) {
-          updated++
-          // Pay links: fill the customer's details / address / saved card.
-          if (session?.metadata?.kind === 'chat_payment') {
-            try { await captureFromPayLink(db, { companyId: pay.company_id, sessionId, paymentId: pay.id }) } catch {}
-          }
-        }
-        results.push({ id: pay.id, status: res.confirmed ? 'paid' : 'already-confirmed' })
-      } catch (e: any) {
-        results.push({ id: pay.id, error: e.message })
-      }
-    }
+    const { updated, results } = await reconcilePayments(db, pending)
 
     return NextResponse.json({ ok: true, checked: pending.length, updated, results })
   } catch (e: any) {
