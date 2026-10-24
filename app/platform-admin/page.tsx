@@ -123,6 +123,8 @@ const NAV = [
   { key: 'intel_funnels',  label: 'Signup funnels',     icon: 'subs' },
   { key: 'intel_business', label: 'Business',           icon: 'companies' },
   { key: 'intel_health',   label: 'Customer health',    icon: 'agent' },
+  { key: 'intel_revenue',  label: 'Revenue',            icon: 'billing' },
+  { key: 'intel_system',   label: 'System health',      icon: 'system' },
   { section: 'Workspace' },
   { key: 'companies',  label: 'Companies',        icon: 'companies' },
   { key: 'users',      label: 'Users',            icon: 'users' },
@@ -5072,7 +5074,7 @@ export default function SuperAdmin() {
           {page === 'users'      && <UsersPage />}
           {page === 'signups'    && <SignupsPage />}
           {page === 'analytics'  && <AnalyticsPage />}
-          {INTEL_VIEWS.includes(page as IntelView) && <Intelligence view={page as IntelView} onOpenCompany={id => { try { window.history.replaceState(null, '', `#companies/${id}`) } catch {} ; setPageState('companies') }} />}
+          {INTEL_VIEWS.includes(page as IntelView) && <Intelligence view={page as IntelView} onOpenCompany={id => { try { window.history.replaceState(null, '', `#companies/${id}`) } catch {} ; setPageState('companies') }} onNavigate={setPage} />}
           {page === 'flags'      && <FeatureFlagsPage />}
           {page === 'system'     && <SystemPage onGo={setPage} />}
           {page === 'audit'      && <AuditPage />}

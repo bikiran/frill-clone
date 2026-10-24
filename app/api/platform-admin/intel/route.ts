@@ -3,11 +3,12 @@ import { adminDb, superAdmin, safe } from '../_lib/super-admin'
 import { hogql, funnel, cached, posthogConfig } from '@/lib/intel/posthog'
 import { channelOf } from '@/lib/intel/channel'
 import { businessReport, healthReport } from '@/lib/intel/business-report'
+import { revenueReport, systemReport } from '@/lib/intel/revenue-report'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-// GET /api/platform-admin/intel?report=overview|live|traffic|pages|journeys|funnels|business|health
+// GET /api/platform-admin/intel?report=overview|live|traffic|pages|journeys|funnels|business|health|revenue|system
 //   &range=24h|7d|28d|90d|custom&from=YYYY-MM-DD&to=YYYY-MM-DD&fresh=1
 //
 // Super Admin → Intelligence. Website and product analytics come from
@@ -296,12 +297,16 @@ export async function GET(req: NextRequest) {
   const fresh = sp.get('fresh') === '1'
   const meta = { report, range: p.label, from: p.from.toISOString(), to: p.to.toISOString(), prevFrom: p.prevFrom.toISOString(), prevTo: p.prevTo.toISOString(), posthog: cfg }
 
-  // Business and Customer health come from Supabase alone (V415 + the hourly
-  // intel job), PostHog or not.
-  if (report === 'business' || report === 'health') {
+  // Business, Customer health, Revenue and System health come from Supabase
+  // (V415/V416 + the hourly intel job) and Stripe, PostHog or not.
+  if (report === 'business' || report === 'health' || report === 'revenue' || report === 'system') {
     try {
       const key = `${report}:${p.label}:${sp.get('from') || ''}:${sp.get('to') || ''}`
-      const data = await cached(key, 60_000, fresh, async () => ({ data: report === 'business' ? await businessReport(db, p) : await healthReport(db), errors: [] as string[] }))
+      const data = await cached(key, 60_000, fresh, async () => ({
+        data: report === 'business' ? await businessReport(db, p) : report === 'health' ? await healthReport(db)
+          : report === 'revenue' ? await revenueReport(db, p) : await systemReport(db),
+        errors: [] as string[],
+      }))
       return NextResponse.json({ ...meta, configured: true, ...data })
     } catch (e: any) {
       console.error('[intel]', report, e?.message || e)

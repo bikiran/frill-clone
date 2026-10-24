@@ -430,6 +430,16 @@ export async function POST(req: NextRequest) {
       } catch (e: any) { console.error('[stripe/webhook] tax invoice failed', e?.message || e) }
     }
 
+    // Colvy's own billing history for Super Admin → Intelligence → Revenue
+    // (lib/intel/billing): subscriptions started, plans changed, payments
+    // failing, cancellations. Best effort; connected accounts never.
+    if (!event.account) {
+      try {
+        const { recordBillingEvent } = await import('@/lib/intel/billing')
+        await recordBillingEvent(supabase, event)
+      } catch {}
+    }
+
     // Log event
     try {
       await (supabase as any).from('stripe_events').insert({
