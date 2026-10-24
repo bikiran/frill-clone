@@ -150,7 +150,13 @@ async function syncFacebookChannel(db: any, companyId: string, channel: any, toC
   const token = channel.page_access_token
   if (!token) return { posts: 0, comments: 0 }
 
-  const feedRes = await fetch(`${GRAPH}/${channel.page_id}/feed?fields=id,message,permalink_url,created_time,full_picture,status_type&limit=25&access_token=${encodeURIComponent(token)}`)
+  // attachments carries a video's playable file and an album's photos, for the
+  // Social page's player and gallery. If Meta refuses the extra field, the
+  // plain feed still syncs.
+  const feedUrl = (fields: string) => `${GRAPH}/${channel.page_id}/feed?fields=${fields}&limit=25&access_token=${encodeURIComponent(token)}`
+  const BASE_FIELDS = 'id,message,permalink_url,created_time,full_picture,status_type'
+  let feedRes = await fetch(feedUrl(`${BASE_FIELDS},attachments{media_type,type,media,subattachments{media_type,type,media}}`))
+  if (!feedRes.ok) feedRes = await fetch(feedUrl(BASE_FIELDS))
   const feed = await feedRes.json()
   if (!feedRes.ok) throw new Error(feed?.error?.message || 'Could not fetch page posts')
 
@@ -212,7 +218,11 @@ async function syncInstagramChannel(db: any, companyId: string, channel: any, to
   const accountNode = igLogin ? 'me' : (channel.ig_account_id || '')
   if (!igLogin && !accountNode) return { posts: 0, comments: 0 }
 
-  const mediaRes = await fetch(`${base}/${accountNode}/media?fields=id,caption,media_type,media_url,thumbnail_url,permalink,timestamp&limit=25&access_token=${encodeURIComponent(token)}`)
+  // children = a carousel's photos and videos (for the Social page's gallery).
+  const mediaUrl = (fields: string) => `${base}/${accountNode}/media?fields=${fields}&limit=25&access_token=${encodeURIComponent(token)}`
+  const IG_FIELDS = 'id,caption,media_type,media_url,thumbnail_url,permalink,timestamp'
+  let mediaRes = await fetch(mediaUrl(`${IG_FIELDS},children{media_type,media_url,thumbnail_url}`))
+  if (!mediaRes.ok) mediaRes = await fetch(mediaUrl(IG_FIELDS))
   const media = await mediaRes.json()
   if (!mediaRes.ok) throw new Error(media?.error?.message || 'Could not fetch Instagram media')
 

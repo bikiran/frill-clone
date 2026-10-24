@@ -7,6 +7,8 @@ import { useCompanyUser } from '../crm-settings/_shared'
 import PageHeader from '@/components/PageHeader'
 import { SuggestionCard, type Suggestion } from '@/components/AgentSuggestion'
 import Pagination, { usePagination } from '@/components/Pagination'
+import VideoPlayer from '@/components/VideoPlayer'
+import MediaGallery from '@/components/MediaGallery'
 
 type Comment = {
   id: string
@@ -30,7 +32,7 @@ type Comment = {
   commented_at: string | null
 }
 
-type Post = { id: string; platform: string | null; permalink: string | null; message: string | null; media_url: string | null; post_type: string | null; thumb?: string | null; mtype?: string | null }
+type Post = { id: string; platform: string | null; permalink: string | null; message: string | null; media_url: string | null; post_type: string | null; thumb?: string | null; mtype?: string | null; children?: any; attachments?: any }
 
 const PLATFORM: Record<string, { label: string; color: string; bg: string }> = {
   instagram: { label: 'Instagram', color: '#C13584', bg: 'linear-gradient(45deg,#F58529 0%,#DD2A7B 50%,#8134AF 80%,#515BD4 100%)' },
@@ -60,40 +62,81 @@ function Avatar({ src, name }: { src?: string | null; name: string }) {
   return <span style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13 }}>{(name || '?').charAt(0).toUpperCase()}</span>
 }
 
+type PostMedia = { kind: 'image' | 'video'; url: string; poster?: string | null }
+
+/** A post's photos and videos, from what the sync saved (carousel children, Facebook attachments). */
+function postMedia(post: Post, platform: string, isVideo: boolean): PostMedia[] {
+  if (platform === 'instagram') {
+    const kids = post.children?.data
+    if (Array.isArray(kids) && kids.length) {
+      return kids.map((k: any): PostMedia | null => !k?.media_url ? null
+        : /VIDEO/i.test(k.media_type || '') ? { kind: 'video', url: k.media_url, poster: k.thumbnail_url || null }
+        : { kind: 'image', url: k.media_url }).filter(Boolean) as PostMedia[]
+    }
+    if (!post.media_url) return []
+    return /VIDEO/i.test(post.mtype || '') ? [{ kind: 'video', url: post.media_url, poster: post.thumb || null }]
+      : isVideo ? [] : [{ kind: 'image', url: post.media_url }]
+  }
+  const fromAtt = (a: any): PostMedia | null => a?.media?.source ? { kind: 'video', url: a.media.source, poster: a.media.image?.src || null }
+    : a?.media?.image?.src ? { kind: 'image', url: a.media.image.src } : null
+  const att = post.attachments?.data?.[0]
+  const subs = att?.subattachments?.data
+  if (Array.isArray(subs) && subs.length) return subs.map(fromAtt).filter(Boolean) as PostMedia[]
+  const one = att ? fromAtt(att) : null
+  if (one && (one.kind === 'video' || !isVideo)) return [one]
+  return post.media_url && !isVideo ? [{ kind: 'image', url: post.media_url }] : []
+}
+
 /**
- * The post a comment is on: a thumbnail and the caption, and for a reel or
- * video a play button that plays it right here. Instagram videos play from
- * the file itself and fall back to Instagram's own embed when that link has
- * expired; Facebook videos use Facebook's embedded player. A photo opens
- * bigger. The arrow still opens the post on Instagram / Facebook.
+ * The post a comment is on: its thumbnails and caption. A reel or video
+ * plays right here in Colvy's own player (falling back to Instagram's or
+ * Facebook's embed when there's no playable file, or its link has expired);
+ * photos and carousels open in Colvy's gallery. The arrow opens the post on
+ * Instagram / Facebook.
  */
 function PostPreview({ post, platform }: { post: Post; platform: string }) {
-  const [open, setOpen] = useState(false)
+  const [playing, setPlaying] = useState(false)
   const [embed, setEmbed] = useState(false)
-  const [thumbBroken, setThumbBroken] = useState(false)
+  const [galleryAt, setGalleryAt] = useState<number | null>(null)
+  const [broken, setBroken] = useState<Record<number, boolean>>({})
   const label = PLATFORM[platform]?.label || 'Facebook'
   const isVideo = post.post_type === 'reel' || /video|reel/i.test(post.mtype || '')
-  const igVideoFile = platform === 'instagram' && isVideo && /^VIDEO$/i.test(post.mtype || '') ? post.media_url : null
-  const thumb = platform === 'instagram' && isVideo ? (post.thumb || null) : (post.media_url || post.thumb || null)
+  const media = postMedia(post, platform, isVideo)
+  const single = media.length <= 1
+  // One video (or a reel we can only embed): play inline. Otherwise a gallery.
+  const inlineVideo = single && (media[0]?.kind === 'video' || (isVideo && !media.length))
+  const thumbOf = (m?: PostMedia) => m ? (m.kind === 'video' ? (m.poster || null) : m.url) : (post.thumb || post.media_url || null)
+  const thumbs = single ? [thumbOf(media[0]) || (platform === 'facebook' ? post.media_url : post.thumb) || null] : media.slice(0, 3).map(thumbOf)
   const text = (post.message || '').replace(/\s+/g, ' ').trim()
-  const kind = post.post_type && post.post_type !== 'post' ? `a ${post.post_type.toLowerCase().replace(/_/g, ' ')}` : 'a post'
-  const canOpen = isVideo ? !!(igVideoFile || post.permalink) : !!thumb
+  const kind = media.length > 1 ? (media.some(m => m.kind === 'video') ? `a post with ${media.length} photos and videos` : `a post with ${media.length} photos`)
+    : post.post_type && post.post_type !== 'post' ? `a ${post.post_type.toLowerCase().replace(/_/g, ' ')}` : 'a post'
   const igEmbed = post.permalink ? post.permalink.replace(/\?.*$/, '').replace(/\/?$/, '/') + 'embed' : null
   const fbEmbed = post.permalink ? `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(post.permalink)}&show_text=false&width=320` : null
+  const canEmbed = platform === 'instagram' ? !!igEmbed : !!fbEmbed
+  const clickable = inlineVideo ? (media[0]?.kind === 'video' || canEmbed) : media.length > 0
+  const tap = (i: number) => { if (!clickable) return; if (inlineVideo) setPlaying(p => !p); else setGalleryAt(i) }
   return (
     <div style={{ margin: '0 0 10px' }}>
       <div className="se-post">
-        <button type="button" onClick={() => canOpen && setOpen(o => !o)} disabled={!canOpen} title={canOpen ? (open ? 'Close' : isVideo ? `Play the ${post.post_type || 'video'}` : 'View the photo') : undefined}
-          style={{ position: 'relative', width: 44, height: 44, borderRadius: 8, overflow: 'hidden', flexShrink: 0, border: 'none', padding: 0, background: '#e7e5e4', cursor: canOpen ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {thumb && !thumbBroken
-            ? <img src={thumb} alt="" referrerPolicy="no-referrer" onError={() => setThumbBroken(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            : <PlatformMark platform={platform} size={20} />}
-          {isVideo && canOpen && (
-            <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.28)' }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff" aria-hidden="true">{open ? <><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></> : <path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" />}</svg>
-            </span>
-          )}
-        </button>
+        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+          {thumbs.map((t, i) => (
+            <button key={i} type="button" onClick={() => tap(i)} disabled={!clickable}
+              title={!clickable ? undefined : inlineVideo ? (playing ? 'Close' : `Play the ${post.post_type || 'video'}`) : 'Open the photos'}
+              style={{ position: 'relative', width: 44, height: 44, borderRadius: 8, overflow: 'hidden', border: 'none', padding: 0, background: '#e7e5e4', cursor: clickable ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {t && !broken[i]
+                ? <img src={t} alt="" referrerPolicy="no-referrer" onError={() => setBroken(b => ({ ...b, [i]: true }))} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : <PlatformMark platform={platform} size={20} />}
+              {(inlineVideo || media[i]?.kind === 'video') && clickable && (
+                <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.28)' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff" aria-hidden="true">{inlineVideo && playing ? <><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></> : <path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" />}</svg>
+                </span>
+              )}
+              {i === 2 && media.length > 3 && (
+                <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)', color: '#fff', fontSize: 13, fontWeight: 800 }}>+{media.length - 3}</span>
+              )}
+            </button>
+          ))}
+        </div>
         <span style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           On {kind}{text ? `: “${text.slice(0, 90)}${text.length > 90 ? '…' : ''}”` : ''}
         </span>
@@ -103,18 +146,20 @@ function PostPreview({ post, platform }: { post: Post; platform: string }) {
           </a>
         )}
       </div>
-      {open && (
-        <div style={{ marginTop: 8, width: '100%', maxWidth: isVideo ? 300 : 360, borderRadius: 12, overflow: 'hidden', background: '#000', aspectRatio: isVideo ? '9 / 16' : undefined }}>
-          {!isVideo
-            ? <img src={thumb || ''} alt="" referrerPolicy="no-referrer" style={{ width: '100%', display: 'block' }} />
-            : igVideoFile && !embed
-              ? <video src={igVideoFile} poster={thumb || undefined} controls autoPlay playsInline onError={() => setEmbed(true)} style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }} />
-              : platform === 'instagram' && igEmbed
-                ? <iframe src={igEmbed} title="Instagram post" allow="autoplay; encrypted-media; picture-in-picture" style={{ width: '100%', height: '100%', border: 0, background: '#fff' }} />
-                : fbEmbed
-                  ? <iframe src={fbEmbed} title="Facebook video" allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen style={{ width: '100%', height: '100%', border: 0 }} />
-                  : null}
+      {inlineVideo && playing && (
+        <div style={{ marginTop: 8, width: '100%', maxWidth: 360, aspectRatio: '9 / 16', borderRadius: 12, overflow: 'hidden', background: '#000', display: 'flex' }}>
+          {media[0]?.kind === 'video' && !embed
+            ? <VideoPlayer src={media[0].url} poster={media[0].poster || undefined} ambient onError={() => setEmbed(true)} style={{ width: '100%', height: '100%', borderRadius: 12 }} />
+            : platform === 'instagram' && igEmbed
+              ? <iframe src={igEmbed} title="Instagram post" allow="autoplay; encrypted-media; picture-in-picture" style={{ width: '100%', height: '100%', border: 0, background: '#fff' }} />
+              : fbEmbed
+                ? <iframe src={fbEmbed} title="Facebook video" allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen style={{ width: '100%', height: '100%', border: 0 }} />
+                : null}
         </div>
+      )}
+      {galleryAt !== null && (
+        <MediaGallery items={media.map((m, i) => ({ url: m.url, kind: m.kind, poster: m.poster || undefined, name: media.length > 1 ? `${i + 1} of ${media.length}` : label }))}
+          index={galleryAt} onIndex={setGalleryAt} onClose={() => setGalleryAt(null)} />
       )}
     </div>
   )
@@ -225,7 +270,7 @@ export default function SocialEngagementPage() {
     const [{ data: chans }, cmts, postRes] = await Promise.all([
       (supabase as any).from('meta_channels').select('page_name').eq('company_id', companyId).in('platform', ['facebook', 'instagram']).eq('is_active', true).limit(1),
       (supabase as any).from('social_comments').select('*').eq('company_id', companyId).order('commented_at', { ascending: false }).limit(2000),
-      (supabase as any).from('social_posts').select('id, platform, permalink, message, media_url, post_type, thumb:raw->>thumbnail_url, mtype:raw->>media_type', { count: 'exact' }).eq('company_id', companyId).order('posted_at', { ascending: false }).limit(1000),
+      (supabase as any).from('social_posts').select('id, platform, permalink, message, media_url, post_type, thumb:raw->>thumbnail_url, mtype:raw->>media_type, children:raw->children, attachments:raw->attachments', { count: 'exact' }).eq('company_id', companyId).order('posted_at', { ascending: false }).limit(1000),
     ])
     setConnected(chans?.[0] || null)
     setComments(cmts.data || [])
