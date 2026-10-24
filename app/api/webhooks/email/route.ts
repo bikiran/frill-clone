@@ -3,6 +3,7 @@ import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { runKeywordReply } from '@/lib/keyword-reply'
+import { protectInbound } from '@/lib/conversation-protection'
 import { passesRules, sanitizeEmailHtml } from '@/lib/gmail'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
@@ -419,6 +420,7 @@ export async function POST(req: NextRequest) {
       // The Resend id lets the body backfill re-fetch this email later.
       metadata: { inbound_email: { provider: resendEmailId ? 'resend' : 'webhook', ...(resendEmailId ? { resend_email_id: String(resendEmailId) } : {}), body: bodyFetch, ...pendingMeta(), auth, ...(auth === 'fail' ? { unverified: true } : {}), ...(receivedAt ? { received_at: receivedAt } : {}), ...(threadedVia ? { threaded_via: threadedVia } : {}) } },
     }
+    let storedMessageId: string | null = null
     {
       const { data: inserted, error: insErr } = await db.from('messages').insert(msgRow).select('id').maybeSingle()
       // Stored already (two deliveries at once; V389's unique index caught it).
@@ -434,6 +436,7 @@ export async function POST(req: NextRequest) {
       // Small copies of photos for the inbox tiles — made after the response,
       // from the files we just stored in this company's folder.
       scheduleMessageThumbs(db, storedId, msgRow.email_attachments, { field: 'email_attachments', prefixes: [`/ticket-attachments/${companyId}/`] })
+      storedMessageId = storedId
     }
     alertPending(companyId)
     if (bodyFetch === 'pending') logWebhookEvent({ source: 'email', eventType: 'inbound-body-pending', companyId, status: 'error', error: `Saved without its text: ${bodyError?.reason}${bodyError?.status ? ` (Resend answered ${bodyError.status}${bodyError.detail ? ` ${bodyError.detail}` : ''})` : ''}`, payload: { from: from.email, subject, resendEmailId } })
@@ -464,6 +467,10 @@ export async function POST(req: NextRequest) {
       status: 'open',
       unread_count: (conv.unread_count || 0) + 1,
     }).eq('id', conv.id)
+
+    // Spam and inappropriate emails (lib/conversation-protection): checked
+    // before anyone is notified or anything answers it.
+    await protectInbound(db, { companyId, conversationId: conv.id, messageId: storedMessageId, text: `${subject || ''}\n${content || ''}` })
 
     // ── Route ticket replies back into the ticket ────────────────────────────
     // Agent ticket replies go out with "[TICK-######]" in the subject; when the

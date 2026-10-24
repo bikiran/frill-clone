@@ -1,6 +1,7 @@
 import { internalHeaders } from '@/lib/internal-call'
 import { staffUserIds } from '@/lib/company-access'
 import { createClient } from '@supabase/supabase-js'
+import { quietVerdict, HIDDEN_PREVIEW, INBOUND_NOTIFY_TYPES } from '@/lib/conversation-protection'
 
 function admin() {
   return createClient(
@@ -41,6 +42,11 @@ export async function pushInboundMessage(params: {
   baseUrl?: string
 }) {
   try {
+    // Conversation protection: nothing for spam or a blocked sender, and a
+    // flagged message's words never reach a lock screen.
+    const quiet = await quietVerdict(admin(), params.conversationId)
+    if (quiet === 'spam' || quiet === 'blocked') return
+    const body = quiet ? `${HIDDEN_PREVIEW}. Open Colvy to review it.` : params.body
     const base = params.baseUrl || process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
     await fetch(`${base}/api/push/send`, {
       method: 'POST',
@@ -49,7 +55,7 @@ export async function pushInboundMessage(params: {
         companyId: params.companyId,
         conversationId: params.conversationId,
         title: params.title,
-        body: params.body,
+        body,
         route: params.route,
         excludeUserId: params.excludeUserId,
       }),
@@ -76,13 +82,21 @@ export async function notifyCompany(params: {
 }) {
   try {
     const db = params.db || admin()
+    // A customer's message in a conversation Colvy flagged (lib/conversation-protection):
+    // no bell for spam or a blocked sender, and no message text for a suspect one.
+    let message = params.message
+    if (params.conversationId && INBOUND_NOTIFY_TYPES.has(params.type)) {
+      const quiet = await quietVerdict(db, params.conversationId)
+      if (quiet === 'spam' || quiet === 'blocked') return
+      if (quiet) message = `${HIDDEN_PREVIEW} (from ${params.actorName || 'a customer'})`
+    }
     const recipients = await companyRecipients(db, params.companyId, params.excludeUserId)
     if (recipients.length === 0) return
     const rows = recipients.map(uid => ({
       user_id: uid,
       company_id: params.companyId,
       type: params.type,
-      message: params.message,
+      message,
       actor_name: params.actorName || null,
       actor_email: params.actorEmail || null,
       conversation_id: params.conversationId || null,

@@ -18,6 +18,7 @@ import { enqueueRun, runAgent } from './engine'
 import { agentsPaused, getAgentChannels, channelKey } from './pilot'
 import { agentsOnPlan } from './access'
 import { retireStaleSuggestions } from './approvals'
+import { quietVerdict } from '@/lib/conversation-protection'
 
 // Where Colvy AI's older auto-reply also runs — it stands down here once the
 // Support Agent replies on its own (app/api/ai/reply).
@@ -53,6 +54,8 @@ export async function startSupportAgentForConversation(db: any, conversationId: 
   const arrivedOn = opts.channel || conv?.channel
   const key = channelKey(arrivedOn)
   if (!conv?.company_id || !key) return { started: false, reason: 'channel' }
+  // Spam, a blocked sender, or a message Colvy hid for review: the agents leave it to the team.
+  if (await quietVerdict(db, conversationId)) return { started: false, reason: 'protection' }
   const { data: roleRows } = await db.from('agent_roles').select('role_key, enabled').eq('company_id', conv.company_id).in('role_key', ['support', 'reception']).then((r: any) => r, () => ({ data: [] }))
   const enabled = new Set<string>((roleRows || []).filter((r: any) => r.enabled).map((r: any) => r.role_key))
   if (!enabled.size) return { started: false, reason: 'off' }

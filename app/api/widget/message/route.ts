@@ -7,6 +7,7 @@ import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 import { emitInboundEvent } from '@/lib/integration-hooks'
 import { scheduleMessageThumbs } from '@/lib/image-thumb'
+import { protectInbound } from '@/lib/conversation-protection'
 
 export const dynamic = 'force-dynamic'
 
@@ -120,6 +121,10 @@ export async function POST(req: NextRequest) {
       status: 'open',
       updated_at: new Date().toISOString(),
     }).eq('id', conversationId)
+
+    // Spam and inappropriate messages (lib/conversation-protection): checked
+    // before anyone is notified or anything answers it.
+    if (senderType === 'visitor') await protectInbound(db, { companyId, conversationId, messageId: message?.id || null, text: content })
 
     // A real visitor message (not a "started a chat" system event) alerts the
     // team: the in-app bell plus a phone push carrying conversationId, so the

@@ -15,6 +15,7 @@
 // The caller starts the agents (after the response).
 
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
+import { protectInbound } from '@/lib/conversation-protection'
 import { emitInboundEvent } from '@/lib/integration-hooks'
 import { findContactByPhone, ensureContactByPhone } from '@/lib/contact-capture'
 import { scheduleMessageThumbs } from '@/lib/image-thumb'
@@ -123,6 +124,9 @@ export async function ingestInboundWhatsApp(p: InboundWhatsApp): Promise<Inbound
   scheduleMessageThumbs(db, messageId, media, { prefixes: [`/chat-attachments/${companyId}/`] })
   await recordUsage(db, [{ company_id: companyId, conversation_id: conv.id, message_id: messageId, direction: 'inbound', kind: 'session', twilio_sid: p.providerMessageId || null, to_number: to, from_number: from, status: 'received' }])
   await emitInboundEvent(db, { companyId, conversationId: conv.id, isNew: isNewConversation, text, channel: 'whatsapp', phone: from, name, contactId, messageId })
+
+  // Spam and inappropriate messages (lib/conversation-protection), before anyone is told.
+  if (text) await protectInbound(db, { companyId, conversationId: conv.id, messageId, contactId: contactId || conv.contact_id || null, text })
 
   // ── Tell the team ─────────────────────────────────────────────────────────
   const who = name && !/^\+?\d[\d\s-]*$/.test(name) ? name : from

@@ -605,7 +605,7 @@ export async function syncGmailChannel(
     }
     if (!conv) continue
 
-    await db.from('messages').insert({
+    const { data: gmailMsg } = await db.from('messages').insert({
       conversation_id: conv.id, company_id: companyId,
       sender_type: 'visitor',
       sender_name: from.name || from.email,
@@ -622,7 +622,9 @@ export async function syncGmailChannel(
       email_html: emailHtmlResolved || null,
       email_quoted: quoted || null,
       email_attachments: attachmentsResolved,
-    })
+    }).select('id').maybeSingle()
+    // Spam and inappropriate emails (lib/conversation-protection), before the agents answer.
+    try { const { protectInbound } = await import('@/lib/conversation-protection'); await protectInbound(db, { companyId, conversationId: conv.id, messageId: gmailMsg?.id || null, contactId: contact?.id || null, text: `${subject || ''}\n${content || ''}` }) } catch {}
     await emitInboundEvent(db, { companyId, conversationId: conv.id, text: content, channel: 'email', name: from.name || null, email: from.email || null })
 
     // The Support / Reception Agent, if switched on for email: queued here, run

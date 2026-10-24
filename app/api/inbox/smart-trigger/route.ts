@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { isInternalCall } from '@/lib/internal-call'
 import { createClient } from '@supabase/supabase-js'
 import { formsDb } from '@/lib/forms-server'
+import { quietVerdict } from '@/lib/conversation-protection'
 
 function admin() {
   return createClient(
@@ -37,6 +38,8 @@ export async function POST(req: NextRequest) {
     const db = admin()
     const { data: conv } = await db.from('conversations').select('*').eq('id', conversationId).maybeSingle()
     if (!conv) return NextResponse.json({ ok: true, skipped: 'no conv' })
+    const quiet = await quietVerdict(db, conversationId)
+    if (quiet) return NextResponse.json({ ok: true, skipped: `protection: ${quiet}` })
     // Only offer once per conversation
     if (conv.claim_offered) return NextResponse.json({ ok: true, skipped: 'already offered' })
 
