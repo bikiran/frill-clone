@@ -9,6 +9,10 @@ import { stripeSecretFor } from '@/lib/company-secrets'
 import { recordUnclaimedFailure, type NumberOrder } from '@/lib/number-orders'
 
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || ''
+// Stripe sends connected-account events (payment links paid on a business's
+// connected Stripe account) from a separate endpoint with its own signing
+// secret. Both endpoints can point at this URL.
+const STRIPE_CONNECT_WEBHOOK_SECRET = process.env.STRIPE_CONNECT_WEBHOOK_SECRET || ''
 
 export async function POST(req: NextRequest) {
   try {
@@ -30,7 +34,12 @@ export async function POST(req: NextRequest) {
         console.error('[stripe/webhook] STRIPE_WEBHOOK_SECRET is not set; rejecting the event')
         return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 500 })
       }
-      event = stripe.webhooks.constructEvent(body, sig, STRIPE_WEBHOOK_SECRET)
+      try {
+        event = stripe.webhooks.constructEvent(body, sig, STRIPE_WEBHOOK_SECRET)
+      } catch (first) {
+        if (!STRIPE_CONNECT_WEBHOOK_SECRET) throw first
+        event = stripe.webhooks.constructEvent(body, sig, STRIPE_CONNECT_WEBHOOK_SECRET)
+      }
     } catch (err: any) {
       await logWebhookEvent({ source: 'stripe', status: 'rejected', error: 'signature verification failed' })
       return NextResponse.json({ error: 'Webhook signature failed' }, { status: 400 })
