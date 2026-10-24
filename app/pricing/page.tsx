@@ -3,6 +3,9 @@ import Client from './Client'
 import JsonLd from '@/components/JsonLd'
 import { PRICING_FAQS } from '@/lib/pricing-faqs'
 import { pageMeta } from '@/lib/seo'
+import { breadcrumbJsonLd } from '@/lib/seo-faqs'
+
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
 export const metadata: Metadata = pageMeta({
   title: 'Pricing: Shared Inbox, Business SMS & CRM Plans',
@@ -24,7 +27,7 @@ const faqLd = {
 export default function Page() {
   return (
     <>
-      <JsonLd data={faqLd} />
+      <JsonLd data={[faqLd, breadcrumbJsonLd(SITE_URL, [{ name: 'Pricing', path: 'pricing' }])]} />
       <Client />
     </>
   )
