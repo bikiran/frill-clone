@@ -154,12 +154,10 @@ export function newReviewEmail(o: { business: string; reviewer?: string | null; 
   const who = o.reviewer || 'A customer'
   const { html, text } = colvyEmail({
     preheader: `${who}${n ? ` gave ${o.business} ${n} out of 5 stars` : ` reviewed ${o.business}`}.`,
+    stars: n || undefined,
     kicker: o.business,
     title: `You got a new ${n ? `${n}-star ` : ''}review${n >= 4 ? '. Nice work!' : ''}`,
-    blocks: [
-      { type: 'facts', rows: [['From', who], ['Rating', n ? `${n} out of 5 stars` : 'No star rating']] },
-      { type: 'quote', text: o.comment || '(no written comment)' },
-    ],
+    blocks: [{ type: 'review', reviewer: who, rating: n, comment: o.comment }],
     cta: { label: 'Read and reply', url: o.reviewsUrl },
     secondary: 'Replying to reviews builds trust, and Colvy can draft the reply for you.',
     footerNote: `You’re receiving this because ${o.business} has Google reviews connected to Colvy.`,
