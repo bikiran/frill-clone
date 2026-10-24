@@ -6207,6 +6207,13 @@ export default function InboxPage() {
       logEvent('assigned', member.user_id && member.user_id === user?.id
         ? `${me} self-assigned this conversation`
         : `${me} assigned this conversation to ${member.name}`)
+      // Bell + phone push for the new assignee (the server skips a self-assign).
+      if (member.user_id && member.user_id !== user?.id) {
+        authFetch('/api/inbox/assigned', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ companyId, conversationId: selected.id, assigneeId: member.user_id, assignedBy: me }),
+        }).catch(() => {})
+      }
     } else logEvent('assigned', `${me} unassigned this conversation`)
     loadConversations()
   }

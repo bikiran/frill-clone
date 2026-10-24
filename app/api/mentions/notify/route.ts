@@ -70,12 +70,12 @@ export async function POST(req: NextRequest) {
 
     const companyName = company?.name || 'your team'
 
-    // Push the mention to the named people's phones. Fire-and-forget for the
-    // same reason the email is: the in-app notification is already written, so
-    // a push failure must never surface as a failed action.
+    // Push the mention to the named people's phones. Awaited (an un-awaited
+    // fetch can be dropped when the function returns), but a push failure must
+    // never surface as a failed action: the in-app notification is written too.
     try {
       const origin = req.nextUrl.origin
-      fetch(`${origin}/api/push/send`, {
+      await fetch(`${origin}/api/push/send`, {
         method: 'POST',
         headers: internalHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({

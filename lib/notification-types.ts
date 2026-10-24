@@ -15,6 +15,7 @@ export const STAFF_ONLY_NOTIFICATION_TYPES: readonly string[] = [
   'booking', 'ticket', 'call', 'calendar',
   'realestate', 'integration', 'agent_escalation',
   'mention', 'task_assigned', 'task_mention', 'task_comment', 'media_note',
+  'conversation_assigned',
 ]
 
 // The types a browser may write for any user: public-board notifications about
