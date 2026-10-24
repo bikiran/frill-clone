@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { cronOr401 } from '@/lib/cron-auth'
 import { createClient } from '@supabase/supabase-js'
 import { logJobRun } from '@/lib/job-log'
+import { TwilioService } from '@/lib/twilio-service'
+import { platformTwilio } from '@/lib/twilio-platform'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -17,6 +19,12 @@ function admin() {
 // How long a call may sit in a live state before we treat it as stale. Mirrors
 // the Command Centre's client-side display cap so the board and the data agree.
 const STALE_MS = 2 * 60 * 60 * 1000 // 2 hours
+
+// A call still "live" this long after it began is checked with Twilio: if
+// Twilio says it has ended, its end webhook was lost and it's closed now,
+// rather than showing "Call in progress" for up to STALE_MS.
+const CHECK_AFTER_MS = 3 * 60 * 1000
+const TWILIO_ENDED = new Set(['completed', 'busy', 'failed', 'no-answer', 'canceled'])
 
 const LIVE_STATES = ['ringing', 'initiated', 'in_progress', 'ringing_agents', 'dialing_agent', 'dialing_customer', 'voicemail_greeting', 'recording_voicemail']
 
@@ -64,6 +72,48 @@ export async function GET(req: NextRequest) {
   const nowIso = new Date().toISOString()
 
   let swept = 0
+  let checked = 0
+  // ── Ask Twilio about calls that look live but may have ended ──────────────
+  try {
+    const { data: recent } = await db.from('calls')
+      .select('id, company_id, twilio_call_sid, direction, duration_seconds, answered_at, answered_by_user_id, is_voicemail, recording_url')
+      .in('status', LIVE_STATES)
+      .is('ended_at', null)
+      .not('twilio_call_sid', 'is', null)
+      .lt('created_at', new Date(Date.now() - CHECK_AFTER_MS).toISOString())
+      .gte('created_at', cutoff)
+      .limit(100)
+    const services = new Map<string, TwilioService | null>()
+    const serviceFor = async (companyId: string): Promise<TwilioService | null> => {
+      if (services.has(companyId)) return services.get(companyId)!
+      let svc: TwilioService | null = null
+      try {
+        const { data: t } = await db.from('twilio_integrations').select('account_sid, auth_token').eq('company_id', companyId).maybeSingle()
+        if ((t as any)?.account_sid && (t as any)?.auth_token) svc = new TwilioService((t as any).account_sid, (t as any).auth_token)
+      } catch { /* no integration row */ }
+      services.set(companyId, svc)
+      return svc
+    }
+    const platform = platformTwilio()
+    for (const c of (recent || []) as any[]) {
+      checked++
+      const own = await serviceFor(c.company_id)
+      // The number may live on the business's own account or on Colvy's.
+      const read = (svc: TwilioService | null) => svc ? svc.getCall(c.twilio_call_sid).catch(() => null) : Promise.resolve(null)
+      const tw = (await read(own)) || (await read(platform))
+      const st = String(tw?.status || '').toLowerCase()
+      if (!TWILIO_ENDED.has(st)) continue
+      const end = tw?.endTime ? new Date(tw.endTime) : null
+      const endedAt = end && !isNaN(end.getTime()) ? end.toISOString() : nowIso
+      // Only while it's still open, in case its real webhook lands meanwhile.
+      const { data: done } = await db.from('calls').update({ ...staleCallFinal(c), ended_at: endedAt })
+        .eq('id', c.id).is('ended_at', null).in('status', LIVE_STATES).select('id')
+      if (done?.length) swept++
+    }
+  } catch (e: any) {
+    console.error('[sweep-stale-calls] twilio check failed', e?.message)
+  }
+
   try {
     const { data: stuck, error } = await db.from('calls')
       .select('id, direction, duration_seconds, answered_at, answered_by_user_id, is_voicemail, recording_url')
@@ -83,6 +133,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: e?.message || 'sweep failed' }, { status: 500 })
   }
 
-  await logJobRun({ job: 'sweep-stale-calls', startedAt, durationMs: Date.now() - t0, status: swept ? 'success' : 'idle', detail: { swept } })
-  return NextResponse.json({ ok: true, swept })
+  await logJobRun({ job: 'sweep-stale-calls', startedAt, durationMs: Date.now() - t0, status: swept ? 'success' : 'idle', detail: { swept, checked } })
+  return NextResponse.json({ ok: true, swept, checked })
 }
