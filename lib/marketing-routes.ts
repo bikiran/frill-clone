@@ -31,8 +31,6 @@ export const STATIC_MARKETING_ROUTES: string[] = [
   'security',
   'status',
   'help',
-  'roadmap',
-  'announcements',
   'demo',
   'privacy',
   'terms',
@@ -61,6 +59,11 @@ export const FOR_SLUGS: string[] = [
   'ecommerce', 'real-estate', 'multi-location-retail', 'service-businesses', 'restaurants',
 ]
 
+// Colvy vs <competitor> pages; mirrors CMP in app/compare/[slug]/Client.tsx.
+export const COMPARE_SLUGS: string[] = [
+  'podium', 'birdeye', 'coax', 'gorgias', 'zendesk', 'freshdesk', 'intercom', 'gladly', 'manychat',
+]
+
 // Every indexable path (relative, e.g. '' or 'channels/whatsapp').
 export function allMarketingPaths(): string[] {
   return [
@@ -70,5 +73,6 @@ export function allMarketingPaths(): string[] {
     ...SOLUTION_SLUGS.map(s => `solutions/${s}`),
     ...INDUSTRY_SLUGS.map(s => `industries/${s}`),
     ...FOR_SLUGS.map(s => `for/${s}`),
+    ...COMPARE_SLUGS.map(s => `compare/${s}`),
   ]
 }

@@ -2,12 +2,13 @@ import type { Metadata } from 'next'
 import Client from './Client'
 import JsonLd from '@/components/JsonLd'
 import { PRICING_FAQS } from '@/lib/pricing-faqs'
+import { pageMeta } from '@/lib/seo'
 
-export const metadata: Metadata = {
-  title: 'Pricing',
-  description: 'Simple, transparent pricing for Colvy — the omnichannel inbox, CRM and customer-feedback platform. Start free.',
-  alternates: { canonical: '/pricing' },
-}
+export const metadata: Metadata = pageMeta({
+  title: 'Pricing: Shared Inbox, Business SMS & CRM Plans',
+  description: 'Colvy pricing in AUD. Start free, then pick Inbox for SMS, calls, social, email and live chat with AI agents, Feedback for roadmaps and help centre, or Everything. 14-day free trial.',
+  path: 'pricing',
+})
 
 // Mirror the on-page FAQ into FAQPage structured data for rich results.
 const faqLd = {

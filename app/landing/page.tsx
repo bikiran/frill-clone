@@ -416,7 +416,7 @@ export default function LandingPage() {
             {/* Left: copy */}
             <div style={{ maxWidth: 620 }}>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 15px', borderRadius: 999, marginBottom: 24, background: dark ? 'rgba(255,106,77,0.14)' : 'rgba(255,106,77,0.1)', border: `1px solid ${CORAL}44`, color: CORAL, fontSize: 13, fontWeight: 800 }}>
-                <span style={{ width: 7, height: 7, borderRadius: '50%', background: GREEN, animation: 'blink 1.6s infinite' }} /> The all-in-one customer platform
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: GREEN, animation: 'blink 1.6s infinite' }} /> <span className="cv-lg">Shared inbox, SMS &amp; CRM for Australian business</span><span className="cv-sm">Inbox, SMS &amp; CRM for Aussie business</span>
               </div>
               <h1 style={{ fontSize: 'clamp(46px, 6.8vw, 92px)', fontWeight: 900, lineHeight: 0.97, letterSpacing: '-0.035em', margin: '0 0 24px' }}>
                 Turn every chat<br />into a{' '}
@@ -426,7 +426,7 @@ export default function LandingPage() {
                 </span>
               </h1>
               <p style={{ fontSize: 'clamp(16px, 1.7vw, 20px)', color: muted, lineHeight: 1.6, maxWidth: 520, margin: '0 0 32px' }}>
-                One shared inbox for Instagram, Messenger, email, SMS &amp; live chat — with WooCommerce, payments, media and AI agents built in. Talk to customers and close sales, all in one place.
+                One shared inbox for SMS, calls, Instagram, Messenger, email &amp; live chat — with an Australian number, CRM, store orders, payments and AI agents built in. Talk to customers and close sales, all in one place.
               </p>
               <div className="cv-hero-cta" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
                 <InviteCta onClick={handleDashboard} className="cv-btn-primary" style={btnPrimary}>{user ? 'Go to dashboard' : (<><span className="cv-lg">Start free — no card</span><span className="cv-sm">Start free</span></>)}</InviteCta>

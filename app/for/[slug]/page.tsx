@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import JsonLd from '@/components/JsonLd'
+import { pageMeta } from '@/lib/seo'
 import { FOR_PAGES, FOR_SLUGS } from '@/lib/for-pages'
 import Client from './Client'
 
@@ -15,12 +16,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { slug } = await params
   const m = FOR_PAGES[slug]
   if (!m) return { title: 'Not found', robots: { index: false } }
-  return {
-    title: m.title,
-    description: m.description,
-    alternates: { canonical: `/for/${slug}` },
-    openGraph: { title: m.title, description: m.description, url: `${SITE_URL}/for/${slug}` },
-  }
+  return pageMeta({ title: m.title, description: m.description, path: `for/${slug}` })
 }
 
 export default async function Page({ params }: { params: Promise<{ slug: string }> }) {

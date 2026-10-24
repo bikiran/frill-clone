@@ -22,8 +22,10 @@ export const metadata: Metadata = {
   applicationName: 'Colvy',
   keywords: [
     'shared inbox', 'omnichannel inbox', 'small business CRM', 'business phone',
-    'business SMS', 'Instagram DM', 'Messenger', 'live chat', 'help desk',
-    'WooCommerce', 'Shopify', 'AI agents', 'customer feedback',
+    'business SMS Australia', 'two-way SMS', 'Australian business phone number',
+    'Instagram DM inbox', 'Facebook Messenger', 'Google reviews management',
+    'live chat', 'help desk', 'online booking', 'WooCommerce', 'Shopify',
+    'abandoned cart recovery', 'AI agents', 'customer feedback', 'Podium alternative',
   ],
   // The black rounded tile (the app icon), so the mark stays visible on dark
   // browser tabs. Google shows the favicon beside every result and wants a
@@ -39,6 +41,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     siteName: 'Colvy',
+    locale: 'en_AU',
     url: SITE_URL,
     title: 'Colvy — Shared Inbox, CRM & Business Phone for Small Businesses',
     description:
@@ -68,7 +71,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     // router only switches that off for its scroll-to-top on navigation when
     // this attribute is present; without it that jump animates and can stop
     // short of the top. In-page smooth scrolling is unaffected.
-    <html lang="en" data-scroll-behavior="smooth">
+    <html lang="en-AU" data-scroll-behavior="smooth">
       <head>
         {/*
           Stale-page rescue (lib/chunk-reload.ts does the same after the app has
