@@ -36,6 +36,8 @@ const structuredData = [
       'Colvy is an all-in-one customer platform for small businesses: a shared inbox across every channel, a CRM, business phone, store orders, payments, AI agents and customer feedback.',
     telephone: COLVY_CONTACT.phoneE164,
     email: COLVY_CONTACT.email,
+    areaServed: 'AU',
+    knowsAbout: ['Shared inbox software', 'Customer messaging', 'Business SMS', 'Business phone systems', 'CRM for small business', 'Google review management', 'Conversational commerce', 'AI customer service agents', 'WooCommerce', 'Shopify'],
     contactPoint: [
       {
         '@type': 'ContactPoint',
@@ -75,7 +77,32 @@ const structuredData = [
     url: SITE_URL,
     description:
       'One shared inbox across Instagram, Messenger, SMS, email, live chat and phone, with a CRM, WooCommerce and Shopify orders, payments, AI agents and customer feedback boards.',
-    offers: { '@type': 'Offer', price: '0', priceCurrency: 'AUD' },
+    // Mirrors the plans on /pricing (AUD per month).
+    offers: {
+      '@type': 'AggregateOffer', priceCurrency: 'AUD', lowPrice: '0', highPrice: '259', offerCount: 4,
+      offers: [
+        { '@type': 'Offer', name: 'Free', price: '0', priceCurrency: 'AUD' },
+        { '@type': 'Offer', name: 'Feedback', price: '39', priceCurrency: 'AUD' },
+        { '@type': 'Offer', name: 'Inbox', price: '179', priceCurrency: 'AUD' },
+        { '@type': 'Offer', name: 'Everything', price: '259', priceCurrency: 'AUD' },
+      ],
+    },
+    applicationSubCategory: 'Shared inbox, CRM and business phone',
+    areaServed: { '@type': 'Country', name: 'Australia' },
+    audience: { '@type': 'BusinessAudience', audienceType: 'Small and medium-sized businesses' },
+    featureList: [
+      'Shared inbox for SMS, phone calls, Instagram, Facebook Messenger, email, live chat and Google reviews',
+      'Australian business phone numbers for calls and texts',
+      'Built-in CRM with each customer’s orders, bookings and messages',
+      'WooCommerce and Shopify orders, products and abandoned carts in the inbox',
+      'Stripe payment links in any conversation',
+      'Five AI agents for support, bookings, sales follow-ups, order updates and reviews',
+      'Online booking with deposits and SMS reminders',
+      'Broadcasts, review requests and back-in-stock texts',
+      'Help centre, ideas board, public roadmap and changelog',
+      'iPhone and Android apps',
+    ],
+    keywords: 'shared inbox, omnichannel inbox, small business CRM, business SMS Australia, business phone number Australia, Instagram DM inbox, Google review management, live chat, help desk, AI agents for customer service, selling chat, Podium alternative',
     image: `${SITE_URL}/og.png`,
     sameAs: SAME_AS,
     publisher: { '@id': ORG_ID },
@@ -85,5 +112,7 @@ const structuredData = [
 export const colvyStructuredData = structuredData
 
 export default function ColvyJsonLd() {
-  return <JsonLd data={structuredData} />
+  // The plain-text summary for AI assistants (app/llms.txt), linked from every
+  // marketing page so agents reading a page can find it.
+  return <><link rel="alternate" type="text/plain" href="/llms.txt" title="Colvy summary for AI assistants" /><JsonLd data={structuredData} /></>
 }
