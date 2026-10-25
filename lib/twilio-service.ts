@@ -117,9 +117,9 @@ export class TwilioService {
   }
 
   // A call's current status (queued, ringing, completed, busy, no-answer…).
-  async getCall(sid: string): Promise<{ status: string | null }> {
+  async getCall(sid: string): Promise<{ status: string | null; endTime: string | null }> {
     const data = await this.req(`/Calls/${encodeURIComponent(sid)}.json`, 'GET')
-    return { status: data?.status || null }
+    return { status: data?.status || null, endTime: data?.end_time || null }
   }
 
   // Inbound MMS media lives behind the account (Basic-auth protected). Fetch the
