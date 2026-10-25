@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { authFetch } from '@/lib/auth-fetch'
-import { CALL_LANGUAGES, SUMMARY_LANGUAGES, type CallLanguageCode, type SummaryLanguage, type TranscriptView } from '@/lib/call-languages'
+import { CALL_LANGUAGES, summaryOptions, type CallLanguageCode, type SummaryLanguage, type TranscriptView } from '@/lib/call-languages'
 
 type Saved = { languages: CallLanguageCode[]; summary: SummaryLanguage; view: TranscriptView }
 
@@ -34,8 +34,8 @@ export default function CallLanguageSettings({ companyId }: { companyId: string 
   const toggle = (c: CallLanguageCode) => setF(p => {
     if (!p) return p
     const languages = p.languages.includes(c) ? p.languages.filter(x => x !== c) : [...p.languages, c]
-    const opt = SUMMARY_LANGUAGES.find(s => s.value === p.summary)
-    return { ...p, languages, summary: opt?.needs && !languages.includes(opt.needs) ? 'en' : p.summary }
+    // A summary language that was just removed falls back to English.
+    return { ...p, languages, summary: summaryOptions(languages).some(o => o.value === p.summary) ? p.summary : 'en' }
   })
   const save = async () => {
     setBusy(true); setMsg(null)
@@ -49,12 +49,15 @@ export default function CallLanguageSettings({ companyId }: { companyId: string 
 
   const label: React.CSSProperties = { display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }
   const chip = (on: boolean): React.CSSProperties => ({ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 10, border: `1px solid ${on ? 'var(--coral)' : 'var(--border)'}`, background: on ? 'var(--peach)' : '#fff', cursor: 'pointer', fontSize: 13.5, color: 'var(--ink)' })
-  const summaryOpts = SUMMARY_LANGUAGES.filter(s => !s.needs || f.languages.includes(s.needs))
-  const first = CALL_LANGUAGES.find(l => f.languages.includes(l.code))
+  const summaryOpts = summaryOptions(f.languages)
+  const chosen = f.languages.map(c => CALL_LANGUAGES.find(l => l.code === c)!).filter(Boolean)
+  const romanOnes = chosen.filter(l => l.roman)
   const views: { value: TranscriptView; label: string }[] = [
     { value: 'en', label: 'English' },
-    ...(first ? [{ value: 'roman' as const, label: first.romanName }, { value: 'original' as const, label: first.native }] : []),
+    ...(romanOnes.length ? [{ value: 'roman' as const, label: romanOnes.length === 1 ? romanOnes[0].roman! : 'Roman letters' }] : []),
+    ...(chosen.length ? [{ value: 'original' as const, label: chosen.length === 1 ? chosen[0].native : 'As spoken (own script)' }] : []),
   ]
+  const addable = CALL_LANGUAGES.filter(l => !f.languages.includes(l.code))
 
   return (
     <div style={{ border: '1px solid var(--border)', background: '#fff', borderRadius: 14, padding: 16, marginBottom: 18 }}>
@@ -64,19 +67,24 @@ export default function CallLanguageSettings({ companyId }: { companyId: string 
       </p>
 
       <span style={label}>Languages spoken on your calls</span>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8, alignItems: 'center' }}>
         <span style={{ ...chip(true), cursor: 'default', opacity: 0.75 }}>✓ English</span>
-        {CALL_LANGUAGES.map(l => {
-          const on = f.languages.includes(l.code)
-          return (
-            <label key={l.code} style={chip(on)}>
-              <input type="checkbox" checked={on} onChange={() => toggle(l.code)} style={{ width: 15, height: 15, accentColor: 'var(--coral)' }} />
-              {l.name} <span style={{ color: 'var(--slate)' }}>{l.native}</span>
-            </label>
-          )
-        })}
+        {chosen.map(l => (
+          <span key={l.code} style={chip(true)}>
+            {l.name}{l.native !== l.name && <span style={{ color: 'var(--slate)' }}>{l.native}</span>}
+            <button type="button" onClick={() => toggle(l.code)} aria-label={`Remove ${l.name}`}
+              style={{ border: 'none', background: 'none', padding: '0 0 0 2px', cursor: 'pointer', color: 'var(--slate)', fontSize: 15, lineHeight: 1 }}>×</button>
+          </span>
+        ))}
+        {addable.length > 0 && (
+          <select aria-label="Add a language" value="" onChange={e => { if (e.target.value) toggle(e.target.value) }}
+            style={{ padding: '8px 12px', borderRadius: 10, border: '1px dashed var(--border)', fontSize: 13.5, background: '#fff', color: 'var(--ink)', cursor: 'pointer' }}>
+            <option value="">+ Add a language</option>
+            {addable.map(l => <option key={l.code} value={l.code}>{l.name}{l.native !== l.name ? ` · ${l.native}` : ''}</option>)}
+          </select>
+        )}
       </div>
-      <p style={{ margin: '0 0 14px', fontSize: 12, color: 'var(--slate)' }}>Choosing a language helps Colvy hear it accurately and adds its Roman-letters version.</p>
+      <p style={{ margin: '0 0 14px', fontSize: 12, color: 'var(--slate)', lineHeight: 1.45 }}>Calls in other languages are still transcribed and translated. Adding one helps Colvy hear it accurately, lets you get summaries in it and, for languages people type in English letters, adds a Roman-letters version.</p>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 12 }}>
         <div style={{ flex: '1 1 220px', minWidth: 0 }}>

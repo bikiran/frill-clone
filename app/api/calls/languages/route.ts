@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { requireCompanyAccess } from '@/lib/company-access'
-import { callLanguageSettings, CALL_LANGUAGES, SUMMARY_LANGUAGES } from '@/lib/call-languages'
+import { callLanguageSettings, CALL_LANGUAGES, summaryOptions } from '@/lib/call-languages'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,7 +36,7 @@ export async function PATCH(req: NextRequest) {
   if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
   const known = new Set<string>(CALL_LANGUAGES.map(l => l.code))
   if (body.languages !== undefined && (!Array.isArray(body.languages) || body.languages.some((c: any) => !known.has(c)))) return NextResponse.json({ error: 'Choose languages from the list.' }, { status: 400 })
-  if (body.summary !== undefined && !SUMMARY_LANGUAGES.some(s => s.value === body.summary)) return NextResponse.json({ error: 'Choose a summary language.' }, { status: 400 })
+  if (body.summary !== undefined && !summaryOptions(Array.isArray(body.languages) ? body.languages : CALL_LANGUAGES.map(l => l.code)).some(s => s.value === body.summary)) return NextResponse.json({ error: 'Choose a summary language.' }, { status: 400 })
   if (body.view !== undefined && !['en', 'roman', 'original'].includes(body.view)) return NextResponse.json({ error: 'Choose a transcript view.' }, { status: 400 })
 
   const { data: co, error: readErr } = await db.from('companies').select('inbox_settings').eq('id', companyId).maybeSingle()

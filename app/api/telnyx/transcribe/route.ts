@@ -5,7 +5,7 @@ import { createClient } from '@supabase/supabase-js'
 import { ensureCallCard } from '@/lib/call-card'
 import { modelChain, trackAi } from '@/lib/ai-models'
 import { ACTION_ITEMS_GUIDE, loadOpenTasks, openTasksForSummaryPrompt, refineActionItemsDetailed, type OpenTask } from '@/lib/task-dedupe'
-import { callLanguageSettings, speechHints, isEnglish, hasNonLatinScript, looksRomanNepali, languageName } from '@/lib/call-languages'
+import { callLanguageSettings, speechHints, isEnglish, hasNonLatinScript, looksRomanNepali, looksEnglish, languageName, hasRomanForm, summaryInstruction } from '@/lib/call-languages'
 import { transcribeGemini, audioMime, logGeminiUsage } from '@/lib/stt-gemini'
 import { translateTranscript } from '@/lib/call-translate'
 
@@ -203,12 +203,13 @@ export async function POST(req: NextRequest) {
 
     const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 
-    // Not all English (another script, a non-English language detected, or
-    // Romanised Nepali for a business that speaks it) → the three forms.
+    // Not all English (another script, a non-English language detected, few
+    // English words, or Romanised Nepali for a business that speaks it) → the
+    // three forms.
     let transcriptEn: string | null = null
     let transcriptRoman: string | null = null
     let mixed = false
-    const needsTranslation = hasNonLatinScript(text) || !isEnglish(lang) || (langs.languages.includes('ne') && looksRomanNepali(text))
+    const needsTranslation = hasNonLatinScript(text) || !isEnglish(lang) || !looksEnglish(text) || (langs.languages.includes('ne') && looksRomanNepali(text))
     if (needsTranslation && ANTHROPIC_KEY) {
       const t = await translateTranscript({
         turns: segments.length ? segments : null, text,
@@ -216,12 +217,14 @@ export async function POST(req: NextRequest) {
         business: co?.name || '', companyId: call.company_id,
       })
       if (t && !(isEnglish(t.lang) && !t.mixed && !hasNonLatinScript(t.original))) {
+        // A Roman version only for languages people type in Roman letters.
+        const roman = hasRomanForm(t.lang)
         text = t.original
-        segments = t.segments
+        segments = roman ? t.segments : t.segments.map(({ roman: _r, ...seg }) => seg)
         lang = t.lang
         mixed = t.mixed
         transcriptEn = t.en
-        transcriptRoman = t.roman
+        transcriptRoman = roman ? t.roman : null
       } else if (!t && !isEnglish(lang)) {
         transcriptEn = await translateToEnglish(text, ANTHROPIC_KEY)
       }
@@ -290,11 +293,8 @@ export async function POST(req: NextRequest) {
         ? `This was an INBOUND call: ${them} called ${biz}.`
         : ''
       // The language the business reads its call notes in.
-      const writeIn = langs.summary === 'ne'
-        ? 'Write "summary" and every "todos" item in Nepali, in Devanagari script (keep product names, amounts and English terms the staff use as they are).'
-        : langs.summary === 'ne-roman'
-        ? 'Write "summary" and every "todos" item in Nepali using Roman (Latin) letters, the way Nepali speakers type on their phones (e.g. "Customer le bholi tank pick up garne bhanyo"). Keep product names and amounts as they are.'
-        : transcriptEn ? `Write "summary" and every "todos" item in English, even though the call was in ${languageName(lang) || 'another language'}.` : ''
+      const writeIn = summaryInstruction(langs.summary)
+        || (transcriptEn ? `Write "summary" and every "todos" item in English, even though the call was in ${languageName(lang) || 'another language'}.` : '')
       const prompt = `You are summarising a phone call between a staff member at ${biz} and ${otherParty}.${whoInitiated ? `\n\n${whoInitiated}` : ''}${writeIn ? `\n\n${writeIn}` : ''}
 
 Respond ONLY with JSON, no preamble and no markdown fences:
