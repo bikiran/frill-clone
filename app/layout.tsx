@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { preconnect } from 'react-dom'
 import './globals.css'
 import AppChrome from './AppChrome'
+import PressFeedback from '@/components/PressFeedback'
 import PhoneHost from '@/components/PhoneHost'
 
 // The public marketing site lives on this origin; used to resolve canonical and
@@ -111,6 +112,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             (full-page vs app chrome), which would remount — and hang up — a
             live call. Here the phone persists across every route in the tab. */}
         <PhoneHost />
+        <PressFeedback />
       </body>
     </html>
   )

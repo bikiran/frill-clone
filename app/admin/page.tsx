@@ -1,5 +1,6 @@
 'use client'
 import Greeting from '@/components/Greeting'
+import CountUp from '@/components/CountUp'
 import LinkClicksCard from '@/components/LinkClicksCard'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
@@ -550,11 +551,11 @@ function Performance({ s }: { s: Summary | null }) {
   const p = s.perf
   const reports = canSee(s, 'reports')
   const tiles = [
-    { feature: 'orders', label: 'Revenue', value: money(p.revenue.now), d: <Delta now={p.revenue.now} prev={p.revenue.prev} />, href: reports ? '/admin/orders/reports' : '/admin/orders' },
-    { feature: 'orders', label: 'Orders', value: String(p.orders.now), d: <Delta now={p.orders.now} prev={p.orders.prev} />, href: '/admin/orders' },
-    { feature: 'orders', label: 'Avg order', value: money(p.aov.now), d: <Delta now={p.aov.now} prev={p.aov.prev} />, href: reports ? '/admin/orders/reports' : '/admin/orders' },
-    { feature: 'inbox', label: 'New chats', value: String(p.conversations.now), d: <Delta now={p.conversations.now} prev={p.conversations.prev} />, href: '/admin/inbox' },
-    { feature: 'calls', label: 'Calls', value: String(p.calls.now), d: <Delta now={p.calls.now} prev={p.calls.prev} />, href: canSee(s, 'command_centre') ? '/admin/command-centre' : '/admin/calls' },
+    { feature: 'orders', label: 'Revenue', value: <CountUp id="dash-revenue" value={p.revenue.now} format={n => money(n)} />, d: <Delta now={p.revenue.now} prev={p.revenue.prev} />, href: reports ? '/admin/orders/reports' : '/admin/orders' },
+    { feature: 'orders', label: 'Orders', value: <CountUp id="dash-orders" value={p.orders.now} />, d: <Delta now={p.orders.now} prev={p.orders.prev} />, href: '/admin/orders' },
+    { feature: 'orders', label: 'Avg order', value: <CountUp id="dash-aov" value={p.aov.now} format={n => money(n)} />, d: <Delta now={p.aov.now} prev={p.aov.prev} />, href: reports ? '/admin/orders/reports' : '/admin/orders' },
+    { feature: 'inbox', label: 'New chats', value: <CountUp id="dash-chats" value={p.conversations.now} />, d: <Delta now={p.conversations.now} prev={p.conversations.prev} />, href: '/admin/inbox' },
+    { feature: 'calls', label: 'Calls', value: <CountUp id="dash-calls" value={p.calls.now} />, d: <Delta now={p.calls.now} prev={p.calls.prev} />, href: canSee(s, 'command_centre') ? '/admin/command-centre' : '/admin/calls' },
     { feature: 'reviews', label: 'Google reviews', value: p.reviews.avgNow != null ? `${p.reviews.avgNow.toFixed(1)}` : '—', suffix: p.reviews.now ? ` from ${p.reviews.now}` : '',
       d: <Delta now={p.reviews.now} prev={p.reviews.prev} />, href: '/admin/reviews', star: p.reviews.avgNow != null },
   ].filter(t => canSee(s, t.feature))
@@ -566,7 +567,7 @@ function Performance({ s }: { s: Summary | null }) {
         <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Last 30 days</h2>
         {reports && <Link href="/admin/orders/reports" className="text-sm font-semibold" style={{ color: 'var(--coral)' }}>Full reports</Link>}
       </div>
-      <div className={`grid grid-cols-2 md:grid-cols-3 ${tiles.length >= 6 ? 'lg:grid-cols-6' : ''} gap-3 mb-3`}>
+      <div className={`cascade grid grid-cols-2 md:grid-cols-3 ${tiles.length >= 6 ? 'lg:grid-cols-6' : ''} gap-3 mb-3`}>
         {tiles.map(t => (
           <Link key={t.label} href={t.href} className={`${card} p-4 hover:shadow-md transition-smooth min-w-0`} style={cardStyle}>
             <p className={`${eyebrow} mb-1.5 truncate`} style={{ color: 'var(--slate)' }}>{t.label}</p>
@@ -619,7 +620,9 @@ function RevenueChart({ daily }: { daily: Summary['perf']['daily'] }) {
               </div>
             ))}
           </div>
-          <div className="relative h-36 flex items-end" style={{ gap: 2 }} onMouseLeave={() => setHover(null)} role="list" aria-label="Revenue by day, last 30 days">
+          {/* Bars rise from the baseline, left to right, when the chart appears. */}
+          <style>{`@keyframes dashBarUp { from { transform: scaleY(0); } to { transform: none; } } @media (prefers-reduced-motion: reduce) { .dash-bar { animation: none !important; } }`}</style>
+          <div className="relative h-36 flex items-end" style={{ gap: 2 }} onMouseLeave={() => setHover(null)} role="list" aria-label="Revenue by day, last 30 days" data-no-press>
             {daily.map((d, i) => {
               const pct = top ? (d.value / top) * 100 : 0
               return (
@@ -627,11 +630,12 @@ function RevenueChart({ daily }: { daily: Summary['perf']['daily'] }) {
                   className="flex-1 h-full flex items-end cursor-default focus:outline-none"
                   onMouseEnter={() => setHover(i)} onFocus={() => setHover(i)} onBlur={() => setHover(null)} onClick={() => setHover(i)}
                   aria-label={`${d.label}: ${money(d.value, true)}`}>
-                  <span className="block w-full transition-all duration-200"
+                  <span className="dash-bar block w-full transition-all duration-200"
                     style={{
                       height: d.value > 0 ? `max(${pct}%, 3px)` : 0,
                       background: BAR, borderRadius: '4px 4px 0 0',
                       opacity: hover == null || hover === i ? 1 : 0.45,
+                      transformOrigin: 'bottom', animation: `dashBarUp .55s cubic-bezier(.2,.8,.2,1) ${i * 14}ms both`,
                     }} />
                 </button>
               )

@@ -93,6 +93,16 @@ export default function AppChrome({
   const [mounted, setMounted] = useState(false)
   useEffect(() => { setMounted(true) }, [])
 
+  // The header lifts with a soft shadow once the page scrolls under it
+  // (an attribute, so scrolling never re-renders the app).
+  const headerRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const on = () => headerRef.current?.toggleAttribute('data-scrolled', window.scrollY > 4)
+    on()
+    window.addEventListener('scroll', on, { passive: true })
+    return () => window.removeEventListener('scroll', on)
+  }, [])
+
   // If a user lands with an auth error hash (e.g. an expired invite/OTP link:
   // #error=access_denied&error_code=otp_expired), Supabase's detectSessionInUrl
   // would otherwise choke on it and the page renders a blank error. Strip the
@@ -821,7 +831,7 @@ export default function AppChrome({
     <>
         <Analytics />
         {/* Header */}
-        <header className="sticky top-0 z-40 backdrop-blur-md border-b bg-white/80" style={{ borderColor: 'var(--border)' }}>
+        <header ref={headerRef} className="cv-app-header sticky top-0 z-40 backdrop-blur-md border-b bg-white/80" style={{ borderColor: 'var(--border)' }}>
           <nav className="h-14 px-6 flex items-center justify-between">
             {/* Left: logo */}
             <div className="flex items-center gap-2">
@@ -1047,49 +1057,56 @@ export default function AppChrome({
                       )}
                     </button>
                     
-                    {showUserMenu && (
+                    {showUserMenu && (() => {
+                      // Account menu: who you are, then your things, then the
+                      // business's, then sign out. Grouped and plainly named.
+                      const close = () => setShowUserMenu(false)
+                      const I = (d: React.ReactNode) => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>
+                      const name = user?.user_metadata?.display_name || user.email
+                      const inAdmin = !!pathname?.startsWith('/admin')
+                      return (
                       <>
-                        <div className="fixed inset-0 z-30" onClick={() => setShowUserMenu(false)} />
-                        <div id="colvy-user-menu" className="absolute top-full right-0 mt-2 w-56 bg-white rounded-xl shadow-2xl border z-40 overflow-hidden" style={{ borderColor: 'var(--border)' }}>
-                          <div className="p-3 border-b" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
-                            <p className="text-sm font-semibold truncate" style={{ color: 'var(--ink)' }}>{user?.user_metadata?.display_name || user.email}</p>
-                            <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--slate)' }}>{user.email}</p>
+                        <div className="fixed inset-0 z-30" onClick={close} />
+                        <div id="colvy-user-menu" role="menu" className="cv-acct absolute top-full right-0 mt-2 z-40">
+                          <div className="cv-acct-head">
+                            <span className="cv-acct-av" style={{ background: avatarUrl ? undefined : 'var(--coral)' }}>
+                              {avatarUrl ? <img src={avatarUrl} alt="" /> : userInitial}
+                            </span>
+                            <span style={{ minWidth: 0, flex: 1 }}>
+                              <span className="cv-acct-name">{name}</span>
+                              <span className="cv-acct-mail">{user.email}</span>
+                            </span>
                           </div>
-                          <div className="py-1.5">
-                            <Link href="/profile" onClick={() => setShowUserMenu(false)}
-                              className="flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-gray-50 cursor-pointer" style={{ color: 'var(--ink)' }}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                              My Profile
+                          <div className="cv-acct-sep" />
+                          {isCompanyOwner && !inAdmin && (
+                            <a href="/admin" onClick={close} role="menuitem" className="cv-acct-item">
+                              {I(<><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>)}
+                              Open dashboard
+                            </a>
+                          )}
+                          <Link href="/profile" onClick={close} role="menuitem" className="cv-acct-item">
+                            {I(<><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>)}
+                            Your profile
+                          </Link>
+                          {isCompanyOwner && <>
+                            <Link href="/admin/settings" onClick={close} role="menuitem" className="cv-acct-item">
+                              {I(<><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></>)}
+                              Business settings
                             </Link>
-                            {isCompanyOwner && <>
-                              <div className="border-t my-1" style={{ borderColor: 'var(--border)' }} />
-                              <p className="px-4 pt-1 pb-0.5 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--slate)' }}>Board Owner</p>
-                              <a href="/admin" onClick={() => setShowUserMenu(false)}
-                                className="flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-gray-50 cursor-pointer font-semibold" style={{ color: 'var(--coral)', textDecoration: 'none' }}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-                                Admin Dashboard
-                              </a>
-                              <Link href="/admin/settings" onClick={() => setShowUserMenu(false)}
-                                className="flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-gray-50 cursor-pointer" style={{ color: 'var(--ink)' }}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                                Settings
-                              </Link>
-                              <Link href="/admin/billing" onClick={() => setShowUserMenu(false)}
-                                className="flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-gray-50 cursor-pointer" style={{ color: 'var(--ink)' }}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-                                Billing
-                              </Link>
-                            </>}
-                            <div className="border-t my-1" style={{ borderColor: 'var(--border)' }} />
-                            <button onClick={handleLogout}
-                              className="w-full flex items-center gap-2.5 text-left px-4 py-2.5 text-sm hover:bg-gray-50 cursor-pointer" style={{ color: '#ef4444' }}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-                              Sign out
-                            </button>
-                          </div>
+                            <Link href="/admin/billing" onClick={close} role="menuitem" className="cv-acct-item">
+                              {I(<><rect x="2.5" y="5" width="19" height="14" rx="2.5" /><path d="M2.5 10h19" /></>)}
+                              Plan &amp; billing
+                            </Link>
+                          </>}
+                          <div className="cv-acct-sep" />
+                          <button type="button" onClick={handleLogout} role="menuitem" className="cv-acct-item cv-acct-out" data-no-press>
+                            {I(<><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></>)}
+                            Sign out
+                          </button>
                         </div>
                       </>
-                    )}
+                      )
+                    })()}
                   </div>
                   {isCompanyOwner && (
                     <Link

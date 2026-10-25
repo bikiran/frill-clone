@@ -83,6 +83,12 @@ export default function MobileNav() {
   const pathname = usePathname()
   const router = useRouter()
   const [showMore, setShowMore] = useState(false)
+  // Tapping outside slides the sheet back down before it goes.
+  const [moreClosing, setMoreClosing] = useState(false)
+  const closeMore = () => {
+    setMoreClosing(true)
+    setTimeout(() => { setShowMore(false); setMoreClosing(false) }, 220)
+  }
   const [me, setMe] = useState<{ name: string; email: string } | null>(null)
   const [unread, setUnread] = useState(0)
   const [taskDue, setTaskDue] = useState(0)
@@ -175,6 +181,17 @@ export default function MobileNav() {
              (OverlayWatch adds the AI orb's height on top). */
           .colvy-mobile-pad { padding-bottom: calc(58px + env(safe-area-inset-bottom)); }
         }
+        /* The tab you tap gives a small bounce; the More sheet slides up. */
+        .mn-tab[data-on="1"] .mn-ic { animation: mnPop .42s cubic-bezier(.2,.9,.3,1.2); }
+        @keyframes mnPop { 0% { transform: scale(1); } 35% { transform: scale(.86); } 70% { transform: scale(1.08); } 100% { transform: scale(1); } }
+        .mn-sheet-bg { animation: mnFade .2s ease both; }
+        .mn-sheet-bg.out { animation: mnFade .22s ease reverse both; }
+        .mn-sheet { animation: mnUp .38s cubic-bezier(.2,.8,.2,1) both; }
+        .mn-sheet-bg.out .mn-sheet { animation: mnDown .22s cubic-bezier(.4,0,1,1) both; }
+        @keyframes mnFade { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes mnUp { from { transform: translateY(100%); } to { transform: none; } }
+        @keyframes mnDown { from { transform: none; } to { transform: translateY(100%); } }
+        @media (prefers-reduced-motion: reduce) { .mn-tab .mn-ic, .mn-sheet-bg, .mn-sheet { animation: none !important; } }
       `}</style>
 
       {/* ── Bottom tab bar ─────────────────────────────────────────────────── */}
@@ -189,19 +206,19 @@ export default function MobileNav() {
         {TABS.map(t => {
           const active = isActive(t.href)
           return (
-            <Link key={t.href} href={t.href} style={{
+            <Link key={t.href} href={t.href} className="mn-tab" data-on={active ? '1' : '0'} style={{
               flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
               justifyContent: 'center', gap: 3, padding: '8px 0 7px', textDecoration: 'none',
               color: active ? 'var(--coral)' : 'var(--slate)',
               WebkitTapHighlightColor: 'transparent', position: 'relative',
             }}>
-              <span style={{ display: 'flex', position: 'relative' }}>
+              <span className="mn-ic" style={{ display: 'flex', position: 'relative' }}>
                 {svg(t.icon)}
                 {(() => {
                   const c = t.label === 'Inbox' ? unread : t.label === 'Tasks' ? taskDue : 0
                   if (c <= 0) return null
                   return (
-                    <span style={{
+                    <span key={c} className="count-pop" style={{
                       position: 'absolute', top: -4, right: -7, minWidth: 16, height: 16,
                       padding: '0 4px', borderRadius: 9, background: 'var(--coral)', color: '#fff',
                       fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center',
@@ -217,25 +234,25 @@ export default function MobileNav() {
           )
         })}
 
-        <button onClick={() => setShowMore(true)} style={{
+        <button onClick={() => setShowMore(true)} className="mn-tab" data-on={showMore ? '1' : '0'} data-no-press style={{
           flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
           justifyContent: 'center', gap: 3, padding: '8px 0 7px', border: 'none',
           background: 'none', cursor: 'pointer',
           color: (showMore || moreActive) ? 'var(--coral)' : 'var(--slate)',
           WebkitTapHighlightColor: 'transparent',
         }}>
-          {svg(I.more)}
+          <span className="mn-ic" style={{ display: 'flex' }}>{svg(I.more)}</span>
           <span style={{ fontSize: 10.5, fontWeight: (showMore || moreActive) ? 700 : 600 }}>More</span>
         </button>
       </nav>
 
       {/* ── More sheet ─────────────────────────────────────────────────────── */}
       {showMore && (
-        <div onClick={() => setShowMore(false)} style={{
+        <div onClick={closeMore} className={`mn-sheet-bg${moreClosing ? ' out' : ''}`} style={{
           position: 'fixed', inset: 0, zIndex: 950, background: 'rgba(0,0,0,0.35)',
           display: 'flex', alignItems: 'flex-end',
         }}>
-          <div onClick={e => e.stopPropagation()} style={{
+          <div onClick={e => e.stopPropagation()} className="mn-sheet" style={{
             width: '100%', maxHeight: '85dvh', overflowY: 'auto',
             background: '#fff', borderRadius: '18px 18px 0 0',
             paddingBottom: 'calc(14px + env(safe-area-inset-bottom))',

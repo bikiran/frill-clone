@@ -896,3 +896,55 @@ button:hover .action-tooltip,
 @keyframes invBeat { 0%, 100% { transform: scale(1) } 14% { transform: scale(1.05) } 28% { transform: scale(1) } 42% { transform: scale(1.03) } 70% { transform: scale(1) } }
 @keyframes invRing { 0% { --inv-a: 0deg; opacity: 0 } 12% { opacity: 1 } 85% { opacity: 1 } 100% { --inv-a: 360deg; opacity: 0 } }
 @media (prefers-reduced-motion: reduce) { .cv-inv::before { display: none; } }
+
+/* ── Touch response ─────────────────────────────────────────────────────────
+   Every button gives a little under your finger, like a physical key.
+   components/PressFeedback marks a button on pointer-down and sizes the press
+   so every button sinks about the same few pixels: a small icon button a
+   touch more, a full-width row barely at all. `scale` (not `transform`)
+   leaves any transform a button already has alone. Opt out with
+   data-no-press on the button or any parent. */
+[data-press] {
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.2s ease, opacity 0.15s ease, scale 0.34s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+[data-press]:active {
+  scale: var(--press, 0.97);
+  transition-duration: 0.15s, 0.15s, 0.15s, 0.2s, 0.15s, 0.08s;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-press]:active { scale: none; }
+}
+
+/* The app header lifts once the page scrolls under it (AppChrome sets
+   data-scrolled). */
+.cv-app-header { transition: box-shadow 0.28s ease, background-color 0.15s ease, border-color 0.15s ease; }
+.cv-app-header[data-scrolled] { box-shadow: 0 1px 14px rgba(0, 0, 0, 0.06); }
+
+/* ── Account menu (AppChrome) ───────────────────────────────────────────────
+   A frosted card that opens from the avatar: who you are, then grouped,
+   plainly named links, then Sign out. */
+.cv-acct {
+  width: 268px; padding: 6px; border-radius: 16px;
+  background: rgba(255, 255, 255, 0.96);
+  -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.05);
+  transform-origin: top right; animation: cvAcctIn 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes cvAcctIn { from { opacity: 0; transform: translateY(-4px) scale(0.96); } to { opacity: 1; transform: none; } }
+.cv-acct-head { display: flex; align-items: center; gap: 11px; padding: 10px 10px 12px; }
+.cv-acct-av { width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 16px; font-weight: 700; }
+.cv-acct-av img { width: 100%; height: 100%; object-fit: cover; }
+.cv-acct-name { display: block; font-size: 15px; font-weight: 650; color: #1c1c1e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.01em; }
+.cv-acct-mail { display: block; margin-top: 1px; font-size: 12.5px; color: #8e8e93; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cv-acct-sep { height: 1px; margin: 4px 10px; background: rgba(0, 0, 0, 0.07); }
+.cv-acct-item { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 40px; padding: 8px 10px; border: none; border-radius: 10px; background: transparent; font: inherit; font-size: 15px; color: #1c1c1e; text-decoration: none; text-align: left; cursor: pointer; }
+.cv-acct-item svg { color: #8e8e93; flex-shrink: 0; }
+.cv-acct-item:hover { background: #f2f2f7; }
+.cv-acct-out, .cv-acct-out svg { color: #ff3b30; }
+.cv-acct-item::before { display: none; }
+@media (prefers-reduced-motion: reduce) { .cv-acct { animation: none; } }
+[data-theme="dark"] .cv-acct { background: rgba(30, 30, 30, 0.96); border-color: var(--border); }
+[data-theme="dark"] .cv-acct-name, [data-theme="dark"] .cv-acct-item { color: var(--ink); }
+[data-theme="dark"] .cv-acct-item:hover { background: #2a2a2a; }
+[data-theme="dark"] .cv-acct-sep { background: var(--border); }

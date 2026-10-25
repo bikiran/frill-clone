@@ -6986,6 +6986,13 @@ export default function InboxPage() {
         /* The collapsed one-line reply bar is a phone thing only. */
         .mcmp-bar { display: none; }
 
+        /* A message that has just arrived (or just been sent) rises into place
+           from its own corner; what was already there when the thread opened
+           stays still. */
+        .chat-msg-row.msg-in { animation: msgIn .4s cubic-bezier(.2,.9,.3,1.12) both; transform-origin: bottom left; }
+        .chat-msg-row.msg-in.mine { transform-origin: bottom right; }
+        @keyframes msgIn { from { opacity: 0; transform: translateY(10px) scale(.96); } to { opacity: 1; transform: none; } }
+
         /* ── Inbox mobile responsiveness ─────────────────────────────── */
         @media (max-width: 767px) {
           /* Fit the inbox between the top header AND the fixed bottom nav — the
@@ -9837,7 +9844,7 @@ export default function InboxPage() {
                 return (
                   <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
                     {dateDivider}
-                    <div className="chat-msg-row" style={{ display: 'flex', justifyContent: isAgent ? 'flex-end' : 'flex-start', gap: 8, alignItems: 'flex-end', position: 'relative' }}>
+                    <div className={`chat-msg-row${Date.now() - Date.parse((msg as any).created_at || '') < 15000 ? (isAgent ? ' msg-in mine' : ' msg-in') : ''}`} style={{ display: 'flex', justifyContent: isAgent ? 'flex-end' : 'flex-start', gap: 8, alignItems: 'flex-end', position: 'relative' }}>
                     {!isAgent && (
                       <div className="chat-cust-av" style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--peach)', border: '2px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: 'var(--coral)', flexShrink: 0 }}>
                         {(contact?.name || msg.sender_name || 'V')[0].toUpperCase()}
