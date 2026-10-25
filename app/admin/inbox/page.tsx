@@ -1,6 +1,7 @@
 'use client'
 
 import { VoiceTag } from '@/components/VoiceTag'
+import { voiceKind, tagVoice } from '@/lib/voice-typed'
 import { useAttachmentToken } from '@/lib/useAttachmentToken'
 import VoicePlayer from '@/components/VoicePlayer'
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react'
@@ -5835,11 +5836,17 @@ export default function InboxPage() {
     loadConversations()
   }
 
+  // What Colvy Voice put in the reply box since it was last empty, to tag the
+  // reply "Voice typed" / "Voice assisted" (lib/voice-typed).
+  const dictatedRef = useRef<string[]>([])
+  useEffect(() => { if (!reply) dictatedRef.current = [] }, [reply])
   const sendReply = async () => {
     if ((!reply.trim() && stagedMedia.length === 0) || !selected || !user) return
     setSending(true)
     let content = reply.trim()
     const senderName = myName
+    const voice = voiceKind(content, dictatedRef.current)
+    const voiceSince = new Date(Date.now() - 5000).toISOString()
     // A send takes a few seconds and the agent may open another chat meanwhile.
     // When it finishes, forget THIS conversation's draft, but only reset the
     // composer if this conversation is still open — otherwise it belongs to the
@@ -5847,6 +5854,7 @@ export default function InboxPage() {
     const sentFrom = selected.id
     const sendDone = () => {
       draft.discard()
+      if (voice) tagVoice(sentFrom, voiceSince, voice).then(() => { if (selectedIdRef.current === sentFrom) reloadThread(sentFrom) })
       // A payment link went out in this reply: that message becomes the
       // payment's card, which turns PAID when the money arrives (lib/payment-links).
       if (!internalMode && companyId && /\/(?:l|pay)\/[A-Za-z0-9_-]+/.test(content)) {
@@ -6201,6 +6209,7 @@ export default function InboxPage() {
       showToast('Heads up: no mobile or email on file and the customer isn’t on live chat — this reply was saved to the thread but not delivered. Add a phone or email to reach them.')
     }
     await deliverChat(content, senderName)
+    if (voice) tagVoice(sentFrom, voiceSince, voice).then(() => { if (selectedIdRef.current === sentFrom) reloadThread(sentFrom) })
   }
 
   const deliverChat = async (content: string, senderName: string) => {
@@ -11005,7 +11014,7 @@ export default function InboxPage() {
                     soft
                     title="Voice type"
                     keyterms={[contact?.name, (contact as any)?.company_name].filter(Boolean) as string[]}
-                    onText={(t) => setReply(prev => (prev.trim() ? prev.replace(/\s*$/, ' ') : '') + t)}
+                    onText={(t) => { dictatedRef.current.push(t); setReply(prev => (prev.trim() ? prev.replace(/\s*$/, ' ') : '') + t) }}
                   />
                   {renderSendMenu(false)}
                   {/* Attach */}
