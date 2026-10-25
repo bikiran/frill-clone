@@ -1905,7 +1905,14 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
   // more). Columns are sized to the measured viewport ÷ this count.
   const [daysShown, setDaysShown] = useState(5)
   const [viewW, setViewW] = useState(0)
-  const COL_W = viewW ? viewW / daysShown : 256
+  // A column never gets narrower than a readable card. On a phone that means
+  // about two days across whatever "Show" says, so the setting is hidden
+  // there, the "No due date" column isn't pinned over the days, and today
+  // opens at the left edge.
+  const narrow = viewW > 0 && viewW < 640
+  const MIN_COL = narrow ? 172 : 140
+  const COL_W = viewW ? Math.max(MIN_COL, viewW / daysShown) : 256
+  const lead = narrow ? 0 : COL_W   // how much of yesterday shows before today
   // Only the days around what's on screen are drawn — the axis can span a
   // year (366 columns), and drawing every card in every column made the
   // Timeline slow to open. Spacers keep the scroll width the same.
@@ -1984,14 +1991,15 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
   useEffect(() => {
     // Offset by the pinned "No due date" column (if present) so today isn't
     // hidden behind it.
-    const left = Math.max(0, todayIdx * COL_W - COL_W + (showNoDate ? COL_W : 0))
+    const left = Math.max(0, todayIdx * COL_W - lead + (showNoDate ? COL_W : 0))
     if (scrollRef.current) scrollRef.current.scrollLeft = left
     setScrollX(left)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [todayIdx, COL_W, showNoDate])
+  }, [todayIdx, COL_W, showNoDate, lead])
 
   const scrollBy = (cols: number) => { if (scrollRef.current) scrollRef.current.scrollBy({ left: cols * COL_W, behavior: 'smooth' }) }
-  const goToday = () => { if (scrollRef.current) scrollRef.current.scrollTo({ left: Math.max(0, todayIdx * COL_W - COL_W + (showNoDate ? COL_W : 0)), behavior: 'smooth' }) }
+  const goToday = () => { if (scrollRef.current) scrollRef.current.scrollTo({ left: Math.max(0, todayIdx * COL_W - lead + (showNoDate ? COL_W : 0)), behavior: 'smooth' }) }
+  const goNoDate = () => { if (scrollRef.current) scrollRef.current.scrollTo({ left: 0, behavior: 'smooth' }) }
 
   if (tasks.length === 0) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--slate)', fontSize: 13.5 }}>No tasks to show on the timeline.</div>
 
@@ -2024,10 +2032,10 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
     <div key={key} className="tl-col"
       onDragOver={(e) => { if (dragId) { e.preventDefault(); setDrop(key, list.length) } }}
       onDrop={(e) => { e.preventDefault(); doDrop(dateObj, list, overCol ? dropTarget!.index : list.length) }}
-      style={{ width: COL_W, boxSizing: 'border-box', flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%', borderLeft: '1px solid var(--border)', background: isToday ? 'var(--peach)' : (weekend ? 'var(--canvas)' : '#fff'), outline: overCol ? '2px dashed var(--coral)' : 'none', outlineOffset: -2, ...(sticky ? { position: 'sticky' as const, left: 0, zIndex: 3, background: 'var(--canvas)', boxShadow: '4px 0 10px rgba(0,0,0,0.06)' } : {}) }}>
-      <div style={{ position: 'sticky', top: 0, zIndex: 1, padding: '8px 10px', borderBottom: `2px solid ${isToday ? 'var(--coral)' : 'var(--border)'}`, background: 'inherit', display: 'flex', alignItems: 'baseline', gap: 6 }}>
-        <span style={{ fontSize: 13, fontWeight: 800, color: isToday ? 'var(--coral)' : 'var(--ink)' }}>{header}</span>
-        {sub && <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>{sub}</span>}
+      style={{ width: COL_W, boxSizing: 'border-box', flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%', borderLeft: '1px solid var(--border)', background: isToday ? 'var(--peach)' : (weekend ? 'var(--canvas)' : '#fff'), outline: overCol ? '2px dashed var(--coral)' : 'none', outlineOffset: -2, ...(sticky ? { background: 'var(--canvas)', ...(narrow ? {} : { position: 'sticky' as const, left: 0, zIndex: 3, boxShadow: '4px 0 10px rgba(0,0,0,0.06)' }) } : {}) }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 1, padding: '8px 10px', borderBottom: `2px solid ${isToday ? 'var(--coral)' : 'var(--border)'}`, background: 'inherit', display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
+        <span style={{ fontSize: 13, fontWeight: 800, color: isToday ? 'var(--coral)' : 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{header}</span>
+        {sub && <span style={{ fontSize: 11.5, color: 'var(--slate)', whiteSpace: 'nowrap', flexShrink: 0 }}>{sub}</span>}
         {list.length > 0 && <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 800, color: 'var(--slate)', background: 'rgba(0,0,0,0.06)', borderRadius: 10, padding: '0 6px' }}>{list.length}</span>}
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '10px 8px' }}>
@@ -2070,25 +2078,30 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
         <button aria-label="Scroll back" onClick={() => scrollBy(-daysShown)} style={navBtn}>‹</button>
         <button onClick={goToday} style={{ ...navBtn, width: 'auto', padding: '0 12px', fontSize: 12 }}>Today</button>
         <button aria-label="Scroll forward" onClick={() => scrollBy(daysShown)} style={navBtn}>›</button>
-        <span style={{ fontSize: 12.5, color: 'var(--slate)', marginLeft: 4 }}>Scroll right for upcoming days →</span>
+        {narrow && showNoDate && (
+          <button onClick={goNoDate} style={{ ...navBtn, width: 'auto', padding: '0 12px', fontSize: 12 }}>No due date · {byDay.noDate.filter((t: any) => statusOf(t) !== 'done').length}</button>
+        )}
+        <span style={{ fontSize: 12.5, color: 'var(--slate)', marginLeft: 4 }}>{narrow ? 'Swipe for more days →' : 'Scroll right for upcoming days →'}</span>
         <span style={{ flex: 1 }} />
-        {/* How many days fill the screen at once. */}
-        <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--slate)' }}>Show</span>
-        <div className="seg">
-          {[3, 5, 7].map(n => (
-            <button key={n} className={daysShown === n ? 'on' : ''} onClick={() => setDaysShown(n)}>{n}</button>
-          ))}
-        </div>
-        <input type="number" min={1} max={7} value={daysShown}
-          onChange={e => setDaysShown(Math.max(1, Math.min(7, parseInt(e.target.value) || 1)))}
-          style={{ width: 48, padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12.5, boxSizing: 'border-box' }} />
-        <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>days</span>
+        {/* How many days fill the screen at once (a phone always shows about two). */}
+        {!narrow && <>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--slate)' }}>Show</span>
+          <div className="seg">
+            {[3, 5, 7].map(n => (
+              <button key={n} className={daysShown === n ? 'on' : ''} onClick={() => setDaysShown(n)}>{n}</button>
+            ))}
+          </div>
+          <input type="number" min={1} max={7} value={daysShown}
+            onChange={e => setDaysShown(Math.max(1, Math.min(7, parseInt(e.target.value) || 1)))}
+            style={{ width: 48, padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12.5, boxSizing: 'border-box' }} />
+          <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>days</span>
+        </>}
       </div>
       <div ref={scrollRef} onScroll={onScroll} style={{ flex: 1, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', borderTop: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'stretch', height: '100%', minWidth: 'min-content' }}>
           {/* Unscheduled tasks (no due date) pinned to the left so they're always
               visible — otherwise they hid at the far right, past every future day. */}
-          {showNoDate && renderColumn('nodate', 'No due date', 'unscheduled', false, false, byDay.noDate, null, true)}
+          {showNoDate && renderColumn('nodate', 'No due date', '', false, false, byDay.noDate, null, true)}
           {winStart > 0 && <div aria-hidden="true" style={{ width: winStart * COL_W, flexShrink: 0 }} />}
           {days.slice(winStart, winEnd).map(d => {
             const k = dayKey(d)

@@ -750,12 +750,16 @@ export default function GalleryPage() {
     .filter((it: any) => !catFilter || (itemCats[it.id] || []).includes(catFilter))
 
   return (
-    <div className="gal-root" style={{ padding: '28px 36px' }}>
+    <div className="gal-root">
       <style>{`
         .gal-toolbar-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+        .gal-root { padding: 28px 36px; }
         .gal-layout { display: flex; gap: 24px; align-items: flex-start; }
         .gal-sidebar { width: 210px; flex-shrink: 0; position: sticky; top: 16px; }
         .gal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 16px; }
+        /* A card can shrink to its column; without this a card's own content
+           (the action row) widened every column past the screen. */
+        .gal-grid > * { min-width: 0; }
         .gal-grid.compact { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
         .gal-grid.large { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 18px; }
         /* Segmented view switcher */
@@ -820,8 +824,12 @@ export default function GalleryPage() {
 
         @media (max-width: 760px) {
           .gal-root { padding: 16px 14px; }
+          /* The header still reaches the screen edges with the smaller padding. */
+          .gal-root > .ph-root { margin: -16px -14px 16px !important; }
           /* Stack: the folder sidebar becomes a horizontal chip strip on top. */
-          .gal-layout { flex-direction: column; gap: 12px; }
+          /* Stretch, so the column is the screen's width rather than its widest
+             strip of chips (which scroll sideways instead). */
+          .gal-layout { flex-direction: column; gap: 12px; align-items: stretch; }
           .gal-sidebar { display: none; }
           .gal-cat-strip {
             display: flex; gap: 7px; overflow-x: auto; padding-bottom: 4px;
@@ -834,9 +842,12 @@ export default function GalleryPage() {
             border: 1px solid var(--border); background: #fff; color: var(--slate);
           }
           .gal-cat-chip.on { border-color: var(--coral); background: var(--peach); color: var(--coral); }
-          /* Denser grid so thumbnails fill a phone screen (density switcher is
-             desktop-only — the phone always uses this compact layout). */
-          .gal-grid, .gal-grid.compact, .gal-grid.comfortable, .gal-grid.large { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+          /* Two cards across on a phone: room for the thumbnail, the name, the
+             folder and all four actions (the density switcher is desktop-only).
+             Three across left ~100px cards whose actions spilled out. */
+          .gal-grid, .gal-grid.compact, .gal-grid.comfortable, .gal-grid.large { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+          .gal-acts { justify-content: space-between !important; }
+          .gal-act { width: 32px; height: 32px; }
           .gal-viewseg { display: none; }
           /* Primary actions full width, secondary ones wrap. */
           .gal-toolbar-btns { width: 100%; }
@@ -1227,7 +1238,7 @@ export default function GalleryPage() {
                         </span>
                       </div>
                     ) : (
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 4, marginTop: 8 }}>
+                    <div className="gal-acts" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 4, marginTop: 8 }}>
                       <button onClick={() => shareItems([item])} title="Share / copy link" className="gal-act share">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
                       </button>
