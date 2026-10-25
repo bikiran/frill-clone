@@ -290,6 +290,17 @@ function warmWaitlists(cid: string) {
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
+  // A new page fades in instead of snapping over the old one. Opacity only:
+  // moving the content would make it the containing block for the page's
+  // fixed buttons and sheets for the length of the fade.
+  const pageRef = useRef<HTMLDivElement>(null)
+  const fadedPath = useRef(pathname)
+  React.useLayoutEffect(() => {
+    if (fadedPath.current === pathname) return
+    fadedPath.current = pathname
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+    pageRef.current?.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' })
+  }, [pathname])
   const [authed, setAuthed] = useState<boolean | null>(null)
   // When auth resolution hangs or throws (a stuck/expired session token, a
   // backend blip), we must never leave the user on an endless spinner. This
@@ -973,22 +984,32 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           .admin-collapse-btn { display: none !important; }
           .admin-mobile-close { display: flex !important; }
           .admin-ws-head { padding: 18px 56px 12px 20px !important; border-bottom: none !important; }
-          .admin-ws-head .admin-ws-name { font-size: 18px !important; font-weight: 700 !important; }
-          .admin-sidebar nav { padding: 6px 12px 24px !important; }
+          .admin-ws-head .admin-ws-name { font-size: 17px !important; font-weight: 700 !important; }
+          .admin-sidebar nav { padding: 4px 12px 24px !important; }
+          /* Rows at the app's own text size (15px), with section headings the
+             same size, set in bold with a chevron, like the sidebar in Files. */
           .admin-sidebar .nav-item {
-            font-size: 16.5px !important; padding: 12px 14px !important; gap: 16px !important; border-radius: 14px !important;
-            min-height: 50px; color: #1c1c1e !important; font-weight: 500 !important; margin-bottom: 2px !important;
+            font-size: 15px !important; padding: 10px 12px !important; gap: 14px !important; border-radius: 12px !important;
+            min-height: 44px; color: #1c1c1e !important; font-weight: 500 !important; margin-bottom: 1px !important;
           }
           .admin-sidebar .nav-item.is-active { background: #f2f2f7 !important; }
           .admin-sidebar .nav-item.is-active .nav-ic { color: var(--coral); }
           .admin-sidebar .nav-item .nav-ic { opacity: 0.75 !important; }
-          .admin-sidebar .nav-item .nav-ic svg { width: 22px; height: 22px; }
+          .admin-sidebar .nav-item .nav-ic svg { width: 20px; height: 20px; }
           .admin-sidebar .nav-item:not(.is-active):hover { background: #f7f7f9; }
-          .admin-sidebar .nav-group-header { padding: 10px 14px 4px !important; margin-top: 4px; }
-          .admin-sidebar .nav-group-header span { font-size: 12.5px !important; letter-spacing: 0.02em !important; text-transform: none !important; color: #8e8e93 !important; font-weight: 600 !important; }
+          .admin-sidebar .nav-group-header { padding: 10px 12px !important; min-height: 44px; margin: 4px 0 1px !important; border-radius: 12px !important; }
+          .admin-sidebar .nav-group-header span { font-size: 15px !important; letter-spacing: -0.01em !important; text-transform: none !important; color: #1c1c1e !important; font-weight: 650 !important; }
+          .admin-sidebar .nav-group-header .nav-group-chevron { width: 15px; height: 15px; opacity: 0.5; }
           .admin-sidebar .nav-group-header.is-collapsed { background: transparent; }
-          .admin-sidebar .ss-trigger { min-height: 46px; font-size: 16px !important; border-radius: 14px !important; padding: 10px 14px !important; gap: 14px !important; margin-bottom: 10px !important; }
-          .admin-sidebar .ss-trigger .nav-ic svg { width: 20px; height: 20px; }
+          .admin-sidebar .nav-group-header:hover { background: #f7f7f9; }
+          /* Touch screens keep :hover after a tap; show the press instead. */
+          @media (hover: none) {
+            .admin-sidebar .nav-group-header:hover, .admin-sidebar .nav-group-header.is-collapsed:hover,
+            .admin-sidebar .nav-item:not(.is-active):hover { background: transparent !important; }
+            .admin-sidebar .nav-group-header:active, .admin-sidebar .nav-item:not(.is-active):active { background: #f2f2f7 !important; }
+          }
+          .admin-sidebar .ss-trigger { min-height: 42px; font-size: 15px !important; border-radius: 12px !important; padding: 9px 12px !important; gap: 12px !important; margin-bottom: 8px !important; }
+          .admin-sidebar .ss-trigger .nav-ic svg { width: 18px; height: 18px; }
         }
         @keyframes cvOverlayIn { from { opacity: 0 } to { opacity: 1 } }
         /* Collapsible nav-group header — a proper padded, rounded row that
@@ -1269,7 +1290,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             setup checklist (it reads the query string, hence Suspense). */}
         <React.Suspense fallback={null}><SetupReturnBar key={pathname} /></React.Suspense>
         </div>
-        <div className="colvy-mobile-pad">
+        <div ref={pageRef} className="colvy-mobile-pad">
           {children}
         </div>
       </div>
