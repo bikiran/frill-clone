@@ -11,7 +11,7 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 export const revalidate = 300
 
 export const metadata: Metadata = pageMeta({
-  title: 'Blog: Customer Communication Playbooks for Small Business',
+  title: 'Blog: Customer Communication Playbooks for Growing Teams',
   description: 'Practical, honest playbooks on customer communication for growing businesses — support, sales, feedback and more, from the Colvy team.',
   path: 'blog',
 })

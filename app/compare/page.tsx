@@ -8,7 +8,7 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
 export const metadata: Metadata = pageMeta({
   title: 'Compare Colvy with Podium, Birdeye, Zendesk, Intercom & More',
-  description: 'See how Colvy compares with Podium, Birdeye, Coax, Gorgias, Zendesk, Freshdesk, Intercom, Gladly and ManyChat for Australian small businesses.',
+  description: 'See how Colvy compares with Podium, Birdeye, Coax, Gorgias, Zendesk, Freshdesk, Intercom, Gladly and ManyChat for teams of every size.',
   path: 'compare',
 })
 

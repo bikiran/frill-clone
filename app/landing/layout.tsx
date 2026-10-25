@@ -7,9 +7,9 @@ import { pageMeta } from '@/lib/seo'
 // so Google keeps one home page rather than also listing /landing or
 // www.colvy.com as separate pages.
 export const metadata: Metadata = pageMeta({
-  title: 'Colvy | Shared Inbox, Business SMS & CRM for Australian Small Business',
+  title: 'Colvy | Shared Inbox, Business Phone & SMS, AI-Powered CRM',
   description:
-    'One shared inbox for SMS, calls, Instagram, Messenger, email, live chat and Google reviews, with Australian numbers, a CRM, WooCommerce and Shopify orders and AI agents. Start free.',
+    'One shared inbox for calls, SMS, Instagram, Messenger, email and live chat, with a business phone system, an AI-powered CRM and AI agents. For teams of every size, up to enterprise. Start free.',
   path: '',
   absolute: true,
 })

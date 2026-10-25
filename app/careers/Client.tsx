@@ -19,7 +19,7 @@ const PERKS = [
   { icon: 'globe', title: 'Remote-friendly', desc: 'Work where you do your best. We’re a distributed team, rooted in Australia 🇦🇺.', accent: CYAN },
   { icon: 'bolt', title: 'Real ownership', desc: 'Small team, wide scope. What you build ships — and customers feel it fast.', accent: CORAL },
   { icon: 'idea', title: 'Always learning', desc: 'Mentorship, room to grow and real time to sharpen your craft.', accent: PURPLE },
-  { icon: 'star', title: 'Customers you can reach', desc: 'We build for real SMBs and hear from them every single day.', accent: AMBER },
+  { icon: 'star', title: 'Customers you can reach', desc: 'We build for real businesses and hear from them every single day.', accent: AMBER },
   { icon: 'lock', title: 'Room to switch off', desc: 'Flexible hours and genuine time to rest. Sustainable beats heroic.', accent: BLUE },
   { icon: 'user', title: 'Low ego, high trust', desc: 'Kind, direct people and no politics. We assume the best of each other.', accent: GREEN },
 ]
@@ -34,7 +34,7 @@ const HIRE = [
 
 const TEAMS = [
   { icon: 'inbox', title: 'Engineering', desc: 'Product-minded builders shipping the whole platform, end to end.', accent: BLUE },
-  { icon: 'pen', title: 'Product & Design', desc: 'Shape the simple, lively experiences small businesses love.', accent: PURPLE },
+  { icon: 'pen', title: 'Product & Design', desc: 'Shape the simple, lively experiences teams love.', accent: PURPLE },
   { icon: 'chat', title: 'Customer support', desc: 'The friendly Australian 🇦🇺 humans behind our support promise.', accent: GREEN },
   { icon: 'tag', title: 'Sales & success', desc: 'Help businesses switch, onboard and find value fast.', accent: CORAL },
   { icon: 'megaphone', title: 'Marketing', desc: 'Tell the Colvy story to the businesses who need it.', accent: PINK },
@@ -89,7 +89,7 @@ export default function CareersPage() {
         <div style={{ position: 'relative' }}>
           <Reveal>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: CORAL + '18', color: CORAL, fontSize: 12.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 18 }}><FeatureIcon name="bolt" color={CORAL} size={15} />Careers</span>
-            <h1 style={{ fontSize: 'clamp(38px, 5.6vw, 68px)', fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 1.03, margin: '0 0 18px' }}>Help small businesses<br /><span style={{ color: CORAL }}>win — and grow with us</span></h1>
+            <h1 style={{ fontSize: 'clamp(38px, 5.6vw, 68px)', fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 1.03, margin: '0 0 18px' }}>Help businesses<br /><span style={{ color: CORAL }}>win — and grow with us</span></h1>
             <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: muted, maxWidth: 520, lineHeight: 1.6, margin: '0 0 30px' }}>We’re a small, distributed team building one lively platform for growing businesses. If you like real ownership, kind people and customers you can actually talk to, we’d love to meet you.</p>
             <div className="cr-hero-cta" style={{ display: 'flex', gap: 12 }}>
               <button onClick={scrollToTeams} className="cr-btn" style={btnPrimary}>See where we hire →</button>

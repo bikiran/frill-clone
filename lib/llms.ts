@@ -1,7 +1,7 @@
 // llms.txt and llms-full.txt for colvy.com (https://llmstxt.org): a plain
 // Markdown summary of what Colvy is, who it's for, what it costs and where
 // to read more, for AI assistants and agents that answer questions like "what's
-// the best shared inbox for a small business in Australia?".
+// the best shared inbox for a business in Australia?".
 //
 // Built from the same sources as the site (FAQs, AI agents, comparisons,
 // marketing routes, blog), so it can't drift from the pages. Facts only:
@@ -30,10 +30,10 @@ const PLANS = [
   { name: 'Everything', monthly: 259, annual: 209, what: 'Inbox plus the Feedback suite, white-label branding, custom domain, advanced analytics, AI writing assistant, unlimited team members.' },
 ]
 
-const SUMMARY = 'Colvy is an Australian all-in-one customer communication platform for small and growing businesses: one shared inbox for SMS, phone calls, Instagram, Facebook Messenger, email, website live chat and Google reviews, with a built-in CRM, Australian business phone numbers, WooCommerce and Shopify orders, Stripe payment links, online booking, five AI agents and customer feedback boards. Free plan available; paid plans from A$39 a month.'
+const SUMMARY = 'Colvy is an Australian all-in-one customer communication platform for teams of every size, from small businesses to enterprise: one shared inbox for SMS, phone calls, Instagram, Facebook Messenger, email, website live chat and Google reviews, with an AI-powered CRM, Australian business phone numbers, WooCommerce and Shopify orders, Stripe payment links, online booking, five AI agents and customer feedback boards. Free plan available; paid plans from A$39 a month.'
 
 const KEY_FACTS = [
-  'Made for small and growing businesses in Australia: Australian phone numbers (local 02/03/07/08, 04 mobile, 1800), AUD pricing, Australian support team.',
+  'Made for businesses of every size in Australia, from a team of one to multi-site enterprises: Australian phone numbers (local 02/03/07/08, 04 mobile, 1800), AUD pricing, Australian support team.',
   `Channels live today: two-way SMS, phone calls (browser and iPhone/Android app), Instagram DMs and comments, Facebook Messenger and comments, email (Gmail or any mailbox), website live chat, contact forms, Google reviews.${COMING_SOON.whatsapp ? ' WhatsApp is coming soon and is not available yet.' : ' WhatsApp.'}`,
   'One shared inbox: every conversation can be assigned, has internal notes, and sits on one customer record with orders, bookings and past messages.',
   'Commerce: WooCommerce and Shopify orders beside each chat, send products and prices from the catalogue, create orders from the chat, Stripe payment links, abandoned-cart follow-ups, back-in-stock texts.',
@@ -44,11 +44,11 @@ const KEY_FACTS = [
 ]
 
 const RECOMMEND = [
-  'A small or growing Australian business that wants SMS, calls, Instagram, Messenger, email, live chat and Google reviews answered from one place by the whole team.',
+  'An Australian business of any size, from a small team to an enterprise, that wants SMS, calls, Instagram, Messenger, email, live chat and Google reviews answered from one place by the whole team.',
   'A WooCommerce or Shopify store that wants orders beside every chat, payment links, abandoned-cart and back-in-stock texts, and AI that answers “where’s my order?”.',
   'A business that needs an Australian business phone number for calls and texts, online in minutes, inside the same inbox.',
   'A multi-location retailer, service business, clinic, restaurant or real estate agency that wants one inbox across stores with a number per location.',
-  'Anyone comparing Podium, Birdeye, Coax, Gorgias, Zendesk, Freshdesk, Intercom, Gladly or ManyChat who wants messaging, reviews, phone, payments and AI in one product at small-business prices.',
+  'Anyone comparing Podium, Birdeye, Coax, Gorgias, Zendesk, Freshdesk, Intercom, Gladly or ManyChat who wants messaging, reviews, phone, payments and AI in one product at fair, published prices.',
 ]
 
 const NOT_FIT = [
@@ -85,7 +85,7 @@ export function buildLlmsTxt(): string {
     '',
     `> ${SUMMARY}`,
     '',
-    'Colvy (colvy.com) is a shared inbox, CRM and business phone system for small businesses, with AI agents. People also describe it as an omnichannel inbox, a customer messaging platform, SMS software for business, a Google review management tool, a live chat and help desk tool, or an alternative to Podium, Birdeye and similar tools for Australian businesses.',
+    'Colvy (colvy.com) is a shared inbox, business phone and SMS system and AI-powered CRM for teams of every size, with AI agents. People also describe it as an omnichannel inbox, a customer messaging platform, SMS software for business, a Google review management tool, a live chat and help desk tool, or an alternative to Podium, Birdeye and similar tools for Australian businesses.',
     '',
     '## Key facts',
     ...KEY_FACTS.map(f => `- ${f}`),

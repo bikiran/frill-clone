@@ -33,11 +33,11 @@ const structuredData = [
     image: { '@id': `${SITE_URL}/#logo` },
     sameAs: SAME_AS,
     description:
-      'Colvy is an all-in-one customer platform for small businesses: a shared inbox across every channel, a CRM, business phone, store orders, payments, AI agents and customer feedback.',
+      'Colvy is an all-in-one customer platform for teams of every size, from small businesses to enterprise: a shared inbox across every channel, business phone and SMS, an AI-powered CRM, store orders, payments, AI agents and customer feedback.',
     telephone: COLVY_CONTACT.phoneE164,
     email: COLVY_CONTACT.email,
     areaServed: 'AU',
-    knowsAbout: ['Shared inbox software', 'Customer messaging', 'Business SMS', 'Business phone systems', 'CRM for small business', 'Google review management', 'Conversational commerce', 'AI customer service agents', 'WooCommerce', 'Shopify'],
+    knowsAbout: ['Shared inbox software', 'Customer messaging', 'Business SMS', 'Business phone systems', 'AI-powered CRM', 'CRM for small business', 'Enterprise customer communication', 'Google review management', 'Conversational commerce', 'AI customer service agents', 'WooCommerce', 'Shopify'],
     contactPoint: [
       {
         '@type': 'ContactPoint',
@@ -87,9 +87,9 @@ const structuredData = [
         { '@type': 'Offer', name: 'Everything', price: '259', priceCurrency: 'AUD' },
       ],
     },
-    applicationSubCategory: 'Shared inbox, CRM and business phone',
+    applicationSubCategory: 'Shared inbox, business phone & SMS, AI-powered CRM',
     areaServed: { '@type': 'Country', name: 'Australia' },
-    audience: { '@type': 'BusinessAudience', audienceType: 'Small and medium-sized businesses' },
+    audience: { '@type': 'BusinessAudience', audienceType: 'Businesses of every size, from small teams to enterprise' },
     featureList: [
       'Shared inbox for SMS, phone calls, Instagram, Facebook Messenger, email, live chat and Google reviews',
       'Australian business phone numbers for calls and texts',
@@ -102,7 +102,7 @@ const structuredData = [
       'Help centre, ideas board, public roadmap and changelog',
       'iPhone and Android apps',
     ],
-    keywords: 'shared inbox, omnichannel inbox, small business CRM, business SMS Australia, business phone number Australia, Instagram DM inbox, Google review management, live chat, help desk, AI agents for customer service, selling chat, Podium alternative',
+    keywords: 'shared inbox, omnichannel inbox, AI-powered CRM, business phone and SMS, small business CRM, enterprise shared inbox, business SMS Australia, business phone number Australia, Instagram DM inbox, Google review management, live chat, help desk, AI agents for customer service, selling chat, Podium alternative',
     image: `${SITE_URL}/og.png`,
     sameAs: SAME_AS,
     publisher: { '@id': ORG_ID },
