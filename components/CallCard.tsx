@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import DraftTasks from './DraftTasks'
 import { callRoutingFacts } from '@/lib/call-routing'
+import { languageName, nativeName, romanName, hasNonLatinScript } from '@/lib/call-languages'
 
 // Coax-style call card for the conversation timeline: AI summary, action items,
 // sentiment, an audio player for the recording, and the full transcript.
@@ -103,8 +104,17 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
   // once the panel is gone.
   const [draftsClosed, setDraftsClosed] = useState(false)
   const [showTranscript, setShowTranscript] = useState(false)
-  // For a non-English call: 'en' shows the translation, 'orig' the spoken language.
-  const [transcriptView, setTranscriptView] = useState<'en' | 'orig'>('en')
+  // For a non-English call: 'en' the translation, 'roman' the spoken words in
+  // Roman letters, 'original' the spoken language's own script. Each person's
+  // last choice is remembered; until then the business's default (set under
+  // Calls & SMS → Call languages, saved on the call) applies.
+  const [pickedView, setPickedView] = useState<'en' | 'roman' | 'original' | null>(() => {
+    try { const v = localStorage.getItem('colvy:transcript-view'); return v === 'en' || v === 'roman' || v === 'original' ? v : null } catch { return null }
+  })
+  const setTranscriptView = (v: 'en' | 'roman' | 'original') => {
+    setPickedView(v)
+    try { localStorage.setItem('colvy:transcript-view', v) } catch {}
+  }
   const [retrying, setRetrying] = useState(false)
   const [retryMsg, setRetryMsg] = useState('')
 
@@ -170,7 +180,8 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
     const inTodos = (Array.isArray(call.ai_todos) ? call.ai_todos : []).some((t: any) => String(t || '').toLowerCase().includes(q))
     const inTranscript = String(call.transcription || '').toLowerCase().includes(q)
       || String(call.transcript_en || '').toLowerCase().includes(q)
-      || (Array.isArray(call.transcript_segments) ? call.transcript_segments : []).some((s: any) => String(s?.text || '').toLowerCase().includes(q))
+      || String(call.transcript_roman || '').toLowerCase().includes(q)
+      || (Array.isArray(call.transcript_segments) ? call.transcript_segments : []).some((s: any) => [s?.text, s?.roman, s?.en].some(v => String(v || '').toLowerCase().includes(q)))
     if (inSummary || inTodos || inTranscript) setExpanded(true)
     if (inTranscript) setShowTranscript(true)
   }, [highlight, call])
@@ -226,16 +237,18 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
   // `transcript_en` the English translation (only set for a non-English call).
   const tLang: string | null = call?.transcript_lang || null
   const nonEnglish = !!tLang && !/^en/i.test(String(tLang))
-  const hasTranslation = nonEnglish && !!call?.transcript_en
-  const langName = (() => {
-    if (!tLang) return ''
-    const code = String(tLang).toLowerCase()
-    try {
-      const n = new Intl.DisplayNames(['en'], { type: 'language' }).of(code)
-      if (n && n.toLowerCase() !== code) return n
-    } catch { /* fall through */ }
-    return code.charAt(0).toUpperCase() + code.slice(1)
-  })()
+  const mixedEnglish = !!call?.transcript_meta?.mixed
+  const hasTranslation = (nonEnglish || mixedEnglish) && !!call?.transcript_en
+  const langName = languageName(tLang)
+  const segs: any[] = Array.isArray(call?.transcript_segments) ? call.transcript_segments : []
+  // Calls translated line by line carry all three versions on each turn.
+  const perLine = hasTranslation && segs.length > 0 && segs.every(sg => typeof sg?.en === 'string')
+  const hasRoman = hasTranslation && (!!call?.transcript_roman || (perLine && segs.some(sg => sg?.roman)))
+  const views: { key: 'en' | 'roman' | 'original'; label: string }[] = hasTranslation
+    ? [{ key: 'en', label: 'English' }, ...(hasRoman ? [{ key: 'roman' as const, label: romanName(tLang) }] : []), { key: 'original', label: nativeName(tLang) || langName }]
+    : []
+  const wanted = pickedView || call?.transcript_meta?.view || 'en'
+  const transcriptView: 'en' | 'roman' | 'original' = views.some(v => v.key === wanted) ? wanted : 'en'
 
   return (
     <div style={{ maxWidth: 560, margin: '10px auto', background: '#f7f9fc', border: '1px solid #e3e9f2', borderRadius: 14, padding: 14 }}>
@@ -265,7 +278,7 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
           <p style={{ margin: '0 0 6px', fontSize: 12.5, fontWeight: 700, color: '#8b5cf6', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <SparkIcon /> Call Summary
             {hasTranslation && (
-              <span style={{ fontWeight: 600, fontSize: 10.5, color: 'var(--slate)' }}>· English · translated from {langName}</span>
+              <span style={{ fontWeight: 600, fontSize: 10.5, color: 'var(--slate)' }}>· {hasNonLatinScript(summary) || call?.transcript_meta?.summary === 'ne-roman' ? `from a ${langName} call` : `English · translated from ${langName}`}</span>
             )}
           </p>
           <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: 'var(--ink)' }}>
@@ -388,33 +401,40 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
       {/* Transcript */}
       {showTranscript && call?.transcription && (
         <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #e3e9f2' }}>
-          {/* Language toggle — only for a non-English call we translated. */}
-          {hasTranslation && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, fontSize: 11.5 }}>
-              <button type="button" onClick={() => setTranscriptView('en')}
-                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: transcriptView === 'en' ? 800 : 500, color: transcriptView === 'en' ? '#2563eb' : 'var(--slate)' }}>
-                Translated · English
-              </button>
-              <span style={{ color: '#c7d0dd' }}>|</span>
-              <button type="button" onClick={() => setTranscriptView('orig')}
-                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: transcriptView === 'orig' ? 800 : 500, color: transcriptView === 'orig' ? '#2563eb' : 'var(--slate)' }}>
-                Original · {langName}
-              </button>
-            </div>
-          )}
+          {/* Language views — for a call that isn't all English. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, fontSize: 11.5, flexWrap: 'wrap' }}>
+            {views.map((v, i) => (
+              <span key={v.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                {i > 0 && <span style={{ color: '#c7d0dd' }}>|</span>}
+                <button type="button" onClick={() => setTranscriptView(v.key)} aria-pressed={transcriptView === v.key}
+                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: transcriptView === v.key ? 800 : 500, color: transcriptView === v.key ? '#2563eb' : 'var(--slate)' }}>
+                  {v.label}
+                </button>
+              </span>
+            ))}
+            {hasTranslation && mixedEnglish && <span style={{ color: 'var(--slate)' }}>· {langName} and English</span>}
+            <button type="button" onClick={runTranscription} disabled={retrying} title="Transcribe and summarise this call again with the current call language settings"
+              style={{ marginLeft: 'auto', background: 'none', border: 'none', padding: 0, cursor: retrying ? 'wait' : 'pointer', color: 'var(--slate)', fontWeight: 600 }}>
+              {retrying ? 'Re-transcribing…' : 'Re-transcribe'}
+            </button>
+          </div>
+          {retryMsg && <p style={{ margin: '0 0 8px', fontSize: 11.5, color: '#dc2626' }}>{retryMsg}</p>}
           <div style={{ maxHeight: 260, overflowY: 'auto' }}>
-            {hasTranslation && transcriptView === 'en' ? (
-              // The translation is plain text (no per-speaker diarisation).
-              <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6, color: 'var(--ink)', whiteSpace: 'pre-wrap' }}><HL text={call.transcript_en} q={highlight} accent={accent} /></p>
-            ) : Array.isArray(call.transcript_segments) && call.transcript_segments.length ? (
-              call.transcript_segments.map((seg: any, i: number) => (
-                <div key={i} style={{ marginBottom: 8 }}>
-                  <p style={{ margin: 0, fontSize: 10.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase' }}>{seg.speaker}</p>
-                  <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--ink)' }}><HL text={seg.text} q={highlight} accent={accent} /></p>
-                </div>
-              ))
+            {perLine || (!hasTranslation && segs.length) ? (
+              segs.map((seg: any, i: number) => {
+                const line = transcriptView === 'en' && perLine ? seg.en : transcriptView === 'roman' && perLine ? (seg.roman || seg.text) : seg.text
+                return (
+                  <div key={i} style={{ marginBottom: 8 }}>
+                    {seg.speaker && <p style={{ margin: 0, fontSize: 10.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase' }}>{seg.speaker}</p>}
+                    <p lang={transcriptView === 'original' && tLang ? String(tLang) : undefined} style={{ margin: 0, fontSize: 12.5, lineHeight: 1.55, color: 'var(--ink)' }}><HL text={String(line || '')} q={highlight} accent={accent} /></p>
+                  </div>
+                )
+              })
             ) : (
-              <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6, color: 'var(--ink)', whiteSpace: 'pre-wrap' }}><HL text={call.transcription} q={highlight} accent={accent} /></p>
+              // Older translated calls: whole-text versions, no per-line split.
+              <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6, color: 'var(--ink)', whiteSpace: 'pre-wrap' }}>
+                <HL text={String((transcriptView === 'en' ? call.transcript_en : transcriptView === 'roman' ? call.transcript_roman : null) || call.transcription)} q={highlight} accent={accent} />
+              </p>
             )}
           </div>
         </div>
