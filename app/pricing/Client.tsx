@@ -291,7 +291,7 @@ export default function PricingPage() {
               <button onClick={() => setContactPlan('Enterprise')} className="pr-btn" style={{ padding: '11px 24px', borderRadius: 999, background: 'transparent', color: text, fontWeight: 800, fontSize: 14, border: `1.5px solid ${cardBorder}`, flexShrink: 0, cursor: 'pointer', fontFamily: 'inherit' }}>Contact sales →</button>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {['White-label branding', 'Dedicated onboarding', 'Dedicated support', 'Custom contracts', 'High-volume usage & rates'].map(f => (
+              {['White-label branding', 'Roles & permissions', 'Audit logs', 'Dedicated onboarding', 'Dedicated support', 'Custom contracts', 'High-volume usage & rates'].map(f => (
                 <span key={f} style={{ fontSize: 12.5, fontWeight: 600, color: muted, background: dark ? 'rgba(255,255,255,0.04)' : 'rgba(15,17,25,0.03)', border: `1px solid ${cardBorder}`, borderRadius: 999, padding: '5px 12px' }}>{f}</span>
               ))}
             </div>

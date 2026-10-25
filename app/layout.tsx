@@ -14,14 +14,15 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: 'Colvy — Shared Inbox, CRM & Business Phone for Small Businesses',
+    default: 'Colvy — Shared Inbox, Business Phone & SMS, AI-Powered CRM',
     template: '%s · Colvy',
   },
   description:
-    'Colvy is the all-in-one customer platform for small businesses: one shared inbox for Instagram, Messenger, email, SMS and live chat, with a CRM, business phone, store orders, payments, AI agents and customer feedback built in.',
+    'Colvy is the all-in-one customer platform for teams of every size, from small businesses to enterprise: one shared inbox for Instagram, Messenger, email, SMS and live chat, with an AI-powered CRM, business phone and SMS, store orders, payments, AI agents and customer feedback built in.',
   applicationName: 'Colvy',
   keywords: [
-    'shared inbox', 'omnichannel inbox', 'small business CRM', 'business phone',
+    'shared inbox', 'omnichannel inbox', 'AI CRM', 'business phone', 'business SMS',
+    'small business CRM', 'enterprise shared inbox', 'contact centre software',
     'business SMS Australia', 'two-way SMS', 'Australian business phone number',
     'Instagram DM inbox', 'Facebook Messenger', 'Google reviews management',
     'live chat', 'help desk', 'online booking', 'WooCommerce', 'Shopify',
@@ -43,16 +44,16 @@ export const metadata: Metadata = {
     siteName: 'Colvy',
     locale: 'en_AU',
     url: SITE_URL,
-    title: 'Colvy — Shared Inbox, CRM & Business Phone for Small Businesses',
+    title: 'Colvy — Shared Inbox, Business Phone & SMS, AI-Powered CRM',
     description:
-      'One shared inbox for Instagram, Messenger, email, SMS and live chat, with a CRM, business phone, store orders, payments and AI agents built in.',
+      'One shared inbox for calls, SMS, Instagram, Messenger, email and live chat, with an AI-powered CRM, store orders, payments and AI agents built in. For teams of every size.',
     images: [{ url: '/og.png', width: 1731, height: 909, alt: 'Colvy — customer communication made simple' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Colvy — Shared Inbox, CRM & Business Phone for Small Businesses',
+    title: 'Colvy — Shared Inbox, Business Phone & SMS, AI-Powered CRM',
     description:
-      'One shared inbox for Instagram, Messenger, email, SMS and live chat, with a CRM, business phone, store orders, payments and AI agents built in.',
+      'One shared inbox for calls, SMS, Instagram, Messenger, email and live chat, with an AI-powered CRM, store orders, payments and AI agents built in. For teams of every size.',
     images: ['/og.png'],
   },
   robots: {

@@ -29,7 +29,7 @@ const WHY = [
   { icon: 'bolt', title: 'One platform', desc: 'Support, sales, marketing and feedback share the same inbox and CRM.' },
   { icon: 'user', title: 'Full context everywhere', desc: 'Every conversation carries the customer’s history, orders and notes.' },
   { icon: 'ai', title: 'AI across the board', desc: 'The same assistant drafts replies, answers WISMO and summarises threads.' },
-  { icon: 'tag', title: 'SMB pricing', desc: 'One fair, flat plan — not a separate subscription per job.' },
+  { icon: 'tag', title: 'Fair pricing', desc: 'One fair, flat plan — not a separate subscription per job.' },
 ]
 
 function useReveal(threshold = 0.12) {

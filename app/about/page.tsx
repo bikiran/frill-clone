@@ -8,7 +8,7 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
 export const metadata: Metadata = pageMeta({
   title: 'About Colvy',
-  description: 'Colvy is an Australian customer communication platform helping small businesses answer every customer across SMS, calls, social, email and chat from one inbox.',
+  description: 'Colvy is an Australian customer communication platform helping businesses of every size answer every customer across SMS, calls, social, email and chat from one inbox.',
   path: 'about',
 })
 

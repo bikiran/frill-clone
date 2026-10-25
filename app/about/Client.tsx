@@ -17,11 +17,11 @@ const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c'
 
 const VALUES = [
   { icon: 'bolt', title: 'One platform, not five', desc: 'Feedback, inbox, CRM and calling belong together — one login, one bill, one shared context.', accent: CORAL },
-  { icon: 'tag', title: 'Honest, SMB pricing', desc: 'Flat, published pricing and no per-seat traps. Software is predictable; usage is billed fairly.', accent: GREEN },
+  { icon: 'tag', title: 'Honest, published pricing', desc: 'Flat, published pricing and no per-seat traps. Software is predictable; usage is billed fairly.', accent: GREEN },
   { icon: 'star', title: 'Real human support', desc: 'Talk to real people in Australia 🇦🇺 who actually help — not a ticket queue and a bot.', accent: AMBER },
   { icon: 'idea', title: 'We listen, then ship', desc: 'A public roadmap and changelog. The features customers ask for are the ones we build next.', accent: PURPLE },
   { icon: 'lock', title: 'Your data is yours', desc: 'Export anytime. Encrypted in transit and at rest. No lock-in, cancel whenever you like.', accent: BLUE },
-  { icon: 'globe', title: 'Built for local business', desc: 'Local numbers, AUD pricing and a team that understands how growing SMBs actually work.', accent: CYAN },
+  { icon: 'globe', title: 'Built for local business', desc: 'Local numbers, AUD pricing and a team that understands how growing businesses actually work.', accent: CYAN },
 ]
 
 const STATS = [
@@ -91,7 +91,7 @@ export default function AboutPage() {
           <Reveal>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: CORAL + '18', color: CORAL, fontSize: 12.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 18 }}><FeatureIcon name="star" color={CORAL} size={15} />About Colvy</span>
             <h1 style={{ fontSize: 'clamp(38px, 5.6vw, 68px)', fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 1.03, margin: '0 0 18px' }}>The whole customer conversation,<br /><span style={{ color: CORAL }}>in one place</span></h1>
-            <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: muted, maxWidth: 520, lineHeight: 1.6, margin: '0 0 30px' }}>Colvy started with a simple frustration: growing businesses were paying for five tools that didn’t talk to each other. So we built one that does — feedback, inbox, CRM and calls, priced for SMBs, not enterprise.</p>
+            <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: muted, maxWidth: 520, lineHeight: 1.6, margin: '0 0 30px' }}>Colvy started with a simple frustration: growing businesses were paying for five tools that didn’t talk to each other. So we built one that does — feedback, inbox, CRM and calls, for teams of every size.</p>
             <div className="ab-hero-cta" style={{ display: 'flex', gap: 12 }}>
               <button onClick={go} className="ab-btn" style={btnPrimary}>Start free — no card →</button>
               <a href="/pricing" className="ab-btn" style={btnGhost}>See pricing</a>
@@ -104,7 +104,7 @@ export default function AboutPage() {
             <div aria-hidden style={{ position: 'absolute', inset: 0, background: `linear-gradient(150deg, ${CORAL}d9 0%, ${CORAL}59 40%, rgba(10,12,20,0.42) 118%)` }} />
             <div style={{ position: 'absolute', top: 22, right: 22, color: 'rgba(255,255,255,0.95)', animation: 'abFloat 6s ease-in-out infinite' }}><FeatureIcon name="bolt" color="rgba(255,255,255,0.95)" size={50} /></div>
             <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 10, padding: 26 }}>
-              {['Built for SMBs', 'One platform', 'Australian 🇦🇺 team'].map((c, i) => (
+              {['Every team size', 'One platform', 'Australian 🇦🇺 team'].map((c, i) => (
                 <span key={c} style={{ alignSelf: i % 2 ? 'flex-end' : 'flex-start', fontSize: 13.5, fontWeight: 800, color: '#fff', background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.34)', borderRadius: 999, padding: '8px 15px', animation: `abFloat ${5 + i * 0.6}s ease-in-out ${i * 0.3}s infinite` }}>{c}</span>
               ))}
             </div>
@@ -117,7 +117,7 @@ export default function AboutPage() {
         <div className="ab-story" style={{ display: 'grid', gridTemplateColumns: '0.9fr 1.1fr', gap: 48, alignItems: 'start' }}>
           <Reveal>
             <span style={{ fontSize: 12.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: CORAL }}>Why we built Colvy</span>
-            <h2 style={{ fontSize: 'clamp(26px, 3.6vw, 42px)', fontWeight: 900, letterSpacing: '-0.02em', lineHeight: 1.08, margin: '10px 0 0' }}>Small businesses deserve better than a stack of disconnected apps</h2>
+            <h2 style={{ fontSize: 'clamp(26px, 3.6vw, 42px)', fontWeight: 900, letterSpacing: '-0.02em', lineHeight: 1.08, margin: '10px 0 0' }}>Every business deserves better than a stack of disconnected apps</h2>
           </Reveal>
           <Reveal delay={0.08}>
             <div style={{ fontSize: 16.5, lineHeight: 1.7, color: muted, display: 'flex', flexDirection: 'column', gap: 16 }}>

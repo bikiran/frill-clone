@@ -19,7 +19,7 @@
 
 import { escapeHtml } from '@/lib/safe-html'
 
-export const COLVY_TAGLINE = 'The all-in-one customer platform for small businesses'
+export const COLVY_TAGLINE = 'The all-in-one customer platform for teams of every size'
 // The mark sits on a dark tile with an empty alt: the "Colvy" wordmark beside it
 // names it, so a mail app that blocks images shows a tidy tile, not a second
 // "Colvy" link (Supabase's template preview blocks outside images too).
