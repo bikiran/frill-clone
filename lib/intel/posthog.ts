@@ -1,8 +1,7 @@
 // Read Colvy's own analytics from PostHog's Query API for Super Admin →
 // Intelligence. Server-side only: the personal API key never reaches a
-// browser. Results are cached in memory per server instance (short for live
-// data, longer for reports), so several Super Admin tabs or refreshes share one
-// PostHog query and the database is never involved.
+// browser. Reports built on it are saved and reused (lib/intel/cache), so
+// several Super Admin tabs or refreshes share one PostHog query.
 
 const INGEST = (process.env.NEXT_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com').replace(/\/$/, '')
 
@@ -59,17 +58,4 @@ export async function funnel(steps: { event: string; label: string; properties?:
   })
   const res = Array.isArray(j?.results?.[0]) ? j.results[0] : (j?.results || [])
   return steps.map((s, i) => ({ label: s.label, count: Number(res[i]?.count || 0) }))
-}
-
-// ── Cache ────────────────────────────────────────────────────────────────────
-
-const cache = new Map<string, { at: number; data: any }>()
-
-export async function cached<T>(key: string, ttlMs: number, fresh: boolean, fn: () => Promise<T>): Promise<T & { cachedAt?: string }> {
-  const hit = cache.get(key)
-  if (!fresh && hit && Date.now() - hit.at < ttlMs) return { ...hit.data, cachedAt: new Date(hit.at).toISOString() }
-  const data: any = await fn()
-  cache.set(key, { at: Date.now(), data })
-  if (cache.size > 200) { const oldest = [...cache.entries()].sort((a, b) => a[1].at - b[1].at)[0]; if (oldest) cache.delete(oldest[0]) }
-  return { ...data, cachedAt: new Date().toISOString() }
 }

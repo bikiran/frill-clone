@@ -181,10 +181,13 @@ export async function businessReport(db: any, p: { from: Date; to: Date; prevFro
 }
 
 export async function healthReport(db: any) {
-  const latest = await db.from('company_health_daily').select('day').order('day', { ascending: false }).limit(1)
+  const [latest, companies, integ] = await Promise.all([
+    db.from('company_health_daily').select('day').order('day', { ascending: false }).limit(1),
+    companiesLive(db),
+    collectIntegrations(db).catch(() => ({ rows: [], missing: [] as string[] })),
+  ])
   if (latest.error) return { migrated: false, ran: false }
   const day: string | undefined = latest.data?.[0]?.day
-  const [companies, integ] = await Promise.all([companiesLive(db), collectIntegrations(db).catch(() => ({ rows: [], missing: [] as string[] }))])
   const byId = new Map(companies.map(c => [c.id, c]))
   const problems = integ.rows.filter(r => r.active && r.note && r.company_id && byId.has(r.company_id) && !byId.get(r.company_id)!.closed_at)
     .map(r => ({ company_id: r.company_id, company: byId.get(r.company_id!)?.name || 'Unnamed', type: r.type, note: r.note, detail: r.detail, last: r.last }))

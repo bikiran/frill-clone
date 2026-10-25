@@ -68,10 +68,6 @@ export async function revenueReport(db: any, p: { from: Date; to: Date; prevFrom
   // Companies and names.
   const ids = [...new Set([...subs.rows.map(r => r.company_id), ...events.rows.map(r => r.company_id), ...costsNow.rows.map(r => r.company_id)].filter(Boolean))]
   const names = new Map<string, any>()
-  for (let i = 0; i < ids.length; i += 200) {
-    const { data } = await db.from('companies').select('id, name, slug, created_at, is_demo').in('id', ids.slice(i, i + 200))
-    for (const c of data || []) names.set(c.id, c)
-  }
   const nameOf = (id: string | null) => (id ? names.get(id)?.name || names.get(id)?.slug || 'Unnamed' : 'Not linked to a workspace')
 
   // Now, from the mirror.
@@ -84,8 +80,24 @@ export async function revenueReport(db: any, p: { from: Date; to: Date; prevFrom
     const e = byPlan.get(k) || { key: k, mrr: 0, subs: 0 }; e.mrr += s.mrr_cents; e.subs++; byPlan.set(k, e)
   }
 
+  // Everything else at once: names, acquisition, cohorts, ever-paid, health.
+  const chunks: string[][] = []
+  for (let i = 0; i < ids.length; i += 200) chunks.push(ids.slice(i, i + 200))
+  const [nameRows, { rows: acq }, { rows: cos }, { rows: subscribedMs }, healthRows] = await Promise.all([
+    Promise.all(chunks.map(c => db.from('companies').select('id, name, slug, created_at, is_demo').in('id', c).then((r: any) => r.data || [], () => []))),
+    all<any>(() => db.from('company_acquisition').select('company_id, channel').order('company_id')),
+    all<any>(() => db.from('companies').select('id, created_at, is_demo').gte('created_at', new Date(Date.now() - 365 * DAY).toISOString()).order('id')),
+    all<any>(() => db.from('company_milestones').select('company_id').eq('milestone', 'subscribed').order('company_id')),
+    (async () => {
+      const { data: hDay } = await db.from('company_health_daily').select('day').order('day', { ascending: false }).limit(1)
+      if (!hDay?.[0]?.day || !mrrByCo.size) return []
+      const { data: hs } = await db.from('company_health_daily').select('company_id, band').eq('day', hDay[0].day).in('company_id', [...mrrByCo.keys()].slice(0, 1000))
+      return hs || []
+    })().catch(() => []),
+  ])
+  for (const c of nameRows.flat()) names.set(c.id, c)
+
   // Acquisition channel of paying businesses.
-  const { rows: acq } = await all<any>(() => db.from('company_acquisition').select('company_id, channel').order('company_id'))
   const chanOf = new Map(acq.map(a => [a.company_id, a.channel]))
   const byChannel = new Map<string, { key: string; mrr: number; paying: number }>()
   for (const [id, v] of mrrByCo) {
@@ -94,8 +106,6 @@ export async function revenueReport(db: any, p: { from: Date; to: Date; prevFrom
   }
 
   // Signup-month cohorts (last 12 months): how many pay now and for how much.
-  const { rows: cos } = await all<any>(() => db.from('companies').select('id, created_at, is_demo').gte('created_at', new Date(Date.now() - 365 * DAY).toISOString()).order('id'))
-  const { rows: subscribedMs } = await all<any>(() => db.from('company_milestones').select('company_id').eq('milestone', 'subscribed').order('company_id'))
   const everPaid = new Set(subscribedMs.map(r => r.company_id))
   const cohorts = new Map<string, { month: string; workspaces: number; everPaid: number; payingNow: number; mrr: number }>()
   for (const c of cos.filter(c => !c.is_demo)) {
@@ -112,12 +122,8 @@ export async function revenueReport(db: any, p: { from: Date; to: Date; prevFrom
   const trialConversion = trialPool.length ? trialPool.filter(c => everPaid.has(c.id)).length / trialPool.length : null
 
   // Latest health band per business, for the top customers list.
-  const { data: hDay } = await db.from('company_health_daily').select('day').order('day', { ascending: false }).limit(1)
   const bandOf = new Map<string, string>()
-  if (hDay?.[0]?.day && mrrByCo.size) {
-    const { data: hs } = await db.from('company_health_daily').select('company_id, band').eq('day', hDay[0].day).in('company_id', [...mrrByCo.keys()].slice(0, 1000))
-    for (const h of hs || []) bandOf.set(h.company_id, BAND_LABEL[h.band as keyof typeof BAND_LABEL] || h.band)
-  }
+  for (const h of healthRows as any[]) bandOf.set(h.company_id, BAND_LABEL[h.band as keyof typeof BAND_LABEL] || h.band)
 
   const sinceOf = (id: string) => subs.rows.filter(s => s.company_id === id && s.started_at).map(s => s.started_at).sort()[0] || null
   const top = [...mrrByCo].sort((a, b) => b[1] - a[1]).slice(0, 25).map(([id, mrr]) => ({
