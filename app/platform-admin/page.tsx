@@ -4,27 +4,37 @@ import { authFetch } from '@/lib/auth-fetch'
 import VoicePlayer from '@/components/VoicePlayer'
 import { useState, useEffect, Fragment } from 'react'
 import { supabase } from '@/lib/supabase'
-import LegalAdminPage from '../admin/legal/page'
-import PlatformBannerAdmin from '@/components/PlatformBannerAdmin'
-import BlogAdminPage from '@/components/BlogAdminPage'
 import { SmsPricing, DEFAULT_PRICING, calculateCost, aud, audRate, parsePricingRow } from '@/lib/sms-pricing'
 import { PLAN_FEATURES, PLAN_LIMITS, PLAN_NAMES, PLAN_PRICES, OVERRIDABLE_FEATURES, OVERRIDABLE_LIMITS, Plan } from '@/lib/plan'
 import { OPERATIONAL_FLAGS } from '@/lib/feature-flags'
 import { confirmDialog } from '@/components/ConfirmDialog'
-import SignupsPage from '@/components/platform-admin/SignupsPage'
 import EmailHealthCard from '@/components/platform-admin/EmailHealthCard'
 import SignupSmsHealth from '@/components/platform-admin/SignupSmsHealth'
-import WebFormsPage from '@/components/platform-admin/WebFormsPage'
-import PortingQueuePage from '@/components/platform-admin/PortingQueuePage'
 import BillingConfigCard from '@/components/platform-admin/BillingConfigCard'
-import SmsCreditsPage from '@/components/platform-admin/SmsCreditsPage'
 import CompanySmsBilling from '@/components/platform-admin/CompanySmsBilling'
 import CompanyTaxInvoices from '@/components/platform-admin/CompanyTaxInvoices'
 import CompanyWhatsApp from '@/components/platform-admin/CompanyWhatsApp'
-import WhatsAppPage from '@/components/platform-admin/WhatsAppPage'
-import StatusIncidentsPage from '@/components/platform-admin/StatusIncidentsPage'
 import { COLVY_CONTACT, isColvyNumber } from '@/lib/colvy-contact'
-import Intelligence, { type IntelView, INTEL_VIEWS } from './intelligence/Intelligence'
+import dynamic from 'next/dynamic'
+import { INTEL_VIEWS, prefetchIntel, type IntelView } from './intelligence/data'
+import { NAV_HOME, NAV_GROUPS, groupOf, navItem, searchNav } from './nav'
+import Dashboard from './Dashboard'
+
+// Pages with their own big bundles load when first opened, so the panel
+// itself starts quickly.
+function PageLoading() {
+  return <div style={{ padding: '40px 0', display: 'flex', justifyContent: 'center' }}><div style={{ width: 26, height: 26, border: '2px solid #ff7a6b', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} /></div>
+}
+const LegalAdminPage = dynamic(() => import('../admin/legal/page'), { loading: PageLoading })
+const PlatformBannerAdmin = dynamic(() => import('@/components/PlatformBannerAdmin'), { loading: PageLoading })
+const BlogAdminPage = dynamic(() => import('@/components/BlogAdminPage'), { loading: PageLoading })
+const SignupsPage = dynamic(() => import('@/components/platform-admin/SignupsPage'), { loading: PageLoading })
+const WebFormsPage = dynamic(() => import('@/components/platform-admin/WebFormsPage'), { loading: PageLoading })
+const PortingQueuePage = dynamic(() => import('@/components/platform-admin/PortingQueuePage'), { loading: PageLoading })
+const SmsCreditsPage = dynamic(() => import('@/components/platform-admin/SmsCreditsPage'), { loading: PageLoading })
+const WhatsAppPage = dynamic(() => import('@/components/platform-admin/WhatsAppPage'), { loading: PageLoading })
+const StatusIncidentsPage = dynamic(() => import('@/components/platform-admin/StatusIncidentsPage'), { loading: PageLoading })
+const Intelligence = dynamic(() => import('./intelligence/Intelligence'), { loading: PageLoading })
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
 
@@ -112,61 +122,6 @@ const I = {
   alert:      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
 }
 
-const NAV = [
-  { key: 'overview',   label: 'Overview',        icon: 'overview' },
-  { section: 'Intelligence' },
-  { key: 'intel',          label: 'Executive overview', icon: 'analytics' },
-  { key: 'intel_live',     label: 'Live visitors',      icon: 'users' },
-  { key: 'intel_traffic',  label: 'Traffic',            icon: 'signups' },
-  { key: 'intel_pages',    label: 'Pages & clicks',     icon: 'overview' },
-  { key: 'intel_journeys', label: 'Journeys',           icon: 'roadmap' },
-  { key: 'intel_funnels',  label: 'Signup funnels',     icon: 'subs' },
-  { key: 'intel_business', label: 'Business',           icon: 'companies' },
-  { key: 'intel_health',   label: 'Customer health',    icon: 'agent' },
-  { key: 'intel_revenue',  label: 'Revenue',            icon: 'billing' },
-  { key: 'intel_system',   label: 'System health',      icon: 'system' },
-  { section: 'Workspace' },
-  { key: 'companies',  label: 'Companies',        icon: 'companies' },
-  { key: 'users',      label: 'Users',            icon: 'users' },
-  { key: 'signups',    label: 'Signups',          icon: 'signups' },
-  { key: 'subs',       label: 'Subscriptions',    icon: 'subs' },
-  { key: 'analytics',  label: 'Analytics',        icon: 'analytics' },
-  { section: 'Content' },
-  { key: 'ideas',      label: 'Ideas',            icon: 'ideas' },
-  { key: 'roadmap',    label: 'Roadmaps',         icon: 'roadmap' },
-  { key: 'announce',   label: 'Announcements',    icon: 'announce' },
-  { key: 'help',       label: 'Help Center',      icon: 'help' },
-  { key: 'blog',       label: 'Blog',             icon: 'announce' },
-  { key: 'legal',      label: 'Legal Pages',      icon: 'audit' },
-  { key: 'banner',     label: 'Product Banner',   icon: 'announce' },
-  { section: 'Support' },
-  { key: 'chat',       label: 'Live Chat',        icon: 'chat' },
-  { key: 'tickets',    label: 'Support Tickets',  icon: 'tickets' },
-  { key: 'moderation', label: 'Moderation',       icon: 'moderation' },
-  { section: 'Operations' },
-  { key: 'imp',        label: 'Impersonation',    icon: 'audit' },
-  { key: 'webforms',   label: 'Web Forms',        icon: 'system' },
-  { key: 'demos',      label: 'Demo Workspaces',  icon: 'companies' },
-  { key: 'calls',      label: 'Call Diagnostics', icon: 'chat' },
-  { key: 'porting',    label: 'Number Porting',   icon: 'tickets' },
-  { key: 'webhooks',   label: 'Webhook Explorer', icon: 'system' },
-  { key: 'jobs',       label: 'Background Jobs',  icon: 'system' },
-  { key: 'status',     label: 'Status & Incidents', icon: 'alert' },
-  { key: 'apilogs',    label: 'API Logs',         icon: 'audit' },
-  { key: 'devices',    label: 'Mobile Devices',   icon: 'users' },
-  { key: 'integrations', label: 'Integrations',   icon: 'plug' },
-  { key: 'agents',     label: 'AI Agents',        icon: 'agent' },
-  { section: 'Platform' },
-  { key: 'ai',         label: 'AI Models & Usage', icon: 'system' },
-  { key: 'sms',        label: 'SMS Pricing',      icon: 'billing' },
-  { key: 'smscredits', label: 'SMS Credits',      icon: 'billing' },
-  { key: 'whatsapp',   label: 'WhatsApp',         icon: 'chat' },
-  { key: 'billing',    label: 'Billing',          icon: 'billing' },
-  { key: 'flags',      label: 'Feature Flags',    icon: 'flags' },
-  { key: 'system',     label: 'System Health',    icon: 'system' },
-  { key: 'audit',      label: 'Audit Logs',       icon: 'audit' },
-  { key: 'settings',   label: 'Settings',         icon: 'settings' },
-]
 
 // ── Mini sparkline ─────────────────────────────────────────────────────────
 function Spark({ data, color = '#ff7a6b', h = 36 }: { data: number[]; color?: string; h?: number }) {
@@ -185,20 +140,6 @@ function Spark({ data, color = '#ff7a6b', h = 36 }: { data: number[]; color?: st
 }
 
 // ── Bar chart ──────────────────────────────────────────────────────────────
-function MiniBar({ data, color = '#ff7a6b' }: { data: { label: string; value: number }[]; color?: string }) {
-  const max = Math.max(...data.map(d => d.value), 1)
-  return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 60 }}>
-      {data.map((d, i) => (
-        <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-          <div style={{ width: '100%', background: color, borderRadius: '3px 3px 0 0', height: `${(d.value / max) * 52}px`, opacity: 0.8 + (i / data.length) * 0.2, transition: 'height 0.5s ease' }} />
-          <span style={{ fontSize: 9, color: 'var(--sa-muted)', whiteSpace: 'nowrap' }}>{d.label}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 // ── KPI Card ───────────────────────────────────────────────────────────────
 function KPI({ label, value, sub, trend, color = '#ff7a6b', spark }: any) {
   const up = trend > 0
@@ -2766,259 +2707,6 @@ function DemoWorkspacesPage() {
 
 // Attention Required — surfaces businesses that need a look right now, computed
 // purely from companies.plan + created_at (no invented columns, no backend).
-function AttentionPanel() {
-  const [rows, setRows] = useState<any[] | null>(null)
-  useEffect(() => {
-    let active = true
-    ;(async () => {
-      try {
-        const { data } = await (supabase as any).from('companies').select('id,name,slug,plan,created_at').limit(1000)
-        if (active) setRows(data || [])
-      } catch { if (active) setRows([]) }
-    })()
-    return () => { active = false }
-  }, [])
-
-  const now = Date.now()
-  const ageDays = (d: string) => d ? (now - new Date(d).getTime()) / 86400000 : 0
-  const list = rows || []
-  const p = (c: any) => String(c.plan || '').toLowerCase()
-  const buckets = [
-    { key: 'suspended', color: '#ef4444', icon: '⛔', label: 'Suspended businesses', hint: 'Review or reactivate',
-      items: list.filter(c => p(c) === 'suspended') },
-    { key: 'trial_ending', color: '#f59e0b', icon: '⏳', label: 'Trials ending soon', hint: 'Assuming a 14-day trial — under ~3 days left',
-      items: list.filter(c => p(c) === 'trial' && ageDays(c.created_at) >= 11 && ageDays(c.created_at) <= 14) },
-    { key: 'trial_stale', color: '#ef4444', icon: '💤', label: 'Stale trials', hint: 'On trial 21+ days and never converted',
-      items: list.filter(c => p(c) === 'trial' && ageDays(c.created_at) > 21) },
-    { key: 'new_signup', color: '#10b981', icon: '✨', label: 'New signups to onboard', hint: 'Joined in the last 2 days',
-      items: list.filter(c => ['trial', 'free'].includes(p(c)) && ageDays(c.created_at) < 2) },
-    { key: 'free_long', color: '#6366f1', icon: '📈', label: 'Long-time free (upsell)', hint: 'On the free plan 45+ days',
-      items: list.filter(c => p(c) === 'free' && ageDays(c.created_at) > 45) },
-  ].filter(b => b.items.length > 0)
-  const total = buckets.reduce((n, b) => n + b.items.length, 0)
-
-  return (
-    <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 20, marginBottom: 24 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-        <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: 0 }}>Attention Required</p>
-        {rows !== null && (
-          <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 999, background: total ? '#ef444422' : '#10b98122', color: total ? '#ef4444' : '#10b981' }}>{total}</span>
-        )}
-      </div>
-      <p style={{ fontSize: 11, color: 'var(--sa-muted)', margin: '0 0 14px' }}>Businesses that need a look right now</p>
-      {rows === null ? (
-        <p style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>Loading…</p>
-      ) : buckets.length === 0 ? (
-        <p style={{ fontSize: 13, color: '#10b981', fontWeight: 600, margin: 0 }}>✓ All clear — nothing needs attention.</p>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {buckets.map(b => (
-            <div key={b.key} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-              <div style={{ width: 34, height: 34, borderRadius: 9, background: b.color + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>{b.icon}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)' }}>{b.label}</span>
-                  <span style={{ fontSize: 11, fontWeight: 800, padding: '1px 8px', borderRadius: 999, background: b.color + '22', color: b.color }}>{b.items.length}</span>
-                </div>
-                <p style={{ fontSize: 11, color: 'var(--sa-muted)', margin: '2px 0 7px' }}>{b.hint}</p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {b.items.slice(0, 10).map((c: any) => (
-                    <a key={c.id} href={`https://${c.slug}.colvy.com/admin`} target="_blank" rel="noopener"
-                      title={`Open ${c.name || c.slug} workspace`}
-                      style={{ fontSize: 11.5, fontWeight: 600, padding: '3px 10px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: 'var(--sa-text)', textDecoration: 'none' }}>
-                      {c.name || c.slug || 'Untitled'}
-                    </a>
-                  ))}
-                  {b.items.length > 10 && <span style={{ fontSize: 11.5, color: 'var(--sa-muted)', alignSelf: 'center' }}>+{b.items.length - 10} more</span>}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function OverviewPage({ data, pulse, onRefresh, onGo }: { data: any; pulse: any; onRefresh: () => void; onGo: (page: string) => void }) {
-  const abandoned = pulse?.signupLeads?.abandoned24h || 0
-  return (
-    <div>
-      <SectionHeader title="Overview" sub={`Last updated ${new Date().toLocaleTimeString()}`}
-        action={
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          {abandoned > 0 && (
-            <button onClick={() => onGo('signups')} title="People who asked for a sign-up code in the last 24 hours and didn't finish" style={{ padding: '6px 12px', borderRadius: 999, background: '#f59e0b20', color: '#d97706', fontSize: 12, fontWeight: 700, border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-              ● {abandoned} abandoned sign-up{abandoned === 1 ? '' : 's'} · 24h
-            </button>
-          )}
-          <button onClick={onRefresh} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, border: '1px solid var(--sa-border)', background: 'var(--sa-card)', color: 'var(--sa-muted)', fontSize: 13, cursor: 'pointer' }}>
-            {I.refresh} Refresh
-          </button>
-          </div>
-        }
-      />
-
-      {/* Quick actions */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(230px, 100%), 1fr))', gap: 12, marginBottom: 24 }}>
-        <a href="https://colvy.com/admin" target="_blank" rel="noopener" style={paQuick('#ff7a6b')}>
-          <span style={{ fontSize: 20 }}>🏠</span>
-          <div><p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--sa-text)' }}>Manage colvy.com</p><p style={{ margin: '2px 0 0', fontSize: 11.5, color: 'var(--sa-muted)' }}>Widget, help centre & content for the main site</p></div>
-        </a>
-        <a href="https://colvy.com" target="_blank" rel="noopener" style={paQuick('#6366f1')}>
-          <span style={{ fontSize: 20 }}>🌐</span>
-          <div><p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--sa-text)' }}>View colvy.com</p><p style={{ margin: '2px 0 0', fontSize: 11.5, color: 'var(--sa-muted)' }}>Open the public marketing site</p></div>
-        </a>
-        <a href="https://colvy.com/admin/create-company" target="_blank" rel="noopener" style={paQuick('#10b981')}>
-          <span style={{ fontSize: 20 }}>➕</span>
-          <div><p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--sa-text)' }}>New company</p><p style={{ margin: '2px 0 0', fontSize: 11.5, color: 'var(--sa-muted)' }}>Provision a new customer workspace</p></div>
-        </a>
-      </div>
-
-      {/* KPI grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(220px, 100%), 1fr))', gap: 14, marginBottom: 24 }}>
-        <KPI label="Total Companies" value={data.companies?.toLocaleString() ?? '—'} sub="all workspaces" color="#ff7a6b" />
-        <KPI label="Active Companies" value={data.active?.toLocaleString() ?? '—'} sub="active in 30 days" color="#6366f1" />
-        <KPI label="On trial" value={data.trials?.toLocaleString() ?? '—'} sub="on trial plan" color="#f59e0b" />
-        <KPI label="New Today" value={data.today?.toLocaleString() ?? '0'} sub="signups in last 24h" color="#10b981" />
-        <KPI label="DAC" value={data.dac?.toLocaleString() ?? '—'} sub="active companies today" color="#6366f1" />
-        <KPI label="Total Ideas" value={data.ideas?.toLocaleString() ?? '—'} sub="across all boards" color="#f59e0b" />
-        <KPI label="Help Articles" value={data.articles?.toLocaleString() ?? '—'} sub="published" color="#0891b2" />
-      </div>
-
-      {/* Revenue & growth (SaaS metrics) */}
-      <div style={{ marginBottom: 24 }}>
-        <p style={{ fontSize: 11, fontWeight: 800, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 10px' }}>Revenue & growth</p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(200px, 100%), 1fr))', gap: 14 }}>
-          <KPI label="MRR" value={`$${(data.mrr ?? 0).toLocaleString()}`} sub={data.mrrSource === 'subscriptions' ? 'live from Stripe subs' : 'est. from plans'} color="#8b5cf6" />
-          <KPI label="ARR" value={`$${(data.arr ?? 0).toLocaleString()}`} sub="annual run rate" color="#ec4899" />
-          <KPI label="ARPA" value={`$${(data.arpa ?? 0).toLocaleString()}`} sub="avg revenue / account" color="#8b5cf6" />
-          <KPI label="Paying customers" value={data.paid?.toLocaleString() ?? '—'} sub="on a paid plan" color="#10b981" />
-          <KPI label="New paid · 30d" value={data.newPaidLast30?.toLocaleString() ?? '—'} sub="subscriptions started" color="#10b981" />
-          <KPI label="Churn · 30d" value={data.churn != null ? `${data.churn}%` : '—'} sub={`${data.canceledLast30 ?? 0} cancelled`} color="#ef4444" />
-          <KPI label="Active trials" value={data.activeTrials?.toLocaleString() ?? '—'} sub="not yet expired" color="#f59e0b" />
-          <KPI label="Trials ending · 7d" value={data.trialsEndingSoon?.toLocaleString() ?? '—'} sub="reach out to convert" color="#f59e0b" />
-          <KPI label="Trial → paid" value={data.conversion != null ? `${data.conversion}%` : '—'} sub="paid ÷ (paid + trial)" color="#0891b2" />
-          <KPI label="Expired trials" value={data.expiredTrials?.toLocaleString() ?? '—'} sub="lapsed, not converted" color="#6b7280" />
-          <KPI label="Sales logged · 30d" value={`$${(data.salesLogged30d ?? 0).toLocaleString()}`} sub={`${data.salesCount30d ?? 0} in-chat sales`} color="#16a34a" />
-          <KPI label="Pay links paid · 30d" value={data.payLinksPaid30d != null ? data.payLinksPaid30d.toLocaleString() : '—'} sub="Stripe pay links in chat" color="#635bff" />
-          <KPI label="Bookings · 30d" value={data.bookings30d != null ? data.bookings30d.toLocaleString() : '—'} sub="booked across all workspaces" color="#0891b2" />
-        </div>
-        {/* Top workspaces by revenue tenants attribute to Colvy (in-chat sales). */}
-        {Array.isArray(data.topSalesCompanies) && data.topSalesCompanies.length > 0 && (
-          <div style={{ marginTop: 12, background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 18 }}>
-            <p style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)', margin: '0 0 3px' }}>Revenue generated via Colvy · last 30 days</p>
-            <p style={{ fontSize: 11, color: 'var(--sa-muted)', margin: '0 0 12px' }}>Top workspaces by in-chat sales logged (incl. bank transfers)</p>
-            {data.topSalesCompanies.map((c: any) => (
-              <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '7px 0', borderBottom: '1px solid var(--sa-border)' }}>
-                <span style={{ fontSize: 13, color: 'var(--sa-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
-                <span style={{ fontSize: 13, fontWeight: 800, color: '#16a34a', whiteSpace: 'nowrap' }}>${Number(c.total || 0).toLocaleString()}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Attention Required */}
-      <AttentionPanel />
-
-      {/* Charts row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(320px, 100%), 1fr))', gap: 14, marginBottom: 24 }}>
-        {/* Daily active companies (REAL: activity in conversations + ideas) */}
-        <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 20 }}>
-          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 4 }}>Daily Active Companies</p>
-          <p style={{ fontSize: 11, color: 'var(--sa-muted)', marginBottom: 16 }}>Last 7 days · companies with chat or idea activity</p>
-          <MiniBar data={(data.activeSeries || []).map((d: any) => ({ label: new Date(d.day).toLocaleDateString([], { weekday: 'short' }), value: d.count }))} color="#6366f1" />
-        </div>
-
-        {/* Plan distribution (REAL: companies.plan) */}
-        <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 20 }}>
-          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 16 }}>Plan Distribution</p>
-          {(() => {
-            const dist = data.planDistribution || {}
-            const order = ['enterprise', 'everything', 'omnichannel', 'feedback', 'growth', 'pro', 'business', 'startup', 'trial', 'free', 'suspended']
-            const colors: Record<string, string> = { enterprise: '#8b5cf6', everything: '#ff6a4d', omnichannel: '#2b59ff', feedback: '#7c5cff', growth: '#ff7a6b', pro: '#10b981', business: '#2563eb', startup: '#0891b2', trial: '#f59e0b', free: '#d1d5db', suspended: '#ef4444' }
-            const total = Object.values(dist).reduce((a: number, b: any) => a + b, 0) as number
-            const keys = Object.keys(dist).sort((a, b) => (order.indexOf(a) === -1 ? 99 : order.indexOf(a)) - (order.indexOf(b) === -1 ? 99 : order.indexOf(b)))
-            if (total === 0) return <p style={{ fontSize: 12, color: 'var(--sa-muted)' }}>No companies yet.</p>
-            return keys.map(k => {
-              const pct = Math.round((dist[k] / total) * 100)
-              return (
-                <div key={k} style={{ marginBottom: 10 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                    <span style={{ fontSize: 12, color: 'var(--sa-muted)', textTransform: 'capitalize' }}>{k} ({dist[k]})</span>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sa-text)' }}>{pct}%</span>
-                  </div>
-                  <div style={{ height: 5, borderRadius: 999, background: 'var(--sa-border)' }}>
-                    <div style={{ height: '100%', width: `${pct}%`, background: colors[k] || '#9ca3af', borderRadius: 999 }} />
-                  </div>
-                </div>
-              )
-            })
-          })()}
-        </div>
-      </div>
-
-      {/* Platform health (real, last 24h) + recent admin activity */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(320px, 100%), 1fr))', gap: 14 }}>
-        <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 20 }}>
-          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 4 }}>Platform health</p>
-          <p style={{ fontSize: 11, color: 'var(--sa-muted)', marginBottom: 14 }}>Failures in the last 24 hours · click a row to dig in</p>
-          {pulse === null ? <p style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>Checking…</p>
-          : pulse?.error ? <p style={{ fontSize: 12.5, color: '#ef4444' }}>Couldn’t load health: {pulse.error}</p>
-          : [
-            { label: 'Background jobs', value: `${pulse.jobs?.errors || 0} failed / ${pulse.jobs?.runs || 0} runs`, bad: (pulse.jobs?.errors || 0) > 0, go: 'jobs' },
-            { label: 'API errors', value: `${pulse.api?.errors || 0} errors · ${pulse.api?.warnings || 0} warnings`, bad: (pulse.api?.errors || 0) > 0, go: 'apilogs' },
-            { label: 'Webhooks', value: `${pulse.webhooks?.errors || 0} errors / ${pulse.webhooks?.total || 0} received`, bad: (pulse.webhooks?.errors || 0) > 0, go: 'webhooks' },
-            { label: 'AI agent runs', value: `${pulse.agents?.failed || 0} failed · ${pulse.agents?.stuck || 0} stuck / ${pulse.agents?.runs || 0}`, bad: (pulse.agents?.failed || 0) + (pulse.agents?.stuck || 0) > 0 || !!pulse.agents?.platformPaused, go: 'agents' },
-            { label: 'Connections', value: `${pulse.connections?.broken || 0} need attention / ${pulse.connections?.total || 0}`, bad: (pulse.connections?.broken || 0) > 0, go: 'integrations' },
-            { label: 'Stripe events', value: `${pulse.stripe?.events || 0} received`, bad: false, go: 'system' },
-            ...(pulse.emailReceiving ? [{ label: 'Reading received email', value: pulse.emailReceiving.status === 'working' ? 'Working' : pulse.emailReceiving.status === 'blocked' ? 'Blocked: key can only send' : pulse.emailReceiving.label, bad: pulse.emailReceiving.status !== 'working', go: 'system' }] : []),
-            ...(pulse.signupLeads && !pulse.signupLeads.missing ? [{ label: 'Sign-ups not finished', value: `${pulse.signupLeads.abandoned24h} abandoned · ${pulse.signupLeads.suspicious24h} suspicious`, bad: false, go: 'signups', tag: pulse.signupLeads.abandoned24h || pulse.signupLeads.suspicious24h ? 'Follow up' : 'None' }] : []),
-          ].map((r: any) => (
-            <div key={r.label} onClick={() => onGo(r.go)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 0', borderBottom: '1px solid var(--sa-border)', cursor: 'pointer' }}>
-              <span style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>{r.label}</span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)' }}>{r.value}</span>
-                {r.tag ? <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: r.tag === 'None' ? 'var(--sa-hover)' : '#f59e0b20', color: r.tag === 'None' ? 'var(--sa-muted)' : '#d97706', whiteSpace: 'nowrap' }}>{r.tag}</span> : <Badge status={r.bad ? 'degraded' : 'healthy'} />}
-              </span>
-            </div>
-          ))}
-        </div>
-
-        <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 20 }}>
-          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 14 }}>Recent activity</p>
-          {pulse === null ? <p style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>Loading…</p> : (() => {
-            const items = [
-              ...((pulse?.audit || []) as any[]).map(a => ({ k: `a-${a.id}`, at: a.created_at, color: '#8b5cf6', action: a.summary || String(a.action || '').replace(/[._]/g, ' '), detail: [a.company, a.admin_email].filter(Boolean).join(' · ') })),
-              ...((pulse?.signups || []) as any[]).map(c => ({ k: `c-${c.id}`, at: c.created_at, color: '#10b981', action: 'New company signed up', detail: `${c.name || c.slug} · ${c.slug}.colvy.com · ${c.plan || 'free'}` })),
-            ].sort((x, y) => String(y.at).localeCompare(String(x.at))).slice(0, 9)
-            if (items.length === 0) return <p style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>Nothing recorded yet.</p>
-            return items.map(a => (
-              <div key={a.k} style={{ display: 'flex', gap: 12, marginBottom: 14, alignItems: 'flex-start' }}>
-                <div style={{ width: 7, height: 7, borderRadius: '50%', background: a.color, marginTop: 5, flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: 13, color: 'var(--sa-text)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={a.action}>{a.action}</p>
-                  <p style={{ fontSize: 12, color: 'var(--sa-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.detail}</p>
-                </div>
-                <span style={{ fontSize: 11, color: 'var(--sa-muted)', flexShrink: 0, whiteSpace: 'nowrap' }}>{agoText(a.at)}</span>
-              </div>
-            ))
-          })()}
-          {pulse?.auditMissing && <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: 0 }}>Admin actions appear here once COLVY_V319_SUPER_ADMIN_AUDIT.sql has run.</p>}
-        </div>
-      </div>
-
-      {/* Sign-up code texts: sent vs delivered, top error codes */}
-      {pulse?.signupSms && <div style={{ marginTop: 14 }}><SignupSmsHealth sms={pulse.signupSms} onOpen={() => onGo('signups')} /></div>}
-
-      {/* Email health: recover customer replies saved with an empty body */}
-      <div style={{ marginTop: 14 }}><EmailHealthCard /></div>
-    </div>
-  )
-}
-
-// Plans the console can set (lib/plan). Legacy values still display as-is.
 const CONSOLE_PLANS = ['free', 'trial', 'feedback', 'omnichannel', 'everything', 'enterprise', 'suspended']
 
 function paBtn(color = 'var(--sa-muted)', filled = false): React.CSSProperties {
@@ -3026,9 +2714,6 @@ function paBtn(color = 'var(--sa-muted)', filled = false): React.CSSProperties {
 }
 const paLabel: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--sa-muted)', marginTop: 14, marginBottom: 5 }
 const paInput: React.CSSProperties = { width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'var(--sa-bg)', color: 'var(--sa-text)', fontSize: 13.5, boxSizing: 'border-box', fontFamily: 'inherit' }
-function paQuick(color: string): React.CSSProperties {
-  return { display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', borderRadius: 14, border: '1px solid var(--sa-border)', borderLeft: `3px solid ${color}`, background: 'var(--sa-card)', textDecoration: 'none', cursor: 'pointer' }
-}
 function paField(label: string, value: string, onChange: (v: string) => void, placeholder = '', hint = '') {
   return (
     <div>
@@ -4789,23 +4474,39 @@ export default function SuperAdmin() {
   // then the stored preference is applied on mount below.
   const [dark, setDarkState] = useState(false)
   // The active tab is mirrored in the URL hash so a reload stays on the same
-  // page instead of snapping back to Overview.
+  // page instead of snapping back to the dashboard.
   const [page, setPageState] = useState('overview')
   const [data, setData] = useState<any>({})
   const [collapsed, setCollapsed] = useState(false)
+  const [mobile, setMobile] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  // Menu groups the user has closed (remembered). The current page's group is always open.
+  const [closedGroups, setClosedGroups] = useState<string[]>([])
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQ, setSearchQ] = useState('')
   const [searchIdx, setSearchIdx] = useState(0)
   const [pulse, setPulse] = useState<any>(null)
   // The same computed status customers see on /status (lib/status-health).
   const [live, setLive] = useState<any>(null)
+  const [refreshing, setRefreshing] = useState(false)
 
-  // Overview numbers + live health signals (both service-role server routes).
-  const loadDashboard = async () => {
-    const [a, p, st] = await Promise.all([paJson('/api/platform-admin/analytics'), paJson('/api/platform-admin/pulse'), paJson('/api/status')])
-    if (a.ok) setData(a.data)
-    setPulse(p.ok ? p.data : { error: p.data.error || 'Could not load health', issues: [] })
-    setLive(st.ok && st.data?.overall ? st.data : null)
+  // Dashboard numbers + live health signals. The last copy is kept in this
+  // browser so the dashboard draws at once; each part replaces it as it
+  // arrives (the numbers are saved server-side too, lib/intel/cache).
+  const DASH_KEY = 'colvy:pa-dashboard'
+  const saveDash = (patch: any) => {
+    try { const cur = JSON.parse(localStorage.getItem(DASH_KEY) || '{}'); localStorage.setItem(DASH_KEY, JSON.stringify({ ...cur, ...patch })) } catch {}
+  }
+  const loadDashboard = async (fresh = false) => {
+    setRefreshing(true)
+    const a = paJson(`/api/platform-admin/analytics${fresh ? '?fresh=1' : ''}`).then(r => { if (r.ok) { setData(r.data); saveDash({ data: r.data }) } })
+    const p = paJson('/api/platform-admin/pulse').then(r => {
+      const v = r.ok ? r.data : { error: r.data.error || 'Could not load health', issues: [] }
+      setPulse(v); if (r.ok) saveDash({ pulse: v })
+    })
+    const st = paJson('/api/status').then(r => { const v = r.ok && r.data?.overall ? r.data : null; setLive(v); if (v) saveDash({ live: v }) })
+    await Promise.allSettled([a, p, st])
+    setRefreshing(false)
   }
 
   const setDark = (v: boolean) => {
@@ -4814,26 +4515,42 @@ export default function SuperAdmin() {
   }
   const setPage = (p: string) => {
     setPageState(p)
+    setMenuOpen(false)
     try { window.history.replaceState(null, '', `#${p}`) } catch {}
+    try { window.scrollTo({ top: 0 }) } catch {}
   }
+  const toggleGroup = (g: string) => setClosedGroups(prev => {
+    const next = prev.includes(g) ? prev.filter(x => x !== g) : [...prev, g]
+    try { localStorage.setItem('colvy:pa-closed-groups', JSON.stringify(next)) } catch {}
+    return next
+  })
 
-  // On mount: restore the remembered theme and the tab from the URL hash.
+  // On mount: restore the theme, menu, last dashboard and the tab from the URL hash.
   useEffect(() => {
     try {
       const t = localStorage.getItem('colvy:pa-theme')
       if (t === 'dark') setDarkState(true)
+      const g = JSON.parse(localStorage.getItem('colvy:pa-closed-groups') || 'null')
+      if (Array.isArray(g)) setClosedGroups(g)
+      const d = JSON.parse(localStorage.getItem(DASH_KEY) || 'null')
+      if (d?.data) setData(d.data)
+      if (d?.pulse) setPulse(d.pulse)
+      if (d?.live) setLive(d.live)
     } catch {}
-    // Phones: start with the narrow icon sidebar so pages get the width.
-    try { if (window.innerWidth < 768) setCollapsed(true) } catch {}
+    // Phones: the menu slides over the page instead of taking width.
+    const mq = window.matchMedia('(max-width: 767px)')
+    const onMq = () => setMobile(mq.matches)
+    onMq(); mq.addEventListener('change', onMq)
     try {
       // Hash may carry a sub-target (e.g. "companies/<id>" deep-links straight to
       // a company's detail) — the page key is just the first segment.
       const h = window.location.hash.replace(/^#/, '')
       if (h) setPageState(h.split('/')[0])
     } catch {}
+    return () => mq.removeEventListener('change', onMq)
   }, [])
 
-  // Global ⌘K / Ctrl+K opens the nav search.
+  // Global ⌘K / Ctrl+K opens the search.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); setSearchOpen(true) }
@@ -4843,13 +4560,7 @@ export default function SuperAdmin() {
   }, [])
   useEffect(() => { if (searchOpen) { setSearchQ(''); setSearchIdx(0) } }, [searchOpen])
 
-  // Flat list of navigable destinations (skip section headers).
-  const searchItems = NAV.filter((n: any) => !n.section) as { key: string; label: string; icon: string }[]
-  const searchResults = (() => {
-    const s = searchQ.trim().toLowerCase()
-    if (!s) return searchItems
-    return searchItems.filter(it => it.label.toLowerCase().includes(s) || it.key.toLowerCase().includes(s))
-  })()
+  const searchResults = searchNav(searchQ)
   const goSearch = (key: string) => { setSearchOpen(false); setPage(key) }
 
   useEffect(() => {
@@ -4898,7 +4609,30 @@ export default function SuperAdmin() {
     </div>
   )
 
-  const SIDEBAR_W = collapsed ? 64 : 220
+  const rail = collapsed && !mobile
+  const SIDEBAR_W = rail ? 64 : 236
+  const current = navItem(page)
+  const currentGroup = groupOf(page)
+  const hover = (key: string) => { if (key.startsWith('intel')) prefetchIntel(key) }
+
+  const navButton = (item: { key: string; label: string; icon: string; desc: string }) => {
+    const active = page === item.key
+    return (
+      <button key={item.key} onClick={() => setPage(item.key)} onMouseEnter={() => hover(item.key)} onFocus={() => hover(item.key)}
+        title={rail ? item.label : item.desc} aria-current={active ? 'page' : undefined}
+        className={`pa-nav${active ? ' pa-nav-on' : ''}`}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+          padding: rail ? '9px' : '7px 10px', justifyContent: rail ? 'center' : 'flex-start',
+          borderRadius: 9, border: 'none', cursor: 'pointer', marginBottom: 1,
+          background: active ? '#ff7a6b18' : 'transparent', color: active ? '#ff7a6b' : 'var(--sa-muted)',
+          fontSize: 13, fontWeight: active ? 650 : 500, textAlign: 'left',
+        }}>
+        <span style={{ flexShrink: 0, display: 'flex' }}>{(I as any)[item.icon]}</span>
+        {!rail && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>}
+      </button>
+    )
+  }
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Segoe UI", sans-serif', ...css as any } as any}>
@@ -4912,90 +4646,92 @@ export default function SuperAdmin() {
         button { font-family: inherit; }
         input { font-family: inherit; }
         select { font-family: inherit; }
+        .pa-nav:not(.pa-nav-on):hover { background: var(--sa-hover) !important; color: var(--sa-text) !important; }
+        .pa-group:hover { color: var(--sa-text) !important; }
         @media (max-width: 640px) {
           .pa-content { padding: 16px 12px !important; }
           .pa-topbar { padding: 0 12px !important; }
-          .pa-topsearch { display: none; }
+          .pa-topsearch { display: none !important; }
         }
       `}</style>
 
       {/* ── SIDEBAR ─────────────────────────────────────────────────────────── */}
+      {mobile && menuOpen && <div onClick={() => setMenuOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 39 }} />}
       <aside style={{
         width: SIDEBAR_W, flexShrink: 0, background: 'var(--sa-sidebar)',
         borderRight: '1px solid var(--sa-border)',
         position: 'fixed', top: 0, left: 0, bottom: 0,
         display: 'flex', flexDirection: 'column',
-        transition: 'width 0.2s ease', overflow: 'hidden', zIndex: 40,
+        transition: 'width 0.2s ease, transform 0.2s ease', overflow: 'hidden', zIndex: 40,
+        transform: mobile && !menuOpen ? 'translateX(-100%)' : 'none',
+        boxShadow: mobile && menuOpen ? '0 20px 60px rgba(0,0,0,0.3)' : 'none',
       }}>
         {/* Logo */}
-        <div style={{ padding: '18px 16px 14px', borderBottom: '1px solid var(--sa-border)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+        <div style={{ padding: '16px 14px 12px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
           <div style={{ width: 32, height: 32, borderRadius: 9, background: 'linear-gradient(135deg, #ff7a6b, #ff5247)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
           </div>
-          {!collapsed && (
+          {!rail && (
             <div>
-              <p style={{ fontSize: 13, fontWeight: 800, color: 'var(--sa-text)', lineHeight: 1.2 }}>Colvy</p>
-              <p style={{ fontSize: 10, color: 'var(--sa-muted)', fontWeight: 500 }}>Super Admin</p>
+              <p style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--sa-text)', lineHeight: 1.2 }}>Colvy</p>
+              <p style={{ fontSize: 10.5, color: 'var(--sa-muted)', fontWeight: 500 }}>Super Admin</p>
             </div>
           )}
-          <button onClick={() => setCollapsed(!collapsed)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--sa-muted)', padding: 4, flexShrink: 0 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          <button onClick={() => (mobile ? setMenuOpen(false) : setCollapsed(!collapsed))} title={mobile ? 'Close menu' : collapsed ? 'Expand menu' : 'Collapse menu'} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--sa-muted)', padding: 4, flexShrink: 0, display: rail ? 'none' : 'flex' }}>
+            {mobile ? I.x : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/></svg>}
           </button>
         </div>
+        {rail && (
+          <button onClick={() => setCollapsed(false)} title="Expand menu" style={{ margin: '0 auto 6px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--sa-muted)', padding: 6, display: 'flex' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/></svg>
+          </button>
+        )}
 
         {/* Nav */}
-        <nav style={{ flex: 1, overflowY: 'auto', padding: '8px 8px' }}>
-          {/* Search / command palette — jumps to any section. */}
+        <nav style={{ flex: 1, overflowY: 'auto', padding: '0 8px 10px' }}>
           <button onClick={() => setSearchOpen(true)} title="Search (⌘K)"
             style={{
               width: '100%', display: 'flex', alignItems: 'center', gap: 9,
-              padding: collapsed ? '9px' : '8px 10px', justifyContent: collapsed ? 'center' : 'flex-start',
-              borderRadius: 9, border: '1px solid var(--sa-border)', cursor: 'pointer', marginBottom: 8,
+              padding: rail ? '9px' : '8px 10px', justifyContent: rail ? 'center' : 'flex-start',
+              borderRadius: 9, border: '1px solid var(--sa-border)', cursor: 'pointer', marginBottom: 10,
               background: 'var(--sa-hover)', color: 'var(--sa-muted)', fontSize: 13,
             }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-            {!collapsed && <>
-              <span style={{ flex: 1, textAlign: 'left' }}>Search…</span>
+            {I.search}
+            {!rail && <>
+              <span style={{ flex: 1, textAlign: 'left' }}>Find a page…</span>
               <span style={{ fontSize: 10.5, fontWeight: 700, border: '1px solid var(--sa-border)', borderRadius: 5, padding: '1px 5px' }}>⌘K</span>
             </>}
           </button>
-          {NAV.map((item: any, idx) => {
-            if (item.section) {
-              if (collapsed) return null
-              return <p key={idx} style={{ fontSize: 10, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', padding: '14px 10px 4px' }}>{item.section}</p>
-            }
-            const active = page === item.key
+
+          {navButton(NAV_HOME)}
+
+          {NAV_GROUPS.map(g => {
+            const hasActive = g.items.some(i => i.key === page)
+            const open = rail || hasActive || !closedGroups.includes(g.title)
             return (
-              <button key={item.key} onClick={() => setPage(item.key)}
-                title={collapsed ? item.label : undefined}
-                style={{
-                  width: '100%', display: 'flex', alignItems: 'center', gap: 9,
-                  padding: collapsed ? '9px' : '8px 10px',
-                  justifyContent: collapsed ? 'center' : 'flex-start',
-                  borderRadius: 9, border: 'none', cursor: 'pointer', marginBottom: 1,
-                  background: active ? '#ff7a6b18' : 'transparent',
-                  color: active ? '#ff7a6b' : 'var(--sa-muted)',
-                  fontSize: 13, fontWeight: active ? 600 : 400,
-                  transition: 'all 0.1s',
-                }}
-                onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--sa-hover)'; e.currentTarget.style.color = 'var(--sa-text)' }}
-                onMouseLeave={e => { e.currentTarget.style.background = active ? '#ff7a6b18' : 'transparent'; e.currentTarget.style.color = active ? '#ff7a6b' : 'var(--sa-muted)' }}>
-                <span style={{ flexShrink: 0 }}>{(I as any)[item.icon]}</span>
-                {!collapsed && item.label}
-              </button>
+              <div key={g.title} style={{ marginTop: rail ? 6 : 10, paddingTop: rail ? 6 : 0, borderTop: rail ? '1px solid var(--sa-border)' : 'none' }}>
+                {!rail && (
+                  <button onClick={() => toggleGroup(g.title)} className="pa-group" aria-expanded={open}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', background: 'none', border: 'none', cursor: hasActive ? 'default' : 'pointer', color: hasActive ? 'var(--sa-text)' : 'var(--sa-muted)', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    <span style={{ flex: 1, textAlign: 'left' }}>{g.title}</span>
+                    {!hasActive && <span style={{ display: 'flex', transform: open ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s' }}>{I.chevron}</span>}
+                  </button>
+                )}
+                {open && g.items.map(navButton)}
+              </div>
             )
           })}
         </nav>
 
         {/* Bottom */}
-        <div style={{ padding: '12px 8px', borderTop: '1px solid var(--sa-border)', flexShrink: 0 }}>
-          <button onClick={() => setDark(!dark)}
-            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: collapsed ? '9px' : '8px 10px', justifyContent: collapsed ? 'center' : 'flex-start', borderRadius: 9, border: 'none', cursor: 'pointer', background: 'transparent', color: 'var(--sa-muted)', fontSize: 13 }}>
-            <span>{dark ? I.sun : I.moon}</span>
-            {!collapsed && (dark ? 'Light mode' : 'Dark mode')}
+        <div style={{ padding: '10px 8px', borderTop: '1px solid var(--sa-border)', flexShrink: 0 }}>
+          <button onClick={() => setDark(!dark)} className="pa-nav"
+            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: rail ? '9px' : '8px 10px', justifyContent: rail ? 'center' : 'flex-start', borderRadius: 9, border: 'none', cursor: 'pointer', background: 'transparent', color: 'var(--sa-muted)', fontSize: 13 }}>
+            <span style={{ display: 'flex' }}>{dark ? I.sun : I.moon}</span>
+            {!rail && (dark ? 'Light mode' : 'Dark mode')}
           </button>
-          {!collapsed && (
-            <div style={{ padding: '8px 10px', marginTop: 4 }}>
+          {!rail && (
+            <div style={{ padding: '8px 10px', marginTop: 2 }}>
               <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--sa-text)' }}>Bikiran</p>
               <p style={{ fontSize: 11, color: 'var(--sa-muted)' }}>bishalstha76@gmail.com</p>
             </div>
@@ -5003,12 +4739,12 @@ export default function SuperAdmin() {
         </div>
       </aside>
 
-      {/* ── SEARCH PALETTE ──────────────────────────────────────────────────── */}
+      {/* ── SEARCH ──────────────────────────────────────────────────────────── */}
       {searchOpen && (
         <div onClick={() => setSearchOpen(false)}
           style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '12vh' }}>
           <div onClick={e => e.stopPropagation()}
-            style={{ width: '100%', maxWidth: 520, margin: '0 16px', background: 'var(--sa-bg)', border: '1px solid var(--sa-border)', borderRadius: 14, boxShadow: '0 24px 64px rgba(0,0,0,0.35)', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '68vh' }}>
+            style={{ width: '100%', maxWidth: 560, margin: '0 16px', background: 'var(--sa-bg)', border: '1px solid var(--sa-border)', borderRadius: 14, boxShadow: '0 24px 64px rgba(0,0,0,0.35)', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '70vh' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '13px 16px', borderBottom: '1px solid var(--sa-border)' }}>
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--sa-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
               <input autoFocus value={searchQ}
@@ -5019,18 +4755,22 @@ export default function SuperAdmin() {
                   else if (e.key === 'Enter') { e.preventDefault(); const r = searchResults[searchIdx]; if (r) goSearch(r.key) }
                   else if (e.key === 'Escape') { setSearchOpen(false) }
                 }}
-                placeholder="Search sections…"
+                placeholder="Find a page: try “mrr”, “stripe”, “cron”, “spam”…"
                 style={{ flex: 1, border: 'none', outline: 'none', fontSize: 15, background: 'transparent', color: 'var(--sa-text)' }} />
               <span style={{ fontSize: 11, color: 'var(--sa-muted)' }}>Esc</span>
             </div>
             <div style={{ overflowY: 'auto', padding: 6 }}>
               {searchResults.length === 0 ? (
-                <p style={{ padding: 22, textAlign: 'center', color: 'var(--sa-muted)', fontSize: 14 }}>No matches for “{searchQ}”.</p>
+                <p style={{ padding: 22, textAlign: 'center', color: 'var(--sa-muted)', fontSize: 14 }}>No page matches “{searchQ}”.</p>
               ) : searchResults.map((r, i) => (
-                <button key={r.key} onMouseEnter={() => setSearchIdx(i)} onClick={() => goSearch(r.key)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '9px 12px', borderRadius: 9, border: 'none', cursor: 'pointer', background: i === searchIdx ? '#ff7a6b18' : 'transparent', color: i === searchIdx ? '#ff7a6b' : 'var(--sa-text)' }}>
-                  <span style={{ flexShrink: 0, opacity: 0.8 }}>{(I as any)[r.icon]}</span>
-                  <span style={{ fontSize: 13.5, fontWeight: 600 }}>{r.label}</span>
+                <button key={r.key} onMouseEnter={() => { setSearchIdx(i); hover(r.key) }} onClick={() => goSearch(r.key)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', padding: '9px 12px', borderRadius: 9, border: 'none', cursor: 'pointer', background: i === searchIdx ? '#ff7a6b18' : 'transparent', color: i === searchIdx ? '#ff7a6b' : 'var(--sa-text)' }}>
+                  <span style={{ flexShrink: 0, opacity: 0.8, display: 'flex' }}>{(I as any)[r.icon]}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 650 }}>{r.label}</span>
+                    <span style={{ display: 'block', fontSize: 11.5, color: 'var(--sa-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.desc}</span>
+                  </span>
+                  {r.group && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--sa-muted)', border: '1px solid var(--sa-border)', borderRadius: 999, padding: '2px 8px', flexShrink: 0 }}>{r.group}</span>}
                 </button>
               ))}
             </div>
@@ -5039,14 +4779,24 @@ export default function SuperAdmin() {
       )}
 
       {/* ── MAIN ────────────────────────────────────────────────────────────── */}
-      <main style={{ marginLeft: SIDEBAR_W, flex: 1, minWidth: 0, background: 'var(--sa-bg)', minHeight: '100vh', transition: 'margin-left 0.2s ease' }}>
+      <main style={{ marginLeft: mobile ? 0 : SIDEBAR_W, flex: 1, minWidth: 0, background: 'var(--sa-bg)', minHeight: '100vh', transition: 'margin-left 0.2s ease' }}>
         {/* Topbar */}
         <div className="pa-topbar" style={{ height: 54, borderBottom: '1px solid var(--sa-border)', display: 'flex', alignItems: 'center', padding: '0 24px', gap: 12, background: 'var(--sa-sidebar)', position: 'sticky', top: 0, zIndex: 30 }}>
-          <div className="pa-topsearch" style={{ flex: 1, position: 'relative', maxWidth: 400 }}>
-            <div style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--sa-muted)' }}>{I.search}</div>
-            <input readOnly onFocus={e => { e.currentTarget.blur(); setSearchOpen(true) }} onClick={() => setSearchOpen(true)} placeholder="Jump to a section… (⌘K)" style={{ cursor: 'pointer', width: '100%', padding: '7px 12px 7px 34px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'var(--sa-hover)', color: 'var(--sa-text)', fontSize: 13, outline: 'none' }} />
+          {mobile && (
+            <button onClick={() => setMenuOpen(true)} aria-label="Open menu" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--sa-text)', padding: 4, display: 'flex' }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+            </button>
+          )}
+          {/* Where you are */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, fontSize: 13 }}>
+            {currentGroup && <><span style={{ color: 'var(--sa-muted)', whiteSpace: 'nowrap' }}>{currentGroup}</span><span style={{ color: 'var(--sa-muted)' }}>/</span></>}
+            <span style={{ color: 'var(--sa-text)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{current?.label || 'Dashboard'}</span>
           </div>
-          <div style={{ display: 'flex', gap: 6, marginLeft: 'auto', minWidth: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <div className="pa-topsearch" style={{ position: 'relative', width: 260, marginLeft: 'auto' }}>
+            <div style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--sa-muted)', display: 'flex' }}>{I.search}</div>
+            <input readOnly onFocus={e => { e.currentTarget.blur(); setSearchOpen(true) }} onClick={() => setSearchOpen(true)} placeholder="Find a page… ⌘K" style={{ cursor: 'pointer', width: '100%', padding: '7px 12px 7px 34px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'var(--sa-hover)', color: 'var(--sa-text)', fontSize: 13, outline: 'none' }} />
+          </div>
+          <div style={{ display: 'flex', gap: 6, marginLeft: mobile ? 'auto' : 0, minWidth: 0, flexShrink: 0 }}>
             {(() => {
               // Live status (the public page's computed verdict) first when
               // something is down; otherwise the 24h failure count; the
@@ -5056,20 +4806,19 @@ export default function SuperAdmin() {
               const LIVE_C: Record<string, string> = { operational: '#10b981', partial: '#6b7280', degraded: '#f59e0b', outage: '#ef4444', unknown: '#6b7280' }
               const [txt, c, go] = pulse === null && !live ? ['● Checking…', '#6b7280', 'overview']
                 : lv === 'outage' || lv === 'degraded' ? [`● ${live.overall.title}`, LIVE_C[lv], 'status']
-                : issues.length ? [`● ${issues.length} issue${issues.length === 1 ? '' : 's'} · 24h`, '#f59e0b', 'system']
+                : issues.length ? [`● ${issues.length} issue${issues.length === 1 ? '' : 's'} · 24h`, '#f59e0b', 'intel_system']
                 : lv ? [`● ${live.overall.title}`, LIVE_C[lv] || '#6b7280', 'status']
-                : pulse?.error ? ['● Health unavailable', '#6b7280', 'system']
-                : ['● No failures · 24h', '#6b7280', 'system']
-              return <button onClick={() => setPage(go)} title={[live?.overall?.sub, ...issues].filter(Boolean).join('\n') || 'No failures in the last 24 hours'} style={{ padding: '4px 10px', borderRadius: 999, background: c + '20', color: c, fontSize: 11, fontWeight: 700, border: 'none', cursor: 'pointer' }}>{txt}</button>
+                : pulse?.error ? ['● Health unavailable', '#6b7280', 'intel_system']
+                : ['● No failures · 24h', '#6b7280', 'intel_system']
+              return <button onClick={() => setPage(go)} title={[live?.overall?.sub, ...issues].filter(Boolean).join('\n') || 'No failures in the last 24 hours'} style={{ padding: '4px 10px', borderRadius: 999, background: c + '20', color: c, fontSize: 11, fontWeight: 700, border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}>{txt}</button>
             })()}
           </div>
-          <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #ff7a6b, #6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>B</div>
         </div>
 
         {/* Page content */}
-        {/* Signups uses the full width (no side gap on wide screens). */}
+        {/* Wide tables (sign-ups, web forms, SMS credits) use the full width. */}
         <div className="pa-content" style={{ padding: '28px 28px', maxWidth: page === 'signups' || page === 'webforms' || page === 'smscredits' ? 'none' : 1400 }}>
-          {page === 'overview'   && <OverviewPage data={data} pulse={pulse} onRefresh={() => { setPulse(null); loadDashboard() }} onGo={setPage} />}
+          {page === 'overview'   && <Dashboard data={data} pulse={pulse} live={live} refreshing={refreshing} onRefresh={() => loadDashboard(true)} onGo={setPage} />}
           {page === 'companies'  && <CompaniesPage />}
           {page === 'users'      && <UsersPage />}
           {page === 'signups'    && <SignupsPage />}

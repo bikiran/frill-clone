@@ -1,30 +1,29 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { useEffect, useMemo, useState } from 'react'
+import { useIntel, REPORT, type IntelView, type Range } from './data'
+import { groupOf } from '../nav'
+
+export { INTEL_VIEWS, type IntelView } from './data'
 
 // Super Admin → Intelligence: website analytics (PostHog) and business
 // analytics (Supabase). Reads /api/platform-admin/intel on the server.
 // Every number on these pages is a real count of collected data; with nothing
 // collected yet a page says so instead of showing anything made up.
 
-export type IntelView = 'intel' | 'intel_live' | 'intel_traffic' | 'intel_pages' | 'intel_journeys' | 'intel_funnels' | 'intel_business' | 'intel_health' | 'intel_revenue' | 'intel_system'
-export const INTEL_VIEWS: IntelView[] = ['intel', 'intel_live', 'intel_traffic', 'intel_pages', 'intel_journeys', 'intel_funnels', 'intel_business', 'intel_health', 'intel_revenue', 'intel_system']
-
 const CORAL = '#ff7a6b'
 const GREEN = '#16a34a'
 const RED = '#dc2626'
 const AMBER = '#d97706'
 const INDIGO = '#6366f1'
-const REPORT: Record<IntelView, string> = { intel: 'overview', intel_live: 'live', intel_traffic: 'traffic', intel_pages: 'pages', intel_journeys: 'journeys', intel_funnels: 'funnels', intel_business: 'business', intel_health: 'health', intel_revenue: 'revenue', intel_system: 'system' }
 const TITLES: Record<IntelView, [string, string]> = {
-  intel: ['Executive overview', 'Visitors, engagement and conversion on colvy.com, against the previous period'],
+  intel: ['Website overview', 'Visitors, engagement and conversion on colvy.com, against the previous period'],
   intel_live: ['Live visitors', 'Who is on colvy.com and in the app right now. Refreshes every 15 seconds'],
-  intel_traffic: ['Traffic acquisition', 'Where visits come from: channels, referrers, campaigns, landing pages, devices and places'],
+  intel_traffic: ['Traffic sources', 'Where visits come from: channels, referrers, campaigns, landing pages, devices and places'],
   intel_pages: ['Pages & clicks', 'The pages people view, how long they stay, and the buttons they press'],
   intel_journeys: ['Visitor journeys', 'The paths people take through the site, where they arrive and where they leave'],
-  intel_funnels: ['Signup funnels', 'From first visit to a working workspace, and where people drop off'],
-  intel_business: ['Business analytics', 'New workspaces, how far they get, where they came from and what they use'],
+  intel_funnels: ['Sign-up funnel', 'From first visit to a working workspace, and where people drop off'],
+  intel_business: ['Onboarding & adoption', 'New workspaces, how far they get, where they came from and what they use'],
   intel_health: ['Customer health', 'Which businesses are thriving, which need a hand, and what’s broken'],
   intel_revenue: ['Revenue', 'MRR and how it moves, who pays, what’s at risk, and what it costs to serve'],
   intel_system: ['System health', 'Jobs, webhooks, errors, status and alerts across the platform'],
@@ -47,35 +46,6 @@ function downloadCsv(name: string, rows: Record<string, any>[], cols: { key: str
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
   const a = document.createElement('a'); a.href = url; a.download = `${name}.csv`; a.click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
-}
-
-// ── Data ─────────────────────────────────────────────────────────────────────
-type Range = { range: string; from?: string; to?: string }
-
-function useIntel(report: string, r: Range, pollMs = 0) {
-  const [res, setRes] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
-  const seq = useRef(0)
-  const load = useCallback(async (fresh = false) => {
-    const my = ++seq.current
-    setLoading(true)
-    try {
-      const { data } = await supabase.auth.getSession()
-      const token = data?.session?.access_token
-      const q = new URLSearchParams({ report, range: r.range, ...(r.range === 'custom' && r.from && r.to ? { from: r.from, to: r.to } : {}), ...(fresh ? { fresh: '1' } : {}) })
-      const resp = await fetch(`/api/platform-admin/intel?${q}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-      const j = await resp.json().catch(() => ({ error: 'Bad response' }))
-      if (my === seq.current) setRes(resp.ok || j.configured === false ? j : { error: j.error || `HTTP ${resp.status}` })
-    } catch (e: any) { if (my === seq.current) setRes({ error: e?.message || 'Could not reach the server' }) }
-    finally { if (my === seq.current) setLoading(false) }
-  }, [report, r.range, r.from, r.to])
-  useEffect(() => { load() }, [load])
-  useEffect(() => {
-    if (!pollMs) return
-    const t = setInterval(() => { if (document.visibilityState === 'visible') load() }, pollMs)
-    return () => clearInterval(t)
-  }, [pollMs, load])
-  return { res, loading, reload: () => load(true) }
 }
 
 // ── Primitives ───────────────────────────────────────────────────────────────
@@ -940,7 +910,7 @@ export default function Intelligence({ view, onOpenCompany, onNavigate }: { view
       <style>{`@keyframes ilPulse { 0% { transform: scale(1); opacity: .6 } 100% { transform: scale(2.6); opacity: 0 } } @keyframes ilFade { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } } @keyframes spin { to { transform: rotate(360deg) } }`}</style>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
         <div>
-          <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: CORAL, marginBottom: 6 }}>Intelligence</div>
+          <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: CORAL, marginBottom: 6 }}>{groupOf(view) || 'Intelligence'}</div>
           <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--sa-text)', margin: 0, letterSpacing: '-0.02em' }}>{title}</h1>
           <p style={{ fontSize: 13, color: 'var(--sa-muted)', margin: '5px 0 0' }}>{note}</p>
         </div>
@@ -962,7 +932,7 @@ export default function Intelligence({ view, onOpenCompany, onNavigate }: { view
           )}
           <button onClick={reload} title="Refresh now" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 11px', borderRadius: 10, border: '1px solid var(--sa-border)', background: 'var(--sa-card)', color: 'var(--sa-muted)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" style={{ animation: loading ? 'spin 1s linear infinite' : undefined }}><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
-            {res?.cachedAt ? `Updated ${ago(res.cachedAt)}` : loading ? 'Loading…' : 'Refresh'}
+            {loading && res ? 'Updating…' : res?.cachedAt ? `Updated ${ago(res.cachedAt)}` : loading ? 'Loading…' : 'Refresh'}
           </button>
         </div>
       </div>

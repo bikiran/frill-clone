@@ -64,7 +64,7 @@ async function inBatches<T, R>(xs: T[], n: number, fn: (x: T) => Promise<R>): Pr
 
 export async function gatherJobs(db: any, now = Date.now()): Promise<JobRow[]> {
   const since = new Date(now - DAY).toISOString()
-  return inBatches(CRON_JOBS, 8, async j => {
+  return inBatches(CRON_JOBS, 20, async j => {
     // Which of its possible names it actually logs under.
     let name = j.names[0], last: any[] = []
     for (const n of j.names) {
