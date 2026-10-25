@@ -5,6 +5,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useAiDraft, AiDraftButton, AiDraftInfo } from '@/components/AiDraft'
 import { uploadDirect } from '@/lib/upload-attachment'
 import VoiceDictationButton from '@/components/VoiceDictationButton'
+import { voiceKind, tagVoice } from '@/lib/voice-typed'
 import Popover, { usePopover } from '@/components/composer/Popover'
 import TemplatesButton from '@/components/composer/TemplatesButton'
 import type { TemplateVars } from '@/lib/composer-templates'
@@ -90,9 +91,13 @@ export default function EmailComposer({
     return sel
   }
   const insertAtCursor = (text: string) => { if (!restoreCaret()) return; document.execCommand('insertText', false, text); syncBody(); rememberCaret() }
+  // What Colvy Voice put in this email, to tag it "Voice typed" / "Voice assisted".
+  const dictatedRef = useRef<string[]>([])
+  useEffect(() => { dictatedRef.current = [] }, [conversationId])
   const insertDictation = (text: string) => {
     const el = editorRef.current
     if (!el || !text.trim()) return
+    dictatedRef.current.push(text.trim())
     const sel = restoreCaret()
     // A space between the existing text and the new words, unless at a line start.
     const before = (() => {
@@ -283,6 +288,8 @@ export default function EmailComposer({
     const text = bodyText()
     if (!text) { setErr('Write a message'); return }
     setSending(true); setErr('')
+    const voice = voiceKind(text, dictatedRef.current)
+    const since = new Date(Date.now() - 5000).toISOString()
     try {
       const res = await authFetch('/api/email/reply', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -301,6 +308,8 @@ export default function EmailComposer({
       if (editorRef.current) editorRef.current.innerHTML = ''
       setBodyHtml(''); setCc(''); setShowCc(false); setBcc(''); setShowBcc(false); setAttachments([])
       clearDraft()
+      dictatedRef.current = []
+      await tagVoice(conversationId, since, voice)
       onSent()
     } catch (e: any) {
       setErr(e.message || 'Could not send')
