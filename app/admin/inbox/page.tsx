@@ -1,5 +1,6 @@
 'use client'
 
+import { VoiceTag } from '@/components/VoiceTag'
 import { useAttachmentToken } from '@/lib/useAttachmentToken'
 import VoicePlayer from '@/components/VoicePlayer'
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react'
@@ -9861,6 +9862,11 @@ export default function InboxPage() {
                         maxWidth: (msg as any).metadata?.story_reply ? 182 : (atts.some((a: any) => a.kind === 'image' || a.kind === 'video') ? 300 : undefined),
                         width: (msg as any).metadata?.story_reply ? 'fit-content' : undefined,
                       }}>
+                        {isAgent && (msg as any).metadata?.voice && (
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', margin: atts.length ? '4px 8px 2px' : '0 0 2px' }}>
+                            <VoiceTag kind={(msg as any).metadata.voice} onColour />
+                          </div>
+                        )}
                         {/* Instagram story reply — show the story they replied
                             to (thumbnail) above their message, like Coax. */}
                         {(msg as any).metadata?.story_reply && (() => {

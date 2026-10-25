@@ -1,6 +1,7 @@
 'use client'
 
 import { useAttachmentToken } from '@/lib/useAttachmentToken'
+import { VoiceTag } from '@/components/VoiceTag'
 import { useEffect, useRef, useState } from 'react'
 import { quotedDateOf, emailFrameDoc, estimateEmailHeight } from '@/lib/email-text'
 import { toPublicUrl, sizedImageUrl, sizedImageFallback } from '@/lib/storage-url'
@@ -156,6 +157,7 @@ export default function EmailMessage({ msg, agentColor, onOpenMedia, businessNam
               {isAgent ? <SentPlane /> : <InboxIn />}
               {isAgent ? (isAuto ? 'Email sent automatically' : 'Email sent') : 'Email received'}
             </span>
+            {isAgent && <VoiceTag kind={(msg as any)?.metadata?.voice} />}
             {when && <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--slate)', whiteSpace: 'nowrap' }} title={isAgent ? 'Sent' : 'Received'}>{when}</span>}
           </div>
           {isAgent ? (
