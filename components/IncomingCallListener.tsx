@@ -8,6 +8,7 @@ import { getVoiceProvider } from '@/lib/voice-provider-client'
 import { setActiveCall, clearActiveCall } from '@/lib/active-call'
 import { listCallDevices, handoffFetch } from '@/lib/call-device'
 import { hdDeviceOptions, applyHdAudio } from '@/lib/voice-audio'
+import { createRinger, type Ringer } from '@/lib/ringtone'
 
 // Pull the useful bit out of a Twilio Voice SDK error for the status pill.
 function twErr(e: any): string {
@@ -926,65 +927,11 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
     setTimeout(() => setEnded(null), 900)
   }
 
-  // Incoming-call ringtone. Prefer the branded ringtone file (the same one the
-  // mobile app rings with, so a call sounds the same on web and phone); fall back
-  // to a WebAudio two-tone only if the audio file can't play (autoplay blocked,
-  // decode error) so a call is never silent before it's answered.
-  const ringOscRef = useRef<any>(null)
-  const ringAudioRef = useRef<HTMLAudioElement | null>(null)
-  const ringCapRef = useRef<any>(null)
-  const startOscRing = () => {
-    try {
-      const AC = (window as any).AudioContext || (window as any).webkitAudioContext
-      if (!AC) return
-      const ctx = new AC()
-      ringOscRef.current = { ctx, timer: null as any }
-      const beep = () => {
-        const o = ctx.createOscillator(); const g = ctx.createGain()
-        o.frequency.value = 440; o.type = 'sine'
-        g.gain.setValueAtTime(0.0001, ctx.currentTime)
-        g.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + 0.05)
-        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.9)
-        o.connect(g); g.connect(ctx.destination)
-        o.start(); o.stop(ctx.currentTime + 1)
-      }
-      beep()
-      ringOscRef.current.timer = setInterval(beep, 3000)
-    } catch {}
-  }
-  const startRing = () => {
-    // Hard safety cap: a ringtone must never outlive a realistic ring window. If
-    // every other stop path fails (no SDK cancel, backstop row not found), this
-    // guarantees the "tung tung" can't play forever.
-    try { clearTimeout(ringCapRef.current) } catch {}
-    ringCapRef.current = setTimeout(() => { try { stopRing() } catch {} }, 60000)
-    try {
-      const a = new Audio('/ringtone.mp3')
-      a.loop = true
-      a.volume = 0.6
-      ringAudioRef.current = a
-      // If the browser blocks autoplay or the file fails, ring via WebAudio so the
-      // call is still audible.
-      a.play().catch(() => { ringAudioRef.current = null; startOscRing() })
-    } catch { startOscRing() }
-  }
-  const stopRing = () => {
-    try { clearTimeout(ringCapRef.current); ringCapRef.current = null } catch {}
-    try {
-      if (ringAudioRef.current) {
-        ringAudioRef.current.pause()
-        ringAudioRef.current.currentTime = 0
-        ringAudioRef.current = null
-      }
-    } catch {}
-    try {
-      if (ringOscRef.current) {
-        clearInterval(ringOscRef.current.timer)
-        ringOscRef.current.ctx?.close?.()
-        ringOscRef.current = null
-      }
-    } catch {}
-  }
+  // Incoming-call ringtone (lib/ringtone): one stop silences every sound a
+  // ring started, including a fallback tone still on its way.
+  const ringerRef = useRef<Ringer | null>(null)
+  const startRing = () => { (ringerRef.current ||= createRinger()).start() }
+  const stopRing = () => { ringerRef.current?.stop() }
 
   // ── Outbound ringback ("brr-brr") ────────────────────────────────────────────
   // On an outbound call the agent joins a silent conference immediately and only
@@ -1265,6 +1212,15 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
   }, [waiting, inCall, incoming])
 
   const fmtDur = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+
+  // Nothing rings unless a call is on screen and not yet answered. Whatever
+  // path closes the popup or connects the call, the ringtone goes with it.
+  useEffect(() => {
+    if (!incoming || inCall) stopRing()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incoming, inCall])
+  // ...and nothing outlives the listener itself.
+  useEffect(() => () => stopRing(), [])   // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Incoming-ring backstop ──────────────────────────────────────────────────
   // A ringing inbound call can be answered, missed or ended on ANOTHER device —
