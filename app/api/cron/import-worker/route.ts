@@ -30,7 +30,8 @@ export async function GET(req: NextRequest) {
       const r = await drive(db, id, deadline)
       if (r) ran++
     }
-    if (ran) await logJobRun({ job: 'import-worker', startedAt, durationMs: Date.now() - t0, status: 'success', detail: { ran } })
+    // Idle runs are logged too, so a stopped worker shows as stopped.
+    await logJobRun({ job: 'import-worker', startedAt, durationMs: Date.now() - t0, status: ran ? 'success' : 'idle', detail: { ran } })
     return NextResponse.json({ ok: true, ran })
   } catch (e: any) {
     if (missingTable(e)) return NextResponse.json({ ok: true, ran: 0 })

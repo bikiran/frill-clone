@@ -31,7 +31,9 @@ export async function GET(req: NextRequest) {
       if (Date.now() > deadline - 20_000) break
       if (await runAgent(db, id, deadline)) ran++
     }
-    if (ran || expired) await logJobRun({ job: 'agent-worker', startedAt, durationMs: Date.now() - t0, status: 'success', detail: { ran, expired } })
+    // Every run is logged (idle ones too), so System health can tell a quiet
+    // minute from a worker that has stopped.
+    await logJobRun({ job: 'agent-worker', startedAt, durationMs: Date.now() - t0, status: ran || expired ? 'success' : 'idle', detail: { ran, expired } })
     return NextResponse.json({ ok: true, ran, expired })
   } catch (e: any) {
     await logJobRun({ job: 'agent-worker', startedAt, durationMs: Date.now() - t0, status: 'error', error: e?.message })
