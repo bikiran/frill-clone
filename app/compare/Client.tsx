@@ -12,7 +12,7 @@ const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c'
 // Why-Colvy hero feature grid (mirrors the old solutions/compare header the user liked).
 const WHY = [
   { icon: 'bolt', title: 'One platform', desc: 'Feedback, inbox, CRM and calls — not four subscriptions.' },
-  { icon: 'tag', title: 'SMB pricing', desc: 'Fair, flat pricing. Calls priced well under the pack.' },
+  { icon: 'tag', title: 'Fair pricing', desc: 'Fair, flat pricing. Calls priced well under the pack.' },
   { icon: 'target', title: '45-min setup', desc: 'Live the same afternoon, not next quarter.' },
   { icon: 'user', title: 'No per-seat tricks', desc: 'Add your team without watching the bill explode.' },
   { icon: 'star', title: 'Real support', desc: 'Talk to humans in Australia 🇦🇺 who actually help.' },
@@ -24,13 +24,13 @@ const WHY = [
 const CARDS = [
   { slug: 'podium', comp: 'Podium', tag: 'More channels, deeper AI, no lock-in', metric: 'No contracts', accent: GREEN },
   { slug: 'gorgias', comp: 'Gorgias', tag: 'Full comms platform, not just a helpdesk', metric: 'AI', accent: PURPLE },
-  { slug: 'gladly', comp: 'Gladly', tag: 'SMB pricing, not enterprise', metric: 'SMB', accent: PINK },
+  { slug: 'gladly', comp: 'Gladly', tag: 'Enterprise features, fair pricing', metric: 'Fair', accent: PINK },
   { slug: 'intercom', comp: 'Intercom', tag: 'True omnichannel, not just chat', metric: 'Calls', accent: CORAL },
   { slug: 'zendesk', comp: 'Zendesk', tag: 'Threads not tickets, 45-min setup', metric: '45 min', accent: BLUE },
   { slug: 'freshdesk', comp: 'Freshdesk', tag: 'All-in-one, no add-on fees', metric: '$0', accent: CYAN },
   { slug: 'coax', comp: 'Coax', tag: 'Comms + a built-in feedback loop', metric: 'Feedback', accent: TEAL },
   { slug: 'manychat', comp: 'ManyChat', tag: 'A real inbox, not just flows', metric: 'Inbox', accent: INDIGO },
-  { slug: 'birdeye', comp: 'Birdeye', tag: 'Reviews, calls & feedback — SMB priced', metric: 'All-in-1', accent: AMBER },
+  { slug: 'birdeye', comp: 'Birdeye', tag: 'Reviews, calls & feedback — fairly priced', metric: 'All-in-1', accent: AMBER },
 ]
 
 function useReveal(threshold = 0.12) {
@@ -97,7 +97,7 @@ export default function CompareHub() {
           <Reveal>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: CORAL + '18', color: CORAL, fontSize: 12.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 18 }}><FeatureIcon name="bolt" color={CORAL} size={15} />Why Colvy</span>
             <h1 style={{ fontSize: 'clamp(40px, 6vw, 74px)', fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 1.02, margin: '0 0 18px' }}>All of it,<br /><span style={{ color: CORAL }}>without the add-on fees</span></h1>
-            <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: muted, maxWidth: 520, lineHeight: 1.6, margin: '0 0 30px' }}>Feedback, inbox, CRM and calling in one lively platform — priced for SMBs, not enterprise.</p>
+            <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: muted, maxWidth: 520, lineHeight: 1.6, margin: '0 0 30px' }}>Feedback, inbox, CRM and calling in one lively platform — for teams of every size, without enterprise lock-in.</p>
             <div className="ch-hero-cta" style={{ display: 'flex', gap: 12 }}>
               <button onClick={go} className="sol-btn" style={btnPrimary}>Start free — no card →</button>
               <a href="/pricing" className="sol-btn" style={btnGhost}>See pricing</a>
@@ -110,7 +110,7 @@ export default function CompareHub() {
             <div aria-hidden style={{ position: 'absolute', inset: 0, background: `linear-gradient(150deg, ${CORAL}e6 0%, ${CORAL}73 42%, rgba(10,12,20,0.55) 118%)` }} />
             <div style={{ position: 'absolute', top: 22, right: 22, color: 'rgba(255,255,255,0.95)', animation: 'chFloat 6s ease-in-out infinite' }}><FeatureIcon name="bolt" color="rgba(255,255,255,0.95)" size={54} /></div>
             <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 12, padding: 32 }}>
-              {['One platform', 'SMB pricing', 'No per-seat tricks', '45-min setup'].map((c, i) => (
+              {['One platform', 'Fair pricing', 'No per-seat tricks', '45-min setup'].map((c, i) => (
                 <span key={c} style={{ alignSelf: i % 2 ? 'flex-end' : 'flex-start', fontSize: 14, fontWeight: 800, color: '#fff', background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.34)', borderRadius: 999, padding: '9px 16px', animation: `chFloat ${5 + i * 0.6}s ease-in-out ${i * 0.3}s infinite` }}>{c}</span>
               ))}
             </div>

@@ -57,7 +57,8 @@ export const SEO_FAQS: Record<string, SeoFaq[]> = {
   'product/crm': [
     { q: 'What makes Colvy different from a traditional CRM?', a: 'The CRM sits beside every conversation. Contact details, channels, orders, bookings, notes and past messages fill in automatically as customers talk to you, so there’s no separate system to keep up to date.' },
     { q: 'Can I import my existing customers?', a: 'Yes. Import contacts from a spreadsheet or another platform, and Colvy matches them to people as they message you by phone number, email or social account.' },
-    { q: 'Is Colvy a good CRM for small businesses?', a: `Colvy is built for small and growing teams that talk to customers every day: retail stores, ecommerce, service businesses, clinics and agencies. ${STARTER}` },
+    { q: 'Is Colvy a good CRM for small businesses?', a: `Yes. Colvy is built for teams that talk to customers every day, from a sole trader to a multi-site business: retail stores, ecommerce, service businesses, clinics and agencies. ${STARTER}` },
+    { q: 'Does Colvy work for larger teams and enterprise?', a: 'Yes. Colvy has team roles with per-person permissions, audit logs, unlimited team members on the Everything plan, a number per location, API keys and an MCP server, and an Enterprise option with dedicated onboarding and support, custom contracts, white-label branding and high-volume rates.' },
   ],
   'product/booking': [
     { q: 'Can customers book appointments online with Colvy?', a: 'Yes. You get a booking page with live staff and location availability. Customers pick a service and time, can pay a deposit by card, and get SMS reminders and a link to reschedule or cancel.' },
@@ -104,7 +105,7 @@ export const SEO_FAQS: Record<string, SeoFaq[]> = {
     { q: 'Does Colvy have review requests like Podium?', a: 'Yes. Colvy texts review requests after an order, booking or job, and its Reputation Agent drafts replies to the reviews that come in.' },
   ],
   'compare/birdeye': [
-    { q: 'Is Colvy a good Birdeye alternative for small businesses?', a: 'Colvy brings reviews, business texting, social messages, email and live chat into one shared inbox with a CRM, booking and AI agents, built for small Australian teams rather than large multi-site enterprises.' },
+    { q: 'Is Colvy a good Birdeye alternative for small businesses?', a: 'Colvy brings reviews, business texting, social messages, email and live chat into one shared inbox with a CRM, booking and AI agents, for Australian teams of every size, from one location to many.' },
     { q: 'Can Colvy manage Google reviews like Birdeye?', a: 'Yes. Reply to Google reviews from Colvy, send review requests by SMS, and let the Reputation Agent draft replies in your tone.' },
     { q: 'How quickly can I switch to Colvy?', a: `Most businesses connect their channels and import contacts in about 45 minutes. ${STARTER}` },
   ],
@@ -124,7 +125,7 @@ export const SEO_FAQS: Record<string, SeoFaq[]> = {
     { q: 'Can I try Colvy for free?', a: STARTER },
   ],
   'compare/freshdesk': [
-    { q: 'What is a good Freshdesk alternative for small businesses?', a: 'Colvy combines a shared inbox for SMS, calls, Instagram, Messenger, email and live chat with a CRM, help centre, reviews, booking, payments and AI agents, so a small team can run customer conversations from one app.' },
+    { q: 'What is a good Freshdesk alternative for small businesses?', a: 'Colvy combines a shared inbox for SMS, calls, Instagram, Messenger, email and live chat with a CRM, help centre, reviews, booking, payments and AI agents, so a team of any size can run customer conversations from one app.' },
     { q: 'Does Colvy include phone and SMS?', a: 'Yes. Australian business numbers for calls and two-way SMS are built in, not a separate add-on product.' },
     { q: 'How do I get started?', a: STARTER },
   ],
@@ -134,7 +135,7 @@ export const SEO_FAQS: Record<string, SeoFaq[]> = {
     { q: 'Can I try it before I switch?', a: STARTER },
   ],
   'compare/gladly': [
-    { q: 'What is a Gladly alternative for small businesses?', a: 'Colvy gives small teams a customer-centred shared inbox, where every SMS, call, social message, email and chat sits on one customer timeline, with pricing for small businesses rather than enterprise contracts.' },
+    { q: 'What is a Gladly alternative for small businesses?', a: 'Colvy gives teams of every size a customer-centred shared inbox, where every SMS, call, social message, email and chat sits on one customer timeline, with fair, published pricing rather than forced enterprise contracts.' },
     { q: 'Does Colvy keep one history per customer?', a: 'Yes. Every channel lands on the customer’s record, so anyone on the team can pick up the conversation with full context.' },
     { q: 'How do I get started?', a: STARTER },
   ],

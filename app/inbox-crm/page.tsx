@@ -7,7 +7,7 @@ import { breadcrumbJsonLd } from '@/lib/seo-faqs'
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
 export const metadata: Metadata = pageMeta({
-  title: 'Shared Inbox & CRM for Small Business',
+  title: 'Shared Inbox & AI-Powered CRM',
   description: 'Colvy’s shared inbox and simple CRM bring SMS, calls, Instagram, Messenger, email and live chat, plus every customer’s orders and history, into one place.',
   path: 'inbox-crm',
 })

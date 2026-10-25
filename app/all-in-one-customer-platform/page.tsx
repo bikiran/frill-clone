@@ -8,7 +8,7 @@ import { breadcrumbJsonLd } from '@/lib/seo-faqs'
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
 export const metadata: Metadata = pageMeta({
-  title: 'All-in-One Customer Platform for Small Business',
+  title: 'All-in-One Customer Platform for Every Business',
   description: 'One platform for every customer: shared inbox, business phone, CRM, payments, bookings, reviews and AI, with every step from first click to paid order tracked.',
   path: 'all-in-one-customer-platform',
 })
