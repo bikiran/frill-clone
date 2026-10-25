@@ -50,7 +50,7 @@ export const CRON_JOBS: CronJob[] = ((vercelConfig as any).crons || []).map((c: 
 
 // ── Gather ───────────────────────────────────────────────────────────────────
 
-export type JobState = 'ok' | 'overdue' | 'failing' | 'not_logged' | 'error'
+export type JobState = 'ok' | 'overdue' | 'failing' | 'not_logged' | 'error' | 'quiet'
 export type JobRow = { job: string; path: string; schedule: string; everyMin: number; lastAt: string | null; lastStatus: string | null; lastError: string | null; runs24h: number; failed24h: number; avgMs: number | null; state: JobState; lateMin: number | null }
 
 async function count(q: any): Promise<number> { try { const { count: n, error } = await q; return error ? 0 : n || 0 } catch { return 0 } }
@@ -81,7 +81,17 @@ export async function gatherJobs(db: any, now = Date.now()): Promise<JobRow[]> {
     const ageMin = (now - Date.parse(last[0].created_at)) / MIN
     const allowed = Math.max(3 * j.everyMin, j.everyMin + 30)
     const failing = last.length >= 3 && last.every(r => r.status === 'error')
-    const state: JobState = failing ? 'failing' : ageMin > allowed ? 'overdue' : last[0].status === 'error' ? 'error' : 'ok'
+    // Silence only means "stopped" for a job that logs every run. Some log only
+    // when they had work; judge by the day before its last run: if it logged
+    // fewer than half the runs its schedule makes, a quiet spell is normal.
+    let logsEveryRun = true
+    if (ageMin > allowed && j.everyMin < 1440) {
+      const lastAt = Date.parse(last[0].created_at)
+      const before = await count(db.from('job_runs').select('id', { count: 'exact', head: true }).eq('job', name)
+        .gte('created_at', new Date(lastAt - DAY).toISOString()).lte('created_at', new Date(lastAt).toISOString()))
+      logsEveryRun = before >= 0.5 * (1440 / j.everyMin)
+    }
+    const state: JobState = failing ? 'failing' : ageMin > allowed ? (logsEveryRun ? 'overdue' : 'quiet') : last[0].status === 'error' ? 'error' : 'ok'
     return {
       job: name, path: j.path, schedule: j.schedule, everyMin: j.everyMin,
       lastAt: last[0].created_at, lastStatus: last[0].status, lastError: last[0].error ? String(last[0].error).slice(0, 240) : null,
@@ -225,8 +235,10 @@ export async function runAlerts(db: any, now = new Date()): Promise<{ ok: boolea
   }
   const gone = (existing.data || []).filter((r: any) => !r.resolved_at && !current.some(a => a.fingerprint === r.fingerprint)).map((r: any) => r.fingerprint)
   if (gone.length) { await db.from('intel_alerts').update({ resolved_at: iso }).in('fingerprint', gone); resolved = gone.length }
-  // Resolved alerts are kept 30 days.
+  // Resolved alerts are kept 30 days; so is the job log (Background jobs and
+  // these checks only look back a week), which nothing else ever pruned.
   await db.from('intel_alerts').delete().lt('resolved_at', new Date(now.getTime() - 30 * DAY).toISOString())
+  try { await db.from('job_runs').delete().lt('created_at', new Date(now.getTime() - 30 * DAY).toISOString()) } catch {}
 
   // Tell the team about new critical alerts (bell in Colvy's workspace + email).
   const { alertColvyTeamOncePerDay } = await import('@/lib/billing-alert')

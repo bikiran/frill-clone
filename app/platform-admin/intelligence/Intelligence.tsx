@@ -817,7 +817,7 @@ function CostsCard({ c, onOpen }: { c: any; onOpen?: (id: string) => void }) {
 
 const SEV_COLOR: Record<string, string> = { critical: RED, warning: AMBER, info: INDIGO }
 const HEALTH_COLOR: Record<string, string> = { operational: GREEN, degraded: AMBER, outage: RED, unknown: 'var(--sa-muted)' }
-const JOB_STATE: Record<string, [string, string]> = { failing: ['Failing', RED], overdue: ['Stopped', RED], error: ['Last run failed', AMBER], ok: ['OK', GREEN], not_logged: ['Not logged', 'var(--sa-muted)'] }
+const JOB_STATE: Record<string, [string, string]> = { failing: ['Failing', RED], overdue: ['Stopped', RED], error: ['Last run failed', AMBER], ok: ['OK', GREEN], quiet: ['Quiet (logs only when busy)', 'var(--sa-muted)'], not_logged: ['Not logged', 'var(--sa-muted)'] }
 const everyLabel = (m: number) => (m < 60 ? `${m} min` : m < 1440 ? `${Math.round(m / 60)} h` : m < 10080 ? 'daily' : 'weekly')
 
 function Dot({ color }: { color: string }) { return <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 99, background: color, flex: 'none' }} /> }
@@ -825,7 +825,7 @@ function Dot({ color }: { color: string }) { return <span style={{ display: 'inl
 function SystemView({ d, onNavigate }: { d: any; onNavigate?: (page: string) => void }) {
   const open = d.alerts?.open || []
   const go = (page: string) => onNavigate && <button onClick={() => onNavigate(page)} style={{ background: 'none', border: 'none', color: CORAL, fontWeight: 700, fontSize: 12, cursor: 'pointer', padding: 0, whiteSpace: 'nowrap' }}>Open →</button>
-  const jobOrder: Record<string, number> = { failing: 0, overdue: 1, error: 2, ok: 3, not_logged: 4 }
+  const jobOrder: Record<string, number> = { failing: 0, overdue: 1, error: 2, ok: 3, quiet: 4, not_logged: 5 }
   const jobs = [...(d.jobs || [])].sort((a, b) => jobOrder[a.state] - jobOrder[b.state] || a.job.localeCompare(b.job))
   const crit = open.filter((a: any) => a.severity === 'critical').length
   const sms = d.signupSms?.day
