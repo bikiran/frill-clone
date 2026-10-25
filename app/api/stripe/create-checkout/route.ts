@@ -2,6 +2,7 @@ import { callerUser, requireCompanyAccess } from '@/lib/company-access'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { BRANDING_ADDON } from '@/lib/branding-addon'
+import { shopifyChargeBlock } from '@/lib/shopify-billing'
 import { billingUnavailableCopy, checkoutBlockers, isKnownTier, priceIdFor } from '@/lib/billing-config'
 import { alertBillingNotConfigured } from '@/lib/billing-alert'
 import { COLVY_CONTACT } from '@/lib/colvy-contact'
@@ -56,11 +57,15 @@ export async function POST(req: NextRequest) {
     }
 
     // A workspace using Colvy through the Shopify app pays through Shopify
-    // (App Store rule, lib/shopify-billing) — never a second, Stripe charge.
+    // (App Store rule 1.2.1, lib/shopify-billing): no plan or add-on by card.
     {
-      const q = db.from('companies').select('id').eq('billing_provider', 'shopify').limit(1)
-      const { data: viaShopify } = await (companyId ? q.eq('id', companyId) : q.eq('owner_id', userId))
-      if (viaShopify?.length) return NextResponse.json({ error: 'Your Colvy plan is billed through Shopify. Change it from Billing → Choose plan in Shopify.', shopify: true }, { status: 409 })
+      let cid = companyId
+      if (!cid) {
+        const { data: owned } = await db.from('companies').select('id').eq('owner_id', userId).limit(1)
+        cid = owned?.[0]?.id || null
+      }
+      const viaShopify = await shopifyChargeBlock(db, cid, tier === BRANDING_ADDON ? 'addon' : 'plan')
+      if (viaShopify) return NextResponse.json(viaShopify, { status: 409 })
     }
 
     const blockers = checkoutBlockers(tier, billing, process.env)

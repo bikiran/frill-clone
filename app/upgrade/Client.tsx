@@ -129,6 +129,8 @@ export default function UpgradePage() {
         await showBillingUnavailable({ what: `the ${tier.name} plan (${billing})` })
         return
       }
+      // Uses Colvy through the Shopify app: plans are chosen in Shopify.
+      if (data.shopify) { window.location.href = '/admin/billing'; return }
       if (data.error) throw new Error(data.error)
       if (data.url) { try { localStorage.removeItem('pending_plan') } catch {}; window.location.href = data.url }
     } catch (err: any) {

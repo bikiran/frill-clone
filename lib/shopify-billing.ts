@@ -34,7 +34,7 @@ export const planSelectionUrl = (shop: string) =>
   `https://admin.shopify.com/store/${String(shop || '').replace(/\.myshopify\.com$/i, '')}/charges/${appHandle()}/pricing_plans`
 
 const RECHECK_MS = 6 * 60 * 60 * 1000
-const PAID_STATUSES = ['active', 'trialing', 'past_due']
+export const PAID_STATUSES = ['active', 'trialing', 'past_due']
 
 export type ShopifySubscription = {
   billingPeriod: string | null
@@ -116,13 +116,17 @@ async function shopGidFor(db: any, integ: any): Promise<string> {
 const keepsOwnPlan = (co: any) => !!co?.is_complimentary || co?.plan === 'enterprise' || co?.plan === 'suspended'
 
 /**
- * Make a workspace Shopify-billed when it connects a store through the app —
- * only while it's on its trial or Free with no Stripe subscription, so a
- * workspace already paying Colvy is never billed twice.
+ * Make a workspace Shopify-billed when it connects a store through the app.
+ * App Store rule 1.2.1: a merchant using Colvy through the Shopify app is never
+ * charged by Colvy off Shopify, whatever plan they're on. A workspace already
+ * paying by card keeps that subscription until they move to a Shopify plan
+ * (their Billing page says so and links to cancel it); plans set by the Colvy
+ * team (Enterprise, complimentary, suspended) are never overwritten by the
+ * sync, but still can't buy anything by card.
  */
 export async function adoptShopifyBilling(db: any, companyId: string, integrationId: string): Promise<boolean> {
   const { data: co } = await db.from('companies').select('id, owner_id, plan, is_complimentary, billing_provider, billing_integration_id').eq('id', companyId).maybeSingle()
-  if (!co || keepsOwnPlan(co)) return false
+  if (!co) return false
   if (co.billing_provider === 'shopify') {
     // Re-point at the new store if the old one is gone.
     if (co.billing_integration_id !== integrationId) {
@@ -133,14 +137,46 @@ export async function adoptShopifyBilling(db: any, companyId: string, integratio
     }
     return true
   }
-  if (!['trial', 'free'].includes(String(co.plan || 'free'))) return false
-  if (co.owner_id) {
-    const { data: subs } = await db.from('subscriptions').select('status, stripe_subscription_id').eq('user_id', co.owner_id).limit(1)
-    const s = subs?.[0]
-    if (s?.stripe_subscription_id && PAID_STATUSES.includes(String(s.status))) return false
-  }
   await db.from('companies').update({ billing_provider: 'shopify', billing_integration_id: integrationId }).eq('id', companyId)
   return true
+}
+
+/**
+ * The Shopify store a workspace uses Colvy through, if any: the one it's
+ * billed through, else any store connected through the app and still active.
+ * Workspaces connected before the rule above are adopted here on first look.
+ */
+export async function shopifyBillingStore(db: any, companyId: string | null | undefined): Promise<{ id: string; store_domain: string; store_name?: string | null } | null> {
+  if (!companyId) return null
+  try {
+    const { data: co } = await db.from('companies').select('billing_provider, billing_integration_id').eq('id', companyId).maybeSingle()
+    if (co?.billing_provider === 'shopify' && co.billing_integration_id) {
+      const { data: integ } = await db.from('shopify_integrations').select('id, store_domain, store_name, is_active').eq('id', co.billing_integration_id).maybeSingle()
+      if (integ?.is_active) return integ
+    }
+    const { data: rows } = await db.from('shopify_integrations').select('id, store_domain, store_name, is_active').eq('company_id', companyId).eq('is_active', true).limit(1)
+    const integ = rows?.[0]
+    if (!integ) return co?.billing_provider === 'shopify' ? { id: co.billing_integration_id, store_domain: '' } : null
+    if (co?.billing_provider !== 'shopify' || co?.billing_integration_id !== integ.id) await adoptShopifyBilling(db, companyId, integ.id).catch(() => {})
+    return integ
+  } catch { return null }
+}
+
+/**
+ * Refuse a card (Stripe) charge for a workspace that uses Colvy through the
+ * Shopify app. Returns the response body to send, or null when card billing
+ * is fine. `what` names the purchase for the message.
+ */
+export async function shopifyChargeBlock(db: any, companyId: string | null | undefined, what: 'plan' | 'addon' | 'sms' | 'number' | 'porting'): Promise<{ error: string; shopify: true; planUrl: string | null } | null> {
+  const store = await shopifyBillingStore(db, companyId)
+  if (!store) return null
+  const planUrl = store.store_domain ? planSelectionUrl(store.store_domain) : null
+  const error = what === 'plan'
+    ? 'This workspace uses Colvy through the Shopify app, so your Colvy plan is billed through Shopify. Choose or change it from Billing → Choose a plan in Shopify.'
+    : what === 'addon'
+    ? 'This workspace uses Colvy through the Shopify app, so add-ons can’t be bought by card. The Inbox and Everything plans in Shopify already remove Colvy branding.'
+    : `This workspace uses Colvy through the Shopify app, so ${what === 'sms' ? 'SMS credit' : what === 'number' ? 'phone numbers' : 'moving a number'} can’t be paid for by card here. Contact Colvy support and we’ll set it up for you.`
+  return { error, shopify: true, planUrl }
 }
 
 /**

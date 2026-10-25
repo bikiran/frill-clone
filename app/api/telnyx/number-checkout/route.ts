@@ -1,4 +1,5 @@
 import { requireCompanyAccess } from '@/lib/company-access'
+import { shopifyChargeBlock } from '@/lib/shopify-billing'
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
@@ -31,6 +32,10 @@ export async function POST(req: NextRequest) {
       const { data: co } = await admin().from('companies').select('free_number_credits').eq('id', companyId).maybeSingle()
       if ((co?.free_number_credits || 0) > 0) return NextResponse.json({ free: true })
     } catch {}
+
+    // Using Colvy through the Shopify app: no card charges (App Store rule 1.2.1).
+    const viaShopify = await shopifyChargeBlock(admin(), companyId, 'number')
+    if (viaShopify) return NextResponse.json(viaShopify, { status: 409 })
 
     const secret = (process.env.STRIPE_SECRET_KEY || '').trim()
     if (!secret.startsWith('sk_')) {
