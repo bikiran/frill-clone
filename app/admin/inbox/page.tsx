@@ -7255,8 +7255,11 @@ export default function InboxPage() {
           .inbox-thread-header .inbox-header-tools button span.tool-label { display: none; }
 
           /* Message bubbles get more of the screen — 70% left too much dead
-             space on a 390px phone. */
-          .inbox-messages > div > div { max-width: 88% !important; }
+             space on a 390px phone. Replies sit against the right edge (no
+             business avatar beside your own messages, like iMessage). */
+          .inbox-messages .chat-msg-col { max-width: 84% !important; min-width: 0; }
+          .inbox-messages .chat-agent-av { display: none !important; }
+          .inbox-messages .chat-cust-av { width: 24px !important; height: 24px !important; font-size: 10px !important; }
           .inbox-messages { padding: 10px 12px !important; gap: 7px !important; }
           /* Flatter, less bulky bubbles on a phone. */
           .inbox-messages .msg-bubble { box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important; }
@@ -9836,11 +9839,11 @@ export default function InboxPage() {
                     {dateDivider}
                     <div className="chat-msg-row" style={{ display: 'flex', justifyContent: isAgent ? 'flex-end' : 'flex-start', gap: 8, alignItems: 'flex-end', position: 'relative' }}>
                     {!isAgent && (
-                      <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--peach)', border: '2px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: 'var(--coral)', flexShrink: 0 }}>
+                      <div className="chat-cust-av" style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--peach)', border: '2px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: 'var(--coral)', flexShrink: 0 }}>
                         {(contact?.name || msg.sender_name || 'V')[0].toUpperCase()}
                       </div>
                     )}
-                    <div style={{ maxWidth: '70%', position: 'relative' }}
+                    <div className="chat-msg-col" style={{ maxWidth: '70%', minWidth: 0, position: 'relative' }}
                       onMouseEnter={() => setShowReactPicker(null)}>
                       {!isAgent && <p style={{ margin: '0 0 3px 4px', fontSize: 10, color: '#9ca3af' }}>{contact?.name || msg.sender_name || 'Visitor'}</p>}
                       {/* Outbound messages name the team member that sent them, so
@@ -10378,9 +10381,9 @@ export default function InboxPage() {
                     </div>
                     {isAgent && (
                       companyInfo?.logo_url ? (
-                        <img src={companyInfo.logo_url} alt="" loading="lazy" decoding="async" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} onError={(e: any) => { e.target.style.display = 'none' }} />
+                        <img className="chat-agent-av" src={companyInfo.logo_url} alt="" loading="lazy" decoding="async" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} onError={(e: any) => { e.target.style.display = 'none' }} />
                       ) : (
-                        <div style={{ width: 28, height: 28, borderRadius: '50%', background: companyInfo?.accent_color || 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+                        <div className="chat-agent-av" style={{ width: 28, height: 28, borderRadius: '50%', background: companyInfo?.accent_color || 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
                           {(companyInfo?.name || msg.sender_name || 'A')[0].toUpperCase()}
                         </div>
                       )

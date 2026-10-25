@@ -956,11 +956,41 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <GlobalDialer companyId={company?.id || null} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]} />
       <style>{`
         @media (max-width: 860px) {
-          .admin-sidebar { transform: translateX(-100%); transition: transform 0.25s ease; box-shadow: 0 0 0 transparent; }
-          .admin-sidebar.open { transform: translateX(0); box-shadow: 8px 0 32px rgba(0,0,0,0.18); }
+          /* Phones: the menu is a floating sheet over the page (Apple-like):
+             inset from the edges, rounded top corners, large rows, the page
+             dimmed behind it, and a close button by the workspace name. */
+          .admin-sidebar {
+            top: calc(env(safe-area-inset-top, 0px) + 8px) !important; left: 8px !important; bottom: 0;
+            width: min(340px, calc(100vw - 48px)) !important; height: calc(100dvh - env(safe-area-inset-top, 0px) - 8px) !important;
+            border: none !important; border-radius: 22px 22px 0 0; z-index: 61 !important;
+            transform: translateX(calc(-100% - 16px)); transition: transform 0.32s cubic-bezier(.2,.8,.2,1), box-shadow 0.32s ease;
+            box-shadow: 0 0 0 transparent; overscroll-behavior: contain;
+          }
+          .admin-sidebar.open { transform: translateX(0); box-shadow: 0 24px 60px rgba(0,0,0,0.22), 0 2px 8px rgba(0,0,0,0.06); }
           .admin-main { margin-left: 0 !important; }
-          .admin-mobile-overlay.open { display: block !important; }
+          .admin-mobile-overlay { top: 0 !important; z-index: 60 !important; background: rgba(17,17,20,0.34) !important; -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+          .admin-mobile-overlay.open { display: block !important; animation: cvOverlayIn .2s ease-out; }
+          .admin-collapse-btn { display: none !important; }
+          .admin-mobile-close { display: flex !important; }
+          .admin-ws-head { padding: 18px 56px 12px 20px !important; border-bottom: none !important; }
+          .admin-ws-head .admin-ws-name { font-size: 18px !important; font-weight: 700 !important; }
+          .admin-sidebar nav { padding: 6px 12px 24px !important; }
+          .admin-sidebar .nav-item {
+            font-size: 16.5px !important; padding: 12px 14px !important; gap: 16px !important; border-radius: 14px !important;
+            min-height: 50px; color: #1c1c1e !important; font-weight: 500 !important; margin-bottom: 2px !important;
+          }
+          .admin-sidebar .nav-item.is-active { background: #f2f2f7 !important; }
+          .admin-sidebar .nav-item.is-active .nav-ic { color: var(--coral); }
+          .admin-sidebar .nav-item .nav-ic { opacity: 0.75 !important; }
+          .admin-sidebar .nav-item .nav-ic svg { width: 22px; height: 22px; }
+          .admin-sidebar .nav-item:not(.is-active):hover { background: #f7f7f9; }
+          .admin-sidebar .nav-group-header { padding: 10px 14px 4px !important; margin-top: 4px; }
+          .admin-sidebar .nav-group-header span { font-size: 12.5px !important; letter-spacing: 0.02em !important; text-transform: none !important; color: #8e8e93 !important; font-weight: 600 !important; }
+          .admin-sidebar .nav-group-header.is-collapsed { background: transparent; }
+          .admin-sidebar .ss-trigger { min-height: 46px; font-size: 16px !important; border-radius: 14px !important; padding: 10px 14px !important; gap: 14px !important; margin-bottom: 10px !important; }
+          .admin-sidebar .ss-trigger .nav-ic svg { width: 20px; height: 20px; }
         }
+        @keyframes cvOverlayIn { from { opacity: 0 } to { opacity: 1 } }
         /* Collapsible nav-group header — a proper padded, rounded row that
            highlights on hover, with the chevron fading in a touch. */
         .nav-group-header {
@@ -1025,9 +1055,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <line x1={adminCollapsed ? '19' : '5'} y1="5" x2={adminCollapsed ? '19' : '5'} y2="19" />
           </svg>
         </button>
+        {/* Phones: close the menu sheet. */}
+        <button type="button" onClick={() => setMobileSidebarOpen(false)} aria-label="Close menu" className="admin-mobile-close"
+          style={{ display: 'none', position: 'absolute', top: 14, right: 12, width: 36, height: 36, borderRadius: '50%', border: 'none', background: 'transparent', color: '#3a3a3c', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', zIndex: 2 }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+        </button>
         {/* Company info — workspace switcher. In the collapsed rail we hide the
             name/chevron so no clipped text renders behind the avatar. */}
-        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', position: 'relative' }}>
+        <div className="admin-ws-head" style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', position: 'relative' }}>
           <button type="button" onClick={() => { setShowWorkspaces(v => !v); if (!workspaces.length) loadWorkspaces() }}
             title={adminCollapsed ? (company?.name || 'Workspace') : undefined}
             style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
@@ -1040,7 +1075,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               {(company?.name?.[0] || user?.email?.[0] || '?').toUpperCase()}
             </div>
             {!adminCollapsed && <div style={{ minWidth: 0, flex: 1 }}>
-              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <p className="admin-ws-name" style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {company?.name || user?.email?.split('@')[0] || 'My Board'}
               </p>
               <p style={{ fontSize: 11, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1085,9 +1120,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <nav style={{ flex: 1, padding: '10px 8px' }}>
           {/* Search — jumps to any sidebar page or settings destination. */}
           {(() => {
-            const navItems: SearchItem[] = NAV_GROUPS.flatMap(g => g.items.filter(canUseNavItem).map(it => ({ label: it.label, href: it.href, section: g.label || 'General' })))
+            const navItems: SearchItem[] = NAV_GROUPS.flatMap(g => g.items.filter(canUseNavItem).map(it => ({ label: it.label, href: it.href, section: g.label || 'General', icon: icons[it.icon] })))
             const seen = new Set(navItems.map(i => i.href))
-            const items = [...navItems, ...SEARCH_EXTRAS.filter(e => !seen.has(e.href) && canUseNavItem(e))]
+            const items = [...navItems, ...SEARCH_EXTRAS.filter(e => !seen.has(e.href) && canUseNavItem(e)).map(e => ({ ...e, icon: e.icon || icons.settings }))]
             return <SidebarSearch items={items} collapsed={adminCollapsed} />
           })()}
           {NAV_GROUPS.map((group, gi) => {
