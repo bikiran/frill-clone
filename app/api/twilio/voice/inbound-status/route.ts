@@ -158,7 +158,21 @@ export async function POST(req: NextRequest) {
               answerUser = (leg as any)?.user_id || ''
             } catch {}
           }
+          // The leg Twilio actually connected (DialCallSid) is the truth about
+          // who took the call. In a ring-all, two people tapping Answer in the
+          // same second can both report in, and the first report to land
+          // claimed the call — crediting someone whose leg Twilio then
+          // cancelled. Correct it here, without a second "answered" ping.
+          const fromLeg = !!answerUser
           if (!answerUser && soloUser) answerUser = soloUser
+          if (answerUser && fromLeg) {
+            try {
+              const name = await resolveAgentName(db, answerUser, companyId)
+              await db.from('calls')
+                .update({ answered_by_user_id: answerUser, answered_by: name, agent_name: name })
+                .eq('id', callRowId).not('answered_by_user_id', 'is', null).neq('answered_by_user_id', answerUser)
+            } catch {}
+          }
           if (answerUser) {
             try {
               const name = await resolveAgentName(db, answerUser, companyId)
