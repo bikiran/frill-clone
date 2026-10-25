@@ -5,8 +5,13 @@ import { createClient } from '@supabase/supabase-js'
 import { ensureCallCard } from '@/lib/call-card'
 import { modelChain, trackAi } from '@/lib/ai-models'
 import { ACTION_ITEMS_GUIDE, loadOpenTasks, openTasksForSummaryPrompt, refineActionItemsDetailed, type OpenTask } from '@/lib/task-dedupe'
+import { callLanguageSettings, speechHints, isEnglish, hasNonLatinScript, looksRomanNepali, languageName } from '@/lib/call-languages'
+import { transcribeGemini, audioMime, logGeminiUsage } from '@/lib/stt-gemini'
+import { translateTranscript } from '@/lib/call-translate'
 
-export const maxDuration = 60
+// Speech recognition, the three-way transcript and the summary can together
+// take a while on a long call in another language.
+export const maxDuration = 300
 
 // Every outbound call gets a hard timeout. Without one, a hung request to
 // Deepgram/Anthropic leaves the UI stuck on "Transcribing…" forever with no
@@ -29,21 +34,32 @@ function admin() {
 /**
  * Transcribe a call recording, then summarise it.
  *
- * Claude cannot accept audio, so speech-to-text needs a provider. We support
- * either, whichever key is present:
- *   DEEPGRAM_API_KEY  — cheaper, gives speaker diarization (who said what)
- *   OPENAI_API_KEY    — Whisper; no speakers, but very accurate
- * With NEITHER key set, the recording still saves and plays back; there's just
- * no transcript or AI summary. The response says so explicitly rather than
- * failing silently.
+ * Claude cannot accept audio, so speech-to-text needs a provider. In order:
+ *   GEMINI_API_KEY    — Gemini 3.5 Transcribe (lib/stt-gemini): 85+ languages
+ *                       including Nepali, follows speakers who mix English into
+ *                       another language, labels speakers
+ *   DEEPGRAM_API_KEY  — speaker labels; detects ~35 languages (not Nepali), so
+ *                       for a business whose calls can be in Nepali it's also
+ *                       asked in Nepali and the better-heard version is kept
+ *   OPENAI_API_KEY    — Whisper; no speakers
+ * With none set, the recording still saves and plays back; there's just no
+ * transcript or AI summary. The response says so rather than failing silently.
+ *
+ * A call that isn't all English is then written three ways (lib/call-translate):
+ * its own script, Roman letters and English, line by line. The summary and
+ * action items are written in the language the business chose (Calls & SMS →
+ * Call languages).
  */
-async function transcribeDeepgram(audio: ArrayBuffer, key: string) {
+async function transcribeDeepgram(audio: ArrayBuffer, key: string, language?: string) {
   // detect_language=true → Deepgram returns the spoken language, so a non-English
   // call can be transcribed in its own language and then translated to English.
+  // With a language (Nepali), Nova-3 listens for that language only.
   const res = await fetchWithTimeout(
     // mip_opt_out: don't let Deepgram keep call audio to improve its models —
     // it is used for the transcript and nothing else (privacy policy).
-    'https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&diarize=true&punctuate=true&detect_language=true&mip_opt_out=true',
+    language
+      ? `https://api.deepgram.com/v1/listen?model=nova-3&language=${encodeURIComponent(language)}&smart_format=true&diarize=true&punctuate=true&mip_opt_out=true`
+      : 'https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&diarize=true&punctuate=true&detect_language=true&mip_opt_out=true',
     {
       method: 'POST',
       headers: { Authorization: `Token ${key}`, 'Content-Type': 'audio/webm' },
@@ -55,7 +71,8 @@ async function transcribeDeepgram(audio: ArrayBuffer, key: string) {
   const channel = data?.results?.channels?.[0]
   const alt = channel?.alternatives?.[0]
   const text: string = alt?.transcript || ''
-  const lang: string | null = channel?.detected_language || null
+  const lang: string | null = channel?.detected_language || language || null
+  const confidence = Number(alt?.confidence || 0)
 
   // Group words into speaker turns, so the transcript reads like a dialogue.
   const segments: any[] = []
@@ -65,7 +82,7 @@ async function transcribeDeepgram(audio: ArrayBuffer, key: string) {
     if (last && last.speaker === spk) last.text += ` ${w.punctuated_word || w.word}`
     else segments.push({ speaker: spk, text: w.punctuated_word || w.word, start: w.start })
   }
-  return { text, segments, lang }
+  return { text, segments, lang, confidence }
 }
 
 async function transcribeWhisper(audio: ArrayBuffer, key: string) {
@@ -107,13 +124,6 @@ async function translateToEnglish(text: string, key: string): Promise<string | n
   return null
 }
 
-// Is a detected language English? Deepgram returns ISO ('en'), Whisper a name
-// ('english') — accept both, and treat "unknown" as English (no translation).
-function isEnglishLang(lang: string | null | undefined): boolean {
-  const l = String(lang || '').toLowerCase()
-  return !l || l.startsWith('en')
-}
-
 export async function POST(req: NextRequest) {
   try {
     const { callId, companyId, conversationId } = await req.json()
@@ -129,11 +139,39 @@ export async function POST(req: NextRequest) {
 
     const DEEPGRAM = process.env.DEEPGRAM_API_KEY
     const OPENAI = process.env.OPENAI_API_KEY
-    if (!DEEPGRAM && !OPENAI) {
+    const GEMINI = process.env.GEMINI_API_KEY
+    if (!DEEPGRAM && !OPENAI && !GEMINI) {
       return NextResponse.json({
         ok: false,
-        reason: 'Transcription needs a speech-to-text key. Add DEEPGRAM_API_KEY (recommended — it labels speakers) or OPENAI_API_KEY in Vercel. The recording is saved and playable either way.',
+        reason: 'Transcription needs a speech-to-text key. Add GEMINI_API_KEY (recommended — it understands Nepali and labels speakers), DEEPGRAM_API_KEY or OPENAI_API_KEY in Vercel. The recording is saved and playable either way.',
       })
+    }
+
+    // The business's call languages (hints, and the summary language).
+    const { data: co } = await db.from('companies').select('name, inbox_settings').eq('id', call.company_id).maybeSingle()
+    const langs = callLanguageSettings(co?.inbox_settings)
+    const extraLang = langs.languages[0] || null
+
+    // One recording, by the best service available. Gemini first; if it fails,
+    // Deepgram (asked in the business's language too, keeping the clearer
+    // result); then Whisper.
+    const transcribeOne = async (audio: ArrayBuffer, mime: string): Promise<{ text: string; segments: any[] | null; lang: string | null; engine: string }> => {
+      if (GEMINI) {
+        try {
+          const g = await transcribeGemini(audio, mime, { key: GEMINI, languageCodes: speechHints(langs) })
+          if (g.text.trim()) { await logGeminiUsage(db, call.company_id, g.seconds, { usage: g.usage }); return g }
+        } catch (e: any) { console.warn('[transcribe] gemini failed, falling back:', e?.message || e) }
+      }
+      if (DEEPGRAM) {
+        const [auto, local] = await Promise.all([
+          transcribeDeepgram(audio, DEEPGRAM).catch(() => null),
+          extraLang ? transcribeDeepgram(audio, DEEPGRAM, extraLang).catch(() => null) : Promise.resolve(null),
+        ])
+        const pick = local && local.text.trim() && (!auto || local.confidence > auto.confidence + 0.05) ? local : auto
+        if (pick) return { ...pick, engine: pick === local ? `deepgram-nova-3-${extraLang}` : 'deepgram' }
+      }
+      if (OPENAI) return { ...(await transcribeWhisper(audio, OPENAI)), engine: 'whisper' }
+      throw new Error('No transcription service answered')
     }
 
     // A call can have TWO recordings: the pre-handoff dial recording, then the
@@ -141,13 +179,13 @@ export async function POST(req: NextRequest) {
     // transfer). Transcribe each in order and stitch them so the transcript +
     // summary cover the WHOLE call, not just the part before the handoff.
     const recordings: string[] = Array.from(new Set([call.recording_url, call.conference_recording_url].filter(Boolean))) as string[]
-    const parts: { text: string; segments: any[]; lang: string | null }[] = []
+    const parts: { text: string; segments: any[] | null; lang: string | null; engine: string }[] = []
     for (const url of recordings) {
       try {
         const audioRes = await fetchWithTimeout(url, {}, 30000)
         if (!audioRes.ok) continue
         const audio = await audioRes.arrayBuffer()
-        const p = DEEPGRAM ? await transcribeDeepgram(audio, DEEPGRAM) : await transcribeWhisper(audio, OPENAI!)
+        const p = await transcribeOne(audio, audioMime(audioRes.headers.get('content-type'), url))
         if (p.text.trim()) parts.push(p)
       } catch { /* skip a segment we couldn't read/transcribe */ }
     }
@@ -158,27 +196,49 @@ export async function POST(req: NextRequest) {
     }
 
     const DIVIDER = '\n\n— call continued on another device —\n\n'
-    const text = parts.map(p => p.text.trim()).join(DIVIDER)
-    const segments = parts.flatMap(p => p.segments || [])
-    const lang = parts[0].lang
+    let text = parts.map(p => p.text.trim()).join(DIVIDER)
+    let segments: any[] = parts.flatMap(p => p.segments || [])
+    let lang = parts[0].lang
+    const engine = parts.map(p => p.engine).join(' + ')
 
     const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 
-    // Non-English call → translate the transcript to English so the agent reads
-    // it in English, with the original kept for the "View original" toggle.
+    // Not all English (another script, a non-English language detected, or
+    // Romanised Nepali for a business that speaks it) → the three forms.
     let transcriptEn: string | null = null
-    if (!isEnglishLang(lang) && ANTHROPIC_KEY) {
-      transcriptEn = await translateToEnglish(text, ANTHROPIC_KEY)
+    let transcriptRoman: string | null = null
+    let mixed = false
+    const needsTranslation = hasNonLatinScript(text) || !isEnglish(lang) || (langs.languages.includes('ne') && looksRomanNepali(text))
+    if (needsTranslation && ANTHROPIC_KEY) {
+      const t = await translateTranscript({
+        turns: segments.length ? segments : null, text,
+        languages: langs.languages.length ? langs.languages : lang && !isEnglish(lang) ? [lang] : [],
+        business: co?.name || '', companyId: call.company_id,
+      })
+      if (t && !(isEnglish(t.lang) && !t.mixed && !hasNonLatinScript(t.original))) {
+        text = t.original
+        segments = t.segments
+        lang = t.lang
+        mixed = t.mixed
+        transcriptEn = t.en
+        transcriptRoman = t.roman
+      } else if (!t && !isEnglish(lang)) {
+        transcriptEn = await translateToEnglish(text, ANTHROPIC_KEY)
+      }
     }
-    // What the English-speaking summary should be built from.
-    const summarySource = transcriptEn || text
+    // What the summary is built from: the original, with the English beside it.
+    const summarySource = transcriptEn ? `Transcript as spoken:\n${text.slice(0, 7000)}\n\nEnglish translation:\n${transcriptEn.slice(0, 7000)}` : text
 
-    await db.from('calls').update({
-      transcription: text,               // the ORIGINAL, in the spoken language
-      transcript_segments: segments,
+    const row = {
+      transcription: text,               // the ORIGINAL, in the spoken language's script
+      transcript_segments: segments,     // speaker turns; translated calls also carry roman + en per turn
       transcript_lang: lang || null,
       transcript_en: transcriptEn,       // English translation (null if already English)
-    }).eq('id', callId)
+    }
+    const extra = { transcript_roman: transcriptRoman, transcript_meta: { engine, mixed, view: langs.view, summary: langs.summary, at: new Date().toISOString() } }
+    const { error: saveErr } = await db.from('calls').update({ ...row, ...extra }).eq('id', callId)
+    // Before V419 runs there's no transcript_roman / transcript_meta: save the rest.
+    if (saveErr) await db.from('calls').update(row).eq('id', callId)
 
     // ── Summarise with Claude ────────────────────────────────────────────────
     let summary = ''
@@ -223,12 +283,19 @@ export async function POST(req: NextRequest) {
       // Also tell the model who initiated the call, so an outbound call isn't
       // summarised as though the other party rang in (the row knows its direction).
       const dir = String(call.direction || '').toLowerCase()
+      const biz = co?.name ? `${co.name}` : 'the business'
       const whoInitiated = dir === 'outbound'
-        ? `This was an OUTBOUND call: the aquarium business (the agent) called ${them}. Do not say ${them} called.`
+        ? `This was an OUTBOUND call: ${biz} (the staff member) called ${them}. Do not say ${them} called.`
         : dir === 'inbound'
-        ? `This was an INBOUND call: ${them} called the aquarium business.`
+        ? `This was an INBOUND call: ${them} called ${biz}.`
         : ''
-      const prompt = `You are summarising a phone call between a staff member at an aquarium business and ${otherParty}.${whoInitiated ? `\n\n${whoInitiated}` : ''}
+      // The language the business reads its call notes in.
+      const writeIn = langs.summary === 'ne'
+        ? 'Write "summary" and every "todos" item in Nepali, in Devanagari script (keep product names, amounts and English terms the staff use as they are).'
+        : langs.summary === 'ne-roman'
+        ? 'Write "summary" and every "todos" item in Nepali using Roman (Latin) letters, the way Nepali speakers type on their phones (e.g. "Customer le bholi tank pick up garne bhanyo"). Keep product names and amounts as they are.'
+        : transcriptEn ? `Write "summary" and every "todos" item in English, even though the call was in ${languageName(lang) || 'another language'}.` : ''
+      const prompt = `You are summarising a phone call between a staff member at ${biz} and ${otherParty}.${whoInitiated ? `\n\n${whoInitiated}` : ''}${writeIn ? `\n\n${writeIn}` : ''}
 
 Respond ONLY with JSON, no preamble and no markdown fences:
 {"summary":"2-3 sentences, past tense, naming who called whom and what they wanted and how it was left","todos":["specific follow-up actions for the business, [] if none"],"sentiment":"positive|neutral|negative","contact":{"name":null,"email":null,"address":null,"city":null,"state":null,"postcode":null}}
@@ -238,14 +305,14 @@ ${ACTION_ITEMS_GUIDE}${openTasksForSummaryPrompt(openTasks)}
 For "contact", extract details that ${them} (NOT the staff member) explicitly stated about THEMSELVES during the call — their full name, email, and delivery/postal address (street line in "address", plus city/state/postcode separately). Use null for anything not clearly and unambiguously stated; never guess or infer.
 
 Transcript:
-${summarySource.slice(0, 12000)}`
+${summarySource.slice(0, 14000)}`
 
       for (const model of MODELS) {
         try {
           const res = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
             method: 'POST',
             headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-            body: JSON.stringify({ model, max_tokens: 800, messages: [{ role: 'user', content: prompt }] }),
+            body: JSON.stringify({ model, max_tokens: 1500, messages: [{ role: 'user', content: prompt }] }),
           })
           const raw = await res.text()
           if (!res.ok) {

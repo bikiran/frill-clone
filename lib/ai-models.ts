@@ -120,11 +120,16 @@ export async function trackAi(job: AiJob, companyId: string | null | undefined, 
   } catch {}
 }
 
+// Models used outside the job picker (speech-to-text), priced per 1M tokens.
+const OTHER_PRICES: Record<string, { in: number; out: number }> = {
+  'gemini-3.5-transcribe': { in: 2, out: 0 },   // audio tokens, 25 a second (lib/stt-gemini)
+}
+
 /** Estimated USD for some tokens on a model, or null when its price isn't known. */
 export function estimateCost(model: string, tokensIn: number, tokensOut: number, prices: AiSettings['prices'] = {}): number | null {
   // A dated id ("claude-haiku-4-5-20251001") costs the same as its alias.
   const id = KNOWN.has(model) ? model : (AI_MODELS.find(m => model.startsWith(m.id))?.id || model)
-  const p = prices[id] || (() => { const m = AI_MODELS.find(x => x.id === id); return m?.priceIn != null ? { in: m.priceIn, out: m.priceOut! } : null })()
+  const p = prices[id] || OTHER_PRICES[id] || (() => { const m = AI_MODELS.find(x => x.id === id); return m?.priceIn != null ? { in: m.priceIn, out: m.priceOut! } : null })()
   if (!p) return null
   return (tokensIn * p.in + tokensOut * p.out) / 1_000_000
 }
