@@ -188,7 +188,9 @@ export default function LinkCards({ companyId, text, codes: given, title, conver
   const stats = useLinkStats(companyId, codes)
   if (!codes.length) return null
   return (
-    <div style={{ display: 'grid', gap: 8, marginBottom: 8 }}>
+    // One column that never grows past its container, so a card stays inside
+    // a narrow chat bubble on a phone.
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 8, marginBottom: 8 }}>
       <style>{CSS}</style>
       {codes.map((c, i) => {
         const s = stats[i]
@@ -246,12 +248,12 @@ function Card({ s, title }: { s: LinkStats; title?: string }) {
 }
 
 const CSS = `
-.lc-card{background:#fff;border-radius:16px;color:#111;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.06);animation:lcIn .35s cubic-bezier(.22,1,.36,1) backwards;min-width:240px}
+.lc-card{background:#fff;border-radius:16px;color:#111;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.06);animation:lcIn .35s cubic-bezier(.22,1,.36,1) backwards;min-width:min(240px,100%)}
 .lc-skel{height:64px;background:linear-gradient(90deg,#f3f4f6 25%,#eceef1 50%,#f3f4f6 75%);background-size:400px 100%;animation:lcShim 1.2s linear infinite}
 .lc-head{display:flex;align-items:center;gap:11px;width:100%;padding:12px 12px 11px;border:none;background:none;font:inherit;color:inherit;cursor:pointer;text-align:left}
 .lc-head:disabled{cursor:default}
 .lc-icon{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.lc-title{display:block;font-size:13.5px;font-weight:800;color:#111;line-height:1.25}
+.lc-title{display:block;font-size:13.5px;font-weight:800;color:#111;line-height:1.25;overflow-wrap:anywhere}
 .lc-target{display:block;font-size:12px;color:#6b7280;text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
 .lc-target:hover{color:#111;text-decoration:underline}
 .lc-badge{flex-shrink:0;font-size:11.5px;font-weight:800;padding:4px 9px;border-radius:999px;background:#f3f4f6;color:#6b7280;white-space:nowrap}
