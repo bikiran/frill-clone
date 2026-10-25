@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { shopifyChargeBlock } from '@/lib/shopify-billing'
 import { createClient } from '@supabase/supabase-js'
 import { smsCreditsAccess } from '@/lib/sms-credits-access'
 import { getWallet, platformStripe } from '@/lib/sms-credits'
@@ -55,10 +56,9 @@ export async function POST(req: NextRequest) {
 
     const { data: co } = await db.from('companies').select('id, name, owner_id, billing_provider').eq('id', id).maybeSingle()
     if (!co) return NextResponse.json({ error: 'Couldn’t find your workspace. Refresh the page and try again.' }, { status: 404 })
-    // Shopify App Store rule: a workspace billed through Shopify pays through Shopify.
-    if (co.billing_provider === 'shopify') {
-      return NextResponse.json({ error: 'Your Colvy plan is billed through Shopify, so SMS credits can’t be bought by card here yet. Contact us and we’ll add credit for you.', shopify: true }, { status: 409 })
-    }
+    // Using Colvy through the Shopify app: no card charges (App Store rule 1.2.1).
+    const viaShopify = await shopifyChargeBlock(db, id, 'sms')
+    if (viaShopify) return NextResponse.json(viaShopify, { status: 409 })
     const wallet = await getWallet(db, id)
     if (!wallet.ready) return NextResponse.json({ error: 'SMS credits aren’t set up yet. Try again later.', notReady: true }, { status: 409 })
 

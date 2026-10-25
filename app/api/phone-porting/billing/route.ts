@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
+import { shopifyChargeBlock } from '@/lib/shopify-billing'
 import { createClient } from '@supabase/supabase-js'
 import { requireCompanyAdmin } from '@/lib/company-access'
 import { getPort } from '@/lib/number-porting-server'
@@ -37,6 +38,11 @@ export async function POST(req: NextRequest) {
     if (r.status !== 'completed') return NextResponse.json({ error: 'Billing starts once the number has moved to Colvy.' }, { status: 409 })
     if (r.billing_status === 'active') return NextResponse.json({ ok: true, alreadyActive: true })
     if (r.billing_status !== 'pending') return NextResponse.json({ error: 'Nothing to pay for this request.' }, { status: 409 })
+    // Using Colvy through the Shopify app: no card charges (App Store rule 1.2.1).
+    if (!sessionId) {
+      const viaShopify = await shopifyChargeBlock(db, companyId, 'porting')
+      if (viaShopify) return NextResponse.json(viaShopify, { status: 409 })
+    }
 
     const secret = (process.env.STRIPE_SECRET_KEY || '').trim()
     if (!secret.startsWith('sk_')) return NextResponse.json({ error: 'Card payments aren’t available just yet. The Colvy team will set up billing for this number with you.' }, { status: 503 })

@@ -59,9 +59,29 @@ function ShopifyBilling({ info }: { info: any }) {
   // Complimentary (given free by Colvy): nothing to choose or pay in Shopify.
   // If they'd already picked a paid Shopify plan, say so, since Shopify still
   // charges for it until it's changed to Free there.
-  const comp = !!info.complimentary
+  // Complimentary or set up by the Colvy team (Enterprise): nothing to choose
+  // or pay in Shopify.
+  const managed = !!info.managed && !info.complimentary
+  const comp = !!info.complimentary || managed
   const paidInShopify = comp && !!sub?.plan && sub.plan !== 'free'
-  const status = comp
+  // Plans the Colvy team manages are sorted out by the team, not here.
+  const [card, setCard] = useState<any>(managed ? null : info.cardSubscription || null)
+  const [cancelling, setCancelling] = useState(false)
+  const [cardMsg, setCardMsg] = useState('')
+  const cancelCard = async () => {
+    setCancelling(true); setCardMsg('')
+    try {
+      const r = await authFetch('/api/stripe/cancel-card-subscription', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: info.companyId }) })
+      const d = await r.json()
+      if (!r.ok || d.error) setCardMsg(d.error || 'Couldn’t cancel it. Try again.')
+      else { setCard(null); setCardMsg(d.endsAt ? `Your card subscription ends on ${fmtDate(d.endsAt)} and won’t renew.` : 'Your card subscription won’t renew.') }
+    } catch { setCardMsg('Couldn’t reach Colvy. Try again.') } finally { setCancelling(false) }
+  }
+  const status = managed
+    ? (paidInShopify
+      ? `Your ${PLAN_LABEL[plan] || plan} plan is managed by the Colvy team, but you also have a paid ${sub.name || PLAN_LABEL[sub.plan] || 'Colvy'} plan in Shopify${price ? ` (${price})` : ''}. Choose the Free plan in Shopify so you’re not charged twice.`
+      : `Your ${PLAN_LABEL[plan] || plan} plan is set up and managed by the Colvy team. Contact us for any billing changes.`)
+    : comp
     ? (paidInShopify
       ? `Your ${PLAN_LABEL[plan] || plan} plan is complimentary, but you also have a paid ${sub.name || PLAN_LABEL[sub.plan] || 'Colvy'} plan in Shopify${price ? ` (${price})` : ''}. Choose the Free plan in Shopify so you’re not charged.`
       : `Your ${PLAN_LABEL[plan] || plan} plan is complimentary. You won’t be charged.`)
@@ -93,9 +113,11 @@ function ShopifyBilling({ info }: { info: any }) {
         <div className="flex items-start gap-3">
           <span className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: '#e3f1ec', color: '#008060' }}><ShopifyBagIcon /></span>
           <div style={{ minWidth: 0 }}>
-            <p className="font-bold" style={{ color: 'var(--ink)' }}>{comp ? 'Complimentary — no charge' : 'Billed through Shopify'}</p>
+            <p className="font-bold" style={{ color: 'var(--ink)' }}>{managed ? 'Managed by Colvy' : comp ? 'Complimentary — no charge' : 'Billed through Shopify'}</p>
             <p className="text-sm mt-0.5" style={{ color: 'var(--slate)', lineHeight: 1.5 }}>
-              {comp
+              {managed
+                ? <>Your plan is arranged with the Colvy team. Anything you add through the app is charged on {info.store?.name ? <strong style={{ color: 'var(--ink)' }}>{info.store.name}</strong> : 'your store'}’s Shopify bill.</>
+                : comp
                 ? <>Colvy has given this workspace its plan free of charge. Nothing is added to {info.store?.name ? <strong style={{ color: 'var(--ink)' }}>{info.store.name}</strong> : 'your store'}’s Shopify bill.</>
                 : <>Your Colvy plan is charged on {info.store?.name ? <strong style={{ color: 'var(--ink)' }}>{info.store.name}</strong> : 'your store'}’s Shopify bill.</>}
             </p>
@@ -106,12 +128,25 @@ function ShopifyBilling({ info }: { info: any }) {
           <p className="text-sm mt-0.5" style={{ color: paidInShopify ? '#b42318' : 'var(--slate)', lineHeight: 1.5 }}>{status}</p>
         </div>
         {comp && !paidInShopify ? null : info.planUrl && info.store?.active ? (
-          <a href={info.planUrl} className="mt-5 w-full md:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90" style={{ background: '#008060' }}>
+          <a href={info.planUrl} target="_top" rel="noopener" className="mt-5 w-full md:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90" style={{ background: '#008060' }}>
             {paidInShopify ? 'Change to Free in Shopify' : sub?.plan ? 'Change plan in Shopify' : 'Choose a plan in Shopify'}
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17 17 7M8 7h9v9"/></svg>
           </a>
         ) : (
           <p className="mt-4 text-sm" style={{ color: 'var(--slate)' }}>Reconnect your Shopify store under Integrations → Shopify to change your plan.</p>
+        )}
+        {(card || cardMsg) && (
+          <div className="mt-5 p-4 rounded-xl text-sm" style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', lineHeight: 1.5 }}>
+            {card ? (
+              <>
+                <p style={{ margin: 0 }}>You still have a Colvy card subscription{card.tier ? ` (${PLAN_LABEL[card.tier] || card.tier})` : ''} from before you connected Shopify. Once your plan in Shopify has started, stop the card subscription so you aren’t charged twice. It runs to the end of the period you’ve paid for.</p>
+                <button type="button" onClick={cancelCard} disabled={cancelling} className="mt-3 px-4 py-2 rounded-lg text-sm font-bold" style={{ background: '#fff', border: '1px solid #f59e0b', color: '#92400e', cursor: cancelling ? 'wait' : 'pointer' }}>
+                  {cancelling ? 'Stopping…' : 'Stop card subscription'}
+                </button>
+              </>
+            ) : null}
+            {cardMsg && <p style={{ margin: card ? '8px 0 0' : 0 }}>{cardMsg}</p>}
+          </div>
         )}
         {!comp && (
           <p className="text-xs mt-4" style={{ color: 'var(--slate)', lineHeight: 1.5 }}>
@@ -207,7 +242,9 @@ export default function BillingPage() {
       }
       // The add-on check and (for Shopify billing) the Shopify plan, side by side.
       const back = new URLSearchParams(window.location.search).get('shopify_plan')
-      const shopP = co?.billing_provider === 'shopify'
+      // Asked for every workspace: one with a store connected through the
+      // Shopify app is billed through Shopify (adopted server-side).
+      const shopP = co?.id
         ? authFetch(`/api/shopify/billing?companyId=${co.id}${back ? '&refresh=1' : ''}`).then(async r => ({ ok: r.ok, d: await r.json() })).catch(() => null)
         : null
       const addonOn = await readAddon()
@@ -225,7 +262,7 @@ export default function BillingPage() {
       // Billed through Shopify? (lib/shopify-billing)
       if (shopP) {
         const res = await shopP
-        if (res?.ok && res.d?.provider === 'shopify') { setShopifyBilling(res.d); setPageLoading(false); return }
+        if (res?.ok && res.d?.provider === 'shopify') { setShopifyBilling({ ...res.d, companyId: co.id }); setPageLoading(false); return }
       }
 
       // Load subscription (already on its way)
@@ -290,6 +327,8 @@ export default function BillingPage() {
         return
       }
       if (data.url) { window.location.href = data.url; return }
+      // Uses Colvy through the Shopify app: reload into the Shopify plan view.
+      if (data.shopify) { window.location.reload(); return }
       await alertDialog({ title: 'Couldn’t start the checkout', message: data.error || 'Please try again in a minute.' })
     } catch (err: any) { await alertDialog({ title: 'Couldn’t start the checkout', message: err?.message || 'Please try again in a minute.' }) }
     setLoading(null)
