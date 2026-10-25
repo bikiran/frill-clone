@@ -67,6 +67,8 @@ import CreateOrderPanel from '@/components/CreateOrderPanel'
 import SuperAdminContactWorkspaces from '@/components/SuperAdminContactWorkspaces'
 import WaitlistQuickAdd from '@/components/WaitlistQuickAdd'
 import { useAiDraft, AiDraftButton, AiDraftInfo } from '@/components/AiDraft'
+import { useReplyTranslate, TranslateButton, TranslateStrip, customerLanguage } from '@/components/inbox/ReplyTranslate'
+import { mightNeedTranslation } from '@/lib/call-languages'
 import BookingLinkButton from '@/components/booking/BookingLinkButton'
 import LinkCards, { linkCodesIn, useLinkStats, LastOpen } from '@/components/LinkCards'
 import { confirmDialog } from '@/components/ConfirmDialog'
@@ -864,6 +866,8 @@ export default function InboxPage() {
   const [reply, setReply] = useState('')
   // ✨ Draft reply (chat/SMS composer): AI writes the next reply for the agent to review.
   const aiDraft = useAiDraft({ companyId, conversationId: selected?.id || null, onDraft: t => setReply(t), getText: () => reply })
+  // Reply in the customer's language (components/inbox/ReplyTranslate).
+  const replyTr = useReplyTranslate({ companyId, conversationId: selected?.id || null, getText: () => reply, setText: t => setReply(t) })
 
   // ── Coax-style resizable composer ──────────────────────────────────────
   // The reply box can be dragged taller/shorter via the grab handle on its top
@@ -1734,6 +1738,20 @@ export default function InboxPage() {
   const toggleMsgOriginal = (id: string) => setShowOriginalMsgs(prev => {
     const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
   })
+  // Translate one message into English on demand (emails, older messages,
+  // ones the automatic check missed); saved on the message for everyone.
+  const [translatingMsgs, setTranslatingMsgs] = useState<Set<string>>(new Set())
+  const translateMsg = async (id: string) => {
+    if (!companyId || translatingMsgs.has(id)) return
+    setTranslatingMsgs(p => new Set(p).add(id))
+    try {
+      const r = await authFetch('/api/inbox/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, messageId: id }) })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) { showToast(d.error || 'Couldn’t translate that message.'); return }
+      setMessages(prev => prev.map(m => m.id === id ? ({ ...m, content_lang: d.lang || 'unknown', ...(d.translated ? { translated_content: d.translated } : {}) } as any) : m))
+      if (!d.translated) showToast('That message is already in English.')
+    } catch { showToast('Couldn’t translate that message.') } finally { setTranslatingMsgs(p => { const n = new Set(p); n.delete(id); return n }) }
+  }
   const [statusFilter, setStatusFilter] = useState<'open' | 'closed'>('open')
 
   // ── Filter panel (Coax style) ─────────────────────────────────────────────
@@ -10145,6 +10163,14 @@ export default function InboxPage() {
                                 {/* Links Colvy sent the customer → a card with opens / device / city. */}
                                 {isAgent && /https?:\/\//.test(body || '') && <div style={{ whiteSpace: 'normal', marginTop: 2 }}><LinkCards companyId={companyId} text={body} conversationId={selected?.id || null} at={(msg as any).created_at || null} /></div>}
                                 {renderTextWithLinks(body)}
+                                {!hasTr && !isAgent && !(msg as any).translated_content && !/^en/i.test(String(tLang || '')) && mightNeedTranslation(msg.content) && (
+                                  <div style={{ marginTop: 4, fontSize: 10.5 }}>
+                                    <button type="button" onClick={() => translateMsg(msg.id)} disabled={translatingMsgs.has(msg.id)}
+                                      style={{ background: 'none', border: 'none', padding: 0, cursor: translatingMsgs.has(msg.id) ? 'wait' : 'pointer', color: '#2563eb', fontSize: 10.5, fontWeight: 700, textDecoration: 'underline' }}>
+                                      {translatingMsgs.has(msg.id) ? 'Translating…' : 'Translate'}
+                                    </button>
+                                  </div>
+                                )}
                                 {hasTr && (
                                   <div style={{ marginTop: 4, fontSize: 10.5, opacity: 0.8, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
                                     <span style={{ color: isAgent ? 'rgba(255,255,255,0.8)' : 'var(--slate)' }}>{showOrig ? `Original · ${langName}` : 'Translated · English'}</span>
@@ -10919,6 +10945,7 @@ export default function InboxPage() {
                 </div>
               )}
               {!internalMode && <AiDraftInfo info={aiDraft.info} error={aiDraft.error} busy={aiDraft.busy} onRedo={i => aiDraft.run(i)} onClose={aiDraft.clear} />}
+              {!internalMode && <TranslateStrip t={replyTr} suggested={customerLanguage(messages)} hasText={!!reply.trim()} />}
 
               {/* @mention picker */}
               {mentionQuery !== null && mentionMatches.length > 0 && (
@@ -11030,6 +11057,7 @@ export default function InboxPage() {
                   {/* Emoji */}
                   <button type="button" ref={emojiBtnRef} className="cmp-tool" onClick={() => setShowEmoji(v => !v)} title="Emoji" aria-label="Emoji" aria-haspopup="dialog" aria-expanded={showEmoji}
                     style={toolBtn(showEmoji)}>{Icon.smile(17)}</button>
+                  {!internalMode && <TranslateButton t={replyTr} suggested={customerLanguage(messages)} className="cmp-tool" style={toolBtn(!!replyTr.done)} />}
                   {renderLinkTools(false)}
                 </div>
                 <div className="cmp-send">

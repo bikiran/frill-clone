@@ -136,7 +136,7 @@ export function looksRomanNepali(text: string): boolean {
 
 // The most common words in spoken English. A call where few words are these
 // is very likely in another language (Vietnamese, Spanish, Romanised Hindi).
-const ENGLISH = new Set('the a an and or but to of in on at for with is are was were be been it its this that these those i you he she we they me my your our their him her them yes no yeah okay ok not do does did have has had can could will would just so what when where how why there here hi hello thanks thank please sorry right good sure like know get got one about from up out if all then now'.split(' '))
+const ENGLISH = new Set('the a an and or but to of in on at for with is are was were be been it its this that these those i you he she we they me my your our their him her them yes no yeah yep nope okay ok not do does did have has had can could will would just so what when where how why there here hi hello hey thanks thank please sorry right good great sure like know get got one about from up out if all then now still want need order ready today tomorrow time pick send'.split(' '))
 
 /** Latin-script text that reads as English (needs 20+ words to judge; shorter counts as English). */
 export function looksEnglish(text: string): boolean {
@@ -144,6 +144,22 @@ export function looksEnglish(text: string): boolean {
   if (words.length < 20) return true
   const hits = words.filter(w => ENGLISH.has(w)).length
   return hits / words.length >= 0.18
+}
+
+/**
+ * Might a short message be in another language? Another script, or three or
+ * more words with few common English ones (Roman Nepali "kati ho dai?",
+ * Spanish "¿tienen peces?"). Used to offer a Translate button; a wrong guess
+ * just shows the button on an English message.
+ */
+export function mightNeedTranslation(text: string): boolean {
+  const t = String(text || '')
+  if (hasNonLatinScript(t)) return true
+  const words = (t.toLowerCase().replace(/https?:\/\/\S+|\S+@\S+/g, ' ').match(/[a-zà-ÿ']+/g) || []).map(w => w.replace(/'s$|'re$|'m$|n't$|'ll$|'d$/, ''))
+  if (words.length < 3) return false
+  if (/[àáâãäåèéêëìíîïñòóôõöùúûüýÿăđơư]/.test(t.toLowerCase())) return true
+  const hits = words.filter(w => ENGLISH.has(w)).length
+  return hits / words.length < (words.length >= 20 ? 0.18 : 0.25)
 }
 
 /** "Nepali", from 'ne' / 'ne-NP' / 'nepali'. */
