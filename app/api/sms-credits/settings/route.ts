@@ -5,6 +5,7 @@ import { getWallet } from '@/lib/sms-credits'
 import { getSmsPolicy } from '@/lib/sms-policy'
 import { COLVY_CONTACT } from '@/lib/colvy-contact'
 import { validateAutoTopUp } from '@/lib/sms-credits-core'
+import { shopifySmsBilling } from '@/lib/shopify-usage'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,7 +14,8 @@ export const dynamic = 'force-dynamic'
 //   { companyId, removeCard: true }                      forget the saved card
 // Owner / admin only. Turning auto top-up on needs a saved card: the first one
 // is saved by a top-up with "Top up automatically" ticked (./topup). Turning it
-// on (again) clears the failure count. Switching auto top-up on needs the
+// on (again) clears the failure count. A workspace billed through Shopify needs
+// no card: its top-ups go on its Shopify bill (lib/shopify-usage). Switching auto top-up on needs the
 // company's SMS billing policy to allow it (lib/sms-policy); switching it off
 // and removing the card are always allowed.
 
@@ -41,7 +43,7 @@ export async function POST(req: NextRequest) {
       if (enabled && !(await getSmsPolicy(db, id)).canAutoTopUp) {
         return NextResponse.json({ error: `Auto top-up isn’t available for your account. Contact us at ${COLVY_CONTACT.email} if you need it.`, managed: true }, { status: 403 })
       }
-      if (enabled && !wallet.card) {
+      if (enabled && !wallet.card && !(await shopifySmsBilling(db, id).catch(() => null))?.ready) {
         return NextResponse.json({ error: 'Save a card first: top up once with “Top up automatically” ticked.', needsCard: true }, { status: 409 })
       }
       patch = {

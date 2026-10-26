@@ -228,9 +228,13 @@ async function rpc(db: any, fn: string, args: Record<string, any>): Promise<any>
 export type AutoTopUpDeps = {
   /** A Stripe client (tests pass a fake). Defaults to one on STRIPE_SECRET_KEY. */
   stripe?: any
+  /** Whether (and how) the company is billed through Shopify (tests pass a fake). Defaults to lib/shopify-usage. */
+  shopify?: () => Promise<import('@/lib/shopify-usage').ShopifySmsBilling | null>
+  /** Sends the Shopify billing event (tests pass a fake). Defaults to lib/shopify-usage. */
+  sendShopifyEvent?: (o: { shopGid: string; value: number | string; key: string; at?: Date }) => Promise<{ ok: boolean; status: number; error?: string }>
   now?: () => Date
   /** Tells the owner auto top-up was switched off (defaults to email + bell). */
-  notifyDisabled?: (db: any, companyId: string, error: string) => Promise<void>
+  notifyDisabled?: (db: any, companyId: string, error: string, o?: { viaShopify?: boolean }) => Promise<void>
 }
 
 /** Hold the estimated cost of a campaign. Re-calling re-quotes and adjusts the hold. */
@@ -366,6 +370,34 @@ export async function topUp(db: any, o: { companyId: string; amountCents: number
   return { ok: !!r.ok, already: !!r.already, balanceCents: Number(r.balance_cents) || 0, reason: r.reason }
 }
 
+/**
+ * Credit bought through the merchant's Shopify plan (lib/shopify-usage): one
+ * billable event to Shopify, then the credit. The event goes first so nothing
+ * is credited that Shopify refused; its key is the ledger's payment reference,
+ * so the credit is recorded once however often it's retried. charged with
+ * ok:false means Shopify has the charge but the credit couldn't be recorded
+ * (logged for the Colvy team to add by hand).
+ */
+export async function shopifyTopUp(db: any, o: {
+  companyId: string; amountCents: number; kind: 'topup' | 'auto_topup'; shopGid: string; createdBy?: string | null; at?: Date
+  send?: AutoTopUpDeps['sendShopifyEvent']
+}): Promise<{ ok: boolean; charged: boolean; balanceCents: number; key: string; error?: string }> {
+  const usage = await import('@/lib/shopify-usage')
+  const at = o.at || new Date()
+  const key = usage.usageKey(o.kind === 'auto_topup' ? 'auto' : 'buy', o.companyId, at)
+  const send = o.send || usage.sendBillingEvent
+  const ev = await send({ shopGid: o.shopGid, value: usage.creditUnits(o.amountCents), key, at })
+  if (!ev.ok) return { ok: false, charged: false, balanceCents: 0, key, error: ev.status === 0 ? 'Couldn’t reach Shopify. Try again in a minute.' : 'Shopify didn’t accept the charge. Try again in a minute.' }
+  const note = o.kind === 'auto_topup' ? 'Auto top-up (billed through Shopify)' : 'Top-up (billed through Shopify)'
+  let t: { ok: boolean; balanceCents: number; reason?: string } = { ok: false, balanceCents: 0 }
+  for (let i = 0; i < 3 && !t.ok; i++) {
+    t = await topUp(db, { companyId: o.companyId, amountCents: o.amountCents, kind: o.kind, paymentIntentId: `shopify:${key}`, note, createdBy: o.createdBy || null })
+    if (!t.ok) await new Promise(r => setTimeout(r, 400 * (i + 1)))
+  }
+  if (!t.ok) console.error('[sms-credits] Shopify charged but credit not recorded', JSON.stringify({ companyId: o.companyId, amountCents: o.amountCents, key, reason: t.reason }))
+  return { ok: t.ok, charged: true, balanceCents: t.balanceCents, key }
+}
+
 /** A platform admin's manual change (positive or negative), with the reason. */
 export async function adjustBalance(db: any, o: { companyId: string; amountCents: number; reason: string; adminId?: string | null }) {
   const r = await rpc(db, 'sms_credit_apply', {
@@ -394,8 +426,15 @@ export async function maybeAutoTopUp(db: any, companyId: string, opts: AutoTopUp
   if (!ready) return { ran: false, ok: false, reason: 'not_set_up' }
   // The policy must allow it (top-ups and auto top-up on, a mode that uses credit).
   if (row?.auto_topup_enabled && !(await getSmsPolicy(db, companyId)).canAutoTopUp) return { ran: false, ok: false, reason: 'not_allowed' }
-  const d = autoTopUpDecision(row, now.getTime(), opts.needCents || 0)
+  // A workspace that uses Colvy through the Shopify app is billed through its
+  // Shopify plan, never the card (App Store rule 1.2.1), even one saved before
+  // it moved to Shopify. Only asked when auto top-up is on.
+  const shop = row?.auto_topup_enabled
+    ? await (opts.shopify || (async () => (await import('@/lib/shopify-usage')).shopifySmsBilling(db, companyId, { maxAgeMs: 24 * 60 * 60 * 1000 })))().catch(() => null)
+    : null
+  const d = autoTopUpDecision(row, now.getTime(), opts.needCents || 0, { viaShopify: !!shop?.ready })
   if (!d.go) return { ran: false, ok: false, reason: d.reason }
+  if (shop && !shop.ready) return { ran: false, ok: false, reason: 'shopify_not_ready' }
 
   // Claim the attempt: only one request charges the card.
   const claimAt = now.toISOString()
@@ -408,21 +447,36 @@ export async function maybeAutoTopUp(db: any, companyId: string, opts: AutoTopUp
   } catch {}
   if (!claimed) return { ran: false, ok: false, reason: 'in_progress' }
 
-  const stripe = opts.stripe || await platformStripe()
-  if (!stripe) {
-    await db.from('sms_credit_accounts').update({ auto_topup_pending_at: null }).eq('company_id', companyId)
-    return { ran: false, ok: false, reason: 'billing_unavailable' }
-  }
   const amount = Number(row.auto_topup_amount_cents) || DEFAULT_AUTO_AMOUNT_CENTS
+  const done = async () => {
+    try {
+      await db.from('sms_credit_accounts').update({
+        auto_topup_failures: 0, auto_topup_last_error: null, auto_topup_last_attempt_at: now.toISOString(),
+        auto_topup_pending_at: null, updated_at: now.toISOString(),
+      }).eq('company_id', companyId)
+    } catch {}
+  }
   const fail = async (error: string) => {
     const patch = afterAutoTopUpFailure(row.auto_topup_failures, error, now)
     const { disabled, ...cols } = patch
     try { await db.from('sms_credit_accounts').update({ ...cols, updated_at: now.toISOString() }).eq('company_id', companyId) } catch {}
     if (disabled) {
       const notify = opts.notifyDisabled || notifyAutoTopUpDisabled
-      await notify(db, companyId, error).catch((e: any) => console.error('[sms-credits] notify failed', e?.message))
+      await notify(db, companyId, error, { viaShopify: !!shop?.ready }).catch((e: any) => console.error('[sms-credits] notify failed', e?.message))
     }
     return { ran: true, ok: false, reason: 'failed', disabled }
+  }
+  if (shop?.ready) {
+    const t = await shopifyTopUp(db, { companyId, amountCents: amount, kind: 'auto_topup', shopGid: shop.shopGid, at: now, send: opts.sendShopifyEvent })
+    if (!t.ok && !t.charged) return fail(t.error || 'Shopify didn’t accept the charge.')
+    await done()
+    return { ran: true, ok: t.ok, reason: t.ok ? 'topped_up' : 'charged_not_recorded', balanceCents: t.balanceCents }
+  }
+
+  const stripe = opts.stripe || await platformStripe()
+  if (!stripe) {
+    await db.from('sms_credit_accounts').update({ auto_topup_pending_at: null }).eq('company_id', companyId)
+    return { ran: false, ok: false, reason: 'billing_unavailable' }
   }
   let pi: any
   try {
@@ -438,12 +492,7 @@ export async function maybeAutoTopUp(db: any, companyId: string, opts: AutoTopUp
   }
   if (pi?.status !== 'succeeded') return fail(pi?.status === 'requires_action' ? cardErrorText({ code: 'authentication_required' }) : 'The payment didn’t go through.')
   const t = await topUp(db, { companyId, amountCents: Number(pi.amount_received || pi.amount || amount), kind: 'auto_topup', paymentIntentId: pi.id })
-  try {
-    await db.from('sms_credit_accounts').update({
-      auto_topup_failures: 0, auto_topup_last_error: null, auto_topup_last_attempt_at: now.toISOString(),
-      auto_topup_pending_at: null, updated_at: now.toISOString(),
-    }).eq('company_id', companyId)
-  } catch {}
+  await done()
   // Charged but not recorded (database blip): the payment_intent.succeeded
   // webhook credits it, keyed on the same payment intent.
   return { ran: true, ok: t.ok, reason: t.ok ? 'topped_up' : 'charged_not_recorded', balanceCents: t.balanceCents }
@@ -458,16 +507,16 @@ export async function billingUrl(db: any, companyId: string): Promise<{ url: str
 }
 
 /** Email + bell to the owner: auto top-up failed twice and is now off. */
-export async function notifyAutoTopUpDisabled(db: any, companyId: string, error: string): Promise<void> {
+export async function notifyAutoTopUpDisabled(db: any, companyId: string, error: string, o: { viaShopify?: boolean } = {}): Promise<void> {
   const { url, name, ownerId } = await billingUrl(db, companyId)
   const w = await getWallet(db, companyId)
   const { smsAutoTopUpOffEmail } = await import('@/lib/colvy-account-emails')
-  const mail = smsAutoTopUpOffEmail({ business: name, error, balanceCents: w.balanceCents, billingUrl: url })
+  const mail = smsAutoTopUpOffEmail({ business: name, error, balanceCents: w.balanceCents, billingUrl: url, viaShopify: o.viaShopify })
   if (ownerId) {
     try {
       await db.from('notifications').insert({
         user_id: ownerId, company_id: companyId, type: 'sms', is_read: false,
-        message: `Auto top-up for SMS credits is off: the card payment failed twice. ${error} Top up from Billing to keep texts going.`,
+        message: `Auto top-up for SMS credits is off: ${o.viaShopify ? 'Shopify didn’t accept two top-ups in a row' : 'the card payment failed twice'}. ${error} Top up from Billing to keep texts going.`,
       })
     } catch {}
   }

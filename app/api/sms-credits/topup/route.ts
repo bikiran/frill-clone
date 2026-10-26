@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { shopifyChargeBlock } from '@/lib/shopify-billing'
+import { shopifySmsBilling, shopifySmsRefusal } from '@/lib/shopify-usage'
 import { createClient } from '@supabase/supabase-js'
 import { smsCreditsAccess } from '@/lib/sms-credits-access'
-import { getWallet, platformStripe } from '@/lib/sms-credits'
+import { getWallet, platformStripe, shopifyTopUp } from '@/lib/sms-credits'
 import { getSmsPolicy, topUpRefusal } from '@/lib/sms-policy'
 import { fmtCents, validateAutoTopUp, validateTopUpCents } from '@/lib/sms-credits-core'
 import { billingUnavailableCopy, secretKeyOk } from '@/lib/billing-config'
@@ -24,6 +24,11 @@ export const dynamic = 'force-dynamic'
 // The company's SMS billing policy must allow it (lib/sms-policy): no top-ups
 // when Colvy manages them or the plan doesn't use credit, and no auto top-up
 // when that's not allowed: 403 { managed: true }, whatever the page shows.
+//
+// A workspace that uses Colvy through the Shopify app is never charged by card
+// (App Store rule 1.2.1). Its credit is billed through its Shopify plan's usage
+// meter (lib/shopify-usage) and added straight away: { ok, shopify: true,
+// balanceCents }, no checkout. Without the meter: 409 { shopify: true, planUrl }.
 
 const admin = () => createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } })
 
@@ -56,11 +61,26 @@ export async function POST(req: NextRequest) {
 
     const { data: co } = await db.from('companies').select('id, name, owner_id, billing_provider').eq('id', id).maybeSingle()
     if (!co) return NextResponse.json({ error: 'Couldn’t find your workspace. Refresh the page and try again.' }, { status: 404 })
-    // Using Colvy through the Shopify app: no card charges (App Store rule 1.2.1).
-    const viaShopify = await shopifyChargeBlock(db, id, 'sms')
-    if (viaShopify) return NextResponse.json(viaShopify, { status: 409 })
+    // Using Colvy through the Shopify app: billed through the Shopify plan, never by card.
+    const shop = await shopifySmsBilling(db, id, { fresh: true })
+    if (shop && !shop.ready) return NextResponse.json({ error: shopifySmsRefusal(shop), shopify: true, planUrl: shop.planUrl }, { status: 409 })
     const wallet = await getWallet(db, id)
     if (!wallet.ready) return NextResponse.json({ error: 'SMS credits aren’t set up yet. Try again later.', notReady: true }, { status: 409 })
+    if (shop?.ready) {
+      if (auto) {
+        // Auto top-up through Shopify needs no card: switch it on with these amounts.
+        await db.from('sms_credit_accounts').upsert({
+          company_id: id, auto_topup_enabled: true, auto_topup_threshold_cents: auto.thresholdCents, auto_topup_amount_cents: auto.amountCents,
+          auto_topup_failures: 0, auto_topup_last_error: null, updated_at: new Date().toISOString(),
+        }, { onConflict: 'company_id' })
+      }
+      const t = await shopifyTopUp(db, { companyId: id, amountCents: amount.cents, kind: 'topup', shopGid: shop.shopGid, createdBy: access.userId || null })
+      if (!t.charged) return NextResponse.json({ error: t.error }, { status: 502 })
+      if (!t.ok) {
+        return NextResponse.json({ shopify: true, error: `Shopify has the charge, but the credit didn’t save. Contact us at ${COLVY_CONTACT.email} with reference ${t.key} and we’ll add it straight away.` }, { status: 500 })
+      }
+      return NextResponse.json({ ok: true, shopify: true, creditedCents: amount.cents, balanceCents: t.balanceCents })
+    }
 
     if (!secretKeyOk(process.env)) {
       console.error('[sms-credits/topup] billing not set up: missing or wrong STRIPE_SECRET_KEY')

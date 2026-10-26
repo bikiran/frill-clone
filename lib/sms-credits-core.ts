@@ -212,10 +212,11 @@ export type AutoTopUpAccount = {
  * Whether to charge the saved card now. `needCents` (optional) asks for a top-up
  * because a send needs that much more, even above the threshold.
  */
-export function autoTopUpDecision(a: AutoTopUpAccount | null | undefined, now: number = Date.now(), needCents = 0): { go: boolean; reason: string } {
+export function autoTopUpDecision(a: AutoTopUpAccount | null | undefined, now: number = Date.now(), needCents = 0, opts: { viaShopify?: boolean } = {}): { go: boolean; reason: string } {
   if (!a) return { go: false, reason: 'no_account' }
   if (!a.auto_topup_enabled) return { go: false, reason: 'off' }
-  if (!a.stripe_customer_id || !a.stripe_payment_method_id) return { go: false, reason: 'no_card' }
+  // Billed through the merchant's Shopify plan (lib/shopify-usage): no card involved.
+  if (!opts.viaShopify && (!a.stripe_customer_id || !a.stripe_payment_method_id)) return { go: false, reason: 'no_card' }
   if ((a.auto_topup_failures || 0) >= AUTO_TOPUP_MAX_FAILURES) return { go: false, reason: 'failed_too_often' }
   const pending = a.auto_topup_pending_at ? Date.parse(a.auto_topup_pending_at) : NaN
   if (Number.isFinite(pending) && now - pending < AUTO_TOPUP_PENDING_MS) return { go: false, reason: 'in_progress' }
