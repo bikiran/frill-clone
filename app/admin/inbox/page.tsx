@@ -7059,6 +7059,18 @@ export default function InboxPage() {
             height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px) - var(--admin-banners-h, 0px)) !important;
             max-height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px) - var(--admin-banners-h, 0px)) !important;
           }
+          /* Keyboard up (components/KeyboardAware): the page has shrunk to the
+             space above it and the bottom tabs and banners have stepped aside,
+             so the inbox takes everything under the top bar. While writing an
+             email the customer strip and the To row (still under Details when
+             the keyboard is down) give way, and the editor starts shorter. */
+          html.kb-open .inbox-root {
+            height: calc(100dvh - 56px - var(--admin-banners-h, 0px)) !important;
+            max-height: calc(100dvh - 56px - var(--admin-banners-h, 0px)) !important;
+          }
+          html.kb-open .cg-wrap { display: none; }
+          html.kb-open .ecmp:has(.email-rte:focus) .ecmp-to { display: none !important; }
+          html.kb-open .email-rte { min-height: 72px !important; max-height: 30dvh !important; }
           /* One pane at a time on phones */
           .inbox-root .inbox-col-list,
           .inbox-root .inbox-col-thread,

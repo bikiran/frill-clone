@@ -1,13 +1,23 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { preconnect } from 'react-dom'
 import './globals.css'
 import AppChrome from './AppChrome'
 import PressFeedback from '@/components/PressFeedback'
+import KeyboardAware from '@/components/KeyboardAware'
 import PhoneHost from '@/components/PhoneHost'
 
 // The public marketing site lives on this origin; used to resolve canonical and
 // Open Graph URLs. Falls back to the production domain when the env var is unset.
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+
+// On phones the keyboard shrinks the page instead of covering its bottom (where
+// the inbox's reply box is). Chrome's default draws the keyboard over the page.
+// Safari ignores this and moves the page itself.
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  interactiveWidget: 'resizes-content',
+}
 
 // Site-wide metadata defaults. Individual pages override `title` (the template
 // turns "Pricing" into "Pricing · Colvy") and `description`; everything else
@@ -113,6 +123,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             live call. Here the phone persists across every route in the tab. */}
         <PhoneHost />
         <PressFeedback />
+        <KeyboardAware />
       </body>
     </html>
   )

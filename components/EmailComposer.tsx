@@ -338,7 +338,7 @@ export default function EmailComposer({
 
 
   return (
-    <div className={header ? 'cmp-card' : undefined} style={header ? { overflow: 'hidden' } : { border: '1px solid var(--border)', borderRadius: 12, background: '#fff', overflow: 'hidden' }}>
+    <div className={header ? 'cmp-card ecmp' : 'ecmp'} style={header ? { overflow: 'hidden' } : { border: '1px solid var(--border)', borderRadius: 12, background: '#fff', overflow: 'hidden' }}>
       {header}
       {(!compact || showDetails) && (
       <div style={{ ...row, flexWrap: 'wrap', rowGap: 2, background: header ? 'transparent' : 'var(--canvas)' }}>
@@ -352,7 +352,7 @@ export default function EmailComposer({
         </span>
       </div>
       )}
-      <div style={row}>
+      <div className="ecmp-to" style={row}>
         <span style={rowLabel}>To</span>
         <input value={to} onChange={e => setTo(e.target.value)} style={field} placeholder="customer@example.com" />
         {(!showCc || !showBcc) && (!compact || showDetails) && (
