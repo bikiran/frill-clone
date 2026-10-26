@@ -86,6 +86,7 @@ import { fillTemplateVars, type TemplateVars } from '@/lib/composer-templates'
 import WhatsAppComposerBar from '@/components/inbox/WhatsAppComposerBar'
 import { STATUS_LABEL as WA_STATUS_LABEL } from '@/lib/whatsapp-core'
 import { ProtectionCard, ProtectionBanner } from '@/components/inbox/ProtectionCard'
+import EmptyScroll from '@/components/EmptyScroll'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -6788,6 +6789,44 @@ export default function InboxPage() {
     setConvLimit(l => l + 50)
   }, [filteredConvs.length, hasMoreConvs, assignFilter, locationFilter, activeFilterCount, searchTerm, convLimit])
 
+  // Keyboard: J / K move down / up the list, R jumps to the reply box. Only
+  // when nothing is being typed and no dialog is open (the empty thread pane
+  // shows these).
+  const kbd = useRef({ list: filteredConvs, selected, select: selectConversation })
+  kbd.current = { list: filteredConvs, selected, select: selectConversation }
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return
+      const k = e.key.toLowerCase()
+      if (k !== 'j' && k !== 'k' && k !== 'r') return
+      const t = e.target as HTMLElement | null
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return
+      // Not while a dialog is showing (some, like Colvy AI, stay in the page hidden).
+      const showing = [...document.querySelectorAll<HTMLElement>('[role="dialog"], [aria-modal="true"]')].some(el => {
+        if (!el.getClientRects().length) return false
+        const cs = getComputedStyle(el)
+        return cs.visibility !== 'hidden' && cs.pointerEvents !== 'none' && Number(cs.opacity) > 0.01
+      })
+      if (showing) return
+      const { list, selected: cur, select } = kbd.current
+      if (k === 'r') {
+        // The SMS/chat box, or the email editor (components/EmailComposer).
+        const box = textareaRef.current?.isConnected ? textareaRef.current : document.querySelector<HTMLElement>('.email-rte[contenteditable="true"]')
+        if (cur && box) { e.preventDefault(); box.focus() }
+        return
+      }
+      if (!list.length) return
+      const i = cur ? list.findIndex(c => c.id === cur.id) : -1
+      const next = i < 0 ? 0 : k === 'j' ? Math.min(list.length - 1, i + 1) : Math.max(0, i - 1)
+      if (next === i) return
+      e.preventDefault()
+      select(list[next])
+      document.querySelector(`[data-conv-row="${list[next].id}"]`)?.scrollIntoView({ block: 'nearest' })
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   // ── Render ─────────────────────────────────────────────────────────────────
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--slate)' }}>Loading inbox…</div>
 
@@ -6985,6 +7024,22 @@ export default function InboxPage() {
 
         /* The collapsed one-line reply bar is a phone thing only. */
         .mcmp-bar { display: none; }
+
+        /* Keyboard keys in the empty thread pane. */
+        .inbox-kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 6px; background: #fff; border: 1px solid #e5e5ea; box-shadow: 0 1px 0 rgba(0,0,0,0.04); font-size: 11.5px; font-weight: 600; color: #3a3a3c; }
+        @media (hover: none), (max-width: 1100px) { .inbox-kbd-hints { display: none !important; } }
+
+        /* Desktop: the list, the thread and the contact panel float as rounded
+           cards on a soft grey, like a native app. The thread column keeps its
+           menus unclipped, so its header and reply box take the corners. */
+        @media (min-width: 1101px) {
+          .inbox-root { background: #f1f1f4; padding: 10px; gap: 10px; }
+          .inbox-col-list, .inbox-col-contact, .inbox-collapsed-rail { border: none !important; border-radius: 18px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+          .inbox-col-thread { border-radius: 18px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+          .inbox-col-thread > .inbox-thread-header { border-radius: 18px 18px 0 0; }
+          .inbox-col-thread .inbox-composer { border-radius: 0 0 18px 18px; }
+          .inbox-empty-thread { border-radius: 18px; }
+        }
 
         /* A message that has just arrived (or just been sent) rises into place
            from its own corner; what was already there when the thread opened
@@ -8712,9 +8767,18 @@ export default function InboxPage() {
 
         {/* List */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {filteredConvs.length === 0 && (
-            <div style={{ padding: 32, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>No conversations yet</div>
-          )}
+          {filteredConvs.length === 0 && (() => {
+            // An empty list that still feels alive, worded for what's being looked at.
+            const term = searchTerm.trim()
+            const [title, line] = term ? ['No matches', `Nothing matches “${term}”. Try a name, number or a word from the chat.`]
+              : statusFilter === 'closed' ? ['No closed conversations', 'Conversations you close will show up here.']
+              : activeFilterCount > 0 || locationFilter !== 'all' ? ['Nothing matches these filters', 'Try clearing a filter to see more.']
+              : assignFilter === 'unread' ? ['You’re all caught up', 'New messages will show up here.']
+              : assignFilter === 'mine' ? ['Nothing assigned to you', 'Conversations assigned to you will show up here.']
+              : assignFilter === 'unassigned' ? ['Every conversation has an owner', 'New ones without an owner will show up here.']
+              : ['No conversations yet', 'New conversations will show up here.']
+            return <div style={{ paddingTop: 24 }}><EmptyScroll title={title} line={line} /></div>
+          })()}
           {filteredConvs.map(conv => {
             // Customer name first — the source is a tag, not the headline.
             const c: any = conv
@@ -8823,7 +8887,7 @@ export default function InboxPage() {
             const isOverdue = waitingHours >= 3
 
             return (
-            <button key={conv.id} type="button" onClick={() => selectConversation(conv)}
+            <button key={conv.id} type="button" onClick={() => selectConversation(conv)} data-conv-row={conv.id}
               onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, conv }) }}
               style={{ display: 'block', width: '100%', textAlign: 'left', padding: '12px 14px', paddingLeft: unread ? 11 : 14, border: 'none', borderLeft: unread ? `3px solid ${accent}` : '3px solid transparent', borderBottom: '1px solid var(--border)', cursor: 'pointer', background: selected?.id === conv.id ? 'var(--peach)' : unread ? '#fff6f4' : '#fff', transition: 'background 0.1s' }}>
               {/* Location label — only shown when viewing All locations, so the
@@ -8958,9 +9022,20 @@ export default function InboxPage() {
       {/* ── MIDDLE: Chat thread ─────────────────────────────────────────────── */}
       <div className="inbox-col-thread" style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#f9f9f9', minWidth: 0 }}>
         {!selected ? (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-            <p style={{ marginTop: 12, fontSize: 15 }}>Select a conversation</p>
+          // Nothing open: the business's mark, quietly, and the keyboard keys.
+          <div className="inbox-empty-thread" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative', background: '#fff' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, opacity: 0.9 }}>
+              {companyInfo?.logo_url
+                ? <img src={companyInfo.logo_url} alt="" style={{ width: 44, height: 44, borderRadius: 12, objectFit: 'cover' }} />
+                : <span style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--coral)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 800 }}>{(companyInfo?.name || 'C').slice(0, 1).toUpperCase()}</span>}
+              <span style={{ fontSize: 26, fontWeight: 800, color: 'var(--ink)', letterSpacing: '-0.02em' }}>{companyInfo?.name || 'Inbox'}</span>
+            </div>
+            <p style={{ margin: '14px 0 0', fontSize: 13.5, color: '#8e8e93' }}>Pick a conversation to start.</p>
+            <div className="inbox-kbd-hints" style={{ position: 'absolute', bottom: 22, left: 0, right: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, flexWrap: 'wrap', fontSize: 12.5, color: '#8e8e93' }}>
+              <span className="inbox-kbd">J</span><span>/</span><span className="inbox-kbd">K</span><span style={{ marginRight: 8 }}>to move,</span>
+              <span className="inbox-kbd">R</span><span style={{ marginRight: 8 }}>to reply,</span>
+              <span className="inbox-kbd">⌘</span><span className="inbox-kbd">K</span><span>to search</span>
+            </div>
           </div>
         ) : (
           <>

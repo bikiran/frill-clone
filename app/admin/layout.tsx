@@ -39,6 +39,7 @@ import FeedbackButton from '@/components/FeedbackButton'
 import ColvyAssistant from '@/components/ColvyAssistant'
 import SuperAdminBar from '@/components/SuperAdminBar'
 import RouteScrollTop from '@/components/RouteScrollTop'
+import SetupRing from '@/components/SetupRing'
 import { canUseFeature, canAccessPath, featureForPath, hasFullAccess, type PermissionMap } from '@/lib/permissions'
 
 const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
@@ -1258,6 +1259,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </div>
           )}
         </nav>
+
+        {/* Getting started: setup progress, for new workspaces (components/SetupRing). */}
+        {hasFullAccess(myRole) && company?.id && <SetupRing companyId={company.id} collapsed={adminCollapsed} />}
 
         {/* Upgrade CTA — collapses to a single centred icon so its text can't
             overflow the 60px rail and clip ("Upgrade / to Pro / Unloc…").

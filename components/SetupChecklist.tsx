@@ -64,7 +64,7 @@ function oldChecklistHidden(companyId: string): boolean {
     return !!old && old.hidden === true
   } catch { return false }
 }
-function readPrefs(companyId: string): Prefs {
+export function readPrefs(companyId: string): Prefs {
   const blank: Prefs = { hidden: false, skipped: [], seen: null, completed: false }
   if (typeof window === 'undefined') return blank
   try {
