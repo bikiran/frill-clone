@@ -7,14 +7,23 @@ import { authFetch } from '@/lib/auth-fetch'
 // Inbox: a reply the Support Agent prepared for this conversation, waiting for
 // the team (Agent Engine "prepare"). Send it as is, edit it first, or dismiss
 // it. "Why?" explains the agent's run — what it looked up and why it said this.
+// In the inbox it folds to a slim "… suggests a reply · Review" bar (the ⌄ in
+// its header), as on the phone, so it doesn't sit over the thread; it stays
+// folded for that suggestion until opened again.
 
 const EASE = 'cubic-bezier(.22,1,.36,1)'
 const Spark = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.6L18.5 9l-4.7 1.4L12 15l-1.8-4.6L5.5 9l4.7-1.4z" /></svg>
 
+// Suggestions folded this visit, so switching conversations doesn't reopen them.
+const folded = new Set<string>()
+const Chevron = ({ up }: { up?: boolean }) => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points={up ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} /></svg>
+
 export type Suggestion = { id: string; run_id: string; action_key: string; args: any; created_at: string; run?: { summary?: string | null; intent?: string | null; role_key?: string | null; input?: any } | null }
 
-export function SuggestionCard({ s, companyId, onDone, compact }: { s: Suggestion; companyId: string; onDone: (id: string, result: string) => void; compact?: boolean }) {
+export function SuggestionCard({ s, companyId, onDone, compact, foldable }: { s: Suggestion; companyId: string; onDone: (id: string, result: string) => void; compact?: boolean; foldable?: boolean }) {
   const [editing, setEditing] = useState(false)
+  const [isFolded, setFolded] = useState(() => !!foldable && folded.has(s.id))
+  const fold = (v: boolean) => { if (v) folded.add(s.id); else folded.delete(s.id); setFolded(v) }
   const [text, setText] = useState(String(s.args?.text || ''))
   const [busy, setBusy] = useState<'' | 'send' | 'dismiss'>('')
   // A public reply to a Google review (Reputation Agent) or a message to a customer (Support Agent).
@@ -55,15 +64,31 @@ export function SuggestionCard({ s, companyId, onDone, compact }: { s: Suggestio
     } catch { setError('Couldn’t reach Colvy. Try again.') } finally { setBusy('') }
   }
 
+  const title = isOutside ? `${agentName} wants to use an outside tool` : isWaitlist ? `${agentName} wants to add them to a waiting list` : isBooking ? `Reception Agent wants to ${s.action_key === 'cancel_booking' ? 'cancel a booking' : 'move a booking'}` : isComment ? `Reputation Agent drafted ${s.run?.input?.platform === 'instagram' ? 'an Instagram' : 'a Facebook'} reply` : isReview ? 'Reputation Agent drafted a reply' : isCart ? 'Sales Agent wrote a cart follow-up' : isOrder ? 'Operations Agent wrote an order update' : isFollowup ? `Sales Agent wrote a ${s.run?.input?.kind === 'lead' ? 'follow-up to an enquiry' : 'quote follow-up'}` : s.run?.role_key === 'reception' ? 'Reception Agent suggests a reply' : 'Support Agent suggests a reply'
+
+  if (isFolded) {
+    return (
+      <button type="button" className="agsg-bar" onClick={() => fold(false)} aria-expanded={false} aria-label={`${title}. Show`}>
+        <span className="agsg-orb" style={{ width: 22, height: 22, borderRadius: 7 }}><Spark /></span>
+        <span className="agsg-bar-t">{title}</span>
+        <span className="agsg-bar-go">Review <Chevron up /></span>
+        <style>{CSS}</style>
+      </button>
+    )
+  }
+
   return (
     <div className="agsg" role="region" aria-label="Suggested reply">
       <div className="agsg-head">
         <span className="agsg-orb"><Spark /></span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p className="agsg-t">{isOutside ? `${agentName} wants to use an outside tool` : isWaitlist ? `${agentName} wants to add them to a waiting list` : isBooking ? `Reception Agent wants to ${s.action_key === 'cancel_booking' ? 'cancel a booking' : 'move a booking'}` : isComment ? `Reputation Agent drafted ${s.run?.input?.platform === 'instagram' ? 'an Instagram' : 'a Facebook'} reply` : isReview ? 'Reputation Agent drafted a reply' : isCart ? 'Sales Agent wrote a cart follow-up' : isOrder ? 'Operations Agent wrote an order update' : isFollowup ? `Sales Agent wrote a ${s.run?.input?.kind === 'lead' ? 'follow-up to an enquiry' : 'quote follow-up'}` : s.run?.role_key === 'reception' ? 'Reception Agent suggests a reply' : 'Support Agent suggests a reply'}</p>
+          <p className="agsg-t">{title}</p>
           {!compact && s.run?.summary && <p className="agsg-s">{s.run.summary}</p>}
         </div>
         <WhyLink companyId={companyId} runId={s.run_id} className="agsg-why" style={{ textDecoration: 'none' }} />
+        {foldable && !editing && (
+          <button type="button" className="agsg-fold" onClick={() => fold(true)} aria-expanded title="Hide for now" aria-label="Hide the suggestion"><Chevron /></button>
+        )}
       </div>
       {isOutside
         ? <p className="agsg-text">{String(s.args?._preview || 'Use an outside tool')}. It runs once, with exactly these details.</p>
@@ -132,7 +157,7 @@ export default function AgentSuggestion({ companyId, conversationId, onChange }:
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '8px 0' }}>
       {visible.map(s => (
-        <SuggestionCard key={s.id} s={s} companyId={companyId} onDone={(id) => { setDone(d => new Set(d).add(id)); setTimeout(load, 1200) }} />
+        <SuggestionCard key={s.id} s={s} companyId={companyId} foldable onDone={(id) => { setDone(d => new Set(d).add(id)); setTimeout(load, 1200) }} />
       ))}
     </div>
   )
@@ -147,6 +172,14 @@ const CSS = `
 .agsg-t{margin:0;font-size:13px;font-weight:800;color:#0d0d0d}
 .agsg-s{margin:2px 0 0;font-size:12px;color:#71717a;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .agsg-why{flex-shrink:0;font-size:12.5px;font-weight:700;color:var(--coral,#e2553f);text-decoration:none;padding:3px 2px}
+.agsg-fold{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;margin:-1px -4px 0 0;border:none;border-radius:8px;background:none;color:#71717a;cursor:pointer;transition:background .15s ease,color .15s ease}
+.agsg-fold:hover{background:color-mix(in srgb,var(--coral,#e2553f) 10%,#fff);color:var(--coral,#e2553f)}
+.agsg-bar{display:flex;align-items:center;gap:10px;width:100%;max-width:640px;margin-left:auto;box-sizing:border-box;padding:8px 12px;border-radius:14px;border:1px solid color-mix(in srgb,var(--coral,#e2553f) 22%,#e5e7eb);background:color-mix(in srgb,var(--coral,#e2553f) 6%,#fff);cursor:pointer;font-family:inherit;text-align:left;animation:agsgIn .3s ${EASE} both;transition:background .15s ease}
+.agsg-bar:hover{background:color-mix(in srgb,var(--coral,#e2553f) 10%,#fff)}
+.agsg-bar .agsg-orb svg{width:12px;height:12px}
+.agsg-bar-t{flex:1;min-width:0;font-size:13px;font-weight:800;color:#0d0d0d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.agsg-bar-go{display:inline-flex;align-items:center;gap:4px;flex-shrink:0;font-size:12.5px;font-weight:800;color:var(--coral,#e2553f)}
+@media (prefers-reduced-motion: reduce){.agsg-bar{animation:none}}
 .agsg-text{margin:0;padding:12px 14px;font-size:14px;line-height:1.55;color:#18181b;white-space:pre-wrap}
 .agsg-edit{display:block;width:calc(100% - 24px);margin:10px 12px 0;box-sizing:border-box;padding:10px 12px;border-radius:12px;border:1px solid #e4e4e7;font-size:14px;line-height:1.55;font-family:inherit;color:#18181b;resize:vertical;min-height:96px;outline:none;transition:border-color .2s ease,box-shadow .2s ease}
 .agsg-edit:focus{border-color:var(--coral,#e2553f);box-shadow:0 0 0 3px color-mix(in srgb,var(--coral,#e2553f) 15%,transparent)}
