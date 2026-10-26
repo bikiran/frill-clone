@@ -100,6 +100,9 @@ export default function CommandCentrePage() {
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
   const [rangeMenu, setRangeMenu] = useState(false)
+  // The menu opens toward whichever side has room: from the button's right
+  // edge when it sits near the right of the screen, so it never runs off it.
+  const [rangeAlignRight, setRangeAlignRight] = useState(false)
   const [sms, setSms] = useState<Sms[]>([])
   const [smsLoaded, setSmsLoaded] = useState(false)
   // booted: the first calls are in. Until then the board shows placeholders.
@@ -941,13 +944,13 @@ export default function CommandCentrePage() {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', minWidth: 0, maxWidth: '100%' }}>
           <div style={{ position: 'relative' }}>
-            <button type="button" onClick={() => setRangeMenu(m => !m)} style={{ ...ctrl, display: 'inline-flex', alignItems: 'center', gap: 6 }} title="Date range">
+            <button type="button" onClick={e => { const r = e.currentTarget.getBoundingClientRect(); setRangeAlignRight(r.left + 200 > document.documentElement.clientWidth - 8); setRangeMenu(m => !m) }} style={{ ...ctrl, display: 'inline-flex', alignItems: 'center', gap: 6 }} title="Date range">
               {Icon.calendar()} {rangeLabel} {Icon.chevron()}
             </button>
             {rangeMenu && (
               <>
                 <div onClick={() => setRangeMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 30 }} />
-                <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 6, zIndex: 31, background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 11, boxShadow: '0 16px 40px rgba(0,0,0,0.16)', padding: 5, width: 190 }}>
+                <div style={{ position: 'absolute', top: '100%', ...(rangeAlignRight ? { right: 0 } : { left: 0 }), marginTop: 6, zIndex: 31, background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 11, boxShadow: '0 16px 40px rgba(0,0,0,0.16)', padding: 5, width: 190, maxWidth: 'calc(100vw - 24px)' }}>
                   {RANGES.map(([k, label]) => (
                     <button key={k} type="button" onClick={() => { if (k !== 'custom') { setRange(k); setRangeMenu(false) } else setRange('custom') }}
                       style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: range === k ? 800 : 600, background: range === k ? 'var(--coral)' : 'transparent', color: range === k ? '#fff' : 'var(--ink)' }}>{label}</button>

@@ -5,8 +5,9 @@
 // Zero-dependency (same pattern as scripts/form-logic.test.mjs). Audio and
 // AudioContext are faked the way Chrome behaves: play() can stay pending
 // while media is held back (a background tab), and pause() during a pending
-// play() rejects it with an AbortError. Timers are faked so the 3s beep and
-// the grace/cap timeouts can be stepped through. Exits non-zero on failure.
+// play() rejects it with an AbortError. Timers and the page's visibility are
+// faked so the 3s beep, the safety cap and a tab going to the background can
+// be stepped through. Exits non-zero on failure.
 
 let failures = 0
 const ok = (cond, name) => { if (cond) console.log('  ok  ', name); else { failures++; console.log('  FAIL', name) } }
@@ -61,9 +62,17 @@ class FakeCtx {
 }
 globalThis.Audio = FakeAudio
 globalThis.window = { AudioContext: FakeCtx }
+// The page's visibility, for phones (quietWhenHidden).
+const visListeners = new Set()
+globalThis.document = {
+  visibilityState: 'visible',
+  addEventListener: (ev, fn) => { if (ev === 'visibilitychange') visListeners.add(fn) },
+  removeEventListener: (ev, fn) => { if (ev === 'visibilitychange') visListeners.delete(fn) },
+}
+const setVisible = async v => { document.visibilityState = v ? 'visible' : 'hidden'; for (const fn of [...visListeners]) fn(); await flush() }
 
-const { createRinger, RING_FILE_GRACE_MS, RING_CAP_MS } = await import('../lib/ringtone.ts')
-const reset = () => { audios.length = 0; ctxs.length = 0; timers.clear() }
+const { createRinger, RING_CAP_MS } = await import('../lib/ringtone.ts')
+const reset = () => { audios.length = 0; ctxs.length = 0; timers.clear(); visListeners.clear(); document.visibilityState = 'visible' }
 const soundOn = () => audios.some(a => a.playing) || ctxs.some(c => !c.closed)
 const beepsAfter = async ms => { const before = ctxs.reduce((n, c) => n + c.beeps, 0); await advance(ms); return ctxs.reduce((n, c) => n + c.beeps, 0) - before }
 
@@ -72,35 +81,64 @@ console.log('The reported bug: answered while the file was still held back')
   reset(); mode = 'held'
   const r = createRinger()
   r.start(); await flush()
-  await advance(1000)          // answered within the grace period
+  await advance(1000)          // answered while the browser still holds the file
   r.stop(); await flush()
   ok(!soundOn(), 'nothing is playing right after the answer')
   ok(await beepsAfter(30000) === 0, 'no "tung" in the 30s after answering')
   ok(ctxs.length === 0, 'the fallback tone never started')
 }
 
-console.log('Answered after the tone stood in for a held-back file')
+console.log('A held-back file stays quiet: no tone stands in for it')
 {
   reset(); mode = 'held'
   const r = createRinger()
   r.start(); await flush()
-  await advance(RING_FILE_GRACE_MS + 10)
-  ok(ctxs.length === 1 && !ctxs[0].closed, 'the tone rings while the file is held back')
+  await advance(10000)
+  ok(ctxs.length === 0 && !soundOn(), 'silent while the browser holds the file back')
+  audios[0].release(); await flush()
+  ok(audios[0].playing, 'rings once the browser lets the file play')
   r.stop(); await flush()
-  ok(!soundOn(), 'answering stops the tone and the file')
-  audios[0].release(); await flush()   // the browser finally lets the file play
+  ok(!soundOn(), 'stop silences it')
+  audios[0].release(); await flush()
   ok(!audios[0].playing, 'a file that starts after the answer is silenced at once')
-  ok(await beepsAfter(30000) === 0, 'no beeps afterwards')
 }
 
-console.log('The file takes over from the tone')
+console.log('Phones (quietWhenHidden): a background tab stays quiet')
 {
-  reset(); mode = 'held'
+  reset(); mode = 'plays'
+  document.visibilityState = 'hidden'
+  const r = createRinger('/ringtone.mp3', { quietWhenHidden: true })
+  r.start(); await flush()
+  ok(audios.length === 0 && ctxs.length === 0, 'nothing plays while the tab is in the background')
+  await setVisible(true)
+  ok(audios.filter(a => a.playing).length === 1, 'brought to the front mid-ring: it rings')
+  await setVisible(false)
+  ok(!soundOn(), 'sent to the background again: quiet')
+  await setVisible(true)
+  ok(audios.filter(a => a.playing).length === 1, 'and rings again (just one ringtone) when shown')
+  r.stop(); await flush()
+  ok(!soundOn(), 'answering silences it')
+  await setVisible(false); await setVisible(true)
+  ok(!soundOn() && visListeners.size === 0, 'after the call, showing the tab plays nothing (listener removed)')
+}
+
+console.log('Phones: autoplay blocked in the background never falls back to the tone')
+{
+  reset(); mode = 'blocked'
+  document.visibilityState = 'hidden'
+  const r = createRinger('/ringtone.mp3', { quietWhenHidden: true })
+  r.start(); await flush()
+  ok(ctxs.length === 0 && await beepsAfter(9000) === 0, 'no beeps from a hidden tab')
+  r.stop(); await flush()
+}
+
+console.log('Desktop (default): a background tab still rings')
+{
+  reset(); mode = 'plays'
+  document.visibilityState = 'hidden'
   const r = createRinger()
   r.start(); await flush()
-  await advance(RING_FILE_GRACE_MS + 10)
-  audios[0].release(); await flush()
-  ok(audios[0].playing && ctxs[0].closed, 'once the file plays the tone stops (no double ring)')
+  ok(audios.filter(a => a.playing).length === 1, 'rings while the tab is in the background')
   r.stop(); await flush()
   ok(!soundOn(), 'stop silences it')
 }

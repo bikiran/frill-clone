@@ -930,7 +930,13 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
   // Incoming-call ringtone (lib/ringtone): one stop silences every sound a
   // ring started, including a fallback tone still on its way.
   const ringerRef = useRef<Ringer | null>(null)
-  const startRing = () => { (ringerRef.current ||= createRinger()).start() }
+  // Phones and tablets: the tab stays quiet in the background (the Colvy app
+  // rings there). Desktop keeps ringing in a background tab.
+  const startRing = () => {
+    (ringerRef.current ||= createRinger('/ringtone.mp3', {
+      quietWhenHidden: !!window.matchMedia?.('(hover: none) and (pointer: coarse)').matches,
+    })).start()
+  }
   const stopRing = () => { ringerRef.current?.stop() }
 
   // ── Outbound ringback ("brr-brr") ────────────────────────────────────────────
