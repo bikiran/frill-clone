@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { trialLeft, trialEndsPhrase } from '@/lib/trial'
 
 // Trial countdown + expiry conversion nudge.
 //
@@ -21,12 +22,11 @@ export default function TrialBanner({ company }: { company: any }) {
   if (!company) return null
   const plan = String(company.plan || '').toLowerCase()
   if (plan !== 'trial' || company.is_demo || company.is_complimentary) return null
-  const endMs = company.trial_ends_at ? new Date(company.trial_ends_at).getTime() : 0
-  if (!endMs) return null // no end date set — nothing to count down to
-
-  const now = Date.now()
-  const expired = endMs <= now
-  const daysLeft = Math.max(0, Math.ceil((endMs - now) / 86400000))
+  // Counted the same way as Billing (lib/trial), so the two always agree.
+  const left = trialLeft(company.trial_ends_at)
+  if (!left) return null // no end date set — nothing to count down to
+  const expired = left.ended
+  const daysLeft = left.days
 
   const snooze = () => {
     try { sessionStorage.setItem('colvy_trial_wall_snoozed', '1') } catch {}
@@ -52,7 +52,7 @@ export default function TrialBanner({ company }: { company: any }) {
         <div className="tb-pill" role="status">
           <span className="tb-dot" style={{ background: urgent ? '#ff9f0a' : '#34c759' }} />
           <span style={{ minWidth: 0 }}>
-            {daysLeft === 0 ? 'Your trial ends today' : <>Your trial ends in <b style={{ fontWeight: 650, color: '#1c1c1e' }}>{daysLeft} day{daysLeft === 1 ? '' : 's'}</b></>}
+            {daysLeft < 2 ? `Your trial ends ${trialEndsPhrase(left)}` : <>Your trial ends in <b style={{ fontWeight: 650, color: '#1c1c1e' }}>{daysLeft} days</b></>}
           </span>
           <Link href="/admin/billing" className="tb-go">Upgrade</Link>
           <button onClick={dismiss} aria-label="Dismiss" className="tb-x">

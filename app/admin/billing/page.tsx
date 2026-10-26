@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { track } from '@/lib/analytics'
+import { trialLeft, trialEndsPhrase } from '@/lib/trial'
 import { alertDialog } from '@/components/ConfirmDialog'
 import { showBillingUnavailable } from '@/components/BillingUnavailable'
 import SmsCreditsCard from '@/components/billing/SmsCreditsCard'
@@ -402,10 +403,16 @@ export default function BillingPage() {
                 <div>
                   <p className="font-bold" style={{ color: 'var(--coral)' }}>
                     14 Day Free Trial
-                    {company?.created_at && (() => {
-                      const daysUsed = Math.floor((Date.now() - new Date(company.created_at).getTime()) / 86400000)
-                      const daysLeft = Math.max(0, 14 - daysUsed)
-                      return daysLeft > 0 ? ` — ${daysLeft} day${daysLeft !== 1 ? 's' : ''} remaining` : ' — Trial ended'
+                    {(() => {
+                      // The trial's own end date (what the banner counts to,
+                      // and what an extension moves); 14 days from sign-up
+                      // only for a workspace that has none.
+                      const ends = company?.trial_ends_at || (company?.created_at ? new Date(new Date(company.created_at).getTime() + 14 * 86400000) : null)
+                      const t = trialLeft(ends)
+                      if (!t) return null
+                      if (t.ended) return ' — Trial ended'
+                      const on = t.ends.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })
+                      return t.days < 2 ? ` — ends ${trialEndsPhrase(t)}` : ` — ${t.days} days left, ends ${on}`
                     })()}
                   </p>
                   <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>

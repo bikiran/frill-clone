@@ -948,3 +948,10 @@ button:hover .action-tooltip,
 [data-theme="dark"] .cv-acct-name, [data-theme="dark"] .cv-acct-item { color: var(--ink); }
 [data-theme="dark"] .cv-acct-item:hover { background: #2a2a2a; }
 [data-theme="dark"] .cv-acct-sep { background: var(--border); }
+
+/* Phones, while the on-screen keyboard is up (components/KeyboardAware): the
+   bottom tabs and the banners step aside so what's being typed has the room. */
+@media (max-width: 767px) {
+  html.kb-open .colvy-mobile-nav,
+  html.kb-open .admin-banners { display: none !important; }
+}
