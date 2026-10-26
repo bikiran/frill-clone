@@ -87,6 +87,7 @@ import WhatsAppComposerBar from '@/components/inbox/WhatsAppComposerBar'
 import { STATUS_LABEL as WA_STATUS_LABEL } from '@/lib/whatsapp-core'
 import { ProtectionCard, ProtectionBanner } from '@/components/inbox/ProtectionCard'
 import EmptyScroll from '@/components/EmptyScroll'
+import CustomerGlance from '@/components/inbox/CustomerGlance'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -9363,6 +9364,16 @@ export default function InboxPage() {
                 </div>
               )}
             </div>
+
+            {/* Who this is: spent, orders, last order, tags; click for recent orders. */}
+            <CustomerGlance companyId={companyId} contactId={contact?.id} orders={wooOrders} tags={contact?.tags}
+              onOpenOrders={() => {
+                setActivePanel('orders')
+                // Phones show one pane at a time; tablets slide the panel in.
+                const w = window.innerWidth
+                if (w < 768) setMobilePane('contact')
+                else if (w <= 1100) setTabletContact(true)
+              }} />
 
             {/* AI detection banner */}
             {/* NOTE: the "AI saved: …" banner used to appear every time you
