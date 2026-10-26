@@ -168,19 +168,23 @@ export function newReviewEmail(o: { business: string; reviewer?: string | null; 
 
 // ── SMS credits: auto top-up switched off (lib/sms-credits) ─────────────────
 
-export function smsAutoTopUpOffEmail(o: { business: string; error: string; balanceCents: number; billingUrl: string }): Mail {
+export function smsAutoTopUpOffEmail(o: { business: string; error: string; balanceCents: number; billingUrl: string; viaShopify?: boolean }): Mail {
   const balance = `A$${((Number(o.balanceCents) || 0) / 100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   const { html, text } = colvyEmail({
-    preheader: `We couldn’t charge your card twice, so auto top-up is off. Balance: ${balance}.`,
+    preheader: o.viaShopify
+      ? `Shopify didn’t accept two top-ups in a row, so auto top-up is off. Balance: ${balance}.`
+      : `We couldn’t charge your card twice, so auto top-up is off. Balance: ${balance}.`,
     kicker: o.business,
     title: 'Auto top-up for SMS credits is off',
     intro: [
-      `We tried twice to top up ${o.business}’s SMS credits with the saved card, and both payments failed. So you’re not charged by surprise later, auto top-up is now switched off.`,
+      o.viaShopify
+        ? `We tried twice to top up ${o.business}’s SMS credits through your Shopify plan, and Shopify didn’t accept either. So nothing is added by surprise later, auto top-up is now switched off.`
+        : `We tried twice to top up ${o.business}’s SMS credits with the saved card, and both payments failed. So you’re not charged by surprise later, auto top-up is now switched off.`,
       'Texts within your plan’s monthly allowance still go out. Texts beyond it need credit, so top up to keep campaigns and replies going.',
     ],
-    blocks: [{ type: 'facts', rows: [['SMS balance', balance], ['What happened', o.error || 'The card was declined.']] }],
+    blocks: [{ type: 'facts', rows: [['SMS balance', balance], ['What happened', o.error || (o.viaShopify ? 'Shopify didn’t accept the charge.' : 'The card was declined.')]] }],
     cta: { label: 'Top up SMS credits', url: o.billingUrl },
-    secondary: 'You can save a new card and switch auto top-up back on from the same page.',
+    secondary: o.viaShopify ? 'You can switch auto top-up back on from the same page.' : 'You can save a new card and switch auto top-up back on from the same page.',
     footerNote: `You’re receiving this because you own ${o.business} on Colvy.`,
   })
   return { subject: 'Auto top-up for SMS credits is off', html, text }

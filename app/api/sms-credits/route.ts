@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { shopifyBillingStore } from '@/lib/shopify-billing'
+import { shopifySmsBilling } from '@/lib/shopify-usage'
 import { createClient } from '@supabase/supabase-js'
 import { smsCreditsAccess } from '@/lib/sms-credits-access'
 import { allowanceStatus, getWallet } from '@/lib/sms-credits'
@@ -69,15 +69,17 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    const [allowance, viaShopify] = await Promise.all([
+    const [allowance, shop] = await Promise.all([
       allowanceStatus(db, id, { policy }),
-      shopifyBillingStore(db, id).then(s => !!s, () => false),
+      shopifySmsBilling(db, id).catch(() => null),
     ])
     return NextResponse.json({
       ready: wallet.ready,
       canManage: access.canManage,
       billingAvailable: secretKeyOk(process.env),
-      billedByShopify: viaShopify,
+      billedByShopify: !!shop,
+      // Credit bought through the Shopify plan (lib/shopify-usage): ready, or why not.
+      shopify: shop ? { ready: shop.ready, reason: shop.ready ? null : shop.reason, planUrl: shop.planUrl, usage: shop.ready ? shop.usage : null } : null,
       wallet: { ...wallet, stripeCustomerId: undefined, autoTopUp: { ...wallet.autoTopUp, enabled: autoOn } },
       policy: policyOut,
       allowance: { ...allowance, limit: allowance.unlimited ? null : allowance.limit, remaining: allowance.unlimited ? null : Math.max(0, allowance.limit - allowance.used) },

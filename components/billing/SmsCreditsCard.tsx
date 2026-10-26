@@ -64,7 +64,7 @@ function Note({ icon, children, tone = 'plain', className = '' }: { icon: React.
   )
 }
 
-function Shell({ children, right }: { children: React.ReactNode; right?: React.ReactNode }) {
+function Shell({ children, right, viaShopify }: { children: React.ReactNode; right?: React.ReactNode; viaShopify?: boolean }) {
   return (
     <section id="sms-credits" className="bg-white rounded-2xl border p-5 md:p-6 mb-6" style={{ borderColor: 'var(--border)', scrollMarginTop: 80 }}>
       <div className="flex items-start justify-between gap-3 flex-wrap mb-5">
@@ -72,7 +72,9 @@ function Shell({ children, right }: { children: React.ReactNode; right?: React.R
           <span className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>{Ico.sms}</span>
           <div style={{ minWidth: 0 }}>
             <h2 className="font-bold" style={{ color: 'var(--ink)' }}>SMS credits</h2>
-            <p className="text-sm mt-0.5" style={{ color: 'var(--slate)', lineHeight: 1.5 }}>Prepaid credit for texts beyond your plan’s monthly allowance. Top up when you need to: no bills after the fact, no surprises.</p>
+            <p className="text-sm mt-0.5" style={{ color: 'var(--slate)', lineHeight: 1.5 }}>{viaShopify
+              ? 'Credit for texts beyond your plan’s monthly allowance. Top up when you need to; it’s added straight away and billed on your next Shopify bill.'
+              : 'Prepaid credit for texts beyond your plan’s monthly allowance. Top up when you need to: no bills after the fact, no surprises.'}</p>
           </div>
         </div>
         {right}
@@ -200,6 +202,12 @@ export default function SmsCreditsCard({ companyId, companyName, initial }: { co
   const amountCheck = validateTopUpCents(amountCents)
   const canManage = !!d.canManage
   const shopify = !!d.billedByShopify
+  // Billed through Shopify with the SMS credit meter on its plan: credit goes on
+  // the Shopify bill (lib/shopify-usage), no card involved.
+  const viaShop = shopify && !!d.shopify?.ready
+  const hasPayer = viaShop || !!w.card
+  // Offer "top up automatically" with this purchase: by card until one is saved; through Shopify while it's off.
+  const offerAuto = canAutoTopUp && (viaShop ? !w.autoTopUp?.enabled : !w.card)
 
   const scrollToTopUp = () => topUpRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 
@@ -209,9 +217,14 @@ export default function SmsCreditsCard({ companyId, companyName, initial }: { co
     try {
       const res = await authFetch('/api/sms-credits/topup', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, amountCents: amountCheck.cents, ...(saveCard && !w.card && canAutoTopUp ? { autoTopUp: { thresholdCents: threshold, amountCents: autoAmount } } : {}) }),
+        body: JSON.stringify({ companyId, amountCents: amountCheck.cents, ...(saveCard && offerAuto ? { autoTopUp: { thresholdCents: threshold, amountCents: autoAmount } } : {}) }),
       })
       const data = await res.json().catch(() => ({}))
+      if (data.ok && data.shopify) {
+        await load(true)
+        setNotice(`Added ${fmtCents(data.creditedCents || amountCheck.cents)} of SMS credit. It’ll be on your next Shopify bill.`)
+        setBusy(''); return
+      }
       if (data.setup) { setBusy(''); await showBillingUnavailable({ what: `SMS credit (${fmtCents(amountCheck.cents)})`, workspace: companyName || null }); return }
       if (data.url) { window.location.href = data.url; return }
       await alertDialog({ title: 'Couldn’t start the top-up', message: data.error || 'Please try again in a minute.' })
@@ -260,7 +273,7 @@ export default function SmsCreditsCard({ companyId, companyName, initial }: { co
   const select: React.CSSProperties = { padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card, #fff)', color: 'var(--ink)', fontSize: 14, width: '100%' }
 
   return (
-    <Shell right={ledger.length > 0 ? (
+    <Shell viaShopify={viaShop} right={ledger.length > 0 ? (
       <button onClick={exportCsv} disabled={busy === 'csv'} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-medium cursor-pointer hover:bg-gray-50 disabled:opacity-60" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
         {Ico.download}{busy === 'csv' ? 'Exporting…' : 'Export CSV'}
       </button>
@@ -278,7 +291,7 @@ export default function SmsCreditsCard({ companyId, companyName, initial }: { co
       )}
       {d.low && (
         <div className="mb-4">
-          <SmsLowBalanceBanner balanceCents={w.balanceCents} pricePerPart={pricing.price_per_part} thresholdCents={w.autoTopUp?.enabled ? w.autoTopUp.thresholdCents : undefined} autoTopUp={!!w.autoTopUp?.enabled} onTopUp={canManage && !shopify && canTopUp ? scrollToTopUp : undefined} canTopUp={canTopUp} force />
+          <SmsLowBalanceBanner balanceCents={w.balanceCents} pricePerPart={pricing.price_per_part} thresholdCents={w.autoTopUp?.enabled ? w.autoTopUp.thresholdCents : undefined} autoTopUp={!!w.autoTopUp?.enabled} onTopUp={canManage && (!shopify || viaShop) && canTopUp ? scrollToTopUp : undefined} canTopUp={canTopUp} force />
         </div>
       )}
 
@@ -331,10 +344,14 @@ export default function SmsCreditsCard({ companyId, companyName, initial }: { co
         <Note icon={Ico.lock} className="mt-5">
           <p style={{ margin: 0 }}><strong style={{ color: 'var(--ink)' }}>Top-ups are managed by Colvy for your account.</strong> We add SMS credit for you, so there’s nothing to buy here. <ContactUs /></p>
         </Note>
-      ) : shopify ? (
+      ) : shopify && !viaShop ? (
         <div className="mt-5 flex items-start gap-3 p-4 rounded-xl text-sm" style={{ background: 'var(--canvas)', border: '1px solid var(--border)', color: 'var(--slate)' }}>
           <span className="shrink-0 mt-px">{Ico.info}</span>
-          <p style={{ margin: 0, lineHeight: 1.5 }}>Your Colvy plan is billed through Shopify, so SMS credits can’t be bought by card here yet. Contact us and we’ll add credit for you.</p>
+          {d.shopify?.reason === 'no_meter' ? (
+            <p style={{ margin: 0, lineHeight: 1.5 }}>Your Colvy plan is billed through Shopify, and it doesn’t include SMS credit yet. Choose your plan again in Shopify to add it, then top up here.{d.shopify?.planUrl && <> <a href={d.shopify.planUrl} target="_top" className="font-semibold hover:underline" style={{ color: 'var(--coral)' }}>Choose a plan in Shopify</a></>}</p>
+          ) : (
+            <p style={{ margin: 0, lineHeight: 1.5 }}>Your Colvy plan is billed through Shopify, so SMS credits can’t be bought by card here yet. Contact us and we’ll add credit for you.</p>
+          )}
         </div>
       ) : !canManage ? (
         <div className="mt-5 flex items-start gap-3 p-4 rounded-xl text-sm" style={{ background: 'var(--canvas)', border: '1px solid var(--border)', color: 'var(--slate)' }}>
@@ -366,13 +383,13 @@ export default function SmsCreditsCard({ companyId, companyName, initial }: { co
             </label>
             {pack === 'custom' && custom && !amountCheck.ok && <p className="text-xs mt-1.5" style={{ color: '#b42318' }}>{amountCheck.error}</p>}
 
-            {!w.card && canAutoTopUp && (
+            {offerAuto && (
               <label className="mt-4 flex items-start gap-2.5 cursor-pointer text-sm" style={{ color: 'var(--ink)' }}>
                 <input type="checkbox" checked={saveCard} onChange={e => setSaveCard(e.target.checked)} className="mt-0.5 w-4 h-4 accent-[var(--coral)]" />
-                <span>Top up automatically when my balance runs low <span className="block text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Saves this card with Stripe. Change or switch it off any time.</span></span>
+                <span>Top up automatically when my balance runs low <span className="block text-xs mt-0.5" style={{ color: 'var(--slate)' }}>{viaShop ? 'Adds credit through your Shopify plan. Change or switch it off any time.' : 'Saves this card with Stripe. Change or switch it off any time.'}</span></span>
               </label>
             )}
-            {!w.card && saveCard && canAutoTopUp && (
+            {offerAuto && saveCard && (
               <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <label className="text-xs font-semibold" style={{ color: 'var(--slate)' }}>When the balance drops below
                   <select value={threshold} onChange={e => setThreshold(Number(e.target.value))} style={{ ...select, marginTop: 4 }}>{THRESHOLDS.map(t => <option key={t} value={t}>{fmtCents(t)}</option>)}</select>
@@ -386,9 +403,11 @@ export default function SmsCreditsCard({ companyId, companyName, initial }: { co
             <button onClick={topUp} disabled={!amountCheck.ok || busy === 'topup'}
               className="mt-4 w-full sm:w-auto px-5 py-2.5 rounded-xl text-sm font-bold text-white cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-default"
               style={{ background: 'var(--coral)' }}>
-              {busy === 'topup' ? 'Redirecting…' : amountCheck.ok ? `Pay ${fmtCents(amountCheck.cents)}` : 'Pay'}
+              {viaShop
+                ? (busy === 'topup' ? 'Adding…' : amountCheck.ok ? `Add ${fmtCents(amountCheck.cents)} of credit` : 'Add credit')
+                : (busy === 'topup' ? 'Redirecting…' : amountCheck.ok ? `Pay ${fmtCents(amountCheck.cents)}` : 'Pay')}
             </button>
-            <p className="text-xs mt-2" style={{ color: 'var(--slate)' }}>Paid securely by card through Stripe. Prices include GST.</p>
+            <p className="text-xs mt-2" style={{ color: 'var(--slate)' }}>{viaShop ? 'Added straight away and billed on your next Shopify bill.' : 'Paid securely by card through Stripe. Prices include GST.'}</p>
           </div>
 
           {!canAutoTopUp ? (
@@ -400,15 +419,21 @@ export default function SmsCreditsCard({ companyId, companyName, initial }: { co
           <div className="rounded-xl border p-4 md:p-5" style={{ borderColor: 'var(--border)', minWidth: 0 }}>
             <div className="flex items-center justify-between gap-3">
               <h3 className="font-bold" style={{ color: 'var(--ink)' }}>Auto top-up</h3>
-              <button type="button" role="switch" aria-checked={autoOn} aria-label="Auto top-up" disabled={!w.card}
+              <button type="button" role="switch" aria-checked={autoOn} aria-label="Auto top-up" disabled={!hasPayer}
                 onClick={() => setAutoOn(v => !v)}
                 className="relative inline-flex h-6 w-11 items-center rounded-full cursor-pointer transition-all disabled:cursor-not-allowed disabled:opacity-50"
                 style={{ background: autoOn ? 'var(--coral)' : '#d1d5db' }}>
                 <span className="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform" style={{ transform: autoOn ? 'translateX(24px)' : 'translateX(4px)' }} />
               </button>
             </div>
-            {w.card ? (
+            {hasPayer ? (
               <>
+                {viaShop ? (
+                  <div className="mt-3 flex items-center gap-2.5 p-3 rounded-xl text-sm" style={{ background: 'var(--canvas)', color: 'var(--ink)' }}>
+                    <span style={{ color: 'var(--slate)' }}>{Ico.info}</span>
+                    <span>Billed through your Shopify plan</span>
+                  </div>
+                ) : (
                 <div className="mt-3 flex items-center justify-between gap-3 p-3 rounded-xl" style={{ background: 'var(--canvas)' }}>
                   <div className="flex items-center gap-2.5 text-sm" style={{ color: 'var(--ink)', minWidth: 0 }}>
                     <span style={{ color: 'var(--slate)' }}>{Ico.card}</span>
@@ -416,6 +441,7 @@ export default function SmsCreditsCard({ companyId, companyName, initial }: { co
                   </div>
                   <button onClick={removeCard} disabled={busy === 'remove'} className="text-sm font-medium cursor-pointer hover:underline shrink-0" style={{ color: 'var(--slate)' }}>{busy === 'remove' ? 'Removing…' : 'Remove'}</button>
                 </div>
+                )}
                 <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <label className="text-xs font-semibold" style={{ color: 'var(--slate)' }}>When the balance drops below
                     <select value={threshold} onChange={e => setThreshold(Number(e.target.value))} style={{ ...select, marginTop: 4 }}>{(THRESHOLDS.includes(threshold) ? THRESHOLDS : [...THRESHOLDS, threshold].sort((a, b) => a - b)).map(t => <option key={t} value={t}>{fmtCents(t)}</option>)}</select>

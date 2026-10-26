@@ -175,7 +175,9 @@ export async function shopifyChargeBlock(db: any, companyId: string | null | und
     ? 'This workspace uses Colvy through the Shopify app, so your Colvy plan is billed through Shopify. Choose or change it from Billing → Choose a plan in Shopify.'
     : what === 'addon'
     ? 'This workspace uses Colvy through the Shopify app, so add-ons can’t be bought by card. The Inbox and Everything plans in Shopify already remove Colvy branding.'
-    : `This workspace uses Colvy through the Shopify app, so ${what === 'sms' ? 'SMS credit' : what === 'number' ? 'phone numbers' : 'moving a number'} can’t be paid for by card here. Contact Colvy support and we’ll set it up for you.`
+    : what === 'sms'
+    ? 'This workspace uses Colvy through the Shopify app, so SMS credit is billed through your Shopify plan rather than by card.'
+    : `This workspace uses Colvy through the Shopify app, so ${what === 'number' ? 'phone numbers' : 'moving a number'} can’t be paid for by card here. Contact Colvy support and we’ll set it up for you.`
   return { error, shopify: true, planUrl }
 }
 
@@ -190,8 +192,17 @@ export async function syncShopifyBilling(db: any, companyId: string, opts: { hin
   const { data: integ } = await db.from('shopify_integrations').select('*').eq('id', co.billing_integration_id).maybeSingle()
   if (!integ?.is_active || !partnerApiConfigured()) return integ?.billing || null
 
-  const sub = await fetchActiveSubscription(await shopGidFor(db, integ))
-  const billing = { ...summarize(sub, opts.hint), checked_at: new Date().toISOString() }
+  const shopGid = await shopGidFor(db, integ)
+  const sub = await fetchActiveSubscription(shopGid)
+  const billing: Record<string, any> = { ...summarize(sub, opts.hint), checked_at: new Date().toISOString() }
+  // Whether SMS credit can be billed through this plan (lib/shopify-usage). Its
+  // own query: trouble reading it keeps the last answer and never stops the
+  // plan sync.
+  const usage = await import('@/lib/shopify-usage')
+  if (usage.smsMeterHandle()) {
+    try { billing.sms_meter = sub ? await usage.fetchSmsMeter(shopGid) : { metered: false, handle: null, usage: null, checked_at: billing.checked_at } }
+    catch { if (integ.billing?.sms_meter) billing.sms_meter = integ.billing.sms_meter }
+  }
   await db.from('shopify_integrations').update({ billing, billing_checked_at: billing.checked_at }).eq('id', integ.id)
 
   if (!keepsOwnPlan(co)) {
