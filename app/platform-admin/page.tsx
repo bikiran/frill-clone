@@ -19,6 +19,7 @@ import dynamic from 'next/dynamic'
 import { INTEL_VIEWS, prefetchIntel, type IntelView } from './intelligence/data'
 import { NAV_HOME, NAV_GROUPS, groupOf, navItem, searchNav } from './nav'
 import Dashboard from './Dashboard'
+import { trialLeft as trialLeftOf, trialEndsPhrase } from '@/lib/trial'
 
 // Pages with their own big bundles load when first opened, so the panel
 // itself starts quickly.
@@ -647,7 +648,8 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
           {tab === 'plan' && (() => {
             const PLANS = CONSOLE_PLANS
             const planColor: Record<string, string> = { free: '#6b7280', trial: '#6366f1', feedback: '#7c5cff', omnichannel: '#2b59ff', everything: '#ff6a4d', pro: '#10b981', enterprise: '#8b5cf6', suspended: '#ef4444' }
-            const trialLeft = sub.trial_ends_at ? Math.ceil((new Date(sub.trial_ends_at).getTime() - Date.now()) / 86400000) : null
+            // Counted as the customer sees it (lib/trial).
+            const trial = trialLeftOf(sub.trial_ends_at)
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 {subMsg && <div style={{ padding: '9px 12px', borderRadius: 9, background: 'var(--sa-card)', border: '1px solid var(--sa-border)', fontSize: 12.5, color: 'var(--sa-text)' }}>{subMsg}</div>}
@@ -659,7 +661,7 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
                     {sub.is_complimentary && <span style={{ fontSize: 10.5, fontWeight: 800, padding: '2px 8px', borderRadius: 999, background: '#10b98122', color: '#10b981' }}>COMPLIMENTARY</span>}
                   </div>
                   <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: 0 }}>
-                    {sub.trial_ends_at ? `Trial ends ${new Date(sub.trial_ends_at).toLocaleDateString()}${trialLeft != null ? ` (${trialLeft} day${trialLeft === 1 ? '' : 's'} left)` : ''}` : 'No trial end set'}
+                    {sub.trial_ends_at ? `Trial ends ${new Date(sub.trial_ends_at).toLocaleDateString()}${trial ? ` (${trial.ended ? 'ended' : trialEndsPhrase(trial)})` : ''}` : 'No trial end set'}
                     {co.stripe_customer_id ? ' · Stripe customer linked' : ' · no Stripe customer'}
                   </p>
                   {co.stripe_customer_id && <a href={`https://dashboard.stripe.com/customers/${co.stripe_customer_id}`} target="_blank" rel="noopener" style={{ fontSize: 12.5, color: '#635BFF', fontWeight: 600 }}>Open in Stripe ↗</a>}

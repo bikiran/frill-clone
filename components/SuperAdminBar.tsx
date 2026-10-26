@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import { trialLeft } from '@/lib/trial'
 
 // In-workspace Super-Admin context bar.
 // Renders ONLY for a platform super-admin (the summary API 403s for everyone
@@ -57,7 +58,8 @@ export default function SuperAdminBar({ companyId }: { companyId: string | null 
   const u = data.usage || {}
   const plan = String(co.plan || 'free')
   const suspended = plan === 'suspended'
-  const trialLeft = co.trial_ends_at ? Math.ceil((new Date(co.trial_ends_at).getTime() - Date.now()) / 86400000) : null
+  // Counted as the customer sees it (lib/trial).
+  const trial = trialLeft(co.trial_ends_at)
 
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(''), 4000) }
 
@@ -75,7 +77,7 @@ export default function SuperAdminBar({ companyId }: { companyId: string | null 
 
   const changePlan = (p: string) => { if (p && p !== plan) patchCompany({ plan: p }, 'plan') }
   const extendTrial = () => {
-    const base = trialLeft && trialLeft > 0 && co.trial_ends_at ? new Date(co.trial_ends_at).getTime() : Date.now()
+    const base = trial && !trial.ended ? trial.ends.getTime() : Date.now()
     patchCompany({ trial_ends_at: new Date(base + 14 * 86400000).toISOString() }, 'trial')
   }
   const toggleSuspend = async () => {
@@ -137,9 +139,9 @@ export default function SuperAdminBar({ companyId }: { companyId: string | null 
           </select>
         </span>
 
-        {trialLeft !== null && (
-          <span style={{ fontSize: 12, color: trialLeft <= 0 ? '#fca5a5' : 'rgba(255,255,255,0.85)', whiteSpace: 'nowrap' }}>
-            {trialLeft > 0 ? `Trial: ${trialLeft}d left` : 'Trial ended'}
+        {trial && (
+          <span style={{ fontSize: 12, color: trial.ended ? '#fca5a5' : 'rgba(255,255,255,0.85)', whiteSpace: 'nowrap' }}>
+            {trial.ended ? 'Trial ended' : trial.days === 0 ? 'Trial: ends today' : `Trial: ${trial.days}d left`}
           </span>
         )}
 
