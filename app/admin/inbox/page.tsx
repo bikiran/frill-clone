@@ -694,6 +694,11 @@ export default function InboxPage() {
     const at = emailGalleryMedia().findIndex(x => x.key === `${messageId}:${attachmentIndex}`)
     if (at >= 0) setGalleryIndex(chatGalleryMedia().length + at)
   }
+  // A photo or video sent with an email (kept as a chat attachment).
+  const openChatMedia = (url: string) => {
+    const at = chatGalleryMedia().findIndex(x => x.url === url)
+    if (at >= 0) setGalleryIndex(at)
+  }
   const [storyView, setStoryView] = useState<{ items: MediaItem[]; index: number } | null>(null)
   const [showDoa, setShowDoa] = useState(false)
   const [doaMatch, setDoaMatch] = useState(false)
@@ -9912,7 +9917,7 @@ export default function InboxPage() {
                     <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
                       {dateDivider}
                       {/* The card shows when it was received / sent itself. */}
-                      <EmailMessage msg={msg} agentColor={companyInfo?.accent_color} businessName={companyInfo?.name} onOpenMedia={(i) => openEmailMedia(msg.id, i)} showWhy={canSeeEmailWhy} />
+                      <EmailMessage msg={msg} agentColor={companyInfo?.accent_color} businessName={companyInfo?.name} onOpenMedia={t => 'url' in t ? openChatMedia(t.url) : openEmailMedia(msg.id, t.index)} showWhy={canSeeEmailWhy} />
                       {/* The same credit line a text gets: which agent wrote it,
                           who approved or edited it, Why?, and who has read it. */}
                       {(aiCredit || readByChip) && (
