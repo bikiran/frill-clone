@@ -35,8 +35,9 @@ export const S = {
   label: { display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 } as React.CSSProperties,
   input: { width: '100%', padding: '10px 13px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, outline: 'none', boxSizing: 'border-box' as const, fontFamily: 'inherit' } as React.CSSProperties,
   hint: { fontSize: 12, color: 'var(--slate)', margin: '4px 0 0' } as React.CSSProperties,
-  btn: { padding: '11px 22px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' } as React.CSSProperties,
-  btnGhost: { padding: '11px 22px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 14, fontWeight: 600, cursor: 'pointer' } as React.CSSProperties,
+  // Pills, like the app's .cv-btn (app/globals.css).
+  btn: { padding: '11px 22px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: 'inset 0 1px 0 rgba(255,255,255,.22), 0 1px 2px rgba(16,24,40,.12)' } as React.CSSProperties,
+  btnGhost: { padding: '10px 22px', borderRadius: 999, background: '#fff', color: '#18181b', border: '1.5px solid #e4e4e7', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 1px rgba(16,24,40,.03)' } as React.CSSProperties,
 }
 
 // A toggle switch component
