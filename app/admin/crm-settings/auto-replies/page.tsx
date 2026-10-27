@@ -85,7 +85,7 @@ export default function AutoRepliesPage() {
         </div>
         {!editing && (
           <button onClick={() => setEditing({ ...blank })}
-            style={{ padding: '10px 18px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            style={{ padding: '10px 18px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
             + Add reply
           </button>
         )}
@@ -123,9 +123,9 @@ export default function AutoRepliesPage() {
 
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={save}
-              style={{ padding: '10px 20px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Save</button>
+              style={{ padding: '10px 20px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Save</button>
             <button onClick={() => setEditing(null)}
-              style={{ padding: '10px 20px', borderRadius: 9, background: '#fff', color: 'var(--slate)', border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+              style={{ padding: '10px 20px', borderRadius: 999, background: '#fff', color: 'var(--slate)', border: '1.5px solid #e4e4e7', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
           </div>
         </div>
       )}
@@ -142,13 +142,13 @@ export default function AutoRepliesPage() {
               <span style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}>{r.name}</span>
               <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                 <button onClick={() => toggle(r)}
-                  style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: r.is_active ? '#15803d' : 'var(--slate)' }}>
+                  style={{ padding: '5px 11px', borderRadius: 999, border: '1.5px solid #e4e4e7', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: r.is_active ? '#15803d' : 'var(--slate)' }}>
                   {r.is_active ? 'Active' : 'Paused'}
                 </button>
                 <button onClick={() => setEditing({ ...r, keywords: (r.keywords || []).join(', ') })}
-                  style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: 'var(--ink)' }}>Edit</button>
+                  style={{ padding: '5px 11px', borderRadius: 999, border: '1.5px solid #e4e4e7', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: 'var(--ink)' }}>Edit</button>
                 <button onClick={() => remove(r.id)}
-                  style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: '#dc2626' }}>Delete</button>
+                  style={{ padding: '5px 11px', borderRadius: 999, border: '1.5px solid #e4e4e7', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: '#dc2626' }}>Delete</button>
               </div>
             </div>
 
@@ -239,12 +239,12 @@ function MediaUploadReplyCard({ companyId }: { companyId: string }) {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <button type="button" onClick={() => save()} disabled={!dirty || state === 'saving'}
-              style={{ padding: '9px 18px', borderRadius: 9, background: dirty ? 'var(--coral)' : '#f3f4f6', color: dirty ? '#fff' : '#9ca3af', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: dirty ? 'pointer' : 'default' }}>
+              style={{ padding: '9px 18px', borderRadius: 999, background: dirty ? 'var(--coral)' : '#f3f4f6', color: dirty ? '#fff' : '#9ca3af', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: dirty ? 'pointer' : 'default' }}>
               Save message
             </button>
             {message.trim() !== MEDIA_UPLOAD_REPLY_DEFAULT && (
               <button type="button" onClick={() => setMessage(MEDIA_UPLOAD_REPLY_DEFAULT)}
-                style={{ padding: '9px 12px', borderRadius: 9, background: 'transparent', color: 'var(--slate)', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                style={{ padding: '9px 12px', borderRadius: 999, background: 'transparent', color: 'var(--slate)', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                 Use default
               </button>
             )}

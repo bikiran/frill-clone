@@ -113,13 +113,14 @@ export default function LocationsPage() {
     return [line1, line2, l.country].filter(Boolean).join(', ')
   }
 
-  const inp: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, outline: 'none', boxSizing: 'border-box' }
-  const label: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 5 }
+  const inp: React.CSSProperties = { width: '100%', padding: '12px 14px', borderRadius: 12, border: '1px solid transparent', background: '#f4f4f5', fontSize: 15, outline: 'none', boxSizing: 'border-box' }
+  const label: React.CSSProperties = { display: 'block', fontSize: 14, fontWeight: 600, color: '#111', marginBottom: 8 }
 
   if (loading) return <div style={{ padding: 24, color: 'var(--slate)' }}>Loading…</div>
 
   return (
-    <div style={{ maxWidth: 720, margin: '0 auto', padding: '28px 24px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
+    <div className="loc-page" style={{ maxWidth: 1040, padding: '36px 44px 48px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
+      <style>{`@media (max-width: 860px) { .loc-page { padding: 20px 16px 32px !important; } }`}</style>
       <PageHeader
         title="Locations"
         subtitle="Manage your business addresses (Australian format)."
@@ -127,12 +128,10 @@ export default function LocationsPage() {
         bleedTop={28}
         action={!editing ? (
           <>
-            <button onClick={geocodeOutlets} disabled={geocoding}
-              style={{ padding: '10px 16px', borderRadius: 10, background: 'var(--peach)', color: 'var(--coral)', border: '1px solid var(--coral)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            <button onClick={geocodeOutlets} disabled={geocoding} className="cv-btn">
               {geocoding ? 'Geocoding…' : 'Geocode for auto-assign'}
             </button>
-            <button onClick={() => setEditing({ ...blank })}
-              style={{ padding: '10px 18px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            <button onClick={() => setEditing({ ...blank })} className="cv-btn cv-btn-primary">
               + Add location
             </button>
           </>
@@ -140,8 +139,9 @@ export default function LocationsPage() {
       />
 
       {editing ? (
-        <div style={{ border: '1px solid var(--border)', borderRadius: 14, padding: 20, background: '#fff' }}>
-          <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', margin: '0 0 16px' }}>{editing.id ? 'Edit' : 'New'} location</h2>
+        <div className="st-sec">
+          <h2>{editing.id ? 'Edit' : 'New'} location</h2>
+          <p>The address customers see on bookings, receipts and your board.</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div>
               <label style={label}>Label</label>
@@ -188,27 +188,29 @@ export default function LocationsPage() {
               Set as primary location
             </label>
             <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-              <button onClick={save} disabled={saving} style={{ padding: '10px 20px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+              <button onClick={save} disabled={saving} className="cv-btn cv-btn-primary">
                 {saving ? 'Saving…' : 'Save location'}
               </button>
-              <button onClick={() => setEditing(null)} style={{ padding: '10px 20px', borderRadius: 10, background: '#fff', color: 'var(--slate)', border: '1px solid var(--border)', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+              <button onClick={() => setEditing(null)} className="cv-btn">
                 Cancel
               </button>
             </div>
           </div>
         </div>
       ) : locations.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '48px 24px', color: 'var(--slate)', border: '1px dashed var(--border)', borderRadius: 14 }}>
-          No locations yet. Add your first business address.
+        <div style={{ textAlign: 'center', padding: '44px 24px', borderRadius: 16, boxShadow: '0 0 0 1px #ececf0' }}>
+          <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: '#111' }}>No locations yet</p>
+          <p style={{ margin: '4px 0 0', fontSize: 13.5, color: '#71717a' }}>Add your first business address.</p>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {locations.map(l => (
-            <div key={l.id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 16, background: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        // One soft list, a row per location (like Sellio's lists).
+        <div style={{ borderRadius: 16, boxShadow: '0 0 0 1px #ececf0', overflow: 'hidden' }}>
+          {locations.map((l, i) => (
+            <div key={l.id} style={{ padding: '18px 20px', borderTop: i ? '1px solid #f0f0f2' : 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                  <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>{l.label || 'Location'}</span>
-                  {l.is_primary && <span style={{ fontSize: 10, fontWeight: 700, background: 'var(--peach)', color: 'var(--coral)', padding: '2px 8px', borderRadius: 20 }}>PRIMARY</span>}
+                  <span style={{ fontSize: 15.5, fontWeight: 700, color: '#111' }}>{l.label || 'Location'}</span>
+                  {l.is_primary && <span style={{ fontSize: 11.5, fontWeight: 600, background: '#f4f4f5', color: '#3f3f46', padding: '2px 9px', borderRadius: 999 }}>Primary</span>}
                 </div>
                 <p style={{ margin: 0, fontSize: 13.5, color: 'var(--slate)' }}>{fmtAddress(l)}</p>
                 {l.phone && <p style={{ margin: '3px 0 0', fontSize: 13, color: 'var(--slate)' }}>📞 {l.phone}</p>}
@@ -218,16 +220,15 @@ export default function LocationsPage() {
                   return assigned ? (
                     <p style={{ margin: '6px 0 0', fontSize: 13, fontWeight: 600, color: '#059669' }}>☎️ Colvy number: {assigned.phone_number}</p>
                   ) : (
-                    <button onClick={() => buyForLocation(l.id)}
-                      style={{ marginTop: 8, padding: '6px 12px', borderRadius: 8, background: 'var(--peach)', border: '1px solid var(--coral)', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: 'var(--coral)' }}>
+                    <button onClick={() => buyForLocation(l.id)} className="cv-btn" style={{ marginTop: 10, height: 32, padding: '0 12px', fontSize: 13 }}>
                       + Buy a number for this location
                     </button>
                   )
                 })()}
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={() => setEditing(l)} style={{ padding: '6px 12px', borderRadius: 8, background: 'var(--canvas)', border: '1px solid var(--border)', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--ink)' }}>Edit</button>
-                <button onClick={() => remove(l.id)} style={{ padding: '6px 12px', borderRadius: 8, background: '#fff', border: '1px solid #fecaca', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: '#dc2626' }}>Delete</button>
+                <button onClick={() => setEditing(l)} className="cv-btn" style={{ height: 32, padding: '0 14px', fontSize: 13 }}>Edit</button>
+                <button onClick={() => remove(l.id)} className="cv-btn" style={{ height: 32, padding: '0 14px', fontSize: 13, color: '#dc2626' }}>Delete</button>
               </div>
             </div>
           ))}

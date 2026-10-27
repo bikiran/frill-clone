@@ -1743,7 +1743,7 @@ export default function SettingsPage() {
             <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
               {[7, 30, 90].map(d => (
                 <button key={d} onClick={() => setOverviewDays(d)}
-                  style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid var(--border)', background: overviewDays === d ? 'var(--peach)' : '#fff', color: overviewDays === d ? 'var(--coral)' : 'var(--slate)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                  style={{ padding: '6px 14px', borderRadius: 999, border: '1.5px solid #e4e4e7', background: overviewDays === d ? 'var(--peach)' : '#fff', color: overviewDays === d ? 'var(--coral)' : 'var(--slate)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
                   {d} days
                 </button>
               ))}

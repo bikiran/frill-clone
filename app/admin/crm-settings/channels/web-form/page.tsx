@@ -131,7 +131,7 @@ export default function WebFormChannel() {
                   <>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--canvas)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px' }}>
                       <code style={{ flex: 1, fontSize: 13.5, color: 'var(--ink)', fontFamily: 'monospace', wordBreak: 'break-all' }}>{existing.inbound_address}</code>
-                      <button onClick={() => copy(existing.inbound_address)} title="Copy" style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 8px', cursor: 'pointer', color: 'var(--slate)', fontSize: 12, fontWeight: 600 }}>{copied === existing.inbound_address ? 'Copied!' : 'Copy'}</button>
+                      <button onClick={() => copy(existing.inbound_address)} title="Copy" style={{ background: 'none', border: '1.5px solid #e4e4e7', borderRadius: 999, padding: '6px 8px', cursor: 'pointer', color: 'var(--slate)', fontSize: 12, fontWeight: 600 }}>{copied === existing.inbound_address ? 'Copied!' : 'Copy'}</button>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px 10px', marginTop: 10, flexWrap: 'wrap' }}>
                       <button onClick={() => sendTest(existing.inbound_address)} disabled={testing === existing.inbound_address} style={{ ...S.btnGhost, padding: '7px 14px', fontSize: 12.5, flexShrink: 0 }}>{testing === existing.inbound_address ? 'Testing…' : 'Send a test'}</button>

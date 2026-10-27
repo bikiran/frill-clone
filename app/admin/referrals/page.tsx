@@ -50,174 +50,138 @@ export default function ReferralsPage() {
   }
 
   const CORAL = 'var(--coral, #ff6a4d)'
+  const signups = (data?.stats?.qualified ?? 0) + (data?.stats?.pending ?? 0)
+  const earned = money(data?.balanceCents || 0, data?.currency)
+  const linkText = data?.link ? data.link.replace(/^https?:\/\//, '') : 'Generating…'
 
+  // Like Sellio's Refer & earn: the invite card (headline, the link to copy,
+  // sign-ups and what's been earned), then earnings, how it works and the list.
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 1400, margin: '0 auto' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 18 }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--ink)' }}>Referrals</h1>
-          <p style={{ margin: '4px 0 0', fontSize: 14, color: 'var(--slate)' }}>Earn {reward} for every business that subscribes and pays their first month.</p>
-        </div>
-        <a href="/referrals" target="_blank" rel="noopener noreferrer"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 13px', borderRadius: 10, border: '1px solid var(--border)', color: 'var(--slate)', textDecoration: 'none', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          Learn more
-        </a>
+    <div className="ref-page" style={{ padding: '36px 44px 48px', maxWidth: 1040 }}>
+      <style>{`
+        .ref-hero { position: relative; overflow: hidden; border-radius: 22px; background: #fff; box-shadow: 0 0 0 1px #ececf0, 0 1px 2px rgba(0,0,0,.03); }
+        /* A soft coral glow and a dot pattern in the top-right corner. */
+        .ref-hero::before { content: ''; position: absolute; inset: 0; background: radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--coral) 38%, transparent) 0%, color-mix(in srgb, var(--coral) 10%, transparent) 38%, transparent 62%); pointer-events: none; }
+        .ref-hero::after { content: ''; position: absolute; top: 0; right: 0; width: 46%; height: 78%; background-image: radial-gradient(circle, color-mix(in srgb, var(--coral) 75%, #000 0%) 1.1px, transparent 1.6px); background-size: 7px 7px; -webkit-mask-image: radial-gradient(90% 90% at 100% 0%, #000 0%, transparent 70%); mask-image: radial-gradient(90% 90% at 100% 0%, #000 0%, transparent 70%); opacity: .55; pointer-events: none; }
+        .ref-hero > * { position: relative; z-index: 1; }
+        .ref-link { display: flex; align-items: center; gap: 8px; max-width: 620px; padding: 6px 6px 6px 18px; border-radius: 16px; background: #f4f4f5; }
+        .ref-stat-l { margin: 0; font-size: 13px; color: #71717a; }
+        .ref-stat-v { margin: 3px 0 0; font-size: 17px; font-weight: 700; color: #111; }
+        @media (max-width: 720px) {
+          .ref-page { padding: 20px 16px 32px !important; }
+          .ref-steps, .ref-band { grid-template-columns: 1fr !important; }
+          .ref-hero h2 { font-size: 27px !important; }
+        }
+      `}</style>
+
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 22 }}>
+        <h1 style={{ margin: 0 }}>Refer &amp; earn</h1>
+        <a href="/referrals" target="_blank" rel="noopener noreferrer" className="cv-btn" style={{ height: 34, fontSize: 13 }}>How it works ↗</a>
       </div>
 
       {loading ? (
         <p style={{ color: 'var(--slate)', fontSize: 14 }}>Loading…</p>
       ) : err ? (
-        <div style={{ padding: '12px 14px', borderRadius: 10, background: '#fee2e2', color: '#b91c1c', fontSize: 14 }}>{err}</div>
+        <div style={{ padding: '12px 14px', borderRadius: 12, background: '#fee2e2', color: '#b91c1c', fontSize: 14 }}>{err}</div>
       ) : (
         <>
           {data?.needsMigration && (
-            <div style={{ padding: '12px 14px', borderRadius: 10, background: '#fff7e6', color: '#a16207', fontSize: 13.5, marginBottom: 16 }}>
+            <div style={{ padding: '12px 14px', borderRadius: 12, background: '#fff7e6', color: '#a16207', fontSize: 13.5, marginBottom: 16 }}>
               Referrals aren’t fully set up yet — run migration <b>COLVY_V314_REFERRALS.sql</b> to activate link tracking and credit.
             </div>
           )}
 
-          {/* Hero banner */}
-          <div style={{ position: 'relative', overflow: 'hidden', borderRadius: 20, padding: '30px 32px', marginBottom: 16, background: 'linear-gradient(120deg, var(--peach, #ffe9e2) 0%, #fff6f2 60%, #fff 100%)', border: '1px solid #ffe1d6' }}>
-            <div style={{ maxWidth: 560 }}>
-              <p style={{ margin: 0, fontSize: 12, fontWeight: 800, letterSpacing: '0.09em', textTransform: 'uppercase', color: CORAL }}>Grow together</p>
-              <h2 style={{ margin: '8px 0 10px', fontSize: 'clamp(26px,4vw,38px)', fontWeight: 900, letterSpacing: '-0.02em', lineHeight: 1.05, color: 'var(--ink)' }}>
-                Refer businesses.<br /><span style={{ color: CORAL }}>Earn {reward} credit.</span>
+          {/* The invite */}
+          <div className="ref-hero">
+            <div style={{ padding: '56px 36px 30px' }}>
+              <h2 style={{ margin: 0, fontSize: 34, fontWeight: 800, letterSpacing: '-0.025em', lineHeight: 1.12, color: '#111', maxWidth: 480 }}>
+                Invite others to Colvy and earn {reward}
               </h2>
-              <p style={{ margin: 0, fontSize: 15, color: 'var(--slate)', lineHeight: 1.55, maxWidth: 460 }}>
-                Share Colvy with other businesses. When they subscribe and pay their first month, you’ll earn {reward} in account credit.
+              <p style={{ margin: '12px 0 24px', fontSize: 15.5, color: '#52525b' }}>
+                You earn <b style={{ color: '#111' }}>{reward}</b> credit when a business you refer pays its first month.
               </p>
+              <div className="ref-link">
+                <span style={{ flex: 1, minWidth: 0, fontSize: 15, color: '#71717a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linkText}</span>
+                <button type="button" onClick={share} disabled={!data?.link} className="cv-btn cv-btn-icon" aria-label="Share" title="Share" style={{ width: 40, height: 40, background: 'transparent', border: 'none', boxShadow: 'none' }}>
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4" /></svg>
+                </button>
+                <button type="button" onClick={copy} disabled={!data?.link} className="cv-btn cv-btn-dark" style={{ height: 42, padding: '0 18px' }}>
+                  {copied
+                    ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M20 6 9 17l-5-5" /></svg>
+                    : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>}
+                  {copied ? 'Copied' : 'Copy'}
+                </button>
+              </div>
             </div>
-            {/* Decorative gift on the right (hidden on narrow) */}
-            <div className="ref-hero-art" style={{ position: 'absolute', right: 26, top: '50%', transform: 'translateY(-50%)', width: 108, height: 108, borderRadius: 26, background: '#fff', border: '1px solid #ffe1d6', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 20px 40px -20px rgba(255,106,77,0.4)' }}>
-              <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke={CORAL} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px 12px', padding: '16px 36px', borderTop: '1px solid #f0f0f2', fontSize: 14.5, background: 'rgba(255,255,255,.7)' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9, color: '#111', whiteSpace: 'nowrap' }}>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#52525b" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20a6.5 6.5 0 0 1 13 0M16 4.3a3.5 3.5 0 0 1 0 6.6M18.5 14.3A6.5 6.5 0 0 1 21.5 20" /></svg>
+                {signups ? `${signups} sign-up${signups === 1 ? '' : 's'}` : 'No sign-ups yet'}
+              </span>
+              <span style={{ color: '#71717a', whiteSpace: 'nowrap' }}>{earned} earned in total</span>
             </div>
           </div>
 
-          {/* Referral link + reward */}
-          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 18, padding: 22, marginBottom: 16 }}>
-            <div style={{ display: 'flex', gap: 20, alignItems: 'stretch', flexWrap: 'wrap' }}>
-              <div style={{ flex: '1 1 340px', minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                  <span style={{ width: 38, height: 38, borderRadius: 11, background: 'var(--peach, #ffe9e2)', color: CORAL, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-                  </span>
-                  <div>
-                    <p style={{ margin: 0, fontSize: 14.5, fontWeight: 800, color: 'var(--ink)' }}>Your referral link</p>
-                    <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>Share this link with a business you know.</p>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <input readOnly value={data?.link || 'Generating…'} onFocus={e => e.currentTarget.select()}
-                    style={{ flex: '1 1 240px', minWidth: 0, padding: '11px 13px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13.5, color: 'var(--ink)', background: '#fafafa' }} />
-                  <button onClick={copy} disabled={!data?.link}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '11px 18px', borderRadius: 10, border: 'none', background: CORAL, color: '#fff', fontWeight: 800, fontSize: 13.5, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                    {copied ? 'Copied ✓' : 'Copy link'}
-                  </button>
-                  <button onClick={share} disabled={!data?.link}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '11px 16px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontWeight: 700, fontSize: 13.5, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-                    Share
-                  </button>
-                </div>
-              </div>
-              {/* Reward blurb */}
-              <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 12, borderLeft: '1px solid var(--border)', paddingLeft: 20 }} className="ref-reward-blurb">
-                <span style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--peach, #ffe9e2)', color: CORAL, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
-                </span>
-                <div style={{ maxWidth: 190 }}>
-                  <p style={{ margin: 0, fontSize: 16, fontWeight: 900, color: 'var(--ink)' }}>{reward} credit</p>
-                  <p style={{ margin: 0, fontSize: 12, color: 'var(--slate)', lineHeight: 1.4 }}>for every business that subscribes and pays their first month.</p>
-                </div>
-              </div>
+          {/* Earnings */}
+          <h2 style={{ margin: '36px 0 14px', fontSize: 18, fontWeight: 700, color: '#111' }}>Earnings</h2>
+          <div style={{ borderRadius: 20, background: '#f6f6f7', padding: 6 }}>
+            <div style={{ borderRadius: 16, background: '#fff', padding: '22px 26px', boxShadow: '0 0 0 1px #ececf0' }}>
+              <p className="ref-stat-l" style={{ fontSize: 15 }}>Credit earned</p>
+              <p style={{ margin: '4px 0 0', fontSize: 42, fontWeight: 800, letterSpacing: '-0.02em', color: '#111' }}>{earned}</p>
+              <p className="ref-stat-l" style={{ marginTop: 10 }}>Taken off your next invoice once a referral qualifies.</p>
             </div>
-
-            {/* How it works */}
-            <div style={{ borderTop: '1px solid var(--border)', marginTop: 18, paddingTop: 16 }}>
-              <p style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 800, color: 'var(--ink)' }}>How it works</p>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14 }} className="ref-steps">
-                {[
-                  { t: 'Share your link', d: 'Send it to business owners or anyone who’d benefit from Colvy.' },
-                  { t: 'Business subscribes', d: 'They sign up on your link and pay their first month.' },
-                  { t: `You earn ${reward} credit`, d: 'Applied to your next invoice once they qualify.' },
-                ].map((s, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 10 }}>
-                    <span style={{ width: 26, height: 26, borderRadius: 13, background: 'var(--peach, #ffe9e2)', color: CORAL, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, flexShrink: 0 }}>{i + 1}</span>
-                    <div>
-                      <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{s.t}</p>
-                      <p style={{ margin: '2px 0 0', fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.45 }}>{s.d}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
+            <div className="ref-band" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, padding: '16px 22px 12px' }}>
+              <div><p className="ref-stat-l">Qualified</p><p className="ref-stat-v">{data?.stats?.qualified ?? 0}</p></div>
+              <div><p className="ref-stat-l">Pending</p><p className="ref-stat-v">{data?.stats?.pending ?? 0}</p></div>
+              <div><p className="ref-stat-l">Earned in total</p><p className="ref-stat-v">{earned}</p></div>
             </div>
           </div>
 
-          {/* Stats */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 16 }} className="ref-stats">
+          {/* How it works */}
+          <h2 style={{ margin: '36px 0 14px', fontSize: 18, fontWeight: 700, color: '#111' }}>How it works</h2>
+          <div className="ref-steps" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
             {[
-              { label: 'Credit earned', sub: 'Total referral credit earned.', value: money(data?.balanceCents || 0, data?.currency), color: '#059669', bg: '#e7f6ec', icon: <path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /> },
-              { label: 'Qualified', sub: 'Subscribed and paid their first month.', value: data?.stats?.qualified ?? 0, color: '#2563eb', bg: '#e8f0ff', icon: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></> },
-              { label: 'Pending', sub: 'Still in progress.', value: data?.stats?.pending ?? 0, color: '#a16207', bg: '#fef3c7', icon: <><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></> },
-            ].map(s => (
-              <div key={s.label} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: 16 }}>
-                <span style={{ width: 34, height: 34, borderRadius: 10, background: s.bg, color: s.color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
-                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{s.icon}</svg>
-                </span>
-                <p style={{ fontSize: 24, fontWeight: 800, color: s.color, margin: 0 }}>{s.value}</p>
-                <p style={{ fontSize: 12.5, color: 'var(--ink)', margin: '2px 0 0', fontWeight: 600 }}>{s.label}</p>
-                <p style={{ fontSize: 11.5, color: 'var(--slate)', margin: '1px 0 0' }}>{s.sub}</p>
+              { t: 'Share your link', d: 'Send it to business owners or anyone who’d benefit from Colvy.' },
+              { t: 'They subscribe', d: 'They sign up on your link and pay their first month.' },
+              { t: `You earn ${reward}`, d: 'Taken off your next invoice once they qualify.' },
+            ].map((x, i) => (
+              <div key={i} style={{ padding: 18, borderRadius: 16, boxShadow: '0 0 0 1px #ececf0' }}>
+                <span style={{ width: 28, height: 28, borderRadius: 9, background: 'var(--peach, #ffe9e2)', color: CORAL, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13.5 }}>{i + 1}</span>
+                <p style={{ margin: '12px 0 0', fontSize: 15, fontWeight: 700, color: '#111' }}>{x.t}</p>
+                <p style={{ margin: '4px 0 0', fontSize: 13.5, color: '#71717a', lineHeight: 1.5 }}>{x.d}</p>
               </div>
             ))}
           </div>
 
-          {/* List */}
-          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
-            <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>
-              <span style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--ink)' }}>Your referrals</span>
-            </div>
+          {/* The list */}
+          <h2 style={{ margin: '36px 0 14px', fontSize: 18, fontWeight: 700, color: '#111' }}>Your referrals</h2>
+          <div style={{ borderRadius: 16, boxShadow: '0 0 0 1px #ececf0', overflow: 'hidden' }}>
             {(!data?.referrals || data.referrals.length === 0) ? (
-              <div style={{ padding: 40, textAlign: 'center' }}>
-                <div style={{ width: 48, height: 48, borderRadius: 14, background: 'var(--peach, #ffe9e2)', color: CORAL, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
-                </div>
-                <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>No referrals yet — share your link to get started.</p>
-                <p style={{ margin: '4px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>Once someone signs up using your link, they’ll appear here.</p>
+              <div style={{ padding: '36px 20px', textAlign: 'center' }}>
+                <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: '#111' }}>No referrals yet</p>
+                <p style={{ margin: '4px 0 0', fontSize: 13.5, color: '#71717a' }}>When someone signs up with your link, they’ll show here.</p>
               </div>
             ) : (
               data.referrals.map((r: Ref, i: number) => (
-                <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '13px 18px', borderBottom: i < data.referrals.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 20px', borderBottom: i < data.referrals.length - 1 ? '1px solid #f0f0f2' : 'none' }}>
                   <div style={{ minWidth: 0 }}>
-                    <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.referred_name || r.referred_email || 'A business'}</p>
-                    <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--slate)' }}>{new Date(r.created_at).toLocaleDateString()}{r.status === 'qualified' && r.qualified_at ? ` · qualified ${new Date(r.qualified_at).toLocaleDateString()}` : ''}</p>
+                    <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.referred_name || r.referred_email || 'A business'}</p>
+                    <p style={{ margin: '2px 0 0', fontSize: 12.5, color: '#71717a' }}>{new Date(r.created_at).toLocaleDateString()}{r.status === 'qualified' && r.qualified_at ? ` · qualified ${new Date(r.qualified_at).toLocaleDateString()}` : ''}</p>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, whiteSpace: 'nowrap' }}>
                     {statusPill(r.status)}
-                    <span style={{ fontSize: 14, fontWeight: 700, color: r.status === 'qualified' ? '#059669' : 'var(--slate)' }}>{r.status === 'qualified' ? `+${money(r.credit_cents, r.currency)}` : money(r.credit_cents, r.currency)}</span>
+                    <span style={{ fontSize: 14.5, fontWeight: 700, color: r.status === 'qualified' ? '#059669' : '#71717a' }}>{r.status === 'qualified' ? `+${money(r.credit_cents, r.currency)}` : money(r.credit_cents, r.currency)}</span>
                   </div>
                 </div>
               ))
             )}
           </div>
 
-          <p style={{ fontSize: 12.5, color: 'var(--slate)', marginTop: 16 }}>
-            Credit is applied to your next invoice once a referral qualifies. See the <a href="/referrals/terms" target="_blank" rel="noopener noreferrer" style={{ color: CORAL, fontWeight: 600 }}>referral terms</a>.
+          <p style={{ fontSize: 13, color: '#71717a', marginTop: 16 }}>
+            See the <a href="/referrals/terms" target="_blank" rel="noopener noreferrer" style={{ color: CORAL, fontWeight: 600 }}>referral terms</a>.
           </p>
         </>
       )}
-
-      <style>{`
-        @media (max-width: 720px){
-          .ref-hero-art{ display:none !important; }
-          .ref-reward-blurb{ border-left:none !important; padding-left:0 !important; }
-          .ref-steps{ grid-template-columns:1fr !important; }
-          .ref-stats{ grid-template-columns:1fr !important; }
-        }
-      `}</style>
     </div>
   )
 }

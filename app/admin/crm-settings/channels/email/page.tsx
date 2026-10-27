@@ -162,16 +162,16 @@ export default function EmailPage() {
       {/* Add a mailbox */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
         <button onClick={() => setGmailIntro({})}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 999, background: '#fff', color: 'var(--ink)', border: '1.5px solid #e4e4e7', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
           <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.76h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.76c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.84 14.11a6.6 6.6 0 0 1 0-4.22V7.05H2.18a11 11 0 0 0 0 9.9l3.66-2.84z"/><path fill="#EA4335" d="M12 4.75c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 1.46 14.97.5 12 .5A11 11 0 0 0 2.18 7.05l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
           Connect a Gmail account
         </button>
         <button onClick={() => setAddingDomain({ ...blankDomain })}
-          style={{ padding: '10px 18px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+          style={{ padding: '10px 18px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
           + Add a domain mailbox
         </button>
         <button onClick={() => document.getElementById('email-forwarding')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 999, background: '#fff', color: 'var(--ink)', border: '1.5px solid #e4e4e7', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 17l5-5-5-5" /><path d="M4 18v-2a4 4 0 0 1 4-4h12" /></svg>
           Forward email instead
         </button>
@@ -227,11 +227,11 @@ export default function EmailPage() {
 
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={saveDomain} disabled={busy === 'domain'}
-              style={{ padding: '10px 20px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+              style={{ padding: '10px 20px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
               {busy === 'domain' ? 'Saving…' : 'Save mailbox'}
             </button>
             <button onClick={() => setAddingDomain(null)}
-              style={{ padding: '10px 20px', borderRadius: 9, background: '#fff', color: 'var(--slate)', border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+              style={{ padding: '10px 20px', borderRadius: 999, background: '#fff', color: 'var(--slate)', border: '1.5px solid #e4e4e7', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
           </div>
         </div>
       )}
@@ -266,7 +266,7 @@ export default function EmailPage() {
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
                   {isGmail ? (
                     <button onClick={() => syncGmail(a)} disabled={busy === 'sync-' + a.id}
-                      style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--coral)', background: 'var(--peach)', color: 'var(--coral)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                      style={{ padding: '5px 11px', borderRadius: 999, border: '1px solid var(--coral)', background: 'var(--peach)', color: 'var(--coral)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                       {busy === 'sync-' + a.id ? 'Syncing…' : 'Sync now'}
                     </button>
                   ) : (
@@ -278,15 +278,15 @@ export default function EmailPage() {
                     </span>
                   )}
                   <button onClick={() => setRulesFor(a)}
-                    style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: 'var(--ink)' }}>
+                    style={{ padding: '5px 11px', borderRadius: 999, border: '1.5px solid #e4e4e7', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: 'var(--ink)' }}>
                     Email rules{myRules.length ? ` (${myRules.length})` : ''}
                   </button>
                   <button onClick={() => updateAccount(a.id, { is_active: !a.is_active })}
-                    style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: a.is_active ? '#15803d' : 'var(--slate)' }}>
+                    style={{ padding: '5px 11px', borderRadius: 999, border: '1.5px solid #e4e4e7', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: a.is_active ? '#15803d' : 'var(--slate)' }}>
                     {a.is_active ? 'Active' : 'Paused'}
                   </button>
                   <button onClick={() => deleteAccount(a)}
-                    style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: '#dc2626' }}>Remove</button>
+                    style={{ padding: '5px 11px', borderRadius: 999, border: '1.5px solid #e4e4e7', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: '#dc2626' }}>Remove</button>
                 </div>
               </div>
 
@@ -403,7 +403,7 @@ export default function EmailPage() {
                 placeholder="example.com or user@example.com"
                 style={{ flex: 1, minWidth: 200, padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5 }} />
               <button onClick={addRule} disabled={busy === 'rule'}
-                style={{ padding: '9px 18px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Add rule</button>
+                style={{ padding: '9px 18px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Add rule</button>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -418,7 +418,7 @@ export default function EmailPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', padding: '2px 8px', borderRadius: 5, background: r.rule_type === 'allow' ? '#dcfce7' : '#fee2e2', color: r.rule_type === 'allow' ? '#15803d' : '#dc2626' }}>{r.rule_type}</span>
                     <button onClick={async () => { await api({ action: 'toggle_rule', id: r.id, is_enabled: !r.is_enabled }); if (companyId) await load(companyId) }}
-                      style={{ padding: '3px 9px', borderRadius: 6, border: '1px solid var(--border)', background: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', color: r.is_enabled ? '#15803d' : 'var(--slate)' }}>
+                      style={{ padding: '3px 9px', borderRadius: 999, border: '1.5px solid #e4e4e7', background: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', color: r.is_enabled ? '#15803d' : 'var(--slate)' }}>
                       {r.is_enabled ? 'On' : 'Off'}
                     </button>
                     <button onClick={async () => { await api({ action: 'delete_rule', id: r.id }); if (companyId) await load(companyId) }}
@@ -430,7 +430,7 @@ export default function EmailPage() {
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
               <button onClick={() => setRulesFor(null)}
-                style={{ padding: '9px 22px', borderRadius: 9, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Close</button>
+                style={{ padding: '9px 22px', borderRadius: 999, background: '#fff', color: 'var(--ink)', border: '1.5px solid #e4e4e7', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Close</button>
             </div>
           </div>
         </div>
@@ -441,7 +441,7 @@ export default function EmailPage() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>Email signatures</h2>
           <button onClick={() => setSigEditing({ name: '', body: '', email_channel_id: '' })}
-            style={{ padding: '7px 14px', borderRadius: 8, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>+ Add signature</button>
+            style={{ padding: '7px 14px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>+ Add signature</button>
         </div>
 
         {sigEditing && (
@@ -465,9 +465,9 @@ export default function EmailPage() {
             )}
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={saveSignature}
-                style={{ padding: '9px 18px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Save</button>
+                style={{ padding: '9px 18px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Save</button>
               <button onClick={() => setSigEditing(null)}
-                style={{ padding: '9px 18px', borderRadius: 9, background: '#fff', color: 'var(--slate)', border: '1px solid var(--border)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+                style={{ padding: '9px 18px', borderRadius: 999, background: '#fff', color: 'var(--slate)', border: '1.5px solid #e4e4e7', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
             </div>
           </div>
         )}
@@ -484,9 +484,9 @@ export default function EmailPage() {
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                   <button onClick={() => setSigEditing({ ...s })}
-                    style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: 'var(--ink)' }}>Edit</button>
+                    style={{ padding: '5px 11px', borderRadius: 999, border: '1.5px solid #e4e4e7', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: 'var(--ink)' }}>Edit</button>
                   <button onClick={async () => { await api({ action: 'delete_signature', id: s.id }); if (companyId) await load(companyId) }}
-                    style={{ padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: '#dc2626' }}>Delete</button>
+                    style={{ padding: '5px 11px', borderRadius: 999, border: '1.5px solid #e4e4e7', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: '#dc2626' }}>Delete</button>
                 </div>
               </div>
             ))}
@@ -506,7 +506,7 @@ export default function EmailPage() {
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <code style={{ flex: 1, minWidth: 220, padding: '10px 12px', borderRadius: 8, background: '#fff', border: '1px solid var(--border)', fontSize: 13.5, wordBreak: 'break-all' }}>{forwardingAlias}</code>
               <button onClick={() => { navigator.clipboard?.writeText(forwardingAlias); setMsg('Forwarding address copied.') }}
-                style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', color: 'var(--ink)' }}>Copy</button>
+                style={{ padding: '9px 14px', borderRadius: 999, border: '1.5px solid #e4e4e7', background: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', color: 'var(--ink)' }}>Copy</button>
             </div>
             <p style={{ fontSize: 12, color: 'var(--slate)', margin: '8px 0 0', lineHeight: 1.6 }}>
               <strong>Gmail:</strong> Settings, See all settings, Forwarding and POP/IMAP, Add a forwarding address, paste this address. Google emails a confirmation code to it, which shows up in your Colvy inbox; enter the code in Gmail and choose &ldquo;Forward a copy&rdquo;. <strong>Outlook / Microsoft 365:</strong> Settings, Mail, Forwarding.

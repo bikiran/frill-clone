@@ -44,7 +44,7 @@ function WebhookStatus({ channelId, active, onChanged }: { channelId: string; ac
         {tone === 'ok' && st?.app?.name && <span style={{ fontSize: 12, color: C.fg }}>· app “{st.app.name}”</span>}
         <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 12, alignItems: 'center' }}>
           {(tone === 'bad' || tone === 'warn') && active && (
-            <button type="button" onClick={() => run('resubscribe')} disabled={!!busy} style={{ padding: '5px 11px', borderRadius: 8, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{busy === 'subscribe' ? 'Subscribing…' : 'Subscribe now'}</button>
+            <button type="button" onClick={() => run('resubscribe')} disabled={!!busy} style={{ padding: '5px 11px', borderRadius: 999, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{busy === 'subscribe' ? 'Subscribing…' : 'Subscribe now'}</button>
           )}
           {st && <button type="button" onClick={() => run('webhook_status')} disabled={!!busy} style={link}>{busy === 'check' ? 'Checking…' : 'Re-check'}</button>}
           {st?.raw && <button type="button" onClick={() => setShowRaw(v => !v)} style={link}>{showRaw ? 'Hide API response' : 'View API response'}</button>}
@@ -208,7 +208,7 @@ export default function MetaChannelsPage() {
               const href = setupHref((e.currentTarget as HTMLAnchorElement).href)
               try { window.location.href = await withConnectTicket(href, companyId!, 'meta') } catch (er: any) { setMsg(er.message) }
             }}
-            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '11px 16px', borderRadius: 10, background: '#1877F2', color: '#fff', fontSize: 13.5, fontWeight: 700, textDecoration: 'none', opacity: configured ? 1 : 0.6 }}>
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '11px 16px', borderRadius: 999, background: '#1877F2', color: '#fff', fontSize: 13.5, fontWeight: 700, textDecoration: 'none', opacity: configured ? 1 : 0.6 }}>
             Connect Facebook &amp; Instagram
           </a>
         </div>
@@ -235,7 +235,7 @@ export default function MetaChannelsPage() {
                 if (!raw || !companyId) return
                 try { window.location.href = await withConnectTicket(setupHref(raw), companyId, 'instagram') } catch (er: any) { setMsg(er.message) }
               }}
-              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '11px 16px', borderRadius: 10, background: 'linear-gradient(45deg,#feda75,#d62976,#4f5bd5)', color: '#fff', fontSize: 13.5, fontWeight: 700, textDecoration: 'none' }}>
+              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '11px 16px', borderRadius: 999, background: 'linear-gradient(45deg,#feda75,#d62976,#4f5bd5)', color: '#fff', fontSize: 13.5, fontWeight: 700, textDecoration: 'none' }}>
               Connect Instagram directly
             </a>
           </div>
@@ -327,7 +327,7 @@ export default function MetaChannelsPage() {
                   </label>
 
                   <button type="button" onClick={async () => { if (await confirmDialog('Disconnect this account?')) api({ action: 'disconnect', id: c.id }) }}
-                    style={{ padding: '6px 11px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: '#dc2626', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                    style={{ padding: '6px 11px', borderRadius: 999, border: '1.5px solid #e4e4e7', background: '#fff', color: '#dc2626', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
                     Disconnect
                   </button>
                   <WebhookStatus channelId={c.id} active={c.is_active !== false} onChanged={() => companyId && load(companyId)} />

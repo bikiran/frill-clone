@@ -56,7 +56,7 @@ export default function PoliciesSettings() {
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
                 <button onClick={() => setEditing(p)} style={{ ...S.btnGhost, padding: '6px 14px', fontSize: 12.5 }}>Edit</button>
-                <button onClick={async () => { if (await confirmDialog('Delete policy?')) { await (supabase as any).from('policies').delete().eq('id', p.id); load() } }} style={{ padding: '6px 14px', borderRadius: 8, background: '#fff', border: '1px solid #fecaca', color: '#dc2626', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Delete</button>
+                <button onClick={async () => { if (await confirmDialog('Delete policy?')) { await (supabase as any).from('policies').delete().eq('id', p.id); load() } }} style={{ padding: '6px 14px', borderRadius: 999, background: '#fff', border: '1px solid #fecaca', color: '#dc2626', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Delete</button>
               </div>
             </div>
           ))}

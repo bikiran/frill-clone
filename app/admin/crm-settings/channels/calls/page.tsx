@@ -338,11 +338,11 @@ export default function TelnyxIntegration() {
               </div>
               <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                 <button onClick={checkCalling} disabled={!!callBusy}
-                  style={{ padding: '8px 14px', borderRadius: 9, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                  style={{ padding: '8px 14px', borderRadius: 999, border: '1.5px solid #e4e4e7', background: '#fff', color: 'var(--ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
                   {callBusy === 'check' ? 'Checking…' : 'Check'}
                 </button>
                 <button onClick={setupCalling} disabled={!!callBusy}
-                  style={{ padding: '8px 16px', borderRadius: 9, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                  style={{ padding: '8px 16px', borderRadius: 999, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
                   {callBusy === 'setup' ? 'Setting up…' : 'Set up calling'}
                 </button>
               </div>
@@ -365,7 +365,7 @@ export default function TelnyxIntegration() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase' }}>Your numbers</p>
             <button onClick={() => { setAddingNumber(true); setAvailable([]); setAssignLocationId('') }}
-              style={{ padding: '7px 14px', borderRadius: 9, border: '1px solid var(--coral)', background: 'var(--peach)', color: 'var(--coral)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+              style={{ padding: '7px 14px', borderRadius: 999, border: '1px solid var(--coral)', background: 'var(--peach)', color: 'var(--coral)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
               + Add another number
             </button>
           </div>
@@ -502,11 +502,11 @@ export default function TelnyxIntegration() {
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={searchNumbers} disabled={searching}
-                  style={{ padding: '11px 18px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>
+                  style={{ padding: '11px 18px', borderRadius: 999, border: '1.5px solid #e4e4e7', background: '#fff', color: 'var(--ink)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>
                   {searching ? 'Searching…' : 'Choose a number'}
                 </button>
                 <button onClick={() => buyNumber()} disabled={buying}
-                  style={{ padding: '11px 22px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>
+                  style={{ padding: '11px 22px', borderRadius: 999, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>
                   {buying ? 'Setting up…' : freeCredits > 0 ? 'Get your free number' : 'Buy Australian Number'}
                 </button>
               </div>
@@ -522,7 +522,7 @@ export default function TelnyxIntegration() {
                       <div style={{ fontSize: 11.5, color: 'var(--slate)' }}>{n.region} · {freeCredits > 0 ? <span style={{ color: '#059669', fontWeight: 700 }}>Free</span> : `$${n.monthly}/month`}</div>
                     </div>
                     <button onClick={() => buyNumber(n.phone_number)} disabled={buying}
-                      style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                      style={{ padding: '8px 16px', borderRadius: 999, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
                       {buying ? '…' : freeCredits > 0 ? 'Get free' : 'Buy'}
                     </button>
                   </div>

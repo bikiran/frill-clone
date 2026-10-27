@@ -559,7 +559,7 @@ export default function TeamPage() {
   )
 
   return (
-    <div className="team-page px-6 py-8">
+    <div className="team-page" style={{ padding: '36px 44px 48px' }}>
       <style>{`
         /* Table (768px and up): the header and every row share one column
            template, so the columns always line up. Status and Actions have a
@@ -644,14 +644,10 @@ export default function TeamPage() {
         bleedTop={32}
         action={viewOnly ? undefined :
           <>
-          <button onClick={() => setShowCreate(true)}
-            className="px-4 py-2 rounded-lg border text-sm font-medium transition-smooth cursor-pointer hover:bg-gray-50"
-            style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
+          <button onClick={() => setShowCreate(true)} className="cv-btn">
             + Create User
           </button>
-          <button onClick={() => setShowInvite(true)}
-            className="px-4 py-2 rounded-xl text-sm font-semibold text-white transition-smooth cursor-pointer"
-            style={{ background: 'var(--coral)' }}>
+          <button onClick={() => setShowInvite(true)} className="cv-btn cv-btn-primary">
             + Invite Member
           </button>
           </>
@@ -711,7 +707,7 @@ export default function TeamPage() {
 
       {/* One card: a table from 768px up (columns from .tm-grid, which never
           needs a sideways scroll), a list of member cards on phones. */}
-      <div className="tm-card bg-white rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+      <div className="tm-card bg-white overflow-hidden" style={{ borderRadius: 16, boxShadow: '0 0 0 1px #ececf0' }}>
         {/* Header */}
         <div className="tm-head tm-grid px-5 py-3 border-b text-xs font-semibold uppercase tracking-wider" style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
           <div>User</div>
@@ -753,8 +749,8 @@ export default function TeamPage() {
             <p className="text-sm mb-1 font-semibold" style={{ color: 'var(--ink)' }}>No team members yet</p>
             <p className="text-xs mb-4 max-w-xs" style={{ color: 'var(--slate)' }}>Invite colleagues by email, or create a login for them yourself.</p>
             {!viewOnly && <div className="flex flex-wrap gap-2 justify-center">
-              <button onClick={() => setShowInvite(true)} className="px-4 py-2 rounded-xl text-sm font-semibold text-white cursor-pointer" style={{ background: 'var(--coral)' }}>Invite member</button>
-              <button onClick={() => setShowCreate(true)} className="px-4 py-2 rounded-xl border text-sm font-medium cursor-pointer hover:bg-gray-50" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Create user</button>
+              <button onClick={() => setShowInvite(true)} className="cv-btn cv-btn-primary">Invite member</button>
+              <button onClick={() => setShowCreate(true)} className="cv-btn">Create user</button>
             </div>}
           </div>
         ) : (
@@ -782,12 +778,12 @@ export default function TeamPage() {
       </div>
 
       {/* Role legend */}
-      <div className="mt-6 p-4 rounded-xl border" style={{ background: '#eff6ff', borderColor: '#bfdbfe' }}>
-        <p className="text-sm font-bold mb-2 text-blue-900">Role permissions</p>
-        <div className="grid sm:grid-cols-3 gap-2 text-xs text-blue-800">
-          <div><strong>Admin</strong> — Full access, settings, team</div>
-          <div><strong>Agent</strong> — Day-to-day work; exact access set per member in Permissions</div>
-          <div><strong>Viewer</strong> — Read-only dashboard access</div>
+      <div className="mt-6" style={{ padding: '18px 20px', borderRadius: 16, background: '#f6f6f7' }}>
+        <p className="mb-3" style={{ fontSize: 15, fontWeight: 700, color: '#111' }}>Role permissions</p>
+        <div className="grid sm:grid-cols-3 gap-3" style={{ fontSize: 13.5, color: '#52525b', lineHeight: 1.5 }}>
+          <div><strong style={{ color: '#111' }}>Admin</strong> — Full access, settings, team</div>
+          <div><strong style={{ color: '#111' }}>Agent</strong> — Day-to-day work; exact access set per member in Permissions</div>
+          <div><strong style={{ color: '#111' }}>Viewer</strong> — Read-only dashboard access</div>
         </div>
       </div>
 
@@ -820,9 +816,9 @@ export default function TeamPage() {
               </div>
             </div>
             <div className="flex gap-3 p-6 border-t shrink-0" style={{ borderColor: 'var(--border)' }}>
-              <button onClick={() => setShowInvite(false)} className="flex-1 py-2.5 rounded-xl text-sm font-medium border cursor-pointer" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Cancel</button>
+              <button onClick={() => setShowInvite(false)} className="cv-btn flex-1" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Cancel</button>
               <button onClick={inviteMember} disabled={!inviteEmail.trim() || working}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white cursor-pointer disabled:opacity-50"
+                className="cv-btn cv-btn-primary flex-1"
                 style={{ background: 'var(--coral)' }}>
                 {working ? 'Sending...' : 'Send Invite'}
               </button>
@@ -877,9 +873,9 @@ export default function TeamPage() {
               </div>
             </div>
             <div className="flex gap-3 p-6 border-t shrink-0" style={{ borderColor: 'var(--border)' }}>
-              <button onClick={() => setEditMember(null)} className="flex-1 py-2.5 rounded-xl text-sm font-medium border cursor-pointer" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Cancel</button>
+              <button onClick={() => setEditMember(null)} className="cv-btn flex-1" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Cancel</button>
               <button onClick={saveMemberProfile} disabled={editSaving || editUploading}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white cursor-pointer disabled:opacity-50"
+                className="cv-btn cv-btn-primary flex-1"
                 style={{ background: 'var(--coral)' }}>
                 {editSaving ? 'Saving…' : 'Save'}
               </button>
@@ -924,9 +920,9 @@ export default function TeamPage() {
               })}
             </div>
             <div className="flex gap-3 p-6 border-t shrink-0" style={{ borderColor: 'var(--border)' }}>
-              <button onClick={() => setPermMember(null)} className="flex-1 py-2.5 rounded-xl text-sm font-medium border cursor-pointer" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Cancel</button>
+              <button onClick={() => setPermMember(null)} className="cv-btn flex-1" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Cancel</button>
               <button onClick={savePermissions} disabled={permSaving}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white cursor-pointer disabled:opacity-50"
+                className="cv-btn cv-btn-primary flex-1"
                 style={{ background: 'var(--coral)' }}>
                 {permSaving ? 'Saving…' : 'Save permissions'}
               </button>
@@ -974,9 +970,9 @@ export default function TeamPage() {
               </div>
             </div>
             <div className="flex gap-3 p-6 border-t shrink-0" style={{ borderColor: 'var(--border)' }}>
-              <button onClick={() => setShowCreate(false)} className="flex-1 py-2.5 rounded-xl text-sm font-medium border cursor-pointer" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Cancel</button>
+              <button onClick={() => setShowCreate(false)} className="cv-btn flex-1" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Cancel</button>
               <button onClick={createUser} disabled={!createEmail.trim() || working}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white cursor-pointer disabled:opacity-50"
+                className="cv-btn cv-btn-primary flex-1"
                 style={{ background: 'var(--coral)' }}>
                 {working ? 'Creating...' : 'Add to Team'}
               </button>
