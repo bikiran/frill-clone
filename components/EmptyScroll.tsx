@@ -8,13 +8,17 @@
 
 import type { ReactNode } from 'react'
 
-type Kind = 'chat' | 'sms' | 'email' | 'task' | 'contact' | 'order'
+type Kind = 'chat' | 'sms' | 'email' | 'task' | 'contact' | 'order' | 'ticket'
 
-const TINT: Record<Kind, string> = { chat: '#ff7a6b', sms: '#34c759', email: '#007aff', task: '#af52de', contact: '#ff9f0a', order: '#5ac8fa' }
+// Drawn as a coloured outline on its own, without the tile behind it.
+const OUTLINE: Kind[] = ['ticket']
+
+const TINT: Record<Kind, string> = { chat: '#ff7a6b', sms: '#34c759', email: '#007aff', task: '#af52de', contact: '#ff9f0a', order: '#5ac8fa', ticket: '#f2551d' }
 
 const Glyph = ({ kind }: { kind: Kind }) => {
   const p = { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: '#fff', strokeWidth: 2.4, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
   switch (kind) {
+    case 'ticket': return <svg {...p} width={19} height={19} stroke={TINT.ticket} strokeWidth={1.9}><path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2.2a2.8 2.8 0 0 0 0 5.6V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2.2a2.8 2.8 0 0 0 0-5.6z" /><circle cx="12" cy="12" r="2.2" /></svg>
     case 'sms': return <svg {...p}><rect x="6" y="2.5" width="12" height="19" rx="3" /><path d="M11 18h2" /></svg>
     case 'email': return <svg {...p}><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="m4 7 8 6 8-6" /></svg>
     case 'task': return <svg {...p}><path d="m5 12 4.5 4.5L19 7" /></svg>
@@ -27,7 +31,9 @@ const Glyph = ({ kind }: { kind: Kind }) => {
 function Card({ kind, w }: { kind: Kind; w: number }) {
   return (
     <div className="es-card">
-      <span className="es-ic" style={{ background: TINT[kind] }}><Glyph kind={kind} /><span className="es-dot" /></span>
+      {OUTLINE.includes(kind)
+        ? <span className="es-ic"><Glyph kind={kind} /></span>
+        : <span className="es-ic" style={{ background: TINT[kind] }}><Glyph kind={kind} /><span className="es-dot" /></span>}
       <span className="es-bar" style={{ width: `${w}%` }} />
       <svg className="es-plus" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
     </div>
