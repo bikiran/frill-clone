@@ -3,9 +3,10 @@
 import { COLVY_CONTACT } from '@/lib/colvy-contact'
 import { soonLabel } from '@/lib/feature-availability'
 
-// Shared marketing footer — big and bold (ManyChat-style): tall dark band, many
-// link columns (two-up even on mobile, never one long list), a giant Colvy
-// wordmark in a grid, social links and a legal bar. Always dark for a strong
+// Shared marketing footer — big and bold (ManyChat-style): tall dark band, the
+// brand and ways to reach Colvy beside a giant Colvy wordmark in a grid, then
+// every link column in one row across the full width (two-up on mobile, never
+// one long list), social links and a legal bar. Always dark for a strong
 // anchor regardless of the page theme.
 export default function MarketingFooter({ dark = false }: { dark?: boolean }) {
   void dark
@@ -37,20 +38,21 @@ export default function MarketingFooter({ dark = false }: { dark?: boolean }) {
     <footer style={{ background: bg, color: text, padding: '0' }}>
       <style>{`
         .cvf-wrap{ max-width:1280px; margin:0 auto; padding:72px 24px 28px; }
-        .cvf-top{ display:grid; grid-template-columns:1.15fr 1fr; gap:48px; align-items:start; }
-        .cvf-cols{ display:grid; grid-template-columns:repeat(4,1fr); gap:28px 24px; }
+        .cvf-top{ display:grid; grid-template-columns:1.15fr 1fr; gap:48px; align-items:center; }
+        .cvf-cols{ display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:28px 24px; margin-top:56px; }
+        @media (max-width:1100px){ .cvf-cols{ grid-template-columns:repeat(4,minmax(0,1fr)); } }
         .cvf-brandbox{ position:relative; border:1px solid ${line}; border-radius:16px; min-height:220px; overflow:hidden; display:flex; align-items:center; justify-content:center; background:
           linear-gradient(${line} 1px,transparent 1px),linear-gradient(90deg,${line} 1px,transparent 1px); background-size:25% 33.33%; }
         .cvf-word{ font-weight:900; letter-spacing:-0.04em; font-size:clamp(48px,7vw,104px); line-height:1; }
         @media (max-width:820px){
           .cvf-top{ grid-template-columns:1fr; gap:36px; }
-          .cvf-cols{ grid-template-columns:repeat(2,1fr); }   /* side by side on mobile, never one long list */
+          .cvf-cols{ grid-template-columns:repeat(2,minmax(0,1fr)); margin-top:40px; }   /* side by side on mobile, never one long list */
           .cvf-brandbox{ min-height:150px; order:-1; }
         }
       `}</style>
       <div className="cvf-wrap">
         <div className="cvf-top">
-          {/* Left: brand blurb + link columns */}
+          {/* Left: brand blurb, contact and the apps */}
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
               <img src="/icon-512.png" alt="Colvy" width={34} height={34} style={{ borderRadius: 9, display: 'block' }} />
@@ -75,7 +77,7 @@ export default function MarketingFooter({ dark = false }: { dark?: boolean }) {
               ))}
             </ul>
             {/* Get the app — App Store + Google Play */}
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '0 0 30px' }}>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <a href="https://apps.apple.com/us/app/colvy/id6803380512" target="_blank" rel="noopener noreferrer" aria-label="Download on the App Store"
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 9, padding: '8px 14px', borderRadius: 11, border: `1px solid ${line}`, color: text, textDecoration: 'none', transition: 'border-color 0.2s, background 0.2s' }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.35)'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)' }}
@@ -91,22 +93,24 @@ export default function MarketingFooter({ dark = false }: { dark?: boolean }) {
                 <span style={{ lineHeight: 1.1 }}><span style={{ display: 'block', fontSize: 9.5, color: muted }}>Get it on</span><span style={{ display: 'block', fontSize: 15, fontWeight: 700 }}>Google Play</span></span>
               </a>
             </div>
-            <div className="cvf-cols">
-              {COLS.map(col => (
-                <div key={col.title}>
-                  <h3 style={{ fontSize: 12, fontWeight: 800, color: dim, margin: '0 0 14px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{col.title}</h3>
-                  {col.links.map(lk => (
-                    <a key={lk.l} href={lk.h} className="cvf-link" style={{ display: 'block', fontSize: 14.5, color: muted, textDecoration: 'none', marginBottom: 11, transition: 'color 0.2s' }}
-                      onMouseEnter={e => (e.currentTarget.style.color = '#fff')} onMouseLeave={e => (e.currentTarget.style.color = muted)}>{lk.l}</a>
-                  ))}
-                </div>
-              ))}
-            </div>
           </div>
           {/* Right: giant wordmark in a grid box */}
           <div className="cvf-brandbox">
             <span className="cvf-word">Colvy<span style={{ color: CORAL }}>.</span></span>
           </div>
+        </div>
+
+        {/* Every link column, in one row across the full width */}
+        <div className="cvf-cols">
+          {COLS.map(col => (
+            <div key={col.title}>
+              <h3 style={{ fontSize: 12, fontWeight: 800, color: dim, margin: '0 0 14px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{col.title}</h3>
+              {col.links.map(lk => (
+                <a key={lk.l} href={lk.h} className="cvf-link" style={{ display: 'block', fontSize: 14.5, color: muted, textDecoration: 'none', marginBottom: 11, transition: 'color 0.2s' }}
+                  onMouseEnter={e => (e.currentTarget.style.color = '#fff')} onMouseLeave={e => (e.currentTarget.style.color = muted)}>{lk.l}</a>
+              ))}
+            </div>
+          ))}
         </div>
 
         {/* Social + big CTA line */}
