@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { readLocal, writeLocal } from '@/lib/local-cache'
 import { SkeletonList } from '@/components/Skeleton'
+import EmptyScroll from '@/components/EmptyScroll'
 import PageHeader from '@/components/PageHeader'
 import { MessageIcon, ClockIcon, CheckIcon, ArchiveIcon, AlarmClockIcon, DownloadIcon, PlusIcon, SearchIcon, MoreHorizontalIcon, SlidersIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon } from '@/components/Icons'
 import { computeSla, activeClock, clockLabel, CLOCK_COLORS, resolveSla, DEFAULT_SLA, type SlaSettings } from '@/lib/ticket-sla'
@@ -143,7 +144,6 @@ const TICKETS_CSS = `
     .tk-card-asg > span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .tk-card-asg[data-none] { color: var(--slate); font-weight: 500; }
     .tk-card-when { white-space: nowrap; flex-shrink: 0; }
-    .tk-empty { display: block; padding: 40px 16px; text-align: center; font-size: 14px; color: var(--slate); background: #fff; border: 1px solid var(--border); border-radius: 14px; }
     .tk-pager { padding: 12px 0 0 !important; border-top: none !important; justify-content: center !important; }
   }
   /* Tablets: two cards across. */
@@ -464,7 +464,14 @@ export default function TicketsList() {
         </div>
       </div>
 
-      {loading ? <SkeletonList rows={6} /> : (
+      {loading ? <SkeletonList rows={6} /> : filtered.length === 0 ? (
+        // Nothing to list: a few ticket cards drifting past, like the empty inbox.
+        <div style={{ padding: '56px 0' }}>
+          {tickets.length === 0
+            ? <EmptyScroll kinds={['ticket']} title="No tickets yet" line="Tickets you open, or that customers send in, show up here." />
+            : <EmptyScroll kinds={['ticket']} title="No tickets match" line="Try clearing a filter or the search." />}
+        </div>
+      ) : (
         <div className="tk-list">
           <div className="tk-box">
           <div className="tk-table" style={{ overflowX: 'auto' }}>
@@ -479,9 +486,7 @@ export default function TicketsList() {
                 </tr>
               </thead>
               <tbody>
-                {pageRows.length === 0 ? (
-                  <tr><td colSpan={sla.enabled ? 7 : 6} style={{ textAlign: 'center', color: 'var(--slate)', padding: 48, fontSize: 14 }}>No tickets match your filters.</td></tr>
-                ) : pageRows.map(t => {
+                {pageRows.map(t => {
                   const pr = t.priority || 'normal'
                   return (
                     <tr key={t.id} onClick={() => router.push(`/admin/tickets/${t.id}`)}
@@ -523,39 +528,35 @@ export default function TicketsList() {
           </div>
 
           {/* Narrow screens: one card per ticket instead of the table. */}
-          {pageRows.length === 0 ? (
-            <p className="tk-empty tk-cards">No tickets match your filters.</p>
-          ) : (
-            <ul className="tk-cards" aria-label="Tickets">
-              {pageRows.map(t => {
-                const overdue = t._sla.worst === 'overdue'
-                return (
-                  <li key={t.id} className="tk-card" data-overdue={overdue ? '' : undefined}>
-                    <div className="tk-card-top">
-                      <span className="tk-card-id">{t.ticket_number}</span>
-                      <span className="tk-card-ch">{t.channel}</span>
-                      <StatusPill status={t.status} />
-                    </div>
-                    {/* The subject is the card's button; its ::after covers the
-                        whole card, so a tap anywhere opens the ticket. */}
-                    <button type="button" className="tk-card-open" onClick={() => router.push(`/admin/tickets/${t.id}`)}>{t.subject}</button>
-                    <p className="tk-card-cust"><b>{t.customer_name}</b>{t.customer_email && t.customer_email !== t.customer_name ? ` · ${t.customer_email}` : ''}</p>
-                    <div className="tk-card-badges">
-                      <PriorityLabel priority={t.priority || 'normal'} />
-                      {sla.enabled && <DeadlineBadge sla={t._sla} />}
-                    </div>
-                    <div className="tk-card-foot">
-                      <span className="tk-card-asg" data-none={t.assigned_to ? undefined : ''}>
-                        {t.assigned_to && <span aria-hidden="true" style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--canvas)', border: '1px solid var(--border)', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, flexShrink: 0 }}>{initials(assigneeLabel(t))}</span>}
-                        <span>{assigneeLabel(t)}</span>
-                      </span>
-                      <span className="tk-card-when">Updated {shortWhen(t.updated_at || t.created_at)}</span>
-                    </div>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
+          <ul className="tk-cards" aria-label="Tickets">
+            {pageRows.map(t => {
+              const overdue = t._sla.worst === 'overdue'
+              return (
+                <li key={t.id} className="tk-card" data-overdue={overdue ? '' : undefined}>
+                  <div className="tk-card-top">
+                    <span className="tk-card-id">{t.ticket_number}</span>
+                    <span className="tk-card-ch">{t.channel}</span>
+                    <StatusPill status={t.status} />
+                  </div>
+                  {/* The subject is the card's button; its ::after covers the
+                      whole card, so a tap anywhere opens the ticket. */}
+                  <button type="button" className="tk-card-open" onClick={() => router.push(`/admin/tickets/${t.id}`)}>{t.subject}</button>
+                  <p className="tk-card-cust"><b>{t.customer_name}</b>{t.customer_email && t.customer_email !== t.customer_name ? ` · ${t.customer_email}` : ''}</p>
+                  <div className="tk-card-badges">
+                    <PriorityLabel priority={t.priority || 'normal'} />
+                    {sla.enabled && <DeadlineBadge sla={t._sla} />}
+                  </div>
+                  <div className="tk-card-foot">
+                    <span className="tk-card-asg" data-none={t.assigned_to ? undefined : ''}>
+                      {t.assigned_to && <span aria-hidden="true" style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--canvas)', border: '1px solid var(--border)', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, flexShrink: 0 }}>{initials(assigneeLabel(t))}</span>}
+                      <span>{assigneeLabel(t)}</span>
+                    </span>
+                    <span className="tk-card-when">Updated {shortWhen(t.updated_at || t.created_at)}</span>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
 
           {/* Pagination */}
           {filtered.length > 0 && (
