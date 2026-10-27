@@ -40,6 +40,7 @@ import ColvyAssistant from '@/components/ColvyAssistant'
 import SuperAdminBar from '@/components/SuperAdminBar'
 import RouteScrollTop from '@/components/RouteScrollTop'
 import SetupRing from '@/components/SetupRing'
+import AdminRail, { RAIL_W, type RailSection } from '@/components/AdminRail'
 import { canUseFeature, canAccessPath, featureForPath, hasFullAccess, type PermissionMap } from '@/lib/permissions'
 
 const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
@@ -93,79 +94,79 @@ const icons: Record<string, React.JSX.Element> = {
   sliders: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>,
 }
 
-// The admin sidebar. Groups run from the everyday work (inbox, AI, orders,
-// support) down to setup (feedback board config, insights, settings).
-// `match` lists extra pages that should light up this item — pages that belong
-// to it but live at a different address (e.g. a contact's profile → Contacts).
+// The admin's navigation, in sections. On wider screens each section is a
+// tile in the rail (components/AdminRail) with a panel of its pages; on phones
+// the sections are the groups of the menu sheet. The first page of a section
+// is where its tile goes. `match` lists extra pages that should light up an
+// item: pages that belong to it but live at a different address (e.g. a
+// contact's profile → Contacts).
 type NavItem = { label: string; href: string; icon: string; match?: string[] }
-const NAV_GROUPS: { label: string | null; items: NavItem[] }[] = [
-  {
-    label: null,
-    items: [{ label: 'Dashboard', href: '/admin', icon: 'dashboard' }],
-  },
-  {
-    label: 'Inbox & CRM',
-    items: [
-      { label: 'Inbox', href: '/admin/inbox', icon: 'support' },
-      { label: 'Contacts', href: '/admin/contacts', icon: 'users', match: ['/admin/customers/profile'] },
-      { label: 'Tasks', href: '/admin/tasks', icon: 'check' },
-      { label: 'Notes', href: '/admin/notes', icon: 'notes' },
-      { label: 'Gallery', href: '/admin/gallery', icon: 'gallery' },
-      { label: 'Calendar', href: '/admin/calendar', icon: 'calendar' },
-      { label: 'Bookings', href: '/admin/bookings', icon: 'calendar' },
-      { label: 'Scheduled', href: '/admin/scheduled', icon: 'scheduled' },
-      { label: 'Call Logs', href: '/admin/calls', icon: 'support' },
-    ],
-  },
-  {
-    // Everything the AI does and knows, in one place. AI Knowledge and AI
-    // Settings still live inside Settings (so the settings tabs show around
-    // them); these entries just make them findable from the sidebar.
-    label: 'AI',
-    items: [
+type NavSection = { key: string; label: string; glyph: string; groups: { label?: string; items: NavItem[] }[] }
+const SECTIONS: NavSection[] = [
+  { key: 'home', label: 'Home', glyph: 'home', groups: [{ items: [
+    { label: 'Dashboard', href: '/admin', icon: 'dashboard' },
+    { label: 'Command Centre', href: '/admin/command-centre', icon: 'command' },
+  ] }] },
+  { key: 'inbox', label: 'Inbox', glyph: 'inbox', groups: [{ items: [
+    { label: 'Inbox', href: '/admin/inbox', icon: 'support' },
+    { label: 'Call Logs', href: '/admin/calls', icon: 'support' },
+    { label: 'Scheduled', href: '/admin/scheduled', icon: 'scheduled' },
+  ] }] },
+  { key: 'contacts', label: 'Contacts', glyph: 'contacts', groups: [{ items: [
+    { label: 'Contacts', href: '/admin/contacts', icon: 'users', match: ['/admin/customers/profile'] },
+    { label: 'Customer Segments', href: '/admin/customers/segments', icon: 'segments' },
+  ] }] },
+  { key: 'tasks', label: 'Tasks', glyph: 'tasks', groups: [{ items: [
+    { label: 'Tasks', href: '/admin/tasks', icon: 'check' },
+    { label: 'Notes', href: '/admin/notes', icon: 'notes' },
+    { label: 'Calendar', href: '/admin/calendar', icon: 'calendar' },
+    { label: 'Bookings', href: '/admin/bookings', icon: 'calendar' },
+    { label: 'Gallery', href: '/admin/gallery', icon: 'gallery' },
+  ] }] },
+  // Everything the AI does and knows. AI Knowledge and AI Settings live inside
+  // Business Settings (so its tabs show around them); they're listed here too.
+  { key: 'ai', label: 'AI agent', glyph: 'ai', groups: [
+    { items: [
       { label: 'AI Agents', href: '/admin/agents', icon: 'agents' },
       { label: 'Needs You', href: '/admin/agents/needs-you', icon: 'needs' },
       { label: 'Results & Goals', href: '/admin/agents/results', icon: 'results' },
       { label: 'Business Memory', href: '/admin/agents/memory', icon: 'memory' },
+    ] },
+    { label: 'Set up', items: [
       { label: 'AI Knowledge', href: '/admin/crm-settings/ai-knowledge', icon: 'knowledge' },
       { label: 'AI Settings', href: '/admin/crm-settings/ai', icon: 'sliders' },
-    ],
-  },
-  {
-    label: 'Orders & Fulfillment',
-    items: [
-      { label: 'Orders', href: '/admin/orders', icon: 'orders' },
-      { label: 'Reports', href: '/admin/orders/reports', icon: 'analytics' },
-      { label: 'Payments', href: '/admin/payments', icon: 'payments' },
-      { label: 'Shipping', href: '/admin/orders/shipping', icon: 'shipping' },
-    ],
-  },
-  {
-    label: 'Support',
-    items: [
-      { label: 'Tickets', href: '/admin/tickets', icon: 'support' },
+    ] },
+  ] },
+  { key: 'orders', label: 'Orders', glyph: 'orders', groups: [{ items: [
+    { label: 'Orders', href: '/admin/orders', icon: 'orders' },
+    { label: 'Payments', href: '/admin/payments', icon: 'payments' },
+    { label: 'Shipping', href: '/admin/orders/shipping', icon: 'shipping' },
+    { label: 'Reports', href: '/admin/orders/reports', icon: 'analytics' },
+  ] }] },
+  { key: 'support', label: 'Support', glyph: 'ticket', groups: [
+    { items: [{ label: 'Tickets', href: '/admin/tickets', icon: 'support' }] },
+    { label: 'Help centre', items: [
       { label: 'Help Centre', href: '/admin/help', icon: 'help' },
       { label: 'Help Categories', href: '/admin/settings/help-categories', icon: 'topics' },
       { label: 'Help Reporting', href: '/admin/help/analytics', icon: 'analytics' },
       { label: 'Help Settings', href: '/admin/help/settings', icon: 'settings' },
-    ],
-  },
-  {
-    // Reaching customers and your public reputation — split out of Inbox & CRM,
-    // which had grown to 15 items.
-    label: 'Marketing',
-    items: [
+    ] },
+  ] },
+  // Reaching customers and your public reputation.
+  { key: 'marketing', label: 'Marketing', glyph: 'marketing', groups: [
+    { items: [
       { label: 'Campaigns', href: '/admin/campaigns', icon: 'announcements' },
       { label: 'Waitlists', href: '/admin/waitlists', icon: 'waitlist' },
-      { label: 'Links Generator', href: '/admin/links', icon: 'link' },
-      { label: 'Link Reports', href: '/admin/link-reports', icon: 'analytics' },
       { label: 'Reviews', href: '/admin/reviews', icon: 'google' },
       { label: 'Social Engagement', href: '/admin/social', icon: 'meta' },
-    ],
-  },
-  {
-    label: 'Feedback',
-    items: [
+    ] },
+    { label: 'Links', items: [
+      { label: 'Links Generator', href: '/admin/links', icon: 'link' },
+      { label: 'Link Reports', href: '/admin/link-reports', icon: 'analytics' },
+    ] },
+  ] },
+  { key: 'feedback', label: 'Feedback', glyph: 'feedback', groups: [
+    { items: [
       // The ideas board itself (the public board, like Roadmap). ?view=ideas
       // reaches it even when another page is set as the board's homepage.
       { label: 'Ideas', href: '/?view=ideas', icon: 'ideas' },
@@ -174,46 +175,44 @@ const NAV_GROUPS: { label: string | null; items: NavItem[] }[] = [
       { label: 'Polls', href: '/admin/polls', icon: 'polls' },
       { label: 'Forms', href: '/admin/forms', icon: 'forms' },
       { label: 'Surveys', href: '/admin/surveys', icon: 'surveys' },
-    ],
-  },
-  {
+    ] },
     // How the feedback board is organised.
-    label: 'Manage',
-    items: [
+    { label: 'Organise', items: [
       { label: 'Statuses', href: '/admin/statuses', icon: 'statuses' },
       { label: 'Topics', href: '/admin/topics', icon: 'topics' },
       { label: 'Priorities', href: '/admin/priorities', icon: 'priorities' },
       { label: 'Segments', href: '/admin/segments', icon: 'segments' },
-    ],
-  },
-  {
-    label: 'Insights',
-    items: [
-      { label: 'Command Centre', href: '/admin/command-centre', icon: 'command' },
-      { label: 'Analytics', href: '/admin/analytics', icon: 'analytics' },
-      { label: 'Customer Insights', href: '/admin/insights/customers', icon: 'users' },
-      { label: 'Customer Segments', href: '/admin/customers/segments', icon: 'segments' },
-      { label: 'Location Insights', href: '/admin/insights/location', icon: 'analytics' },
-    ],
-  },
-  {
-    label: 'Settings',
-    items: [
-      { label: 'Settings', href: '/admin/settings', icon: 'settings' },
-      // Business profile, channels, chat widget, auto-replies, payments, order
-      // automation, policies… (the /admin/crm-settings area). Previously only
-      // reachable from the gear icon inside the Inbox.
-      { label: 'Business Settings', href: '/admin/crm-settings/business', icon: 'company', match: ['/admin/crm-settings'] },
-      { label: 'Team', href: '/admin/team', icon: 'team' },
-      { label: 'Users', href: '/admin/users', icon: 'users' },
-      { label: 'Locations', href: '/admin/locations', icon: 'settings' },
-      { label: 'Integrations', href: '/admin/integrations', icon: 'integrations' },
-      { label: 'Import Data', href: '/admin/import', icon: 'import_data' },
-      { label: 'Billing', href: '/admin/billing', icon: 'billing' },
-      { label: 'Referrals', href: '/admin/referrals', icon: 'link' },
-    ],
-  },
+    ] },
+  ] },
+  { key: 'insights', label: 'Insights', glyph: 'insights', groups: [{ items: [
+    { label: 'Analytics', href: '/admin/analytics', icon: 'analytics' },
+    { label: 'Customer Insights', href: '/admin/insights/customers', icon: 'users' },
+    { label: 'Location Insights', href: '/admin/insights/location', icon: 'analytics' },
+  ] }] },
 ]
+// Settings sits at the foot of the rail, below Search.
+const SETTINGS_SECTION: NavSection = { key: 'settings', label: 'Settings', glyph: 'settings', groups: [
+  { items: [
+    // Business profile, channels, chat widget, auto-replies, payments, order
+    // automation, policies… (the /admin/crm-settings area).
+    { label: 'Business Settings', href: '/admin/crm-settings/business', icon: 'company', match: ['/admin/crm-settings'] },
+    { label: 'Board & Branding', href: '/admin/settings', icon: 'settings' },
+  ] },
+  { label: 'Workspace', items: [
+    { label: 'Team', href: '/admin/team', icon: 'team' },
+    { label: 'Users', href: '/admin/users', icon: 'users' },
+    { label: 'Locations', href: '/admin/locations', icon: 'settings' },
+    { label: 'Billing', href: '/admin/billing', icon: 'billing' },
+    { label: 'Referrals', href: '/admin/referrals', icon: 'link' },
+  ] },
+  { label: 'Connect', items: [
+    { label: 'Integrations', href: '/admin/integrations', icon: 'integrations' },
+    { label: 'Import Data', href: '/admin/import', icon: 'import_data' },
+  ] },
+] }
+// The phone menu sheet: one group per section.
+const NAV_GROUPS: { label: string | null; items: NavItem[] }[] = [...SECTIONS, SETTINGS_SECTION]
+  .map(s => ({ label: s.key === 'home' ? null : s.label, items: s.groups.flatMap(g => g.items) }))
 
 // Every address that lights up a sidebar item, longest first. A page lights up
 // the item whose address is the longest whole-segment match, so
@@ -334,25 +333,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       router.replace('/admin/integrations/shopify')
     } catch {}
   }, [authed, pathname, router])
-  const [adminCollapsed, setAdminCollapsed] = useState(false)
-  // Adapt the sidebar to the window width as it changes. Below 860px the sidebar
-  // is an off-canvas drawer (CSS), so we keep it EXPANDED there for full labels
-  // when opened; in the medium band (860–1200px) auto-COLLAPSE it to icons so
-  // dense pages aren't crushed; wide (≥1200px) leaves it expanded. We only act on
-  // a band CHANGE, so a manual collapse/expand still sticks within a band.
+  // Wider screens get the rail (components/AdminRail); phones get the menu
+  // sheet. Decided once mounted, and again as the window changes.
+  const [desktop, setDesktop] = useState(false)
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    const bandOf = (w: number) => (w < 860 ? 'mobile' : w < 1200 ? 'medium' : 'wide')
-    let prev = ''
-    const apply = () => {
-      const band = bandOf(window.innerWidth)
-      if (band === prev) return
-      prev = band
-      setAdminCollapsed(band === 'medium')
-    }
+    const mq = window.matchMedia('(min-width: 861px)')
+    const apply = () => setDesktop(mq.matches)
     apply()
-    window.addEventListener('resize', apply)
-    return () => window.removeEventListener('resize', apply)
+    mq.addEventListener('change', apply)
+    return () => mq.removeEventListener('change', apply)
   }, [])
   const [company, setCompany] = useState<any>(null)
   // Tab favicon for this workspace. Prefer a dedicated square favicon (uploaded
@@ -942,6 +931,73 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     : NAV_MATCHES.find(m => pathname === m.path || pathname?.startsWith(m.path + '/'))?.href
   const isActive = (href: string) => href === activeHref
 
+  // Jump-to search: every page this member can open, and settings destinations.
+  const navItems: SearchItem[] = NAV_GROUPS.flatMap(g => g.items.filter(canUseNavItem).map(it => ({ label: it.label, href: it.href, section: g.label || 'General', icon: icons[it.icon] })))
+  const searchSeen = new Set(navItems.map(i => i.href))
+  const searchItems = [...navItems, ...SEARCH_EXTRAS.filter(e => !searchSeen.has(e.href) && canUseNavItem(e)).map(e => ({ ...e, icon: e.icon || icons.settings }))]
+
+  // Upgrade shows for the people who run billing, and only when there's
+  // something to upgrade to (not on a paid or Enterprise plan).
+  const showUpgrade = hasFullAccess(myRole) && !['feedback', 'omnichannel', 'everything', 'enterprise', 'pro', 'business', 'growth', 'startup'].includes(String(company?.plan || '').toLowerCase())
+
+  // The rail's sections: what this member may open, with counts of what's
+  // waiting, the current page lit, and demo-locked pages marked.
+  const COUNTS: Record<string, [number, string]> = {
+    Inbox: [inboxUnread, '#ef4444'], Tasks: [taskDue, 'var(--coral)'], Orders: [ordersNew, '#2563eb'],
+    Tickets: [ticketsNew, '#ef4444'], Bookings: [bookingsNew, '#2563eb'], Waitlists: [waitlistNew, '#2563eb'],
+  }
+  const toRail = (sec: NavSection): RailSection | null => {
+    const groups = sec.groups.map(g => ({
+      label: g.label,
+      items: g.items.filter(canUseNavItem).map(it => ({
+        label: it.label, href: it.href, icon: icons[it.icon], active: isActive(it.href),
+        count: COUNTS[it.label]?.[0] || 0, tone: COUNTS[it.label]?.[1],
+        locked: !!company?.is_demo && DEMO_LOCKED_HREFS.some(h => it.href === h || it.href.startsWith(h + '/')),
+      })),
+    })).filter(g => g.items.length)
+    return groups.length ? { key: sec.key, label: sec.label, glyph: sec.glyph, groups } : null
+  }
+  const railSections = SECTIONS.map(toRail).filter((x): x is RailSection => !!x)
+  const railSettingsBase = toRail(SETTINGS_SECTION)
+  const railSettings: RailSection | null = isSuperAdmin
+    ? { key: 'settings', label: 'Settings', glyph: 'settings', groups: [...(railSettingsBase?.groups || []), { label: 'Super admin', items: [
+        { label: 'Create Company', href: '/admin/create-company', icon: icons.company, active: isActive('/admin/create-company') },
+        { label: 'Platform panel', href: 'https://admin.colvy.com', icon: icons.lock || icons.company, external: true },
+        { label: 'Legal Pages', href: '/admin/legal', icon: icons.legal || icons.settings, active: isActive('/admin/legal') },
+      ] }] }
+    : railSettingsBase
+
+  // The workspaces this person runs, to switch between (the menu sheet's
+  // header and the rail's logo both open it).
+  const workspaceList = (
+    <>
+      <p style={{ margin: 0, padding: '12px 16px 6px', fontSize: 12, fontWeight: 600, color: '#9ca3af' }}>Workspaces</p>
+      {workspaces.map(w => (
+        <button key={w.id} type="button"
+          onClick={() => {
+            setShowWorkspaces(false)
+            if (w.slug && company?.slug !== w.slug) window.location.href = `https://${w.slug}.colvy.com/admin`
+          }}
+          style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '9px 16px', border: 'none', background: 'none', cursor: 'pointer' }}>
+          {w.logo_url ? (
+            <img src={w.logo_url} alt={w.name} style={{ width: 24, height: 24, borderRadius: 6, objectFit: 'cover' }} />
+          ) : (
+            <span style={{ width: 24, height: 24, borderRadius: 6, background: w.accent_color || 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11, fontWeight: 700 }}>{(w.name?.[0] || '?').toUpperCase()}</span>
+          )}
+          <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.name}</span>
+          {company?.id === w.id && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>}
+        </button>
+      ))}
+      <div style={{ borderTop: '1px solid var(--border)', marginTop: 4 }}>
+        <a href="/admin/new-workspace"
+          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px', textDecoration: 'none' }}>
+          <span style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--canvas)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', fontSize: 15, fontWeight: 600 }}>+</span>
+          <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>Create Workspace</span>
+        </a>
+      </div>
+    </>
+  )
+
   return (
     <div style={{ display: 'flex', minHeight: 'calc(100vh - 56px)' }}>
       {/* Super-admin impersonation banner (shows only when a session is active) */}
@@ -982,7 +1038,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           .admin-main { margin-left: 0 !important; }
           .admin-mobile-overlay { top: 0 !important; z-index: 60 !important; background: rgba(17,17,20,0.34) !important; -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
           .admin-mobile-overlay.open { display: block !important; animation: cvOverlayIn .2s ease-out; }
-          .admin-collapse-btn { display: none !important; }
           .admin-mobile-close { display: flex !important; }
           .admin-ws-head { padding: 18px 56px 12px 20px !important; border-bottom: none !important; }
           .admin-ws-head .admin-ws-name { font-size: 17px !important; font-weight: 700 !important; }
@@ -1042,6 +1097,44 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           and showed a SECOND hamburger over the sidebar. The top-bar hamburger
           opens this sidebar via the colvy:toggle-admin-sidebar event. */}
 
+      {desktop ? (
+        <>
+          <AdminRail
+            workspace={
+              <div style={{ position: 'relative' }}>
+                <button type="button" onClick={() => { setShowWorkspaces(v => !v); if (!workspaces.length) loadWorkspaces() }}
+                  title={company?.name || 'Workspace'} aria-haspopup="menu" aria-expanded={showWorkspaces}
+                  style={{ display: 'flex', width: 44, height: 44, padding: 0, border: 'none', borderRadius: 13, background: 'none', cursor: 'pointer', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,.08)' }}>
+                  {company?.logo_url
+                    ? <img src={company.logo_url} alt={company?.name || ''} style={{ width: 44, height: 44, objectFit: 'cover', background: '#fff' }} />
+                    : <span style={{ width: 44, height: 44, background: company?.accent_color || 'var(--coral)', color: '#fff', fontWeight: 800, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{(company?.name?.[0] || user?.email?.[0] || '?').toUpperCase()}</span>}
+                </button>
+                {showWorkspaces && (
+                  <>
+                    <div onClick={() => setShowWorkspaces(false)} style={{ position: 'fixed', inset: 0, zIndex: 89 }} />
+                    <div style={{ position: 'fixed', top: 64, left: RAIL_W + 6, width: 280, background: '#fff', borderRadius: 16, boxShadow: '0 16px 44px rgba(0,0,0,.14), 0 0 0 1px rgba(0,0,0,.05)', zIndex: 90, overflow: 'hidden' }}>
+                      <div style={{ padding: '14px 16px 10px', borderBottom: '1px solid #f0f0f2' }}>
+                        <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{company?.name || 'Workspace'}</p>
+                        <p style={{ margin: '2px 0 0', fontSize: 12.5, color: '#8e8e93' }}>{company ? `${company.slug}.colvy.com` : ''}</p>
+                      </div>
+                      {workspaceList}
+                    </div>
+                  </>
+                )}
+              </div>
+            }
+            sections={railSections}
+            settings={railSettings}
+            search={() => window.dispatchEvent(new Event('colvy:open-search'))}
+            ring={hasFullAccess(myRole) && company?.id ? <SetupRing companyId={company.id} rail /> : null}
+            upgrade={showUpgrade ? '/admin/billing' : null}
+            onLocked={() => setDemoMsg(DEMO_LOCK_MESSAGE)}
+          />
+          {/* The search palette (⌘K, or the rail's Search). */}
+          <SidebarSearch items={searchItems} collapsed={false} hideTrigger />
+        </>
+      ) : (
+      <>
       {/* Mobile overlay */}
       <div
         className={`admin-mobile-overlay ${mobileSidebarOpen ? 'open' : ''}`}
@@ -1054,7 +1147,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         position: 'fixed',
         top: 56,
         left: 0,
-        width: adminCollapsed ? 60 : 220,
+        width: 220,
         height: 'calc(100vh - 56px)',
         background: '#fff',
         borderRight: '1px solid var(--border)',
@@ -1066,27 +1159,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         flexShrink: 0,
         transition: 'width 0.2s ease',
       }}>
-        {/* Collapse toggle — arrow with a T */}
-        <button type="button" onClick={() => setAdminCollapsed(v => !v)} title={adminCollapsed ? 'Expand' : 'Collapse'}
-          className="admin-collapse-btn"
-          style={{ position: 'absolute', top: 12, right: 8, width: 26, height: 26, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', zIndex: 5, padding: 0 }}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            {/* Arrow */}
-            <polyline points={adminCollapsed ? '9 6 15 12 9 18' : '15 6 9 12 15 18'} />
-            {/* The 'T' bar */}
-            <line x1={adminCollapsed ? '19' : '5'} y1="5" x2={adminCollapsed ? '19' : '5'} y2="19" />
-          </svg>
-        </button>
         {/* Phones: close the menu sheet. */}
         <button type="button" onClick={() => setMobileSidebarOpen(false)} aria-label="Close menu" className="admin-mobile-close"
           style={{ display: 'none', position: 'absolute', top: 14, right: 12, width: 36, height: 36, borderRadius: '50%', border: 'none', background: 'transparent', color: '#3a3a3c', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', zIndex: 2 }}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
         </button>
-        {/* Company info — workspace switcher. In the collapsed rail we hide the
-            name/chevron so no clipped text renders behind the avatar. */}
+        {/* Company info — workspace switcher. */}
         <div className="admin-ws-head" style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', position: 'relative' }}>
           <button type="button" onClick={() => { setShowWorkspaces(v => !v); if (!workspaces.length) loadWorkspaces() }}
-            title={adminCollapsed ? (company?.name || 'Workspace') : undefined}
             style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}>
             {company?.logo_url ? (
               <img src={company.logo_url} alt={company.name}
@@ -1096,44 +1176,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <div style={{ width: 32, height: 32, borderRadius: 8, background: company?.accent_color || 'var(--coral)', display: company?.logo_url ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 14, flexShrink: 0 }}>
               {(company?.name?.[0] || user?.email?.[0] || '?').toUpperCase()}
             </div>
-            {!adminCollapsed && <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
               <p className="admin-ws-name" style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {company?.name || user?.email?.split('@')[0] || 'My Board'}
               </p>
               <p style={{ fontSize: 11, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {company ? `${company.slug}.colvy.com` : typeof window !== 'undefined' ? window.location.hostname : 'colvy.com'}
               </p>
-            </div>}
-            {!adminCollapsed && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0, transform: showWorkspaces ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}><polyline points="6 9 12 15 18 9" /></svg>}
+            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0, transform: showWorkspaces ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}><polyline points="6 9 12 15 18 9" /></svg>
           </button>
 
           {/* Workspace switcher dropdown */}
           {showWorkspaces && (
             <div style={{ position: 'absolute', top: '92%', left: 12, right: 12, background: '#fff', borderRadius: 14, border: '1px solid var(--border)', boxShadow: '0 16px 48px rgba(0,0,0,0.14)', zIndex: 90, overflow: 'hidden' }}>
-              <p style={{ margin: 0, padding: '12px 16px 6px', fontSize: 12, fontWeight: 600, color: '#9ca3af' }}>Workspaces</p>
-              {workspaces.map(w => (
-                <button key={w.id} type="button"
-                  onClick={() => {
-                    setShowWorkspaces(false)
-                    if (w.slug && company?.slug !== w.slug) window.location.href = `https://${w.slug}.colvy.com/admin`
-                  }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '9px 16px', border: 'none', background: 'none', cursor: 'pointer' }}>
-                  {w.logo_url ? (
-                    <img src={w.logo_url} alt={w.name} style={{ width: 24, height: 24, borderRadius: 6, objectFit: 'cover' }} />
-                  ) : (
-                    <span style={{ width: 24, height: 24, borderRadius: 6, background: w.accent_color || 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11, fontWeight: 700 }}>{(w.name?.[0] || '?').toUpperCase()}</span>
-                  )}
-                  <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.name}</span>
-                  {company?.id === w.id && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>}
-                </button>
-              ))}
-              <div style={{ borderTop: '1px solid var(--border)', marginTop: 4 }}>
-                <a href="/admin/new-workspace"
-                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px', textDecoration: 'none' }}>
-                  <span style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--canvas)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', fontSize: 15, fontWeight: 600 }}>+</span>
-                  <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>Create Workspace</span>
-                </a>
-              </div>
+              {workspaceList}
             </div>
           )}
         </div>
@@ -1141,24 +1198,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         {/* Nav groups */}
         <nav style={{ flex: 1, padding: '10px 8px' }}>
           {/* Search — jumps to any sidebar page or settings destination. */}
-          {(() => {
-            const navItems: SearchItem[] = NAV_GROUPS.flatMap(g => g.items.filter(canUseNavItem).map(it => ({ label: it.label, href: it.href, section: g.label || 'General', icon: icons[it.icon] })))
-            const seen = new Set(navItems.map(i => i.href))
-            const items = [...navItems, ...SEARCH_EXTRAS.filter(e => !seen.has(e.href) && canUseNavItem(e)).map(e => ({ ...e, icon: e.icon || icons.settings }))]
-            return <SidebarSearch items={items} collapsed={adminCollapsed} />
-          })()}
+          <SidebarSearch items={searchItems} collapsed={false} />
           {NAV_GROUPS.map((group, gi) => {
             // Hide features this member isn't permitted to use, and drop a whole
             // group once nothing in it is visible.
             const permittedItems = group.items.filter(canUseNavItem)
             if (permittedItems.length === 0) return null
-            // Groups without a title (the lone Dashboard link) are never
-            // collapsible. In the icon-only sidebar there are no titles to click,
-            // so everything stays visible regardless of the saved state.
-            const groupCollapsed = !!group.label && !adminCollapsed && !!collapsedGroups[group.label]
+            // Groups without a title (Home) are never collapsible.
+            const groupCollapsed = !!group.label && !!collapsedGroups[group.label]
             return (
             <div key={gi} style={{ marginBottom: groupCollapsed ? 8 : 20 }}>
-              {group.label && !adminCollapsed && (
+              {group.label && (
                 <button type="button" onClick={() => toggleGroup(group.label!)}
                   aria-expanded={!groupCollapsed}
                   title={groupCollapsed ? `Show ${group.label}` : `Hide ${group.label}`}
@@ -1182,14 +1232,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   <Link key={item.href + item.label} href={locked ? '#' : item.href}
                     className={`nav-item${active ? ' is-active' : ''}`}
                     onClick={(e) => { if (locked) { e.preventDefault(); setDemoMsg(DEMO_LOCK_MESSAGE) } else setMobileSidebarOpen(false) }}
-                    title={adminCollapsed ? item.label : undefined}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 9, padding: '7px 10px',
                       borderRadius: 8, fontSize: 13, textDecoration: 'none', marginBottom: 1,
                       background: active ? 'var(--peach)' : undefined,
                       color: active ? 'var(--coral)' : 'var(--slate)',
                       fontWeight: active ? 600 : 400,
-                      justifyContent: adminCollapsed ? 'center' : 'flex-start',
                     }}>
                     {/* Any section with things waiting shows a count, so you can
                         see there's work elsewhere without navigating to it. */}
@@ -1206,13 +1254,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                         <>
                           <span className="nav-ic" style={{ flexShrink: 0, display: 'flex', opacity: active ? 1 : 0.65, position: 'relative' }}>
                             {icons[item.icon]}
-                            {count > 0 && adminCollapsed && (
-                              <span style={{ position: 'absolute', top: -3, right: -3, width: 8, height: 8, borderRadius: '50%', background: tone, border: '1.5px solid #fff' }} />
-                            )}
                           </span>
-                          {!adminCollapsed && item.label}
-                          {locked && !adminCollapsed && <span title="Not available in the demo" style={{ marginLeft: 'auto', fontSize: 12, opacity: 0.55 }}>🔒</span>}
-                          {count > 0 && !adminCollapsed && (
+                          {item.label}
+                          {locked && <span title="Not available in the demo" style={{ marginLeft: 'auto', fontSize: 12, opacity: 0.55 }}>🔒</span>}
+                          {count > 0 && (
                             <span
                               // key on the number so React remounts it and the
                               // pop animation replays whenever the count moves.
@@ -1261,29 +1306,30 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </nav>
 
         {/* Getting started: setup progress, for new workspaces (components/SetupRing). */}
-        {hasFullAccess(myRole) && company?.id && <SetupRing companyId={company.id} collapsed={adminCollapsed} />}
+        {hasFullAccess(myRole) && company?.id && <SetupRing companyId={company.id} />}
 
         {/* Upgrade CTA — collapses to a single centred icon so its text can't
             overflow the 60px rail and clip ("Upgrade / to Pro / Unloc…").
             Only for the people who run billing, and only when there's
             something to upgrade to (not on a paid or Enterprise plan). */}
-        {hasFullAccess(myRole) && !['feedback', 'omnichannel', 'everything', 'enterprise', 'pro', 'business', 'growth', 'startup'].includes(String(company?.plan || '').toLowerCase()) && (
+        {showUpgrade && (
         <div style={{ padding: 12, borderTop: '1px solid var(--border)' }}>
           <Link href="/admin/billing"
-            title={adminCollapsed ? 'Upgrade to Pro' : undefined}
-            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: adminCollapsed ? '10px 0' : '10px 14px', borderRadius: 12, background: 'var(--peach)', textDecoration: 'none', textAlign: 'center' }}>
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '10px 14px', borderRadius: 12, background: 'var(--peach)', textDecoration: 'none', textAlign: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, color: 'var(--coral)' }}>
               {icons.upgrade}
-              {!adminCollapsed && <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--coral)' }}>Upgrade to Pro</p>}
+              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--coral)' }}>Upgrade to Pro</p>
             </div>
-            {!adminCollapsed && <p style={{ fontSize: 11, color: 'var(--slate)', marginTop: 2 }}>Unlock all features</p>}
+            <p style={{ fontSize: 11, color: 'var(--slate)', marginTop: 2 }}>Unlock all features</p>
           </Link>
         </div>
         )}
       </aside>
+      </>
+      )}
 
       {/* Main content — offset by sidebar width on desktop, full width on mobile */}
-      <div className="admin-main" style={{ marginLeft: adminCollapsed ? 60 : 220, flex: 1, overflowY: 'auto', minHeight: 'calc(100vh - 56px)', transition: 'margin-left 0.2s ease' }}>
+      <div className="admin-main" style={{ marginLeft: desktop ? RAIL_W : 0, flex: 1, overflowY: 'auto', minHeight: 'calc(100vh - 56px)' }}>
         {/* The banners' total height is published as --admin-banners-h so
             full-height screens (the inbox) can fit below them instead of
             running under the phone's bottom nav. */}

@@ -1310,7 +1310,7 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
         actually connected to receive inbound calls (green = ready). Dismissable
         — hovering reveals a cross that hides it until the next page refresh. */}
     {!pillDismissed && showStatusPill && (
-      <div
+      <div className="cv-phone-pill"
         onMouseEnter={() => setPillHover(true)}
         onMouseLeave={() => setPillHover(false)}
         title={connErr ? `Phone: ${connErr}` : ready ? 'Phone ready to receive calls' : 'Phone connecting…'}
