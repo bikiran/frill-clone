@@ -146,18 +146,18 @@ export default function ChannelsSettings() {
                 {wa ? (
                   <button
                     onClick={() => router.push(ch.href)}
-                    style={{ padding: '7px 15px', borderRadius: 8, border: wa.primary ? 'none' : '1px solid var(--border)', background: wa.primary ? 'var(--coral)' : '#fff', color: wa.primary ? '#fff' : 'var(--ink)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    style={{ padding: '7px 15px', borderRadius: 999, border: wa.primary ? 'none' : '1.5px solid #e4e4e7', background: wa.primary ? 'var(--coral)' : '#fff', color: wa.primary ? '#fff' : 'var(--ink)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                     {wa.cta}
                   </button>
                 ) : ch.ready ? (
                   <button
                     onClick={() => router.push(ch.href)}
-                    style={{ padding: '7px 15px', borderRadius: 8, border: isConnected ? '1px solid var(--border)' : 'none', background: isConnected ? '#fff' : 'var(--coral)', color: isConnected ? 'var(--ink)' : '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                    style={{ padding: '7px 15px', borderRadius: 999, border: isConnected ? '1.5px solid #e4e4e7' : 'none', background: isConnected ? '#fff' : 'var(--coral)', color: isConnected ? 'var(--ink)' : '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
                     {isConnected ? 'Manage' : 'Connect'}
                   </button>
                 ) : (
                   <button disabled title="Not available yet"
-                    style={{ padding: '7px 15px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--canvas)', color: '#b6bac0', fontSize: 12.5, fontWeight: 700, cursor: 'not-allowed' }}>
+                    style={{ padding: '7px 15px', borderRadius: 999, border: '1.5px solid #e4e4e7', background: 'var(--canvas)', color: '#b6bac0', fontSize: 12.5, fontWeight: 700, cursor: 'not-allowed' }}>
                     Connect
                   </button>
                 )}

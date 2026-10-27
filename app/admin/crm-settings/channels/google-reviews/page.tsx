@@ -219,7 +219,7 @@ export default function GoogleReviewsPage() {
         {!connected ? (
           <>
             <p style={{ fontSize: 13, color: 'var(--slate)', margin: '0 0 14px' }}>Connect your Google Business Profile to pull in reviews and reply from Colvy.</p>
-            <button onClick={connect} style={{ padding: '10px 18px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Connect Google</button>
+            <button onClick={connect} style={{ padding: '10px 18px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Connect Google</button>
           </>
         ) : (
           <>
@@ -233,11 +233,11 @@ export default function GoogleReviewsPage() {
               </button>
               {location?.title && (
                 <button onClick={sync} disabled={busy === 'sync'}
-                  style={{ padding: '8px 14px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                  style={{ padding: '8px 14px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
                   {busy === 'sync' ? 'Syncing…' : 'Sync reviews'}
                 </button>
               )}
-              <button onClick={connect} style={{ padding: '8px 14px', borderRadius: 9, background: 'none', color: 'var(--slate)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Reconnect</button>
+              <button onClick={connect} style={{ padding: '8px 14px', borderRadius: 999, background: 'none', color: 'var(--slate)', border: '1.5px solid #e4e4e7', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Reconnect</button>
             </div>
 
             {locations.length > 0 && (
@@ -348,7 +348,7 @@ export default function GoogleReviewsPage() {
         )}
 
         <button onClick={saveSettings} disabled={busy === 'settings'}
-          style={{ padding: '10px 20px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+          style={{ padding: '10px 20px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
           {busy === 'settings' ? 'Saving…' : 'Save settings'}
         </button>
       </div>
@@ -410,7 +410,7 @@ export default function GoogleReviewsPage() {
                           rows={2}
                           style={{ flex: 1, padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, resize: 'vertical', fontFamily: 'inherit' }} />
                         <button type="button" onClick={() => sendReply(r.review_id)} disabled={busy === 'reply-' + r.review_id || !(replyDraft[r.review_id] || '').trim()}
-                          style={{ padding: '9px 18px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', alignSelf: 'flex-start' }}>
+                          style={{ padding: '9px 18px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', alignSelf: 'flex-start' }}>
                           {busy === 'reply-' + r.review_id ? '…' : 'Reply'}
                         </button>
                       </div>

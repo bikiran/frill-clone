@@ -82,7 +82,7 @@ export default function PowerUpsSettings() {
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button onClick={() => setEditing(r)} style={{ ...S.btnGhost, padding: '5px 12px', fontSize: 12 }}>Edit</button>
-                    <button onClick={async () => { await (supabase as any).from('quick_responses').delete().eq('id', r.id); loadResponses() }} style={{ padding: '5px 12px', borderRadius: 8, background: '#fff', border: '1px solid #fecaca', color: '#dc2626', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Delete</button>
+                    <button onClick={async () => { await (supabase as any).from('quick_responses').delete().eq('id', r.id); loadResponses() }} style={{ padding: '5px 12px', borderRadius: 999, background: '#fff', border: '1px solid #fecaca', color: '#dc2626', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Delete</button>
                   </div>
                 </div>
               </div>
@@ -125,7 +125,7 @@ export default function PowerUpsSettings() {
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button onClick={() => setEditing(c)} style={{ ...S.btnGhost, padding: '5px 12px', fontSize: 12 }}>Edit</button>
-                  <button onClick={async () => { await (supabase as any).from('conversation_categories').delete().eq('id', c.id); loadCategories() }} style={{ padding: '5px 12px', borderRadius: 8, background: '#fff', border: '1px solid #fecaca', color: '#dc2626', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Delete</button>
+                  <button onClick={async () => { await (supabase as any).from('conversation_categories').delete().eq('id', c.id); loadCategories() }} style={{ padding: '5px 12px', borderRadius: 999, background: '#fff', border: '1px solid #fecaca', color: '#dc2626', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Delete</button>
                 </div>
               </div>
             ))}

@@ -49,7 +49,7 @@ export default function ChatWidgetSettings() {
       <div style={{ display: 'flex', gap: 6, marginBottom: 24, flexWrap: 'wrap' }}>
         {STEPS.map((label, i) => (
           <button key={label} onClick={() => setStep(i)}
-            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', borderRadius: 10, border: step === i ? '2px solid var(--coral)' : '1px solid var(--border)', background: step === i ? 'var(--peach)' : '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: step === i ? 'var(--coral)' : 'var(--slate)' }}>
+            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', borderRadius: 999, border: step === i ? '2px solid var(--coral)' : '1.5px solid #e4e4e7', background: step === i ? 'var(--peach)' : '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: step === i ? 'var(--coral)' : 'var(--slate)' }}>
             <span style={{ width: 20, height: 20, borderRadius: '50%', background: step === i ? 'var(--coral)' : 'var(--border)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>{i + 1}</span>
             {label}{label === 'FAQs' && <span style={{ fontSize: 10, opacity: 0.6 }}>(Optional)</span>}
           </button>
@@ -74,7 +74,7 @@ export default function ChatWidgetSettings() {
                   <label style={S.label}>Widget shape</label>
                   <div style={{ display: 'flex', gap: 8 }}>
                     {['rounded', 'square', 'circle'].map(sh => (
-                      <button key={sh} onClick={() => set('shape', sh)} style={{ padding: '8px 16px', borderRadius: 8, border: cfg.shape === sh ? '2px solid var(--coral)' : '1px solid var(--border)', background: cfg.shape === sh ? 'var(--peach)' : '#fff', cursor: 'pointer', fontSize: 13, textTransform: 'capitalize' }}>{sh}</button>
+                      <button key={sh} onClick={() => set('shape', sh)} style={{ padding: '8px 16px', borderRadius: 999, border: cfg.shape === sh ? '2px solid var(--coral)' : '1.5px solid #e4e4e7', background: cfg.shape === sh ? 'var(--peach)' : '#fff', cursor: 'pointer', fontSize: 13, textTransform: 'capitalize' }}>{sh}</button>
                     ))}
                   </div>
                 </div>
@@ -82,7 +82,7 @@ export default function ChatWidgetSettings() {
                   <label style={S.label}>Bubble display</label>
                   <div style={{ display: 'flex', gap: 8 }}>
                     {[{ k: 'icon', label: 'Chat icon only' }, { k: 'icon_label', label: 'Icon + label' }].map(m => (
-                      <button key={m.k} onClick={() => set('bubble_mode', m.k)} style={{ padding: '8px 16px', borderRadius: 8, border: (cfg.bubble_mode || 'icon') === m.k ? '2px solid var(--coral)' : '1px solid var(--border)', background: (cfg.bubble_mode || 'icon') === m.k ? 'var(--peach)' : '#fff', cursor: 'pointer', fontSize: 13 }}>{m.label}</button>
+                      <button key={m.k} onClick={() => set('bubble_mode', m.k)} style={{ padding: '8px 16px', borderRadius: 999, border: (cfg.bubble_mode || 'icon') === m.k ? '2px solid var(--coral)' : '1.5px solid #e4e4e7', background: (cfg.bubble_mode || 'icon') === m.k ? 'var(--peach)' : '#fff', cursor: 'pointer', fontSize: 13 }}>{m.label}</button>
                     ))}
                   </div>
                   <p style={{ ...S.hint, marginTop: 6 }}>By default only the chat icon shows. Choose "Icon + label" to show text next to it.</p>
@@ -95,7 +95,7 @@ export default function ChatWidgetSettings() {
                   <label style={S.label}>Bubble position</label>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {[['bottom-right', 'Bottom right'], ['bottom-left', 'Bottom left'], ['center-right', 'Center right'], ['center-left', 'Center left']].map(([k, label]) => (
-                      <button key={k} onClick={() => set('bubble_position', k)} style={{ padding: '8px 14px', borderRadius: 8, border: (cfg.bubble_position || 'bottom-right') === k ? '2px solid var(--coral)' : '1px solid var(--border)', background: (cfg.bubble_position || 'bottom-right') === k ? 'var(--peach)' : '#fff', cursor: 'pointer', fontSize: 13 }}>{label}</button>
+                      <button key={k} onClick={() => set('bubble_position', k)} style={{ padding: '8px 14px', borderRadius: 999, border: (cfg.bubble_position || 'bottom-right') === k ? '2px solid var(--coral)' : '1.5px solid #e4e4e7', background: (cfg.bubble_position || 'bottom-right') === k ? 'var(--peach)' : '#fff', cursor: 'pointer', fontSize: 13 }}>{label}</button>
                     ))}
                   </div>
                 </div>

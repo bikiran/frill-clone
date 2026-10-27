@@ -184,7 +184,7 @@ export default function AiSettingsPage() {
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <Link href="/admin/crm-settings/ai-knowledge"
-                style={{ padding: '9px 18px', borderRadius: 9, background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, textDecoration: 'none' }}>
+                style={{ padding: '9px 18px', borderRadius: 999, background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, textDecoration: 'none' }}>
                 Open AI knowledge
               </Link>
               <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>
@@ -358,7 +358,7 @@ export default function AiSettingsPage() {
       </Card>
 
       <button onClick={save} disabled={saving}
-        style={{ padding: '11px 24px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+        style={{ padding: '11px 24px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
         {saving ? 'Saving…' : 'Save settings'}
       </button>
     </div>

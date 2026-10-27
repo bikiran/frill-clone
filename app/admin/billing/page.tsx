@@ -94,7 +94,7 @@ function ShopifyBilling({ info }: { info: any }) {
     : sub.cancel_at_end ? `Ends on ${fmtDate(sub.period_end)}.`
     : `${price ? `${price}. ` : ''}${sub.period_end ? `Renews ${fmtDate(sub.period_end)}.` : ''}`
   return (
-    <div className="w-full px-4 md:px-8 py-8">
+    <div className="w-full px-4 md:px-11 py-6 md:py-9" style={{ maxWidth: 1040 }}>
       <div className="mb-6">
         <h1 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>Billing</h1>
         <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>
@@ -371,7 +371,7 @@ export default function BillingPage() {
   const brandingIncluded = ['feedback', 'omnichannel', 'everything', 'business', 'growth', 'enterprise', 'pro'].includes(currentPlanId)
 
   return (
-    <div className="w-full px-4 md:px-8 py-8">
+    <div className="w-full px-4 md:px-11 py-6 md:py-9" style={{ maxWidth: 1040 }}>
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap mb-8">
         <div>
@@ -534,7 +534,7 @@ export default function BillingPage() {
       </div>
 
       {/* Remove Branding Add-on */}
-      <div className="bg-white rounded-2xl border p-6 mb-6" style={{ borderColor: 'var(--border)' }}>
+      <div className="st-sec">
         <div className="flex items-start md:items-center justify-between gap-4 flex-col md:flex-row">
           <div>
             <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -594,7 +594,7 @@ export default function BillingPage() {
       {company?.id && <SmsCreditsCard companyId={company.id} companyName={company.name} />}
 
       {/* Payment Method */}
-      <div className="bg-white rounded-2xl border p-6 mb-6" style={{ borderColor: 'var(--border)' }}>
+      <div className="st-sec">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-bold" style={{ color: 'var(--ink)' }}>Payment Method</h2>
           {isPaid && hasStripe && (
@@ -629,7 +629,7 @@ export default function BillingPage() {
       {company?.id && <BillingDetailsCard companyId={company.id} />}
 
       {/* Billing History */}
-      <div className="bg-white rounded-2xl border p-5 md:p-6" style={{ borderColor: 'var(--border)' }}>
+      <div className="st-sec st-one">
         <h2 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Billing History</h2>
         <p className="text-sm mb-4" style={{ color: 'var(--slate)', lineHeight: 1.5 }}>Every payment to Colvy, with a tax invoice you can print or save as a PDF. Refunds come with an adjustment note.</p>
         {billingHistory.length === 0 ? (

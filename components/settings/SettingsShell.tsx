@@ -94,10 +94,14 @@ export default function SettingsShell({ children, top }: { children: ReactNode; 
         .st-sec > h2:first-child { font-size: 16px !important; font-weight: 700 !important; color: #111 !important; letter-spacing: -0.01em; margin: 0 0 6px !important; }
         .st-sec > h2:first-child + p { font-size: 14px !important; font-weight: 400 !important; color: #71717a !important; line-height: 1.55 !important; margin: 0 0 14px !important; }
         @container (min-width: 700px) {
-          .st-sec:has(> h2:first-child) > h2:first-child,
-          .st-sec:has(> h2:first-child) > h2:first-child + p { float: left; clear: left; width: 220px; }
-          .st-sec:has(> h2:first-child) > :not(h2:first-child):not(h2:first-child + p) { margin-left: 260px !important; }
+          .st-sec:not(.st-one):has(> h2:first-child) > h2:first-child,
+          .st-sec:not(.st-one):has(> h2:first-child) > h2:first-child + p { float: left; clear: left; width: 220px; }
+          .st-sec:not(.st-one):has(> h2:first-child) > :not(h2:first-child):not(h2:first-child + p) { margin-left: 260px !important; }
         }
+        /* .st-one: a section that keeps one column (a wide table). */
+        /* Buttons the pages draw with utility classes become pills too, but
+           not card-like buttons that hold blocks of content. */
+        .st-main :is(button, a):is(.rounded-lg, .rounded-xl):is([class*="px-"], [class*="py-"]):not(:has(div, p, img, h3, h4, ul)) { border-radius: 999px !important; }
         .st-main :is(input:not([type]), input[type=text], input[type=email], input[type=tel], input[type=url], input[type=number], input[type=password], input[type=search], input[type=time], input[type=date], input[type=datetime-local], textarea, select:not(.cv-select)) {
           background-color: #f4f4f5 !important; border-color: transparent !important; border-radius: 12px !important; color: #111;
           transition: background-color .15s ease, box-shadow .15s ease, border-color .15s ease;

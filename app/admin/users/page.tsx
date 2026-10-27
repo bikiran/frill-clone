@@ -393,22 +393,56 @@ export default function UsersPage() {
   // totalSpend comes from DB aggregate (covers all pages, not just visible 100)
 
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '24px' }}>
-      <div style={{ marginBottom: '32px' }}>
-        <h1 style={{ fontSize: '28px', fontWeight: 700, marginBottom: '8px', color: 'var(--ink)' }}>
+    <div className="us-page" style={{ maxWidth: 1100, padding: '36px 44px 48px' }}>
+      <style>{`@media (max-width: 860px) { .us-page { padding: 20px 16px 32px !important; } }`}</style>
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ margin: '0 0 6px' }}>
           Users & Customers
         </h1>
-        <p style={{ fontSize: '14px', color: '#666', margin: '0' }}>
+        <p style={{ fontSize: 15, color: '#71717a', margin: '0' }}>
           {hasEcommerce ? 'Manage team members and view customers' : 'Manage team members'}
         </p>
       </div>
 
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 24 }}>
+        <div style={{ borderRadius: 16, boxShadow: '0 0 0 1px #ececf0', padding: '16px 18px', background: '#fff' }}>
+          <p style={{ margin: '0 0 6px 0', fontSize: 13, color: '#71717a' }}>Total Users</p>
+          <p style={{ margin: '0', fontSize: '24px', fontWeight: 700, color: 'var(--ink)' }}>
+            {users.length}
+          </p>
+        </div>
+
+        <div style={{ borderRadius: 16, boxShadow: '0 0 0 1px #ececf0', padding: '16px 18px', background: '#fff' }}>
+          <p style={{ margin: '0 0 6px 0', fontSize: 13, color: '#71717a' }}>Team Members</p>
+          <p style={{ margin: '0', fontSize: '24px', fontWeight: 700, color: 'var(--ink)' }}>
+            {users.filter(u => u.type === 'team').length}
+          </p>
+        </div>
+
+        {hasEcommerce && (
+          <>
+            <div style={{ borderRadius: 16, boxShadow: '0 0 0 1px #ececf0', padding: '16px 18px', background: '#fff' }}>
+              <p style={{ margin: '0 0 6px 0', fontSize: 13, color: '#71717a' }}>Synced Customers</p>
+              <p style={{ margin: '0', fontSize: '24px', fontWeight: 700, color: 'var(--coral)' }}>
+                {totalCustomers.toLocaleString()}
+              </p>
+            </div>
+
+            <div style={{ borderRadius: 16, boxShadow: '0 0 0 1px #ececf0', padding: '16px 18px', background: '#fff' }}>
+              <p style={{ margin: '0 0 6px 0', fontSize: 13, color: '#71717a' }}>Total Customer Spend</p>
+              <p style={{ margin: '0', fontSize: '24px', fontWeight: 700, color: 'var(--ink)' }}>
+                ${totalSpendDb.toLocaleString()}
+              </p>
+            </div>
+          </>
+        )}
+      </div>
+
       {!hasEcommerce && (
         <div style={{
-          padding: '16px',
-          borderRadius: '8px',
-          background: '#fef3c7',
-          border: '1px solid #fcd34d',
+          padding: '14px 16px',
+          borderRadius: 14,
+          background: '#fff7e6',
           marginBottom: '24px',
           fontSize: '13px',
           color: '#92400e',
@@ -428,7 +462,7 @@ export default function UsersPage() {
           placeholder="Search by name, email, or username..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          style={{ flex: 1, minWidth: '200px', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '13px' }}
+          style={{ flex: 1, minWidth: '200px', height: 40, padding: '0 16px', borderRadius: 999, border: '1px solid transparent', fontSize: 14 }}
         />
 
         <div style={{ display: 'flex', gap: '8px' }}>
@@ -436,16 +470,9 @@ export default function UsersPage() {
             <button
               key={type}
               onClick={() => setFilterType(type as any)}
-              style={{
-                padding: '8px 16px',
-                borderRadius: '6px',
-                border: filterType === type ? 'none' : '1px solid var(--border)',
-                background: filterType === type ? 'var(--coral)' : '#fff',
-                color: filterType === type ? '#fff' : 'var(--ink)',
-                fontSize: '12px',
-                fontWeight: 600,
-                cursor: 'pointer'
-              }}
+              aria-pressed={filterType === type}
+              className={filterType === type ? 'cv-btn cv-btn-dark' : 'cv-btn'}
+              style={{ height: 36, fontSize: 13 }}
             >
               {type === 'all' && `All (${(users.filter(u => u.type === 'team').length + totalCustomers).toLocaleString()})`}
               {type === 'team' && `Team (${users.filter(u => u.type === 'team').length})`}
@@ -454,8 +481,7 @@ export default function UsersPage() {
           ))}
         </div>
         {hasEcommerce && (
-          <button onClick={() => setShowFilters(v => !v)}
-            style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid var(--border)', background: filtersActive ? 'var(--peach)' : '#fff', color: filtersActive ? 'var(--coral)' : 'var(--ink)', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <button onClick={() => setShowFilters(v => !v)} aria-expanded={showFilters} className="cv-btn" style={{ height: 36, fontSize: 13, ...(filtersActive ? { borderColor: 'var(--coral)', color: 'var(--coral)' } : {}) }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
             Filters{filtersActive ? ' •' : ''}
           </button>
@@ -463,7 +489,7 @@ export default function UsersPage() {
       </div>
 
       {hasEcommerce && showFilters && (
-        <div style={{ marginBottom: 24, padding: 16, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--canvas)' }}>
+        <div style={{ marginBottom: 24, padding: 18, borderRadius: 16, background: '#f6f6f7' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
             {/* Sort */}
             <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Sort by
@@ -518,7 +544,7 @@ export default function UsersPage() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
             <button onClick={() => { setSortBy('spend'); setFChannel(''); setFLoyalty(''); setFMinSpend(''); setFMinOrders(''); setFState(''); setFPostcode(''); setFProduct('') }}
-              style={{ padding: '7px 14px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--slate)' }}>
+              className="cv-btn" style={{ height: 32, fontSize: 13 }}>
               Clear all
             </button>
             <span style={{ fontSize: 12, color: 'var(--slate)' }}>
@@ -528,17 +554,17 @@ export default function UsersPage() {
         </div>
       )}
 
-      <div style={{ borderRadius: '12px', border: '1px solid var(--border)', overflow: 'hidden', background: '#fff' }}>
+      <div style={{ borderRadius: 16, boxShadow: '0 0 0 1px #ececf0', overflow: 'hidden', background: '#fff' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
           <thead>
-            <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--peach)' }}>
-              <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 600, color: 'var(--ink)' }}>
+            <tr style={{ borderBottom: '1px solid #f0f0f2', background: '#fafafa' }}>
+              <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 600, color: '#71717a' }}>
                 Name / Email
               </th>
-              <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 600, color: 'var(--ink)' }}>
+              <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 600, color: '#71717a' }}>
                 Type
               </th>
-              <th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 600, color: 'var(--ink)' }}>
+              <th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 600, color: '#71717a' }}>
                 Details
               </th>
             </tr>
@@ -635,57 +661,7 @@ export default function UsersPage() {
         </table>
       </div>
 
-      {!hasEcommerce && (
-        <div style={{
-          borderRadius: '12px',
-          border: '1px solid #fbbf24',
-          background: '#fef3c7',
-          padding: '16px',
-          marginTop: '24px',
-          marginBottom: '24px'
-        }}>
-          <p style={{ margin: '0 0 8px 0', fontSize: '14px', fontWeight: 600, color: '#92400e' }}>
-            🔗 WooCommerce Not Connected
-          </p>
-          <p style={{ margin: '0', fontSize: '13px', color: '#b45309' }}>
-            Connect your WooCommerce store in <strong>Settings → Integrations</strong> to see synced customers here.
-          </p>
-        </div>
-      )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginTop: '32px' }}>
-        <div style={{ borderRadius: '12px', border: '1px solid var(--border)', padding: '16px', background: '#fff' }}>
-          <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#666' }}>Total Users</p>
-          <p style={{ margin: '0', fontSize: '24px', fontWeight: 700, color: 'var(--ink)' }}>
-            {users.length}
-          </p>
-        </div>
-
-        <div style={{ borderRadius: '12px', border: '1px solid var(--border)', padding: '16px', background: '#fff' }}>
-          <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#666' }}>Team Members</p>
-          <p style={{ margin: '0', fontSize: '24px', fontWeight: 700, color: 'var(--ink)' }}>
-            {users.filter(u => u.type === 'team').length}
-          </p>
-        </div>
-
-        {hasEcommerce && (
-          <>
-            <div style={{ borderRadius: '12px', border: '1px solid var(--border)', padding: '16px', background: '#fff' }}>
-              <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#666' }}>Synced Customers</p>
-              <p style={{ margin: '0', fontSize: '24px', fontWeight: 700, color: 'var(--coral)' }}>
-                {totalCustomers.toLocaleString()}
-              </p>
-            </div>
-
-            <div style={{ borderRadius: '12px', border: '1px solid var(--border)', padding: '16px', background: '#fff' }}>
-              <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#666' }}>Total Customer Spend</p>
-              <p style={{ margin: '0', fontSize: '24px', fontWeight: 700, color: 'var(--ink)' }}>
-                ${totalSpendDb.toLocaleString()}
-              </p>
-            </div>
-          </>
-        )}
-      </div>
       {/* Customer pagination */}
       {hasWooCommerce && totalCustomers > PAGE_SIZE && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, padding: '0 4px' }}>
@@ -696,7 +672,7 @@ export default function UsersPage() {
             <button
               onClick={() => setCustomerPage(p => Math.max(0, p - 1))}
               disabled={customerPage === 0}
-              style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: customerPage === 0 ? '#f9f9f9' : '#fff', color: customerPage === 0 ? '#ccc' : 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: customerPage === 0 ? 'default' : 'pointer' }}>
+              className="cv-btn">
               ← Previous
             </button>
             <span style={{ padding: '8px 12px', fontSize: 13, color: '#666' }}>
@@ -705,7 +681,7 @@ export default function UsersPage() {
             <button
               onClick={() => setCustomerPage(p => p + 1)}
               disabled={(customerPage + 1) * PAGE_SIZE >= totalCustomers}
-              style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: (customerPage + 1) * PAGE_SIZE >= totalCustomers ? '#f9f9f9' : 'var(--coral)', color: (customerPage + 1) * PAGE_SIZE >= totalCustomers ? '#ccc' : '#fff', fontSize: 13, fontWeight: 600, cursor: (customerPage + 1) * PAGE_SIZE >= totalCustomers ? 'default' : 'pointer' }}>
+              className="cv-btn cv-btn-primary">
               Next →
             </button>
           </div>

@@ -179,8 +179,8 @@ export default function AuditLogsPage() {
                 onClick={() => setFilterType(null)}
                 style={{
                   padding: '8px 16px',
-                  borderRadius: 8,
-                  border: '1px solid var(--border)',
+                  borderRadius: 999,
+                  border: '1.5px solid #e4e4e7',
                   background: 'white',
                   fontSize: 13,
                   cursor: 'pointer',
