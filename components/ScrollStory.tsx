@@ -7,8 +7,8 @@ import { useEffect, useRef, useState, ReactNode } from 'react'
 // them and a set of product cards flies between layouts — channel messages
 // fanned out, then pulled into one inbox, then a payment link and a paid order,
 // the AI answering a call, and the follow-ups that bring customers back.
-// Everything is driven by scroll position (no timers), so it moves exactly as
-// fast as the visitor scrolls. With reduced motion it's five still panels.
+// Scrolling picks the beat; each change then plays as one short, eased move,
+// so it's smooth on phones too. With reduced motion it's five still panels.
 //
 // Other pages (the /for/* workflow pages, the platform page) pass their own
 // beats and cards; with no props it tells the homepage story.
@@ -50,28 +50,53 @@ const HOME_STAGES: Stage[] = [
 ]
 
 const clamp = (n: number, a = 0, b = 1) => Math.min(b, Math.max(a, n))
-// Hold each beat for a while, then move: the change happens in the middle
-// half of the scroll between two beats.
-const ease = (f: number) => { const t = clamp((f - 0.22) / 0.56); return t * t * (3 - 2 * t) }
-const hex = (h: string) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16))
-const mix = (a: string, b: string, t: number) => {
-  const A = hex(a), B = hex(b)
-  return `rgb(${A.map((v, i) => Math.round(v + (B[i] - v) * t)).join(',')})`
+
+// How a beat changes. Scroll only picks the beat; the change itself is a
+// timed, eased move (CSS transitions on transform and opacity, which the
+// browser runs off the main thread), so it always finishes — never parked
+// half-way with two beats on top of each other — and stays smooth however
+// fast the page is scrolled or flung. A change that's interrupted carries on
+// from wherever it had got to.
+const EASE = 'cubic-bezier(.22,1,.36,1)'
+const MOVE = 900       // ms: cards gliding to their new places
+const FADE_OUT = 340   // what's leaving goes first…
+const FADE_IN = 560    // …and what's arriving fades in after it,
+const IN_DELAY = 200   // starting a little later, so they don't sit on top of each other
+const STAGGER = 45     // and one after another
+const BG = 750         // the background colour
+
+type Full = { x: number; y: number; r: number; s: number; o: number }
+const full = (q: Pose): Full => ({ r: 0, s: 1, o: 1, ...q })
+
+// Where a card sits during beat k. Not in that beat: invisible, just below
+// where it comes in next, or drifted up from where it was last.
+function restPose(stages: Stage[], id: string, k: number): Full {
+  const at = (n: number) => stages[n]?.poses[id]
+  const here = at(k)
+  if (here) return full(here)
+  let next = -1, prev = -1
+  for (let n = k + 1; n < stages.length; n++) if (at(n)) { next = n; break }
+  for (let n = k - 1; n >= 0; n--) if (at(n)) { prev = n; break }
+  const enter = (n: number) => { const b = full(at(n)!); return { ...b, y: b.y + 50, s: b.s * 0.9, o: 0 } }
+  const leave = (n: number) => { const a = full(at(n)!); return { ...a, y: a.y - 40, s: a.s * 0.94, o: 0 } }
+  if (next === k + 1) return enter(next)
+  if (prev >= 0 && prev === k - 1) return leave(prev)
+  if (next >= 0) return enter(next)
+  if (prev >= 0) return leave(prev)
+  return { x: 0, y: 40, r: 0, s: 0.9, o: 0 }
 }
 
-function poseAt(stages: Stage[], id: string, p: number): Pose & { r: number; s: number; o: number } {
-  const i = Math.floor(clamp(p, 0, stages.length - 1)), j = Math.min(i + 1, stages.length - 1)
-  const t = ease(p - i)
-  const full = (q?: Pose) => q ? { r: 0, s: 1, o: 1, ...q } : undefined
-  let a = full(stages[i].poses[id]), b = full(stages[j].poses[id])
-  // Not in a beat: fade in/out in place (slightly lower and smaller).
-  if (!a && !b) return { x: 0, y: 40, r: 0, s: 0.9, o: 0 }
-  if (!a) a = { ...b!, y: b!.y + 50, s: b!.s * 0.9, o: 0 }
-  if (!b) b = { ...a, y: a.y - 40, s: a.s * 0.94, o: 0 }
-  const l = (k: 'x' | 'y' | 'r' | 's' | 'o', f = t) => (a as any)[k] + ((b as any)[k] - (a as any)[k]) * f
-  // Outgoing cards fade early, incoming ones late, so they don't pile up.
-  const ft = b.o < a.o ? clamp(t * 1.7) : b.o > a.o ? clamp((t - 0.35) / 0.65) : t
-  return { x: l('x'), y: l('y'), r: l('r'), s: l('s'), o: l('o', ft) }
+const place = (q: Full) => `translate(-50%,-50%) translate3d(${q.x}px,${q.y}px,0) rotate(${q.r}deg) scale(${q.s})`
+
+// The transition for a card going from pose a to b. Arriving cards wait their
+// turn (delay); leaving ones fade quickly; the rest glide.
+function cardMotion(a: Full, b: Full, delay: number): string {
+  const o = b.o < a.o ? `opacity ${b.o > 0.01 ? 500 : FADE_OUT}ms ease-out`
+    : b.o > a.o ? `opacity ${FADE_IN}ms ease-out ${delay}ms`
+    : `opacity ${MOVE}ms ${EASE}`
+  const t = b.o > a.o && a.o < 0.01 ? `transform ${MOVE}ms ${EASE} ${delay}ms` : `transform ${MOVE}ms ${EASE}`
+  // Hidden once it's faded out, so the browser can skip drawing it.
+  return `${t}, ${o}, visibility 0s linear ${b.o > 0.01 ? 0 : FADE_OUT}ms`
 }
 
 // ── The cards (clean, real-looking product UI with demo data) ─────────────────
@@ -182,38 +207,58 @@ export default function ScrollStory({ stages: STAGES = HOME_STAGES, cards: CARDS
   stages?: Stage[]; cards?: Record<string, ReactNode>; order?: string[]; label?: string
 } = {}) {
   const ref = useRef<HTMLElement>(null)
-  const [p, setP] = useState(0)
+  const pin = useRef<HTMLDivElement>(null)
+  const N = STAGES.length
+  // The beat on screen, and the one before it (to know what's arriving and what's leaving).
+  const [view, setView] = useState({ at: 0, from: 0 })
+  // No transitions until the first reading has put the right beat up (a reload half-way down shouldn't animate in).
+  const [live, setLive] = useState(false)
   const [still, setStill] = useState(false)
 
   useEffect(() => {
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { setStill(true); return }
-    let raf = 0
+    let raf = 0, cur = -1, wake = 0
     const read = () => {
       raf = 0
-      const el = ref.current; if (!el) return
+      const el = ref.current, box = pin.current; if (!el || !box) return
       const r = el.getBoundingClientRect()
-      const span = r.height - window.innerHeight
-      setP(clamp(-r.top / Math.max(1, span)) * (STAGES.length - 1))
+      // The pinned box, not innerHeight: a phone's address bar showing and hiding changes innerHeight mid-scroll.
+      const f = clamp(-r.top / Math.max(1, r.height - box.offsetHeight)) * N
+      const k = Math.min(N - 1, Math.floor(f))
+      if (k === cur) return
+      // A little give at each boundary, so coming to rest right on one doesn't flick back and forth.
+      if (cur >= 0 && Math.abs(f - (k > cur ? k : k + 1)) < 0.12) return
+      cur = k
+      setView(v => (v.at === k ? v : { at: k, from: v.at }))
     }
     const onScroll = () => { if (!raf) raf = requestAnimationFrame(read) }
     read()
+    wake = requestAnimationFrame(() => { wake = requestAnimationFrame(() => setLive(true)) })
     window.addEventListener('scroll', onScroll, { passive: true })
     window.addEventListener('resize', onScroll)
-    return () => { window.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onScroll); cancelAnimationFrame(raf) }
-  }, [STAGES.length])
+    return () => { window.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onScroll); cancelAnimationFrame(raf); cancelAnimationFrame(wake) }
+  }, [N])
 
-  const i = Math.floor(clamp(p, 0, STAGES.length - 1)), j = Math.min(i + 1, STAGES.length - 1)
-  const t = ease(p - i)
-  const bg = mix(STAGES[i].bg, STAGES[j].bg, t)
-  const ink = mix(STAGES[i].ink, STAGES[j].ink, t)
+  const { at, from } = view
+  const ink = STAGES[at].ink
 
-  const visual = (at: number) => (
+  // The cards arriving in this change, in the order the beat lists them, for the stagger.
+  const arriving = Object.keys(STAGES[at].poses).filter(id => restPose(STAGES, id, at).o > restPose(STAGES, id, from).o)
+
+  const visual = (k: number, motion: boolean) => (
     <div className="ss-visual" style={{ position: 'relative', width: 560, height: 560 }}>
       {ORDER.map(id => {
-        const q = poseAt(STAGES, id, at)
-        if (q.o < 0.01) return null
+        const q = restPose(STAGES, id, k)
+        if (!motion) return q.o < 0.01 ? null : (
+          <div key={id} style={{ position: 'absolute', left: '50%', top: '50%', transform: place(q), opacity: q.o }}>{CARDS[id]}</div>
+        )
+        const n = arriving.indexOf(id)
         return (
-          <div key={id} style={{ position: 'absolute', left: '50%', top: '50%', transform: `translate(-50%,-50%) translate3d(${q.x}px,${q.y}px,0) rotate(${q.r}deg) scale(${q.s})`, opacity: q.o, willChange: 'transform, opacity' }}>
+          <div key={id} style={{
+            position: 'absolute', left: '50%', top: '50%', transform: place(q), opacity: q.o,
+            visibility: q.o > 0.01 ? 'visible' : 'hidden', willChange: 'transform, opacity',
+            transition: live ? cardMotion(restPose(STAGES, id, from), q, IN_DELAY + Math.max(0, n) * STAGGER) : 'none',
+          }}>
             {CARDS[id]}
           </div>
         )
@@ -228,7 +273,7 @@ export default function ScrollStory({ stages: STAGES = HOME_STAGES, cards: CARDS
           <div key={s.key} className="ss-still" style={{ background: s.bg, color: s.ink, padding: 'clamp(56px, 8vw, 96px) 24px' }}>
             <div className="ss-grid" style={{ maxWidth: 1240, margin: '0 auto', display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 40, alignItems: 'center' }}>
               <StageText s={s} />
-              <div className="ss-stage" style={{ display: 'flex', justifyContent: 'center', minWidth: 0 }}>{visual(k)}</div>
+              <div className="ss-stage" style={{ display: 'flex', justifyContent: 'center', minWidth: 0 }}>{visual(k, false)}</div>
             </div>
           </div>
         ))}
@@ -238,27 +283,36 @@ export default function ScrollStory({ stages: STAGES = HOME_STAGES, cards: CARDS
   }
 
   return (
-    <section ref={ref} aria-label={label} style={{ position: 'relative', height: `${STAGES.length * 110}vh`, background: bg }}>
-      <div style={{ position: 'sticky', top: 0, height: '100vh', overflow: 'hidden', background: bg, color: ink }}>
-        <div className="ss-grid" style={{ maxWidth: 1240, height: '100%', margin: '0 auto', padding: '0 24px', display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 40, alignItems: 'center' }}>
-          {/* The words for each beat, crossfading and sliding as you scroll. */}
+    <section ref={ref} aria-label={label} style={{ position: 'relative', height: `${N * 100}vh`, background: STAGES[at].bg }}>
+      <div ref={pin} style={{ position: 'sticky', top: 0, height: '100vh', overflow: 'hidden', background: STAGES[0].bg }}>
+        {/* The background colours, stacked; each beat's fades in over the last
+            (opacity only, so changing colour doesn't repaint the screen). */}
+        {STAGES.map((s, k) => k > 0 && (
+          <div key={s.key} aria-hidden style={{ position: 'absolute', inset: 0, background: s.bg, opacity: k <= at ? 1 : 0, willChange: 'opacity', transition: live ? `opacity ${BG}ms cubic-bezier(.4,0,.2,1)` : 'none' }} />
+        ))}
+        <div className="ss-grid" style={{ position: 'relative', maxWidth: 1240, height: '100%', margin: '0 auto', padding: '0 24px', display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 40, alignItems: 'center' }}>
+          {/* The words for each beat: the old ones lift away, then the new ones rise in. */}
           <div className="ss-copy" style={{ position: 'relative', height: 360 }}>
             {STAGES.map((s, k) => {
-              const d = (i + t) - k
-              const o = clamp(1 - Math.abs(d) * 2.2)
-              if (o <= 0) return null
+              const d = Math.sign(k - at), on = d === 0
               return (
-                <div key={s.key} style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', opacity: o, transform: `translate3d(0, ${-d * 70}px, 0)`, pointerEvents: o > 0.5 ? 'auto' : 'none' }}>
+                <div key={s.key} style={{
+                  position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', color: s.ink,
+                  opacity: on ? 1 : 0, transform: `translate3d(0, ${d * 36}px, 0)`, visibility: on ? 'visible' : 'hidden',
+                  transition: !live ? 'none' : on
+                    ? `opacity ${FADE_IN}ms ease-out ${IN_DELAY}ms, transform ${MOVE}ms ${EASE} ${IN_DELAY}ms, visibility 0s`
+                    : `opacity ${FADE_OUT - 80}ms ease-out, transform ${MOVE}ms ${EASE}, visibility 0s linear ${FADE_OUT}ms`,
+                }}>
                   <StageText s={s} />
                 </div>
               )
             })}
           </div>
-          <div className="ss-stage" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minWidth: 0 }}>{visual(p)}</div>
+          <div className="ss-stage" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minWidth: 0 }}>{visual(at, true)}</div>
         </div>
         {/* Progress: one dot per beat */}
         <div aria-hidden className="ss-dots" style={{ position: 'absolute', right: 22, top: '50%', transform: 'translateY(-50%)', display: 'flex', flexDirection: 'column', gap: 9 }}>
-          {STAGES.map((s, k) => <span key={s.key} style={{ width: 7, height: Math.round(p) === k ? 24 : 7, borderRadius: 4, background: ink, opacity: Math.round(p) === k ? 0.95 : 0.35, transition: 'height .3s cubic-bezier(.16,1,.3,1), opacity .3s' }} />)}
+          {STAGES.map((s, k) => <span key={s.key} style={{ width: 7, height: at === k ? 24 : 7, borderRadius: 4, background: ink, opacity: at === k ? 0.95 : 0.35, transition: `height .5s ${EASE}, opacity .3s, background-color ${BG}ms` }} />)}
         </div>
       </div>
       <Styles />
