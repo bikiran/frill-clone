@@ -88,7 +88,7 @@ import { STATUS_LABEL as WA_STATUS_LABEL } from '@/lib/whatsapp-core'
 import { ProtectionCard, ProtectionBanner } from '@/components/inbox/ProtectionCard'
 import EmptyScroll from '@/components/EmptyScroll'
 import CustomerGlance from '@/components/inbox/CustomerGlance'
-import { ColvyChatRow, ColvyChatThread, useColvySummary } from '@/components/inbox/ColvyChat'
+import { ColvyChatRow, ColvyChatThread, ColvyChatInfo, useColvySummary } from '@/components/inbox/ColvyChat'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -11317,6 +11317,9 @@ export default function InboxPage() {
           </>
         )}
       </div>
+
+      {/* ── RIGHT: About Colvy, beside the Colvy chat ─────────────────────── */}
+      {!selected && colvyOpen && <ColvyChatInfo />}
 
       {/* ── RIGHT: Contact info + Page history ─────────────────────────────── */}
       {selected && (
