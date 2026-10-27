@@ -74,10 +74,13 @@ function useFitsLongPlaceholder(ref: React.RefObject<HTMLInputElement | null>) {
 const TICKETS_CSS = `
   .tk-page { padding: 24px; }
   .tk-actions { display: flex; gap: 8px; align-items: center; }
-  .tk-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 38px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--border); background: #fff; color: var(--ink); font: inherit; font-size: 13.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
-  .tk-btn:hover { background: var(--canvas); }
-  .tk-btn-primary { border: none; background: var(--coral); color: #fff; }
-  .tk-btn-primary:hover { background: var(--coral); filter: brightness(1.04); }
+  /* The app's pill buttons (.cv-btn in app/globals.css). */
+  .tk-btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 38px; padding: 0 16px; border-radius: 999px; border: 1.5px solid #e4e4e7; background: #fff; color: #18181b; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; box-shadow: 0 1px 1px rgba(16,24,40,.03); transition: background .15s, border-color .15s, filter .15s; }
+  .tk-btn svg { color: #52525b; }
+  .tk-btn:hover { background: #fafafa; border-color: #d4d4d8; }
+  .tk-btn-primary { border-color: transparent; background: var(--coral); color: #fff; box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 1px 2px rgba(16,24,40,.12); }
+  .tk-btn-primary svg { color: currentColor; }
+  .tk-btn-primary:hover { background: var(--coral); border-color: transparent; filter: brightness(.96); }
   .tk-more { position: relative; display: none; }
   .tk-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 230px; padding: 6px; background: #fff; border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 16px 40px rgba(16,24,40,.14); }
   .tk-menu button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: none; background: none; border-radius: 8px; font: inherit; font-size: 14px; font-weight: 600; color: var(--ink); cursor: pointer; text-align: left; }
@@ -366,7 +369,6 @@ export default function TicketsList() {
     const a = document.createElement('a'); a.href = url; a.download = `tickets-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(url)
   }
 
-  const selStyle: React.CSSProperties = { height: 40, padding: '0 12px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', cursor: 'pointer', fontFamily: 'inherit' }
   const assigneeLabel = (t: any) => teamName(t.assigned_to) || (t.assigned_to ? 'Teammate' : 'Unassigned')
   const allOn = statusFilter === 'all' && dueFilter === 'all'
 
@@ -434,14 +436,14 @@ export default function TicketsList() {
           <SlidersIcon size={15} /> Filters{extraFilters > 0 && <span className="tk-badge-n">{extraFilters}</span>}
         </button>
         <div className="tk-selects" id="tk-selects">
-          <select className="tk-sel-status" aria-label="Status" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={selStyle}>
+          <select className="cv-select tk-sel-status" aria-label="Status" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
             <option value="all">All statuses</option>
             <option value="open">Open</option>
             <option value="in_progress">In Progress</option>
             <option value="resolved">Resolved</option>
             <option value="closed">Closed</option>
           </select>
-          <select aria-label="Priority" value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)} style={selStyle}>
+          <select className="cv-select" aria-label="Priority" value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}>
             <option value="all">All priorities</option>
             <option value="low">Low</option>
             <option value="normal">Normal</option>
@@ -449,13 +451,13 @@ export default function TicketsList() {
             <option value="urgent">Urgent</option>
           </select>
           {sla.enabled && (
-            <select aria-label="Deadline" value={dueFilter} onChange={e => setDueFilter(e.target.value as any)} style={selStyle}>
+            <select className="cv-select" aria-label="Deadline" value={dueFilter} onChange={e => setDueFilter(e.target.value as any)}>
               <option value="all">All deadlines</option>
               <option value="overdue">Overdue</option>
               <option value="soon">Due soon</option>
             </select>
           )}
-          <select aria-label="Assignee" value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)} style={selStyle}>
+          <select className="cv-select" aria-label="Assignee" value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)}>
             <option value="all">Anyone</option>
             <option value="me">Assigned to me</option>
             <option value="unassigned">Unassigned</option>
