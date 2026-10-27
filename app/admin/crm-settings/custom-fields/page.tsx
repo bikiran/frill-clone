@@ -54,7 +54,7 @@ export default function CustomFieldsSettings() {
       <p style={S.sub}>Add custom fields to your contact cards to capture the details that matter to your business.</p>
 
       {editing ? (
-        <div style={S.card}>
+        <div className="st-sec">
           <h2 style={S.h2}>{editing.id ? 'Edit' : 'New'} field</h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div><label style={S.label}>Title</label><input value={editing.title || ''} onChange={e => setEditing({ ...editing, title: e.target.value })} placeholder="Scheduled Delivery" style={S.input} /></div>

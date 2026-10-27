@@ -66,14 +66,14 @@ export default function ContactFormBuilder() {
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 24, alignItems: 'start' }} className="cf-grid">
         {/* Builder */}
         <div>
-          <div style={S.card}>
+          <div className="st-sec">
             <label style={S.label}>Form name</label>
             <input value={form.name} onChange={e => set({ name: e.target.value })} style={{ ...S.input, marginBottom: 14 }} />
             <label style={S.label}>Description (optional)</label>
             <textarea value={form.description || ''} onChange={e => set({ description: e.target.value })} rows={2} style={{ ...S.input, resize: 'vertical' }} />
           </div>
 
-          <div style={S.card}>
+          <div className="st-sec">
             <h2 style={S.h2}>Appearance</h2>
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
               <div>
@@ -97,7 +97,7 @@ export default function ContactFormBuilder() {
             </div>
           </div>
 
-          <div style={S.card}>
+          <div className="st-sec">
             <h2 style={S.h2}>Fields</h2>
             {fields.map((f, i) => (
               <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, marginBottom: 10 }}>
@@ -122,7 +122,7 @@ export default function ContactFormBuilder() {
             <button onClick={() => setFields(fs => [...fs, { key: slugify(`field ${fs.length + 1}`), label: 'New field', type: 'text', required: false }])} style={{ ...S.btnGhost, width: '100%' }}>+ Add field</button>
           </div>
 
-          <div style={S.card}>
+          <div className="st-sec">
             <h2 style={S.h2}>Submit</h2>
             <label style={S.label}>Button label</label>
             <input value={form.button_label || ''} onChange={e => set({ button_label: e.target.value })} style={{ ...S.input, marginBottom: 14 }} />
@@ -132,7 +132,7 @@ export default function ContactFormBuilder() {
             <input value={form.redirect_url || ''} onChange={e => set({ redirect_url: e.target.value })} placeholder="https://…" style={S.input} />
           </div>
 
-          <div style={S.card}>
+          <div className="st-sec">
             <h2 style={S.h2}>Embed</h2>
             <p style={S.hint}>Paste this on your website's contact page. It auto-resizes to fit.</p>
             <textarea readOnly value={embedCode} rows={4} style={{ ...S.input, fontFamily: 'monospace', fontSize: 12, marginTop: 10, background: 'var(--canvas)' }} />

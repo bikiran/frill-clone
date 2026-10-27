@@ -94,7 +94,7 @@ export default function AiSettingsPage() {
     setCfg((c: any) => ({ ...c, capabilities: { ...c.capabilities, [key]: { ...c.capabilities[key], ...patch } } }))
 
   const Card = ({ children }: any) => (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 14, padding: 20, background: '#fff', marginBottom: 16 }}>{children}</div>
+    <div className="st-sec">{children}</div>
   )
   const L: any = { display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }
   const num: any = { width: 110, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13.5 }
@@ -303,8 +303,7 @@ export default function AiSettingsPage() {
             <p style={{ margin: '0 0 3px', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Status check</p>
             <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>If the AI isn&rsquo;t replying, this tells you why.</p>
           </div>
-          <button onClick={runCheck} disabled={checking}
-            style={{ padding: '9px 16px', borderRadius: 9, background: 'var(--peach)', color: 'var(--coral)', border: '1px solid var(--coral)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          <button onClick={runCheck} disabled={checking} className="cv-btn">
             {checking ? 'Checking…' : 'Check now'}
           </button>
         </div>

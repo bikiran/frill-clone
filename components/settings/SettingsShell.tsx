@@ -84,6 +84,28 @@ export default function SettingsShell({ children, top }: { children: ReactNode; 
         /* The page brings its own padding (pages also used on their own do). */
         .st-main { flex: 1; min-width: 0; border-radius: 18px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.04), 0 1px 2px rgba(0,0,0,.03); }
         .st-fold { display: none; }
+        /* The pages, like Sellio's: big bold titles; sections with their name
+           and what they're for on the left and the fields on the right,
+           between thin lines; soft grey fields. A section that doesn't open
+           with a heading (or a narrow page) stays one column. Sections are
+           className="st-sec" (Business Settings and /admin/settings use it). */
+        .st-main h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; color: #111; }
+        .st-sec { display: flow-root; container-type: inline-size; margin: 0 !important; padding: 28px 0 !important; border: none !important; border-top: 1px solid #f0f0f2 !important; border-radius: 0 !important; background: none !important; box-shadow: none !important; }
+        .st-sec > h2:first-child { font-size: 16px !important; font-weight: 700 !important; color: #111 !important; letter-spacing: -0.01em; margin: 0 0 6px !important; }
+        .st-sec > h2:first-child + p { font-size: 14px !important; font-weight: 400 !important; color: #71717a !important; line-height: 1.55 !important; margin: 0 0 14px !important; }
+        @container (min-width: 700px) {
+          .st-sec:has(> h2:first-child) > h2:first-child,
+          .st-sec:has(> h2:first-child) > h2:first-child + p { float: left; clear: left; width: 220px; }
+          .st-sec:has(> h2:first-child) > :not(h2:first-child):not(h2:first-child + p) { margin-left: 260px !important; }
+        }
+        .st-main :is(input:not([type]), input[type=text], input[type=email], input[type=tel], input[type=url], input[type=number], input[type=password], input[type=search], input[type=time], input[type=date], input[type=datetime-local], textarea, select:not(.cv-select)) {
+          background-color: #f4f4f5 !important; border-color: transparent !important; border-radius: 12px !important; color: #111;
+          transition: background-color .15s ease, box-shadow .15s ease, border-color .15s ease;
+        }
+        .st-main :is(input:not([type]), input[type=text], input[type=email], input[type=tel], input[type=url], input[type=number], input[type=password], input[type=search], input[type=time], input[type=date], input[type=datetime-local], textarea, select:not(.cv-select)):focus {
+          background-color: #fff !important; border-color: #d4d4d8 !important; outline: none !important; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 16%, transparent) !important;
+        }
+        .st-main :is(input, textarea)::placeholder { color: #a1a1aa; }
         /* Pages with their own sticky header bar sit flat in the white page. */
         .st-main .ph-root { position: static !important; margin: 0 0 22px !important; padding: 0 0 18px !important; background: transparent !important; }
         .st-main .ph-root h1 { font-size: 26px !important; letter-spacing: -0.02em !important; }

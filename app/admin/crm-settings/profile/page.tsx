@@ -82,7 +82,7 @@ export default function ProfileSettings() {
       </div>
 
       {/* General Information */}
-      <div style={S.card}>
+      <div className="st-sec">
         <h2 style={S.h2}>General Information</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
           <div>
@@ -111,7 +111,7 @@ export default function ProfileSettings() {
       </div>
 
       {/* Customisation */}
-      <div style={S.card}>
+      <div className="st-sec">
         <h2 style={S.h2}>Customisation</h2>
         <ToggleRow title="Show Message Detail" desc="Show a preview of individual message details, e.g. date & time." checked={s.show_message_detail} onChange={v => set('show_message_detail', v)} />
         <ToggleRow title="Enable Dialer" desc="Enable or disable the phone call feature for your account. This change only affects you." checked={s.dialer_enabled} onChange={v => set('dialer_enabled', v)} />
@@ -135,7 +135,7 @@ export default function ProfileSettings() {
       </div>
 
       {/* Notifications */}
-      <div style={S.card}>
+      <div className="st-sec">
         <h2 style={S.h2}>Notifications</h2>
         <ToggleRow title="Browser Notifications" desc="Colvy will send a browser notification whenever you get new activity." checked={s.browser_notifications} onChange={v => set('browser_notifications', v)} />
         <ToggleRow title="Message Notifications" desc="Get notified whenever you receive a new message." checked={s.message_notifications} onChange={v => set('message_notifications', v)} />

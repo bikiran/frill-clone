@@ -32,7 +32,7 @@ export default function PoliciesSettings() {
       <p style={S.sub}>Collect legally binding agreements from customers, such as liability waivers or consent forms. Create and manage multiple policies, and view signed ones from your dashboard.</p>
 
       {editing ? (
-        <div style={S.card}>
+        <div className="st-sec">
           <h2 style={S.h2}>{editing.id ? 'Edit' : 'New'} policy</h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div><label style={S.label}>Title</label><input value={editing.title || ''} onChange={e => setEditing({ ...editing, title: e.target.value })} placeholder="Liability Waiver" style={S.input} /></div>

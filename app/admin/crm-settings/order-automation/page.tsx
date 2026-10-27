@@ -106,13 +106,13 @@ export default function OrderAutomationSettings() {
       <h1 style={S.h1}>Order Automation</h1>
       <p style={S.sub}>Automatically start a chat with the customer when a WooCommerce order is created or changes status, with a message tailored to that status.</p>
 
-      <div style={S.card}>
+      <div className="st-sec">
         <ToggleRow title="Start a chat on new orders & status changes" desc="When on, Colvy messages the customer based on the order's status." checked={enabled} onChange={setEnabled} />
       </div>
 
       {enabled && (
         <>
-          <div style={S.card}>
+          <div className="st-sec">
             <h2 style={S.h2}>Messages per status</h2>
             <p style={{ ...S.hint, marginBottom: 14 }}>Placeholders: <code>{'{business}'}</code>, <code>{'{name}'}</code> (first name), <code>{'{full_name}'}</code>, <code>{'{order}'}</code>, <code>{'{amount}'}</code> (refund), <code>{'{total}'}</code>. Leave a field blank to send nothing for that status.</p>
             {STATUSES.map(st => (
@@ -142,7 +142,7 @@ export default function OrderAutomationSettings() {
             ))}
           </div>
 
-          <div style={S.card}>
+          <div className="st-sec">
             <h2 style={S.h2}>How order messages are sent</h2>
             <p style={{ ...S.hint, marginBottom: 12 }}>The message always posts into the customer's conversation. If they aren't on live chat right now, it's also sent to them so they actually see it.</p>
             <ChannelPicker value={sendBy} onChange={setSendBy}
@@ -150,7 +150,7 @@ export default function OrderAutomationSettings() {
             <p style={{ ...S.hint, marginTop: 10 }}>Texts are only sent 9am to 8pm. Outside those hours the message goes by email, or the text waits until 9am if there’s no email.</p>
           </div>
 
-          <div style={S.card}>
+          <div className="st-sec">
             <h2 style={S.h2}>Also notify the customer directly</h2>
             <p style={{ ...S.hint, marginBottom: 12 }}>These send a copy even when the customer is on live chat.</p>
             <ToggleRow title="Also send as SMS" desc="Requires a Colvy number and the customer's mobile. Standard SMS rates apply." checked={alsoSms} onChange={setAlsoSms} />
@@ -158,7 +158,7 @@ export default function OrderAutomationSettings() {
             <ToggleRow title="Also send as email" desc="Sent from your verified Colvy email domain to the order's email address." checked={alsoEmail} onChange={setAlsoEmail} />
           </div>
 
-          <div style={S.card}>
+          <div className="st-sec">
             <h2 style={S.h2}>Google review reminder</h2>
             <p style={{ ...S.hint, marginBottom: 10 }}>Added after each Completed message. Paste your Google review link.</p>
             <input value={reviewUrl} onChange={e => setReviewUrl(e.target.value)} placeholder="https://g.page/r/…/review" style={S.input} />
@@ -166,7 +166,7 @@ export default function OrderAutomationSettings() {
         </>
       )}
 
-      <div style={S.card}>
+      <div className="st-sec">
         <h2 style={{ ...S.h2, marginBottom: 4 }}>Automatic abandoned-cart message</h2>
         <p style={{ ...S.hint, margin: '0 0 4px' }}>Off by default. When on, a shopper who leaves checkout gets one message, so you don't have to follow up by hand. Each message uses SMS credits.</p>
         <ToggleRow title="Message shoppers who leave checkout" desc="One message per cart, posted into their conversation so replies come to your inbox." checked={cart.enabled} onChange={v => setCart(c => ({ ...c, enabled: v }))} />
@@ -208,7 +208,7 @@ export default function OrderAutomationSettings() {
         )}
       </div>
 
-      <div style={S.card}>
+      <div className="st-sec">
         <h2 style={S.h2}>DOA claim messages</h2>
         <p style={{ ...S.hint, marginBottom: 14 }}>What Colvy sends the customer when you resolve a damaged-order (DOA) claim from the inbox. These fire on your action, independent of the order-automation toggle above. Placeholders: <code>{'{amount}'}</code>, <code>{'{code}'}</code> (store-credit coupon). Leave blank to use the default wording.</p>
         {DOA_MESSAGES.map(dm => (

@@ -120,14 +120,14 @@ export default function WhatsAppChannelPage() {
       {msg && <div style={{ ...S.card, padding: '12px 14px', background: '#ecfdf3', borderColor: '#abefc6', color: '#067647', fontSize: 13.5 }}>{msg}</div>}
 
       {st && !st.ready && (
-        <div style={S.card}>
+        <div className="st-sec">
           <p style={{ margin: 0, fontSize: 14, color: 'var(--ink)', fontWeight: 600 }}>WhatsApp isn’t available on your workspace yet.</p>
           <p style={S.hint}>Colvy is finishing the set-up on our side. Check back soon, or contact us if you’d like to be first.</p>
         </div>
       )}
 
       {status === 'approved' && st && (
-        <div style={S.card}>
+        <div className="st-sec">
           <h2 style={S.h2}>Connected</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
             <div><p style={{ ...S.hint, margin: 0 }}>WhatsApp number</p><p style={{ margin: '2px 0 0', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>{fmtNum(st.sender.phoneNumber)}</p></div>
@@ -146,7 +146,7 @@ export default function WhatsAppChannelPage() {
       )}
 
       {status === 'pending' && st && (
-        <div style={S.card}>
+        <div className="st-sec">
           <h2 style={S.h2}>Waiting for approval</h2>
           <p style={{ margin: '0 0 12px', fontSize: 13.5, color: 'var(--slate)', lineHeight: 1.55 }}>
             Colvy is registering your number with Meta. Meta reviews the name customers will see, which usually takes one to three business days. We may contact {req.contactName || 'you'} to confirm details.
@@ -170,7 +170,7 @@ export default function WhatsAppChannelPage() {
 
       {showForm && st && (
         <>
-          <div style={S.card}>
+          <div className="st-sec">
             <h2 style={S.h2}>How it works</h2>
             <div style={{ display: 'grid', gap: 14 }}>
               <Step n={1} title="Tell us about your business" body="The name customers will see on WhatsApp, the number to use and a few details Meta asks for." />
@@ -179,7 +179,7 @@ export default function WhatsAppChannelPage() {
             </div>
           </div>
 
-          <div style={S.card}>
+          <div className="st-sec">
             <h2 style={S.h2}>Request WhatsApp</h2>
             {!st.canRequest && <p style={{ margin: '0 0 12px', fontSize: 13, color: '#b54708' }}>Only the owner or an admin can request WhatsApp.</p>}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
