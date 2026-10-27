@@ -33,7 +33,7 @@ function Ring({ done, total, size = 30 }: { done: number; total: number; size?: 
   )
 }
 
-export default function SetupRing({ companyId, collapsed }: { companyId: string | null | undefined; collapsed?: boolean }) {
+export default function SetupRing({ companyId, collapsed, rail }: { companyId: string | null | undefined; collapsed?: boolean; rail?: boolean }) {
   const [status, setStatus] = useState<(SetupStatus & { full?: boolean }) | null>(null)
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<{ left: number; bottom: number } | null>(null)
@@ -121,6 +121,16 @@ export default function SetupRing({ companyId, collapsed }: { companyId: string 
           )
         })}
       </div>
+    </>
+  )
+
+  // In the admin rail (components/AdminRail): just the ring, on the rail's grey.
+  if (rail) return (
+    <>
+      <button ref={btn} type="button" onClick={toggle} aria-haspopup="dialog" aria-expanded={open} title={`Getting started: ${label}`} className="rail-tile" style={{ padding: '8px 0' }}>
+        <Ring done={status.done} total={status.total} />
+      </button>
+      {typeof document !== 'undefined' && sheet ? createPortal(sheet, document.body) : null}
     </>
   )
 

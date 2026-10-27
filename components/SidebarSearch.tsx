@@ -14,7 +14,7 @@ export type SearchItem = { label: string; href: string; section?: string; keywor
 // The sheet is portalled to <body>: on phones the sidebar is a sliding drawer
 // (a CSS transform), which would otherwise trap a fixed overlay inside the
 // drawer's width and clip it.
-export default function SidebarSearch({ items, collapsed }: { items: SearchItem[]; collapsed: boolean }) {
+export default function SidebarSearch({ items, collapsed, hideTrigger }: { items: SearchItem[]; collapsed: boolean; hideTrigger?: boolean }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
@@ -25,13 +25,16 @@ export default function SidebarSearch({ items, collapsed }: { items: SearchItem[
 
   useEffect(() => { setMounted(true) }, [])
 
-  // Global ⌘K / Ctrl+K to open.
+  // Global ⌘K / Ctrl+K to open, and the colvy:open-search event (the admin
+  // rail's Search button).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); setOpen(true) }
     }
+    const onOpen = () => setOpen(true)
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('colvy:open-search', onOpen)
+    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('colvy:open-search', onOpen) }
   }, [])
 
   // Opening: clear, focus, and stop the page behind from scrolling.
@@ -145,6 +148,8 @@ export default function SidebarSearch({ items, collapsed }: { items: SearchItem[
       </div>
     </div>
   )
+
+  if (hideTrigger) return open && mounted ? createPortal(sheet, document.body) : null
 
   return (
     <>
