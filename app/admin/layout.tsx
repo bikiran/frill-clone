@@ -41,6 +41,8 @@ import SuperAdminBar from '@/components/SuperAdminBar'
 import RouteScrollTop from '@/components/RouteScrollTop'
 import SetupRing from '@/components/SetupRing'
 import AdminRail, { RAIL_W, type RailSection } from '@/components/AdminRail'
+import { SettingsAccess } from '@/components/settings/SettingsShell'
+import { SETTINGS_NAV } from '@/components/settings/settings-nav'
 import { canUseFeature, canAccessPath, featureForPath, hasFullAccess, type PermissionMap } from '@/lib/permissions'
 
 const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
@@ -190,26 +192,15 @@ const SECTIONS: NavSection[] = [
     { label: 'Location Insights', href: '/admin/insights/location', icon: 'analytics' },
   ] }] },
 ]
-// Settings sits at the foot of the rail, below Search.
-const SETTINGS_SECTION: NavSection = { key: 'settings', label: 'Settings', glyph: 'settings', groups: [
-  { items: [
-    // Business profile, channels, chat widget, auto-replies, payments, order
-    // automation, policies… (the /admin/crm-settings area).
-    { label: 'Business Settings', href: '/admin/crm-settings/business', icon: 'company', match: ['/admin/crm-settings'] },
-    { label: 'Board & Branding', href: '/admin/settings', icon: 'settings' },
+// Settings sits at the foot of the rail, below Search, and opens the Settings
+// area (components/settings/SettingsShell), which has its own menu of every
+// setting. Every page of that area lights it up.
+const SETTINGS_SECTION: NavSection = { key: 'settings', label: 'Settings', glyph: 'settings', groups: [{ items: [
+  { label: 'Settings', href: '/admin/crm-settings/business', icon: 'settings', match: [
+    '/admin/crm-settings', '/admin/settings', '/admin/team', '/admin/users', '/admin/locations',
+    '/admin/billing', '/admin/referrals', '/admin/import', '/admin/integrations',
   ] },
-  { label: 'Workspace', items: [
-    { label: 'Team', href: '/admin/team', icon: 'team' },
-    { label: 'Users', href: '/admin/users', icon: 'users' },
-    { label: 'Locations', href: '/admin/locations', icon: 'settings' },
-    { label: 'Billing', href: '/admin/billing', icon: 'billing' },
-    { label: 'Referrals', href: '/admin/referrals', icon: 'link' },
-  ] },
-  { label: 'Connect', items: [
-    { label: 'Integrations', href: '/admin/integrations', icon: 'integrations' },
-    { label: 'Import Data', href: '/admin/import', icon: 'import_data' },
-  ] },
-] }
+] }] }
 // The phone menu sheet: one group per section.
 const NAV_GROUPS: { label: string | null; items: NavItem[] }[] = [...SECTIONS, SETTINGS_SECTION]
   .map(s => ({ label: s.key === 'home' ? null : s.label, items: s.groups.flatMap(g => g.items) }))
@@ -930,11 +921,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const activeHref = pathname === '/admin' ? '/admin'
     : NAV_MATCHES.find(m => pathname === m.path || pathname?.startsWith(m.path + '/'))?.href
   const isActive = (href: string) => href === activeHref
+  const settingsAccess = (href: string) => canUseNavItem({ href, label: '' })
 
   // Jump-to search: every page this member can open, and settings destinations.
   const navItems: SearchItem[] = NAV_GROUPS.flatMap(g => g.items.filter(canUseNavItem).map(it => ({ label: it.label, href: it.href, section: g.label || 'General', icon: icons[it.icon] })))
-  const searchSeen = new Set(navItems.map(i => i.href))
-  const searchItems = [...navItems, ...SEARCH_EXTRAS.filter(e => !searchSeen.has(e.href) && canUseNavItem(e)).map(e => ({ ...e, icon: e.icon || icons.settings }))]
+  const settingsItems: SearchItem[] = SETTINGS_NAV.flatMap(g => g.items.filter(it => canUseNavItem(it)).map(it => ({ label: it.label, href: it.href, section: `Settings · ${g.title}`, icon: icons.settings })))
+  const searchSeen = new Set([...navItems, ...settingsItems].map(i => i.href))
+  const searchItems = [...navItems, ...settingsItems.filter(i => !navItems.some(n => n.href === i.href)), ...SEARCH_EXTRAS.filter(e => !searchSeen.has(e.href) && canUseNavItem(e)).map(e => ({ ...e, icon: e.icon || icons.settings }))]
 
   // Upgrade shows for the people who run billing, and only when there's
   // something to upgrade to (not on a paid or Enterprise plan).
@@ -1341,7 +1334,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <React.Suspense fallback={null}><SetupReturnBar key={pathname} /></React.Suspense>
         </div>
         <div ref={pageRef} className="colvy-mobile-pad">
-          {children}
+          {/* The Settings menu shows only what this member may open. */}
+          <SettingsAccess.Provider value={settingsAccess}>
+            {children}
+          </SettingsAccess.Provider>
         </div>
       </div>
 
