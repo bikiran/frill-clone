@@ -15,6 +15,7 @@ const NAV_GROUPS: { title: string; items: { slug: string; label: string }[] }[] 
   { title: 'Inbox & channels', items: [
     { slug: 'channels', label: 'Channels' },
     { slug: 'chat-widget', label: 'Chat Widget' },
+    { slug: 'install', label: 'Install Widget' },
     { slug: 'contact-form', label: 'Contact Form' },
     { slug: 'auto-replies', label: 'Automatic Replies' },
     { slug: 'power-ups', label: 'Time Savers' },

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useCompanyUser, S } from '../_shared'
 
@@ -156,7 +157,7 @@ export default function ChatWidgetSettings() {
             </>
           )}
           {step === 3 && <><h2 style={S.h2}>Location</h2><p style={S.hint}>Choose which pages the widget appears on. Coming soon.</p></>}
-          {step === 4 && <><h2 style={S.h2}>Success</h2><p style={S.hint}>Your widget is ready. Save and embed the snippet on your site.</p></>}
+          {step === 4 && <><h2 style={S.h2}>Success</h2><p style={S.hint}>Your widget is ready. Save, then <Link href="/admin/crm-settings/install" style={{ color: 'var(--coral)', fontWeight: 600 }}>add it to your website →</Link></p></>}
         </div>
 
         {/* Live preview */}
