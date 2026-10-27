@@ -498,4 +498,19 @@
   } catch (e) {}
   if (document.readyState !== 'loading') mount()
   else document.addEventListener('DOMContentLoaded', mount)
+
+  // Tell Colvy the widget is live on this site, so the business sees it as
+  // installed (Settings → Install widget). Once a day from each browser; the
+  // site comes from the browser's own Origin header. Plain text, so there's
+  // no preflight, and nothing waits for the answer.
+  try {
+    var SEEN_KEY = 'colvy_seen_' + slug, due = true
+    try {
+      due = !(Date.now() - Number(localStorage.getItem(SEEN_KEY) || 0) < 86400000)
+      if (due) localStorage.setItem(SEEN_KEY, String(Date.now()))
+    } catch (e) {}
+    if (due && window.fetch) {
+      fetch(BASE + '/api/widget/seen', { method: 'POST', mode: 'cors', credentials: 'omit', keepalive: true, headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ slug: slug }) }).catch(function () {})
+    }
+  } catch (e) {}
 })()

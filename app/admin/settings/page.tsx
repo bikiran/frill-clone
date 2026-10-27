@@ -1609,7 +1609,7 @@ export default function SettingsPage() {
               {/* Embed code */}
               <div className="mb-5">
                 <p className="text-sm font-semibold mb-2" style={{ color: 'var(--ink)' }}>Embed on your website</p>
-                <p className="text-xs mb-3" style={{ color: 'var(--slate)' }}>Paste this snippet anywhere before the <code>{`</body>`}</code> tag on your website.</p>
+                <p className="text-xs mb-3" style={{ color: 'var(--slate)' }}>Paste this snippet anywhere before the <code>{`</body>`}</code> tag on your website. <Link href="/admin/crm-settings/install" className="font-semibold" style={{ color: 'var(--coral)' }}>Step-by-step for your platform, with a live check →</Link></p>
                 <ShopifyNote />
                 {company?.slug ? (
                   <>

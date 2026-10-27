@@ -89,6 +89,7 @@ import { ProtectionCard, ProtectionBanner } from '@/components/inbox/ProtectionC
 import EmptyScroll from '@/components/EmptyScroll'
 import CustomerGlance from '@/components/inbox/CustomerGlance'
 import { ColvyChatRow, ColvyChatThread, ColvyChatInfo, useColvySummary } from '@/components/inbox/ColvyChat'
+import WidgetInstallCard from '@/components/inbox/WidgetInstallCard'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -871,9 +872,11 @@ export default function InboxPage() {
   }, [selected?.id])
   const [contact, setContact] = useState<Contact | null>(null)
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
-  // Owners, admins and the platform super admin see why an email's text couldn't be loaded.
-  const canSeeEmailWhy = String(user?.email || '').toLowerCase() === 'bishalstha76@gmail.com'
+  // Owners, admins and the platform super admin: they see why an email's text
+  // couldn't be loaded, and how to install the chat widget.
+  const isManager = String(user?.email || '').toLowerCase() === 'bishalstha76@gmail.com'
     || teamMembers.some(m => m.user_id === user?.id && ['owner', 'admin'].includes(String(m.role || '').toLowerCase()))
+  const canSeeEmailWhy = isManager
   const [reply, setReply] = useState('')
   // ✨ Draft reply (chat/SMS composer): AI writes the next reply for the agent to review.
   const aiDraft = useAiDraft({ companyId, conversationId: selected?.id || null, onDraft: t => setReply(t), getText: () => reply })
@@ -8846,6 +8849,8 @@ export default function InboxPage() {
 
         {/* List */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
+          {/* Until the chat widget is on their website: how to add it (owners and admins). */}
+          {isManager && !searchTerm.trim() && statusFilter !== 'closed' && activeFilterCount === 0 && <WidgetInstallCard companyId={companyId} />}
           {colvyAt === 0 && filteredConvs.length === 0 && colvyRowEl}
           {filteredConvs.length === 0 && (() => {
             // An empty list that still feels alive, worded for what's being looked at.
