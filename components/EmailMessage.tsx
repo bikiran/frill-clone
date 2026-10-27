@@ -98,8 +98,9 @@ export function emailTextPending(msg: any): boolean {
 export default function EmailMessage({ msg, agentColor, onOpenMedia, businessName, showWhy }: {
   msg: any
   agentColor?: string
-  // Open a photo/video attachment (by its index on this email) in the viewer.
-  onOpenMedia?: (attachmentIndex: number) => void
+  // Open a photo/video attachment in the viewer: a received one by its index
+  // on this email, a sent one (a chat attachment) by its url.
+  onOpenMedia?: (target: { index: number } | { url: string }) => void
   // The business's name, for "Sent from Roxy Aquarium <…>".
   businessName?: string | null
   // Owners and super admins: say why an email's text couldn't be loaded.
@@ -129,7 +130,13 @@ export default function EmailMessage({ msg, agentColor, onOpenMedia, businessNam
   const subject = msg.email_subject || ''
   const html = msg.email_html || ''
   const quoted = msg.email_quoted || ''
-  const attachments: any[] = Array.isArray(msg.email_attachments) ? msg.email_attachments : []
+  // Files on a received email are in email_attachments. Files sent from Colvy
+  // with an email are kept on the message like any chat attachment
+  // ({ url, name, type, kind }); they were sent but never shown here.
+  const received: any[] = Array.isArray(msg.email_attachments) ? msg.email_attachments : []
+  const seenUrls = new Set(received.map(a => a?.url).filter(Boolean))
+  const sent: any[] = (Array.isArray(msg.attachments) ? msg.attachments : []).filter((a: any) => a?.url && !seenUrls.has(a.url))
+  const attachments: any[] = [...received.map((a, i) => ({ ...a, _i: i })), ...sent.map(a => ({ ...a, _sent: true }))]
   const text = cleanPreview(msg.content)
   const when = fmtWhen(msg.metadata?.inbound_email?.received_at || msg.created_at)
   const quotedOn = quotedDateOf(quoted)
@@ -214,11 +221,11 @@ export default function EmailMessage({ msg, agentColor, onOpenMedia, businessNam
             <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               <style>{`.em-media{transition:border-color .18s ease,box-shadow .18s ease,transform .18s cubic-bezier(.2,.8,.2,1)}.em-media:hover{border-color:#c9d6e8;box-shadow:0 2px 10px rgba(15,23,42,.07)}.em-media:active{transform:scale(.98)}`}</style>
               {attachments.map((a, i) => {
-                const dl = emailAttachmentUrl(msg, a, attToken)
-                const kind = emailAttachmentKind(a)
+                const dl = a._sent ? a.url : emailAttachmentUrl(msg, a, attToken)
+                const kind = a._sent && (a.kind === 'image' || a.kind === 'video') ? a.kind : emailAttachmentKind(a)
                 if (dl && kind && onOpenMedia) {
                   return (
-                    <button key={i} type="button" className="em-media" onClick={() => onOpenMedia(i)} title={`View ${a.name || 'attachment'}`}
+                    <button key={i} type="button" className="em-media" onClick={() => onOpenMedia(a._sent ? { url: a.url } : { index: a._i })} title={`View ${a.name || 'attachment'}`}
                       style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '5px 11px 5px 5px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--canvas)', color: 'var(--ink)', fontSize: 12.5, maxWidth: 240, cursor: 'zoom-in', font: 'inherit' }}>
                       <span style={{ position: 'relative', width: 32, height: 32, borderRadius: 6, overflow: 'hidden', background: '#e8edf4', flexShrink: 0 }}>
                         {kind === 'image'
@@ -235,9 +242,12 @@ export default function EmailMessage({ msg, agentColor, onOpenMedia, businessNam
                     </button>
                   )
                 }
+                const isPdf = /pdf/i.test(String(a.type || a.mime || a.mimeType || '')) || /\.pdf$/i.test(String(a.name || ''))
                 const chip = (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 11px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--canvas)', color: 'var(--ink)', fontSize: 12.5, maxWidth: 240 }}>
-                    <Paperclip />
+                  <span className="em-media" title={dl ? `Open ${a.name || 'attachment'}` : a.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: isPdf ? '5px 11px 5px 5px' : '7px 11px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--canvas)', color: 'var(--ink)', fontSize: 12.5, maxWidth: 280 }}>
+                    {isPdf
+                      ? <span aria-hidden style={{ width: 32, height: 32, borderRadius: 6, background: '#fee2e2', color: '#dc2626', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9.5, fontWeight: 800, letterSpacing: '.02em', flexShrink: 0 }}>PDF</span>
+                      : <Paperclip />}
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
                     {a.size ? <span style={{ color: 'var(--slate)', fontSize: 11 }}>{fmtBytes(a.size)}</span> : null}
                     {dl && <Download />}
