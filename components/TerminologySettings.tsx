@@ -154,7 +154,7 @@ export default function TerminologySettings({ values, onChange, saving }: {
 
       <style>{`
         .term-wrap{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
-        @media (min-width:1024px){.term-wrap{grid-template-columns:minmax(0,1fr) 300px;align-items:start}.term-preview{position:sticky;top:16px}}
+        @media (min-width:1024px){.term-wrap{grid-template-columns:minmax(0,1fr) 300px;align-items:start}.term-preview{position:sticky;top:76px}}
         @media (max-width:1023px){.term-preview{order:-1}}
         .term-row{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;padding:12px 20px;border-top:1px solid var(--border)}
         @media (min-width:640px){.term-row{grid-template-columns:minmax(0,1fr) 260px;align-items:center;padding:12px 24px}}

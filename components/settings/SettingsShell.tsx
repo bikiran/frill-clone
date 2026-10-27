@@ -67,7 +67,13 @@ export default function SettingsShell({ children, top }: { children: ReactNode; 
     <div className="st-wrap">
       <style>{`
         .st-wrap { display: flex; gap: 12px; align-items: flex-start; min-height: calc(100vh - 56px - var(--admin-banners-h, 0px)); padding: 12px; background: #f4f4f6; }
-        .st-nav { position: sticky; top: 12px; width: 264px; flex-shrink: 0; max-height: calc(100vh - 80px); overflow-y: auto; scrollbar-width: thin; padding: 14px 10px 16px; border-radius: 18px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.04), 0 1px 2px rgba(0,0,0,.03); }
+        /* The page scrolls as a whole and the menu stays put just under the
+           top bar. The admin layout's main column is a scroll container that
+           never scrolls, which would hold anything sticky in place, so on
+           settings pages it stands down. (Sticky panels in the pages sit at
+           76px: the 56px top bar, and a gap.) */
+        .admin-main:has(.st-wrap) { overflow-x: clip !important; overflow-y: visible !important; }
+        .st-nav { position: sticky; top: 68px; width: 264px; flex-shrink: 0; max-height: calc(100vh - 80px); overflow-y: auto; scrollbar-width: thin; padding: 14px 10px 16px; border-radius: 18px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.04), 0 1px 2px rgba(0,0,0,.03); }
         .st-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 8px 10px 10px; }
         .st-title { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.02em; color: #111; }
         .st-search-btn { width: 34px; height: 34px; border-radius: 50%; border: 1.5px solid #e4e4e7; background: #fff; color: #52525b; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
