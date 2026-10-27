@@ -4,7 +4,7 @@ import { VoiceTag } from '@/components/VoiceTag'
 import { voiceKind, tagVoice } from '@/lib/voice-typed'
 import { useAttachmentToken } from '@/lib/useAttachmentToken'
 import VoicePlayer from '@/components/VoicePlayer'
-import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react'
+import { Fragment, useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react'
 import AiLiveReply from '@/components/AiLiveReply'
 import AgentSuggestion from '@/components/AgentSuggestion'
 import { WhyLink } from '@/components/WhyAgent'
@@ -1017,6 +1017,9 @@ export default function InboxPage() {
   // at the top of the list. Open instead of a conversation, never alongside one.
   const colvy = useColvySummary(companyId)
   const [colvyOpen, setColvyOpen] = useState(false)
+  // For the list refresh (below), which mustn't open a conversation over it.
+  const colvyOpenRef = useRef(false)
+  colvyOpenRef.current = colvyOpen
   // Tablets (768–1100px): the contact panel is a slide-over drawer, not a column.
   const [tabletContact, setTabletContact] = useState(false)
   useEffect(() => {
@@ -2482,7 +2485,9 @@ export default function InboxPage() {
     // messages + contact) so the thread loads in parallel with the list's
     // contact enrichment below rather than after it.
     const hasDeepLink = typeof window !== 'undefined' && (new URLSearchParams(window.location.search).get('conversation') || new URLSearchParams(window.location.search).get('colvy'))
-    if (data && data.length > 0 && !selectedRef.current && !hasDeepLink && typeof window !== 'undefined' && window.innerWidth >= 768) {
+    // Not while the Colvy chat is open either: nothing is selected then, and the
+    // refresh used to swap it for the newest conversation every few seconds.
+    if (data && data.length > 0 && !selectedRef.current && !colvyOpenRef.current && !hasDeepLink && typeof window !== 'undefined' && window.innerWidth >= 768) {
       selectConversation(data[0])
     }
 
@@ -2965,12 +2970,20 @@ export default function InboxPage() {
     setSelected(null); selectedRef.current = null
     setColvyOpen(true); setMobilePane('thread')
   }
-  // ?colvy=1 (a link to it) opens it once it's known to be there.
+  // ?colvy=1 (a link to it) opens it once it's known to be there; so does the
+  // account menu's "Message Colvy" while the inbox is already open.
   const colvyLinked = useRef(false)
+  const colvyAvailable = useRef(false)
+  colvyAvailable.current = colvy.available
   useEffect(() => {
     if (colvyLinked.current || !colvy.available || typeof window === 'undefined') return
     if (new URLSearchParams(window.location.search).get('colvy')) { colvyLinked.current = true; openColvy() }
   }, [colvy.available]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const open = () => { if (colvyAvailable.current) openColvy() }
+    window.addEventListener('colvy:open', open)
+    return () => window.removeEventListener('colvy:open', open)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectConversation = async (conv: Conversation) => {
     setColvyOpen(false)
@@ -6865,6 +6878,22 @@ export default function InboxPage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  // Where the Colvy chat sits in the list: on top while it has something new
+  // (an update, or an answer from the team), otherwise by time like any
+  // conversation, below the pinned ones, sinking as newer ones arrive. Not in
+  // searches, Closed, filters or views it doesn't belong to (Unread only while
+  // unread). Past the loaded page it's left out; the account menu opens it.
+  const colvyAt = (() => {
+    if (!colvy.available || searchTerm.trim() || statusFilter === 'closed' || activeFilterCount > 0) return -1
+    if (assignFilter !== 'all' && !(assignFilter === 'unread' && colvy.unread > 0)) return -1
+    if (colvy.unread > 0) return 0
+    const t = Date.parse(colvy.last?.at || '')
+    if (!Number.isFinite(t)) return -1
+    const i = filteredConvs.findIndex(c => !pinnedIds.has(c.id) && (Date.parse((c as any).last_message_at || '') || 0) < t)
+    return i >= 0 ? i : hasMoreConvs ? -1 : filteredConvs.length
+  })()
+  const colvyRowEl = <ColvyChatRow key="colvy-chat" summary={colvy} active={colvyOpen && !selected} onOpen={openColvy} />
+
   // ── Render ─────────────────────────────────────────────────────────────────
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--slate)' }}>Loading inbox…</div>
 
@@ -8817,12 +8846,7 @@ export default function InboxPage() {
 
         {/* List */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {/* The Colvy chat, pinned on top of the open conversations (not in a
-              search, Closed, or a filter it doesn't belong to). */}
-          {colvy.available && !searchTerm.trim() && statusFilter !== 'closed' && activeFilterCount === 0
-            && (assignFilter === 'all' || (assignFilter === 'unread' && colvy.unread > 0)) && (
-            <ColvyChatRow summary={colvy} active={colvyOpen && !selected} onOpen={openColvy} />
-          )}
+          {colvyAt === 0 && filteredConvs.length === 0 && colvyRowEl}
           {filteredConvs.length === 0 && (() => {
             // An empty list that still feels alive, worded for what's being looked at.
             const term = searchTerm.trim()
@@ -8835,7 +8859,7 @@ export default function InboxPage() {
               : ['No conversations yet', 'New conversations will show up here.']
             return <div style={{ paddingTop: 24 }}><EmptyScroll title={title} line={line} /></div>
           })()}
-          {filteredConvs.map(conv => {
+          {filteredConvs.map((conv, ci) => {
             // Customer name first — the source is a tag, not the headline.
             const c: any = conv
             const contact = c.contacts || {}
@@ -8945,7 +8969,9 @@ export default function InboxPage() {
             const isOverdue = waitingHours >= 3
 
             return (
-            <button key={conv.id} type="button" onClick={() => selectConversation(conv)} data-conv-row={conv.id}
+            <Fragment key={conv.id}>
+            {ci === colvyAt && colvyRowEl}
+            <button type="button" onClick={() => selectConversation(conv)} data-conv-row={conv.id}
               onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, conv }) }}
               style={{ display: 'block', width: '100%', textAlign: 'left', padding: '12px 14px', paddingLeft: unread ? 11 : 14, border: 'none', borderLeft: unread ? `3px solid ${accent}` : '3px solid transparent', borderBottom: '1px solid var(--border)', cursor: 'pointer', background: selected?.id === conv.id ? 'var(--peach)' : unread ? '#fff6f4' : '#fff', transition: 'background 0.1s' }}>
               {/* Location label — only shown when viewing All locations, so the
@@ -9065,8 +9091,10 @@ export default function InboxPage() {
                 <span style={{ fontSize: 10, color: '#2563eb', marginTop: 3, display: 'block' }}>Assigned: {conv.assigned_name}</span>
               )}
             </button>
+            </Fragment>
             )
           })}
+          {colvyAt > 0 && colvyAt === filteredConvs.length && colvyRowEl}
           {hasMoreConvs && (
             <button type="button" onClick={() => setConvLimit(l => l + 50)}
               style={{ display: 'block', width: '100%', padding: '12px', border: 'none', borderTop: '1px solid var(--border)', background: '#fff', color: 'var(--coral)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
