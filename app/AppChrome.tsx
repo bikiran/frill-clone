@@ -1098,6 +1098,15 @@ export default function AppChrome({
                               Plan &amp; billing
                             </Link>
                           </>}
+                          {/* Their private chat with Colvy (components/inbox/ColvyChat):
+                              opened in place when the inbox is already showing. */}
+                          {inAdmin && (
+                            <Link href="/admin/inbox?colvy=1" role="menuitem" className="cv-acct-item"
+                              onClick={e => { close(); if (pathname?.startsWith('/admin/inbox')) { e.preventDefault(); window.dispatchEvent(new Event('colvy:open')) } }}>
+                              {I(<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.9-.9L3 21l1.9-4.6A8 8 0 0 1 3.5 11.5 8.5 8.5 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z" />)}
+                              Message Colvy
+                            </Link>
+                          )}
                           <div className="cv-acct-sep" />
                           <button type="button" onClick={handleLogout} role="menuitem" className="cv-acct-item cv-acct-out" data-no-press>
                             {I(<><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></>)}

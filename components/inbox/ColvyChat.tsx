@@ -37,10 +37,17 @@ export function useColvySummary(companyId: string | null | undefined) {
   return { ...s, refresh, clearUnread: () => setS(x => ({ ...x, unread: 0 })) }
 }
 
+// The official-account badge: twelve even points around the centre (worked
+// out, not drawn by hand, so it sits straight), softened with a round stroke.
+const BADGE = Array.from({ length: 24 }, (_, k) => {
+  const a = (Math.PI * k) / 12 - Math.PI / 2
+  const r = k % 2 === 0 ? 10.6 : 8.9
+  return `${(12 + r * Math.cos(a)).toFixed(2)},${(12 + r * Math.sin(a)).toFixed(2)}`
+}).join(' ')
 const Tick = ({ size = 14 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" aria-label="Official Colvy account" role="img" style={{ flexShrink: 0 }}>
-    <path fill="#1d9bf0" d="M12 1.5l2.6 1.9 3.2-.1 1 3 2.6 1.9-1 3 1 3-2.6 1.9-1 3-3.2-.1L12 22.5l-2.6-1.9-3.2.1-1-3-2.6-1.9 1-3-1-3 2.6-1.9 1-3 3.2.1z" />
-    <path fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" d="m8 12.2 2.7 2.7L16.2 9.4" />
+  <svg width={size} height={size} viewBox="0 0 24 24" aria-label="Official Colvy account" role="img" style={{ flexShrink: 0, display: 'block' }}>
+    <polygon points={BADGE} fill="#1d9bf0" stroke="#1d9bf0" strokeWidth="1.6" strokeLinejoin="round" />
+    <path fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" d="m8.1 12.3 2.6 2.6 5.2-5.3" />
   </svg>
 )
 
@@ -53,7 +60,7 @@ const shortTime = (iso?: string) => {
     : d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
 }
 
-/** The pinned row at the top of the conversation list. */
+/** Its row in the conversation list: on top while there's something new, else by time. */
 export function ColvyChatRow({ summary, active, onOpen }: { summary: ColvySummary; active: boolean; onOpen: () => void }) {
   const unread = summary.unread > 0
   return (
@@ -65,6 +72,7 @@ export function ColvyChatRow({ summary, active, onOpen }: { summary: ColvySummar
         <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           <span style={{ fontSize: 13.5, fontWeight: unread ? 750 : 650, color: 'var(--ink)' }}>Colvy</span>
           <Tick />
+          {unread && <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--coral)', background: 'var(--peach)', padding: '1px 6px', borderRadius: 99 }}>New</span>}
           <span style={{ marginLeft: 'auto', fontSize: 10.5, color: '#9ca3af', fontStyle: 'italic', flexShrink: 0 }}>{shortTime(summary.last?.at)}</span>
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
@@ -94,6 +102,8 @@ export function ColvyChatThread({ companyId, onBack, onRead }: { companyId: stri
   const scroller = useRef<HTMLDivElement>(null)
   const box = useRef<HTMLTextAreaElement>(null)
   const seen = useRef(0)
+  // Whether they're at the bottom: only then does something new pull the view down.
+  const atBottom = useRef(true)
   // The parent passes a fresh function each render; keep it out of load's deps.
   const onReadRef = useRef(onRead)
   onReadRef.current = onRead
@@ -104,7 +114,9 @@ export function ColvyChatThread({ companyId, onBack, onRead }: { companyId: stri
       const r = await authFetch(`/api/colvy-chat?companyId=${encodeURIComponent(companyId)}`)
       const d = await r.json().catch(() => null)
       if (!r.ok || !d?.available) { setItems(x => x || []); return }
-      setItems(d.items || [])
+      // Nothing changed: leave the list (and where they've scrolled) alone.
+      const next: ColvyItem[] = d.items || []
+      setItems(x => (x && x.length === next.length && x.every((it, k) => it.id === next[k].id && it.text === next[k].text) ? x : next))
       setCanReply(d.canReply !== false)
       // Open in front of them: everything in it has now been seen.
       if (d.unread > 0) {
@@ -120,19 +132,27 @@ export function ColvyChatThread({ companyId, onBack, onRead }: { companyId: stri
     return () => clearInterval(iv)
   }, [load])
 
-  // Down to the newest when something arrives.
+  // Opens on the newest. After that, something new brings the view down only
+  // if they're already at the bottom or it's their own message; reading
+  // further up, they stay where they are.
   useLayoutEffect(() => {
+    const el = scroller.current
     const n = items?.length || 0
-    if (n !== seen.current && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight
+    if (el && n > seen.current) {
+      const mine = items?.[n - 1]?.kind === 'me'
+      if (seen.current === 0 || atBottom.current || mine) { el.scrollTop = el.scrollHeight; atBottom.current = true }
+    }
     seen.current = n
   }, [items])
 
-  // The reply box grows with what's typed.
+  // The reply box grows with what's typed, and scrolls only past its tallest.
   useLayoutEffect(() => {
     const el = box.current
     if (!el) return
     el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+    const full = el.scrollHeight + 2 // + its border (border-box)
+    el.style.height = `${Math.min(full, 160)}px`
+    el.style.overflowY = full > 160 ? 'auto' : 'hidden'
   }, [text])
 
   const send = async () => {
@@ -160,7 +180,9 @@ export function ColvyChatThread({ companyId, onBack, onRead }: { companyId: stri
         @keyframes ccIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
         @media (prefers-reduced-motion: reduce) { .cc-in { animation: none; } }
         .cc-bubble { max-width: min(560px, 82%); padding: 10px 13px; border-radius: 16px; font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
-        .cc-send { border: none; border-radius: 12px; padding: 0 16px; height: 40px; background: var(--coral); color: #fff; font-weight: 700; font-size: 13.5px; cursor: pointer; font-family: inherit; flex-shrink: 0; }
+        .cc-send { border: none; border-radius: 12px; padding: 0 16px; height: 42px; background: var(--coral); color: #fff; font-weight: 700; font-size: 13.5px; cursor: pointer; font-family: inherit; flex-shrink: 0; }
+        .cc-box { flex: 1; box-sizing: border-box; display: block; resize: none; min-height: 42px; max-height: 160px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border); font: inherit; font-size: 13.5px; line-height: 20px; outline: none; background: #fafafa; overflow-y: hidden; transition: border-color .15s ease, box-shadow .15s ease, background .15s ease; }
+        .cc-box:focus { border-color: var(--coral); background: #fff; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 14%, transparent); }
         .cc-send:disabled { opacity: .45; cursor: default; }
         /* The floating Colvy AI button sits bottom right: on a phone it steps
            aside while this chat is open (as for any conversation), and on a
@@ -186,7 +208,8 @@ export function ColvyChatThread({ companyId, onBack, onRead }: { companyId: stri
       </div>
 
       {/* Messages */}
-      <div ref={scroller} style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '18px 16px 10px' }}>
+      <div ref={scroller} onScroll={e => { const el = e.currentTarget; atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80 }}
+        style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '18px 16px 10px' }}>
         <p style={{ margin: '0 auto 16px', maxWidth: 420, textAlign: 'center', fontSize: 12, color: '#8e8e93', lineHeight: 1.5 }}>
           These messages are just between you and Colvy. Your colleagues can’t see them.
         </p>
@@ -230,10 +253,9 @@ export function ColvyChatThread({ companyId, onBack, onRead }: { companyId: stri
         {err && <p role="alert" style={{ margin: '0 0 8px', fontSize: 12.5, color: '#b42318' }}>{err}</p>}
         {canReply ? (
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
-            <textarea ref={box} value={text} onChange={e => setText(e.target.value)} rows={1} maxLength={4000}
+            <textarea ref={box} className="cc-box" value={text} onChange={e => setText(e.target.value)} rows={1} maxLength={4000}
               placeholder="Message the Colvy team…" aria-label="Message the Colvy team"
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send() } }}
-              style={{ flex: 1, resize: 'none', minHeight: 40, padding: '10px 12px', borderRadius: 12, border: '1px solid var(--border)', fontSize: 13.5, lineHeight: 1.45, fontFamily: 'inherit', outline: 'none', background: '#fafafa' }} />
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send() } }} />
             <button type="button" className="cc-send" onClick={send} disabled={busy || !text.trim()}>{busy ? 'Sending…' : 'Send'}</button>
           </div>
         ) : (
