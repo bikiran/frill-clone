@@ -58,7 +58,7 @@ export default function PowerUpsSettings() {
           {!editing && <button onClick={() => setEditing({})} style={S.btn}>+ Add</button>}
         </div>
         {editing ? (
-          <div style={S.card}>
+          <div className="st-sec">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div><label style={S.label}>Shortcut (optional)</label><input value={editing.shortcut || ''} onChange={e => setEditing({ ...editing, shortcut: e.target.value })} placeholder="/hours" style={S.input} /></div>
               <div><label style={S.label}>Title</label><input value={editing.title || ''} onChange={e => setEditing({ ...editing, title: e.target.value })} placeholder="Opening hours" style={S.input} /></div>
@@ -103,7 +103,7 @@ export default function PowerUpsSettings() {
           {!editing && <button onClick={() => setEditing({ color: '#ff7a6b' })} style={S.btn}>+ Add</button>}
         </div>
         {editing ? (
-          <div style={S.card}>
+          <div className="st-sec">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div><label style={S.label}>Name</label><input value={editing.name || ''} onChange={e => setEditing({ ...editing, name: e.target.value })} placeholder="VIP" style={S.input} /></div>
               <div><label style={S.label}>Colour</label><input type="color" value={editing.color || '#ff7a6b'} onChange={e => setEditing({ ...editing, color: e.target.value })} style={{ width: 60, height: 40, borderRadius: 8, border: '1px solid var(--border)', cursor: 'pointer' }} /></div>

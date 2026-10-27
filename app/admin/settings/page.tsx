@@ -682,7 +682,7 @@ export default function SettingsPage() {
 
       {/* Main Content (the Settings menu is components/settings/SettingsShell) */}
       <div className="px-4 md:px-11 py-6 md:py-9">
-      <div className="max-w-3xl">
+      <div className="max-w-5xl">
 
       {activeSettingsTab === 'misc' ? (
         /* MISCELLANEOUS TAB */
@@ -691,7 +691,7 @@ export default function SettingsPage() {
           <p className="mb-8 text-sm" style={{ color: 'var(--slate)' }}>Other company settings.</p>
 
           {/* Announcements */}
-          <div className="bg-white rounded-2xl border p-6 mb-6" style={{ borderColor: 'var(--border)' }}>
+          <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
             <h2 className="text-base font-bold mb-5" style={{ color: 'var(--ink)' }}>Announcements</h2>
             <div className="space-y-5">
               {[
@@ -731,7 +731,7 @@ export default function SettingsPage() {
           </div>
 
           {/* Ideas */}
-          <div className="bg-white rounded-2xl border p-6 mb-6" style={{ borderColor: 'var(--border)' }}>
+          <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
             <h2 className="text-base font-bold mb-5" style={{ color: 'var(--ink)' }}>Ideas</h2>
             <div className="space-y-0">
               {[
@@ -785,7 +785,7 @@ export default function SettingsPage() {
           </div>
 
           {/* Data */}
-          <div className="bg-white rounded-2xl border p-6 mb-6" style={{ borderColor: 'var(--border)' }}>
+          <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
             <h2 className="text-base font-bold mb-5" style={{ color: 'var(--ink)' }}>Data</h2>
             <div className="space-y-4">
               <div className="flex items-center justify-between py-3 border-b" style={{ borderColor: 'var(--border)' }}>
@@ -822,7 +822,7 @@ export default function SettingsPage() {
           </div>
 
           {/* Danger Zone */}
-          <div className="bg-white rounded-2xl border p-6" style={{ borderColor: '#fca5a5' }}>
+          <div className="st-sec" style={{ borderColor: '#fca5a5' }}>
             <h2 className="text-base font-bold mb-5" style={{ color: '#dc2626' }}>Danger Zone</h2>
             <div className="space-y-4">
               <div className="flex items-center justify-between py-3 border-b" style={{ borderColor: 'var(--border)' }}>
@@ -906,7 +906,7 @@ export default function SettingsPage() {
         {/* Languages tab */}
         {activeSettingsTab === 'languages' && (
           <div className="space-y-4">
-            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+            <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
               <h2 className="font-bold mb-4" style={{ color: 'var(--ink)' }}>Language Settings</h2>
               <div className="space-y-3">
                 {[
@@ -939,7 +939,7 @@ export default function SettingsPage() {
         {/* White Labeling tab */}
         {activeSettingsTab === 'whitelabel' && (
           <div className="space-y-5">
-            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+            <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
               <h2 className="font-bold mb-5" style={{ color: 'var(--ink)' }}>Branding</h2>
               <div className="flex items-center justify-between py-3 border-b" style={{ borderColor: 'var(--border)' }}>
                 <div>
@@ -959,7 +959,7 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+            <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
               <h2 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Custom Domains</h2>
               <p className="text-sm mb-5" style={{ color: 'var(--slate)' }}>Use your own domain instead of {company?.slug
                     ? `${company.slug}.colvy.com`
@@ -1187,7 +1187,7 @@ export default function SettingsPage() {
         {/* Privacy tab */}
         {activeSettingsTab === 'privacy' && (
           <div className="space-y-4">
-            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+            <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
               <h2 className="font-bold mb-5" style={{ color: 'var(--ink)' }}>Board Privacy</h2>
               <div className="space-y-0">
                 {[
@@ -1205,7 +1205,7 @@ export default function SettingsPage() {
                 ))}
               </div>
             </div>
-            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+            <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
               <h2 className="font-bold mb-5" style={{ color: 'var(--ink)' }}>Guest Access</h2>
               {[
                 { label: 'Allow guest voting', desc: 'Users can vote without signing in', state: guestVotingEnabled, set: setGuestVotingEnabled },
@@ -1231,7 +1231,7 @@ export default function SettingsPage() {
         {/* Authentication tab */}
         {activeSettingsTab === 'auth' && (
           <div className="space-y-4">
-            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+            <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
               <h2 className="font-bold mb-5" style={{ color: 'var(--ink)' }}>Sign-in Methods</h2>
               <div className="space-y-3">
                 {[
@@ -1270,7 +1270,7 @@ export default function SettingsPage() {
           }
           return (<>
             <div className="space-y-4">
-              <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+              <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
                 <h2 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Site Navigation</h2>
                 <p className="text-sm mb-1" style={{ color: 'var(--slate)' }}>Choose which sections appear and drag to reorder.</p>
                 <p className="text-xs mb-5 flex items-center gap-1" style={{ color: 'var(--slate)', opacity: 0.7 }}>
@@ -1357,7 +1357,7 @@ export default function SettingsPage() {
         {/* Webhooks tab */}
         {activeSettingsTab === 'webhooks' && (
           <div className="space-y-5">
-            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+            <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
               <h2 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Webhook Secret</h2>
               <p className="text-sm mb-4" style={{ color: 'var(--slate)' }}>Use webhooks to receive notifications when events happen in your board. <a href="https://docs.colvy.com/webhooks" className="hover:underline" style={{ color: 'var(--coral)' }} target="_blank">View documentation →</a></p>
               <div className="flex items-center gap-3 p-3 rounded-xl font-mono text-sm" style={{ background: 'var(--canvas)', border: '1px solid var(--border)' }}>
@@ -1369,7 +1369,7 @@ export default function SettingsPage() {
               </div>
               <p className="text-xs mt-2" style={{ color: '#ca8a04' }}>⚠️ Keep your webhook secret private.</p>
             </div>
-            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+            <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
               <h2 className="font-bold mb-4" style={{ color: 'var(--ink)' }}>Add Webhook</h2>
               <p className="text-xs mb-4" style={{ color: 'var(--slate)' }}>Webhooks are auto-disabled after repeated delivery failures. Ensure your endpoint is reachable.</p>
               <div className="flex gap-3 mb-3">
@@ -1441,7 +1441,7 @@ export default function SettingsPage() {
         {/* API tab */}
         {activeSettingsTab === 'widget' && (
           <div className="space-y-5">
-            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+            <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
               <h2 className="font-bold mb-5" style={{ color: 'var(--ink)' }}>Widget Display</h2>
               <p className="text-sm mb-6" style={{ color: 'var(--slate)' }}>Choose which sections to display in your embedded widget, and drag to set their order.</p>
 
@@ -1502,7 +1502,7 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+            <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
               <h2 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Feedback Widget</h2>
               <p className="text-sm mb-5" style={{ color: 'var(--slate)' }}>A floating button on your website that opens a popup with feedback, roadmap, and updates — just like UserJot.</p>
 
@@ -1572,7 +1572,7 @@ export default function SettingsPage() {
 
         {activeSettingsTab === 'api' && (
           <div className="space-y-5">
-            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+            <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
               <div className="flex items-center gap-2 mb-1">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
                 <h2 className="font-bold" style={{ color: 'var(--ink)' }}>WordPress plugin</h2>
@@ -1602,7 +1602,7 @@ export default function SettingsPage() {
               <p className="text-xs mt-3" style={{ color: 'var(--slate)' }}>Keep your API key private — it lets the plugin update your board's branding and settings.</p>
             </div>
 
-            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+            <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
               <h2 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>API Keys</h2>
               <p className="text-sm mb-5" style={{ color: 'var(--slate)' }}>Build your own integration using the Colvy API. <a href="https://developers.colvy.com" target="_blank" className="hover:underline" style={{ color: 'var(--coral)' }}>View API documentation →</a></p>
               <div className="flex gap-3 mb-5">
@@ -1660,7 +1660,7 @@ export default function SettingsPage() {
         {/* Terminology tab */}
         {activeSettingsTab === 'categories' && (
           <div className="space-y-5">
-            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+            <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
               <h2 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Categories</h2>
               <p className="text-sm mb-5" style={{ color: 'var(--slate)' }}>Use Categories to organize your Announcements.</p>
 
@@ -1853,7 +1853,7 @@ export default function SettingsPage() {
         {(activeSettingsTab === 'general' || activeSettingsTab === 'theme' || activeSettingsTab === 'emails') && (<>
 
           {/* Company section */}
-          <div className="bg-white rounded-2xl border p-6 mb-6" style={{ borderColor: 'var(--border)' }}>
+          <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
             <h2 className="text-lg font-bold mb-6" style={{ color: 'var(--ink)' }}>Company</h2>
 
             {/* Logo */}
@@ -2009,7 +2009,7 @@ export default function SettingsPage() {
           </div>
 
           {/* Styling / Theme */}
-          <div className="bg-white rounded-2xl border p-6 mb-6" style={{ borderColor: 'var(--border)' }}>
+          <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
             <h2 className="text-lg font-bold mb-1" style={{ color: 'var(--ink)' }}>Styling</h2>
             <p className="text-sm mb-5" style={{ color: 'var(--slate)' }}>
               Customize the look and feel of your feedback board.
@@ -2142,7 +2142,7 @@ export default function SettingsPage() {
           </div>
 
           {/* Email Customization */}
-          <div className="bg-white rounded-2xl border p-6 mb-6" style={{ borderColor: 'var(--border)' }}>
+          <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
             <h2 className="text-lg font-bold mb-1" style={{ color: 'var(--ink)' }}>Email Customization</h2>
             <p className="text-sm mb-5" style={{ color: 'var(--slate)' }}>
               Customize emails sent to your users.
@@ -2214,7 +2214,7 @@ export default function SettingsPage() {
           </div>
 
           {/* White Labelling */}
-          <div className="bg-white rounded-2xl border p-6 mb-6" style={{ borderColor: 'var(--border)' }}>
+          <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
             <div className="flex items-start justify-between mb-1">
               <h2 className="text-lg font-bold" style={{ color: 'var(--ink)' }}>White Labelling</h2>
               <span className="text-xs px-2 py-1 rounded-full font-semibold" style={{ background: 'linear-gradient(135deg, var(--coral), #ffb84d)', color: 'white' }}>
@@ -2429,7 +2429,7 @@ export default function SettingsPage() {
           </div>
 
           {/* Guest Access */}
-          <div className="bg-white rounded-2xl border p-6 mb-6" style={{ borderColor: 'var(--border)' }}>
+          <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
             <h2 className="text-lg font-bold mb-1" style={{ color: 'var(--ink)' }}>Guest Access</h2>
             <p className="text-sm mb-5" style={{ color: 'var(--slate)' }}>
               Control whether non-registered users can participate. They'll enter their name and email to submit or vote.
@@ -2457,7 +2457,7 @@ export default function SettingsPage() {
           </div>
 
           {/* Site Navigation */}
-          <div className="bg-white rounded-2xl border p-6 mb-6" style={{ borderColor: 'var(--border)' }}>
+          <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
             <h2 className="text-lg font-bold mb-4" style={{ color: 'var(--ink)' }}>Site Navigation</h2>
             <div className="space-y-3">
               {[
@@ -2486,7 +2486,7 @@ export default function SettingsPage() {
           </div>
 
           {/* Add Script - Colvy Style */}
-          <div className="bg-white rounded-2xl border p-6 mb-6" style={{ borderColor: 'var(--border)' }}>
+          <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold" style={{ color: 'var(--ink)' }}>Add Script</h2>
               <button className="text-xs px-3 py-1 rounded-full transition-smooth hover:bg-gray-100 cursor-pointer" style={{ color: 'var(--slate)' }}>
@@ -2555,7 +2555,7 @@ window.YourApp('container', {
           </div>
 
           {/* Custom Analytics Script */}
-          <div className="bg-white rounded-2xl border p-6 mb-6" style={{ borderColor: 'var(--border)' }}>
+          <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
             <h2 className="text-lg font-bold mb-1" style={{ color: 'var(--ink)' }}>Custom Analytics Script</h2>
             <p className="text-sm mb-4" style={{ color: 'var(--slate)' }}>
               Add Google Analytics, Mixpanel, Intercom, or any other tracking code.

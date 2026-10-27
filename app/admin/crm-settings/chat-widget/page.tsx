@@ -58,7 +58,7 @@ export default function ChatWidgetSettings() {
 
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 300px', gap: 24 }}>
         {/* Config */}
-        <div style={S.card}>
+        <div className="st-sec">
           {step === 0 && (
             <>
               <h2 style={S.h2}>Configure Popup</h2>

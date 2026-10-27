@@ -29,7 +29,7 @@ export default function CampaignsSettings() {
       <p style={S.sub}>Bulk campaigns are for promotional use and are charged per message sent.</p>
 
       {editing ? (
-        <div style={S.card}>
+        <div className="st-sec">
           <h2 style={S.h2}>New SMS Campaign</h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div><label style={S.label}>Campaign name</label><input value={editing.name || ''} onChange={e => setEditing({ ...editing, name: e.target.value })} placeholder="Spring Sale" style={S.input} /></div>

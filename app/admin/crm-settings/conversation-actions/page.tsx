@@ -57,7 +57,7 @@ export default function ConversationActionsSettings() {
       <h1 style={S.h1}>Conversation Actions</h1>
       <p style={S.sub}>Choose which actions your team can trigger from a conversation. Enabled actions appear under the <strong>+ Action</strong> button next to the customer's details in the inbox.</p>
 
-      <div style={S.card}>
+      <div className="st-sec">
         {ACTION_CATALOGUE.map(a => {
           const enabled = !!config[a.key]?.enabled
           return (

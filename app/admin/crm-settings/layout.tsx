@@ -24,7 +24,8 @@ export default function CrmSettingsLayout({ children }: { children: React.ReactN
   return (
     <SettingsShell>
       <div className="crm-settings-content" style={{ padding: '36px 44px 48px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
-        <style>{`@media (max-width: 860px) { .crm-settings-content { padding: 20px 16px 32px !important; } }`}</style>
+        {/* Pages are as wide as their two-column sections need. */}
+        <style>{`.crm-settings-content > div { max-width: 1040px !important; } @media (max-width: 860px) { .crm-settings-content { padding: 20px 16px 32px !important; } }`}</style>
         {channelLabel && (
           <nav aria-label="Breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '-12px 0 18px', fontSize: 13.5, color: '#8e8e93' }}>
             <Link href="/admin/crm-settings/channels" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, color: 'var(--coral)', fontWeight: 600, textDecoration: 'none' }}>

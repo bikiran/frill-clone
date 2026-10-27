@@ -101,7 +101,7 @@ export default function RealEstateChannelPage() {
       )}
 
       {/* Status + connect/disconnect */}
-      <div style={S.card}>
+      <div className="st-sec">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: authorized ? 14 : 18 }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 700, color: authorized ? '#059669' : 'var(--slate)' }}>
             <span style={{ width: 9, height: 9, borderRadius: '50%', background: authorized ? '#22c55e' : '#d1d5db' }} />

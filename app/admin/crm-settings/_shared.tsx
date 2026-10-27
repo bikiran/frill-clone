@@ -28,12 +28,13 @@ export function useCompanyUser() {
 
 // Shared styles
 export const S = {
-  h1: { fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: '0 0 6px' } as React.CSSProperties,
-  sub: { fontSize: 14, color: 'var(--slate)', margin: '0 0 24px', lineHeight: 1.5 } as React.CSSProperties,
+  h1: { fontSize: 28, fontWeight: 800, color: '#111', margin: '0 0 6px', letterSpacing: '-0.02em' } as React.CSSProperties,
+  sub: { fontSize: 15, color: '#71717a', margin: '0 0 24px', lineHeight: 1.5 } as React.CSSProperties,
   card: { border: '1px solid var(--border)', borderRadius: 14, padding: 22, background: '#fff', marginBottom: 18 } as React.CSSProperties,
   h2: { fontSize: 16, fontWeight: 700, color: 'var(--ink)', margin: '0 0 16px' } as React.CSSProperties,
-  label: { display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 } as React.CSSProperties,
-  input: { width: '100%', padding: '10px 13px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, outline: 'none', boxSizing: 'border-box' as const, fontFamily: 'inherit' } as React.CSSProperties,
+  label: { display: 'block', fontSize: 14, fontWeight: 600, color: '#111', marginBottom: 8 } as React.CSSProperties,
+  // Soft grey fields, like Sellio's (the Settings area adds the focus ring).
+  input: { width: '100%', padding: '12px 14px', borderRadius: 12, border: '1px solid transparent', background: '#f4f4f5', fontSize: 15, outline: 'none', boxSizing: 'border-box' as const, fontFamily: 'inherit' } as React.CSSProperties,
   hint: { fontSize: 12, color: 'var(--slate)', margin: '4px 0 0' } as React.CSSProperties,
   // Pills, like the app's .cv-btn (app/globals.css).
   btn: { padding: '11px 22px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: 'inset 0 1px 0 rgba(255,255,255,.22), 0 1px 2px rgba(16,24,40,.12)' } as React.CSSProperties,

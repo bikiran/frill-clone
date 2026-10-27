@@ -35,7 +35,7 @@ export default function PaymentsSettings() {
       <h1 style={S.h1}>Payments</h1>
       <p style={S.sub}>Customise how invoices and transactions look and behave.</p>
 
-      <div style={S.card}>
+      <div className="st-sec">
         <h2 style={S.h2}>Customise Invoice</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16 }}>
           <div><label style={S.label}>Invoice Prefix</label><input value={cfg.invoice_prefix} onChange={e => set('invoice_prefix', e.target.value)} style={S.input} /></div>
@@ -57,12 +57,12 @@ export default function PaymentsSettings() {
         <p style={{ ...S.hint, marginTop: 8 }}>Please make sure uploaded logo is 1:1 aspect ratio.</p>
       </div>
 
-      <div style={S.card}>
+      <div className="st-sec">
         <h2 style={S.h2}>Fees</h2>
         <ToggleRow title="Pass transaction fees to customers" desc="When enabled, card processing fees are added to the customer's total." checked={cfg.pass_fees} onChange={v => set('pass_fees', v)} />
       </div>
 
-      <div style={S.card}>
+      <div className="st-sec">
         <h2 style={{ ...S.h2, marginBottom: 4 }}>Payment links</h2>
         <p style={{ ...S.hint, margin: '0 0 6px' }}>What the secure Stripe page asks for when a customer pays a link from the inbox, and what Colvy keeps afterwards.</p>
         <ToggleRow title="Fill in customer details from payments"
@@ -92,7 +92,7 @@ export default function PaymentsSettings() {
         </div>
       </div>
 
-      <div style={S.card}>
+      <div className="st-sec">
         <h2 style={S.h2}>Transactions</h2>
         <p style={{ ...S.sub, marginBottom: 12 }}>To manage payments &amp; transactions made via Colvy, use the button below. Log in with your primary user email.</p>
         <Link href="/admin/billing" style={{ ...S.btnGhost, textDecoration: 'none', display: 'inline-block' }}>Manage transactions</Link>

@@ -228,7 +228,7 @@ export default function GoogleReviewsPage() {
             </p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button onClick={loadLocations} disabled={busy === 'locations'}
-                style={{ padding: '8px 14px', borderRadius: 9, background: 'var(--peach)', color: 'var(--coral)', border: '1px solid var(--coral)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                className="cv-btn" style={{ height: 34, fontSize: 13 }}>
                 {busy === 'locations' ? 'Loading…' : (location?.title ? 'Change location' : 'Choose location')}
               </button>
               {location?.title && (
