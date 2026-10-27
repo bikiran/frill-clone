@@ -17,45 +17,6 @@ import { WP_PLUGIN_VERSION } from '@/lib/wp-plugin'
 // provider is never exposed. Overridable via env.
 const CUSTOM_CNAME = process.env.NEXT_PUBLIC_CUSTOM_CNAME_TARGET || 'cname.colvy.com'
 
-const SIDEBAR_ITEMS = [
-  { section: null, items: [
-    { label: 'Overview', tab: 'overview' },
-    { label: 'General', tab: 'general' },
-    { label: 'Invite Team', href: '/admin/team' },
-    { label: 'Languages', tab: 'languages' },
-    { label: 'Statuses', href: '/admin/statuses' },
-    { label: 'Topics', href: '/admin/topics' },
-    { label: 'Priorities', href: '/admin/priorities' },
-    { label: 'Miscellaneous', tab: 'misc' },
-  ]},
-  { section: 'Plan', items: [
-    { label: 'Upgrade', href: '/admin/upgrade' },
-    { label: 'Billing', href: '/admin/billing' },
-  ]},
-  { section: 'Styling', items: [
-    { label: 'Theme', tab: 'theme' },
-    { label: 'Emails', tab: 'emails' },
-    { label: 'White Labeling', tab: 'whitelabel' },
-  ]},
-  { section: 'Authentication', items: [
-    { label: 'General', tab: 'auth' },
-    { label: 'Privacy', tab: 'privacy' },
-  ]},
-  { section: 'Feedback & Display', items: [
-    { label: 'Widget Configuration', tab: 'widget' },
-    { label: 'Integrations', href: '/admin/integrations' },
-  ]},
-  { section: 'API & Webhooks', items: [
-    { label: 'Webhooks', tab: 'webhooks' },
-    { label: 'API', tab: 'api' },
-  ]},
-  { section: 'Site Navigation', items: [
-    { label: 'Navigation', tab: 'nav' },
-    { label: 'Terminology', tab: 'terminology' },
-    { label: 'Categories', tab: 'categories' },
-  ]},
-]
-
 // Shopify's App Store rules: merchants mustn't edit theme code. Shopify stores
 // add Colvy from the theme editor (app embed) instead of pasting the snippet.
 function ShopifyNote() {
@@ -114,7 +75,6 @@ export default function SettingsPage() {
   const [newKeyName, setNewKeyName] = useState('')
   const [generatedKey, setGeneratedKey] = useState('')
   // Terminology
-  const [settingsSearch, setSettingsSearch] = useState('')
   const [termValues, setTermValues] = useState<Record<string, string>>({})
   // Other open tabs of the board pick up new wording as you type (AppChrome and
   // TerminologyProvider listen for this).
@@ -178,17 +138,13 @@ export default function SettingsPage() {
   const [activeSettingsTab, setActiveSettingsTab] = useState(() => {
     if (typeof window !== 'undefined') {
       const hash = window.location.hash.replace('#', '')
-      const valid = ['overview','general','theme','emails','whitelabel','auth','nav','terminology','webhooks','api','privacy','misc']
+      const valid = ['overview','general','theme','emails','whitelabel','auth','nav','terminology','webhooks','api','privacy','misc','widget','languages','categories']
       if (valid.includes(hash)) return hash
     }
     return 'general'
   })
 
-  // Sync tab to URL hash for reload persistence
-  const switchTab = (tab: string) => {
-    setActiveSettingsTab(tab)
-    if (typeof window !== 'undefined') window.location.hash = tab
-  }
+  // The tab follows the address's #hash (set by the Settings menu, components/settings).
 
   // Overview metrics (real data, fetched when the Overview tab is open).
   const [overview, setOverview] = useState<any>(null)
@@ -209,7 +165,7 @@ export default function SettingsPage() {
   useEffect(() => {
     // On mount, sync hash to state immediately
     const hash = window.location.hash.replace('#', '')
-    const valid = ['overview','general','theme','emails','whitelabel','auth','nav','terminology','webhooks','api','privacy','misc']
+    const valid = ['overview','general','theme','emails','whitelabel','auth','nav','terminology','webhooks','api','privacy','misc','widget','languages','categories']
     if (valid.includes(hash) && hash !== activeSettingsTab) {
       setActiveSettingsTab(hash)
     }
@@ -722,56 +678,11 @@ export default function SettingsPage() {
   return (
     <>
       <ToastContainer toasts={toasts} onRemove={removeToast} />
-    <div className="flex min-h-[calc(100vh-56px)]">
-      {/* Settings Sidebar */}
-      <aside className="hidden md:flex flex-col w-56 shrink-0 bg-white border-r" style={{ borderColor: 'var(--border)', position: 'sticky', top: 0, height: 'calc(100vh - 56px)', overflowY: 'auto', flexShrink: 0 }}>
-        <div className="py-4 px-3">
-          {/* Sidebar search */}
-          <div className="relative mb-4 px-0">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ color: 'var(--slate)' }}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input
-              value={settingsSearch}
-              onChange={e => setSettingsSearch(e.target.value)}
-              placeholder="Search settings..."
-              className="w-full text-xs focus:outline-none rounded-lg border"
-              style={{ padding: '7px 10px 7px 30px', borderColor: 'var(--border)', background: 'var(--canvas, #fafafa)', color: 'var(--ink)' }}
-            />
-          </div>
-          {(settingsSearch
-            ? SIDEBAR_ITEMS.map((g: any) => ({ ...g, items: g.items.filter((it: any) => it.label.toLowerCase().includes(settingsSearch.toLowerCase())) })).filter((g: any) => g.items.length > 0)
-            : SIDEBAR_ITEMS
-          ).map((group, gi) => (
-            <div key={gi} className="mb-4">
-              {group.section && (
-                <p className="px-3 py-1 text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--slate)' }}>{group.section}</p>
-              )}
-              {group.items.map((item: any) => (
-                item.href ? (
-                  <a key={item.label} href={item.href}
-                    className="flex items-center px-3 py-2 rounded-lg text-sm cursor-pointer hover:bg-gray-50 transition-all"
-                    style={{ color: 'var(--slate)' }}>
-                    {item.label}
-                  </a>
-                ) : (
-                  <button key={item.label} onClick={() => switchTab(item.tab)}
-                    className="flex items-center w-full text-left px-3 py-2 rounded-lg text-sm cursor-pointer hover:bg-gray-50 transition-all"
-                    style={{
-                      background: activeSettingsTab === item.tab ? 'var(--peach)' : 'transparent',
-                      color: activeSettingsTab === item.tab ? 'var(--coral)' : 'var(--slate)',
-                      fontWeight: activeSettingsTab === item.tab ? 600 : 400,
-                    }}>
-                    {item.label}
-                  </button>
-                )
-              ))}
-            </div>
-          ))}
-        </div>
-      </aside>
+    <div>
 
-      {/* Main Content */}
-      <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 md:py-8">
-      <div className="max-w-3xl mx-auto">
+      {/* Main Content (the Settings menu is components/settings/SettingsShell) */}
+      <div className="px-4 md:px-11 py-6 md:py-9">
+      <div className="max-w-3xl">
 
       {activeSettingsTab === 'misc' ? (
         /* MISCELLANEOUS TAB */

@@ -87,7 +87,7 @@ function RailEntry({ s, open, aim, onLocked }: { s: RailSection; open: boolean; 
       <Link href={main.locked ? '#' : main.href} className={`rail-tile${active ? ' on' : ''}`} aria-current={active ? 'page' : undefined}
         onPointerDown={e => { touch.current = e.pointerType === 'touch' }}
         onClick={e => {
-          if (touch.current && !open) { e.preventDefault(); aim.tap(s.key); return }
+          if (touch.current && !open && items.length > 1) { e.preventDefault(); aim.tap(s.key); return }
           if (main.locked) { e.preventDefault(); onLocked() }
           aim.tap(null)
         }}>
@@ -97,7 +97,7 @@ function RailEntry({ s, open, aim, onLocked }: { s: RailSection; open: boolean; 
         </span>
         <span className="rail-label">{s.label}</span>
       </Link>
-      <div className="rail-fly">
+      {items.length > 1 && <div className="rail-fly">
         <div className="rail-fly-card" role="group" aria-label={s.label}>
           <p className="rail-fly-title">{s.label}</p>
           {s.groups.map((g, gi) => (
@@ -125,7 +125,7 @@ function RailEntry({ s, open, aim, onLocked }: { s: RailSection; open: boolean; 
             </Fragment>
           ))}
         </div>
-      </div>
+      </div>}
     </div>
   )
 }
@@ -236,8 +236,9 @@ export default function AdminRail({ workspace, sections, settings, search, ring,
           .rail-top { padding: 8px 0 6px; gap: 8px; }
           .rail-upgrade { display: none !important; }
         }
-        /* The phone's status pill sits just past the rail, not over it. */
-        .cv-phone-pill { left: ${RAIL_W + 12}px !important; }
+        /* The phone's status pill: in the middle of the top bar, clear of the
+           rail and the Settings menu. */
+        .cv-phone-pill { top: 15px; bottom: auto !important; left: 50% !important; transform: translateX(-50%); z-index: 70 !important; }
         @media (max-width: 860px) { .admin-rail { display: none; } }
         @media (prefers-reduced-motion: reduce) { .rail-fly, .rail-ic { transition: none !important; } }
       `}</style>
