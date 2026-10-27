@@ -5179,7 +5179,7 @@ export default function InboxPage() {
     } catch {}
   }
 
-  const miniBtn = (color: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 600, color, background: '#fff', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' })
+  const miniBtn = (color: string): React.CSSProperties => ({ fontSize: 11.5, fontWeight: 600, color, background: '#fff', border: '1.5px solid #e4e4e7', borderRadius: 999, padding: '4px 10px', cursor: 'pointer' })
 
   const folderBtnInbox = (active: boolean): React.CSSProperties => ({ display: 'block', width: '100%', textAlign: 'left', padding: '7px 10px', borderRadius: 7, border: 'none', background: active ? 'var(--peach)' : 'transparent', color: active ? 'var(--coral)' : 'var(--ink)', fontSize: 12.5, fontWeight: active ? 700 : 500, cursor: 'pointer', marginBottom: 2 }) 
 
@@ -6908,8 +6908,8 @@ export default function InboxPage() {
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--slate)' }}>Loading inbox…</div>
 
   const inp: React.CSSProperties = { width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none', fontFamily: 'inherit' }
-  const fieldBtn = (color: string): React.CSSProperties => ({ width: 24, height: 24, borderRadius: 6, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 })
-  const cardAction = (bg: string, color: string): React.CSSProperties => ({ width: 46, height: 46, borderRadius: 12, border: 'none', background: bg, color, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' })
+  const fieldBtn = (color: string): React.CSSProperties => ({ width: 26, height: 26, borderRadius: 999, border: 'none', background: '#f4f4f5', cursor: 'pointer', color, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 })
+  const cardAction = (bg: string, color: string): React.CSSProperties => ({ width: 42, height: 42, borderRadius: 999, border: 'none', background: bg, color, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'filter .15s ease, transform .1s ease' })
   // Addresses arrive in two shapes depending on the source: a plain string, or a
   // structured object like { address_1, city, state, postcode, country }.
   // Assigning the object straight into JSX crashed the page with React error #31
@@ -7510,6 +7510,27 @@ export default function InboxPage() {
         .th-mood { flex: 1; height: 38px; display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: 10px; background: #f4f4f5; color: #71717a; cursor: pointer; transition: background .15s ease, color .15s ease; }
         .th-mood:hover { color: var(--mood); }
         .th-mood.on { background: color-mix(in srgb, var(--mood) 14%, #fff); color: var(--mood); }
+        /* The contact panel, in the same style: pill tabs, a tinted Action
+           pill, small pill buttons. */
+        .cp-tabs { display: flex; gap: 2px; margin: 12px 14px 0; padding: 3px; border-radius: 999px; background: #f4f4f5; flex-shrink: 0; }
+        .cp-tab { flex: 1; height: 32px; border: none; border-radius: 999px; background: transparent; font: inherit; font-size: 13px; font-weight: 600; color: #71717a; cursor: pointer; white-space: nowrap; transition: background .18s ease, color .15s ease, box-shadow .18s ease; }
+        .cp-tab:hover { color: #18181b; }
+        .cp-tab:hover { background: transparent; }
+        .cp-tab.on, .cp-tab.on:hover { background: #fff; color: #111; box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 0 0 1px rgba(0,0,0,.04); }
+        .cp-tab:focus-visible { outline: 2px solid var(--coral); outline-offset: 1px; }
+        .cp-action { width: 100%; height: 40px; display: flex; align-items: center; justify-content: center; gap: 6px; border: none; border-radius: 999px; background: color-mix(in srgb, var(--coral) 12%, #fff); color: var(--coral); font: inherit; font-size: 14px; font-weight: 650; cursor: pointer; transition: background .15s ease, transform .1s ease; }
+        .cp-action:hover, .cp-action.on { background: color-mix(in srgb, var(--coral) 18%, #fff); }
+        .cp-action:active { transform: scale(.98); }
+        .cp-action:focus-visible { outline: 2px solid var(--coral); outline-offset: 2px; }
+        .cp-act-row > span:first-child { color: var(--coral); display: inline-flex; }
+        .cp-mini { height: 28px; padding: 0 12px; display: inline-flex; align-items: center; gap: 5px; border: none; border-radius: 999px; background: #f4f4f5; color: #3f3f46; font: inherit; font-size: 12.5px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background .15s ease; }
+        .cp-mini:hover { background: #ececef; }
+        .cp-mini.accent { background: color-mix(in srgb, var(--coral) 12%, #fff); color: var(--coral); }
+        .cp-mini.accent:hover { background: color-mix(in srgb, var(--coral) 18%, #fff); }
+        .cp-mini.violet { background: #f5f3ff; color: #7c3aed; }
+        .cp-mini.violet:hover { background: #ede9fe; }
+        .cp-mini:disabled { opacity: .6; cursor: default; }
+        .inbox-col-contact button[style*="border-radius: 999px"]:not(:disabled):hover, .inbox-col-contact a[style*="border-radius: 999px"]:hover { filter: brightness(.97); }
         @media (prefers-reduced-motion: reduce) { .th-menu { animation: none; } }
         /* Desktop / tablet: the tools sit inline on the right as before */
         @media (min-width: 768px) {
@@ -7540,7 +7561,7 @@ export default function InboxPage() {
             display: block; position: fixed; inset: 56px 0 0 0; z-index: 310;
             background: rgba(17,24,39,.22); animation: tabletScrimIn .25s ease both;
           }
-          .inbox-root .inbox-col-contact > div:nth-of-type(1) { padding-right: 40px; }
+          .inbox-root .inbox-col-contact > .cp-tabs { margin-right: 48px; }
           @keyframes tabletScrimIn { from { opacity: 0 } to { opacity: 1 } }
         }
         @media (min-width: 768px) and (max-width: 860px) {
@@ -11379,7 +11400,7 @@ export default function InboxPage() {
         <div className="inbox-col-contact" style={{ width: 280, flexShrink: 0, borderLeft: '1px solid var(--border)', background: '#fff', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {/* Tablet: close the drawer */}
           <button type="button" className="inbox-tablet-only inbox-drawer-close" onClick={() => setTabletContact(false)} aria-label="Close contact panel" title="Close"
-            style={{ display: 'none', position: 'absolute', top: 8, right: 8, zIndex: 2, width: 30, height: 30, borderRadius: 9, border: 'none', background: '#f3f4f6', color: 'var(--slate)', cursor: 'pointer', alignItems: 'center', justifyContent: 'center' }}>
+            style={{ display: 'none', position: 'absolute', top: 10, right: 10, zIndex: 2, width: 32, height: 32, borderRadius: 999, border: 'none', background: '#f3f4f6', color: 'var(--slate)', cursor: 'pointer', alignItems: 'center', justifyContent: 'center' }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
           </button>
           {/* Mobile: back to thread */}
@@ -11389,14 +11410,13 @@ export default function InboxPage() {
             Back to conversation
           </button>
           {/* Panel tabs */}
-          <div style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
+          <div className="cp-tabs" role="tablist" aria-label="Contact panel">
             {/* The Orders tab used to appear only once orders had finished
                 loading (wooCustomer || wooOrders.length), so on first open it was
                 missing and you had to click Timeline to trigger the load before
                 it showed. Always render it; it shows its own empty state. */}
             {(['info', 'timeline', 'orders'] as const).map(p => (
-              <button key={p} type="button" onClick={() => setActivePanel(p)}
-                style={{ flex: 1, padding: '11px 0', border: 'none', background: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: activePanel === p ? 700 : 500, color: activePanel === p ? 'var(--coral)' : 'var(--slate)', borderBottom: activePanel === p ? '2px solid var(--coral)' : '2px solid transparent', textTransform: 'capitalize' }}>
+              <button key={p} type="button" role="tab" aria-selected={activePanel === p} onClick={() => setActivePanel(p)} className={`cp-tab${activePanel === p ? ' on' : ''}`}>
                 {p === 'info' ? 'Information' : p === 'timeline' ? 'Timeline' : 'Orders'}
               </button>
             ))}
@@ -11417,16 +11437,16 @@ export default function InboxPage() {
               custom_form: { label: 'Custom Form', icon: Icon.form },
             }
             return (
-              <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', position: 'relative' }}>
-                <button type="button" onClick={() => setShowActionMenu(v => !v)}
-                  style={{ width: '100%', padding: '9px 0', borderRadius: 9, background: 'var(--peach)', color: 'var(--coral)', border: '1px solid var(--coral)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                  + Action
+              <div style={{ padding: '12px 14px 4px', position: 'relative' }}>
+                <button type="button" onClick={() => setShowActionMenu(v => !v)} aria-expanded={showActionMenu} className={`cp-action${showActionMenu ? ' on' : ''}`}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  Action
                 </button>
                 {showActionMenu && (
-                  <div style={{ position: 'absolute', top: '100%', left: 14, right: 14, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.14)', zIndex: 20, overflow: 'hidden', marginTop: 2 }}>
+                  <div className="th-menu" style={{ position: 'absolute', top: '100%', left: 14, right: 14, zIndex: 20, marginTop: 2 }}>
                     {/* Record sale — always available, and can be used multiple times. */}
                     <button type="button" onClick={() => { setShowActionMenu(false); setShowRecordSale(true) }}
-                      style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '11px 14px', border: 'none', borderBottom: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 13.5, color: 'var(--ink)', textAlign: 'left' }}>
+                      className="th-menu-row cp-act-row">
                       <span style={{ color: 'var(--coral)', display: 'inline-flex' }}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
                       </span> Record sale
@@ -11449,7 +11469,7 @@ export default function InboxPage() {
                             }
                             else showToast(`"${meta.label}" isn't configured yet — set it up in Settings → Conversation Actions.`)
                           }}
-                          style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '11px 14px', border: 'none', borderBottom: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 13.5, color: 'var(--ink)', textAlign: 'left' }}>
+                          className="th-menu-row cp-act-row">
                           <span style={{ color: 'var(--coral)', display: 'inline-flex' }}>{meta.icon(16)}</span> {meta.label}
                         </button>
                       )
@@ -11490,9 +11510,9 @@ export default function InboxPage() {
                 {contact && !showContactEdit && (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '4px 0 16px', borderBottom: '1px solid var(--border)', marginBottom: 14 }}>
                     {(contact as any).avatar_url ? (
-                      <img src={(contact as any).avatar_url} alt={contact.name || ''} style={{ width: 84, height: 84, borderRadius: 14, objectFit: 'cover' }} />
+                      <img src={(contact as any).avatar_url} alt={contact.name || ''} style={{ width: 84, height: 84, borderRadius: '50%', objectFit: 'cover' }} />
                     ) : (
-                      <div style={{ width: 84, height: 84, borderRadius: 14, background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30, fontWeight: 800 }}>
+                      <div style={{ width: 84, height: 84, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30, fontWeight: 800 }}>
                         {(contact.name || contact.email || '?').charAt(0).toUpperCase()}
                       </div>
                     )}
@@ -11528,40 +11548,40 @@ export default function InboxPage() {
                           style={cardAction('#ecfdf5', '#059669')}>
                           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
                         </button>
-                        {showCardAssign && (
-                          <div style={{ position: 'absolute', top: '110%', left: 0, width: 230, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.14)', zIndex: 70, overflow: 'hidden', textAlign: 'left' }}>
-                            <p style={{ margin: 0, padding: '10px 14px 6px', fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Assign User</p>
-                            <div style={{ padding: '0 10px 8px' }}>
+                        {showCardAssign && (() => {
+                          const q = cardAssignSearch.trim().toLowerCase()
+                          const matches = teamMembers.filter((m: any) => !q || (m.name || '').toLowerCase().includes(q))
+                          const mine = teamMembers.find((m: any) => m.user_id && m.user_id === user?.id)
+                          const row = (m: any, label?: string) => {
+                            const cur = selected?.assigned_to === m.user_id
+                            return (
+                              <button key={(label ? 'me-' : '') + m.id} type="button" onClick={() => { assignTo(m); setShowCardAssign(false) }} className={`th-menu-row${cur ? ' cur' : ''}`}>
+                                <span className="th-av sm">{m.name?.charAt(0).toUpperCase()}</span>
+                                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label || m.name}</span>
+                                {cur && <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-label="Assigned"><polyline points="20 6 9 17 4 12"/></svg>}
+                              </button>
+                            )
+                          }
+                          return (
+                            <div className="th-menu" style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, width: 240, zIndex: 70, textAlign: 'left', transformOrigin: 'top left' }}>
                               <div style={{ position: 'relative' }}>
-                                <input autoFocus value={cardAssignSearch} onChange={e => setCardAssignSearch(e.target.value)}
-                                  placeholder="Search users…"
-                                  style={{ width: '100%', padding: '7px 26px 7px 10px', fontSize: 12.5, borderRadius: 8, border: '1px solid var(--border)', outline: 'none', boxSizing: 'border-box' }} />
+                                <input autoFocus value={cardAssignSearch} onChange={e => setCardAssignSearch(e.target.value)} placeholder="Find a teammate" aria-label="Find a teammate" className="th-menu-search" />
                                 {cardAssignSearch && (
-                                  <button type="button" onClick={() => setCardAssignSearch('')}
-                                    style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', color: '#9ca3af', display: 'flex', padding: 2 }}>
+                                  <button type="button" onClick={() => setCardAssignSearch('')} aria-label="Clear"
+                                    style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', color: '#9ca3af', display: 'flex', padding: 2 }}>
                                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                                   </button>
                                 )}
                               </div>
+                              <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+                                {mine && !q && <>{row(mine, 'Assign to me')}<div className="th-menu-sep" /><p className="th-menu-label">Teammates</p></>}
+                                {matches.map(m => row(m))}
+                                {matches.length === 0 && <p style={{ margin: 0, padding: '10px', fontSize: 13, color: '#9ca3af' }}>No teammates match.</p>}
+                                {selected?.assigned_to && !q && <><div className="th-menu-sep" /><button type="button" onClick={() => { assignTo(null); setShowCardAssign(false) }} className="th-menu-row danger">Unassign</button></>}
+                              </div>
                             </div>
-                            <div style={{ maxHeight: 220, overflowY: 'auto' }}>
-                              <button type="button" onClick={() => { assignTo(null); setShowCardAssign(false) }}
-                                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#ef4444' }}>
-                                Unassign
-                              </button>
-                              {teamMembers.filter((m: any) => !cardAssignSearch || (m.name || '').toLowerCase().includes(cardAssignSearch.toLowerCase())).map((m: any) => (
-                                <button key={m.id} type="button" onClick={() => { assignTo(m); setShowCardAssign(false) }}
-                                  style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: selected?.assigned_to === m.user_id ? 'var(--peach)' : 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
-                                  <span style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
-                                    {m.name?.charAt(0).toUpperCase()}
-                                  </span>
-                                  {m.name}
-                                  {selected?.assigned_to === m.user_id && ' ✓'}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        )}
+                          )
+                        })()}
                       </div>
                       <button type="button" title="Edit contact" onClick={() => { setShowContactEdit(true); setEditContact(contact) }}
                         style={cardAction('#eff6ff', '#2563eb')}>
@@ -11584,14 +11604,14 @@ export default function InboxPage() {
                           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
                         </button>
                         {showCardMore && (
-                          <div style={{ position: 'absolute', top: '110%', right: 0, width: 210, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.14)', zIndex: 70, overflow: 'hidden', padding: '4px 0', textAlign: 'left' }}>
+                          <div className="th-menu" style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: 220, zIndex: 70, textAlign: 'left' }}>
                             <button type="button" onClick={() => { setShowCardMore(false); reportSpam() }}
-                              style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#c2410c' }}>
+                              className="th-menu-row" style={{ color: '#c2410c' }}>
                               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                               Report spam
                             </button>
                             <button type="button" onClick={() => { setShowCardMore(false); toggleBlockContact() }}
-                              style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: (contact as any).is_blocked ? '#059669' : '#dc2626', borderTop: '1px solid var(--border)' }}>
+                              className="th-menu-row" style={{ color: (contact as any).is_blocked ? '#059669' : '#dc2626' }}>
                               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/></svg>
                               {(contact as any).is_blocked ? 'Unblock this contact' : 'Block this contact'}
                             </button>
@@ -11606,15 +11626,17 @@ export default function InboxPage() {
                   <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Contact</h3>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     {contact && !showContactEdit && (
-                      <button type="button" title="Edit all details" onClick={() => { setShowContactEdit(true); setEditContact(contact) }}
-                        style={{ width: 26, height: 26, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
+                      <button type="button" title="Edit all details" aria-label="Edit all details" onClick={() => { setShowContactEdit(true); setEditContact(contact) }}
+                        className="th-btn" style={{ width: 30, height: 30 }}>
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                       </button>
                     )}
-                    <button type="button" onClick={() => { setShowContactEdit(v => !v); setEditContact(contact || ((selected as any)?.sms_number ? { phone: (selected as any).sms_number } : {})) }}
-                      style={{ fontSize: 11, color: 'var(--coral)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
-                      {showContactEdit ? 'Cancel' : (contact ? '' : '+ Create')}
-                    </button>
+                    {(showContactEdit || !contact) && (
+                      <button type="button" onClick={() => { setShowContactEdit(v => !v); setEditContact(contact || ((selected as any)?.sms_number ? { phone: (selected as any).sms_number } : {})) }}
+                        className={`cp-mini${showContactEdit ? '' : ' accent'}`}>
+                        {showContactEdit ? 'Cancel' : '+ Create'}
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -11715,8 +11737,7 @@ export default function InboxPage() {
                     </div>
                     <textarea value={editContact.notes || ''} onChange={e => setEditContact(c => ({ ...c, notes: e.target.value }))} placeholder="Notes…" rows={2}
                       style={{ ...inp, resize: 'vertical', fontSize: 12 }} />
-                    <button type="button" onClick={saveContact} disabled={savingContact}
-                      style={{ padding: '8px 0', borderRadius: 8, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                    <button type="button" onClick={saveContact} disabled={savingContact} className="cv-btn cv-btn-primary" style={{ width: '100%' }}>
                       {savingContact ? 'Saving…' : 'Save Contact'}
                     </button>
                   </div>
@@ -11978,7 +11999,7 @@ export default function InboxPage() {
 
                       {/* Send the customer a tracking link once dispatched. */}
                       <button type="button" onClick={() => setShowTracking(true)}
-                        style={{ marginTop: 7, width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 0', borderRadius: 9, border: '1px solid var(--border)', background: '#fff', color: 'var(--coral)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                        className="cv-btn" style={{ marginTop: 8, width: '100%', height: 36, fontSize: 13 }}>
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                           <rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>
                         </svg>
@@ -12062,7 +12083,7 @@ export default function InboxPage() {
                       with a contact, not just people on several channels. */}
                   {contact && (
                     <button type="button" onClick={() => setShowTimeline(true)}
-                      style={{ marginBottom: 14, width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 0', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--coral)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                      className="cv-btn" style={{ marginBottom: 14, width: '100%', height: 36, fontSize: 13 }}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
                       Customer timeline
                     </button>
@@ -12086,8 +12107,8 @@ export default function InboxPage() {
                     </div>
                     <div>
                       <p style={{ margin: '0 0 2px', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Status</p>
-                      <span style={{ ...STATUS_COLOR[selected.status], padding: '2px 8px', borderRadius: 6, fontSize: 12, fontWeight: 700, display: 'inline-block' }}>
-                        {selected.status}
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 28, padding: '0 11px 0 9px', borderRadius: 999, background: STATUS_COLOR[selected.status]?.bg || '#f3f4f6', color: STATUS_COLOR[selected.status]?.color || '#6b7280', fontSize: 12.5, fontWeight: 650, textTransform: 'capitalize' }}>
+                        {STATUS_ICON[selected.status] || STATUS_ICON.open}{selected.status}
                       </span>
                     </div>
                     <div>
@@ -12130,8 +12151,8 @@ export default function InboxPage() {
                           {cart.notes && <div style={{ display: 'flex', alignItems: 'flex-start', gap: 5 }}><span style={{ color: 'var(--slate)', display: 'inline-flex', marginTop: 2 }}>{Icon.survey(12)}</span> {cart.notes}</div>}
                         </div>
                         <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
-                          <button onClick={() => convertAbandonedCart(cart)} style={{ flex: 1, padding: '8px', borderRadius: 8, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>Convert to order</button>
-                          <button onClick={() => dismissAbandonedCart(cart)} title="Dismiss" style={{ padding: '8px 12px', borderRadius: 8, background: '#fff', color: 'var(--slate)', border: '1px solid var(--border)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Dismiss</button>
+                          <button onClick={() => convertAbandonedCart(cart)} className="cv-btn cv-btn-primary" style={{ flex: 1, height: 34, fontSize: 13 }}>Convert to order</button>
+                          <button onClick={() => dismissAbandonedCart(cart)} title="Dismiss" className="cv-btn" style={{ height: 34, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Dismiss</button>
                         </div>
                       </div>
                     ))}
@@ -12219,8 +12240,7 @@ export default function InboxPage() {
                 <div style={{ marginBottom: 18, padding: '12px 14px', borderRadius: 10, background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)', border: '1px solid #e9d5ff' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                     <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#7c3aed' }}>✨ AI Summary</h3>
-                    <button type="button" onClick={generateAiSummary} disabled={generatingAi}
-                      style={{ fontSize: 11, color: '#7c3aed', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+                    <button type="button" onClick={generateAiSummary} disabled={generatingAi} className="cp-mini violet">
                       {generatingAi ? 'Thinking…' : aiSummary ? 'Regenerate' : 'Generate'}
                     </button>
                   </div>
@@ -12391,8 +12411,8 @@ export default function InboxPage() {
                 {/* Order history */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                   <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Order History ({wooOrders.length})</h3>
-                  <button type="button" onClick={() => setShowOrderSearch(v => !v)} title="Search orders"
-                    style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: showOrderSearch ? 'var(--peach)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: showOrderSearch ? 'var(--coral)' : 'var(--slate)' }}>
+                  <button type="button" onClick={() => setShowOrderSearch(v => !v)} title="Search orders" aria-label="Search orders" aria-pressed={showOrderSearch}
+                    className={`th-btn${showOrderSearch ? ' on' : ''}`} style={{ width: 30, height: 30 }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                   </button>
                 </div>
