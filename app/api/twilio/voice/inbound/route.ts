@@ -128,10 +128,18 @@ export async function POST(req: NextRequest) {
       if (fromTail) ors.push(`sms_number.ilike.%${fromTail}%`)
       if (contactId) ors.push(`contact_id.eq.${contactId}`)
       if (ors.length) {
-        const { data: conv } = await db.from('conversations')
-          .select('id').eq('company_id', companyId).or(ors.join(','))
-          .order('last_message_at', { ascending: false }).limit(1).maybeSingle()
-        conversationId = conv?.id || null
+        // A caller can have more than one thread (a website chat and an SMS
+        // one). Taking simply the latest put one person's calls in different
+        // threads depending on which was touched last. A call belongs with the
+        // phone conversation: prefer an SMS / phone thread (or one on this
+        // number), then the latest of the rest.
+        const { data: convs } = await db.from('conversations')
+          .select('id, channel, sms_number, last_message_at').eq('company_id', companyId).or(ors.join(','))
+          .order('last_message_at', { ascending: false }).limit(10)
+        const list = (convs || []) as any[]
+        const phoneThread = list.find(c => ['sms', 'phone'].includes(String(c.channel || '').toLowerCase())
+          || (fromTail && String(c.sms_number || '').replace(/\D/g, '').endsWith(fromTail)))
+        conversationId = (phoneThread || list[0])?.id || null
       }
 
       const nowIso = new Date().toISOString()
