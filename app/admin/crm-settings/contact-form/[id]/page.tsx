@@ -144,7 +144,7 @@ export default function ContactFormBuilder() {
         </div>
 
         {/* Live preview */}
-        <div style={{ position: 'sticky', top: 16 }}>
+        <div style={{ position: 'sticky', top: 76 }}>
           <p style={{ ...S.label, marginBottom: 10 }}>Preview</p>
           <div style={{ border: '1px solid var(--border)', borderRadius: 16, padding: 22, background: '#fff' }}>
             <div style={{ maxWidth: 380, margin: form.alignment === 'left' ? '0' : '0 auto', textAlign: form.alignment === 'left' ? 'left' : 'left' }}>

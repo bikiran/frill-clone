@@ -10,7 +10,8 @@
 // Pointing is timed so the panels behave: one opens after a short pause (so
 // sweeping past the rail doesn't flash them), stays a moment after the
 // pointer leaves (time to reach it on a slanting path), and another section
-// only takes over once the pointer settles on it.
+// only takes over once the pointer settles on it. While a panel is open the
+// rest of the screen fades back a little, so the panel stands out.
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -63,7 +64,7 @@ const OPEN_MS = 90      // pointing at a section, with no panel open
 const SWITCH_MS = 220   // pointing at another section while one is open
 const CLOSE_MS = 260    // after the pointer leaves a section and its panel
 
-type Aim = { enter: (key: string) => void; leave: () => void; tap: (key: string | null) => void }
+type Aim = { enter: (key: string) => void; leave: () => void; tap: (key: string | null) => void; blur: (key: string) => void }
 
 /** One section of the rail: its tile, and the panel of its pages. */
 function RailEntry({ s, open, aim, onLocked }: { s: RailSection; open: boolean; aim: Aim; onLocked: () => void }) {
@@ -83,7 +84,10 @@ function RailEntry({ s, open, aim, onLocked }: { s: RailSection; open: boolean; 
   }
   return (
     <div className={`rail-item${open ? ' open' : ''}`}
-      onMouseEnter={e => { place(e.currentTarget); aim.enter(s.key) }} onMouseLeave={aim.leave} onFocus={e => place(e.currentTarget)}>
+      onMouseEnter={e => { place(e.currentTarget); aim.enter(s.key) }} onMouseLeave={aim.leave}
+      // Tabbing to a section opens its panel; tabbing out of it closes it.
+      onFocus={e => { if (items.length > 1 && !open && e.target.matches(':focus-visible')) { place(e.currentTarget); aim.tap(s.key) } }}
+      onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) aim.blur(s.key) }}>
       <Link href={main.locked ? '#' : main.href} className={`rail-tile${active ? ' on' : ''}`} aria-current={active ? 'page' : undefined}
         onPointerDown={e => { touch.current = e.pointerType === 'touch' }}
         onClick={e => {
@@ -117,7 +121,7 @@ function RailEntry({ s, open, aim, onLocked }: { s: RailSection; open: boolean; 
                   ? <a key={i.href} href={i.href} className="rail-fly-row">{inner}</a>
                   : (
                     <Link key={i.href + i.label} href={i.locked ? '#' : i.href} className={`rail-fly-row${i.active ? ' on' : ''}`} aria-current={i.active ? 'page' : undefined}
-                      onClick={e => { if (i.locked) { e.preventDefault(); onLocked() } aim.tap(null) }}>
+                      onClick={e => { if (i.locked) { e.preventDefault(); onLocked() } aim.tap(null); e.currentTarget.blur() }}>
                       {inner}
                     </Link>
                   )
@@ -144,7 +148,7 @@ export default function AdminRail({ workspace, sections, settings, search, ring,
   onLocked: () => void
 }) {
   const pathname = usePathname()
-  // The section whose panel is open (pointing or a tap); tabbing uses CSS.
+  // The section whose panel is open (pointing, a tap or tabbing to it).
   const [open, setOpen] = useState<string | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const openRef = useRef(open)
@@ -160,6 +164,7 @@ export default function AdminRail({ workspace, sections, settings, search, ring,
     },
     leave: () => later(null, CLOSE_MS),
     tap: key => { if (timer.current) clearTimeout(timer.current); setOpen(key) },
+    blur: key => { if (openRef.current === key) { if (timer.current) clearTimeout(timer.current); setOpen(null) } },
   }
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
 
@@ -187,9 +192,19 @@ export default function AdminRail({ workspace, sections, settings, search, ring,
   }, [open])
 
   return (
-    <aside className="admin-rail" aria-label="Main menu">
+    <aside className={`admin-rail${open ? ' dim' : ''}`} aria-label="Main menu">
       <style>{`
-        .admin-rail { position: fixed; top: 56px; left: 0; bottom: 0; width: ${RAIL_W}px; z-index: 30; display: flex; flex-direction: column; align-items: center; background: #f4f4f6; border-right: 1px solid #ececf0; }
+        .admin-rail { position: fixed; top: 56px; left: 0; bottom: 0; width: ${RAIL_W}px; z-index: 30; display: flex; flex-direction: column; align-items: center; background: #f4f4f6; border-right: 1px solid #ececf0; transition: z-index 0s linear .34s; }
+        /* While a panel is open: a soft grey veil over everything but the
+           panel and its tile. The rail lifts above the top bar for it, and
+           settles back once the veil has faded. */
+        .admin-rail.dim { z-index: 960; transition-delay: 0s; }
+        .rail-scrim { position: fixed; inset: 0; z-index: -1; background: rgba(17,17,20,.15); opacity: 0; pointer-events: none; transition: opacity .3s cubic-bezier(.4,0,.2,1); }
+        .admin-rail.dim .rail-scrim { opacity: 1; transition-duration: .22s; }
+        .rail-top, .rail-bottom > :not(.rail-item), .rail-item > .rail-tile { transition: opacity .25s ease, background .2s, color .15s, box-shadow .2s; }
+        .admin-rail.dim :is(.rail-top, .rail-bottom > :not(.rail-item), .rail-item:not(.open) > .rail-tile) { opacity: .5; }
+        .rail-item.open > .rail-tile { background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 4px 14px rgba(0,0,0,.08); }
+        .rail-item.open > .rail-tile:not(.on) { color: #18181b; }
         .rail-top { padding: 12px 0 10px; display: flex; flex-direction: column; align-items: center; gap: 12px; flex-shrink: 0; }
         .rail-top::after { content: ''; width: 28px; height: 1px; background: #e2e2e7; }
         .rail-mid { flex: 1; min-height: 0; width: 100%; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 0; }
@@ -210,9 +225,10 @@ export default function AdminRail({ workspace, sections, settings, search, ring,
         /* The panel beside the rail. Fixed, so the rail's scrolling can't clip it;
            it starts at the rail's edge and its padding is a bridge. Which one
            is open is timed in code (see the top of this file). */
-        .rail-fly { position: fixed; left: ${RAIL_W - 1}px; top: var(--fly-top, 64px); z-index: 80; padding-left: 9px; visibility: hidden; opacity: 0; transform: translateX(-4px); pointer-events: none;
-          transition: opacity .12s ease, transform .16s cubic-bezier(.22,1,.36,1), visibility 0s linear .12s; }
-        .rail-item.open .rail-fly, .rail-item:has(:focus-visible) .rail-fly { visibility: visible; opacity: 1; transform: none; pointer-events: auto; z-index: 81; transition-delay: 0s; }
+        .rail-fly { position: fixed; left: ${RAIL_W - 1}px; top: var(--fly-top, 64px); z-index: 80; padding-left: 9px; visibility: hidden; opacity: 0; transform: translateX(-8px) scale(.98); transform-origin: left top; pointer-events: none;
+          transition: opacity .16s ease, transform .22s cubic-bezier(.22,1,.36,1), visibility 0s linear .16s; }
+        .rail-item.open .rail-fly { visibility: visible; opacity: 1; transform: none; pointer-events: auto; z-index: 81;
+          transition: opacity .2s ease, transform .34s cubic-bezier(.22,1,.36,1), visibility 0s; }
         .rail-fly-card { min-width: 232px; max-width: 280px; max-height: calc(100vh - 80px); overflow-y: auto; padding: 8px; border-radius: 18px; background: #fff; box-shadow: 0 16px 44px rgba(0,0,0,.14), 0 0 0 1px rgba(0,0,0,.05); }
         .rail-fly-title { margin: 0; padding: 8px 10px 6px; font-size: 15px; font-weight: 700; color: #111; letter-spacing: -0.01em; }
         .rail-fly-group { margin: 6px 0 0; padding: 10px 10px 4px; border-top: 1px solid #f0f0f2; font-size: 12.5px; font-weight: 500; color: #8e8e93; }
@@ -240,8 +256,9 @@ export default function AdminRail({ workspace, sections, settings, search, ring,
            rail and the Settings menu. */
         .cv-phone-pill { top: 15px; bottom: auto !important; left: 50% !important; transform: translateX(-50%); z-index: 70 !important; }
         @media (max-width: 860px) { .admin-rail { display: none; } }
-        @media (prefers-reduced-motion: reduce) { .rail-fly, .rail-ic { transition: none !important; } }
+        @media (prefers-reduced-motion: reduce) { .rail-fly, .rail-ic, .rail-scrim { transition: none !important; } }
       `}</style>
+      <div className="rail-scrim" aria-hidden />
       <div className="rail-top">{workspace}</div>
       <nav className="rail-mid" ref={mid} onScroll={fades}>
         {sections.map(s => <RailEntry key={s.key} s={s} open={open === s.key} aim={aim} onLocked={onLocked} />)}

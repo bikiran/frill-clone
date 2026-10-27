@@ -425,7 +425,7 @@ export default function GoogleReviewsPage() {
           </div>
 
           {/* Stats sidebar */}
-          <div style={{ border: '1px solid var(--border)', borderRadius: 16, padding: 20, background: '#fff', position: 'sticky', top: 20 }}>
+          <div style={{ border: '1px solid var(--border)', borderRadius: 16, padding: 20, background: '#fff', position: 'sticky', top: 76 }}>
             <p style={{ margin: '0 0 6px', fontSize: 15, fontWeight: 800, color: 'var(--ink)' }}>Google Reviews</p>
             <div style={{ marginBottom: 6 }}><Stars n={Math.round(Number(stats.average) || 0)} /></div>
             <p style={{ margin: '0 0 14px', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>{location?.title || 'Your business'}</p>

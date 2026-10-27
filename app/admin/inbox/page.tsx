@@ -225,6 +225,13 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   resolved: { bg: '#dcfce7', color: '#059669' },
   closed:   { bg: '#f3f4f6', color: '#6b7280' },
 }
+// The status pill's icon, beside its colours.
+const STATUS_ICON: Record<string, React.ReactNode> = {
+  open:     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>,
+  assigned: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="10" cy="8" r="3.5"/><path d="M3.5 20a6.5 6.5 0 0 1 11-4.7"/><polyline points="15 18 17 20 21 16"/></svg>,
+  resolved: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="8 12.5 11 15.5 16 9.5"/></svg>,
+  closed:   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><line x1="10" y1="13" x2="14" y2="13"/></svg>,
+}
 // Robustly parse a Supabase/Postgres timestamp. The old code appended 'Z' when
 // the string didn't already end in 'Z' — but Supabase returns offsets like
 // "+00:00", so that produced "…+00:00Z" (two tz markers), which Safari parses as
@@ -7187,21 +7194,25 @@ export default function InboxPage() {
              the actions menu; desktop keeps its own layout untouched. */
           .inbox-thread-header { padding-bottom: 6px !important; row-gap: 6px !important; }
           .inbox-thread-header .inbox-back-label { display: none; }
-          .inbox-thread-header .inbox-mobile-only:first-child { padding: 0 6px !important; }
+          .inbox-thread-header .inbox-mobile-only:first-child { width: 36px; padding: 0 !important; justify-content: center; }
           .inbox-thread-header .inbox-call-label { display: none; }
-          .inbox-thread-header [data-callbar-btn] { width: 36px; height: 36px; padding: 0 !important; justify-content: center; border-radius: 10px !important; flex-shrink: 0; }
+          .inbox-thread-header [data-callbar-btn] { width: 36px; height: 36px; padding: 0 !important; justify-content: center; flex-shrink: 0; }
           .inbox-thread-header .inbox-m-more { width: 36px !important; height: 36px !important; }
           .inbox-thread-header .inbox-header-tools,
           .inbox-thread-header .inbox-pin-btn,
+          .inbox-thread-header .inbox-status-pill,
           .inbox-thread-header [data-assign-menu],
           .inbox-thread-header [data-actions-menu] { display: none !important; }
           .inbox-thread-header.m-tools-open { padding-bottom: 8px !important; }
           .inbox-thread-header.m-tools-open .inbox-m-break { display: block !important; order: 9; flex: 0 0 100%; height: 0; }
           .inbox-thread-header.m-tools-open .inbox-header-tools { display: contents !important; }
-          .inbox-thread-header.m-tools-open .inbox-pin-btn { display: flex !important; order: 10; width: 36px !important; height: 36px !important; }
-          .inbox-thread-header.m-tools-open .inbox-header-tools > * { order: 10 !important; flex-shrink: 0; }
-          .inbox-thread-header.m-tools-open [data-assign-menu],
-          .inbox-thread-header.m-tools-open [data-actions-menu] { display: block !important; order: 11; }
+          /* The tray: status and who has it on one line, the tools on the next. */
+          .inbox-thread-header.m-tools-open .inbox-status-pill { display: inline-flex !important; order: 10; }
+          .inbox-thread-header.m-tools-open [data-assign-menu] { display: block !important; order: 11; }
+          .inbox-thread-header.m-tools-open .inbox-header-tools::before { content: ''; order: 12; flex: 0 0 100%; height: 0; }
+          .inbox-thread-header.m-tools-open .inbox-header-tools > * { order: 13 !important; flex-shrink: 0; }
+          .inbox-thread-header.m-tools-open .inbox-pin-btn { display: flex !important; order: 13; width: 36px !important; height: 36px !important; }
+          .inbox-thread-header.m-tools-open [data-actions-menu] { display: block !important; order: 13; }
           /* Assignment tabs scroll horizontally without a visible scrollbar. */
           .inbox-assign-tabs { scrollbar-width: none; -webkit-overflow-scrolling: touch; }
           .inbox-assign-tabs::-webkit-scrollbar { display: none; }
@@ -7454,14 +7465,60 @@ export default function InboxPage() {
           html body:has(.inbox-pane-thread .inbox-composer.mcmp-open) .colvy-ai-orb-wrap { display: none !important; }
           html body:has(.inbox-pane-thread .inbox-composer.mcmp-collapsed) .colvy-ai-orb-wrap[data-default-pos] { bottom: calc(58px + env(safe-area-inset-bottom, 0px) + 76px) !important; }
         }
+        /* The conversation header, like Sellio's: a tinted status pill, who
+           it's assigned to, then plain round icons that only show a
+           background on hover. Its menus are soft white cards. */
+        .th-btn { position: relative; width: 36px; height: 36px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: none; border-radius: 999px; background: transparent; color: #52525b; cursor: pointer; transition: background .15s ease, color .15s ease, transform .1s ease; }
+        .th-btn:hover { background: #f4f4f5; color: #18181b; }
+        .th-btn:active { transform: scale(.93); }
+        .th-btn.on { background: color-mix(in srgb, var(--coral) 12%, #fff); color: var(--coral); }
+        .th-btn:focus-visible, .th-pill:focus-visible, .th-menu-row:focus-visible, .th-mood:focus-visible { outline: 2px solid var(--coral); outline-offset: 1px; }
+        .th-dial { color: #059669; }
+        .th-dial:hover { background: #ecfdf3; color: #047857; }
+        .th-ai { color: #8b5cf6; }
+        .th-ai:hover { background: #f5f3ff; color: #7c3aed; }
+        .th-ai.off { color: #a1a1aa; }
+        .th-ai-slash { position: absolute; width: 20px; height: 1.8px; border-radius: 1px; background: #ef4444; transform: rotate(-45deg); }
+        .th-pill { height: 36px; flex-shrink: 0; display: inline-flex; align-items: center; gap: 7px; padding: 0 15px; border: none; border-radius: 999px; font: inherit; font-size: 14px; font-weight: 650; white-space: nowrap; cursor: pointer; transition: background .15s ease, transform .1s ease; }
+        .th-pill:active { transform: scale(.97); }
+        .th-call { background: #ecfdf3; color: #067647; }
+        .th-call:hover { background: #d1fadf; }
+        .th-assign { background: transparent; color: #18181b; padding: 0 12px 0 4px; font-weight: 600; }
+        .th-assign.none { width: 36px; padding: 0; justify-content: center; background: #f4f4f5; color: #3f3f46; }
+        .th-assign:hover, .th-assign.on { background: #f4f4f5; }
+        .th-assign.none:hover, .th-assign.none.on { background: #ececef; }
+        .th-assign-name { max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+        .th-av { width: 28px; height: 28px; flex-shrink: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--coral) 14%, #fff); color: var(--coral); font-size: 12.5px; font-weight: 700; }
+        .th-av.sm { width: 26px; height: 26px; font-size: 12px; }
+        .th-status { position: relative; display: inline-flex; align-items: center; flex-shrink: 0; color: var(--st-fg); }
+        .th-status select { field-sizing: content; appearance: none; -webkit-appearance: none; height: 36px; margin: 0; padding: 0 32px 0 35px; border: none; border-radius: 999px; background: var(--st-bg); color: var(--st-fg); font: inherit; font-size: 14px; font-weight: 650; cursor: pointer; transition: filter .15s ease; }
+        .th-status select:hover { filter: brightness(.97); }
+        .th-status select:focus-visible { outline: 2px solid var(--st-fg); outline-offset: 2px; }
+        .th-status-ic { position: absolute; left: 13px; display: flex; pointer-events: none; }
+        .th-status-chev { position: absolute; right: 12px; pointer-events: none; }
+        .th-menu { z-index: 50; padding: 6px; border-radius: 16px; background: #fff; box-shadow: 0 16px 44px rgba(0,0,0,.14), 0 0 0 1px rgba(0,0,0,.05); transform-origin: top right; animation: thMenuIn .18s cubic-bezier(.22,1,.36,1); }
+        @keyframes thMenuIn { from { opacity: 0; transform: translateY(-4px) scale(.98); } to { opacity: 1; transform: none; } }
+        .th-menu-search { width: 100%; box-sizing: border-box; height: 40px; margin: 0 0 4px; padding: 0 30px 0 12px; border-radius: 12px; border: 1.5px solid #e4e4e7; background: #fff; font: inherit; font-size: 14px; color: #111; outline: none; transition: border-color .15s ease, box-shadow .15s ease; }
+        .th-menu-search:focus { border-color: var(--coral); box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 16%, transparent); }
+        .th-menu-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: none; border-radius: 10px; background: none; font: inherit; font-size: 14px; color: #18181b; text-align: left; cursor: pointer; }
+        .th-menu-row:hover { background: #f4f4f5; }
+        .th-menu-row.cur { font-weight: 650; }
+        .th-menu-row.danger { color: #dc2626; }
+        .th-menu-row > svg { color: #71717a; flex-shrink: 0; }
+        .th-menu-sep { height: 1px; margin: 4px 6px; background: #f0f0f2; }
+        .th-menu-label { margin: 6px 10px 4px; font-size: 12.5px; font-weight: 500; color: #8e8e93; }
+        .th-mood { flex: 1; height: 38px; display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: 10px; background: #f4f4f5; color: #71717a; cursor: pointer; transition: background .15s ease, color .15s ease; }
+        .th-mood:hover { color: var(--mood); }
+        .th-mood.on { background: color-mix(in srgb, var(--mood) 14%, #fff); color: var(--mood); }
+        @media (prefers-reduced-motion: reduce) { .th-menu { animation: none; } }
         /* Desktop / tablet: the tools sit inline on the right as before */
         @media (min-width: 768px) {
-          .inbox-header-tools { display: flex; align-items: center; gap: 10px; }
+          .inbox-header-tools { display: flex; align-items: center; gap: 2px; }
         }
         /* Narrow desktop windows: tighten so nothing falls off */
         @media (min-width: 768px) and (max-width: 1100px) {
           .inbox-thread-header { gap: 7px !important; padding: 10px 12px !important; }
-          .inbox-header-tools { gap: 7px !important; }
+          .inbox-header-tools { gap: 0 !important; }
         }
         @media (min-width: 768px) {
           .inbox-mobile-only { display: none !important; }
@@ -8703,17 +8760,24 @@ export default function InboxPage() {
         </button>
         {/* Header */}
         <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 8 }}>
+          {/* The title with its unread count, then the actions, kept on one row
+              in the column's 300px. */}
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10, gap: 6 }}>
             <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--ink)' }}>Inbox</h2>
-            <button type="button" onClick={() => setShowAddContact(true)} title="Add a contact manually"
-              className="cv-btn" style={{ height: 30, padding: '0 12px', gap: 5, fontSize: 12.5 }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Contact
-            </button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--peach)', color: 'var(--coral)', padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                {conversations.filter(c => c.is_unread && !['closed','resolved'].includes(c.status)).length} unread
-              </span>
+            {(() => {
+              const n = conversations.filter(c => c.is_unread && !['closed', 'resolved'].includes(c.status)).length
+              return n > 0 && (
+                <span title={`${n} unread`} aria-label={`${n} unread`} style={{ minWidth: 20, height: 20, padding: '0 6px', boxSizing: 'border-box', borderRadius: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, fontWeight: 700, background: 'var(--peach)', color: 'var(--coral)', flexShrink: 0 }}>
+                  {n > 99 ? '99+' : n}
+                </span>
+              )
+            })()}
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              <button type="button" onClick={() => setShowAddContact(true)} title="Add a contact manually"
+                className="cv-btn" style={{ height: 30, padding: '0 12px', gap: 5, fontSize: 12.5 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Contact
+              </button>
               <Link href="/admin/crm-settings/profile" title="Inbox settings" aria-label="Inbox settings"
                 className="cv-btn cv-btn-icon" style={{ width: 30, height: 30 }}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -9140,7 +9204,7 @@ export default function InboxPage() {
             <div className={`inbox-thread-header${mToolsOpen ? ' m-tools-open' : ''}`} style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: igThemeActive ? 'linear-gradient(135deg, rgba(131,58,180,0.08), rgba(225,48,108,0.08))' : msgrThemeActive ? 'linear-gradient(135deg, rgba(0,178,255,0.08), rgba(0,106,255,0.08))' : '#fff', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               {/* Mobile: back to conversation list */}
               <button type="button" className="inbox-mobile-only" onClick={() => setMobilePane('list')} title="Back to chats" aria-label="Back to chats"
-                style={{ display: 'none', height: 36, flexShrink: 0, borderRadius: 10, border: 'none', background: 'color-mix(in srgb, var(--coral) 12%, #fff)', cursor: 'pointer', alignItems: 'center', gap: 3, padding: '0 10px 0 6px', color: 'var(--coral)', fontSize: 13.5, fontWeight: 700, order: -2 }}>
+                style={{ display: 'none', height: 36, flexShrink: 0, borderRadius: 999, border: 'none', background: 'color-mix(in srgb, var(--coral) 12%, #fff)', cursor: 'pointer', alignItems: 'center', gap: 3, padding: '0 10px 0 6px', color: 'var(--coral)', fontSize: 13.5, fontWeight: 700, order: -2 }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
                 <span className="inbox-back-label">Chats</span>
               </button>
@@ -9211,61 +9275,121 @@ export default function InboxPage() {
                 </div>
               </div>
 
-              {/* Pin / unpin this conversation for the current agent. Mirrors the
-                  right-click action so it's reachable while the thread is open. */}
-              {(() => {
-                const isPinned = pinnedIds.has(selected.id)
-                return (
-                  <button type="button" className="inbox-pin-btn" onClick={() => togglePin(selected)}
-                    title={isPinned ? 'Unpin from top' : 'Pin to top'} aria-label={isPinned ? 'Unpin conversation' : 'Pin conversation'}
-                    style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid ' + (isPinned ? 'var(--coral)' : 'var(--border)'), background: isPinned ? 'var(--peach)' : '#fff', color: isPinned ? 'var(--coral)' : 'var(--slate)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill={isPinned ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14l-1.5-3V7a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7z"/></svg>
-                  </button>
-                )
-              })()}
-
               {/* Browser calling — opens the draggable floating call panel
                   (GlobalCallBar) so the call survives navigating away or
                   switching conversations. */}
               {(contact?.phone || (selected as any).sms_number) && (
-                <button type="button" title="Call" data-callbar-btn
+                <button type="button" title="Call" data-callbar-btn className="th-pill th-call"
                   onClick={() => window.dispatchEvent(new CustomEvent('colvy:call', { detail: {
                     number: contact?.phone || (selected as any).sms_number,
                     name: contact?.name,
                     contactId: contact?.id,
                     conversationId: selected.id,
-                  } }))}
-                  style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', borderRadius: 10, border: '1px solid #059669', background: '#dcfce7', color: '#059669', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                  } }))}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
                   <span className="inbox-call-label">Call</span>
                 </button>
               )}
 
               {/* Tablet: slide the contact panel in */}
-              <button type="button" className="inbox-tablet-only" onClick={() => setTabletContact(v => !v)} title="Contact info" aria-label="Contact info" aria-expanded={tabletContact}
-                style={{ display: 'none', width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: tabletContact ? 'var(--peach)' : '#fff', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', color: tabletContact ? 'var(--coral)' : 'var(--slate)', flexShrink: 0 }}>
+              <button type="button" className={`inbox-tablet-only th-btn${tabletContact ? ' on' : ''}`} style={{ display: 'none' }} onClick={() => setTabletContact(v => !v)} title="Contact info" aria-label="Contact info" aria-expanded={tabletContact}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M15 4v16"/></svg>
               </button>
               {/* Mobile: open contact panel */}
-              <button type="button" className="inbox-mobile-only" onClick={() => setMobilePane('contact')} title="Contact info" aria-label="Contact info"
-                style={{ display: 'none', width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
+              <button type="button" className="inbox-mobile-only th-btn" style={{ display: 'none' }} onClick={() => setMobilePane('contact')} title="Contact info" aria-label="Contact info">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="7" r="4"/><path d="M5.5 21a8.38 8.38 0 0 1 13 0"/></svg>
               </button>
               {/* Phones: everything else (pin, assign, status, AI, products,
                   dialler, search, snooze…) opens in a tray under this row, so
                   the name row stays one tidy line with nothing cut off. */}
-              <button type="button" className="inbox-mobile-only inbox-m-more" onClick={() => setMToolsOpen(v => !v)}
-                title={mToolsOpen ? 'Hide actions' : 'More actions'} aria-label={mToolsOpen ? 'Hide actions' : 'More actions'} aria-expanded={mToolsOpen}
-                style={{ display: 'none', width: 30, height: 30, borderRadius: 8, border: '1px solid ' + (mToolsOpen ? 'var(--coral)' : 'var(--border)'), background: mToolsOpen ? 'var(--peach)' : '#fff', cursor: 'pointer', alignItems: 'center', justifyContent: 'center', color: mToolsOpen ? 'var(--coral)' : 'var(--slate)', flexShrink: 0 }}>
+              <button type="button" className={`inbox-mobile-only inbox-m-more th-btn${mToolsOpen ? ' on' : ''}`} style={{ display: 'none' }} onClick={() => setMToolsOpen(v => !v)}
+                title={mToolsOpen ? 'Hide actions' : 'More actions'} aria-label={mToolsOpen ? 'Hide actions' : 'More actions'} aria-expanded={mToolsOpen}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
               </button>
               <span className="inbox-m-break" aria-hidden style={{ display: 'none' }} />
 
 
-              {/* Tools strip. On phones this becomes a single horizontally
-                  scrollable row under the customer's name — the native chat-app
-                  pattern — instead of nine buttons wrapping into ragged rows. */}
+              {/* Status: a tinted pill with its icon, like Sellio's. */}
+              {(() => {
+                const st = STATUS_COLOR[selected.status] || { bg: '#f3f4f6', color: '#6b7280' }
+                return (
+                  <div className="inbox-status-pill th-status" style={{ ['--st-bg' as any]: st.bg, ['--st-fg' as any]: st.color }}>
+                    <span className="th-status-ic" aria-hidden>{STATUS_ICON[selected.status] || STATUS_ICON.open}</span>
+                    <select value={selected.status} onChange={e => setStatus(e.target.value)} aria-label="Conversation status">
+                      {Object.entries(STATUS_COLOR).map(([k, v]) => <option key={k} value={k}>{v.color && k.charAt(0).toUpperCase() + k.slice(1)}</option>)}
+                    </select>
+                    <svg className="th-status-chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="6 9 12 15 18 9"/></svg>
+                  </div>
+                )
+              })()}
+
+              {/* Assign and ⋯ are TRUE siblings of the scrolling tools strip (not
+                  inside it) — the strip's overflow-x/mask was clipping their taps
+                  and dropdown menus when they lived inside it. */}
+              {/* Assign: who has it (or "Assign"), and a menu to find a teammate. */}
+              <div style={{ position: 'relative' }} data-assign-menu>
+                <button type="button" onClick={() => { setShowAssignMenu(v => !v); setAssignSearch('') }} aria-expanded={showAssignMenu}
+                  title={selected.assigned_name ? `Assigned to ${selected.assigned_name}` : 'Assign this conversation'} aria-label={selected.assigned_name ? `Assigned to ${selected.assigned_name}` : 'Assign'}
+                  className={`th-pill th-assign${selected.assigned_name ? '' : ' none'}${showAssignMenu ? ' on' : ''}`}>
+                  {selected.assigned_name
+                    ? <><span className="th-av">{selected.assigned_name.charAt(0).toUpperCase()}</span><span className="th-assign-name">{selected.assigned_name}</span></>
+                    : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="9" cy="7.5" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M19 8v6M16 11h6"/></svg>}
+                </button>
+                {showAssignMenu && (() => {
+                  const q = assignSearch.trim().toLowerCase()
+                  const matches = teamMembers.filter((m: any) => !q || (m.name || '').toLowerCase().includes(q))
+                  const mine = teamMembers.find((m: any) => m.user_id && m.user_id === user?.id)
+                  const row = (m: any, label?: string) => {
+                    const cur = selected.assigned_to === m.user_id
+                    return (
+                      <button key={(label ? 'me-' : '') + m.id} type="button" onClick={() => assignTo(m)} className={`th-menu-row${cur ? ' cur' : ''}`}>
+                        <span className="th-av sm">{m.name?.charAt(0).toUpperCase()}</span>
+                        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label || m.name}</span>
+                        {cur && <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-label="Assigned"><polyline points="20 6 9 17 4 12"/></svg>}
+                      </button>
+                    )
+                  }
+                  return (
+                    <div className="th-menu" style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: 260 }}>
+                      <div style={{ position: 'relative' }}>
+                        <input autoFocus value={assignSearch} onChange={e => setAssignSearch(e.target.value)} placeholder="Find a teammate" aria-label="Find a teammate" className="th-menu-search" />
+                        {assignSearch && (
+                          <button type="button" onClick={() => setAssignSearch('')} aria-label="Clear"
+                            style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', color: '#9ca3af', display: 'flex', alignItems: 'center', padding: 2 }}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                          </button>
+                        )}
+                      </div>
+                      <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+                        {mine && !q && <>{row(mine, 'Assign to me')}<div className="th-menu-sep" /><p className="th-menu-label">Teammates</p></>}
+                        {matches.map(m => row(m))}
+                        {matches.length === 0 && <p style={{ margin: 0, padding: '10px', fontSize: 13, color: '#9ca3af' }}>No teammates match.</p>}
+                        {selected.assigned_to && !q && <><div className="th-menu-sep" /><button type="button" onClick={() => assignTo(null)} className="th-menu-row danger">Unassign</button></>}
+                      </div>
+                    </div>
+                  )
+                })()}
+              </div>
+
+              {/* Tools strip: plain round icons. On phones this becomes a single
+                  horizontally scrollable row under the customer's name — the
+                  native chat-app pattern. */}
               <div className="inbox-header-tools">
+              {/* Dialler — call any number */}
+              <button type="button" onClick={() => setShowDialer(true)} title="Dialler — call any number" aria-label="Dialler" className="th-btn th-dial">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden>
+                  <circle cx="5.5" cy="4.5" r="1.8"/><circle cx="12" cy="4.5" r="1.8"/><circle cx="18.5" cy="4.5" r="1.8"/>
+                  <circle cx="5.5" cy="11" r="1.8"/><circle cx="12" cy="11" r="1.8"/><circle cx="18.5" cy="11" r="1.8"/>
+                  <circle cx="5.5" cy="17.5" r="1.8"/><circle cx="12" cy="17.5" r="1.8"/><circle cx="18.5" cy="17.5" r="1.8"/>
+                </svg>
+              </button>
+
+              {/* Search messages toggle */}
+              <button type="button" onClick={() => { setShowMsgSearch(v => !v); setMsgSearch(''); setMsgSearchIdx(0) }} title="Search messages" aria-label="Search messages" aria-pressed={showMsgSearch}
+                className={`th-btn${showMsgSearch ? ' on' : ''}`}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><circle cx="11" cy="11" r="7"/><line x1="20.5" y1="20.5" x2="16" y2="16"/></svg>
+              </button>
+
               {/* AI on/off for this conversation */}
               <button type="button"
                 onClick={async () => {
@@ -9277,48 +9401,35 @@ export default function InboxPage() {
                   showToast(next === false ? 'AI paused for this chat' : 'AI following your default setting')
                 }}
                 title={(selected as any).ai_enabled === false ? 'AI is paused here — click to re-enable' : 'AI may reply here — click to pause it'}
-                style={{
-                  width: 32, height: 32, borderRadius: 8,
-                  border: `1px solid ${(selected as any).ai_enabled === false ? 'var(--border)' : '#8b5cf6'}`,
-                  background: (selected as any).ai_enabled === false ? '#fff' : '#f5f3ff',
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: (selected as any).ai_enabled === false ? '#c0c4cc' : '#8b5cf6',
-                  position: 'relative',
-                }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z"/></svg>
-                {(selected as any).ai_enabled === false && (
-                  <span style={{ position: 'absolute', width: 20, height: 1.6, background: '#dc2626', transform: 'rotate(-45deg)', borderRadius: 1 }} />
-                )}
+                aria-label={(selected as any).ai_enabled === false ? 'Turn AI back on here' : 'Pause AI here'}
+                className={`th-btn th-ai${(selected as any).ai_enabled === false ? ' off' : ''}`}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z"/><path d="M18.5 14.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/></svg>
+                {(selected as any).ai_enabled === false && <span className="th-ai-slash" aria-hidden />}
               </button>
 
               {/* Product search */}
-              <button type="button" onClick={() => setShowProducts(true)} title="Product search — send a price or buy link"
-                style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${showProducts ? 'var(--coral)' : 'var(--border)'}`, background: showProducts ? 'var(--peach)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: showProducts ? 'var(--coral)' : 'var(--slate)' }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+              <button type="button" onClick={() => setShowProducts(true)} title="Product search — send a price or buy link" aria-label="Product search"
+                className={`th-btn${showProducts ? ' on' : ''}`}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
               </button>
 
               {/* Move or view enquiries across outlets */}
               {outlets.length > 0 && (
                 <div ref={moveMenuRef} style={{ position: 'relative' }} data-move-menu>
-                  <button type="button" onClick={() => setShowMoveMenu(v => !v)} title="Move Or View Enquiries"
-                    style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${showMoveMenu ? 'var(--coral)' : 'var(--border)'}`, background: showMoveMenu ? 'var(--peach)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: showMoveMenu ? 'var(--coral)' : 'var(--slate)' }}>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                  <button type="button" onClick={() => setShowMoveMenu(v => !v)} title="Move or view enquiries" aria-label="Move or view enquiries" aria-expanded={showMoveMenu}
+                    className={`th-btn${showMoveMenu ? ' on' : ''}`}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>
                   </button>
                   {showMoveMenu && (
-                    <div style={{ position: 'absolute', top: '120%', right: 0, width: 260, background: '#fff', borderRadius: 14, border: '1px solid var(--border)', boxShadow: '0 12px 36px rgba(0,0,0,0.16)', zIndex: 80, padding: 8 }}>
-                      <p style={{ margin: '2px 6px 8px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Move or view enquiries</p>
+                    <div className="th-menu" style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: 260, zIndex: 80 }}>
+                      <p className="th-menu-label" style={{ marginTop: 4 }}>Move or view enquiries</p>
                       {outlets.map(o => {
                         const isCurrent = (selected as any).assigned_location_id === o.id
                         return (
-                          <button key={o.id} type="button" onClick={() => !isCurrent && moveToOutlet(o)}
-                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 10, border: 'none', background: isCurrent ? 'var(--peach)' : 'var(--canvas)', cursor: isCurrent ? 'default' : 'pointer', marginBottom: 5 }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                              <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label || o.suburb}</span>
-                            </span>
-                            {isCurrent && (
-                              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--coral)', border: '1px solid var(--coral)', borderRadius: 6, padding: '2px 7px', flexShrink: 0 }}>Current</span>
-                            )}
+                          <button key={o.id} type="button" onClick={() => !isCurrent && moveToOutlet(o)} className={`th-menu-row${isCurrent ? ' cur' : ''}`} style={{ cursor: isCurrent ? 'default' : 'pointer' }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                            <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label || o.suburb}</span>
+                            {isCurrent && <span style={{ fontSize: 12, fontWeight: 600, color: '#71717a', background: '#f4f4f5', borderRadius: 999, padding: '2px 8px', flexShrink: 0 }}>Current</span>}
                           </button>
                         )
                       })}
@@ -9326,118 +9437,53 @@ export default function InboxPage() {
                   )}
                 </div>
               )}
-
-              {/* Dialer — green and keypad-shaped, so it reads as a dialler at a
-                  glance rather than a generic grey icon. */}
-              <button type="button" onClick={() => setShowDialer(true)} title="Dialler — call any number"
-                style={{ height: 36, padding: '0 11px', borderRadius: 10, border: '1.5px solid #bbf7d0', background: 'radial-gradient(circle at 50% 30%, #f0fdf4 0%, #dcfce7 100%)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, color: '#065f46', boxShadow: '0 1px 3px rgba(6,95,70,0.12)' }}>
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                  <circle cx="5" cy="4.5" r="2"/><circle cx="12" cy="4.5" r="2"/><circle cx="19" cy="4.5" r="2"/>
-                  <circle cx="5" cy="11.5" r="2"/><circle cx="12" cy="11.5" r="2"/><circle cx="19" cy="11.5" r="2"/>
-                  <circle cx="5" cy="18.5" r="2"/><circle cx="12" cy="18.5" r="2"/><circle cx="19" cy="18.5" r="2"/>
-                </svg>
-                <span style={{ fontSize: 12.5, fontWeight: 700 }}>Dial</span>
-              </button>
-
-              {/* Search messages toggle */}
-              <button type="button" onClick={() => { setShowMsgSearch(v => !v); setMsgSearch(''); setMsgSearchIdx(0) }} title="Search messages"
-                style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: showMsgSearch ? 'var(--peach)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', order: -1 }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              </button>
-              {/* Sentiment picker */}
-              <div style={{ display: 'flex', gap: 2 }}>
-                {(['positive', 'neutral', 'negative'] as const).map(s => {
-                  const active = (selected as any).sentiment === s
-                  return (
-                    <button key={s} type="button" onClick={() => setSentiment(s)} title={`Mark ${s}`}
-                      style={{ width: 30, height: 30, borderRadius: 8, border: active ? `1.5px solid ${SENTIMENT_COLOR[s]}` : '1px solid var(--border)', background: active ? 'var(--peach)' : '#fff', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: active ? SENTIMENT_COLOR[s] : 'var(--slate)' }}>
-                      {SENTIMENT_ICON[s](16)}
-                    </button>
-                  )
-                })}
               </div>
 
-              {/* Status pill */}
-              <div style={{ position: 'relative' }}>
-                <select value={selected.status} onChange={e => setStatus(e.target.value)}
-                  style={{ fontSize: 11, fontWeight: 700, padding: '4px 8px', borderRadius: 8, border: 'none', background: STATUS_COLOR[selected.status]?.bg || '#f3f4f6', color: STATUS_COLOR[selected.status]?.color || '#6b7280', cursor: 'pointer', appearance: 'none' }}>
-                  {Object.entries(STATUS_COLOR).map(([k, v]) => <option key={k} value={k}>{v.color && k.charAt(0).toUpperCase() + k.slice(1)}</option>)}
-                </select>
-              </div>
-              </div>
-              {/* Assign and ⋯ are TRUE siblings of the scrolling tools strip (not
-                  inside it) — the strip's overflow-x/mask was clipping their taps
-                  and dropdown menus when they lived inside it. */}
-              {/* Assign button */}
-              <div style={{ position: 'relative' }} data-assign-menu>
-                <button type="button" onClick={() => { setShowAssignMenu(v => !v); setAssignSearch('') }}
-                  style={{ padding: '5px 12px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--ink)' }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                    {selected.assigned_name ? <>{Icon.person(13)}{selected.assigned_name}</> : '+ Assign'}
-                  </span>
-                </button>
-                {showAssignMenu && (
-                  <div style={{ position: 'absolute', top: '110%', right: 0, width: 240, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.12)', zIndex: 50, overflow: 'hidden' }}>
-                    <p style={{ margin: 0, padding: '10px 14px 6px', fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Assign User</p>
-                    {/* Search box with a clear (×) on the right */}
-                    <div style={{ padding: '0 10px 8px' }}>
-                      <div style={{ position: 'relative' }}>
-                        <input autoFocus value={assignSearch} onChange={e => setAssignSearch(e.target.value)}
-                          placeholder="Search users…"
-                          style={{ width: '100%', padding: '7px 26px 7px 10px', fontSize: 12.5, borderRadius: 8, border: '1px solid var(--border)', outline: 'none', boxSizing: 'border-box' }} />
-                        {assignSearch && (
-                          <button type="button" onClick={() => setAssignSearch('')}
-                            style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', color: '#9ca3af', display: 'flex', alignItems: 'center', padding: 2 }}>
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <div style={{ maxHeight: 240, overflowY: 'auto' }}>
-                    <button type="button" onClick={() => assignTo(null)}
-                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: '#ef4444' }}>
-                      Unassign
-                    </button>
-                    {teamMembers.filter((m: any) => !assignSearch || (m.name || '').toLowerCase().includes(assignSearch.toLowerCase())).map(m => (
-                      <button key={m.id} type="button" onClick={() => assignTo(m)}
-                        style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: selected.assigned_to === m.user_id ? 'var(--peach)' : 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
-                        <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>
-                          {m.name?.charAt(0).toUpperCase()}
-                        </span>
-                        {m.name}
-                        {selected.assigned_to === m.user_id && ' ✓'}
-                      </button>
-                    ))}
-                    {teamMembers.filter((m: any) => !assignSearch || (m.name || '').toLowerCase().includes(assignSearch.toLowerCase())).length === 0 && (
-                      <p style={{ margin: 0, padding: '10px 14px', fontSize: 12, color: '#9ca3af' }}>No users match.</p>
-                    )}
-                    </div>
-                  </div>
-                )}
-              </div>
+              {/* Pin / unpin this conversation for the current agent. Mirrors the
+                  right-click action so it's reachable while the thread is open. */}
+              {(() => {
+                const isPinned = pinnedIds.has(selected.id)
+                return (
+                  <button type="button" className={`inbox-pin-btn th-btn${isPinned ? ' on' : ''}`} onClick={() => togglePin(selected)}
+                    title={isPinned ? 'Unpin from top' : 'Pin to top'} aria-label={isPinned ? 'Unpin conversation' : 'Pin conversation'} aria-pressed={isPinned}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill={isPinned ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14l-1.5-3V7a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7z"/></svg>
+                  </button>
+                )
+              })()}
 
-              {/* More actions: snooze, copy link, merge */}
+              {/* More: snooze, copy link, merge, AI summary, and the customer's mood */}
               <div style={{ position: 'relative' }} data-actions-menu>
-                <button type="button" onClick={() => setShowActions(v => !v)} title="More actions"
-                  style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', fontSize: 16, lineHeight: 1 }}>⋯</button>
+                <button type="button" onClick={() => setShowActions(v => !v)} title="More actions" aria-label="More actions" aria-expanded={showActions}
+                  className={`th-btn${showActions ? ' on' : ''}`}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
+                </button>
                 {showActions && (
-                  <div style={{ position: 'absolute', top: '110%', right: 0, width: 190, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.12)', zIndex: 50, overflow: 'hidden' }}>
-                    <button type="button" onClick={() => { setShowActions(false); setShowSnooze(true) }}
-                      style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Snooze
+                  <div className="th-menu" style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: 236 }}>
+                    <button type="button" onClick={() => { setShowActions(false); setShowSnooze(true) }} className="th-menu-row">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Snooze
                     </button>
-                    <button type="button" onClick={() => { copyChatLink(); setShowActions(false) }}
-                      style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> {linkCopied ? 'Copied!' : 'Copy chat link'}
+                    <button type="button" onClick={() => { copyChatLink(); setShowActions(false) }} className="th-menu-row">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> {linkCopied ? 'Copied!' : 'Copy chat link'}
                     </button>
-                    <button type="button" onClick={() => { setShowActions(false); setShowMergePicker(true) }}
-                      style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8L22 12L18 16"/><path d="M2 12H22"/><path d="M6 8L2 12L6 16"/></svg> Merge conversation
+                    <button type="button" onClick={() => { setShowActions(false); setShowMergePicker(true) }} className="th-menu-row">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8L22 12L18 16"/><path d="M2 12H22"/><path d="M6 8L2 12L6 16"/></svg> Merge conversation
                     </button>
-                    <button type="button" onClick={() => { generateAiSummary(); setActivePanel('info'); setShowActions(false) }}
-                      style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)', borderTop: '1px solid var(--border)' }}>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3z"/></svg> AI summary & to-dos
+                    <button type="button" onClick={() => { generateAiSummary(); setActivePanel('info'); setShowActions(false) }} className="th-menu-row">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3z"/></svg> AI summary &amp; to-dos
                     </button>
+                    <div className="th-menu-sep" />
+                    <p className="th-menu-label">Customer mood</p>
+                    <div style={{ display: 'flex', gap: 4, padding: '2px 4px 4px' }}>
+                      {(['positive', 'neutral', 'negative'] as const).map(m => {
+                        const on = (selected as any).sentiment === m
+                        return (
+                          <button key={m} type="button" onClick={() => setSentiment(m)} title={`Mark ${m}`} aria-label={`Mark ${m}`} aria-pressed={on}
+                            className={`th-mood${on ? ' on' : ''}`} style={{ ['--mood' as any]: SENTIMENT_COLOR[m] }}>
+                            {SENTIMENT_ICON[m](18)}
+                          </button>
+                        )
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
