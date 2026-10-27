@@ -88,6 +88,7 @@ import { STATUS_LABEL as WA_STATUS_LABEL } from '@/lib/whatsapp-core'
 import { ProtectionCard, ProtectionBanner } from '@/components/inbox/ProtectionCard'
 import EmptyScroll from '@/components/EmptyScroll'
 import CustomerGlance from '@/components/inbox/CustomerGlance'
+import { ColvyChatRow, ColvyChatThread, useColvySummary } from '@/components/inbox/ColvyChat'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -306,7 +307,7 @@ function fmtReceipt(d: string | undefined | null, isAgent: boolean, channel?: st
   const NAMES: Record<string, string> = {
     sms: 'SMS', email: 'Email', chat: 'Live Chat', widget: 'Live Chat',
     instagram: 'Instagram', facebook: 'Messenger', messenger: 'Messenger',
-    whatsapp: 'WhatsApp', phone: 'Phone Call', upload: 'Upload link',
+    whatsapp: 'WhatsApp', phone: 'Phone Call', upload: 'Upload link', colvy: 'Colvy app',
   }
   const chan = channel ? (NAMES[channel.toLowerCase()] || channel.charAt(0).toUpperCase() + channel.slice(1)) : ''
   // Show the channel on BOTH sides — an agent needs to know a reply went by SMS.
@@ -325,6 +326,9 @@ function receiptChannel(msg: any, fallback?: string): string | undefined {
   // Customer emails received by the inbound webhook used to be saved without a
   // channel, so the column default ('chat') made them read "Live Chat".
   if (isEmailWithoutChannel(msg)) return 'email'
+  // Written in someone's Colvy chat (Colvy's own inbox): say from which workspace.
+  const ws = msg?.metadata?.colvy_app?.workspace_name
+  if (msg?.delivery_channel === 'colvy' && ws) return `Colvy app · ${String(ws).slice(0, 60)}`
   return msg?.delivery_channel || fallback
 }
 function isEmailWithoutChannel(msg: any): boolean {
@@ -1009,6 +1013,10 @@ export default function InboxPage() {
   // On phones we show one pane at a time: the conversation list, the open
   // thread, or the contact panel. Desktop shows all three side by side.
   const [mobilePane, setMobilePane] = useState<'list' | 'thread' | 'contact'>('list')
+  // This person's private chat with Colvy (components/inbox/ColvyChat), pinned
+  // at the top of the list. Open instead of a conversation, never alongside one.
+  const colvy = useColvySummary(companyId)
+  const [colvyOpen, setColvyOpen] = useState(false)
   // Tablets (768–1100px): the contact panel is a slide-over drawer, not a column.
   const [tabletContact, setTabletContact] = useState(false)
   useEffect(() => {
@@ -1836,6 +1844,8 @@ export default function InboxPage() {
   // phone-call thread has no text channel of its own, so we text the caller
   // (or email them if there's no mobile) instead of treating it as live chat.
   const outboundChannel = useMemo(() => {
+    // A Colvy chat is answered in the app only (see sendReply).
+    if (String((selected as any)?.channel || '') === 'colvy') return 'colvy'
     if (!['phone', 'call', 'voice'].includes(activeChannel)) return activeChannel
     const s = selected as any
     if (s?.sms_number || s?.phone || contact?.phone || s?.contacts?.phone) return 'sms'
@@ -2471,7 +2481,7 @@ export default function InboxPage() {
     // the wrong (top) conversation first. Started right away (it reads its own
     // messages + contact) so the thread loads in parallel with the list's
     // contact enrichment below rather than after it.
-    const hasDeepLink = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('conversation')
+    const hasDeepLink = typeof window !== 'undefined' && (new URLSearchParams(window.location.search).get('conversation') || new URLSearchParams(window.location.search).get('colvy'))
     if (data && data.length > 0 && !selectedRef.current && !hasDeepLink && typeof window !== 'undefined' && window.innerWidth >= 768) {
       selectConversation(data[0])
     }
@@ -2950,7 +2960,20 @@ export default function InboxPage() {
     if (data && selectedRef.current?.id === convId) { applyThread(convId, data, since, fresh); scrollBottom() }
   }
 
+  // Open the Colvy chat: nothing else is selected while it's open.
+  const openColvy = () => {
+    setSelected(null); selectedRef.current = null
+    setColvyOpen(true); setMobilePane('thread')
+  }
+  // ?colvy=1 (a link to it) opens it once it's known to be there.
+  const colvyLinked = useRef(false)
+  useEffect(() => {
+    if (colvyLinked.current || !colvy.available || typeof window === 'undefined') return
+    if (new URLSearchParams(window.location.search).get('colvy')) { colvyLinked.current = true; openColvy() }
+  }, [colvy.available]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const selectConversation = async (conv: Conversation) => {
+    setColvyOpen(false)
     // Start every independent read for this conversation NOW, in parallel. The
     // thread used to wait on: full message history → unread update → contact →
     // timeline/calls, one round trip after another, before it finished loading.
@@ -4943,7 +4966,7 @@ export default function InboxPage() {
                     </button>
                   </div>
                   <span className="cmp-via">
-                    {internalMode ? 'Only your team sees this' : channelResolving ? 'Choosing a channel…' : <><span className="cmp-via-lbl">Sending by </span><b>{({ sms: 'SMS', email: 'email', chat: 'live chat', instagram: 'Instagram', messenger: 'Messenger', whatsapp: 'WhatsApp', call: 'SMS' } as Record<string, string>)[sendChannel !== 'auto' ? sendChannel : outboundChannel] || 'chat'}</b> {sendChannelGlyph(sendChannel !== 'auto' ? sendChannel : outboundChannel, 13)}</>}
+                    {internalMode ? 'Only your team sees this' : channelResolving ? 'Choosing a channel…' : <><span className="cmp-via-lbl">Sending by </span><b>{({ sms: 'SMS', email: 'email', chat: 'live chat', instagram: 'Instagram', messenger: 'Messenger', whatsapp: 'WhatsApp', call: 'SMS', colvy: 'Colvy app' } as Record<string, string>)[sendChannel !== 'auto' ? sendChannel : outboundChannel] || 'chat'}</b> {sendChannelGlyph(sendChannel !== 'auto' ? sendChannel : outboundChannel, 13)}</>}
                     {/* Both a mobile and an email: one tap to the other. */}
                     {!internalMode && !channelResolving && (() => {
                       const cur = sendChannel !== 'auto' ? sendChannel : outboundChannel
@@ -6010,6 +6033,15 @@ export default function InboxPage() {
         const d = await r.json().catch(() => ({}))
         if (r.ok && typeof d.text === 'string' && d.text) content = d.text
       } catch { /* send the original if tracking fails */ }
+    }
+
+    // Someone writing from their Colvy chat (lib/colvy-chat, Colvy's own
+    // inbox only): the answer goes back into that chat in the app, never by
+    // email or text, whatever the contact has on file. Text only there.
+    if (String((selected as any).channel || '') === 'colvy') {
+      if (stagedMedia.length) { setSending(false); alert('Files can’t be sent in the Colvy chat yet. Paste a link instead.'); return }
+      await deliverChat(content, senderName)
+      return
     }
 
     // Instagram / Messenger conversations reply through the Meta Send API.
@@ -8785,6 +8817,12 @@ export default function InboxPage() {
 
         {/* List */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
+          {/* The Colvy chat, pinned on top of the open conversations (not in a
+              search, Closed, or a filter it doesn't belong to). */}
+          {colvy.available && !searchTerm.trim() && statusFilter !== 'closed' && activeFilterCount === 0
+            && (assignFilter === 'all' || (assignFilter === 'unread' && colvy.unread > 0)) && (
+            <ColvyChatRow summary={colvy} active={colvyOpen && !selected} onOpen={openColvy} />
+          )}
           {filteredConvs.length === 0 && (() => {
             // An empty list that still feels alive, worded for what's being looked at.
             const term = searchTerm.trim()
@@ -8831,6 +8869,8 @@ export default function InboxPage() {
               phone:     { label: 'Phone', bg: '#e0f2fe', fg: '#0369a1' },
               call:      { label: 'Phone', bg: '#e0f2fe', fg: '#0369a1' },
               voice:     { label: 'Phone', bg: '#e0f2fe', fg: '#0369a1' },
+              // Someone's private Colvy chat (Colvy's own inbox only).
+              colvy:     { label: 'Colvy app', bg: '#fff1ee', fg: '#e2553f' },
             }
             if (CHANNEL_BADGE[ch]) {
               source = CHANNEL_BADGE[ch]
@@ -9039,7 +9079,9 @@ export default function InboxPage() {
 
       {/* ── MIDDLE: Chat thread ─────────────────────────────────────────────── */}
       <div className="inbox-col-thread" style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#f9f9f9', minWidth: 0 }}>
-        {!selected ? (
+        {!selected && colvyOpen ? (
+          <ColvyChatThread companyId={companyId} onBack={() => setMobilePane('list')} onRead={colvy.clearUnread} />
+        ) : !selected ? (
           // Nothing open: the business's mark, quietly, and the keyboard keys.
           <div className="inbox-empty-thread" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative', background: '#fff' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, opacity: 0.9 }}>
@@ -9514,6 +9556,7 @@ export default function InboxPage() {
                   sms: 'SMS Enquiry', email: 'Email Enquiry', instagram: 'Instagram Enquiry',
                   facebook: 'Messenger Enquiry', messenger: 'Messenger Enquiry',
                   whatsapp: 'WhatsApp Enquiry', phone: 'Phone Call',
+                  colvy: 'message in the Colvy app',
                 }
                 const subj = (selected.subject || '').toLowerCase()
                 // Order threads carry the customer's NAME as the subject once a
@@ -10584,7 +10627,7 @@ export default function InboxPage() {
                   draft) is still mounted underneath, just hidden. */}
               {(() => {
                 const ch = sendChannel !== 'auto' ? sendChannel : outboundChannel
-                const chName = ({ sms: 'SMS', email: 'Email', chat: 'Live chat', instagram: 'Instagram', messenger: 'Messenger', whatsapp: 'WhatsApp', call: 'SMS' } as Record<string, string>)[ch] || 'Chat'
+                const chName = ({ sms: 'SMS', email: 'Email', chat: 'Live chat', instagram: 'Instagram', messenger: 'Messenger', whatsapp: 'WhatsApp', call: 'SMS', colvy: 'Colvy app' } as Record<string, string>)[ch] || 'Chat'
                 const draftText = ((showEmailComposer && !internalMode) ? emailDraftText : reply).replace(/\s+/g, ' ').trim()
                 const first = contact?.name ? contact.name.split(' ')[0] : 'customer'
                 return (

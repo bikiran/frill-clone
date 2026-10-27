@@ -35,6 +35,7 @@ const PortingQueuePage = dynamic(() => import('@/components/platform-admin/Porti
 const SmsCreditsPage = dynamic(() => import('@/components/platform-admin/SmsCreditsPage'), { loading: PageLoading })
 const WhatsAppPage = dynamic(() => import('@/components/platform-admin/WhatsAppPage'), { loading: PageLoading })
 const StatusIncidentsPage = dynamic(() => import('@/components/platform-admin/StatusIncidentsPage'), { loading: PageLoading })
+const ColvyUpdatesPage = dynamic(() => import('@/components/platform-admin/ColvyUpdatesPage'), { loading: PageLoading })
 const Intelligence = dynamic(() => import('./intelligence/Intelligence'), { loading: PageLoading })
 
 const SUPER_ADMIN = 'bishalstha76@gmail.com'
@@ -4853,6 +4854,7 @@ export default function SuperAdmin() {
           {page === 'billing'    && <BillingPage />}
           {page === 'legal'      && <LegalAdminPage />}
           {page === 'banner'     && <PlatformBannerAdmin />}
+          {page === 'colvyupdates' && <ColvyUpdatesPage />}
           {page === 'ai'         && <AiModelsPage />}
           {page === 'sms'        && <SmsPricingPage />}
           {page === 'smscredits' && <SmsCreditsPage />}

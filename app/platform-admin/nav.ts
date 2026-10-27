@@ -56,6 +56,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { key: 'roadmap', label: 'Roadmaps', icon: 'roadmap', desc: 'Planned, in-progress and shipped items' },
       { key: 'legal', label: 'Legal pages', icon: 'audit', desc: 'Terms, privacy and other legal pages', keywords: 'terms privacy' },
       { key: 'banner', label: 'Product banner', icon: 'announce', desc: 'The banner shown across the app' },
+      { key: 'colvyupdates', label: 'Colvy chat updates', icon: 'chat', desc: 'Posts in everyone’s private Colvy chat; replies come to Colvy’s inbox', keywords: 'announce news whats new in-app message' },
       { key: 'webforms', label: 'Web forms', icon: 'system', desc: 'Contact and demo forms submitted on colvy.com', keywords: 'leads contact demo' },
     ],
   },
