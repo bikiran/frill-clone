@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth-fetch'
 import Link from 'next/link'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import EmptyScroll from '@/components/EmptyScroll'
 
 // The company whose board this is, from the host (momo-hub.colvy.com, or the
 // company's own board/help domain). On colvy.com itself there isn't one and the
@@ -234,12 +235,8 @@ export default function ProfilePage() {
 
   const empty = (title: string, text: string, cta = true) => (
     <div className="pf-empty">
-      <div className="pf-empty-ic" aria-hidden="true">
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z" /></svg>
-      </div>
-      <p className="pf-empty-title">{title}</p>
-      <p className="pf-empty-text">{text}</p>
-      {cta && <Link href="/?view=ideas&new=1" className="pf-btn pf-btn-primary">Submit an idea</Link>}
+      <EmptyScroll kinds={['idea', 'chat']} title={title} line={text}
+        action={cta ? <Link href="/?view=ideas&new=1" className="pf-btn pf-btn-primary">Submit an idea</Link> : undefined} />
     </div>
   )
 
@@ -300,10 +297,7 @@ export default function ProfilePage() {
         .pf-idea-desc { margin: 0 0 8px; font-size: 13px; color: var(--slate); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
         .pf-meta { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--slate); flex-wrap: wrap; }
         .pf-pill { padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 700; }
-        .pf-empty { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 48px 20px; background: #fff; border: 1px dashed var(--border); border-radius: 16px; }
-        .pf-empty-ic { width: 56px; height: 56px; border-radius: 18px; display: flex; align-items: center; justify-content: center; background: var(--peach, #fff1ee); color: var(--coral); margin-bottom: 14px; }
-        .pf-empty-title { margin: 0 0 4px; font-size: 16px; font-weight: 700; color: var(--ink); }
-        .pf-empty-text { margin: 0 0 18px; font-size: 14px; color: var(--slate); max-width: 340px; }
+        .pf-empty { padding: 16px 12px; background: #fff; border: 1px solid var(--border); border-radius: 16px; }
         @media (max-width: 640px) {
           .pf-wrap { padding-left: 16px; padding-right: 16px; }
           /* Phones: avatar, then name and email, then a full-width Edit profile. */
