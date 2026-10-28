@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { provisionSubdomain } from '@/lib/provision-domain'
 import { boardSlugAllowed } from '@/lib/reserved-subdomains'
+import { publicUrlProblem } from '@/lib/site-crawl'
 
 const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
@@ -75,7 +76,8 @@ export async function POST(req: NextRequest) {
         // Seed data for new company (non-blocking)
         const { seedCompanyData } = await import('@/lib/seedCompany')
         seedCompanyData(d2.id, d2.name).catch(console.error)
-        
+        await applyBrand(admin, d2, body)
+
         return NextResponse.json({ company: d2 })
       }
       return NextResponse.json({ error: error.message }, { status: 400 })
@@ -88,6 +90,7 @@ export async function POST(req: NextRequest) {
     // new board on a 404'd subdomain. Call the provisioner directly and await it
     // (it never throws — returns a structured result).
     let domain: any = null
+    if (data?.id) await applyBrand(admin, data, body)
     if (data?.id) {
       try { domain = await provisionSubdomain(`${data.slug}.colvy.com`) } catch (e: any) { domain = { ok: false, error: e?.message } }
 
@@ -103,4 +106,53 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
+}
+
+// ── Logo and website from the new-workspace flow ───────────────────────────────
+
+const IMAGE_TYPES: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/svg+xml': 'svg', 'image/gif': 'gif', 'image/x-icon': 'ico', 'image/vnd.microsoft.icon': 'ico' }
+
+/** Copy a website's icon into Colvy's storage, so the workspace logo doesn't
+ *  depend on that site. Public addresses only (checked on every redirect),
+ *  images only, up to 1 MB. Returns the stored address, or null. */
+async function copyIcon(admin: any, companyId: string, url: string): Promise<string | null> {
+  let current = url
+  for (let hop = 0; hop < 4; hop++) {
+    if (await publicUrlProblem(current)) return null
+    const ctrl = new AbortController()
+    const t = setTimeout(() => ctrl.abort(), 6000)
+    try {
+      const res = await fetch(current, { redirect: 'manual', signal: ctrl.signal, headers: { 'User-Agent': 'ColvyBot/1.0 (+https://colvy.com)' } })
+      if (res.status >= 300 && res.status < 400 && res.headers.get('location')) { current = new URL(res.headers.get('location')!, current).toString(); continue }
+      const type = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
+      const ext = IMAGE_TYPES[type]
+      if (!res.ok || !ext) return null
+      const bytes = new Uint8Array(await res.arrayBuffer())
+      if (!bytes.length || bytes.length > 1_000_000) return null
+      const path = `logos/${companyId}-${Date.now()}.${ext}`
+      for (const bucket of ['settings', 'idea-images']) {
+        const { error } = await admin.storage.from(bucket).upload(path, bytes, { contentType: type, upsert: true })
+        if (!error) return admin.storage.from(bucket).getPublicUrl(path).data?.publicUrl || null
+      }
+      return null
+    } catch { return null } finally { clearTimeout(t) }
+  }
+  return null
+}
+
+/** Save the logo (an upload, or the website's icon) and the website, if given.
+ *  Best effort: a workspace is never refused over its branding. */
+async function applyBrand(admin: any, company: any, body: any) {
+  try {
+    const logo = typeof body?.logoUrl === 'string' ? body.logoUrl.trim() : ''
+    if (/^https:\/\//i.test(logo) && logo.length <= 600) {
+      const ours = !!process.env.NEXT_PUBLIC_SUPABASE_URL && logo.startsWith(process.env.NEXT_PUBLIC_SUPABASE_URL)
+      const stored = ours ? logo : await copyIcon(admin, company.id, logo)
+      if (stored) { await admin.from('companies').update({ logo_url: stored }).eq('id', company.id); company.logo_url = stored }
+    }
+    const site = typeof body?.website === 'string' ? body.website.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '') : ''
+    if (/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(site) && site.length <= 120) {
+      await admin.from('companies').update({ website: `https://${site}` }).eq('id', company.id)
+    }
+  } catch (e: any) { console.warn('[companies] branding not saved:', e?.message || e) }
 }
