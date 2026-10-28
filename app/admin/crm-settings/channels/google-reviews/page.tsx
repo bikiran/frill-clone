@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { Icon, Star } from '@/components/integrations/ui'
 import EmptyScroll from '@/components/EmptyScroll'
+import BrandLogo from '@/components/BrandLogo'
 
 export default function GoogleReviewsPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
@@ -209,7 +210,10 @@ export default function GoogleReviewsPage() {
 
   return (
     <div className="w-full max-w-[1200px] mx-auto px-4 md:px-8 py-6 md:py-8">
-      <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: '0 0 4px' }}>Google Reviews</h1>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+        <BrandLogo brand="google" size={44} />
+        <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>Google reviews</h1>
+      </div>
       <p style={{ fontSize: 14, color: 'var(--slate)', margin: '0 0 20px' }}>See and reply to your Google reviews, and automatically ask customers for one after their order completes.</p>
 
       {msg && <div style={{ padding: '10px 14px', borderRadius: 9, background: 'var(--peach)', color: 'var(--coral)', fontSize: 13, marginBottom: 16 }}>{msg}</div>}

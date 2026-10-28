@@ -12,7 +12,7 @@ import SettingsShell from '@/components/settings/SettingsShell'
 const CHANNEL_LABELS: Record<string, string> = {
   email: 'Email', telnyx: 'SMS & Calls', calls: 'SMS & Calls', 'google-reviews': 'Google Reviews',
   instagram: 'Instagram', facebook: 'Messenger', whatsapp: 'WhatsApp',
-  meta: 'Facebook & Instagram', 'web-form': 'Web Form', realestate: 'RealEstate',
+  meta: 'Instagram & Messenger', 'web-form': 'Web form', realestate: 'realestate.com.au',
   'chat-widget': 'Chat Widget', 'sending-domain': 'Email sending domain',
 }
 

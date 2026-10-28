@@ -8,6 +8,7 @@ import { confirmDialog } from '@/components/ConfirmDialog'
 import { currentSetupReturn } from '@/lib/setup-return'
 import { gmailErrorMessage } from '@/lib/gmail-oauth'
 import GmailConnectExplainer from '@/components/GmailConnectExplainer'
+import BrandLogo from '@/components/BrandLogo'
 
 // Multi-account email. Ways in:
 //   Gmail      — sign in with Google (read + send from the Gmail address).
@@ -152,7 +153,10 @@ export default function EmailPage() {
 
   return (
     <div className="w-full px-4 md:px-8 py-6 md:py-8">
-      <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: '0 0 4px' }}>Email</h1>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+        <BrandLogo brand="gmail" size={44} />
+        <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>Email</h1>
+      </div>
       <p style={{ fontSize: 14, color: 'var(--slate)', margin: '0 0 20px' }}>
         Connect as many mailboxes as you need — one per outlet if you like. Everything lands in your inbox, and replies go back out from the right address.
       </p>

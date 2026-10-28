@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth-fetch'
 import { S, useCompanyUser } from '../../_shared'
+import BrandLogo from '@/components/BrandLogo'
 
 const FORMS_DOMAIN = process.env.NEXT_PUBLIC_FORMS_DOMAIN || 'forms.colvy.com'
 const hex = (s: string) => (s || '').replace(/[^a-f0-9]/gi, '').toLowerCase()
@@ -99,7 +100,10 @@ export default function WebFormChannel() {
 
   return (
     <div>
-      <h1 style={S.h1}>Web Form</h1>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+        <BrandLogo brand="webform" size={44} />
+        <h1 style={{ ...S.h1, margin: 0 }}>Web form</h1>
+      </div>
       <p style={S.sub}>Give any website form a Colvy address. Point your form's notification email here and every submission lands in your inbox for that location. There's nothing else to set up.</p>
 
       {status && status.ready !== null && (
