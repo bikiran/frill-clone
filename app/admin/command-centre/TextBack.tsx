@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { authFetch } from '@/lib/auth-fetch'
-import { Icon, Chip, C, btn, kicker, Spinner } from './ui'
+import { Icon, Chip, C, btn, iconBtn, Spinner } from './ui'
 
 type Draft = { text: string; source: 'ai' | 'template'; why: string[]; to: string; toDisplay: string; from: string | null; conversationId: string | null; contactId: string | null; consent: 'ok' | 'unknown'; autoTexted: boolean }
 
@@ -56,39 +56,40 @@ export default function TextBack({ companyId, callId, who, senderName, onClose, 
   return createPortal(
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(15,15,20,0.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div role="dialog" aria-modal="true" aria-label="Text back" onClick={e => e.stopPropagation()}
-        style={{ width: 'min(520px, 100%)', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', background: 'var(--card, #fff)', borderRadius: 16, border: '1px solid var(--border)', boxShadow: '0 30px 80px rgba(0,0,0,0.28)', padding: 18 }}>
+        className="cc-tb" style={{ width: 'min(520px, 100%)', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', background: '#fff', borderRadius: 24, border: 'none', boxShadow: '0 24px 64px rgba(0,0,0,0.22)', padding: '20px 22px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
-          <span style={{ width: 34, height: 34, borderRadius: 10, background: 'var(--peach)', color: 'var(--coral)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{Icon.chat(17)}</span>
+          <span style={{ width: 40, height: 40, borderRadius: 999, background: 'var(--peach)', color: 'var(--coral)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{Icon.chat(18)}</span>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--ink)' }}>Text {who} back</p>
-            <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--slate)' }}>{draft ? `To ${draft.toDisplay}` : 'Drafting…'}</p>
+            <p style={{ margin: 0, fontSize: 21, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--ink)' }}>Text {who} back</p>
+            <p style={{ margin: '2px 0 0', fontSize: 13, color: '#71717a' }}>{draft ? `To ${draft.toDisplay}` : 'Drafting…'}</p>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close" style={{ border: 'none', background: 'none', color: 'var(--slate)', cursor: 'pointer', padding: 4 }}>{Icon.x(16)}</button>
+          <button type="button" onClick={onClose} aria-label="Close" style={{ ...iconBtn, width: 34, height: 34 }}>{Icon.x(16)}</button>
         </div>
 
         {!draft && !error && <p style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--slate)', margin: '18px 0' }}><Spinner /> Writing a draft from the call…</p>}
-        {error && !draft && <p style={{ margin: '10px 0', padding: '10px 12px', borderRadius: 10, background: 'color-mix(in srgb, #dc2626 9%, transparent)', color: C.red, fontSize: 13, fontWeight: 600 }}>{error}</p>}
+        {error && !draft && <p style={{ margin: '10px 0', padding: '10px 12px', borderRadius: 14, background: 'color-mix(in srgb, #dc2626 9%, transparent)', color: C.red, fontSize: 13, fontWeight: 600 }}>{error}</p>}
 
         {draft && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
               {draft.source === 'ai' ? <Chip color={C.violet}>{Icon.spark(11)} AI draft</Chip> : <Chip color="#6b6b70">Your missed-call message</Chip>}
               {draft.consent === 'ok' ? <Chip color={C.green}>{Icon.check(11)} OK to text</Chip> : <Chip color={C.amber}>Opt-out checked when sent</Chip>}
-              <button type="button" onClick={() => setShowWhy(v => !v)} style={{ border: 'none', background: 'none', padding: 0, fontSize: 12, fontWeight: 700, color: 'var(--coral)', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 2 }}>Why?</button>
+              <button type="button" onClick={() => setShowWhy(v => !v)} aria-expanded={showWhy} style={{ border: 'none', background: 'none', padding: 0, fontSize: 12.5, fontWeight: 600, color: 'var(--coral)', cursor: 'pointer' }}>Why?</button>
             </div>
             {showWhy && (
-              <ul style={{ margin: '0 0 10px', padding: '9px 12px 9px 26px', borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)', fontSize: 12, color: 'var(--ink)', lineHeight: 1.55 }}>
+              <ul style={{ margin: '0 0 10px', padding: '10px 14px 10px 28px', borderRadius: 14, background: '#f4f4f5', border: 'none', fontSize: 12.5, color: '#3f3f46', lineHeight: 1.55 }}>
                 {draft.why.map((w, i) => <li key={i}>{w}</li>)}
               </ul>
             )}
             {draft.autoTexted && (
-              <p style={{ margin: '0 0 10px', padding: '8px 11px', borderRadius: 10, background: 'color-mix(in srgb, #d97706 10%, transparent)', color: '#b45309', fontSize: 12, fontWeight: 600 }}>
+              <p style={{ margin: '0 0 10px', padding: '10px 12px', borderRadius: 14, background: 'color-mix(in srgb, #d97706 10%, transparent)', color: '#b45309', fontSize: 12, fontWeight: 600 }}>
                 They already got your automatic missed-call text for this call. Make this one count, or call instead.
               </p>
             )}
             <textarea value={text} onChange={e => setText(e.target.value)} rows={5} maxLength={640} aria-label="Message"
-              style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 11, border: '1px solid var(--border)', background: 'var(--canvas)', color: 'var(--ink)', fontSize: 14, lineHeight: 1.5, fontFamily: 'inherit', resize: 'vertical', outline: 'none' }} />
-            <p style={{ ...kicker, textTransform: 'none', letterSpacing: 0, fontWeight: 600, margin: '4px 0 0' }}>{len} characters · {parts} text{parts === 1 ? '' : 's'}</p>
+              className="cc-tb-field" style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', borderRadius: 14, border: '1.5px solid transparent', background: '#f4f4f5', color: 'var(--ink)', fontSize: 14.5, lineHeight: 1.5, fontFamily: 'inherit', resize: 'vertical', outline: 'none' }} />
+            <style>{`.cc-tb-field:focus{background:#fff!important;border-color:#d4d4d8!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 16%,transparent)!important}.cc-tb button::before{display:none}`}</style>
+            <p style={{ margin: '6px 0 0', fontSize: 12.5, color: '#8e8e93' }}>{len} characters · {parts} text{parts === 1 ? '' : 's'}</p>
             {error && <p style={{ margin: '10px 0 0', color: C.red, fontSize: 12.5, fontWeight: 600 }}>{error}</p>}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
               <button type="button" onClick={onClose} style={btn('ghost')}>Cancel</button>

@@ -57,15 +57,15 @@ export default function AiSummary({ companyId, from, to, rangeLabel, onTopic, ac
 
   const max = Math.max(1, ...(data?.topics || []).map(t => t.count))
   return (
-    <div style={{ ...card, padding: 18, borderColor: tint(C.violet, 28), background: `linear-gradient(180deg, ${tint(C.violet, 5)}, transparent 70%), var(--card, #fff)` }}>
+    <div style={{ ...card, padding: 20, background: `linear-gradient(180deg, ${tint(C.violet, 6)}, transparent 70%), #fff` }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-        <span style={{ width: 30, height: 30, borderRadius: 9, background: tint(C.violet, 14), color: C.violet, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{Icon.spark(15)}</span>
+        <span style={{ width: 34, height: 34, borderRadius: 11, background: tint(C.violet, 14), color: C.violet, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{Icon.spark(15)}</span>
         <div style={{ flex: 1, minWidth: 180 }}>
-          <p style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--ink)' }}>AI call summary</p>
-          <p style={{ margin: '1px 0 0', fontSize: 12, color: 'var(--slate)' }}>{rangeLabel}{data ? ` · from ${data.based.summaries} call summar${data.based.summaries === 1 ? 'y' : 'ies'} out of ${data.based.calls} call${data.based.calls === 1 ? '' : 's'}` : ''}</p>
+          <p style={{ margin: 0, fontSize: 17, fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--ink)' }}>AI call summary</p>
+          <p style={{ margin: '2px 0 0', fontSize: 13, color: '#71717a' }}>{rangeLabel}{data ? ` · from ${data.based.summaries} call summar${data.based.summaries === 1 ? 'y' : 'ies'} out of ${data.based.calls} call${data.based.calls === 1 ? '' : 's'}` : ''}</p>
         </div>
         <WhyInline align="right" why={<>The numbers are counted exactly from your calls in this period, in your business’s timezone. The reasons people called are grouped by AI from each call’s summary: recorded calls and voicemails get one after the call, and the AI receptionist notes what each caller wanted. Calls with no summary aren’t in the topics.</>} />
-        <button type="button" onClick={() => load(true)} disabled={loading} style={{ ...btn('ghost'), padding: '5px 10px' }}>{loading ? <Spinner size={12} /> : Icon.refresh(12)} Refresh</button>
+        <button type="button" onClick={() => load(true)} disabled={loading} style={btn('ghost')}>{loading ? <Spinner size={12} /> : Icon.refresh(12)} Refresh</button>
       </div>
 
       {error && <p style={{ margin: 0, color: C.red, fontSize: 13, fontWeight: 600 }}>{error}</p>}
@@ -103,10 +103,10 @@ export default function AiSummary({ companyId, from, to, rangeLabel, onTopic, ac
                   const on = activeTopic === t.name
                   return (
                     <button key={t.name} type="button" onClick={() => onTopic(on ? null : t)} title={on ? 'Show all calls' : `Show these ${t.count} calls`}
-                      style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'center', gap: 4, padding: '6px 8px', borderRadius: 9, border: `1px solid ${on ? C.violet : 'transparent'}`, background: on ? tint(C.violet, 8) : 'transparent', cursor: 'pointer', textAlign: 'left', font: 'inherit' }}>
-                      <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
+                      style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', alignItems: 'center', gap: 5, padding: '8px 10px', borderRadius: 12, border: 'none', boxShadow: on ? `0 0 0 1.5px ${C.violet}` : 'none', background: on ? tint(C.violet, 8) : 'transparent', cursor: 'pointer', textAlign: 'left', font: 'inherit' }}>
+                      <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
                       <span style={{ fontSize: 12, fontWeight: 800, color: C.violet }}>{t.count}</span>
-                      <span style={{ gridColumn: '1 / -1', height: 6, borderRadius: 4, background: 'var(--canvas)', overflow: 'hidden' }}>
+                      <span style={{ gridColumn: '1 / -1', height: 6, borderRadius: 4, background: '#f4f4f5', overflow: 'hidden' }}>
                         <span style={{ display: 'block', height: '100%', width: `${Math.max(4, t.count / max * 100)}%`, background: tint(C.violet, 70), borderRadius: 4 }} />
                       </span>
                     </button>

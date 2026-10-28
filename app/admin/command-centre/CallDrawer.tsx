@@ -11,7 +11,7 @@ import { authFetch } from '@/lib/auth-fetch'
 import CallCard from '@/components/CallCard'
 import { WhyLink } from '@/components/WhyAgent'
 import { callerDisplay, outcomeLabel, aiOutcomeOf, AI_OUTCOME_LABEL, fmtDur, formatPhone, otherNumber, type CcCall } from '@/lib/command-centre'
-import { Icon, Chip, C, btn, kicker, Spinner, tint, OUTCOME_COLOR } from './ui'
+import { Icon, Chip, C, btn, kicker, label, Spinner, tint, iconBtn, OUTCOME_COLOR } from './ui'
 
 type Detail = {
   call: CcCall
@@ -67,64 +67,79 @@ export default function CallDrawer({ companyId, call, tz, hour12, locationName, 
   const unanswered = c.direction === 'inbound' && (out.key === 'missed' || out.key === 'voicemail')
   const fmtT = (v: string) => new Date(v).toLocaleString('en-AU', { timeZone: tz, day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12 })
 
+  const col = OUTCOME_COLOR[out.key] || C.blue
+  const sect: React.CSSProperties = { background: '#fff', borderRadius: 18, padding: '14px 16px' }
+  const sectH: React.CSSProperties = { ...kicker, fontSize: 14.5, marginBottom: 10 }
+  const rowBox: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 14, background: '#f4f4f5' }
+
   if (typeof document === 'undefined') return null
   return createPortal(
-    <div onClick={close} style={{ position: 'fixed', inset: 0, zIndex: 900, background: 'rgba(15,15,20,0.36)', opacity: closing ? 0 : 1, transition: 'opacity .18s ease' }}>
-      <style>{`@keyframes ccdrawer{from{transform:translateX(24px);opacity:.4}to{transform:none;opacity:1}}`}</style>
-      <aside role="dialog" aria-modal="true" aria-label="Call details" onClick={e => e.stopPropagation()}
-        style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: 'min(600px, 100vw)', background: 'var(--card, #fff)', borderLeft: '1px solid var(--border)', boxShadow: '-20px 0 60px rgba(0,0,0,0.18)', display: 'flex', flexDirection: 'column', animation: 'ccdrawer .2s ease' }}>
+    <div onClick={close} style={{ position: 'fixed', inset: 0, zIndex: 900, background: 'rgba(15,15,20,0.3)', opacity: closing ? 0 : 1, transition: 'opacity .18s ease' }}>
+      <style>{`@keyframes ccdrawer{from{transform:translateX(28px);opacity:0}to{transform:none;opacity:1}}
+        .cc-drawer{position:absolute;top:8px;right:8px;bottom:8px;width:min(560px,calc(100vw - 16px))}
+        .cc-drawer button::before{display:none}
+        @media (max-width:700px){.cc-drawer{top:6px;right:6px;bottom:6px;left:6px;width:auto;border-radius:22px!important}}
+        @media (prefers-reduced-motion: reduce){.cc-drawer{animation:none!important}}`}</style>
+      <aside className="cc-drawer" role="dialog" aria-modal="true" aria-label="Call details" onClick={e => e.stopPropagation()}
+        style={{ background: '#f4f4f5', borderRadius: 24, overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.22), 0 0 0 1px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', animation: 'ccdrawer .32s cubic-bezier(.22,1,.36,1)', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', color: 'var(--ink)' }}>
         {/* Header */}
-        <div style={{ padding: '16px 18px 14px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-          <span style={{ width: 42, height: 42, borderRadius: 12, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: tint(OUTCOME_COLOR[out.key] || C.blue), color: OUTCOME_COLOR[out.key] || C.blue }}>
-            {out.key === 'voicemail' ? Icon.vm(19) : out.key === 'missed' ? Icon.phoneMissed(19) : c.direction === 'outbound' ? Icon.phoneOut(19) : Icon.phoneIn(19)}
-          </span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{disp.title}</p>
-            <p style={{ margin: '2px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>{disp.subtitle}{disp.known && locationName ? ` · ${locationName}` : ''}</p>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-              <Chip color={OUTCOME_COLOR[out.key] || C.blue}>{out.label}</Chip>
-              {ao && <Chip color={C.violet}>{Icon.spark(11)} {AI_OUTCOME_LABEL[ao]}</Chip>}
-              {c.ai?.test && <Chip color="#6b6b70">Test call</Chip>}
-              <Chip color="#6b6b70">{c.direction === 'inbound' ? 'Incoming' : 'Outgoing'}</Chip>
+        <div style={{ flexShrink: 0, background: '#fff', borderBottom: '1px solid #ececef', padding: '16px 18px' }}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+            <span style={{ width: 46, height: 46, borderRadius: 999, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: tint(col, 12), color: col }}>
+              {out.key === 'voicemail' ? Icon.vm(20) : out.key === 'missed' ? Icon.phoneMissed(20) : c.direction === 'outbound' ? Icon.phoneOut(20) : Icon.phoneIn(20)}
+            </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{disp.title}</p>
+              <p style={{ margin: '3px 0 0', fontSize: 13.5, color: '#71717a' }}>{disp.subtitle}{disp.known && locationName ? ` · ${locationName}` : ''}</p>
             </div>
+            <button type="button" onClick={close} aria-label="Close" title="Close" style={{ ...iconBtn, width: 34, height: 34 }}>{Icon.x(16)}</button>
           </div>
-          <button type="button" onClick={close} aria-label="Close" style={{ border: 'none', background: 'none', color: 'var(--slate)', cursor: 'pointer', padding: 4 }}>{Icon.x(18)}</button>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
+            <Chip color={col}>{out.label}</Chip>
+            {ao && <Chip color={C.violet}>{Icon.spark(11)} {AI_OUTCOME_LABEL[ao]}</Chip>}
+            {c.ai?.test && <Chip color="#71717a">Test call</Chip>}
+            <Chip color="#71717a">{c.direction === 'inbound' ? 'Incoming' : 'Outgoing'}</Chip>
+          </div>
+          {/* Actions */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 14 }}>
+            {canCall && <button type="button" onClick={() => onCallBack(c)} style={{ ...btn('primary'), minHeight: 36 }}>{Icon.phone(14)} Call {c.direction === 'outbound' ? 'again' : 'back'}</button>}
+            {d && (d.textable
+              ? <button type="button" onClick={() => onTextBack(c)} style={{ ...btn('soft'), minHeight: 36 }}>{Icon.spark(13)} Text back</button>
+              : d.textableReason && <span style={{ ...btn('ghost'), minHeight: 36, cursor: 'default', color: '#71717a' }} title="This number can’t get texts">{Icon.chat(14)} {NO_TEXT[d.textableReason] || 'Can’t text'}</span>)}
+            {(d?.conversation?.id || c.conversation_id) && <a href={`/admin/inbox?conversation=${d?.conversation?.id || c.conversation_id}`} style={{ ...btn('ghost'), minHeight: 36 }}>{Icon.chat(14)} Conversation</a>}
+            {(d?.contact?.id || c.contact_id) && <a href={`/admin/customers/profile?id=${d?.contact?.id || c.contact_id}`} style={{ ...btn('ghost'), minHeight: 36 }}>{Icon.user(14)} Contact</a>}
+          </div>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: 18, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
           {/* Facts */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
-            {([
-              ['When', when],
-              ['Duration', c.duration_seconds ? fmtDur(c.duration_seconds) : out.key === 'answered' || out.key === 'connected' ? 'Not recorded' : '—'],
-              [c.direction === 'outbound' ? 'Called by' : 'Answered by', c.agent_name ? (c.agent_name === 'AI phone agent' ? 'AI receptionist' : c.agent_name) : unanswered ? 'Nobody' : '—'],
-              [c.direction === 'outbound' ? 'From line' : 'Line rung', formatPhone(c.direction === 'outbound' ? c.from_number : c.to_number)],
-            ] as [string, string][]).map(([k, v]) => (
-              <div key={k} style={{ padding: '9px 11px', borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)', minWidth: 0 }}>
-                <p style={kicker}>{k}</p>
-                <p style={{ margin: '3px 0 0', fontSize: 13, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v}</p>
-              </div>
-            ))}
-          </div>
+          <section style={sect}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+              {([
+                ['When', when],
+                ['Duration', c.duration_seconds ? fmtDur(c.duration_seconds) : out.key === 'answered' || out.key === 'connected' ? 'Not recorded' : '—'],
+                [c.direction === 'outbound' ? 'Called by' : 'Answered by', c.agent_name ? (c.agent_name === 'AI phone agent' ? 'AI receptionist' : c.agent_name) : unanswered ? 'Nobody' : '—'],
+                [c.direction === 'outbound' ? 'From line' : 'Line rung', formatPhone(c.direction === 'outbound' ? c.from_number : c.to_number)],
+              ] as [string, string][]).map(([k, v]) => (
+                <div key={k} style={{ padding: '10px 12px', borderRadius: 14, background: '#f4f4f5', minWidth: 0 }}>
+                  <p style={label}>{k}</p>
+                  <p style={{ margin: '3px 0 0', fontSize: 14, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v}</p>
+                </div>
+              ))}
+            </div>
+          </section>
 
-          {/* Actions */}
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {canCall && <button type="button" onClick={() => onCallBack(c)} style={btn('primary')}>{Icon.phone(14)} Call {c.direction === 'outbound' ? 'again' : 'back'}</button>}
-            {d && (d.textable
-              ? <button type="button" onClick={() => onTextBack(c)} style={btn('soft')}>{Icon.spark(13)} Text back</button>
-              : d.textableReason && <span style={{ ...btn('ghost'), cursor: 'default', color: 'var(--slate)' }} title="This number can’t get texts">{Icon.chat(14)} {NO_TEXT[d.textableReason] || 'Can’t text'}</span>)}
-            {(d?.conversation?.id || c.conversation_id) && <a href={`/admin/inbox?conversation=${d?.conversation?.id || c.conversation_id}`} style={btn('ghost')}>{Icon.chat(14)} Conversation</a>}
-            {(d?.contact?.id || c.contact_id) && <a href={`/admin/customers/profile?id=${d?.contact?.id || c.contact_id}`} style={btn('ghost')}>{Icon.user(14)} Contact</a>}
-          </div>
-
-          {error && <p style={{ margin: 0, color: C.red, fontSize: 13, fontWeight: 600 }}>{error}</p>}
-          {!d && !error && <p style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, fontSize: 13, color: 'var(--slate)' }}><Spinner /> Loading the call…</p>}
+          {error && <p style={{ ...sect, margin: 0, color: C.red, fontSize: 13.5, fontWeight: 600 }}>{error}</p>}
+          {!d && !error && <p style={{ ...sect, display: 'flex', alignItems: 'center', gap: 8, margin: 0, fontSize: 13.5, color: '#71717a' }}><Spinner /> Loading the call…</p>}
 
           {/* AI receptionist */}
           {d?.phoneAgent && (
-            <section style={{ padding: 14, borderRadius: 12, border: `1px solid ${tint(C.violet, 30)}`, background: tint(C.violet, 6) }}>
-              <p style={{ ...kicker, color: C.violet, display: 'flex', alignItems: 'center', gap: 6 }}>{Icon.spark(12)} AI receptionist</p>
-              <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--ink)', lineHeight: 1.5 }}>
+            <section style={sect}>
+              <p style={{ ...sectH, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 26, height: 26, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: tint(C.violet, 12), color: C.violet }}>{Icon.spark(13)}</span>
+                AI receptionist
+              </p>
+              <p style={{ margin: 0, fontSize: 13.5, color: '#3f3f46', lineHeight: 1.55 }}>
                 Answered because {REASON[d.phoneAgent.reason || ''] || 'of your AI receptionist settings'}.
                 {d.phoneAgent.messageTaken ? ` Took a message${d.phoneAgent.about ? `: “${d.phoneAgent.about}”` : ''}, and made a call-back task.` : ao === 'ai_missed' ? ' The caller hung up without saying anything, so it counts as missed.' : ao === 'ai_voicemail' ? ' The caller asked for voicemail.' : ' It dealt with the call without needing the team.'}
                 {d.phoneAgent.bookingLinks ? ` Texted ${d.phoneAgent.bookingLinks} booking link${d.phoneAgent.bookingLinks === 1 ? '' : 's'}.` : ''}
@@ -132,14 +147,14 @@ export default function CallDrawer({ companyId, call, tz, hour12, locationName, 
               </p>
               {d.phoneAgent.turns.length > 0 && (
                 <>
-                  <button type="button" onClick={() => setShowTurns(v => !v)} style={{ marginTop: 8, border: 'none', background: 'none', padding: 0, fontSize: 12, fontWeight: 700, color: C.violet, cursor: 'pointer' }}>
+                  <button type="button" onClick={() => setShowTurns(v => !v)} aria-expanded={showTurns} style={{ ...btn('ghost'), minHeight: 30, marginTop: 10 }}>
                     {showTurns ? 'Hide' : 'Read'} the conversation ({d.phoneAgent.turns.length} turns)
                   </button>
                   {showTurns && (
-                    <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
                       {d.phoneAgent.turns.map((t, i) => (
-                        <div key={i} style={{ alignSelf: t.who === 'agent' ? 'flex-start' : 'flex-end', maxWidth: '86%', padding: '7px 10px', borderRadius: 10, fontSize: 12.5, lineHeight: 1.45, background: t.who === 'agent' ? 'var(--card, #fff)' : tint(C.blue, 12), border: '1px solid var(--border)', color: 'var(--ink)' }}>
-                          <span style={{ display: 'block', fontSize: 10, fontWeight: 800, color: 'var(--slate)', textTransform: 'uppercase', marginBottom: 2 }}>{t.who === 'agent' ? 'AI' : 'Caller'}</span>
+                        <div key={i} style={{ alignSelf: t.who === 'agent' ? 'flex-start' : 'flex-end', maxWidth: '86%', padding: '8px 12px', borderRadius: 16, fontSize: 13, lineHeight: 1.45, background: t.who === 'agent' ? '#f4f4f5' : tint(C.blue, 12), color: 'var(--ink)' }}>
+                          <span style={{ display: 'block', fontSize: 11.5, fontWeight: 600, color: '#71717a', marginBottom: 2 }}>{t.who === 'agent' ? 'AI' : 'Caller'}</span>
                           {t.text}
                         </div>
                       ))}
@@ -152,32 +167,32 @@ export default function CallDrawer({ companyId, call, tz, hour12, locationName, 
 
           {/* Recording, summary and transcript: the inbox's call card */}
           {(c.has_recording || d?.hasTranscript || c.ai_summary) && (
-            <section>
-              <p style={{ ...kicker, marginBottom: 8 }}>{c.has_recording ? 'Recording and notes' : 'Notes'}</p>
+            <section style={sect}>
+              <p style={sectH}>{c.has_recording ? 'Recording and notes' : 'Notes'}</p>
               <CallCard callId={c.id} meta={{ direction: c.direction, duration_seconds: c.duration_seconds, agent_name: c.agent_name }} timestamp={c.created_at} contactName={d?.contact?.name || null} />
             </section>
           )}
 
           {/* What happened next */}
           {d && (
-            <section>
-              <p style={{ ...kicker, marginBottom: 8 }}>What happened next</p>
+            <section style={sect}>
+              <p style={sectH}>What happened next</p>
               {d.followUps.length === 0 ? (
-                <p style={{ margin: 0, fontSize: 13, color: unanswered ? C.red : 'var(--slate)', fontWeight: unanswered ? 600 : 500 }}>
+                <p style={{ margin: 0, fontSize: 13.5, color: unanswered ? C.red : '#71717a', fontWeight: unanswered ? 600 : 500 }}>
                   {unanswered ? 'Nobody has called or texted them back yet.' : 'Nothing else since this call.'}
                 </p>
               ) : (
-                <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {d.followUps.map((f, i) => {
-                    const col = f.kind === 'auto_text' ? '#6b6b70' : f.kind === 'called_again' ? C.blue : C.green
+                    const fc = f.kind === 'auto_text' ? '#71717a' : f.kind === 'called_again' ? C.blue : C.green
                     return (
                       <li key={i} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                        <span style={{ width: 26, height: 26, borderRadius: 8, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: tint(col), color: col }}>
+                        <span style={{ width: 30, height: 30, borderRadius: 999, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: tint(fc, 12), color: fc }}>
                           {f.kind === 'call_back' ? Icon.phoneOut(13) : f.kind === 'called_again' ? Icon.phoneIn(13) : Icon.chat(13)}
                         </span>
-                        <span style={{ fontSize: 13, color: 'var(--ink)', minWidth: 0 }}>
-                          <strong style={{ fontWeight: 700 }}>{f.label}</strong>{f.by ? ` · ${f.by === 'AI phone agent' ? 'AI receptionist' : f.by}` : ''}
-                          <span style={{ display: 'block', fontSize: 11, color: 'var(--slate)' }}>{fmtT(f.at)}</span>
+                        <span style={{ fontSize: 13.5, minWidth: 0 }}>
+                          <strong style={{ fontWeight: 600 }}>{f.label}</strong><span style={{ color: '#71717a' }}>{f.by ? ` · ${f.by === 'AI phone agent' ? 'AI receptionist' : f.by}` : ''}</span>
+                          <span style={{ display: 'block', fontSize: 12, color: '#a1a1aa', marginTop: 1 }}>{fmtT(f.at)}</span>
                         </span>
                       </li>
                     )
@@ -189,23 +204,23 @@ export default function CallDrawer({ companyId, call, tz, hour12, locationName, 
 
           {/* Tasks and waiting list made from it */}
           {d && (d.tasks.length > 0 || d.waitlist.length > 0) && (
-            <section>
-              <p style={{ ...kicker, marginBottom: 8 }}>Made from this call</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <section style={sect}>
+              <p style={sectH}>Made from this call</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {d.tasks.map(t => (
-                  <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', borderRadius: 10, border: '1px solid var(--border)' }}>
-                    <span style={{ color: t.status === 'done' ? C.green : 'var(--slate)' }}>{Icon.task(15)}</span>
-                    <a href={`/admin/tasks?task=${t.id}`} style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: 'var(--ink)', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</a>
-                    <Chip color={t.status === 'done' ? C.green : t.priority === 'high' || t.priority === 'urgent' ? C.red : '#6b6b70'}>{t.status === 'done' ? 'Done' : t.priority === 'high' || t.priority === 'urgent' ? 'Urgent' : 'Task'}</Chip>
-                    <WhyLink companyId={companyId} entityType="task" entityId={t.id} style={{ fontSize: 11.5 }} />
+                  <div key={t.id} style={rowBox}>
+                    <span style={{ color: t.status === 'done' ? C.green : '#71717a', display: 'inline-flex' }}>{Icon.task(15)}</span>
+                    <a href={`/admin/tasks?task=${t.id}`} style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</a>
+                    <Chip color={t.status === 'done' ? C.green : t.priority === 'high' || t.priority === 'urgent' ? C.red : '#71717a'}>{t.status === 'done' ? 'Done' : t.priority === 'high' || t.priority === 'urgent' ? 'Urgent' : 'Task'}</Chip>
+                    <WhyLink companyId={companyId} entityType="task" entityId={t.id} style={{ fontSize: 12 }} />
                   </div>
                 ))}
                 {d.waitlist.map(w => (
-                  <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', borderRadius: 10, border: '1px solid var(--border)' }}>
-                    <span style={{ color: 'var(--slate)' }}>{Icon.list(15)}</span>
-                    <a href="/admin/waitlists" style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: 'var(--ink)', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Waiting list: {w.item}</a>
-                    <Chip color="#6b6b70">{w.status}</Chip>
-                    {w.runId && <WhyLink companyId={companyId} runId={w.runId} style={{ fontSize: 11.5 }} />}
+                  <div key={w.id} style={rowBox}>
+                    <span style={{ color: '#71717a', display: 'inline-flex' }}>{Icon.list(15)}</span>
+                    <a href="/admin/waitlists" style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Waiting list: {w.item}</a>
+                    <Chip color="#71717a">{w.status}</Chip>
+                    {w.runId && <WhyLink companyId={companyId} runId={w.runId} style={{ fontSize: 12 }} />}
                   </div>
                 ))}
               </div>
@@ -213,12 +228,20 @@ export default function CallDrawer({ companyId, call, tz, hour12, locationName, 
           )}
 
           {d?.contact && (
-            <section>
-              <p style={{ ...kicker, marginBottom: 8 }}>Contact</p>
-              <div style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.6 }}>
-                <strong>{d.contact.name || 'No name saved'}</strong>
-                {d.contact.phone && <span style={{ color: 'var(--slate)' }}> · {formatPhone(d.contact.phone)}</span>}
-                {d.contact.email && <span style={{ color: 'var(--slate)' }}> · {d.contact.email}</span>}
+            <section style={sect}>
+              <p style={sectH}>Contact</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ width: 40, height: 40, borderRadius: 999, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--peach)', color: 'var(--coral)', fontSize: 13.5, fontWeight: 700 }}>
+                  {(d.contact.name || '?').split(' ').map(w => w[0]).filter(Boolean).join('').slice(0, 2).toUpperCase()}
+                </span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <p style={{ margin: 0, fontSize: 14.5, fontWeight: 700 }}>{d.contact.name || 'No name saved'}</p>
+                  {(d.contact.phone || d.contact.email) && (
+                    <p style={{ margin: '2px 0 0', fontSize: 13, color: '#71717a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {[d.contact.phone ? formatPhone(d.contact.phone) : '', d.contact.email || ''].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
+                </div>
               </div>
             </section>
           )}
