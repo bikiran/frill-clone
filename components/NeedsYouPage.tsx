@@ -5,6 +5,7 @@ import { authFetch } from '@/lib/auth-fetch'
 import { supabase } from '@/lib/supabase'
 import { SuggestionCard } from '@/components/AgentSuggestion'
 import { useNeedsYou, ICON, Check, Bell, Target, Arrow, ico, EASE, NY_CSS, type Item, type Payload } from '@/components/NeedsYou'
+import CountUp from '@/components/agents/CountUp'
 
 // Agents → Needs you. Everything waiting on a person, in one place:
 //   • four numbers up top: how much is waiting, the longest a customer has
@@ -82,7 +83,7 @@ function Stat({ icon, tone, value, label, chip, chipTone, bar }: { icon: React.R
     <div className="nyp-stat" style={{ ['--tone' as any]: tone }}>
       <span className="nyp-stat-ic">{icon}</span>
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div className="nyp-stat-v">{value}</div>
+        <div className="nyp-stat-v">{typeof value === 'string' ? <CountUp value={value} /> : value}</div>
         <div className="nyp-stat-l">{label}</div>
         {bar}
       </div>

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { authFetch } from '@/lib/auth-fetch'
 import { resolveCompanyUser, peekCompanyUser, readStored, writeStored } from '@/lib/client-cache'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import AiChatPreview from '@/components/agents/AiChatPreview'
 
 // Business Memory (Agent Engine, Phase 5): what Colvy's AI knows about this
 // business and must follow — how replies sound, the policies, the rules, short
@@ -105,6 +106,8 @@ export default function BusinessMemoryPage() {
     } catch { setError('Couldn’t reach Colvy.'); return false }
   }
 
+  // The tone as it's being edited, for the live preview beside it.
+  const [toneDraft, setToneDraft] = useState<{ sample: string; label: string } | null>(null)
   const active = items.filter(i => i.status === 'active')
   const proposals = items.filter(i => i.status === 'proposed')
   const tone = active.find(i => i.kind === 'tone')
@@ -133,12 +136,17 @@ export default function BusinessMemoryPage() {
           <div className="bm-cols">
             <div className="bm-main">
               {proposals.length > 0 && <Proposals items={proposals} save={save} />}
-              <ToneCard item={tone} tones={templates.tones} save={save} />
+              <ToneCard item={tone} tones={templates.tones} save={save} onDraft={setToneDraft} />
               <RulesCard items={rules} save={save} />
               <PoliciesCard items={policies} templates={templates.policies} coverage={coverage} save={save} />
               <FaqsCard items={faqs} save={save} />
             </div>
             <aside className="bm-side">
+              {toneDraft && (
+                <div className="bm-live bm-fade">
+                  <AiChatPreview sub={toneDraft.label} customer="Jo Parker" channel="Instagram" messages={[{ from: 'them', text: 'Hi! Where’s my order? 📦' }, { from: 'ai', text: toneDraft.sample }]} />
+                </div>
+              )}
               <Glance active={active} tone={templates.tones[tone?.content?.style || 'warm']?.label || 'Warm & friendly'} rules={rules.length} facts={policies.length} faqs={faqs.length} waiting={proposals.length} />
               <ThresholdsCard item={thresholds} defaults={templates.thresholds} save={save} />
               <div className="bm-tip bm-fade">{I.info}<span>Opening hours come live from Google Business Profile, so there’s no need to add them here.</span></div>
@@ -273,13 +281,15 @@ function Proposal({ p, save }: { p: Item; save: Save }) {
 
 // ── Tone ─────────────────────────────────────────────────────────────────────
 
-function ToneCard({ item, tones, save }: { item?: Item; tones: Templates['tones']; save: Save }) {
+function ToneCard({ item, tones, save, onDraft }: { item?: Item; tones: Templates['tones']; save: Save; onDraft?: (d: { sample: string; label: string }) => void }) {
   const saved = useMemo(() => ({ style: item?.content?.style || 'warm', first_name: item?.content?.first_name !== false, sign_off: item?.content?.sign_off || '', avoid: item?.content?.avoid || '' }), [item])
   const [d, setD] = useState(saved)
   const [busy, setBusy] = useState(false)
   useEffect(() => { setD(saved) }, [saved])
   const dirty = !same(d, saved)
   const sample = `${(tones[d.style]?.sample || '').replace(/^Hi Jo|^Hello Jo/, m => (d.first_name ? m : m.replace(' Jo', ' there')))}${d.sign_off ? `\n${d.sign_off}` : ''}`
+  const label = tones[d.style]?.label || ''
+  useEffect(() => { onDraft?.({ sample, label }) }, [sample, label, onDraft])
   return (
     <div className="bm-card bm-fade">
       <CardHead icon={I.voice} title="How it sounds" sub="The voice your agents reply in. It shapes every message they write." />
@@ -292,7 +302,7 @@ function ToneCard({ item, tones, save }: { item?: Item; tones: Templates['tones'
           </button>
         ))}
       </div>
-      <div className="bm-preview">
+      <div className="bm-preview bm-inline-preview">
         <p className="bm-label" style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--coral)' }}>{I.spark} Example reply</p>
         <p key={sample} className="bm-bubble bm-fade">{sample}</p>
       </div>
@@ -499,7 +509,8 @@ const CSS = `
 .bm-crumbs a{color:var(--slate);text-decoration:none;font-weight:600}.bm-crumbs a:hover{color:var(--ink)}
 .bm-crumbs span:last-child{color:var(--ink);font-weight:700}
 .bm-cols{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start}
-@media (min-width:1080px){.bm-cols{grid-template-columns:minmax(0,1fr) 340px;gap:20px}.bm-side{position:sticky;top:76px}}
+.bm-live{display:none}
+@media (min-width:1080px){.bm-cols{grid-template-columns:minmax(0,1fr) 340px;gap:20px}.bm-side{position:sticky;top:76px}.bm-live{display:block;margin-bottom:16px}.bm-inline-preview{display:none}}
 .bm-main>.bm-card:last-child{margin-bottom:0}
 .bm-head{display:flex;gap:12px;align-items:flex-start;margin-bottom:16px}
 .bm-add{gap:6px;flex-shrink:0;height:34px;padding:0 13px}
