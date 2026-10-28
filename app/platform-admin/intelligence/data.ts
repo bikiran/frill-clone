@@ -53,7 +53,7 @@ function loadIntel(report: string, r: Range, fresh = false): Promise<any> {
 /** Start loading a page's report before it's opened (menu hover). */
 export function prefetchIntel(view: string) {
   const report = REPORT[view as IntelView]
-  if (!report || report === 'live') return
+  if (!report) return
   let r: Range = { range: '7d' }
   try { const s = JSON.parse(localStorage.getItem('colvy_intel_range') || 'null'); if (s?.range) r = s } catch {}
   if (remembered(intelQuery(report, r).toString())) return
@@ -62,7 +62,13 @@ export function prefetchIntel(view: string) {
 
 export function useIntel(report: string, r: Range, pollMs = 0) {
   const k = intelQuery(report, r).toString()
-  const [res, setRes] = useState<any>(() => remembered(k))
+  // The answer is kept with the report and period it belongs to. Moving to
+  // another page keeps this hook mounted, and for one render it used to hand
+  // the new page the old page's numbers (Website overview then crashed reading
+  // the Live report). A mismatched answer is never returned.
+  const [state, setState] = useState<{ k: string; res: any }>(() => ({ k, res: remembered(k) }))
+  const res = state.k === k ? state.res : remembered(k)
+  const setRes = useCallback((next: (prev: any) => any) => setState(s => ({ k, res: next(s.k === k ? s.res : remembered(k)) })), [k])
   const [loading, setLoading] = useState(true)
   const seq = useRef(0)
   const load = useCallback(async (fresh = false, quiet = false) => {
@@ -73,11 +79,11 @@ export function useIntel(report: string, r: Range, pollMs = 0) {
       if (my !== seq.current) return
       // A failed refresh keeps showing the numbers we already have.
       setRes((prev: any) => (j.error && prev && !prev.error ? prev : j))
-      if (j.stale && !fresh) setTimeout(() => { if (my === seq.current) load(false, true) }, 8000)
+      if (j.stale && !fresh) setTimeout(() => { if (my === seq.current) load(false, true) }, report === 'live' ? 3000 : 8000)
     } catch (e: any) { if (my === seq.current) setRes((prev: any) => prev && !prev.error ? prev : { error: e?.message || 'Could not reach the server' }) }
     finally { if (my === seq.current) setLoading(false) }
-  }, [report, r.range, r.from, r.to])
-  useEffect(() => { setRes(remembered(k)); load() }, [load, k])
+  }, [report, r.range, r.from, r.to, setRes])
+  useEffect(() => { setState({ k, res: remembered(k) }); load() }, [load, k])
   useEffect(() => {
     if (!pollMs) return
     const t = setInterval(() => { if (document.visibilityState === 'visible') load(false, true) }, pollMs)
