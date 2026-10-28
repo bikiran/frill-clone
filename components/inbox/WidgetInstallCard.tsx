@@ -9,12 +9,16 @@ import { isLocalHost } from '@/lib/widget-install'
 const LOGOS = ['react', 'nextjs', 'wordpress', 'shopify', 'vue', 'webflow', 'wix']
 const key = (companyId: string) => `colvy_install_card:${companyId}`
 
-// "Install your chat widget", at the top of the conversation list until the
+// "Install your chat widget", at the foot of the conversation list until the
 // chat widget is live on their website (lib/widget-install). Folds down to
 // one line with the dash, and that line can be closed for good. Shown only
 // once Colvy can tell (the COLVY_V421 migration has run), so nobody is told
 // to install a widget that's already there.
-export default function WidgetInstallCard({ companyId }: { companyId: string | null }) {
+export default function WidgetInstallCard({ companyId, dock = false }: {
+  companyId: string | null
+  /** At the foot of a flex column: pushed to the bottom, with room below for the + button. */
+  dock?: boolean
+}) {
   const { data } = useWidgetInstall(companyId)
   const [fold, setFold] = useState<'open' | 'min' | 'hidden' | null>(null)
   useEffect(() => {
@@ -39,7 +43,7 @@ export default function WidgetInstallCard({ companyId }: { companyId: string | n
   )
 
   return (
-    <div className="wic" style={{ margin: '10px 10px 4px' }}>
+    <div className="wic" style={dock ? { margin: 'auto 10px 0', padding: '12px 0 80px' } : { margin: '10px 10px 4px' }}>
       <style>{`
         @keyframes wicSpin { to { transform: rotate(360deg); } }
         .wic-ring { animation: wicSpin 2.4s linear infinite; }
@@ -51,8 +55,11 @@ export default function WidgetInstallCard({ companyId }: { companyId: string | n
       `}</style>
       {fold === 'min' ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 6px 7px 10px', borderRadius: 14, background: '#f4f4f5' }}>
-          {Pill}
-          <Link href="/admin/crm-settings/install" style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: 'var(--ink)', textDecoration: 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title} ›</Link>
+          {/* Folded: just the status ring, so the title has room to be read. */}
+          <span title={pill} aria-label={pill} role="img" style={{ width: 26, height: 26, borderRadius: '50%', background: '#fdebd3', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <svg className="wic-ring" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="3" strokeLinecap="round" aria-hidden><path d="M21 12a9 9 0 1 1-6.2-8.56" /></svg>
+          </span>
+          <Link href="/admin/crm-settings/install" style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: 'var(--ink)', textDecoration: 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{data.state === 'stale' ? 'Check your chat widget' : 'Install your chat widget'} ›</Link>
           <button type="button" className="wic-x" onClick={() => set('open')} aria-label="Show more" title="Show more">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden><path d="M12 5v14M5 12h14" /></svg>
           </button>
