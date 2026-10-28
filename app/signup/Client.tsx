@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, Suspense } from 'react'
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { signInWithGoogle, signInWithGitHub } from '@/lib/auth'
 import { isValidSlug, isSlugAvailable } from '@/lib/board'
@@ -15,6 +15,9 @@ import { INDUSTRIES } from '@/lib/industries'
 import Turnstile, { TurnstileHandle, TURNSTILE_SITE_KEY } from '@/components/Turnstile'
 import { normaliseSignupMobile } from '@/lib/signup-delivery'
 import { signupProfilePayload } from '@/lib/signup-profile'
+import AiBuddy from '@/components/AiBuddy'
+import { COLVY_ICON, MORE_COLORS, DOMAIN_RE, cleanDomain, I, GLOBE, ICONS, SETUP_CSS, SetupPreview, SetupToast, PreviewSection, PreviewRow, GhostRows, Swatch, useSetupTheme, type Rect } from '@/components/setup/SetupKit'
+import { DAYS, type DayHours } from '@/lib/week-hours'
 
 
 const CORAL = '#ff7a6b'
@@ -45,11 +48,6 @@ function normalizeMobile(raw: string): string {
   return m.ok ? m.e164 : (raw || '').replace(/[\s()-]/g, '')
 }
 
-// Small outlined actions under the code box ("Resend text", "Call me with the code").
-const smallBtn = (disabled?: boolean): React.CSSProperties => ({
-  display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 10, border: '1px solid #e5e5e5',
-  background: '#fff', color: disabled ? '#9ca3af' : '#0d0d0d', fontSize: 13, fontWeight: 600, cursor: disabled ? 'default' : 'pointer',
-})
 const SmsIcon = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
 const PhoneIcon = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" /></svg>
 const EditIcon = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
@@ -65,10 +63,6 @@ const primaryBtn = (disabled?: boolean): React.CSSProperties => ({
   fontSize: 15, border: 'none', cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.55 : 1,
   display: 'inline-flex', alignItems: 'center', gap: 8,
 })
-const ghostBtn: React.CSSProperties = {
-  padding: '12px 22px', borderRadius: 12, background: '#fff', color: '#0d0d0d', fontWeight: 600,
-  fontSize: 15, border: '1px solid #e5e5e5', cursor: 'pointer',
-}
 
 // Page chrome. MUST live at module scope — if it were defined inside the form
 // component it'd be a new component type on every render, remounting the inputs
@@ -256,9 +250,54 @@ function SignUpForm() {
     setFound(d)
   }
 
+  // ── The live preview ─────────────────────────────────────────────────────
+  // Beside the form, a copy of their workspace builds as they go (components/
+  // setup/SetupKit, the same as creating another workspace): their name, the
+  // business, its website's icon and colour, its details, their email and
+  // mobile as channels (ticked once verified). Creating it zooms the preview
+  // out to fill the screen while the workspace is made.
+  const { dark } = useSetupTheme()
+  const [dir, setDir] = useState<1 | -1>(1)
+  const [brand, setBrand] = useState<{ domain: string; icon: string | null; colors: string[] } | null>(null)
+  const [brandState, setBrandState] = useState<'idle' | 'loading' | 'ok' | 'none'>('idle')
+  const [iconOk, setIconOk] = useState(true)
+  const [color, setColor] = useState(CORAL)
+  const [colorTouched, setColorTouched] = useState(false)
+  const site = cleanDomain(website)
+  const siteLooksDone = DOMAIN_RE.test(site)
+  useEffect(() => {
+    if (!siteLooksDone) { setBrand(null); setBrandState('idle'); return }
+    setBrandState('loading')
+    let live = true
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/site-brand?domain=${encodeURIComponent(site)}`)
+        const d = await r.json()
+        if (!live) return
+        if (r.ok && d.domain) { setBrand(d); setIconOk(true); setBrandState('ok') } else { setBrand(null); setBrandState('none') }
+      } catch { if (live) { setBrand(null); setBrandState('none') } }
+    }, 600)
+    return () => { live = false; clearTimeout(t) }
+  }, [site, siteLooksDone])
+  // Their website's main colour becomes the workspace colour unless they pick one.
+  useEffect(() => { if (!colorTouched && brand?.colors?.[0]) setColor(brand.colors[0]) }, [brand, colorTouched])
+  const siteIcon = brand?.icon && iconOk ? brand.icon : null
+  const [phase, setPhase] = useState<'form' | 'zoom' | 'full'>('form')
+  const [from, setFrom] = useState<Rect | null>(null)
+  const startRect = useRef<Rect | null>(null)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const [buildLine, setBuildLine] = useState(0)
+  const [toast, setToast] = useState<{ msg: string } | null>(null)
+  const closeToast = useCallback(() => setToast(null), [])
+  useEffect(() => {
+    if (phase === 'form') { setBuildLine(0); return }
+    const t = setInterval(() => setBuildLine(n => Math.min(BUILDING.length - 1, n + 1)), 1100)
+    return () => clearInterval(t)
+  }, [phase])
+
   // ── Step transitions ─────────────────────────────────────────────────────
-  const next = () => setStep(s => Math.min(TOTAL_STEPS, s + 1))
-  const back = () => setStep(s => Math.max(1, s - 1))
+  const next = () => { setDir(1); setStep(s => Math.min(TOTAL_STEPS, s + 1)) }
+  const back = () => { setDir(-1); setStep(s => Math.max(1, s - 1)) }
 
   const canLeaveDetails = !!companyName.trim() && slugStatus === 'available' && !!industry
 
@@ -303,7 +342,7 @@ function SignUpForm() {
       setSentAt(data.sentAt || ''); setCalled(false); setPollKey(k => k + 1)
       setEmailResend(30); setSmsResend(30)
       track('signup_submitted', { via: 'email', joining: false })
-      setStep(5)
+      setDir(1); setStep(5)
     } catch (e: any) { setError(e.message) }
     setLoading(false)
   }
@@ -343,7 +382,7 @@ function SignUpForm() {
   const startOver = (why: string) => {
     setToken(''); setEmailVerified(false); setSmsVerified(false); setEmailCode(''); setSmsCode('')
     setSmsProblem(''); setEmailProblem(''); setChangingNumber(false); setCalled(false)
-    setStep(4); setTimeout(() => setError(why), 0)
+    setDir(-1); setStep(4); setTimeout(() => setError(why), 0)
   }
 
   const changeNumber = () => {
@@ -394,6 +433,7 @@ function SignUpForm() {
         if (data.code === 'locked' || data.code === 'restart') { startOver(data.error || 'Please start again.'); setLoading(false); return }
         throw new Error(data.error || 'Could not verify')
       }
+      setDir(1)
       if (channel === 'email') { setEmailVerified(true); setStep(6) }
       else { setSmsVerified(true); setStep(7) }
     } catch (e: any) { setError(e.message) }
@@ -405,6 +445,23 @@ function SignUpForm() {
     if (password.length < 6) { setError('Password must be at least 6 characters'); return }
     if (password !== confirmPassword) { setError('Passwords do not match'); return }
     setLoading(true)
+    // Zoom the preview out to the whole screen while the workspace is made.
+    const r = panelRef.current?.getBoundingClientRect()
+    if (r && r.width) {
+      startRect.current = { top: r.top, left: r.left, right: window.innerWidth - r.right, bottom: window.innerHeight - r.bottom }
+      setFrom(startRect.current); setPhase('zoom')
+      requestAnimationFrame(() => requestAnimationFrame(() => setFrom({ top: 0, left: 0, right: 0, bottom: 0 })))
+      setTimeout(() => setPhase(p => (p === 'zoom' ? 'full' : p)), 750)
+    } else setPhase('full')
+    const started = Date.now()
+    // Something went wrong: say so over the full screen, then ease back to the form.
+    const backToForm = (msg: string, after?: () => void) => {
+      setToast({ msg })
+      setTimeout(() => {
+        const done = () => { setPhase('form'); setFrom(null); setError(msg); setLoading(false); after?.() }
+        if (startRect.current && window.innerWidth > 900) { setPhase('zoom'); setFrom(startRect.current); setTimeout(done, 820) } else done()
+      }, Math.max(0, 1600 - (Date.now() - started)) + 2200)
+    }
     try {
       const res = await fetch('/api/auth/complete-signup', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -417,19 +474,21 @@ function SignUpForm() {
             city: addrParts.city || null, state: addrParts.state || null,
             postcode: addrParts.postcode || null, country: addrParts.country || null,
             phone: businessPhone.trim() || null, hours,
+            accentColor: color, logoUrl: siteIcon || undefined,
           },
         }),
       })
       const data = await res.json()
       if (!res.ok) {
-        if (data.code === 'slug_taken') { setError('That Colvy address is taken. Please choose another.'); setSlugStatus('taken'); setStep(3); setLoading(false); return }
+        if (data.code === 'slug_taken') { setSlugStatus('taken'); backToForm('That Colvy address is taken. Please choose another.', () => { setDir(-1); setStep(3) }); return }
         throw new Error(data.error || 'Signup failed')
       }
       track('signup_completed', { via: 'email' })
-      // Sign in and head to onboarding (the account is already email-confirmed).
+      // Sign in and head to onboarding (the account is already email-confirmed),
+      // after the setup screen has had a moment.
       await supabase.auth.signInWithPassword({ email: email.trim(), password })
-      router.push('/onboarding')
-    } catch (e: any) { setError(e.message); setLoading(false) }
+      setTimeout(() => router.push('/onboarding'), Math.max(0, 2800 - (Date.now() - started)))
+    } catch (e: any) { backToForm(e?.message || 'Signup failed') }
   }
 
   // ── OAuth (alternative to the email path) ────────────────────────────────
@@ -525,274 +584,309 @@ function SignUpForm() {
     )
   }
 
-  // ── Progress header ────────────────────────────────────────────────────────
-  const stepTitles = ['Your name', 'Your business', 'Your business details', 'Your contact details', 'Verify email', 'Verify mobile', 'Create password']
-  const progress = (
-    <div style={{ marginBottom: 28 }}>
-      <p style={{ fontSize: 12, fontWeight: 700, color: CORAL, letterSpacing: '0.06em', margin: '0 0 4px' }}>STEP {step} OF {TOTAL_STEPS}</p>
-      <h2 style={{ fontSize: 20, fontWeight: 800, color: '#0d0d0d', margin: '0 0 12px' }}>{stepTitles[step - 1]}</h2>
-      <div style={{ height: 4, borderRadius: 4, background: '#eee', overflow: 'hidden' }}>
-        <div style={{ height: '100%', width: `${(step / TOTAL_STEPS) * 100}%`, background: '#22c55e', borderRadius: 4, transition: 'width 0.3s ease' }} />
-      </div>
-    </div>
-  )
+  // ── The wizard: the form beside a live preview of their workspace ─────────
+  const first = fullName.trim().split(/\s+/)[0] || ''
+  const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())
+  const mobileOk = normaliseSignupMobile(mobile).ok
+  const today = DAYS[(new Date().getDay() + 6) % 7]
+  const todayHours: DayHours | undefined = hours?.[today]
+  const hoursText = !todayHours ? '' : !todayHours.open ? 'Closed today' : todayHours.from === '00:00' && /^(24:00|23:59|00:00)$/.test(todayHours.to) ? 'Open 24 hours today' : `Open today ${todayHours.from}–${todayHours.to}`
+  const siteColors = (brand?.colors || []).filter(c => !MORE_COLORS.includes(c))
 
-  const card: React.CSSProperties = { background: '#fff', border: '1px solid #f0e6e2', borderRadius: 20, padding: 'clamp(20px, 4vw, 36px)' }
-  const footer = (backOk: boolean, right: React.ReactNode) => (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 28 }}>
-      {backOk ? <button type="button" onClick={back} style={ghostBtn}>← Previous</button> : <span />}
-      {right}
-    </div>
-  )
+  // The one button at the foot, per step.
+  const primary: { label: string; run: () => void; off: boolean } = [
+    { label: 'Continue', run: next, off: !fullName.trim() },
+    { label: 'Continue', run: next, off: !companyName.trim() },
+    { label: 'Continue', run: next, off: !canLeaveDetails },
+    { label: loading ? 'Sending…' : waitingForHuman ? 'Checking…' : 'Send codes', run: sendCodes, off: loading || waitingForHuman },
+    { label: loading ? 'Checking…' : 'Verify email', run: () => verify('email'), off: loading || emailCode.length !== 6 },
+    { label: loading ? 'Checking…' : 'Verify mobile', run: () => verify('sms'), off: loading || smsCode.length !== 6 },
+    { label: loading ? 'Creating…' : 'Create my workspace', run: finish, off: loading },
+  ][step - 1]
+  const onEnter = (ok: boolean) => (e: React.KeyboardEvent) => { if (e.key === 'Enter' && ok) primary.run() }
 
   return (
-    <Shell>
-      <div style={card}>
-        {progress}
-        {error && <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 10, background: '#fef2f2', border: '1px solid #fca5a5', color: '#dc2626', fontSize: 13 }}>{error}</div>}
+    <div className={`nw nw-${phase}${dark ? ' dark' : ''} su`} style={{ ['--c' as string]: color } as React.CSSProperties}>
+      <style>{SETUP_CSS + SU_CSS}</style>
 
-        {/* STEP 1 — Your name */}
-        {step === 1 && (
-          <div style={{ textAlign: 'center' }}>
-            <h1 style={{ fontSize: 26, fontWeight: 800, color: '#0d0d0d', margin: '12px 0 6px' }}>Let&rsquo;s get to know you</h1>
-            <p style={{ fontSize: 15, color: '#6b6b70', marginBottom: 24 }}>Start with your name.</p>
-            <input value={fullName} onChange={e => setFullName(e.target.value)} autoFocus placeholder="Your full name"
-              onKeyDown={e => { if (e.key === 'Enter' && fullName.trim()) next() }}
-              style={{ ...inputStyle, maxWidth: 460, margin: '0 auto', textAlign: 'center' }} />
-            {footer(false, <button type="button" onClick={next} disabled={!fullName.trim()} style={primaryBtn(!fullName.trim())}>Continue →</button>)}
-          </div>
-        )}
+      <div className="nw-left">
+        <div className="nw-top">
+          <div className="nw-brand"><img src={COLVY_ICON} alt="" width={30} height={30} /><span>Colvy</span></div>
+          <div className="nw-dots" aria-label={`Step ${step} of ${TOTAL_STEPS}`}>{Array.from({ length: TOTAL_STEPS }, (_, i) => <span key={i} className={i + 1 === step ? 'on' : i + 1 < step ? 'done' : ''} />)}</div>
+          <a href="/signin" className="nw-top-link">Sign in</a>
+        </div>
 
-        {/* STEP 2 — Your business (find on Google / manual) */}
-        {step === 2 && (
-          <div style={{ textAlign: 'center' }}>
-            <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0d0d0d', margin: '4px 0 6px' }}>Your business</h1>
-            <p style={{ fontSize: 15, color: '#6b6b70', marginBottom: 20 }}>Let&rsquo;s find your business on Google or enter it manually.</p>
-            <div style={{ display: 'inline-flex', background: '#f5f5f5', borderRadius: 12, padding: 4, marginBottom: 20 }}>
-              <button type="button" onClick={() => setBizMode('google')} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700, background: bizMode === 'google' ? CORAL : 'transparent', color: bizMode === 'google' ? '#fff' : '#6b6b70' }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
-                Find on Google
-              </button>
-              <button type="button" onClick={() => setBizMode('manual')} style={{ padding: '9px 18px', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700, background: bizMode === 'manual' ? CORAL : 'transparent', color: bizMode === 'manual' ? '#fff' : '#6b6b70' }}>Enter manually</button>
-            </div>
-            <div style={{ maxWidth: 480, margin: '0 auto', textAlign: 'left' }}>
-              {bizMode === 'google' ? (
-                <>
-                  <BusinessAutocomplete value={companyName} onChange={v => { setCompanyName(v); if (found && v !== found.name) setFound(null) }} onSelect={applyBusiness} placeholder="Search your business name…" style={inputStyle} />
-                  {found && found.name === companyName ? (
-                    <div className="su-found" style={{ marginTop: 12 }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '6px 12px', borderRadius: 999, background: '#ecfdf3', color: '#067647', fontSize: 13, fontWeight: 700 }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
-                        {found.source === 'osm' ? 'Found on the map' : 'Found on Google'}
-                      </span>
-                      <p style={{ fontSize: 13.5, color: '#4b5563', margin: '10px 2px 0', lineHeight: 1.5 }}>
-                        {found.address ? <><strong style={{ color: '#0d0d0d' }}>{found.address}</strong><br /></> : null}
-                        We&rsquo;ll fill in your details{found.source === 'osm' ? '' : ' — address, phone, website and opening hours'}. Continue to check them.
-                      </p>
-                    </div>
-                  ) : (
-                    <p style={{ fontSize: 12.5, color: '#9ca3af', margin: '8px 2px 0' }}>Search your business name and we&rsquo;ll fill your details from Google Maps.</p>
-                  )}
-                  <style>{`.su-found{animation:suFound .35s cubic-bezier(.22,1,.36,1) both}@keyframes suFound{from{opacity:0;transform:translate3d(0,4px,0)}to{opacity:1;transform:none}}@media (prefers-reduced-motion:reduce){.su-found{animation:none}}`}</style>
-                </>
-              ) : (
-                <>
-                  <label style={labelStyle}>Business name</label>
-                  <input value={companyName} onChange={e => setCompanyName(e.target.value)} autoFocus placeholder="Acme Aquariums" style={inputStyle} />
-                </>
-              )}
-            </div>
-            {footer(true, <button type="button" onClick={next} disabled={!companyName.trim()} style={primaryBtn(!companyName.trim())}>Continue →</button>)}
-          </div>
-        )}
+        <div className="nw-body">
+          <div key={step} className={`nw-step ${dir > 0 ? 'fwd' : 'back'}`}>
+            {/* STEP 1 — Your name */}
+            {step === 1 && (<>
+              <h1>Let&rsquo;s get to know you</h1>
+              <p className="nw-sub">Start with your name. Colvy will say hello on the right.</p>
+              <input className="nw-input" value={fullName} onChange={e => setFullName(e.target.value)} autoFocus placeholder="Your full name" autoComplete="name" aria-label="Your full name"
+                onKeyDown={onEnter(!!fullName.trim())} />
+            </>)}
 
-        {/* STEP 3 — Business details */}
-        {step === 3 && (
-          <div>
-            <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0d0d0d', margin: '4px 0 6px' }}>Your business details</h1>
-            <p style={{ fontSize: 14, color: '#6b6b70', marginBottom: 22 }}>Review what we found — you can edit anything.</p>
-
-            <div style={{ marginBottom: 16 }}><label style={labelStyle}>Business name</label>
-              <input value={companyName} onChange={e => setCompanyName(e.target.value)} style={inputStyle} /></div>
-
-            <div style={{ marginBottom: 16 }}><label style={labelStyle}>Your Colvy address</label>
-              <div style={{ display: 'flex', alignItems: 'center', borderRadius: 12, border: `1px solid ${slugStatus === 'available' ? '#10b981' : (slugStatus === 'taken' || slugStatus === 'invalid') ? '#ef4444' : '#e5e5e5'}`, overflow: 'hidden' }}>
-                <input value={slug} onChange={e => { setSlugTouched(true); setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')) }} placeholder="acme"
-                  style={{ flex: 1, padding: '12px 14px', border: 'none', outline: 'none', fontSize: 15, minWidth: 0 }} />
-                <span style={{ padding: '12px', fontSize: 13, fontWeight: 500, color: '#6b6b70', background: '#fafafa', borderLeft: '1px solid #e5e5e5', flexShrink: 0 }}>.colvy.com</span>
+            {/* STEP 2 — Your business (find on Google / manual) */}
+            {step === 2 && (<>
+              <h1>Your business</h1>
+              <p className="nw-sub">Find it on Google and we&rsquo;ll fill in the rest, or type it in.</p>
+              <div className="su-seg" role="tablist">
+                <button type="button" role="tab" aria-selected={bizMode === 'google'} className={bizMode === 'google' ? 'on' : ''} onClick={() => setBizMode('google')}>
+                  {I(<><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>, 15, 2.2)}Find on Google
+                </button>
+                <button type="button" role="tab" aria-selected={bizMode === 'manual'} className={bizMode === 'manual' ? 'on' : ''} onClick={() => setBizMode('manual')}>Enter manually</button>
               </div>
-              {slugStatus === 'checking' && <p style={{ fontSize: 12, marginTop: 5, color: '#f59e0b' }}>Checking…</p>}
-              {slugStatus === 'available' && <p style={{ fontSize: 12, marginTop: 5, color: '#10b981' }}>✓ Available</p>}
-              {slugStatus === 'taken' && <p style={{ fontSize: 12, marginTop: 5, color: '#ef4444' }}>✗ Already taken</p>}
-              {slugStatus === 'invalid' && <p style={{ fontSize: 12, marginTop: 5, color: '#ef4444' }}>✗ Lowercase letters, numbers and hyphens (3–30 chars)</p>}
-            </div>
+              {bizMode === 'google' ? (<>
+                <BusinessAutocomplete value={companyName} onChange={v => { setCompanyName(v); if (found && v !== found.name) setFound(null) }} onSelect={applyBusiness} placeholder="Search your business name…" className="nw-input" style={FIELD} />
+                {found && found.name === companyName ? (
+                  <div className="nw-found su-found-box">
+                    {I(ICONS.check, 13, 3)}
+                    <span>{found.source === 'osm' ? 'Found on the map' : 'Found on Google'}{found.address ? <small>{found.address}</small> : null}</span>
+                  </div>
+                ) : <p className="nw-hint">Search your business name and we&rsquo;ll fill your details from Google Maps.</p>}
+              </>) : (
+                <input className="nw-input" value={companyName} onChange={e => setCompanyName(e.target.value)} autoFocus placeholder="Acme Aquariums" aria-label="Business name" onKeyDown={onEnter(!!companyName.trim())} />
+              )}
+            </>)}
 
-            <div style={{ marginBottom: 16 }}><label style={labelStyle}>Industry</label>
-              <select value={industry} onChange={e => setIndustry(e.target.value)} style={{ ...inputStyle, color: industry ? '#0d0d0d' : '#9ca3af', cursor: 'pointer' }}>
-                <option value="">Select an industry</option>
-                {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
-                {industry && !(INDUSTRIES as readonly string[]).includes(industry) && <option value={industry}>{industry}</option>}
-              </select>
-              {found?.source === 'google' && found.category && found.industry && industry === found.industry && (
-                <p style={{ fontSize: 12, color: '#9ca3af', margin: '6px 2px 0' }}>Google lists you as &ldquo;{found.category}&rdquo;. Change it if that&rsquo;s not right.</p>
-              )}</div>
-
-            <div style={{ marginBottom: 16 }}><label style={labelStyle}>Website</label>
-              <input value={website} onChange={e => setWebsite(e.target.value)} placeholder="https://yourbusiness.com" style={inputStyle} /></div>
-
-            <div style={{ marginBottom: 16 }}><label style={labelStyle}>Address</label>
-              <AddressAutocomplete value={address} onChange={setAddress}
-                onSelect={p => setAddrParts({ city: p.city, state: p.state, postcode: p.postcode, country: p.country })}
-                placeholder="Business address" style={inputStyle} /></div>
-
-            <div style={{ marginBottom: 16 }}><label style={labelStyle}>Business phone</label>
-              <input value={businessPhone} onChange={e => setBusinessPhone(e.target.value)} type="tel" inputMode="tel" autoComplete="tel" placeholder="03 9000 0000" style={inputStyle} />
-              <p style={{ fontSize: 12, color: '#9ca3af', margin: '6px 2px 0' }}>Where calls are forwarded until your Colvy phone line is set up.</p></div>
-
-            <div style={{ marginBottom: 8 }}><label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 8 }}>Business hours
-              {found?.source === 'google' && found.hours && (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 999, background: '#ecfdf3', color: '#067647', fontSize: 11.5, fontWeight: 700 }}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
-                  Verified via Google
+            {/* STEP 3 — Business details */}
+            {step === 3 && (<>
+              <h1>Your business details</h1>
+              <p className="nw-sub">Check what we found. You can change anything.</p>
+              <label className="su-field"><span>Business name</span>
+                <input className="nw-input" value={companyName} onChange={e => setCompanyName(e.target.value)} /></label>
+              <label className="su-field"><span>Your Colvy address</span>
+                <span className={`su-slug ${slugStatus}`}>
+                  <input value={slug} onChange={e => { setSlugTouched(true); setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '')) }} placeholder="acme" aria-label="Colvy address" />
+                  <b>.colvy.com</b>
                 </span>
-              )}</label>
-              <p style={{ fontSize: 12, color: '#9ca3af', margin: '0 2px 10px' }}>Used for after-hours auto-replies and missed-call messages.</p>
-              <BusinessHoursEditor value={hours} onChange={setHours} />
-            </div>
+                {slugStatus !== 'idle' && <small className={`nw-addr-st ${slugStatus}`}>{slugStatus === 'available' && I(ICONS.check, 12, 3)}{{ checking: 'Checking…', available: 'Available', taken: 'Already taken', invalid: 'Lowercase letters, numbers and hyphens (3–30)' }[slugStatus]}</small>}
+              </label>
+              <label className="su-field"><span>Industry</span>
+                <select className="nw-input su-select" value={industry} onChange={e => setIndustry(e.target.value)} style={{ color: industry ? undefined : '#9ca3af' }}>
+                  <option value="">Select an industry</option>
+                  {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
+                  {industry && !(INDUSTRIES as readonly string[]).includes(industry) && <option value={industry}>{industry}</option>}
+                </select>
+                {found?.source === 'google' && found.category && found.industry && industry === found.industry && <small>Google lists you as &ldquo;{found.category}&rdquo;. Change it if that&rsquo;s not right.</small>}
+              </label>
+              <label className="su-field"><span>Website</span>
+                <span className={`nw-input nw-domain${siteIcon ? ' has-icon' : ''}`}>
+                  <span className="nw-domain-ic" key={siteIcon || (brandState === 'loading' ? 'load' : 'globe')}>
+                    {siteIcon ? <img src={siteIcon} alt="" width={20} height={20} onError={() => setIconOk(false)} />
+                      : brandState === 'loading' ? <span className="nw-spin" /> : I(GLOBE, 18, 1.8)}
+                  </span>
+                  <input value={website} onChange={e => setWebsite(e.target.value)} placeholder="yourbusiness.com" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+                </span>
+                {brandState === 'ok' && brand && <small className="su-ok">{I(ICONS.check, 12, 3)}{siteIcon ? 'Found your icon' : 'Found your site'}{brand.colors.length ? ` and ${brand.colors.length} colour${brand.colors.length === 1 ? '' : 's'}` : ''}</small>}
+              </label>
+              <div className="su-field"><span>Workspace colour</span>
+                <div className="nw-swatches">
+                  {[...siteColors, ...MORE_COLORS].map(c => <Swatch key={c} c={c} on={color === c} pick={c2 => { setColor(c2); setColorTouched(true) }} />)}
+                </div>
+              </div>
+              <label className="su-field"><span>Address</span>
+                <AddressAutocomplete value={address} onChange={setAddress}
+                  onSelect={p => setAddrParts({ city: p.city, state: p.state, postcode: p.postcode, country: p.country })}
+                  placeholder="Business address" className="nw-input" style={FIELD} /></label>
+              <label className="su-field"><span>Business phone</span>
+                <input className="nw-input" value={businessPhone} onChange={e => setBusinessPhone(e.target.value)} type="tel" inputMode="tel" autoComplete="tel" placeholder="03 9000 0000" />
+                <small>Where calls are forwarded until your Colvy phone line is set up.</small></label>
+              <div className="su-field"><span>Business hours
+                {found?.source === 'google' && found.hours && <em className="su-pill">{I(ICONS.check, 11, 3)}Verified via Google</em>}</span>
+                <small style={{ margin: '0 0 10px' }}>Used for after-hours auto-replies and missed-call messages.</small>
+                <div className="su-hours"><BusinessHoursEditor value={hours} onChange={setHours} /></div>
+              </div>
 
-            {/* OAuth shortcut — skips the password + OTP path. */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '24px 0 14px' }}>
-              <div style={{ flex: 1, height: 1, background: '#eee' }} />
-              <span style={{ fontSize: 12, color: '#9ca3af' }}>or finish faster with</span>
-              <div style={{ flex: 1, height: 1, background: '#eee' }} />
-            </div>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button type="button" onClick={() => oauth('google')} disabled={!!oauthLoading} style={{ ...ghostBtn, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                <svg width="17" height="17" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-                {oauthLoading === 'google' ? 'Redirecting…' : 'Google'}
-              </button>
-              <button type="button" onClick={() => oauth('github')} disabled={!!oauthLoading} style={{ ...ghostBtn, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
-                {oauthLoading === 'github' ? 'Redirecting…' : 'GitHub'}
-              </button>
-            </div>
+              {/* OAuth shortcut — skips the password + OTP path. */}
+              <div className="su-or"><span />or finish faster with<span /></div>
+              <div className="su-oauth">
+                <button type="button" onClick={() => oauth('google')} disabled={!!oauthLoading}>
+                  <svg width="17" height="17" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                  {oauthLoading === 'google' ? 'Redirecting…' : 'Google'}
+                </button>
+                <button type="button" onClick={() => oauth('github')} disabled={!!oauthLoading}>
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+                  {oauthLoading === 'github' ? 'Redirecting…' : 'GitHub'}
+                </button>
+              </div>
+            </>)}
 
-            {footer(true, <button type="button" onClick={next} disabled={!canLeaveDetails} style={primaryBtn(!canLeaveDetails)}>Continue →</button>)}
-          </div>
-        )}
+            {/* STEP 4 — Contact details */}
+            {step === 4 && (<>
+              <h1>Your contact details</h1>
+              <p className="nw-sub">Your email and mobile, so we can verify your account. They become your first channels.</p>
+              <label className="su-field"><span>Email</span>
+                <input className="nw-input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" autoComplete="email" autoFocus />
+                <small>Work email preferred; personal is fine.</small></label>
+              <label className="su-field"><span>Mobile number</span>
+                <input className="nw-input" value={mobile} onChange={e => setMobile(e.target.value)} placeholder="04xx xxx xxx" inputMode="tel" autoComplete="tel" onKeyDown={onEnter(!primary.off)} />
+                <small>We&rsquo;ll text a 6-digit code to this number.</small></label>
+              <div style={{ marginTop: 6 }}><Turnstile ref={humanRef} onToken={setHumanToken} action="signup" /></div>
+            </>)}
 
-        {/* STEP 4 — Contact details */}
-        {step === 4 && (
-          <div>
-            <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0d0d0d', margin: '4px 0 6px', textAlign: 'center' }}>Your contact details</h1>
-            <p style={{ fontSize: 14, color: '#6b6b70', marginBottom: 24, textAlign: 'center' }}>Add your email and mobile so we can verify your account.</p>
-            <div className="contact-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <div><label style={labelStyle}>Email</label>
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" style={inputStyle} />
-                <p style={{ fontSize: 12, color: '#9ca3af', margin: '6px 2px 0' }}>Work email preferred; personal is fine.</p></div>
-              <div><label style={labelStyle}>Mobile number</label>
-                <input value={mobile} onChange={e => setMobile(e.target.value)} placeholder="04xx xxx xxx" style={inputStyle} />
-                <p style={{ fontSize: 12, color: '#9ca3af', margin: '6px 2px 0' }}>We&rsquo;ll text a 6-digit code to this number.</p></div>
-            </div>
-            <style>{`@media (max-width:560px){.contact-grid{grid-template-columns:1fr !important}}`}</style>
-            <div style={{ marginTop: 16 }}><Turnstile ref={humanRef} onToken={setHumanToken} action="signup" /></div>
-            {footer(true, <button type="button" onClick={sendCodes} disabled={loading || waitingForHuman} style={primaryBtn(loading || waitingForHuman)}>{loading ? 'Sending…' : waitingForHuman ? 'Checking…' : 'Send codes →'}</button>)}
-          </div>
-        )}
-
-        {/* STEP 5 — Verify email */}
-        {step === 5 && (
-          <div style={{ textAlign: 'center' }}>
-            <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0d0d0d', margin: '4px 0 6px' }}>Verify email</h1>
-            <p style={{ fontSize: 14, color: '#6b6b70', marginBottom: 24 }}>Enter the 6-digit code we emailed to <strong>{email}</strong>.</p>
-            {smsProblem && <div role="alert" style={{ display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', maxWidth: 460, margin: '0 auto 16px', padding: '10px 14px', borderRadius: 12, background: '#fef2f2', border: '1px solid #fca5a5', color: '#b91c1c', fontSize: 13 }}><AlertIcon /><span><strong>Your mobile:</strong> {smsProblem}</span></div>}
-            {emailProblem && <div role="alert" style={{ display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', maxWidth: 460, margin: '0 auto 16px', padding: '10px 14px', borderRadius: 12, background: '#fffbeb', border: '1px solid #fcd34d', color: '#92400e', fontSize: 13 }}><AlertIcon />{emailProblem}</div>}
-            <input value={emailCode} onChange={e => setEmailCode(e.target.value.replace(/\D/g, '').slice(0, 6))} autoFocus inputMode="numeric" placeholder="Enter code"
-              onKeyDown={e => { if (e.key === 'Enter') verify('email') }}
-              style={{ ...inputStyle, maxWidth: 320, margin: '0 auto', textAlign: 'center', letterSpacing: 6, fontSize: 20, fontWeight: 700 }} />
-            <div style={{ marginTop: 12 }}>
-              <button type="button" onClick={() => resend('email')} disabled={emailResend > 0} style={{ background: 'none', border: 'none', cursor: emailResend > 0 ? 'default' : 'pointer', color: emailResend > 0 ? '#9ca3af' : CORAL, fontSize: 13, fontWeight: 600 }}>
+            {/* STEP 5 — Verify email */}
+            {step === 5 && (<>
+              <h1>Check your email</h1>
+              <p className="nw-sub">Enter the 6-digit code we emailed to <strong>{email}</strong>.</p>
+              {smsProblem && <div role="alert" className="su-note bad"><AlertIcon /><span><strong>Your mobile:</strong> {smsProblem}</span></div>}
+              {emailProblem && <div role="alert" className="su-note warn"><AlertIcon />{emailProblem}</div>}
+              <input className="nw-input su-code" value={emailCode} onChange={e => setEmailCode(e.target.value.replace(/\D/g, '').slice(0, 6))} autoFocus inputMode="numeric" autoComplete="one-time-code" placeholder="••••••" aria-label="Email code"
+                onKeyDown={onEnter(emailCode.length === 6)} />
+              <button type="button" className="nw-link su-resend" onClick={() => resend('email')} disabled={emailResend > 0}>
                 {emailResend > 0 ? `Resend code in ${emailResend}s` : 'Resend code'}
               </button>
-            </div>
-            {footer(true, <button type="button" onClick={() => verify('email')} disabled={loading || emailCode.length !== 6} style={primaryBtn(loading || emailCode.length !== 6)}>Verify email →</button>)}
-          </div>
-        )}
+            </>)}
 
-        {/* STEP 6 — Verify mobile */}
-        {step === 6 && (
-          <div style={{ textAlign: 'center' }}>
-            <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0d0d0d', margin: '4px 0 6px' }}>Verify mobile</h1>
-            <p style={{ fontSize: 14, color: '#6b6b70', marginBottom: 20 }}>Enter the 6-digit code we {called ? 'read out to' : 'texted to'} <strong>{normalizeMobile(mobile)}</strong>.</p>
-            {smsProblem && (
-              <div role="alert" style={{ display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', maxWidth: 460, margin: '0 auto 16px', padding: '12px 14px', borderRadius: 12, background: '#fef2f2', border: '1px solid #fca5a5', color: '#b91c1c', fontSize: 13.5, lineHeight: 1.45 }}>
-                <AlertIcon /><span>{smsProblem}</span>
-              </div>
-            )}
-            {called && !smsProblem && (
-              <div role="status" style={{ display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', maxWidth: 460, margin: '0 auto 16px', padding: '12px 14px', borderRadius: 12, background: '#f0fdf4', border: '1px solid #86efac', color: '#166534', fontSize: 13.5, lineHeight: 1.45 }}>
-                <PhoneIcon /><span>We&rsquo;re calling {normalizeMobile(mobile)} now. Answer and listen for the 6-digit code. It&rsquo;s read out twice.</span>
-              </div>
-            )}
-            <input value={smsCode} onChange={e => setSmsCode(e.target.value.replace(/\D/g, '').slice(0, 6))} autoFocus inputMode="numeric" autoComplete="one-time-code" placeholder="Enter code"
-              onKeyDown={e => { if (e.key === 'Enter') verify('sms') }}
-              style={{ ...inputStyle, maxWidth: 320, margin: '0 auto', textAlign: 'center', letterSpacing: 6, fontSize: 20, fontWeight: 700 }} />
-            <div style={{ marginTop: 18 }}>
-              <p style={{ fontSize: 13, color: '#6b6b70', margin: '0 0 8px' }}>Didn&rsquo;t get it?{smsResend > 0 ? ` You can ask again in ${smsResend}s.` : ''}</p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
-                <button type="button" onClick={() => resend('sms')} disabled={smsResend > 0 || !!mobileBusy} style={smallBtn(smsResend > 0 || !!mobileBusy)}>
-                  <SmsIcon />{mobileBusy === 'sms' ? 'Sending…' : 'Text me again'}
-                </button>
-                {voiceAvailable && (
-                  <button type="button" onClick={() => resend('voice')} disabled={smsResend > 0 || !!mobileBusy} style={smallBtn(smsResend > 0 || !!mobileBusy)}>
-                    <PhoneIcon />{mobileBusy === 'voice' ? 'Calling…' : 'Call me with the code'}
-                  </button>
-                )}
-                <button type="button" onClick={() => { setChangingNumber(c => !c); setNewMobile(mobile) }} disabled={!!mobileBusy} style={smallBtn(!!mobileBusy)}>
-                  <EditIcon />Change number
-                </button>
+            {/* STEP 6 — Verify mobile */}
+            {step === 6 && (<>
+              <h1>Check your phone</h1>
+              <p className="nw-sub">Enter the 6-digit code we {called ? 'read out to' : 'texted to'} <strong>{normalizeMobile(mobile)}</strong>.</p>
+              {smsProblem && <div role="alert" className="su-note bad"><AlertIcon /><span>{smsProblem}</span></div>}
+              {called && !smsProblem && <div role="status" className="su-note good"><PhoneIcon /><span>We&rsquo;re calling {normalizeMobile(mobile)} now. Answer and listen for the 6-digit code. It&rsquo;s read out twice.</span></div>}
+              <input className="nw-input su-code" value={smsCode} onChange={e => setSmsCode(e.target.value.replace(/\D/g, '').slice(0, 6))} autoFocus inputMode="numeric" autoComplete="one-time-code" placeholder="••••••" aria-label="Mobile code"
+                onKeyDown={onEnter(smsCode.length === 6)} />
+              <p className="nw-hint">Didn&rsquo;t get it?{smsResend > 0 ? ` You can ask again in ${smsResend}s.` : ''}</p>
+              <div className="su-smalls">
+                <button type="button" onClick={() => resend('sms')} disabled={smsResend > 0 || !!mobileBusy}><SmsIcon />{mobileBusy === 'sms' ? 'Sending…' : 'Text me again'}</button>
+                {voiceAvailable && <button type="button" onClick={() => resend('voice')} disabled={smsResend > 0 || !!mobileBusy}><PhoneIcon />{mobileBusy === 'voice' ? 'Calling…' : 'Call me with the code'}</button>}
+                <button type="button" onClick={() => { setChangingNumber(c => !c); setNewMobile(mobile) }} disabled={!!mobileBusy}><EditIcon />Change number</button>
               </div>
               {changingNumber && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', maxWidth: 420, margin: '12px auto 0' }}>
-                  <input value={newMobile} onChange={e => setNewMobile(e.target.value)} placeholder="04xx xxx xxx" inputMode="tel" autoComplete="tel"
-                    onKeyDown={e => { if (e.key === 'Enter') changeNumber() }} style={{ ...inputStyle, flex: '1 1 200px', width: 'auto' }} />
-                  <button type="button" onClick={changeNumber} disabled={!!mobileBusy || smsResend > 0 || (!!TURNSTILE_SITE_KEY && !changeHumanToken)} style={{ ...primaryBtn(!!mobileBusy || smsResend > 0 || (!!TURNSTILE_SITE_KEY && !changeHumanToken)), padding: '10px 16px', fontSize: 14 }}>
+                <div className="su-change">
+                  <input className="nw-input" value={newMobile} onChange={e => setNewMobile(e.target.value)} placeholder="04xx xxx xxx" inputMode="tel" autoComplete="tel" onKeyDown={e => { if (e.key === 'Enter') changeNumber() }} />
+                  <button type="button" className="nw-back" onClick={changeNumber} disabled={!!mobileBusy || smsResend > 0 || (!!TURNSTILE_SITE_KEY && !changeHumanToken)}>
                     {mobileBusy === 'change' ? 'Sending…' : 'Text this number'}
                   </button>
-                  <div style={{ flexBasis: '100%', display: 'flex', justifyContent: 'center' }}><Turnstile ref={changeHumanRef} onToken={setChangeHumanToken} action="signup-change-number" /></div>
+                  <Turnstile ref={changeHumanRef} onToken={setChangeHumanToken} action="signup-change-number" />
                 </div>
               )}
-            </div>
-            {footer(true, <button type="button" onClick={() => verify('sms')} disabled={loading || smsCode.length !== 6} style={primaryBtn(loading || smsCode.length !== 6)}>Verify mobile →</button>)}
-          </div>
-        )}
+            </>)}
 
-        {/* STEP 7 — Create password */}
-        {step === 7 && (
-          <div style={{ textAlign: 'center' }}>
-            <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0d0d0d', margin: '4px 0 6px' }}>Create your password</h1>
-            <p style={{ fontSize: 14, color: '#6b6b70', marginBottom: 24 }}>Last step — set a password to secure your account.</p>
-            <div style={{ maxWidth: 380, margin: '0 auto', textAlign: 'left' }}>
-              <div style={{ marginBottom: 14 }}><label style={labelStyle}>Password</label>
-                <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Min. 6 characters" autoFocus style={inputStyle} /></div>
-              <div style={{ marginBottom: 6 }}><label style={labelStyle}>Confirm password</label>
-                <input type={showPassword ? 'text' : 'password'} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') finish() }} style={inputStyle} /></div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#6b6b70', cursor: 'pointer' }}>
-                <input type="checkbox" checked={showPassword} onChange={e => setShowPassword(e.target.checked)} /> Show password
-              </label>
-            </div>
-            {footer(true, <button type="button" onClick={finish} disabled={loading} style={primaryBtn(loading)}>{loading ? 'Creating your workspace…' : 'Create my workspace'}</button>)}
+            {/* STEP 7 — Create password */}
+            {step === 7 && (<>
+              <h1>Create your password</h1>
+              <p className="nw-sub">Last step. Set a password to keep your account safe.</p>
+              <label className="su-field"><span>Password</span>
+                <input className="nw-input" type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 6 characters" autoComplete="new-password" autoFocus /></label>
+              <label className="su-field"><span>Confirm password</span>
+                <input className="nw-input" type={showPassword ? 'text' : 'password'} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} autoComplete="new-password" onKeyDown={onEnter(!loading)} /></label>
+              <label className="su-check"><input type="checkbox" checked={showPassword} onChange={e => setShowPassword(e.target.checked)} /> Show password</label>
+            </>)}
           </div>
-        )}
+          {error && <div className="nw-error" role="alert">{error}</div>}
+        </div>
+
+        <div className="nw-foot">
+          <div className="nw-btns">
+            {step > 1 && <button type="button" className="nw-back" onClick={back}>{I(ICONS.back, 15)}Back</button>}
+            <button type="button" className="nw-next" onClick={primary.run} disabled={primary.off || phase !== 'form'}>{primary.label}{I(ICONS.next, 15)}</button>
+          </div>
+          <p className="nw-legal">By continuing you agree to the <a href="/terms" target="_blank" rel="noreferrer">Terms</a> and <a href="/privacy" target="_blank" rel="noreferrer">Privacy Policy</a></p>
+        </div>
       </div>
 
-      <p style={{ textAlign: 'center', fontSize: 13, color: '#6b6b70', marginTop: 20 }}>
-        Already have an account? <a href="/signin" style={{ color: CORAL, fontWeight: 600, textDecoration: 'none' }}>Sign in</a>
-      </p>
-    </Shell>
+      {/* ── The live preview ───────────────────────────────────────────── */}
+      <SetupPreview panelRef={panelRef} phase={phase} from={from} name={companyName}
+        logo={siteIcon ? { kind: 'img', src: siteIcon } : { kind: 'colvy' }}
+        corner={first ? <div className="nw-me" key={first[0]}><span className="nw-av-ini" style={{ width: 30, height: 30, fontSize: 13 }}>{first[0].toUpperCase()}</span>{first}</div> : null}
+        sub={<>
+          {step >= 3 && slug && slugStatus === 'available' && <div className="nw-ws-site">{I(ICONS.chat, 13)}{slug}.colvy.com</div>}
+          {siteLooksDone && <div className="nw-ws-site">{siteIcon ? <img src={siteIcon} alt="" /> : I(GLOBE, 13)}{site}</div>}
+        </>}
+        sections={
+          <PreviewSection k="channels" icon={ICONS.chat} title="Channels">
+            <PreviewRow color={color} icon={ICONS.chat} label="Website chat" fresh={false} />
+            {step >= 3 && businessPhone.trim() && <PreviewRow color="#7c3aed" icon={<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z" />} label="Calls" detail={businessPhone.trim()} />}
+            {step >= 4 && emailOk && <PreviewRow color="#3b82f6" icon={<><rect x="3" y="5" width="18" height="14" rx="2" /><polyline points="3 7 12 13 21 7" /></>} label="Email" detail={email.trim()} verified={emailVerified} />}
+            {step >= 4 && mobileOk && <PreviewRow color="#22c55e" icon={ICONS.chat} label="SMS" detail={normalizeMobile(mobile)} verified={smsVerified} />}
+            {step < 3 && <GhostRows />}
+          </PreviewSection>
+        }
+        conv={first ? (
+          <div className="nw-thread">
+            <div className="nw-msg"><img src={COLVY_ICON} alt="" /><p>Welcome to Colvy, <b>{first}</b>! 👋 {companyName.trim() ? <>Let&rsquo;s get <b>{companyName.trim()}</b> set up.</> : <>Let&rsquo;s set up your business.</>}</p></div>
+            {step >= 3 && (address.trim() || businessPhone.trim() || hoursText) && (
+              <div className="nw-card">
+                <h4>{I(ICONS.bag, 13)}{industry || 'Your business'}</h4>
+                {address.trim() && <div className="nw-card-row">{I(<><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></>, 15)}<span>{address.trim()}</span></div>}
+                {businessPhone.trim() && <div className="nw-card-row">{I(<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z" />, 15)}<span>{businessPhone.trim()}</span></div>}
+                {hoursText && <div className="nw-card-row">{I(<><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></>, 15)}<span>{hoursText}</span>{found?.source === 'google' && found.hours && <em>Google</em>}</div>}
+              </div>
+            )}
+            {step >= 5 && (
+              <div className="nw-msg" key={emailVerified && smsVerified ? 'both' : emailVerified ? 'email' : 'codes'}>
+                <img src={COLVY_ICON} alt="" />
+                <p>{emailVerified && smsVerified ? <>You&rsquo;re verified. One last thing: a password.</> : emailVerified ? <>Email verified ✓ Now the code on your phone.</> : <>I&rsquo;ve sent you two codes: one by email, one by text.</>}</p>
+              </div>
+            )}
+          </div>
+        ) : undefined}
+        build={
+          <div className="nw-build">
+            <AiBuddy size={84} color={color} shadow />
+            <h2>Setting up {companyName.trim() || 'your workspace'}</h2>
+            {siteLooksDone && <p className="nw-build-for">for <span className="nw-build-chip">{siteIcon ? <img src={siteIcon} alt="" /> : I(GLOBE, 16)}</span>{site}</p>}
+            <p className="nw-build-line" key={buildLine}>{BUILDING[buildLine]}</p>
+          </div>
+        } />
+
+      <SetupToast toast={toast} onClose={closeToast} />
+    </div>
   )
 }
+
+const BUILDING = ['Creating your account…', 'Creating your inbox…', 'Saving your branding…', 'Getting Colvy AI ready…', 'Setting up your address…', 'Opening your workspace…']
+
+// Fields drawn by other components (business search, address) take a style.
+const FIELD: React.CSSProperties = { width: '100%', height: 52, boxSizing: 'border-box' }
+
+const SU_CSS = `
+.su .nw-body{padding-top:clamp(24px,7vh,72px)}
+.su-field{display:block;margin:0 0 18px}
+.su-field>span{display:flex;align-items:center;gap:8px;margin:0 0 8px;font-size:14px;font-weight:600}
+.su-field small{display:flex;align-items:center;gap:5px;margin:7px 2px 0;font-size:12.5px;color:#8e8e93}
+.su-field small.su-ok{color:#15803d;font-weight:600}
+.su-pill{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:#ecfdf3;color:#067647;font-size:11.5px;font-weight:700;font-style:normal}
+.su-slug{display:flex;align-items:center;height:52px;border-radius:14px;border:1.5px solid #e4e4e7;background:#fff;overflow:hidden;transition:border-color .15s,box-shadow .15s}
+.su-slug:focus-within{border-color:var(--c);box-shadow:0 0 0 4px color-mix(in srgb,var(--c) 16%,transparent)}
+.su-slug.available{border-color:#22c55e}.su-slug.taken,.su-slug.invalid{border-color:#ef4444}
+.su-slug input{flex:1;min-width:0;height:100%;padding:0 6px 0 16px;border:none;outline:none;background:transparent;font:inherit;font-size:16px;font-weight:600;color:inherit}
+.su-slug input:focus{box-shadow:none}
+.su-slug b{padding:0 14px 0 0;font-weight:500;color:#8e8e93}
+.su-select{appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 16px center;padding-right:40px;cursor:pointer}
+.su-seg{display:inline-flex;gap:4px;padding:4px;margin:0 0 16px;border-radius:999px;background:#f4f4f5}
+.su-seg button{display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 16px;border:none;border-radius:999px;background:transparent;font:inherit;font-size:14px;font-weight:600;color:#71717a;cursor:pointer;transition:background-color .2s,color .2s,box-shadow .2s}
+.su-seg button.on{background:#fff;color:#18181b;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.su-found-box{align-items:flex-start}
+.su-found-box span{display:flex;flex-direction:column;gap:2px}
+.su-found-box small{font-weight:500;color:#52525b}
+.su-or{display:flex;align-items:center;gap:12px;margin:26px 0 12px;font-size:12.5px;color:#a1a1aa}
+.su-or span{flex:1;height:1px;background:#ececef}
+.su-oauth{display:flex;gap:10px}
+.su-oauth button,.su-smalls button{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:8px;height:46px;border-radius:999px;border:1.5px solid #e4e4e7;background:#fff;font:inherit;font-size:14.5px;font-weight:600;color:#18181b;cursor:pointer}
+.su-oauth button:hover,.su-smalls button:hover:not(:disabled){background:#fafafa}
+.su-smalls{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.su-smalls button{flex:0 0 auto;height:38px;padding:0 14px;font-size:13.5px}
+.su-smalls button:disabled{opacity:.5;cursor:default}
+.su-change{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.su-change .nw-input{flex:1 1 200px;width:auto}
+.su-change .nw-back{height:52px}
+.su-code{justify-content:center;text-align:center;letter-spacing:.5em;font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+.su-resend{margin-top:12px}
+.su-resend:disabled{color:#a1a1aa;text-decoration:none;cursor:default}
+.su-note{display:flex;gap:10px;align-items:flex-start;margin:0 0 14px;padding:11px 14px;border-radius:14px;font-size:13.5px;line-height:1.45}
+.su-note.bad{background:#fef2f2;color:#b91c1c}
+.su-note.warn{background:#fffbeb;color:#92400e}
+.su-note.good{background:#f0fdf4;color:#166534}
+.su-hours{max-width:100%;overflow-x:auto}
+.su-check{display:inline-flex;align-items:center;gap:8px;font-size:13.5px;color:#71717a;cursor:pointer}
+.su .nw-legal a{text-decoration:underline;text-underline-offset:2px}
+.nw.dark .su-slug,.nw.dark .su-oauth button,.nw.dark .su-smalls button{background:#18181b;border-color:#2c2c31;color:#f4f4f5}
+.nw.dark .su-seg{background:#1f1f23}
+.nw.dark .su-seg button.on{background:#2c2c31;color:#fff}
+.nw.dark .su-or span{background:#26262b}
+`
 
 export default function SignUpPage() {
   return (
