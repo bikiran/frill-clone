@@ -10,6 +10,7 @@ import { peekCompanyUser, resolveCompanyUser, readCache, writeCache } from '@/li
 import { readLocal, writeLocal } from '@/lib/local-cache'
 import { HELP_LIST_COLUMNS } from '@/lib/help-shared'
 import { refreshPublicHelp } from '@/lib/help-revalidate'
+import HelpShell from '@/components/help/HelpShell'
 
 
 const SEED_ARTICLES = [
@@ -150,222 +151,156 @@ export default function HelpAdminPage() {
 
   const formatDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 
-  const CATEGORY_COLORS: Record<string, any> = {
-    'Getting Started': { bg: '#dbeafe', color: '#2563eb' },
-    'Features':        { bg: 'var(--peach)', color: 'var(--coral)' },
-    'Billing':         { bg: '#dcfce7', color: '#16a34a' },
-    'Integrations':    { bg: '#faf5ff', color: '#7c3aed' },
-    'Troubleshooting': { bg: '#fff7ed', color: '#ea580c' },
-    'API':             { bg: '#f0fdf4', color: '#15803d' },
-    'Other':           { bg: '#f9fafb', color: '#6b7280' },
-  }
+  const live = (a: any) => a.status === 'published'
+  const statusTag = (a: any) => <span className="hc-tag" style={{ ['--tag' as any]: live(a) ? '#16a34a' : '#a1a1aa' }}>{live(a) ? 'Live' : 'Draft'}</span>
 
-  if (!user || loading) return <div className="p-8" style={{ color: 'var(--slate)' }}>Loading...</div>
+  const list = (
+    <>
+      <p className="hc-group">{articles.length} article{articles.length === 1 ? '' : 's'}</p>
+      {articles.map(a => (
+        <button key={a.id} type="button" onClick={() => setSelected(a)} className={`hc-art${selected?.id === a.id ? ' on' : ''}`} aria-current={selected?.id === a.id ? 'true' : undefined}>
+          <span className="hc-art-t">{a.title}</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, minWidth: 0 }}>
+            {a.category && <span className="hc-chip" style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.category}</span>}
+            {statusTag(a)}
+          </span>
+        </button>
+      ))}
+      {articles.length > 0 && articles.length < 9 && (
+        <button type="button" onClick={seedArticles} disabled={seeding} className="cv-btn" style={{ width: '100%', height: 34, fontSize: 13, marginTop: 10 }}>
+          {seeding ? 'Adding…' : 'Add sample articles'}
+        </button>
+      )}
+      <style>{`
+        .hc-art { display: block; width: 100%; padding: 9px 10px; margin-bottom: 2px; border: none; border-radius: 11px; background: none; font: inherit; text-align: left; cursor: pointer; transition: background .12s; }
+        .hc-art:hover { background: #f4f4f5; }
+        .hc-art.on { background: #f4f4f5; }
+        .hc-art.on .hc-art-t { font-weight: 650; color: #111; }
+        .hc-art:focus-visible { outline: 2px solid var(--coral); outline-offset: -2px; }
+        .hc-art-t { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14.5px; font-weight: 500; color: #27272a; }
+        .hc-act { width: 100%; justify-content: flex-start; height: 40px; }
+      `}</style>
+    </>
+  )
+
+  if (!user || loading) return (
+    <HelpShell>
+      <div style={{ padding: '36px 44px' }}>
+        {[180, 120, 320].map((w, i) => <div key={i} style={{ width: w, height: i === 2 ? 220 : 22, marginBottom: 16, borderRadius: 10, background: '#f4f4f5' }} />)}
+      </div>
+    </HelpShell>
+  )
 
   return (
-    // A fixed height (not min-height) is important: the sidebar list and the
-    // article pane below both use overflow-y-auto, and an inner scroll container
-    // only works if its parent has a real height to scroll within. With
-    // min-height the article pane stretched instead and its content got cut off
-    // at the bottom with no way to scroll further.
-    <div className="flex h-[calc(100vh-56px)] overflow-hidden">
-      {/* Sidebar */}
-      <aside className="hidden md:flex flex-col w-64 shrink-0 bg-white border-r" style={{ borderColor: 'var(--border)' }}>
-        <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
-          <Link href="/admin" className="text-sm font-medium hover:opacity-70" style={{ color: 'var(--coral)' }}>← Admin</Link>
-          <Link href="/admin/help/new" className="p-2 rounded-lg hover:bg-gray-100 cursor-pointer" title="New Article">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          </Link>
-        </div>
-        <div className="flex-1 overflow-y-auto py-2 px-2">
-          <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--slate)' }}>
-            {articles.length} Articles
-          </p>
-          {articles.length === 0 ? (
-            <div className="px-3 py-4 text-center">
-              <p className="text-sm mb-3" style={{ color: 'var(--slate)' }}>No articles yet</p>
-              <button onClick={seedArticles} disabled={seeding}
-                className="w-full px-3 py-2 rounded-lg text-xs font-semibold text-white cursor-pointer disabled:opacity-50"
-                style={{ background: 'var(--coral)' }}>
-                {seeding ? 'Seeding...' : '✨ Add Sample Articles'}
-              </button>
-            </div>
-          ) : (
-            articles.map(a => (
-              <button key={a.id} onClick={() => setSelected(a)}
-                className="w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all hover:bg-gray-50 cursor-pointer mb-0.5"
-                style={{ background: selected?.id === a.id ? 'var(--peach)' : 'transparent', color: 'var(--ink)', fontWeight: selected?.id === a.id ? 600 : 400, borderLeft: selected?.id === a.id ? '2px solid var(--coral)' : '2px solid transparent' }}>
-                <p className="truncate">{a.title}</p>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className="text-xs px-1.5 py-0.5 rounded-full" style={CATEGORY_COLORS[a.category] || CATEGORY_COLORS['Other']}>{a.category}</span>
-                  <span className="text-xs" style={{ color: a.status === 'published' ? '#16a34a' : 'var(--slate)' }}>
-                    {a.status === 'published' ? '● Live' : '○ Draft'}
-                  </span>
-                </div>
-              </button>
-            ))
-          )}
-        </div>
-        {articles.length > 0 && articles.length < 9 && (
-          <div className="p-3 border-t" style={{ borderColor: 'var(--border)' }}>
-            <button onClick={seedArticles} disabled={seeding}
-              className="w-full px-3 py-2 rounded-lg text-xs font-semibold border cursor-pointer hover:bg-gray-50"
-              style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
-              {seeding ? 'Adding...' : '+ Add Sample Articles'}
-            </button>
+    <HelpShell nav={articles.length ? list : undefined}>
+      <div className="hc-page" style={{ padding: '36px 44px 64px' }}>
+        <style>{`@media (max-width: 860px) { .hc-page { padding: 20px 16px 40px !important; } }`}</style>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 28 }}>
+          <div>
+            <h1 style={{ margin: '0 0 6px' }}>Articles</h1>
+            <p style={{ margin: 0, fontSize: 15, color: '#71717a' }}>
+              {articles.length} article{articles.length === 1 ? '' : 's'} · {articles.filter(live).length} live
+            </p>
           </div>
-        )}
-      </aside>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Link href="/admin/help/import" className="cv-btn">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="12" cy="12" r="9" /><path d="M3 12h18" /><path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z" /></svg>
+              Import from website
+            </Link>
+            <Link href="/admin/help/new" className="cv-btn cv-btn-primary">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+              New article
+            </Link>
+          </div>
+        </div>
 
-      {/* Main */}
-      <main className="flex-1 overflow-y-auto min-w-0">
-        <div className="px-4 md:px-8 py-6 pb-24">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h1 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>Help Centre</h1>
-              <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>
-                {articles.length} articles · {articles.filter(a => a.status === 'published').length} published
-              </p>
+        {!selected ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '64px 16px', borderRadius: 20, background: '#f6f6f7' }}>
+            <div style={{ width: 60, height: 60, borderRadius: 18, background: '#fff', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 2px rgba(0,0,0,.06)', marginBottom: 16 }}>
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
             </div>
-            <div className="flex gap-2">
-              {articles.length === 0 && (
-                <button onClick={seedArticles} disabled={seeding}
-                  className="px-4 py-2.5 rounded-xl text-sm font-semibold border cursor-pointer hover:bg-gray-50"
-                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                  {seeding ? '⏳ Adding...' : '✨ Add Sample Articles'}
-                </button>
-              )}
-              <Link href="/admin/help/import"
-                className="px-4 py-2.5 rounded-xl text-sm font-semibold border cursor-pointer hover:bg-gray-50 inline-flex items-center gap-2"
-                style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
-                Import from website
-              </Link>
-              <Link href="/admin/help/new"
-                className="px-4 py-2.5 rounded-xl font-semibold text-white text-sm cursor-pointer"
-                style={{ background: 'var(--coral)' }}>
-                + New Article
-              </Link>
+            <h2 style={{ margin: '0 0 6px', fontSize: 20, fontWeight: 800, color: '#111' }}>Your help centre</h2>
+            <p style={{ margin: '0 0 20px', fontSize: 14.5, color: '#71717a' }}>Start from your website, or write your first article.</p>
+            <Link href="/admin/help/import" className="cv-btn cv-btn-primary" style={{ height: 42, padding: '0 20px' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="12" cy="12" r="9" /><path d="M3 12h18" /><path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z" /></svg>
+              Import from your website with AI
+            </Link>
+            <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+              <button type="button" onClick={seedArticles} disabled={seeding} className="cv-btn">{seeding ? 'Adding…' : 'Add 9 sample articles'}</button>
+              <Link href="/admin/help/new" className="cv-btn">Write an article</Link>
             </div>
           </div>
-
-          {!selected ? (
-            <div className="flex flex-col items-center justify-center py-24 text-center">
-              <div className="mb-4" style={{ width: 64, height: 64, borderRadius: 20, background: 'linear-gradient(135deg, var(--coral), color-mix(in srgb, var(--coral) 55%, #a855f7))', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 14px 30px color-mix(in srgb, var(--coral) 30%, transparent)' }}>
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
+        ) : (
+          <div className="hc-detail">
+            <style>{`
+              .hc-detail { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 24px; align-items: start; }
+              @media (max-width: 1100px) { .hc-detail { grid-template-columns: minmax(0, 1fr); } }
+            `}</style>
+            {/* The article */}
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+                {selected.category && <span className="hc-chip">{selected.category}</span>}
+                {selected.featured && <span className="hc-tag" style={{ ['--tag' as any]: '#d97706' }}>Featured</span>}
+                {statusTag(selected)}
               </div>
-              <h2 className="text-xl font-bold mb-2" style={{ color: 'var(--ink)' }}>Your Help Centre</h2>
-              <p className="mb-6" style={{ color: 'var(--slate)' }}>Start from your website, or write your first article.</p>
-              <Link href="/admin/help/import" className="mb-3 px-6 py-3 rounded-xl font-semibold text-white text-sm inline-flex items-center gap-2" style={{ background: 'var(--coral)', boxShadow: '0 8px 20px color-mix(in srgb, var(--coral) 28%, transparent)' }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
-                Import articles from your website with AI
-              </Link>
-              <div className="flex gap-3">
-                <button onClick={seedArticles} disabled={seeding}
-                  className="px-6 py-2.5 rounded-xl font-semibold border text-sm cursor-pointer hover:bg-gray-50"
-                  style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                  {seeding ? 'Adding...' : '✨ Add 9 Sample Articles'}
-                </button>
-                <Link href="/admin/help/new" className="px-6 py-2.5 rounded-xl font-semibold border text-sm hover:bg-gray-50" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                  Write New Article
-                </Link>
-              </div>
-            </div>
-          ) : (
-            <div className="grid lg:grid-cols-3 gap-6">
-              {/* Content */}
-              <div className="lg:col-span-2 space-y-4">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="px-3 py-1 rounded-full text-xs font-semibold" style={CATEGORY_COLORS[selected.category] || CATEGORY_COLORS['Other']}>
-                    {selected.category}
-                  </span>
-                  {selected.featured && <span className="px-3 py-1 rounded-full text-xs font-semibold" style={{ background: '#fef9c3', color: '#ca8a04' }}>⭐ Featured</span>}
-                  <span className="px-3 py-1 rounded-full text-xs font-semibold" style={{ background: selected.status === 'published' ? '#dcfce7' : '#f3f4f6', color: selected.status === 'published' ? '#16a34a' : '#6b7280' }}>
-                    {selected.status === 'published' ? '● Published' : '○ Draft'}
-                  </span>
+              <h2 style={{ margin: '0 0 6px', fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em', color: '#111' }}>{selected.title}</h2>
+              <p style={{ margin: '0 0 18px', fontSize: 13.5, color: '#8e8e93' }}>{formatDate(selected.created_at)} · {selected.views || 0} views · {selected.likes || 0} helpful</p>
+              <div className="hc-card" style={{ padding: '22px 24px' }}>
+                <div style={{ color: '#27272a', fontSize: 15, lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>
+                  {current?.content?.replace(/#{1,6} /g, '').replace(/\*\*([^*]+)\*\*/g, '$1').replace(/`([^`]+)`/g, '$1').slice(0, 600)}
+                  {current?.content?.length > 600 && '…'}
                 </div>
-
-                <h2 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>{selected.title}</h2>
-                <p className="text-sm" style={{ color: 'var(--slate)' }}>{formatDate(selected.created_at)} · {selected.views || 0} views · {selected.likes || 0} helpful</p>
-
-                <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
-                  <div className="prose max-w-none text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--ink)', fontSize: '15px', lineHeight: 1.8 }}>
-                    {current?.content?.replace(/#{1,6} /g, '').replace(/\*\*([^*]+)\*\*/g, '$1').replace(/`([^`]+)`/g, '$1').slice(0, 600)}
-                    {current?.content?.length > 600 && '...'}
-                  </div>
-                </div>
-
-                {/* Media gallery preview */}
-                {current?.media?.length > 0 && (
-                  <div className="bg-white rounded-2xl border p-4" style={{ borderColor: 'var(--border)' }}>
-                    <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>Media ({current?.media.length})</p>
-                    <div className="flex gap-2 flex-wrap">
-                      {current?.media.map((m: any, i: number) => (
-                        <div key={i} className="w-20 h-16 rounded-lg overflow-hidden border" style={{ borderColor: 'var(--border)' }}>
-                          {m.type === 'youtube' ? (
-                            <div className="w-full h-full flex items-center justify-center" style={{ background: '#fef2f2' }}>
-                              <span>▶️</span>
-                            </div>
-                          ) : m.type === 'video' ? (
-                            <video src={m.src} className="w-full h-full object-cover" muted />
-                          ) : (
-                            <img src={m.src} loading="lazy" decoding="async" className="w-full h-full object-cover" />
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
 
-              {/* Sidebar */}
-              <div className="space-y-4">
-                <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
-                  <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>Stats</p>
-                  <div className="space-y-3">
-                    {[
-                      { label: 'Views', value: selected.views || 0 },
-                      { label: 'Helpful votes', value: selected.likes || 0 },
-                      { label: 'Status', value: selected.status === 'published' ? '● Live' : '○ Draft' },
-                    ].map(s => (
-                      <div key={s.label} className="flex items-center justify-between">
-                        <span className="text-sm" style={{ color: 'var(--slate)' }}>{s.label}</span>
-                        <span className="font-semibold text-sm" style={{ color: 'var(--ink)' }}>{s.value}</span>
+              {/* Media */}
+              {current?.media?.length > 0 && (
+                <div className="hc-card" style={{ padding: 16, marginTop: 14 }}>
+                  <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 500, color: '#8e8e93' }}>Media ({current?.media.length})</p>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {current?.media.map((m: any, i: number) => (
+                      <div key={i} style={{ width: 84, height: 64, borderRadius: 10, overflow: 'hidden', background: '#f4f4f5' }}>
+                        {m.type === 'youtube' ? (
+                          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#dc2626' }}>
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-label="YouTube video"><path d="M8 5v14l11-7z" /></svg>
+                          </div>
+                        ) : m.type === 'video' ? (
+                          <video src={m.src} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted />
+                        ) : (
+                          <img src={m.src} alt="" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        )}
                       </div>
                     ))}
                   </div>
                 </div>
+              )}
+            </div>
 
-                <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
-                  <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>Actions</p>
-                  <div className="space-y-2">
-                    <Link href={`/admin/help/new?edit=${selected.id}`}
-                      className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium hover:bg-gray-50 cursor-pointer"
-                      style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                      <IconEdit /> Edit Article
-                    </Link>
-                    <button onClick={() => copyLink(selected.id)}
-                      className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium hover:bg-gray-50 cursor-pointer"
-                      style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                      <IconLink /> Copy Link
-                    </button>
-                    <Link href={`/help/${selected.id}`} target="_blank"
-                      className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium hover:bg-gray-50 cursor-pointer"
-                      style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                      <IconView /> View Live
-                    </Link>
-                    <button onClick={() => deleteArticle(selected.id)}
-                      className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium hover:bg-red-50 cursor-pointer"
-                      style={{ borderColor: '#fca5a5', color: '#dc2626' }}>
-                      <IconDelete /> Delete
-                    </button>
+            {/* Numbers and actions */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div className="hc-card" style={{ padding: '16px 18px' }}>
+                <p style={{ margin: '0 0 10px', fontSize: 14.5, fontWeight: 700, color: '#111' }}>Stats</p>
+                {[
+                  ['Views', selected.views || 0],
+                  ['Helpful votes', selected.likes || 0],
+                ].map(([label, value]) => (
+                  <div key={label as string} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', fontSize: 14 }}>
+                    <span style={{ color: '#71717a' }}>{label}</span><span style={{ fontWeight: 650, color: '#111' }}>{value}</span>
                   </div>
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', fontSize: 14 }}>
+                  <span style={{ color: '#71717a' }}>Status</span>{statusTag(selected)}
                 </div>
               </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <Link href={`/admin/help/new?edit=${selected.id}`} className="cv-btn cv-btn-dark hc-act"><IconEdit /> Edit article</Link>
+                <button type="button" onClick={() => copyLink(selected.id)} className="cv-btn hc-act"><IconLink /> Copy link</button>
+                <Link href={`/help/${selected.id}`} target="_blank" className="cv-btn hc-act"><IconView /> View live</Link>
+                <button type="button" onClick={() => deleteArticle(selected.id)} className="cv-btn hc-act" style={{ color: '#dc2626' }}><IconDelete /> Delete</button>
+              </div>
             </div>
-          )}
-        </div>
-      </main>
-    </div>
+          </div>
+        )}
+      </div>
+    </HelpShell>
   )
 }

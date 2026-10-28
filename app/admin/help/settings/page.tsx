@@ -7,6 +7,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { refreshPublicHelp } from '@/lib/help-revalidate'
+import HelpShell from '@/components/help/HelpShell'
 
 const LANGUAGES = ['English', 'Spanish', 'French', 'German', 'Portuguese', 'Italian', 'Dutch', 'Japanese', 'Korean', 'Chinese (Simplified)', 'Hindi', 'Nepali', 'Arabic']
 
@@ -159,15 +160,33 @@ export default function HelpSettingsPage() {
   const helpUrl = helpDomain ? `https://${helpDomain}/help?theme=${theme}` : (slug ? `https://${slug}.colvy.com/help?theme=${theme}` : '')
 
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', padding: '28px 32px', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
-      <h1 style={{ fontSize: 26, fontWeight: 700, margin: '0 0 4px 0', color: 'var(--ink)' }}>Help Center Settings</h1>
-      <p style={{ fontSize: 14, color: 'var(--slate)', margin: '0 0 24px 0' }}>Control access, languages, appearance — and preview the live help center without leaving the admin.</p>
+    <HelpShell>
+    <div className="hs-page" style={{ padding: '36px 44px 48px', maxWidth: 1040 }}>
+      <style>{`
+        @media (max-width: 860px) { .hs-page { padding: 20px 16px 32px !important; } }
+        .hs-seg { display: inline-flex; gap: 2px; padding: 3px; margin-bottom: 28px; border-radius: 999px; background: #f4f4f5; flex-wrap: wrap; }
+        .hs-seg button { height: 34px; padding: 0 16px; border: none; border-radius: 999px; background: transparent; font: inherit; font-size: 13.5px; font-weight: 600; color: #71717a; cursor: pointer; transition: background .18s, color .15s, box-shadow .18s; }
+        .hs-seg button:hover { color: #18181b; }
+        .hs-seg button.on { background: #fff; color: #111; box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 0 0 1px rgba(0,0,0,.04); }
+        .hs-label { display: block; margin: 0 0 7px; font-size: 13.5px; font-weight: 600; color: #18181b; }
+        .hs-help { margin: -2px 0 8px; font-size: 12.5px; color: #8e8e93; line-height: 1.45; }
+        .hs-input { width: 100%; box-sizing: border-box; height: 42px; padding: 0 14px; margin-bottom: 18px; border: 1.5px solid transparent; border-radius: 12px; background: #f4f4f5; font: inherit; font-size: 14px; color: #111; outline: none; transition: background .15s, border-color .15s, box-shadow .15s; }
+        .hs-input:focus { background: #fff; border-color: #d4d4d8; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 16%, transparent); }
+        .hs-input::placeholder { color: #a1a1aa; }
+        .hs-opt { display: block; width: 100%; text-align: left; padding: 18px 20px; border: none; border-radius: 16px; background: #fff; box-shadow: 0 0 0 1px #ececf0; font: inherit; cursor: pointer; transition: box-shadow .15s; }
+        .hs-opt:hover { box-shadow: 0 0 0 1px #d4d4d8; }
+        .hs-opt.on { box-shadow: 0 0 0 2px #111; }
+        .hs-icons { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: #f4f4f5; }
+        .hs-icons button { width: 34px; height: 30px; border: none; border-radius: 999px; background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .hs-icons button.on { background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.1); }
+      `}</style>
+      <h1 style={{ margin: '0 0 6px' }}>Help centre settings</h1>
+      <p style={{ fontSize: 15, color: '#71717a', margin: '0 0 24px' }}>Who can see it, its languages and look, and a live preview without leaving the admin.</p>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 4, padding: 4, borderRadius: 12, background: 'var(--canvas)', border: '1px solid var(--border)', width: 'fit-content', marginBottom: 28 }}>
+      <div className="hs-seg" role="tablist">
         {TABS.map(t => (
-          <button key={t.key} type="button" onClick={() => setTab(t.key)}
-            style={{ padding: '8px 18px', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 13.5, fontWeight: tab === t.key ? 700 : 500, background: tab === t.key ? '#fff' : 'transparent', color: tab === t.key ? 'var(--coral)' : 'var(--slate)', boxShadow: tab === t.key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none' }}>
+          <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)} className={tab === t.key ? 'on' : ''}>
             {t.label}
           </button>
         ))}
@@ -175,11 +194,11 @@ export default function HelpSettingsPage() {
 
       {tab === 'access' && (
         <div style={{ maxWidth: 640 }}>
-          <h2 style={{ fontSize: 17, fontWeight: 700, margin: '0 0 6px 0', color: 'var(--ink)' }}>Default access</h2>
-          <p style={{ fontSize: 13.5, color: 'var(--slate)', margin: '0 0 18px 0' }}>Control whether visitors must sign in before browsing.</p>
+          <h2 style={{ fontSize: 17, fontWeight: 700, margin: '0 0 6px 0', color: '#111' }}>Default access</h2>
+          <p style={{ fontSize: 14, color: '#71717a', margin: '0 0 18px 0' }}>Whether visitors must sign in before browsing.</p>
 
           <button type="button" onClick={() => setHelpAccess('open')}
-            style={{ display: 'block', width: '100%', textAlign: 'left', padding: '18px 20px', borderRadius: 14, border: `2px solid ${helpAccess === 'open' ? 'var(--ink)' : 'var(--border)'}`, background: '#fff', cursor: 'pointer', marginBottom: 14 }}>
+            className={`hs-opt${helpAccess === 'open' ? ' on' : ''}`} aria-pressed={helpAccess === 'open'} style={{ marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
               <span style={{ width: 26, height: 26, borderRadius: '50%', background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
@@ -190,7 +209,7 @@ export default function HelpSettingsPage() {
           </button>
 
           <button type="button" onClick={() => setHelpAccess('locked')}
-            style={{ display: 'block', width: '100%', textAlign: 'left', padding: '18px 20px', borderRadius: 14, border: `2px solid ${helpAccess === 'locked' ? 'var(--ink)' : 'var(--border)'}`, background: '#fff', cursor: 'pointer', marginBottom: 24 }}>
+            className={`hs-opt${helpAccess === 'locked' ? ' on' : ''}`} aria-pressed={helpAccess === 'locked'} style={{ marginBottom: 24 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
               <span style={{ width: 26, height: 26, borderRadius: '50%', background: '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -205,31 +224,31 @@ export default function HelpSettingsPage() {
       {tab === 'translate' && (
         <div style={{ maxWidth: 640 }}>
           <h2 style={{ fontSize: 17, fontWeight: 700, margin: '0 0 14px 0', color: 'var(--ink)' }}>Primary language</h2>
-          <select value={primaryLanguage} onChange={e => setPrimaryLanguage(e.target.value)}
-            style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1px solid var(--border)', fontSize: 14.5, outline: 'none', marginBottom: 28, background: '#fff' }}>
+          <select value={primaryLanguage} onChange={e => setPrimaryLanguage(e.target.value)} className="hs-input" style={{ marginBottom: 28, cursor: 'pointer' }}>
             {LANGUAGES.map(l => <option key={l}>{l}</option>)}
           </select>
 
           <h2 style={{ fontSize: 17, fontWeight: 700, margin: '0 0 4px 0', color: 'var(--ink)' }}>Translations <span style={{ fontWeight: 400, color: '#9ca3af' }}>({languages.length})</span></h2>
           {languages.length === 0 ? (
-            <div style={{ borderRadius: 14, border: '1px solid var(--border)', background: '#fff', padding: '22px 24px', marginTop: 12 }}>
+            <div className="hc-card" style={{ padding: '22px 24px', marginTop: 12 }}>
               <h3 style={{ margin: '0 0 6px 0', fontSize: 15.5, fontWeight: 700, color: 'var(--ink)' }}>Translate your help center</h3>
               <p style={{ margin: '0 0 14px 0', fontSize: 13.5, color: 'var(--slate)' }}>Add languages to automatically translate your articles and collections.</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 7, fontSize: 13.5, color: 'var(--ink)', marginBottom: 18 }}>
-                <span>✨ AI-powered translations</span>
-                <span>🕒 Updates when you edit content</span>
-                <span>🌐 10+ languages</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 14, color: '#27272a', marginBottom: 18 }}>
+                {['Translated by AI', 'Kept up to date when you edit', 'More than 10 languages'].map(t => (
+                  <span key={t} style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="20 6 9 17 4 12" /></svg>{t}
+                  </span>
+                ))}
               </div>
               <div style={{ position: 'relative' }}>
-                <button type="button" onClick={() => setShowLangMenu(v => !v)}
-                  style={{ width: '100%', padding: '12px 0', borderRadius: 12, background: 'var(--ink)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+                <button type="button" onClick={() => setShowLangMenu(v => !v)} className="cv-btn cv-btn-dark" style={{ width: '100%', height: 42 }} aria-haspopup="menu" aria-expanded={showLangMenu}>
                   Add a language
                 </button>
                 {showLangMenu && (
-                  <div style={{ position: 'absolute', top: '110%', left: 0, right: 0, maxHeight: 220, overflowY: 'auto', background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.12)', zIndex: 40 }}>
+                  <div className="hc-menu" style={{ top: 'calc(100% + 6px)', left: 0, right: 0, maxHeight: 240, overflowY: 'auto', zIndex: 40 }}>
                     {LANGUAGES.filter(l => l !== primaryLanguage && !languages.includes(l)).map(l => (
                       <button key={l} type="button" onClick={() => { setLanguages([...languages, l]); setShowLangMenu(false) }}
-                        style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 16px', fontSize: 14, border: 'none', background: '#fff', cursor: 'pointer' }}>
+                        className="hc-menu-row">
                         {l}
                       </button>
                     ))}
@@ -240,24 +259,26 @@ export default function HelpSettingsPage() {
           ) : (
             <div style={{ marginTop: 12 }}>
               {languages.map(l => (
-                <div key={l} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '13px 18px', borderRadius: 12, border: '1px solid var(--border)', background: '#fff', marginBottom: 8 }}>
+                <div key={l} className="hc-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px 12px 18px', marginBottom: 8 }}>
                   <span style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--ink)' }}>{l}</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <span style={{ fontSize: 12, color: '#059669', background: '#dcfce7', padding: '3px 10px', borderRadius: 20, fontWeight: 600 }}>AI-translated</span>
-                    <button type="button" onClick={() => setLanguages(languages.filter(x => x !== l))} style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', fontSize: 17 }}>×</button>
+                    <span className="hc-tag" style={{ ['--tag' as any]: '#16a34a' }}>Translated by AI</span>
+                    <button type="button" onClick={() => setLanguages(languages.filter(x => x !== l))} aria-label={`Remove ${l}`} title="Remove" style={{ width: 30, height: 30, borderRadius: 999, border: 'none', background: '#f4f4f5', color: '#71717a', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden><path d="M6 6l12 12M18 6 6 18" /></svg>
+                    </button>
                   </div>
                 </div>
               ))}
               <div style={{ position: 'relative', marginTop: 10 }}>
-                <button type="button" onClick={() => setShowLangMenu(v => !v)}
-                  style={{ padding: '9px 18px', borderRadius: 10, background: 'var(--ink)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>
-                  + Add a language
+                <button type="button" onClick={() => setShowLangMenu(v => !v)} className="cv-btn cv-btn-dark" aria-haspopup="menu" aria-expanded={showLangMenu}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                  Add a language
                 </button>
                 {showLangMenu && (
-                  <div style={{ position: 'absolute', top: '110%', left: 0, width: 260, maxHeight: 220, overflowY: 'auto', background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.12)', zIndex: 40 }}>
+                  <div className="hc-menu" style={{ top: 'calc(100% + 6px)', left: 0, width: 260, maxHeight: 240, overflowY: 'auto', zIndex: 40 }}>
                     {LANGUAGES.filter(l => l !== primaryLanguage && !languages.includes(l)).map(l => (
                       <button key={l} type="button" onClick={() => { setLanguages([...languages, l]); setShowLangMenu(false) }}
-                        style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 16px', fontSize: 14, border: 'none', background: '#fff', cursor: 'pointer' }}>
+                        className="hc-menu-row">
                         {l}
                       </button>
                     ))}
@@ -271,43 +292,40 @@ export default function HelpSettingsPage() {
 
       {tab === 'customize' && (
         <div style={{ maxWidth: 640 }}>
-          <div style={{ borderRadius: 14, border: '1px solid var(--border)', background: '#fff', padding: '20px 22px', marginBottom: 18 }}>
+          <div className="hc-card" style={{ padding: '22px 24px', marginBottom: 18 }}>
             <h2 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 16px 0', color: 'var(--ink)' }}>Header</h2>
-            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', marginBottom: 6 }}>Help center title</label>
-            <input value={helpTitle} onChange={e => setHelpTitle(e.target.value)}
-              style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, outline: 'none', marginBottom: 16 }} />
-            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', marginBottom: 6 }}>Subtitle (optional)</label>
-            <input value={helpSubtitle} onChange={e => setHelpSubtitle(e.target.value)} placeholder="Find answers, guides, and resources"
-              style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, outline: 'none', marginBottom: 16 }} />
+            <label className="hs-label">Help center title</label>
+            <input value={helpTitle} onChange={e => setHelpTitle(e.target.value)} className="hs-input" />
+            <label className="hs-label">Subtitle (optional)</label>
+            <input value={helpSubtitle} onChange={e => setHelpSubtitle(e.target.value)} placeholder="Find answers, guides, and resources" className="hs-input" />
 
-            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', marginBottom: 6 }}>Support email</label>
-            <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--slate)' }}>Shown on your help centre's contact options and used for "Email Support". Falls back to your account email if left blank.</p>
-            <input value={supportEmail} onChange={e => setSupportEmail(e.target.value)} type="email" placeholder="support@yourcompany.com"
-              style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, outline: 'none', marginBottom: 16 }} />
+            <label className="hs-label">Support email</label>
+            <p className="hs-help">Shown on your help centre's contact options and used for "Email Support". Falls back to your account email if left blank.</p>
+            <input value={supportEmail} onChange={e => setSupportEmail(e.target.value)} type="email" placeholder="support@yourcompany.com" className="hs-input" />
 
-            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', marginBottom: 6 }}>Cover photo</label>
-            <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--slate)' }}>Shown behind the help centre header. Recommended 1600×500. Leave empty to use the branded gradient.</p>
-            <div style={{ borderRadius: 12, border: '1px dashed var(--border)', overflow: 'hidden', background: 'var(--canvas)' }}>
+            <label className="hs-label">Cover photo</label>
+            <p className="hs-help">Shown behind the help centre header. Recommended 1600×500. Leave empty to use the branded gradient.</p>
+            <div style={{ borderRadius: 14, overflow: 'hidden', background: '#f6f6f7' }}>
               {coverUrl && <div style={{ height: 120, background: `url(${coverUrl}) center/cover no-repeat` }} />}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12 }}>
-                <label style={{ padding: '8px 14px', borderRadius: 9, background: 'var(--coral)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: coverBusy ? 'default' : 'pointer', opacity: coverBusy ? 0.6 : 1 }}>
+                <label className="cv-btn cv-btn-primary" style={{ height: 34, fontSize: 13.5, cursor: coverBusy ? 'default' : 'pointer', opacity: coverBusy ? 0.6 : 1 }}>
                   {coverBusy ? 'Uploading…' : coverUrl ? 'Replace' : 'Upload cover'}
                   <input type="file" accept="image/*" disabled={coverBusy} onChange={e => { const f = e.target.files?.[0]; if (f) uploadCover(f) }} style={{ display: 'none' }} />
                 </label>
-                {coverUrl && <button type="button" onClick={removeCover} disabled={coverBusy} style={{ padding: '8px 14px', borderRadius: 9, background: '#fff', border: '1px solid var(--border)', color: 'var(--slate)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Remove</button>}
+                {coverUrl && <button type="button" onClick={removeCover} disabled={coverBusy} className="cv-btn" style={{ height: 34, fontSize: 13.5 }}>Remove</button>}
               </div>
             </div>
           </div>
 
-          <div style={{ borderRadius: 14, border: '1px solid var(--border)', background: '#fff', padding: '20px 22px' }}>
+          <div className="hc-card" style={{ padding: '22px 24px' }}>
             <h2 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 8px 0', color: 'var(--ink)' }}>Sections</h2>
             {[
               { label: 'Trending articles', desc: 'Show the most viewed articles in a sidebar', state: showTrending, set: setShowTrending },
               { label: 'Category cards', desc: 'Display article categories as cards on the homepage', state: showCategories, set: setShowCategories },
               { label: 'Contact CTA', desc: 'Show a "Contact us" button in the header', state: showContactCta, set: setShowContactCta },
             ].map(opt => (
-              <div key={opt.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '13px 0', borderBottom: '1px solid var(--border)' }}>
-                <div><p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{opt.label}</p><p style={{ margin: '2px 0 0 0', fontSize: 12.5, color: 'var(--slate)' }}>{opt.desc}</p></div>
+              <div key={opt.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, padding: '13px 0', borderTop: '1px solid #f0f0f2' }}>
+                <div><p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{opt.label}</p><p style={{ margin: '2px 0 0 0', fontSize: 13, color: '#71717a' }}>{opt.desc}</p></div>
                 <Toggle on={opt.state} set={opt.set} />
               </div>
             ))}
@@ -319,24 +337,20 @@ export default function HelpSettingsPage() {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
             {/* Theme toggle */}
-            <div style={{ display: 'flex', gap: 2, padding: 3, borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)' }}>
-              <button type="button" onClick={() => setTheme('light')} title="Light mode"
-                style={{ width: 34, height: 30, borderRadius: 8, border: 'none', cursor: 'pointer', background: theme === 'light' ? '#fff' : 'transparent', boxShadow: theme === 'light' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="hs-icons">
+              <button type="button" onClick={() => setTheme('light')} title="Light mode" aria-pressed={theme === 'light'} className={theme === 'light' ? 'on' : ''}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
               </button>
-              <button type="button" onClick={() => setTheme('dark')} title="Dark mode"
-                style={{ width: 34, height: 30, borderRadius: 8, border: 'none', cursor: 'pointer', background: theme === 'dark' ? '#fff' : 'transparent', boxShadow: theme === 'dark' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <button type="button" onClick={() => setTheme('dark')} title="Dark mode" aria-pressed={theme === 'dark'} className={theme === 'dark' ? 'on' : ''}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" strokeWidth="2" strokeLinecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
               </button>
             </div>
             {/* Device toggle */}
-            <div style={{ display: 'flex', gap: 2, padding: 3, borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)' }}>
-              <button type="button" onClick={() => setDevice('desktop')} title="Desktop"
-                style={{ width: 34, height: 30, borderRadius: 8, border: 'none', cursor: 'pointer', background: device === 'desktop' ? '#fff' : 'transparent', boxShadow: device === 'desktop' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="hs-icons">
+              <button type="button" onClick={() => setDevice('desktop')} title="Desktop" aria-pressed={device === 'desktop'} className={device === 'desktop' ? 'on' : ''}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" strokeWidth="2" strokeLinecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
               </button>
-              <button type="button" onClick={() => setDevice('mobile')} title="Mobile"
-                style={{ width: 34, height: 30, borderRadius: 8, border: 'none', cursor: 'pointer', background: device === 'mobile' ? '#fff' : 'transparent', boxShadow: device === 'mobile' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <button type="button" onClick={() => setDevice('mobile')} title="Mobile" aria-pressed={device === 'mobile'} className={device === 'mobile' ? 'on' : ''}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" strokeWidth="2" strokeLinecap="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
               </button>
             </div>
@@ -371,12 +385,12 @@ export default function HelpSettingsPage() {
       {tab !== 'preview' && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 24, maxWidth: 640, justifyContent: 'flex-end' }}>
           {saveMsg && <span style={{ fontSize: 13, color: saveMsg.includes('fail') ? '#dc2626' : '#059669' }}>{saveMsg}</span>}
-          <button type="button" onClick={save} disabled={saving}
-            style={{ padding: '10px 26px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
-            {saving ? 'Saving…' : 'Save Settings'}
+          <button type="button" onClick={save} disabled={saving} className="cv-btn cv-btn-primary" style={{ padding: '0 26px', opacity: saving ? 0.6 : 1 }}>
+            {saving ? 'Saving…' : 'Save settings'}
           </button>
         </div>
       )}
     </div>
+    </HelpShell>
   )
 }
