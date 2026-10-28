@@ -9,6 +9,7 @@ import { SegmentationService } from '@/lib/segmentation-service'
 import { contactMessageHref } from '@/lib/channel-choice'
 import { notifyIntegrations } from '@/lib/integrations-notify'
 import CustomerTimeline from '@/components/CustomerTimeline'
+import EmptyScroll from '@/components/EmptyScroll'
 
 export default function CustomerProfilePage() {
   const searchParams = useSearchParams()
@@ -286,9 +287,24 @@ export default function CustomerProfilePage() {
     init()
   }, [slug, customerId])
 
-  if (loading) return <div style={{ padding: '24px', color: '#666', display: 'flex', alignItems: 'center', gap: 8 }}><div style={{ width: 18, height: 18, border: '2px solid var(--border)', borderTopColor: 'var(--coral)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />Loading customer profile...</div>
-  if (error) return <div style={{ padding: '24px', color: '#d32f2f' }}>{error}</div>
-  if (!customer) return <div style={{ padding: '24px', color: '#666' }}>Customer not found</div>
+  if (loading) return (
+    <div style={{ padding: '20px 28px', maxWidth: 1240, margin: '0 auto' }} aria-busy="true" aria-label="Loading customer">
+      <style>{`@keyframes cpPulse{0%,100%{opacity:1}50%{opacity:.5}}.cp-sk{background:#f4f4f5;animation:cpPulse 1.4s ease-in-out infinite}`}</style>
+      <div className="cp-sk" style={{ width: 72, height: 32, borderRadius: 999, marginBottom: 16 }} />
+      <div style={{ display: 'flex', gap: 18, alignItems: 'center', marginBottom: 20 }}>
+        <div className="cp-sk" style={{ width: 76, height: 76, borderRadius: '50%' }} />
+        <div style={{ flex: 1 }}><div className="cp-sk" style={{ width: '40%', height: 28, borderRadius: 10, marginBottom: 10 }} /><div className="cp-sk" style={{ width: '25%', height: 14, borderRadius: 8 }} /></div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))', gap: 12 }}>{[0, 1, 2, 3].map(i => <div key={i} className="cp-sk" style={{ height: 104, borderRadius: 20 }} />)}</div>
+    </div>
+  )
+  if (error || !customer) return (
+    <div style={{ padding: '48px 20px' }}>
+      <EmptyScroll kinds={['contact']} title={error === 'Customer not found' || !customer ? 'Customer not found' : 'Couldn’t open this customer'}
+        line={error && error !== 'Customer not found' ? error : 'They may have been merged or removed. Find them again from Contacts.'}
+        action={<button type="button" className="cv-btn" onClick={() => router.push('/admin/contacts')}>Go to Contacts</button>} />
+    </div>
+  )
 
   // First/last order dates: prefer the aggregate columns, but fall back to the
   // fetched order history — the aggregates are often null on the customer row
@@ -527,432 +543,395 @@ export default function CustomerProfilePage() {
   const focusNote = () => { noteRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(() => noteRef.current?.focus(), 300) }
   const focusTask = () => { taskRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(() => taskRef.current?.focus(), 300) }
 
-  const card: React.CSSProperties = { borderRadius: 14, border: '1px solid var(--border)', background: 'var(--card, #fff)', padding: 18 }
-  const cardTitle: React.CSSProperties = { margin: '0 0 14px', fontSize: 14, fontWeight: 700, color: 'var(--ink)' }
-  const kicker: React.CSSProperties = { margin: '0 0 4px', fontSize: 10.5, color: 'var(--slate)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }
-  const ghostBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card, #fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 600, textDecoration: 'none', cursor: 'pointer' }
+  const I = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
+  const dial = () => window.dispatchEvent(new CustomEvent('colvy:dial', { detail: { number: customer.phone, name: fullName, contactId: contactId || undefined, autoStart: true } }))
+  const emailHref = contactId ? `/admin/inbox?contact=${contactId}&channel=email` : conversationId ? `/admin/inbox?conversation=${conversationId}` : '/admin/inbox'
+  // Opens their conversation on SMS when their mobile may be texted, else
+  // email (lib/channel-choice) — not whichever channel Colvy's last automated
+  // message happened to use.
+  const messageHref = contactId
+    ? contactMessageHref({ id: contactId, phone: customer.phone, email: customer.email, unsubscribed_at: (customer as any).unsubscribed_at, is_blocked: (customer as any).is_blocked, source: contactRow?.source, consent_basis: contactRow?.consent_basis }, null, conversationId)
+    : `/admin/inbox?conversation=${conversationId}`
+  const relLabel = (RELATIONSHIPS.find(([v]) => v === relationship) || [relationship, relationship])[1]
 
-  // Compact icon-topped stat card.
-  const statCard = (icon: React.ReactNode, label: string, value: string, sub?: string, accent = 'var(--coral)') => (
-    <div style={{ ...card, padding: 16, display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
-      <span style={{ width: 34, height: 34, borderRadius: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: `color-mix(in srgb, ${accent} 13%, transparent)`, color: accent }}>{icon}</span>
-      <div style={{ minWidth: 0 }}>
-        <p style={kicker}>{label}</p>
-        <p style={{ margin: 0, fontSize: 21, fontWeight: 800, color: 'var(--ink)', letterSpacing: '-0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</p>
-        {sub && <p style={{ margin: '2px 0 0', fontSize: 11.5, fontWeight: 600, color: 'var(--slate)' }}>{sub}</p>}
+  // Compact stat tile: label, big number, a quiet line under it.
+  const statCard = (icon: React.ReactNode, label: string, value: string, sub: string | undefined, accent: string) => (
+    <div className="cp-card cp-stat">
+      <div className="cp-stat-top">
+        <span className="cp-label">{label}</span>
+        <span className="cp-ic" style={{ background: `color-mix(in srgb, ${accent} 12%, #fff)`, color: accent }}>{icon}</span>
       </div>
+      <span className="cp-stat-v">{value}</span>
+      {sub && <span className="cp-sub">{sub}</span>}
     </div>
   )
-  const I = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
 
   // A card heading that folds the card. With the timeline on the page the
   // detail cards start folded; without one (no linked contact) they start open.
   // They stay folded while the contact is still being looked up, so they don't
   // open and then snap shut as the timeline arrives.
   const isOpen = (k: string) => openCards[k] ?? (!!companyId && !contactId)
-  const foldHead = (k: string, title: string, extra?: React.ReactNode) => (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: isOpen(k) ? 14 : 0 }}>
-      <button type="button" onClick={() => setOpenCards(o => ({ ...o, [k]: !isOpen(k) }))} aria-expanded={isOpen(k)}
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontSize: 15, fontWeight: 700, color: 'var(--ink)', textAlign: 'left' }}>
-        <svg width="14" height="14" viewBox="0 0 24 24" {...I} style={{ color: 'var(--slate)', transform: isOpen(k) ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}><polyline points="9 18 15 12 9 6"/></svg>
-        {title}
+  const foldHead = (k: string, title: string, count: number | null, extra?: React.ReactNode) => (
+    <div className={`cp-fold${isOpen(k) ? ' open' : ''}`}>
+      <button type="button" className="cp-fold-btn" onClick={() => setOpenCards(o => ({ ...o, [k]: !isOpen(k) }))} aria-expanded={isOpen(k)}>
+        <span className="cp-h3">{title}</span>
+        {count != null && <span className="cp-count">{count}</span>}
+        <span className="cp-chev" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" {...I} strokeWidth={2.4}><polyline points="6 9 12 15 18 9"/></svg></span>
       </button>
       {isOpen(k) && extra}
     </div>
   )
 
   return (
-    <div style={{ padding: 24, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    <div className="cp">
+      <style>{CP_CSS}</style>
 
-      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+      <button type="button" className="cp-back" onClick={() => { if (window.history.length > 1) router.back(); else router.push('/admin/contacts') }}>
+        <svg width="15" height="15" viewBox="0 0 24 24" {...I} strokeWidth={2.4}><path d="m15 18-6-6 6-6"/></svg>
+        Back
+      </button>
+
+      {/* Header: who they are, and the things you'd do next. */}
+      <div className="cp-head">
+        <span className="cp-av" style={{ background: avatarBg, color: avatarFg }}>{initials}</span>
+        <div className="cp-who">
+          <h1>{fullName}</h1>
+          <p className="cp-meta">
+            {customer.email && <span>{customer.email}</span>}
+            {customer.phone && <span>{customer.phone}</span>}
+          </p>
+          <div className="cp-tags">
+            <span className="cp-tag dot" style={tint(status.dot)}>{rfmCategory}</span>
+            {relationship !== 'customer' && <span className="cp-tag dot" style={tint('#6366f1')}>{relLabel}</span>}
+            {allTags.slice(0, 6).map((t, i) => <span key={i} className="cp-tag">{t}</span>)}
+            {allTags.length > 6 && <span className="cp-tag">+{allTags.length - 6}</span>}
+          </div>
+        </div>
+        <div className="cp-acts">
+          {customer.phone && (
+            <button type="button" className="cp-ic-btn" onClick={dial} title="Call in Colvy" aria-label="Call">
+              <svg width="17" height="17" viewBox="0 0 24 24" {...I}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+            </button>
+          )}
+          {(conversationId || contactId) && (
+            <button type="button" className="cp-ic-btn" onClick={() => router.push(messageHref)} title="Message" aria-label="Message">
+              <svg width="17" height="17" viewBox="0 0 24 24" {...I}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </button>
+          )}
+          {customer.email && (
+            <button type="button" className="cp-ic-btn" onClick={() => router.push(emailHref)} title="Email in Colvy" aria-label="Email">
+              <svg width="17" height="17" viewBox="0 0 24 24" {...I}><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>
+            </button>
+          )}
+          <button type="button" onClick={focusNote} className="cv-btn">
+            <svg width="15" height="15" viewBox="0 0 24 24" {...I}><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+            Add note
+          </button>
+          <button type="button" onClick={focusTask} className="cv-btn cv-btn-primary">
+            <svg width="15" height="15" viewBox="0 0 24 24" {...I}><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            Create task
+          </button>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="cp-stats">
+        {statCard(<svg width="16" height="16" viewBox="0 0 24 24" {...I}><path d="M20 12V8H6a2 2 0 0 1 0-4h12v4"/><path d="M4 6v12a2 2 0 0 0 2 2h14v-4"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>, 'Total spend', displaySpend > 0 ? fmtMoney(displaySpend) : '—', 'Lifetime', '#16a34a')}
+        {statCard(<svg width="16" height="16" viewBox="0 0 24 24" {...I}><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>, 'Orders', String(displayOrders), lastOrderDate ? `Last order ${daysSinceLast === 0 ? 'today' : `${daysSinceLast} day${daysSinceLast === 1 ? '' : 's'} ago`}` : 'None yet', '#7c3aed')}
+        {statCard(<svg width="16" height="16" viewBox="0 0 24 24" {...I}><path d="M20.59 13.41 13.42 20.6a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1.2" fill="currentColor" stroke="none"/></svg>, 'Average order', displayAov > 0 ? fmtMoney(displayAov) : '—', 'Per order', '#d97706')}
+        {statCard(<svg width="16" height="16" viewBox="0 0 24 24" {...I}><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>, 'RFM score', `${rfmScore}/9`, rfmCategory, '#3b82f6')}
+      </div>
+
+      <div className="cp-cols">
         {/* ── MAIN COLUMN ─────────────────────────────────────────────────── */}
-        <div style={{ flex: '1 1 620px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 18 }}>
-
-          {/* Header card */}
-          <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-            <span style={{ width: 60, height: 60, borderRadius: '50%', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: avatarBg, color: avatarFg, fontSize: 21, fontWeight: 800 }}>{initials}</span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <h1 style={{ fontSize: 24, fontWeight: 800, margin: '0 0 3px', color: 'var(--ink)', letterSpacing: '-0.02em', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fullName}</h1>
-              <p style={{ margin: '0 0 7px', fontSize: 13.5, color: 'var(--slate)', overflowWrap: 'anywhere' }}>{customer.email}</p>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 10px', borderRadius: 20, background: status.bg, color: status.fg, fontSize: 11.5, fontWeight: 700 }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: status.dot }} /> {rfmCategory}
-              </span>
-            </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {customer.phone && (
-                <button type="button" style={ghostBtn}
-                  onClick={() => window.dispatchEvent(new CustomEvent('colvy:dial', { detail: { number: customer.phone, name: fullName, contactId: contactId || undefined, autoStart: true } }))}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" {...I}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
-                  Call
-                </button>
-              )}
-              {(conversationId || contactId) && (
-                <button type="button" style={ghostBtn}
-                  // Opens their conversation on SMS when their mobile may be
-                  // texted, else email (lib/channel-choice) — not whichever
-                  // channel Colvy's last automated message happened to use.
-                  onClick={() => router.push(contactId
-                    ? contactMessageHref({ id: contactId, phone: customer.phone, email: customer.email, unsubscribed_at: (customer as any).unsubscribed_at, is_blocked: (customer as any).is_blocked, source: contactRow?.source, consent_basis: contactRow?.consent_basis }, null, conversationId)
-                    : `/admin/inbox?conversation=${conversationId}`)}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" {...I}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                  Message
-                </button>
-              )}
-              {customer.email && (
-                <button type="button" style={ghostBtn}
-                  onClick={() => router.push(contactId ? `/admin/inbox?contact=${contactId}&channel=email` : conversationId ? `/admin/inbox?conversation=${conversationId}` : '/admin/inbox')}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" {...I}><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>
-                  Email
-                </button>
-              )}
-              <button type="button" onClick={focusNote} style={ghostBtn}>
-                <svg width="15" height="15" viewBox="0 0 24 24" {...I}><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-                Add note
-              </button>
-              <button type="button" onClick={focusTask} style={{ ...ghostBtn, border: 'none', background: 'var(--coral)', color: '#fff' }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" {...I}><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-                Create task
-              </button>
-            </div>
-          </div>
-
-          {/* Stats grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
-            {statCard(<svg width="17" height="17" viewBox="0 0 24 24" {...I}><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>, 'RFM Score', `${rfmScore}/9`, rfmCategory, '#3b82f6')}
-            {statCard(<svg width="17" height="17" viewBox="0 0 24 24" {...I}><path d="M20 12V8H6a2 2 0 0 1 0-4h12v4"/><path d="M4 6v12a2 2 0 0 0 2 2h14v-4"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>, 'Total Spend', displaySpend > 0 ? fmtMoney(displaySpend) : 'N/A', 'Lifetime', '#16a34a')}
-            {statCard(<svg width="17" height="17" viewBox="0 0 24 24" {...I}><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>, 'Total Orders', String(displayOrders), displayOrders === 1 ? 'Order' : 'Orders', '#7c3aed')}
-            {statCard(<svg width="17" height="17" viewBox="0 0 24 24" {...I}><path d="M20.59 13.41 13.42 20.6a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1.2" fill="currentColor" stroke="none"/></svg>, 'Avg Order Value', displayAov > 0 ? fmtMoney(displayAov) : 'N/A', 'Per order', '#d97706')}
-          </div>
+        <div className="cp-main">
 
           {/* Timeline — everything that's happened with this customer, on every
               channel, in one stream. The centre of the profile. */}
           {contactId && (
-            <div style={card}>
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
-                <h3 style={{ ...cardTitle, margin: 0, fontSize: 15 }}>Timeline</h3>
-                <span style={{ fontSize: 12, color: 'var(--slate)' }}>Messages, orders, bookings, calls and more</span>
+            <div className="cp-card cp-pad">
+              <div className="cp-card-h">
+                <span className="cp-h3">Timeline</span>
+                <span className="cp-sub">Messages, orders, bookings, calls and more</span>
               </div>
               <CustomerTimeline contactId={contactId} contactName={fullName} refreshKey={timelineTick} />
             </div>
           )}
 
-          {/* Contact Information */}
-          <div style={card}>
-            <h3 style={cardTitle}>Contact Information</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
-              <div style={{ minWidth: 0 }}>
-                <p style={kicker}>Email</p>
-                {customer.email ? (
-                  <button type="button"
-                    onClick={() => router.push(contactId ? `/admin/inbox?contact=${contactId}&channel=email` : conversationId ? `/admin/inbox?conversation=${conversationId}` : '/admin/inbox')}
-                    title="Email in Colvy"
-                    style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--coral)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', overflowWrap: 'anywhere' }}>{customer.email}</button>
-                ) : <span style={{ fontSize: 13.5, color: 'var(--slate)' }}>—</span>}
-              </div>
-              {customer.phone && (
-                <div style={{ minWidth: 0 }}>
-                  <p style={kicker}>Phone</p>
-                  <button type="button"
-                    onClick={() => window.dispatchEvent(new CustomEvent('colvy:dial', { detail: { number: customer.phone, name: fullName, contactId: contactId || undefined, autoStart: true } }))}
-                    title="Call in Colvy"
-                    style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}>{customer.phone}</button>
-                </div>
+          {/* Contact details */}
+          <div className="cp-card cp-pad">
+            <div className="cp-card-h">
+              <span className="cp-h3">Contact details</span>
+              {fillPatch && (
+                <button type="button" className="cp-pill" onClick={fillFromOrder} title="Fill the blank details in from their most recent order">
+                  <svg width="14" height="14" viewBox="0 0 24 24" {...I}><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+                  Fill in from their last order
+                </button>
               )}
+            </div>
+            <div className="cp-fields">
+              <div className="cp-field">
+                <span className="cp-k">Email</span>
+                {customer.email
+                  ? <button type="button" className="cp-v link" onClick={() => router.push(emailHref)} title="Email in Colvy">{customer.email}</button>
+                  : <span className="cp-v muted">—</span>}
+              </div>
+              <div className="cp-field">
+                <span className="cp-k">Phone</span>
+                {customer.phone
+                  ? <button type="button" className="cp-v link" onClick={dial} title="Call in Colvy">{customer.phone}</button>
+                  : <span className="cp-v muted">—</span>}
+              </div>
               {hasWooAddr ? (
-                <div style={{ minWidth: 0 }}>
-                  <p style={kicker}>Address</p>
-                  <p style={{ margin: 0, fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.5 }}>
+                <div className="cp-field">
+                  <span className="cp-k">Address</span>
+                  <span className="cp-v">
                     {[addr.address_1, addr.address_2].filter(Boolean).join(', ')}
                     {(addr.address_1 || addr.address_2) && <br />}
                     {[addr.city, (addr.state || '').toUpperCase(), addr.postcode].filter(Boolean).join(' ')}
                     {(addr.city || addr.state || addr.postcode) && addr.country && <br />}
                     {addr.country}
-                  </p>
+                  </span>
                 </div>
-              ) : contactAddrStr && (
-                <div style={{ minWidth: 0 }}>
-                  <p style={kicker}>Address</p>
-                  <p style={{ margin: 0, fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.5 }}>{contactAddrStr}</p>
-                </div>
-              )}
+              ) : contactAddrStr ? (
+                <div className="cp-field"><span className="cp-k">Address</span><span className="cp-v">{contactAddrStr}</span></div>
+              ) : null}
               {firstOrderDate && (
-                <div style={{ minWidth: 0 }}>
-                  <p style={kicker}>Customer Since</p>
-                  <p style={{ margin: 0, fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>{firstOrderDate.toLocaleDateString()}</p>
-                </div>
+                <div className="cp-field"><span className="cp-k">Customer since</span><span className="cp-v">{firstOrderDate.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })}</span></div>
               )}
-              <div style={{ minWidth: 0 }}>
-                <p style={kicker}>Relationship</p>
+              <div className="cp-field">
+                <span className="cp-k">Relationship</span>
                 {contactId ? (
-                  <select value={relationship} onChange={e => updateRelationship(e.target.value)}
-                    style={{ fontSize: 13, fontWeight: 600, padding: '5px 8px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card, #fff)', color: 'var(--ink)', cursor: 'pointer' }}>
+                  <select className="cp-select" value={relationship} onChange={e => updateRelationship(e.target.value)} aria-label="Relationship">
                     {RELATIONSHIPS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                   </select>
-                ) : (
-                  <p style={{ margin: 0, fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', textTransform: 'capitalize' }}>{relationship}</p>
-                )}
+                ) : <span className="cp-v">{relLabel}</span>}
               </div>
             </div>
             {allTags.length > 0 && (
-              <div style={{ marginTop: 14 }}>
-                <p style={kicker}>Tags</p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {allTags.map((t, i) => (
-                    <span key={i} style={{ padding: '3px 10px', borderRadius: 20, background: 'var(--canvas)', border: '1px solid var(--border)', fontSize: 11.5, fontWeight: 600, color: 'var(--slate)' }}>{t}</span>
-                  ))}
+              <div style={{ marginTop: 16 }}>
+                <span className="cp-k">Tags</span>
+                <div className="cp-tags" style={{ marginTop: 8 }}>
+                  {allTags.map((t, i) => <span key={i} className="cp-tag">{t}</span>)}
                 </div>
               </div>
             )}
           </div>
 
-      {/* Products Purchased — searchable accordion list */}
-      {rawItems.length > 0 && (
-        <div style={card}>
-          {foldHead('products', `Products Purchased (${rawItems.length})`, (
-            <input
-              type="text" placeholder="Search products..."
-              value={productSearch} onChange={e => setProductSearch(e.target.value)}
-              style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none', minWidth: 200 }}
-            />
-          ))}
-
-          {/* Rows must not shrink: in a height-capped flex column with overflow
-              hidden they squash into empty slivers instead of scrolling. */}
-          {isOpen('products') && <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 520, overflowY: 'auto', paddingRight: 4 }}>
-            {filteredProducts.length === 0 && <p style={{ color: '#888', fontSize: 13 }}>No products match your search.</p>}
-            {filteredProducts.map((item: any, idx: number) => {
-              // WooCommerce line items vary in shape depending on how they were
-              // synced. Be generous about where the name/price/qty might live —
-              // previously an unrecognised shape rendered as an empty grey bar.
-              const name =
-                item.name || item.product_name || item.title ||
-                item.parent_name || item.product?.name ||
-                (item.sku ? `SKU ${item.sku}` : '') ||
-                (item.product_id ? `Product #${item.product_id}` : '') ||
-                'Unnamed product'
-              const category = item.category || item.categories?.[0]?.name || ''
-              const rawImage = item.image?.src || item.image || item.images?.[0]?.src || item.thumbnail || ''
-              const image = typeof rawImage === 'string' ? rawImage : ''
-              const rawPrice = item.price ?? item.total ?? item.subtotal ?? item.line_total ?? ''
-              const price = typeof rawPrice === 'object' ? '' : rawPrice
-              const qty = item.quantity ?? item.qty ?? ''
-              const description = item.description || item.short_description || ''
-              const sku = item.sku || ''
-              const isOpen = expandedProducts.has(idx)
-              return (
-                <div key={idx} style={{ borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden', flexShrink: 0, background: isOpen ? 'var(--canvas)' : 'var(--card, #fff)' }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = new Set(expandedProducts)
-                      if (isOpen) next.delete(idx); else next.add(idx)
-                      setExpandedProducts(next)
-                    }}
-                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: 12, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
-                    {/* Fixed thumbnail box: a fallback icon always sits behind, and
-                        the photo fills the box on top — so a broken/oversized image
-                        can never collapse or overflow the row. */}
-                    <span style={{ position: 'relative', width: 44, height: 44, borderRadius: 9, flexShrink: 0, overflow: 'hidden', background: 'var(--peach)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                      {image && (
-                        <img src={image} alt="" loading="lazy" decoding="async"
-                          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
-                          onError={(e: any) => { e.currentTarget.style.display = 'none' }} />
-                      )}
-                    </span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ margin: 0, fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</p>
-                      {category && <p style={{ margin: '2px 0 0 0', fontSize: 11, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{category}</p>}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-                      {qty !== '' && qty != null && <span style={{ fontSize: 12, color: 'var(--slate)', whiteSpace: 'nowrap' }}>×{qty}</span>}
-                      {price !== '' && !isNaN(parseFloat(price)) && <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', whiteSpace: 'nowrap' }}>${parseFloat(price).toFixed(2)}</span>}
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}><polyline points="6 9 12 15 18 9"/></svg>
-                    </div>
-                  </button>
-                  {isOpen && (
-                    <div style={{ padding: '10px 14px 14px', borderTop: '1px solid var(--border)', fontSize: 13, color: '#555', lineHeight: 1.5 }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8, marginBottom: description ? 10 : 0 }}>
-                        {qty && <div><span style={{ fontSize: 10.5, color: '#9ca3af', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>Quantity</span>{qty}</div>}
-                        {price !== '' && !isNaN(parseFloat(price)) && <div><span style={{ fontSize: 10.5, color: '#9ca3af', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>Price</span>${parseFloat(price).toFixed(2)}</div>}
-                        {category && <div><span style={{ fontSize: 10.5, color: '#9ca3af', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>Category</span>{category}</div>}
-                        {sku && <div><span style={{ fontSize: 10.5, color: '#9ca3af', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>SKU</span>{sku}</div>}
-                      </div>
-                      {description ? <p style={{ margin: 0 }}>{description.replace(/<[^>]+>/g, '')}</p> : (!qty && !price && !category && !sku && <p style={{ margin: 0, color: '#9ca3af' }}>No further details available for this product.</p>)}
-                    </div>
-                  )}
+          {/* Products purchased — searchable accordion list */}
+          {rawItems.length > 0 && (
+            <div className="cp-card cp-pad">
+              {foldHead('products', 'Products purchased', rawItems.length, (
+                <div className="cp-search">
+                  <svg width="14" height="14" viewBox="0 0 24 24" {...I}><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                  <input type="text" placeholder="Search products…" value={productSearch} onChange={e => setProductSearch(e.target.value)} aria-label="Search products" />
                 </div>
-              )
-            })}
-          </div>}
-        </div>
-      )}
+              ))}
 
-      {/* Call History */}
-      {calls.length > 0 && (
-        <div style={card}>
-          {foldHead('calls', `Call History (${calls.length})`)}
-          {isOpen('calls') && <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {calls.map((call: any) => {
-              const dur = call.duration_seconds || 0
-              const durStr = dur > 0 ? `${Math.floor(dur / 60)}m ${dur % 60}s` : (call.status === 'completed' ? 'No answer' : call.status)
-              return (
-                <div key={call.id} style={{ borderRadius: 8, border: '1px solid var(--border)', padding: '12px 14px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ width: 28, height: 28, borderRadius: '50%', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb', background: 'color-mix(in srgb, #2563eb 13%, transparent)' }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" {...I}>{call.direction === 'inbound' ? <path d="M16 2v6h6M22 2l-6 6" /> : <path d="M22 8V2h-6M16 8l6-6" />}<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" /></svg>
-                      </span>
-                      <div>
-                        <p style={{ margin: 0, fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>
-                          {call.direction === 'inbound' ? 'Incoming' : 'Outgoing'} call · {durStr}
-                        </p>
-                        <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)' }}>
-                          {call.created_at ? new Date(call.created_at).toLocaleString('en-AU') : ''}
-                          {call.agent_name ? ` · ${call.agent_name}` : ''}
-                        </p>
-                      </div>
-                    </div>
-                    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, fontWeight: 600, background: call.status === 'answered' || call.status === 'completed' ? '#dcfce7' : '#fef3c7', color: call.status === 'answered' || call.status === 'completed' ? '#059669' : '#d97706', textTransform: 'capitalize' }}>{call.status}</span>
-                  </div>
-                  {call.ai_summary && (
-                    <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, background: 'color-mix(in srgb, #7c3aed 9%, transparent)', fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.5, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="#7c3aed" aria-hidden="true" style={{ flexShrink: 0, marginTop: 4 }}><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z" /></svg>
-                      <span>{call.ai_summary}</span>
-                    </div>
-                  )}
-                  {call.recording_url && !call.ai_summary && (
-                    <button onClick={async () => {
-                      const res = await authFetch('/api/telnyx/call-summary', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ callId: call.id }) })
-                      const d = await res.json()
-                      if (d.summary) setCalls(cs => cs.map(c => c.id === call.id ? { ...c, ai_summary: d.summary } : c))
-                    }} style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#7c3aed', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, padding: 0 }}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z" /></svg>
-                      Generate AI summary
-                    </button>
-                  )}
-                  <div style={{ display: 'flex', gap: 16, marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
-                    <button type="button" onClick={focusNote} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', color: 'var(--slate)', fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0 }}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" {...I}><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-                      Add note
-                    </button>
-                    <button type="button" onClick={focusTask} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', color: 'var(--slate)', fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0 }}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" {...I}><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-                      Create task
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>}
-        </div>
-      )}
-
-      {/* Order History */}
-      <div style={card}>
-        {foldHead('orders', `Order History (${customer.total_orders || orders.length || 0})`)}
-        {!isOpen('orders') ? null : orders.length > 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {orders.map((order: any) => {
-              const orderTotal = parseFloat(order.total || order.order_total || 0)
-              const lineItems: any[] = order.line_items || []
-              return (
-                <div key={order.id} style={{ borderRadius: 8, border: '1px solid var(--border)', padding: '12px 14px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
-                    <div>
-                      <p style={{ margin: '0 0 3px 0', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Order #{order.woo_order_id}</p>
-                      <p style={{ margin: 0, fontSize: 12, color: '#888' }}>
-                        {order.order_date ? new Date(order.order_date).toLocaleDateString() : 'Date unknown'}
-                        {lineItems.length > 0 && ` • ${lineItems.length} item${lineItems.length !== 1 ? 's' : ''}`}
-                      </p>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <p style={{ margin: '0 0 4px 0', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>
-                        {orderTotal > 0 ? `$${orderTotal.toFixed(2)}` : '—'}
-                      </p>
-                      <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: order.status === 'completed' ? '#dcfce7' : order.status === 'processing' ? '#dbeafe' : ['refunded', 'cancelled', 'failed'].includes(order.status) ? '#fee2e2' : '#fef3c7', color: order.status === 'completed' ? '#166534' : order.status === 'processing' ? '#1e40af' : ['refunded', 'cancelled', 'failed'].includes(order.status) ? '#dc2626' : '#92400e' }}>
-                        {order.status || order.order_status || 'unknown'}
-                      </span>
-                    </div>
-                  </div>
-                  {lineItems.length > 0 && (
-                    <div style={{ marginTop: 10, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
-                      {/* All items — no "+N more" truncation. */}
-                      {lineItems.map((li: any, i: number) => {
-                        const qty = li.quantity || 1
-                        const lineTotal = parseFloat(li.total ?? li.subtotal ?? (li.price ? li.price * qty : 0)) || 0
-                        return (
-                          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12.5, color: '#444', padding: '3px 0' }}>
-                            <span>{li.name || li.product_name}{qty > 1 ? ` ×${qty}` : ''}</span>
-                            {lineTotal > 0 && <span style={{ color: '#666', flexShrink: 0 }}>${lineTotal.toFixed(2)}</span>}
+              {/* Rows must not shrink: in a height-capped flex column with overflow
+                  hidden they squash into empty slivers instead of scrolling. */}
+              {isOpen('products') && <div className="cp-list" style={{ maxHeight: 520, overflowY: 'auto', paddingRight: 4 }}>
+                {filteredProducts.length === 0 && (
+                  <EmptyScroll compact kinds={['order']} title="No matches" line={`No products match “${productSearch.trim()}”.`}
+                    action={<button type="button" className="cv-btn" onClick={() => setProductSearch('')}>Clear search</button>} />
+                )}
+                {filteredProducts.map((item: any, idx: number) => {
+                  // WooCommerce line items vary in shape depending on how they were
+                  // synced. Be generous about where the name/price/qty might live —
+                  // previously an unrecognised shape rendered as an empty grey bar.
+                  const name =
+                    item.name || item.product_name || item.title ||
+                    item.parent_name || item.product?.name ||
+                    (item.sku ? `SKU ${item.sku}` : '') ||
+                    (item.product_id ? `Product #${item.product_id}` : '') ||
+                    'Unnamed product'
+                  const category = item.category || item.categories?.[0]?.name || ''
+                  const rawImage = item.image?.src || item.image || item.images?.[0]?.src || item.thumbnail || ''
+                  const image = typeof rawImage === 'string' ? rawImage : ''
+                  const rawPrice = item.price ?? item.total ?? item.subtotal ?? item.line_total ?? ''
+                  const price = typeof rawPrice === 'object' ? '' : rawPrice
+                  const qty = item.quantity ?? item.qty ?? ''
+                  const description = item.description || item.short_description || ''
+                  const sku = item.sku || ''
+                  const open = expandedProducts.has(idx)
+                  return (
+                    <div key={idx} className={`cp-item${open ? ' open' : ''}`}>
+                      <button type="button" className="cp-item-btn" aria-expanded={open}
+                        onClick={() => {
+                          const next = new Set(expandedProducts)
+                          if (open) next.delete(idx); else next.add(idx)
+                          setExpandedProducts(next)
+                        }}>
+                        {/* Fixed thumbnail box: a fallback icon always sits behind, and
+                            the photo fills the box on top — so a broken/oversized image
+                            can never collapse or overflow the row. */}
+                        <span className="cp-thumb">
+                          <svg width="18" height="18" viewBox="0 0 24 24" {...I}><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+                          {image && (
+                            <img src={image} alt="" loading="lazy" decoding="async"
+                              onError={(e: any) => { e.currentTarget.style.display = 'none' }} />
+                          )}
+                        </span>
+                        <span className="cp-item-main">
+                          <span className="cp-item-t">{name}</span>
+                          {category && <span className="cp-item-s">{category}</span>}
+                        </span>
+                        {qty !== '' && qty != null && <span className="cp-item-q">×{qty}</span>}
+                        {price !== '' && !isNaN(parseFloat(price)) && <span className="cp-item-p">${parseFloat(price).toFixed(2)}</span>}
+                        <span className="cp-chev sm" aria-hidden="true"><svg width="13" height="13" viewBox="0 0 24 24" {...I} strokeWidth={2.4}><polyline points="6 9 12 15 18 9"/></svg></span>
+                      </button>
+                      {open && (
+                        <div className="cp-item-more">
+                          <div className="cp-minis">
+                            {qty && <div><span className="cp-k">Quantity</span>{qty}</div>}
+                            {price !== '' && !isNaN(parseFloat(price)) && <div><span className="cp-k">Price</span>${parseFloat(price).toFixed(2)}</div>}
+                            {category && <div><span className="cp-k">Category</span>{category}</div>}
+                            {sku && <div><span className="cp-k">SKU</span>{sku}</div>}
                           </div>
-                        )
-                      })}
-                      {(() => {
-                        // Shipping line + a total that actually adds up (items +
-                        // shipping), matching the order total.
-                        const shipping = parseFloat(order.shipping_total ?? order.shipping ?? 0) || 0
-                        return (
-                          <>
-                            {shipping > 0 && (
-                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: '#444', padding: '3px 0' }}>
-                                <span>Shipping</span><span style={{ color: '#666' }}>${shipping.toFixed(2)}</span>
-                              </div>
-                            )}
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 700, color: 'var(--ink)', padding: '6px 0 0', marginTop: 4, borderTop: '1px dashed var(--border)' }}>
-                              <span>Total</span><span>${orderTotal.toFixed(2)}</span>
-                            </div>
-                          </>
-                        )
-                      })()}
+                          {description ? <p style={{ margin: '10px 0 0' }}>{description.replace(/<[^>]+>/g, '')}</p> : (!qty && !price && !category && !sku && <p style={{ margin: 0, color: '#a1a1aa' }}>No further details available for this product.</p>)}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        ) : (
-          <div style={{ padding: '24px 0', textAlign: 'center', color: '#888', fontSize: 13 }}>
-            {displayOrders > 0 ? (
-              <>
-                <p style={{ margin: '0 0 6px 0' }}>This customer has {displayOrders} orders, but the detailed order history hasn&rsquo;t finished syncing.</p>
-                <p style={{ margin: 0, fontSize: 12 }}>Run <strong>Sync Now</strong> in the WooCommerce integration — the order sync now runs in the background until it completes.</p>
-              </>
+                  )
+                })}
+              </div>}
+            </div>
+          )}
+
+          {/* Call history */}
+          {calls.length > 0 && (
+            <div className="cp-card cp-pad">
+              {foldHead('calls', 'Calls', calls.length)}
+              {isOpen('calls') && <div className="cp-list">
+                {calls.map((call: any) => {
+                  const dur = call.duration_seconds || 0
+                  const durStr = dur > 0 ? `${Math.floor(dur / 60)}m ${dur % 60}s` : (call.status === 'completed' ? 'No answer' : call.status)
+                  const ok = call.status === 'answered' || call.status === 'completed'
+                  return (
+                    <div key={call.id} className="cp-row">
+                      <div className="cp-row-top">
+                        <span className="cp-ic round" style={{ background: '#eff6ff', color: '#2563eb' }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" {...I}>{call.direction === 'inbound' ? <path d="M16 2v6h6M22 2l-6 6" /> : <path d="M22 8V2h-6M16 8l6-6" />}<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" /></svg>
+                        </span>
+                        <span className="cp-item-main">
+                          <span className="cp-item-t">{call.direction === 'inbound' ? 'Incoming' : 'Outgoing'} call · {durStr}</span>
+                          <span className="cp-item-s">{call.created_at ? new Date(call.created_at).toLocaleString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : ''}{call.agent_name ? ` · ${call.agent_name}` : ''}</span>
+                        </span>
+                        <span className="cp-tag dot" style={{ ...tint(ok ? '#22c55e' : '#f59e0b'), textTransform: 'capitalize' }}>{call.status}</span>
+                      </div>
+                      {call.ai_summary && (
+                        <div className="cp-ai">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="#7c3aed" aria-hidden="true" style={{ flexShrink: 0, marginTop: 4 }}><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z" /></svg>
+                          <span>{call.ai_summary}</span>
+                        </div>
+                      )}
+                      <div className="cp-row-acts">
+                        {call.recording_url && !call.ai_summary && (
+                          <button type="button" className="cp-mini violet" onClick={async () => {
+                            const res = await authFetch('/api/telnyx/call-summary', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ callId: call.id }) })
+                            const d = await res.json()
+                            if (d.summary) setCalls(cs => cs.map(c => c.id === call.id ? { ...c, ai_summary: d.summary } : c))
+                          }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z" /></svg>
+                            AI summary
+                          </button>
+                        )}
+                        <button type="button" className="cp-mini" onClick={focusNote}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" {...I}><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                          Add note
+                        </button>
+                        <button type="button" className="cp-mini" onClick={focusTask}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" {...I}><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                          Create task
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>}
+            </div>
+          )}
+
+          {/* Order history */}
+          <div className="cp-card cp-pad">
+            {foldHead('orders', 'Orders', customer.total_orders || orders.length || 0)}
+            {!isOpen('orders') ? null : orders.length > 0 ? (
+              <div className="cp-list">
+                {orders.map((order: any, oi: number) => {
+                  const orderTotal = parseFloat(order.total || order.order_total || 0)
+                  const lineItems: any[] = order.line_items || []
+                  const st = String(order.status || order.order_status || 'unknown')
+                  const dot = st === 'completed' ? '#22c55e' : st === 'processing' ? '#3b82f6' : ['refunded', 'cancelled', 'failed'].includes(st) ? '#ef4444' : '#f59e0b'
+                  return (
+                    <div key={order.id || `${order.woo_order_id}-${oi}`} className="cp-row">
+                      <div className="cp-row-top">
+                        <span className="cp-item-main">
+                          <span className="cp-item-t">Order #{order.woo_order_id}</span>
+                          <span className="cp-item-s">
+                            {order.order_date ? new Date(order.order_date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Date unknown'}
+                            {lineItems.length > 0 && ` · ${lineItems.length} item${lineItems.length !== 1 ? 's' : ''}`}
+                          </span>
+                        </span>
+                        <span className="cp-tag dot" style={{ ...tint(dot), textTransform: 'capitalize' }}>{st}</span>
+                        <span className="cp-item-p big">{orderTotal > 0 ? `$${orderTotal.toFixed(2)}` : '—'}</span>
+                      </div>
+                      {lineItems.length > 0 && (
+                        <div className="cp-lines">
+                          {/* All items — no "+N more" truncation. */}
+                          {lineItems.map((li: any, i: number) => {
+                            const qty = li.quantity || 1
+                            const lineTotal = parseFloat(li.total ?? li.subtotal ?? (li.price ? li.price * qty : 0)) || 0
+                            return (
+                              <div key={i} className="cp-line">
+                                <span>{li.name || li.product_name}{qty > 1 ? <span className="cp-x"> ×{qty}</span> : null}</span>
+                                {lineTotal > 0 && <span>${lineTotal.toFixed(2)}</span>}
+                              </div>
+                            )
+                          })}
+                          {(() => {
+                            // Shipping line + a total that actually adds up (items +
+                            // shipping), matching the order total.
+                            const shipping = parseFloat(order.shipping_total ?? order.shipping ?? 0) || 0
+                            return (
+                              <>
+                                {shipping > 0 && <div className="cp-line"><span>Shipping</span><span>${shipping.toFixed(2)}</span></div>}
+                                <div className="cp-line total"><span>Total</span><span>${orderTotal.toFixed(2)}</span></div>
+                              </>
+                            )
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
             ) : (
-              <>
-                <p style={{ margin: '0 0 6px 0' }}>No orders synced yet.</p>
-                <p style={{ margin: 0, fontSize: 12 }}>Run <strong>Sync Now</strong> in WooCommerce integration to load order history.</p>
-              </>
+              <EmptyScroll compact kinds={['order']}
+                title={displayOrders > 0 ? 'Order history is still syncing' : 'No orders yet'}
+                line={displayOrders > 0
+                  ? `They have ${displayOrders} orders, but the details haven’t finished syncing. Run Sync Now in the WooCommerce integration; it keeps going in the background until it’s done.`
+                  : 'Orders from your store show up here once they sync. Run Sync Now in the WooCommerce integration to load them.'} />
             )}
           </div>
-        )}
-      </div>
         </div>{/* main column */}
 
         {/* ── SIDEBAR ─────────────────────────────────────────────────── */}
-        <div style={{ flex: '0 1 300px', minWidth: 260, display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div className="cp-side">
 
           {/* Notes */}
-          <div style={card}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <h3 style={{ ...cardTitle, margin: 0 }}>Notes{notes.length ? ` (${notes.length})` : ''}</h3>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <textarea ref={noteRef} value={noteBody} onChange={e => setNoteBody(e.target.value)}
-                placeholder="Add a note…" rows={2}
-                style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, resize: 'vertical', outline: 'none', fontFamily: 'inherit' }} />
-              <button type="button" onClick={addNote} disabled={savingNote || !noteBody.trim()}
-                style={{ alignSelf: 'flex-start', padding: '7px 14px', borderRadius: 9, border: 'none', background: noteBody.trim() ? 'var(--coral)' : 'var(--border)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: noteBody.trim() ? 'pointer' : 'default' }}>
-                {savingNote ? 'Saving…' : 'Add note'}
-              </button>
-            </div>
+          <div className="cp-card cp-pad">
+            <div className="cp-card-h"><span className="cp-h3">Notes</span>{notes.length > 0 && <span className="cp-count">{notes.length}</span>}</div>
+            <textarea ref={noteRef} className="cp-input" value={noteBody} onChange={e => setNoteBody(e.target.value)}
+              placeholder="Add a note…" rows={2} aria-label="New note" />
+            <button type="button" className="cv-btn cv-btn-primary cp-add" onClick={addNote} disabled={savingNote || !noteBody.trim()}>
+              {savingNote ? 'Saving…' : 'Add note'}
+            </button>
             {notes.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+              <div className="cp-notes">
                 {notes.map((n: any) => (
-                  <div key={n.id} style={{ padding: '9px 11px', borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)' }}>
-                    <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{n.content}</p>
-                    <p style={{ margin: '5px 0 0', fontSize: 10.5, color: 'var(--slate)' }}>{n.author ? `${n.author} · ` : ''}{n.created_at ? relTime(n.created_at) : ''}</p>
+                  <div key={n.id} className="cp-note">
+                    <p>{n.content}</p>
+                    <span>{n.author ? `${n.author} · ` : ''}{n.created_at ? relTime(n.created_at) : ''}</span>
                   </div>
                 ))}
               </div>
@@ -960,35 +939,29 @@ export default function CustomerProfilePage() {
           </div>
 
           {/* Tasks */}
-          <div style={card}>
-            <h3 style={cardTitle}>Tasks{tasks.length ? ` (${tasks.length})` : ''}</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <input ref={taskRef} value={taskText} onChange={e => setTaskText(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') addTask() }}
-                placeholder="Add a task…"
-                style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, outline: 'none' }} />
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input type="datetime-local" value={taskDue} onChange={e => setTaskDue(e.target.value)}
-                  style={{ flex: 1, minWidth: 0, padding: '7px 10px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 12, color: 'var(--slate)', outline: 'none' }} />
-                <button type="button" onClick={addTask} disabled={savingTask || !taskText.trim()}
-                  style={{ padding: '7px 14px', borderRadius: 9, border: 'none', background: taskText.trim() ? 'var(--coral)' : 'var(--border)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: taskText.trim() ? 'pointer' : 'default', whiteSpace: 'nowrap' }}>
-                  {savingTask ? '…' : 'Add'}
-                </button>
-              </div>
+          <div className="cp-card cp-pad">
+            <div className="cp-card-h"><span className="cp-h3">Tasks</span>{tasks.length > 0 && <span className="cp-count">{tasks.length}</span>}</div>
+            <input ref={taskRef} className="cp-input" value={taskText} onChange={e => setTaskText(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') addTask() }}
+              placeholder="Add a task…" aria-label="New task" />
+            <div className="cp-task-row">
+              <input type="datetime-local" className="cp-input sm" value={taskDue} onChange={e => setTaskDue(e.target.value)} aria-label="Due" />
+              <button type="button" className="cv-btn cv-btn-primary cp-add" onClick={addTask} disabled={savingTask || !taskText.trim()}>
+                {savingTask ? '…' : 'Add'}
+              </button>
             </div>
             {tasks.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
+              <div className="cp-tasks">
                 {tasks.map((t: any) => {
                   const done = t.done || t.status === 'done'
                   return (
-                    <div key={t.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '8px 10px', borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)' }}>
-                      <button type="button" onClick={() => toggleTask(t)}
-                        style={{ marginTop: 1, width: 16, height: 16, flexShrink: 0, borderRadius: 5, border: `1.5px solid ${done ? 'var(--coral)' : 'var(--slate)'}`, background: done ? 'var(--coral)' : 'transparent', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+                    <div key={t.id} className={`cp-task${done ? ' done' : ''}`}>
+                      <button type="button" className={`cp-check${done ? ' on' : ''}`} onClick={() => toggleTask(t)} aria-label={done ? 'Mark not done' : 'Mark done'}>
                         {done && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
                       </button>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ margin: 0, fontSize: 12.5, color: done ? 'var(--slate)' : 'var(--ink)', textDecoration: done ? 'line-through' : 'none', lineHeight: 1.4 }}>{t.title || t.text}</p>
-                        {t.due_date && <p style={{ margin: '3px 0 0', fontSize: 10.5, color: 'var(--slate)' }}>Due {new Date(t.due_date).toLocaleDateString()}</p>}
+                        <p>{t.title || t.text}</p>
+                        {t.due_date && <span>Due {new Date(t.due_date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</span>}
                       </div>
                     </div>
                   )
@@ -997,20 +970,18 @@ export default function CustomerProfilePage() {
             )}
           </div>
 
-          <div style={card}>
-            <h3 style={cardTitle}>Customer Value</h3>
+          {/* Customer value */}
+          <div className="cp-card cp-pad">
+            <div className="cp-card-h"><span className="cp-h3">Customer value</span></div>
             {([
-              ['First order', firstOrderDate ? firstOrderDate.toLocaleDateString() : '—'],
-              ['Last order', lastOrderDate ? lastOrderDate.toLocaleDateString() : '—'],
+              ['First order', firstOrderDate ? firstOrderDate.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'],
+              ['Last order', lastOrderDate ? lastOrderDate.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'],
               ['Total spend', displaySpend > 0 ? fmtMoney(displaySpend) : '—'],
-              ['Avg order value', displayAov > 0 ? fmtMoney(displayAov) : '—'],
+              ['Average order', displayAov > 0 ? fmtMoney(displayAov) : '—'],
               ['Total orders', String(displayOrders)],
-              ...(daysSinceLast !== null ? [['Days since last order', `${daysSinceLast} days`]] : []),
-            ] as [string, string][]).map(([k, v], i) => (
-              <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '9px 0', borderTop: i ? '1px solid var(--border)' : 'none', fontSize: 13 }}>
-                <span style={{ color: 'var(--slate)' }}>{k}</span>
-                <span style={{ fontWeight: 700, color: 'var(--ink)', textAlign: 'right' }}>{v}</span>
-              </div>
+              ...(daysSinceLast !== null ? [['Since last order', `${daysSinceLast} day${daysSinceLast === 1 ? '' : 's'}`]] : []),
+            ] as [string, string][]).map(([k, v]) => (
+              <div key={k} className="cp-kv"><span>{k}</span><b>{v}</b></div>
             ))}
             {firstOrderDate && (() => {
               const d = Math.floor((Date.now() - firstOrderDate.getTime()) / 864e5)
@@ -1018,26 +989,157 @@ export default function CustomerProfilePage() {
                 : d < 30 ? `${d} day${d === 1 ? '' : 's'}`
                 : d < 365 ? `${Math.floor(d / 30)} month${Math.floor(d / 30) === 1 ? '' : 's'}`
                 : `${Math.floor(d / 365)} year${Math.floor(d / 365) === 1 ? '' : 's'}`
-              return (
-                <div style={{ marginTop: 12, padding: '9px 12px', borderRadius: 10, background: 'var(--peach)', color: 'var(--coral)', fontSize: 12.5, fontWeight: 700, display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Customer since</span><span>{lbl}</span>
-                </div>
-              )
+              return <div className="cp-since"><span>Customer for</span><b>{lbl}</b></div>
             })()}
           </div>
 
-          <div style={card}>
-            <h3 style={cardTitle}>Lifetime Status</h3>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '6px 12px', borderRadius: 20, background: status.bg, color: status.fg, fontSize: 13, fontWeight: 700 }}>
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: status.dot }} /> {rfmCategory}
-            </span>
-            <p style={{ margin: '10px 0 0', fontSize: 12, color: 'var(--slate)', lineHeight: 1.5 }}>
-              RFM score <strong style={{ color: 'var(--ink)' }}>{rfmScore}/9</strong> — recency, frequency &amp; monetary value across this customer&rsquo;s order history.
-            </p>
+          {/* Lifetime status */}
+          <div className="cp-card cp-pad">
+            <div className="cp-card-h"><span className="cp-h3">Lifetime status</span></div>
+            <span className="cp-tag dot lg" style={tint(status.dot)}>{rfmCategory}</span>
+            <div className="cp-rfm" aria-label={`RFM score ${rfmScore} of 9`}>
+              {Array.from({ length: 9 }).map((_, i) => <i key={i} style={{ background: i < rfmScore ? status.dot : '#f0f0f2' }} />)}
+            </div>
+            <p className="cp-fine">RFM score <b>{rfmScore}/9</b>: how recently, how often and how much they’ve bought, across their order history.</p>
           </div>
 
         </div>
-      </div>{/* flex wrapper */}
+      </div>
     </div>
   )
 }
+
+const tint = (c: string) => ({ ['--t' as any]: c }) as React.CSSProperties
+
+// The profile look: a big header on the page itself, then white rounded
+// cards with bold titles, soft grey fields and dot-and-tint tags.
+const CP_CSS = `
+.cp{padding:20px 28px 48px;max-width:1240px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
+.cp button::before{display:none}
+.cp-back{display:inline-flex;align-items:center;gap:4px;height:32px;padding:0 12px 0 8px;border:none;border-radius:999px;background:#f4f4f5;color:#18181b;font:inherit;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:16px;transition:background-color .15s}
+.cp-back:hover{background-color:#ececef}
+.cp-head{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-bottom:20px}
+.cp-av{width:76px;height:76px;border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;font-size:26px;font-weight:800}
+.cp-who{flex:1;min-width:220px}
+.cp-who h1{margin:0;font-size:30px;font-weight:800;letter-spacing:-.025em;line-height:1.15;color:var(--ink);overflow-wrap:anywhere}
+.cp-meta{display:flex;flex-wrap:wrap;gap:4px 14px;margin:6px 0 10px;font-size:14px;color:#71717a}
+.cp-meta span{overflow-wrap:anywhere}
+.cp-tags{display:flex;flex-wrap:wrap;gap:6px}
+.cp-tag{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px;border-radius:999px;font-size:12.5px;font-weight:600;background:#f4f4f5;color:#52525b;white-space:nowrap}
+.cp-tag.dot{background:color-mix(in srgb,var(--t) 12%,#fff);color:color-mix(in srgb,var(--t) 78%,#000)}
+.cp-tag.dot::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--t)}
+.cp-tag.lg{height:30px;padding:0 12px;font-size:14px}
+.cp-acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cp-ic-btn{width:38px;height:38px;flex-shrink:0;padding:0;border:none;border-radius:999px;background:#f4f4f5;color:#3f3f46;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:background-color .15s,color .15s}
+.cp-ic-btn:hover{background-color:#ececef;color:#18181b}
+.cp-ic-btn:focus-visible,.cp-back:focus-visible,.cp-fold-btn:focus-visible,.cp-item-btn:focus-visible,.cp-mini:focus-visible,.cp-pill:focus-visible,.cp-check:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 28%,transparent)}
+.cp-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.cp-card{background:#fff;border-radius:20px;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04);min-width:0}
+.cp-pad{padding:18px 20px}
+.cp-stat{display:flex;flex-direction:column;gap:4px;padding:16px 18px}
+.cp-stat-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.cp-label{font-size:13.5px;font-weight:600;color:#71717a}
+.cp-ic{width:32px;height:32px;border-radius:10px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center}
+.cp-ic.round{border-radius:50%}
+.cp-stat-v{margin-top:4px;font-size:26px;font-weight:800;letter-spacing:-.02em;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cp-sub{font-size:12.5px;color:#8e8e93}
+.cp-cols{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.cp-main{flex:1 1 620px;min-width:0;display:flex;flex-direction:column;gap:16px}
+.cp-side{flex:0 1 320px;min-width:270px;display:flex;flex-direction:column;gap:16px}
+.cp-card-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.cp-h3{font-size:17px;font-weight:800;letter-spacing:-.01em;color:var(--ink)}
+.cp-count{min-width:22px;height:22px;padding:0 7px;box-sizing:border-box;border-radius:999px;background:#f4f4f5;color:#52525b;font-size:12px;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
+.cp-pill{margin-left:auto;display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:none;border-radius:999px;background:color-mix(in srgb,var(--coral) 10%,#fff);color:color-mix(in srgb,var(--coral) 80%,#000);font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:background-color .15s}
+.cp-pill:hover{background-color:color-mix(in srgb,var(--coral) 16%,#fff)}
+.cp-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px 20px}
+.cp-field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.cp-k{display:block;font-size:13px;font-weight:500;color:#8e8e93}
+.cp-v{font-size:14.5px;font-weight:500;color:var(--ink);line-height:1.5;overflow-wrap:anywhere}
+.cp-v.muted{color:#a1a1aa}
+button.cp-v{padding:0;border:none;background:none;font:inherit;font-size:14.5px;font-weight:600;text-align:left;cursor:pointer}
+.cp-v.link{color:var(--coral)}
+.cp-v.link:hover{text-decoration:underline}
+.cp-select{appearance:none;-webkit-appearance:none;align-self:flex-start;height:36px;padding:0 34px 0 14px;border:none;border-radius:999px;background-color:#f4f4f5;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;background-size:14px;font:inherit;font-size:13.5px;font-weight:600;color:var(--ink);cursor:pointer}
+.cp-select:hover{background-color:#ececef}
+.cp-fold{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.cp-fold.open{margin-bottom:14px}
+.cp-fold-btn{display:inline-flex;align-items:center;gap:10px;padding:0;border:none;background:none;font:inherit;cursor:pointer;text-align:left;border-radius:10px}
+.cp-chev{width:28px;height:28px;border-radius:999px;background:#f4f4f5;color:#52525b;display:inline-flex;align-items:center;justify-content:center;transition:transform .2s ease,background-color .15s}
+.cp-chev.sm{width:24px;height:24px;flex-shrink:0;background:transparent;color:#a1a1aa}
+.cp-fold-btn:hover .cp-chev{background-color:#ececef}
+.cp-fold-btn[aria-expanded="true"] .cp-chev,.cp-item.open .cp-chev{transform:rotate(180deg)}
+.cp-search{display:flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:999px;background:#f4f4f5;color:#a1a1aa;min-width:220px;border:1.5px solid transparent;box-sizing:border-box}
+.cp-search:focus-within{background:#fff;border-color:#d4d4d8;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 16%,transparent)}
+.cp-search input{flex:1;min-width:0;border:none;outline:none;background:transparent;font:inherit;font-size:13.5px;color:var(--ink)}
+.cp-list{display:flex;flex-direction:column;gap:8px}
+.cp-item{flex-shrink:0;border-radius:16px;background:#fafafa;overflow:hidden;transition:background-color .15s}
+.cp-item.open{background:#f4f4f5}
+.cp-item-btn{width:100%;display:flex;align-items:center;gap:12px;padding:10px 12px;border:none;background:none;font:inherit;text-align:left;cursor:pointer;border-radius:16px}
+.cp-item-btn:hover{background-color:#f4f4f5}
+.cp-thumb{position:relative;width:44px;height:44px;border-radius:12px;flex-shrink:0;overflow:hidden;background:#fff;color:#a1a1aa;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 0 0 1px rgba(0,0,0,.05)}
+.cp-thumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.cp-item-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.cp-item-t{font-size:14px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cp-item-s{font-size:12.5px;color:#8e8e93;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cp-item-q{flex-shrink:0;font-size:13px;color:#8e8e93}
+.cp-item-p{flex-shrink:0;font-size:14px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
+.cp-item-p.big{font-size:15.5px}
+.cp-item-more{padding:4px 14px 14px 68px;font-size:13.5px;color:#52525b;line-height:1.5}
+.cp-minis{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}
+.cp-minis .cp-k{margin-bottom:2px}
+.cp-row{flex-shrink:0;padding:12px 14px;border-radius:16px;background:#fafafa}
+.cp-row-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.cp-ai{margin-top:10px;padding:9px 12px;border-radius:12px;background:#f5f3ff;font-size:13px;color:var(--ink);line-height:1.5;display:flex;gap:7px;align-items:flex-start}
+.cp-row-acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.cp-mini{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 10px;border:none;border-radius:999px;background:#fff;color:#52525b;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;box-shadow:0 0 0 1px rgba(0,0,0,.06);transition:background-color .15s,color .15s}
+.cp-mini:hover{color:#18181b;background-color:#f4f4f5}
+.cp-mini.violet{color:#7c3aed}
+.cp-lines{margin-top:10px;padding-top:8px;border-top:1px solid #ececef}
+.cp-line{display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:13.5px;color:#3f3f46}
+.cp-line > span:last-child{color:#71717a;flex-shrink:0;font-variant-numeric:tabular-nums}
+.cp-line.total{margin-top:6px;padding-top:8px;border-top:1px dashed #e4e4e7;font-weight:700;color:var(--ink)}
+.cp-line.total > span:last-child{color:var(--ink)}
+.cp-x{color:#a1a1aa}
+.cp-input{display:block;width:100%;box-sizing:border-box;min-height:40px;padding:9px 14px;border:1.5px solid transparent;border-radius:12px;background:#f4f4f5;font:inherit;font-size:14px;color:var(--ink);outline:none;resize:vertical;transition:background-color .15s,border-color .15s,box-shadow .15s}
+.cp-input::placeholder{color:#a1a1aa}
+.cp-input:focus{background:#fff;border-color:#d4d4d8;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 16%,transparent)}
+.cp-input.sm{flex:1;min-width:0;font-size:13px;color:#52525b}
+.cp-add{margin-top:8px;height:34px!important;padding:0 14px!important;font-size:13.5px!important}
+.cp-task-row{display:flex;gap:8px;align-items:center;margin-top:8px}
+.cp-task-row .cp-add{margin-top:0}
+.cp-notes{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.cp-note{padding:10px 12px;border-radius:14px;background:#fefce8}
+.cp-note p{margin:0;font-size:13.5px;color:var(--ink);line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.cp-note span{display:block;margin-top:5px;font-size:12px;color:#8e8e93}
+.cp-tasks{display:flex;flex-direction:column;gap:4px;margin-top:14px}
+.cp-task{display:flex;align-items:flex-start;gap:10px;padding:8px 6px;border-radius:12px}
+.cp-task p{margin:0;font-size:14px;color:var(--ink);line-height:1.4;overflow-wrap:anywhere}
+.cp-task span{display:block;margin-top:2px;font-size:12px;color:#8e8e93}
+.cp-task.done p{color:#a1a1aa;text-decoration:line-through}
+.cp-check{width:20px;height:20px;flex-shrink:0;margin-top:1px;padding:0;border-radius:50%;border:1.5px solid #d4d4d8;background:#fff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:background-color .15s,border-color .15s}
+.cp-check:hover{border-color:#a1a1aa}
+.cp-check.on{background:#22c55e;border-color:#22c55e}
+.cp-kv{display:flex;justify-content:space-between;gap:10px;padding:8px 0;font-size:14px;border-top:1px solid #f4f4f5}
+.cp-kv:first-of-type{border-top:none}
+.cp-kv span{color:#71717a}
+.cp-kv b{font-weight:700;color:var(--ink);text-align:right;font-variant-numeric:tabular-nums}
+.cp-since{display:flex;justify-content:space-between;gap:10px;margin-top:10px;padding:10px 14px;border-radius:14px;background:color-mix(in srgb,var(--coral) 9%,#fff);color:color-mix(in srgb,var(--coral) 82%,#000);font-size:13.5px;font-weight:600}
+.cp-rfm{display:grid;grid-template-columns:repeat(9,1fr);gap:4px;margin:14px 0 10px}
+.cp-rfm i{height:8px;border-radius:999px}
+.cp-fine{margin:0;font-size:13px;color:#71717a;line-height:1.5}
+.cp-fine b{color:var(--ink)}
+@media(max-width:900px){.cp-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.cp-side{flex:1 1 100%;min-width:0}}
+@media(max-width:640px){
+  .cp{padding:14px 14px 40px}
+  .cp-head{gap:14px}
+  .cp-av{width:60px;height:60px;font-size:21px}
+  .cp-who h1{font-size:24px}
+  .cp-acts{width:100%;flex-wrap:nowrap}
+  .cp-acts .cv-btn{flex:1;min-width:0;padding:0 12px}
+  .cp-acts .cv-btn svg{display:none}
+  .cp-stat{padding:14px}
+  .cp-stat-v{font-size:22px}
+  .cp-search{min-width:0;width:100%}
+  .cp-item-more{padding-left:14px}
+}
+`
