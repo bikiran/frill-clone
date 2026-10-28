@@ -18,6 +18,7 @@ import { PlatformLogo } from '@/components/StoreLogo'
 import OrderDraftsPanel, { useOrderDraftCount } from '@/components/OrderDraftsPanel'
 import OutOfStockModal from '@/components/OutOfStockModal'
 import RefundOrderModal from '@/components/RefundOrderModal'
+import EmptyScroll from '@/components/EmptyScroll'
 import { CARRIERS as TRACK_CARRIERS, carrierByKey } from '@/lib/carriers'
 import { barcodeSVG } from '@/lib/barcode'
 import { confirmDialog } from '@/components/ConfirmDialog'
@@ -51,7 +52,7 @@ export function ClickCollectIcon({ size = 14 }: { size?: number }) {
 }
 
 // "Awaiting Shipment" → "Awaiting shipment" for chips and tags.
-const sentence = (s: string) => s ? s.charAt(0) + s.slice(1).toLowerCase() : s
+const sentence = (s: string) => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s
 
 // The page's line icons (one stroke style, like the rest of the admin).
 const ORD_ICONS: Record<string, React.ReactNode> = {
@@ -1003,11 +1004,8 @@ export default function OrdersPage() {
         .ord-muted { color: #71717a; }
         .ord-tag { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px 0 9px; border-radius: 999px; background: color-mix(in srgb, var(--tag) 10%, #fff); color: color-mix(in srgb, var(--tag) 88%, #000); font-size: 12.5px; font-weight: 600; line-height: 1; white-space: nowrap; }
         .ord-tag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--tag); flex-shrink: 0; }
-        .ord-empty { padding: 56px 20px; text-align: center; }
-        .ord-empty-ic { width: 52px; height: 52px; margin: 0 auto 14px; border-radius: 18px; background: #f4f4f5; color: #71717a; display: flex; align-items: center; justify-content: center; }
-        .ord-empty h3 { margin: 0; font-size: 16px; font-weight: 700; color: var(--ink); }
-        .ord-empty p { margin: 5px 0 16px; font-size: 13.5px; color: #71717a; }
-        .ord-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 12px 18px 14px; border-top: 1px solid #f0f0f2; }
+        .ord-empty { padding: 28px 12px 36px; white-space: normal; }
+                .ord-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 12px 18px 14px; border-top: 1px solid #f0f0f2; }
         .ord-foot-l { font-size: 13.5px; color: #71717a; }
         .ord-foot-r { display: flex; align-items: center; gap: 4px; }
         .ord-foot-r .pg { font-size: 13.5px; font-weight: 600; color: var(--ink); padding: 0 6px; font-variant-numeric: tabular-nums; }
@@ -1318,10 +1316,11 @@ export default function OrdersPage() {
               {pageRows.length === 0 && (
                 <tr><td colSpan={13} className="ord-empty-td" style={{ borderBottom: 'none' }}>
                   <div className="ord-empty">
-                    <div className="ord-empty-ic"><OrdIcon name="box" size={24} /></div>
-                    <h3>{orders.length ? 'No orders match' : 'No orders yet'}</h3>
-                    <p>{orders.length ? 'Try another status, or clear the search and filters.' : 'Orders from your store show up here as they come in.'}</p>
-                    {orders.length > 0 && filtersOn && <button type="button" className="cv-btn" onClick={clearFilters}>Clear filters</button>}
+                    {/* The same drifting cards as an empty inbox or ticket list. */}
+                    <EmptyScroll kinds={['order']}
+                      title={!orders.length ? 'No orders yet' : search.trim() ? 'No matches' : 'No orders match these filters'}
+                      line={!orders.length ? 'Orders from your store show up here as they come in.' : search.trim() ? `Nothing matches “${search.trim()}”. Try an order number, name, phone or SKU.` : 'Try another status, or clear a filter to see more.'}
+                      action={orders.length > 0 && filtersOn ? <button type="button" className="cv-btn" onClick={clearFilters}>Clear filters</button> : undefined} />
                   </div>
                 </td></tr>
               )}
@@ -1455,25 +1454,25 @@ export function TagMenu({ tags, accent, align = 'left', onPick, onClose }: { tag
   return (
     <>
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 4500 }} />
-      <div style={{ position: 'absolute', top: 'calc(100% + 5px)', [align]: 0, zIndex: 4501, width: 224, background: 'var(--card, #fff)', border: '1px solid var(--border)', borderRadius: 11, boxShadow: '0 10px 30px rgba(0,0,0,0.16)', padding: 7 }}>
+      <div style={{ position: 'absolute', top: 'calc(100% + 6px)', [align]: 0, zIndex: 4501, width: 240, background: 'var(--card, #fff)', borderRadius: 16, boxShadow: '0 16px 44px rgba(0,0,0,.14), 0 0 0 1px rgba(0,0,0,.05)', padding: 6 }}>
         <input autoFocus value={q} onChange={e => setQ(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && query) { onPick(query); onClose() } else if (e.key === 'Escape') onClose() }}
-          placeholder="Find or create tag…"
-          style={{ width: '100%', padding: '7px 9px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12.5, outline: 'none', boxSizing: 'border-box' }} />
-        <div style={{ maxHeight: 214, overflowY: 'auto', marginTop: 6, display: 'flex', flexDirection: 'column', gap: 1 }}>
+          placeholder="Find or create a tag…"
+          style={{ width: '100%', height: 36, padding: '0 12px', borderRadius: 999, border: 'none', background: '#f4f4f5', fontSize: 13.5, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+        <div style={{ maxHeight: 214, overflowY: 'auto', marginTop: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
           {filtered.map(t => (
             <button key={t} type="button" className="tag-opt" onClick={() => { onPick(t); onClose() }}
-              style={{ textAlign: 'left', padding: '7px 9px', borderRadius: 8, border: 'none', background: 'none', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', cursor: 'pointer' }}>
-              <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: accent, marginRight: 8, verticalAlign: 'middle' }} />{t}
+              style={{ display: 'flex', alignItems: 'center', gap: 9, minHeight: 34, textAlign: 'left', padding: '0 10px', borderRadius: 10, border: 'none', background: 'none', fontSize: 13.5, color: 'var(--ink)', cursor: 'pointer', fontFamily: 'inherit' }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: hashColor(t), flexShrink: 0 }} />{t}
             </button>
           ))}
           {canCreate && (
             <button type="button" className="tag-opt" onClick={() => { onPick(query); onClose() }}
-              style={{ textAlign: 'left', padding: '7px 9px', borderRadius: 8, border: 'none', background: 'none', fontSize: 12.5, fontWeight: 700, color: accent, cursor: 'pointer' }}>
+              style={{ display: 'flex', alignItems: 'center', minHeight: 34, textAlign: 'left', padding: '0 10px', borderRadius: 10, border: 'none', background: 'none', fontSize: 13.5, fontWeight: 600, color: accent, cursor: 'pointer', fontFamily: 'inherit' }}>
               + Create “{query}”
             </button>
           )}
-          {!filtered.length && !canCreate && <span style={{ padding: '7px 9px', fontSize: 12, color: 'var(--slate)' }}>No tags yet — type to create one</span>}
+          {!filtered.length && !canCreate && <span style={{ padding: '8px 10px', fontSize: 13, color: '#8e8e93' }}>No tags yet. Type a name to create one.</span>}
         </div>
       </div>
     </>
@@ -2515,15 +2514,19 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
     } catch { onFlash('Could not start a conversation') }
   }
 
-  const sect: React.CSSProperties = { padding: '16px 18px', borderBottom: '1px solid var(--border)' }
-  const kick: React.CSSProperties = { margin: 0, fontSize: 14, fontWeight: 700, letterSpacing: '-0.005em', color: 'var(--ink)' }
-  const quick = (icon: React.ReactNode, label: string, onClick: () => void, primary = false) => (
-    <button type="button" onClick={onClick} title={label}
-      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '9px 6px', borderRadius: 11, border: `1px solid ${primary ? ACCENT : 'var(--border)'}`, background: primary ? ACCENT : 'var(--card, #fff)', color: primary ? '#fff' : 'var(--ink)', cursor: 'pointer', flex: '0 0 auto', width: 72 }}>
-      {icon}<span style={{ fontSize: 10.5, fontWeight: 700 }}>{label}</span>
+  // Each section is a white card on the panel's soft grey.
+  const sect: React.CSSProperties = { margin: '0 12px 10px', padding: '15px 16px', background: 'var(--card, #fff)', borderRadius: 18, boxShadow: '0 0 0 1px rgba(0,0,0,.045)' }
+  const act = (icon: React.ReactNode, label: string, onClick: () => void, opts: { primary?: boolean; on?: boolean } = {}) => (
+    <button type="button" onClick={onClick} title={label} aria-pressed={opts.on || undefined} className={`od-act${opts.primary ? ' primary' : ''}${opts.on ? ' on' : ''}`}>
+      {icon}<span>{label}</span>
     </button>
   )
-  const I = { width: 17, height: 17, fill: 'none', stroke: 'currentColor', strokeWidth: 1.9, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, viewBox: '0 0 24 24' }
+  const I = { width: 16, height: 16, fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, viewBox: '0 0 24 24' }
+  const when = (d?: string | null) => d ? new Date(d).toLocaleString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''
+  const custName = String(order.customer_name || '')
+  const custInitials = custName.split(' ').filter(Boolean).map((w: string) => w[0]).join('').slice(0, 2).toUpperCase() || '?'
+  const custHue = Array.from(custName).reduce((a: number, c: string) => a + c.charCodeAt(0), 0) % 360
+  const addrText = [order.customer_name, [addr.address_1, addr.address_2].filter(Boolean).join(', '), [addr.city, (addr.state || '').toUpperCase(), addr.postcode].filter(Boolean).join(' '), addr.country].filter(Boolean).join('\n')
 
   // Reprint or void the order's existing label. Reprint opens the carrier PDF
   // (or the printable-label route as a fallback); void cancels at the carrier
@@ -2554,72 +2557,199 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
     } catch (e: any) { onFlash(`Error: ${e?.message || e}`) }
   }
 
-  // Full-screen mode slides up over the whole viewport (same tab); side mode is
-  // the 420px right drawer.
-  const panelStyle: React.CSSProperties = fullScreen
-    ? { position: 'fixed', inset: 0, background: 'var(--canvas, #f6f7f9)', zIndex: 4001, display: 'flex', flexDirection: 'column', animation: 'ordSlideUp .28s cubic-bezier(.16,.84,.44,1)' }
-    : { position: 'fixed', top: 0, right: 0, bottom: 0, width: 420, maxWidth: '94vw', background: 'var(--card, #fff)', zIndex: 4001, boxShadow: '-12px 0 40px rgba(0,0,0,0.16)', display: 'flex', flexDirection: 'column' }
+  // Side mode floats in from the right; full-screen mode slides up over the
+  // whole viewport (same tab) with the content centred.
   return (
     <>
-      <style>{`@keyframes ordSlideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}`}</style>
-      {!fullScreen && <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.28)', zIndex: 4000 }} />}
-      <div style={panelStyle}>
-        {/* Header */}
-        <div style={{ ...sect, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, maxWidth: fullScreen ? 980 : undefined, width: '100%', margin: fullScreen ? '0 auto' : undefined, boxSizing: 'border-box' }}>
-          <div>
-            <h2 onClick={() => copyToClipboard(String(order.order_number), onFlash)} title="Click to copy order number" style={{ margin: 0, fontSize: 18, fontWeight: 800, color: 'var(--ink)', cursor: 'copy', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              Order {order.order_number}
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
-            </h2>
-            <p style={{ margin: '5px 0 0', fontSize: 12, display: 'flex', alignItems: 'center', gap: 7 }}>
-              <span style={{ fontWeight: 700, padding: '2px 9px', borderRadius: 20, background: sm.bg, color: sm.fg }}>{sm.label}</span>
-              <span style={{ color: age.color, fontWeight: 700 }}>{age.label} old</span>
-            </p>
+      <style>{`@keyframes ordSlideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+        @keyframes odIn{from{transform:translateX(28px);opacity:0}to{transform:none;opacity:1}}
+        @keyframes odFade{from{opacity:0}to{opacity:1}}
+        .od-scrim { position: fixed; inset: 0; z-index: 4000; background: rgba(15,15,20,.3); animation: odFade .2s ease; }
+        .od-panel { position: fixed; top: 8px; right: 8px; bottom: 8px; width: 440px; max-width: calc(100vw - 16px); z-index: 4001; display: flex; flex-direction: column; background: #f4f4f5; border-radius: 24px; overflow: hidden; box-shadow: 0 24px 64px rgba(0,0,0,.22), 0 0 0 1px rgba(0,0,0,.05); animation: odIn .32s cubic-bezier(.22,1,.36,1); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+        .od-panel.full { inset: 0; width: auto; max-width: none; border-radius: 0; box-shadow: none; animation: ordSlideUp .28s cubic-bezier(.16,.84,.44,1); }
+        .od-panel.full .od-in { max-width: 760px; margin: 0 auto; }
+        .od-head { flex-shrink: 0; background: var(--card, #fff); border-bottom: 1px solid #ececef; padding: 18px 18px 14px; }
+        .od-top { display: flex; align-items: center; gap: 2px; margin: -4px -6px 0 0; }
+        .od-title { margin: 0; font-size: 23px; font-weight: 800; letter-spacing: -0.025em; line-height: 1.15; color: var(--ink); cursor: copy; }
+        .od-title span { color: #a1a1aa; font-weight: 600; }
+        .od-meta { margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: #71717a; }
+        .od-meta .ord-age { font-size: 13px; }
+        .od-placed { margin-top: 7px; font-size: 13px; color: #8e8e93; }
+        .od-acts { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 14px -18px 0; padding: 0 18px 1px; }
+        .od-acts::-webkit-scrollbar { display: none; }
+        .od-act { flex-shrink: 0; height: 36px; display: inline-flex; align-items: center; gap: 7px; padding: 0 13px; border: none; border-radius: 999px; background: #f4f4f5; color: #18181b; font: inherit; font-size: 13.5px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background .15s ease, color .15s ease; }
+        .od-act::before { display: none; }
+        .od-act svg { color: #52525b; flex-shrink: 0; }
+        .od-act:hover { background: #ececef; }
+        .od-act.primary { background: var(--ord-accent); color: #fff; }
+        .od-act.primary:hover { background: var(--ord-accent); filter: brightness(.95); }
+        .od-act.on { background: #18181b; color: #fff; }
+        .od-act.primary svg, .od-act.on svg { color: currentColor; }
+        .od-act:focus-visible, .od-small:focus-visible, .od-choice:focus-visible, .od-rowbtn:focus-visible, .od-check:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ord-accent) 28%, transparent); }
+        .od-body { flex: 1; overflow-y: auto; padding: 12px 0 14px; }
+        .od-cust { display: flex; align-items: flex-start; gap: 12px; margin-top: 12px; }
+        .od-av { width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; }
+        .od-name { font-size: 15px; font-weight: 700; color: var(--ink); text-decoration: none; }
+        a.od-name:hover { text-decoration: underline; }
+        .od-line { display: flex; align-items: center; gap: 8px; width: fit-content; max-width: 100%; margin-top: 6px; font-size: 13.5px; color: #52525b; cursor: copy; }
+        .od-line > svg { color: #a1a1aa; flex-shrink: 0; }
+        .od-line > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .od-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 0; font-size: 13.5px; }
+        .od-row > :first-child { color: #71717a; flex-shrink: 0; }
+        .od-row > :last-child { color: var(--ink); font-weight: 600; text-align: right; min-width: 0; }
+        .od-row.total { margin-top: 6px; padding-top: 11px; border-top: 1px solid #f0f0f2; font-size: 15px; }
+        .od-row.total > :first-child { color: var(--ink); font-weight: 600; }
+        .od-row.total > :last-child { font-weight: 800; font-variant-numeric: tabular-nums; }
+        .od-small { height: 32px; display: inline-flex; align-items: center; gap: 6px; padding: 0 13px; border: none; border-radius: 999px; background: #f4f4f5; color: #18181b; font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; text-decoration: none; cursor: pointer; transition: background .15s ease; }
+        .od-small::before { display: none; }
+        .od-small:hover { background: #ececef; }
+        .od-small:disabled { opacity: .5; cursor: default; }
+        .od-small svg { color: #71717a; flex-shrink: 0; }
+        .od-small.accent { color: var(--ord-accent); }
+        .od-small.accent svg { color: currentColor; }
+        .od-small.green { color: #15803d; } .od-small.green svg { color: currentColor; }
+        .od-small.amber { color: #b45309; } .od-small.amber svg { color: currentColor; }
+        .od-small.blue { color: #2563eb; } .od-small.blue svg { color: currentColor; }
+        .od-small.primary { background: var(--ord-accent); color: #fff; }
+        .od-small.primary:hover { filter: brightness(.95); }
+        .od-small.primary:disabled { background: #e4e4e7; color: #a1a1aa; filter: none; }
+        .od-wrap { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+        .od-field { width: 100%; box-sizing: border-box; height: 40px; padding: 0 14px; border: 1.5px solid transparent; border-radius: 12px; background: #f4f4f5; font: inherit; font-size: 14px; color: var(--ink); outline: none; transition: background .15s ease, border-color .15s ease, box-shadow .15s ease; }
+        .od-field::placeholder { color: #a1a1aa; }
+        .od-field:focus { background: #fff; border-color: #d4d4d8; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ord-accent) 16%, transparent); }
+        textarea.od-field { height: auto; padding: 10px 14px; resize: vertical; line-height: 1.45; }
+        .od-label { display: block; margin: 12px 0 6px; font-size: 12.5px; font-weight: 500; color: #8e8e93; }
+        .od-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+        .od-choice { height: 36px; border: none; border-radius: 999px; background: #f4f4f5; color: #52525b; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s ease, color .15s ease; }
+        .od-choice::before { display: none; }
+        .od-choice:hover { background: #ececef; color: #18181b; }
+        .od-choice.on { background: #18181b; color: #fff; }
+        .od-rowbtn { display: flex; align-items: center; gap: 12px; width: 100%; padding: 0; border: none; background: none; font: inherit; text-align: left; cursor: pointer; border-radius: 12px; }
+        .od-rowbtn::before { display: none; }
+        .od-rowbtn-ic { width: 38px; height: 38px; border-radius: 13px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--ord-accent) 11%, #fff); color: var(--ord-accent); }
+        .od-rowbtn b { display: block; font-size: 14.5px; font-weight: 700; color: var(--ink); }
+        .od-rowbtn small { display: block; margin-top: 1px; font-size: 12.5px; color: #8e8e93; }
+        .od-rowbtn > svg:last-child { margin-left: auto; color: #a1a1aa; transition: transform .2s ease; }
+        .od-rowbtn[aria-expanded="true"] > svg:last-child { transform: rotate(180deg); }
+        .od-note { position: relative; padding: 10px 12px; border-radius: 14px; background: #fefce8; }
+        .od-note.blue { background: #eff6ff; }
+        .od-note p { margin: 0; font-size: 13.5px; color: var(--ink); white-space: pre-wrap; line-height: 1.5; }
+        .od-note .meta { margin-top: 5px; font-size: 12px; color: #8e8e93; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .od-note-tools { position: absolute; top: 6px; right: 6px; display: flex; gap: 2px; opacity: 0; transition: opacity .12s ease; }
+        .od-note:hover .od-note-tools, .od-note:focus-within .od-note-tools { opacity: 1; }
+        .od-tool { width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: none; border-radius: 999px; background: rgba(255,255,255,.85); color: #71717a; cursor: pointer; }
+        .od-tool::before { display: none; }
+        .od-tool:hover { background: #fff; color: #18181b; }
+        .od-tool.danger:hover { color: #dc2626; }
+        .od-tl { position: relative; display: flex; gap: 11px; padding-bottom: 14px; }
+        .od-tl::before { content: ""; position: absolute; left: 3.5px; top: 15px; bottom: 0; width: 1.5px; background: #ececef; }
+        .od-tl:last-child { padding-bottom: 0; }
+        .od-tl:last-child::before { display: none; }
+        .od-tl-dot { width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; flex-shrink: 0; background: var(--ord-accent); }
+        .od-tl p { margin: 0; font-size: 13.5px; color: var(--ink); }
+        .od-tl small { display: block; margin-top: 2px; font-size: 12px; color: #8e8e93; }
+        .od-task { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 13.5px; color: var(--ink); }
+        .od-check { width: 18px; height: 18px; flex-shrink: 0; padding: 0; border-radius: 50%; border: 1.5px solid #d4d4d8; background: transparent; color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+        .od-check::before { display: none; }
+        .od-check.on { background: #18181b; border-color: #18181b; }
+        .od-refund { padding: 11px 12px; border-radius: 14px; background: #fafafa; display: flex; flex-direction: column; gap: 5px; }
+        .od-muted { margin: 10px 0 0; font-size: 13px; color: #8e8e93; }
+        @media (max-width: 640px) {
+          .od-panel { top: 6px; right: 6px; bottom: 6px; left: 6px; width: auto; max-width: none; border-radius: 22px; }
+          .od-panel.full { inset: 0; border-radius: 0; }
+        }
+        @media (prefers-reduced-motion: reduce) { .od-panel, .od-scrim { animation: none; } }`}</style>
+      {!fullScreen && <div className="od-scrim" onClick={onClose} />}
+      <div className={`od-panel${fullScreen ? ' full' : ''}`} role="dialog" aria-label={`Order ${order.order_number}`}>
+        {/* Header: order number, status, and the everyday actions */}
+        <div className="od-head">
+          <div className="od-in">
+            <div className="od-top">
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <h2 className="od-title" onClick={() => copyToClipboard(String(order.order_number), onFlash)} title="Click to copy order number">
+                  Order <span>#</span>{order.order_number}
+                </h2>
+              </div>
+              <button type="button" className="ord-icon" onClick={() => copyToClipboard(String(order.order_number), onFlash)} title="Copy order number" aria-label="Copy order number">
+                <svg {...I} width={17} height={17}><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+              </button>
+              {!fullScreen && (
+                <a className="ord-icon" href={`/admin/orders/${order.id}`} title="Open the full order page" aria-label="Open the full order page">
+                  <svg {...I} width={17} height={17}><polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" /><line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" /></svg>
+                </a>
+              )}
+              <button type="button" className="ord-icon" onClick={onClose} title="Close" aria-label="Close">
+                <svg {...I} width={18} height={18}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
+            </div>
+            <div className="od-meta">
+              <span className="ord-tag" style={{ ['--tag' as any]: sm.fg }}>{sentence(sm.label)}</span>
+              <span className="ord-age" style={{ color: age.color }}>{age.label} old</span>
+            </div>
+            {order.order_date && <div className="od-placed">Placed {when(order.order_date)}{order.sales_channel ? ` · ${channelMeta(order.sales_channel).label}` : ''}</div>}
+
+            {/* Quick actions — one row that scrolls sideways when it runs out of room */}
+            <div className="od-acts">
+              {act(<svg {...I}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18" /></svg>, 'Create label', () => onLabel(order), { primary: true })}
+              {order.tracking_number && act(<svg {...I}><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" /></svg>, 'Reprint', () => labelAction('reprint'))}
+              {order.tracking_number && act(<svg {...I}><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>, 'Void label', () => labelAction('void'))}
+              {act(<svg {...I}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><path d="M9 15h6" /></svg>, 'Slip', () => onPrintSlip(order.id))}
+              {act(<svg {...I}><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M9 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3" /><path d="m9 14 2 2 4-4" /></svg>, 'Pick', () => { setPickMode(v => { const n = !v; if (n) { const el = document.getElementById('ord-items-panel'); el?.scrollIntoView({ behavior: 'smooth', block: 'start' }); onFlash('Picking — tap each item as you pick it') } return n }) }, { on: pickMode })}
+              {act(<svg {...I}><path d="M20 6 9 17l-5-5" /></svg>, order.status === 'packed' ? 'Packed' : 'Pack', () => {
+                const wasPacked = order.status === 'packed'
+                const next = wasPacked ? 'awaiting_shipment' : 'packed'
+                onPatch({ status: next }, { type: wasPacked ? 'unpacked' : 'packed', detail: wasPacked ? 'Marked unpacked' : 'Marked packed' }); order.status = next
+                logEvent(wasPacked ? 'unpacked' : 'packed', wasPacked ? 'Marked unpacked' : 'Marked packed')
+                onFlash(wasPacked ? 'Order unpacked' : 'Order marked packed')
+              }, { on: order.status === 'packed' })}
+              {isClickCollect(order) && act(<svg {...I}><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 5L2 7" /></svg>, actBusy === 'notify' ? 'Notifying…' : 'Notify pickup', notifyPickup)}
+              {isClickCollect(order) && act(<svg {...I}><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" /><path d="M3 6h18" /><path d="m9 12 2 2 4-4" /></svg>, 'Collected', markCollected, { on: order.status === 'shipped' })}
+              {act(<svg {...I}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>, 'Message', () => { if (convHref) location.href = convHref; else if (canContact) startConversation(); else onFlash('No email or phone for this customer') })}
+              {act(<svg {...I}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>, 'Note', () => { const el = document.getElementById('ord-note') as HTMLTextAreaElement | null; el?.scrollIntoView({ behavior: 'smooth', block: 'center' }); el?.focus() })}
+            </div>
           </div>
-          <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, color: 'var(--slate)', cursor: 'pointer', lineHeight: 1 }}>✕</button>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', ...(fullScreen ? { maxWidth: 980, width: '100%', margin: '0 auto', background: 'var(--card,#fff)' } : {}) }}>
-          {/* Quick actions — horizontally scrollable so every action stays reachable
-              in the narrow side drawer instead of the last one being clipped. */}
-          <div style={{ ...sect, display: 'flex', gap: 8, overflowX: 'auto', scrollbarWidth: 'thin' }}>
-            {quick(<svg {...I}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18" /></svg>, 'Label', () => onLabel(order), true)}
-            {order.tracking_number && quick(<svg {...I}><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" /></svg>, 'Reprint', () => labelAction('reprint'))}
-            {order.tracking_number && quick(<svg {...I}><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>, 'Void', () => labelAction('void'))}
-            {quick(<svg {...I}><path d="M6 9V2h12v7" /><rect x="6" y="14" width="12" height="8" /><path d="M6 18H4a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2" /></svg>, 'Slip', () => onPrintSlip(order.id))}
-            {quick(<svg {...I}><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M9 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3" /><path d="m9 14 2 2 4-4" /></svg>, 'Pick', () => { setPickMode(v => { const n = !v; if (n) { const el = document.getElementById('ord-items-panel'); el?.scrollIntoView({ behavior: 'smooth', block: 'start' }); onFlash('Picking — tap each item as you pick it') } return n }) }, pickMode)}
-            {quick(<svg {...I}><path d="M20 6 9 17l-5-5" /></svg>, order.status === 'packed' ? 'Packed' : 'Pack', () => {
-              const wasPacked = order.status === 'packed'
-              const next = wasPacked ? 'awaiting_shipment' : 'packed'
-              onPatch({ status: next }, { type: wasPacked ? 'unpacked' : 'packed', detail: wasPacked ? 'Marked unpacked' : 'Marked packed' }); order.status = next
-              logEvent(wasPacked ? 'unpacked' : 'packed', wasPacked ? 'Marked unpacked' : 'Marked packed')
-              onFlash(wasPacked ? 'Order unpacked' : 'Order marked packed')
-            }, order.status === 'packed')}
-            {quick(<svg {...I}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>, 'Note', () => { (document.getElementById('ord-note') as HTMLTextAreaElement)?.focus() })}
-            {quick(<svg {...I}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>, 'Contact', () => { if (convHref) location.href = convHref; else if (canContact) startConversation(); else onFlash('No email or phone for this customer') })}
-            {isClickCollect(order) && quick(<svg {...I}><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 5L2 7" /></svg>, actBusy === 'notify' ? '…' : 'Notify', notifyPickup)}
-            {isClickCollect(order) && quick(<svg {...I}><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" /><path d="M3 6h18" /><path d="m9 12 2 2 4-4" /></svg>, 'Collected', markCollected, order.status === 'shipped')}
-          </div>
-
+        <div className="od-body">
+          <div className="od-in">
           {/* Customer */}
           <CollapseSection style={sect} storageKey="order-customer" title="Customer">
-            <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              {contactHref ? <a href={contactHref} style={{ fontSize: 15, fontWeight: 700, color: ACCENT, textDecoration: 'none' }}>{order.customer_name}</a> : <span style={{ fontSize: 15, fontWeight: 700 }}>{order.customer_name}</span>}
-              {order.customer_name && <CopyBtn onClick={() => copyToClipboard(order.customer_name, onFlash)} title="Copy name" />}
-              {(order.tags || []).includes('VIP') && <span style={{ fontSize: 10, fontWeight: 800, color: '#15803d', background: '#dcfce7', padding: '1px 7px', borderRadius: 20 }}>VIP</span>}
+            <div className="od-cust">
+              <span className="od-av" style={{ background: `hsl(${custHue} 60% 92%)`, color: `hsl(${custHue} 45% 36%)` }}>{custInitials}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  {contactHref ? <a href={contactHref} className="od-name" title="Open customer profile">{order.customer_name || 'Customer'}</a> : <span className="od-name">{order.customer_name || 'Customer'}</span>}
+                  {order.customer_name && <CopyBtn onClick={() => copyToClipboard(order.customer_name, onFlash)} title="Copy name" />}
+                  {(order.tags || []).includes('VIP') && <TagChip name="VIP" color={tagColor?.('VIP')} />}
+                </div>
+                {order.customer_email && (
+                  <div className="od-line" onClick={() => copyToClipboard(order.customer_email, onFlash)} title="Click to copy email">
+                    <svg {...I} width={15} height={15}><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 5L2 7" /></svg>
+                    <span>{order.customer_email}</span><CopyBtn onClick={() => copyToClipboard(order.customer_email, onFlash)} title="Copy email" />
+                  </div>
+                )}
+                {order.customer_phone && (
+                  <div className="od-line" onClick={() => copyToClipboard(order.customer_phone, onFlash)} title="Click to copy phone">
+                    <svg {...I} width={15} height={15}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" /></svg>
+                    <span>{order.customer_phone}</span><CopyBtn onClick={() => copyToClipboard(order.customer_phone, onFlash)} title="Copy phone" />
+                  </div>
+                )}
+              </div>
             </div>
-            {order.customer_email && <p onClick={() => copyToClipboard(order.customer_email, onFlash)} title="Click to copy email" style={{ margin: '5px 0 0', fontSize: 12.5, color: 'var(--slate)', cursor: 'copy', display: 'flex', width: 'fit-content', maxWidth: '100%', alignItems: 'center', gap: 5 }}>{order.customer_email}<CopyBtn onClick={() => copyToClipboard(order.customer_email, onFlash)} title="Copy email" /></p>}
-            {order.customer_phone && <p onClick={() => copyToClipboard(order.customer_phone, onFlash)} title="Click to copy phone" style={{ margin: '3px 0 0', fontSize: 12.5, color: 'var(--slate)', cursor: 'copy', display: 'flex', width: 'fit-content', maxWidth: '100%', alignItems: 'center', gap: 5 }}>{order.customer_phone}<CopyBtn onClick={() => copyToClipboard(order.customer_phone, onFlash)} title="Copy phone" /></p>}
-            {convHref
-              ? <a href={convHref} style={{ display: 'inline-block', marginTop: 8, fontSize: 12.5, fontWeight: 700, color: ACCENT, textDecoration: 'none' }}>Open conversation →</a>
-              : canContact && <button onClick={startConversation} style={{ display: 'inline-block', marginTop: 8, fontSize: 12.5, fontWeight: 700, color: ACCENT, textDecoration: 'none', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit' }}>Start a conversation →</button>}
+            {(convHref || canContact) && (
+              <div className="od-wrap">
+                {convHref
+                  ? <a href={convHref} className="od-small accent"><svg {...I} width={14} height={14}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>Open conversation</a>
+                  : <button type="button" onClick={startConversation} className="od-small accent"><svg {...I} width={14} height={14}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>Start a conversation</button>}
+              </div>
+            )}
           </CollapseSection>
 
           {/* Shipping address */}
           {(addr.address_1 || addr.city) && (
             <CollapseSection style={sect} storageKey="order-address" title="Shipping address"
-              right={<CopyBtn title="Copy address" onClick={() => copyToClipboard([order.customer_name, [addr.address_1, addr.address_2].filter(Boolean).join(', '), [addr.city, (addr.state || '').toUpperCase(), addr.postcode].filter(Boolean).join(' '), addr.country].filter(Boolean).join('\n'), onFlash)} />}>
-              <p onClick={() => copyToClipboard([order.customer_name, [addr.address_1, addr.address_2].filter(Boolean).join(', '), [addr.city, (addr.state || '').toUpperCase(), addr.postcode].filter(Boolean).join(' '), addr.country].filter(Boolean).join('\n'), onFlash)} title="Click to copy address" style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--ink)', lineHeight: 1.6, cursor: 'copy' }}>
+              right={<CopyBtn title="Copy address" onClick={() => copyToClipboard(addrText, onFlash)} />}>
+              <p onClick={() => copyToClipboard(addrText, onFlash)} title="Click to copy address" style={{ margin: '10px 0 0', fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.6, cursor: 'copy' }}>
                 {order.customer_name}<br />
                 {[addr.address_1, addr.address_2].filter(Boolean).join(', ')}<br />
                 {[addr.city, (addr.state || '').toUpperCase(), addr.postcode].filter(Boolean).join(' ')}<br />
@@ -2630,37 +2760,34 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
 
           {/* Order summary */}
           <CollapseSection style={sect} storageKey="order-summary" title="Order summary">
-            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 7 }}>
+            <div style={{ marginTop: 8 }}>
               {([
                 ['Outlet', store || 'No outlet'],
-                ['Order Date', order.order_date ? new Date(order.order_date).toLocaleString('en-AU') : '—'],
-                ['Sales Channel', <span key="ch" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ChannelIcon channel={order.sales_channel} size={14} />{channelMeta(order.sales_channel).label}</span>],
-                ['Payment', order.payment_status || '—'],
-                ['Fulfilment', order.fulfilment_status || '—'],
+                ['Order date', order.order_date ? when(order.order_date) : '—'],
+                ['Sales channel', <span key="ch" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ChannelIcon channel={order.sales_channel} size={13} />{channelMeta(order.sales_channel).label}</span>],
+                ['Payment', order.payment_status ? sentence(String(order.payment_status)) : '—'],
+                ['Fulfilment', order.fulfilment_status ? sentence(String(order.fulfilment_status)) : '—'],
                 ['Subtotal', order.subtotal != null ? fmtMoney(order.subtotal, order.currency) : '—'],
                 ...(financials?.coupons?.length ? [['Coupon', financials.coupons.join(', ')]] as [string, any][] : []),
-                ...(financials && financials.discount > 0 ? [['Discount', <span key="disc" style={{ color: '#15803d', fontWeight: 700 }}>−{fmtMoney(financials.discount, order.currency)}</span>]] as [string, any][] : []),
+                ...(financials && financials.discount > 0 ? [['Discount', <span key="disc" style={{ color: '#15803d' }}>−{fmtMoney(financials.discount, order.currency)}</span>]] as [string, any][] : []),
                 ...((financials?.fees || []).map(f => [f.name, fmtMoney(f.total, order.currency)]) as [string, any][]),
                 ['Shipping', isClickCollect(order)
-                  ? <span key="cc" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#2563eb', fontWeight: 700 }}><ClickCollectIcon size={13} />{order.shipping_method || 'Click & Collect'}</span>
+                  ? <span key="cc" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#2563eb' }}><ClickCollectIcon size={13} />{order.shipping_method || 'Click & Collect'}</span>
                   : (Number(order.shipping_total) || 0) > 0 ? `${fmtMoney(order.shipping_total, order.currency)}${order.shipping_method ? ` · ${order.shipping_method}` : ''}` : (order.shipping_method || 'Free')],
-                ['Total', `${fmtMoney(order.total, order.currency)} ${order.currency || ''}`],
-                ...(refundedTotal > 0.004 ? [
-                  ['Refunded', <span key="ref" style={{ color: '#b45309', fontWeight: 700 }}>−{fmtMoney(refundedTotal, order.currency)}</span>],
-                  ['Net', fmtMoney(Math.max(0, (Number(order.total) || 0) - refundedTotal), order.currency)],
-                ] as [string, any][] : []),
               ] as [string, any][]).map(([k, v]) => (
-                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5 }}>
-                  <span style={{ color: 'var(--slate)' }}>{k}</span>
-                  <span style={{ fontWeight: k === 'Total' ? 800 : 600, color: 'var(--ink)', textAlign: 'right', textTransform: k === 'Payment' || k === 'Fulfilment' ? 'capitalize' : 'none' }}>{v}</span>
-                </div>
+                <div key={k} className="od-row"><span>{k}</span><span>{v}</span></div>
               ))}
+              <div className="od-row total"><span>Total</span><span>{fmtMoney(order.total, order.currency)} <span style={{ color: '#a1a1aa', fontWeight: 600, fontSize: 12.5 }}>{order.currency || ''}</span></span></div>
+              {refundedTotal > 0.004 && <>
+                <div className="od-row"><span>Refunded</span><span style={{ color: '#b45309' }}>−{fmtMoney(refundedTotal, order.currency)}</span></div>
+                <div className="od-row"><span>Net</span><span>{fmtMoney(Math.max(0, (Number(order.total) || 0) - refundedTotal), order.currency)}</span></div>
+              </>}
             </div>
           </CollapseSection>
 
-          {/* Order barcode — scannable Code128 of the order number, under the order details */}
+          {/* Order barcode — scannable Code128 of the order number */}
           {order.order_number && (
-            <div style={{ ...sect, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+            <div style={{ ...sect, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
               <div title={`Order ${order.order_number}`} style={{ width: '100%', maxWidth: 320, display: 'flex', justifyContent: 'center' }}
                 dangerouslySetInnerHTML={{ __html: barcodeSVG(String(order.order_number), { moduleWidth: 2, height: 54 }) }} />
               <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.14em', color: 'var(--ink)', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{order.order_number}</span>
@@ -2678,29 +2805,30 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
           {refunds && refunds.length > 0 && (
             <CollapseSection style={sect} storageKey="order-refunds"
               title={<>Refunds · {fmtMoney(refundedTotal, order.currency)}<span style={{ color: '#b45309' }}>{refundedTotal + 0.005 >= (Number(order.total) || 0) ? ' · Full' : ' · Partial'}</span></>}>
-              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {refunds.map(r => {
                   const general = !r.items.length && !r.shipping
                   const row = (label: React.ReactNode, amount: number, key: string) => (
-                    <div key={key} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5, color: 'var(--ink)' }}>
+                    <div key={key} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 13, color: 'var(--ink)' }}>
                       <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-                      <span style={{ flexShrink: 0, color: 'var(--slate)', fontWeight: 600 }}>{fmtMoney(amount, order.currency)}</span>
+                      <span style={{ flexShrink: 0, color: '#71717a', fontWeight: 600 }}>{fmtMoney(amount, order.currency)}</span>
                     </div>
                   )
+                  const n = r.items.reduce((s, l) => s + (l.qty || 0), 0) || r.items.length
                   return (
-                    <div key={r.id} className="ord-refund" style={{ border: '1px solid var(--border)', borderRadius: 11, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    <div key={r.id} className="od-refund">
                       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
-                        <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--ink)' }}>
-                          {general ? 'Partial refund' : r.items.length ? `${r.items.reduce((n, l) => n + (l.qty || 0), 0) || r.items.length} item${(r.items.reduce((n, l) => n + (l.qty || 0), 0) || r.items.length) === 1 ? '' : 's'} refunded` : 'Shipping refunded'}
-                          {r.at && <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 11.5 }}> · {new Date(r.at).toLocaleString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>}
+                        <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>
+                          {general ? 'Partial refund' : r.items.length ? `${n} item${n === 1 ? '' : 's'} refunded` : 'Shipping refunded'}
+                          {r.at && <span style={{ fontWeight: 500, color: '#8e8e93', fontSize: 12 }}> · {when(r.at)}</span>}
                         </span>
-                        <span style={{ fontSize: 13.5, fontWeight: 800, color: '#b45309', flexShrink: 0 }}>−{fmtMoney(r.amount, order.currency)}</span>
+                        <span style={{ fontSize: 14, fontWeight: 800, color: '#b45309', flexShrink: 0 }}>−{fmtMoney(r.amount, order.currency)}</span>
                       </div>
                       {r.items.map((l, i) => row(<>{l.qty > 0 ? <strong>{l.qty} × </strong> : null}{l.name}</>, l.amount, `i${i}`))}
                       {r.shipping > 0 && row('Shipping', r.shipping, 'ship')}
-                      {r.other > 0 && !general && row(<span style={{ color: 'var(--slate)' }}>Extra amount (not tied to an item)</span>, r.other, 'other')}
-                      {general && <span style={{ fontSize: 12, color: 'var(--slate)' }}>A general amount, not tied to any item.</span>}
-                      {r.reason && <span style={{ fontSize: 12, color: 'var(--slate)', fontStyle: 'italic' }}>&ldquo;{r.reason}&rdquo;</span>}
+                      {r.other > 0 && !general && row(<span style={{ color: '#71717a' }}>Extra amount (not tied to an item)</span>, r.other, 'other')}
+                      {general && <span style={{ fontSize: 12.5, color: '#8e8e93' }}>A general amount, not tied to any item.</span>}
+                      {r.reason && <span style={{ fontSize: 12.5, color: '#71717a', fontStyle: 'italic' }}>&ldquo;{r.reason}&rdquo;</span>}
                     </div>
                   )
                 })}
@@ -2711,97 +2839,98 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
           {/* Tags */}
           <CollapseSection style={sect} storageKey="order-tags" title="Tags"
             right={
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, position: 'relative' }}>
-                <button type="button" onClick={() => onManageTags?.()} style={{ fontSize: 12, fontWeight: 700, color: 'var(--slate)', background: 'none', border: 'none', cursor: 'pointer' }}>Manage</button>
-                <button type="button" onClick={() => setAddingTag(v => !v)} style={{ fontSize: 12, fontWeight: 700, color: ACCENT, background: 'none', border: 'none', cursor: 'pointer' }}>{addingTag ? 'Cancel' : '+ Add'}</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, position: 'relative' }}>
+                <button type="button" className="od-small" onClick={() => onManageTags?.()} style={{ height: 28 }}>Manage</button>
+                <button type="button" className="od-small accent" onClick={() => setAddingTag(v => !v)} style={{ height: 28 }}>
+                  {addingTag ? 'Cancel' : <><svg {...I} width={13} height={13}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>Add</>}
+                </button>
                 {addingTag && (
                   <TagMenu tags={Array.from(new Set([...(tagDefs || []).map((t: any) => t.name), ...(allTags || [])])).filter((t: string) => !(order.tags || []).includes(t))} accent={ACCENT} align="right"
                     onClose={() => setAddingTag(false)} onPick={t => addTag(t)} />
                 )}
               </div>
             }>
-            <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {(order.tags || []).map((t: string) => (
                 <TagChip key={t} name={t} color={tagColor?.(t)} onRemove={() => removeTag(t)} />
               ))}
-              {(order.tags || []).length === 0 && !addingTag && <span style={{ fontSize: 12, color: 'var(--slate)' }}>No tags</span>}
+              {(order.tags || []).length === 0 && !addingTag && <span style={{ fontSize: 13, color: '#8e8e93' }}>No tags yet</span>}
             </div>
           </CollapseSection>
 
-          {/* Assign Outlet */}
+          {/* Assign outlet */}
           {locations && locations.length > 0 && (
             <CollapseSection style={sect} storageKey="order-outlet" title="Assign outlet">
-              <select value={order.store_location_id || ''} onChange={e => { const v = e.target.value || null; onPatch({ store_location_id: v }, { type: 'outlet', detail: v ? `Assigned to ${outletName?.(v) || 'outlet'}` : 'Outlet cleared' }); order.store_location_id = v }}
-                style={{ width: '100%', marginTop: 8, padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer', outline: 'none' }}>
+              <select className="ord-select" aria-label="Outlet" value={order.store_location_id || ''} onChange={e => { const v = e.target.value || null; onPatch({ store_location_id: v }, { type: 'outlet', detail: v ? `Assigned to ${outletName?.(v) || 'outlet'}` : 'Outlet cleared' }); order.store_location_id = v }}
+                style={{ width: '100%', marginTop: 10 }}>
                 <option value="">No outlet</option>
                 {locations.map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
               </select>
             </CollapseSection>
           )}
 
-          {/* Send tracking — expands an inline box below (no popup) */}
+          {/* Send tracking — expands inline below (no popup) */}
           <div style={sect}>
-            <button type="button" onClick={() => setShowTracking(v => !v)}
-              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '11px 12px', borderRadius: 11, border: `1px solid ${ACCENT}`, background: showTracking ? `color-mix(in srgb, ${ACCENT} 8%, transparent)` : 'var(--card,#fff)', color: ACCENT, fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="1" /><path d="M16 8h4l3 3v5h-7V8z" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>
-              Send tracking
+            <button type="button" className="od-rowbtn" aria-expanded={showTracking} onClick={() => setShowTracking(v => !v)}>
+              <span className="od-rowbtn-ic"><svg {...I} width={18} height={18}><rect x="1" y="3" width="15" height="13" rx="1" /><path d="M16 8h4l3 3v5h-7V8z" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg></span>
+              <span><b>Send tracking</b><small>Text or email the customer their tracking link</small></span>
+              <svg {...I} width={16} height={16}><polyline points="6 9 12 15 18 9" /></svg>
             </button>
             {showTracking && (
-              <div style={{ marginTop: 10, padding: 12, borderRadius: 11, border: '1px solid var(--border)', background: 'var(--canvas)' }}>
-                <p style={{ margin: '0 0 6px', fontSize: 11, fontWeight: 700, color: 'var(--slate)' }}>Carrier</p>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                  {TRACK_CARRIERS.map((c: any) => {
-                    const on = trkCarrier === c.key
-                    return <button key={c.key} type="button" onClick={() => setTrkCarrier(c.key)}
-                      style={{ padding: '8px 0', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: `1px solid ${on ? ACCENT : 'var(--border)'}`, background: on ? `color-mix(in srgb, ${ACCENT} 12%, transparent)` : 'var(--card,#fff)', color: on ? ACCENT : 'var(--slate)' }}>{c.label}</button>
-                  })}
+              <div style={{ marginTop: 4 }}>
+                <span className="od-label">Carrier</span>
+                <div className="od-choices">
+                  {TRACK_CARRIERS.map((c: any) => (
+                    <button key={c.key} type="button" className={`od-choice${trkCarrier === c.key ? ' on' : ''}`} aria-pressed={trkCarrier === c.key} onClick={() => setTrkCarrier(c.key)}>{c.label}</button>
+                  ))}
                 </div>
-                <p style={{ margin: '10px 0 6px', fontSize: 11, fontWeight: 700, color: 'var(--slate)' }}>Tracking number</p>
-                <input value={trkNumber} onChange={e => setTrkNumber(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submitTracking() }} placeholder="e.g. 33ABC123456789" style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                <span className="od-label">Tracking number</span>
+                <input className="od-field" value={trkNumber} onChange={e => setTrkNumber(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submitTracking() }} placeholder="e.g. 33ABC123456789" />
                 {trkCarrier === 'manual' && (
-                  <input value={trkCustomUrl} onChange={e => setTrkCustomUrl(e.target.value)} placeholder="Tracking URL (https://…)" style={{ width: '100%', marginTop: 6, padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                  <input className="od-field" value={trkCustomUrl} onChange={e => setTrkCustomUrl(e.target.value)} placeholder="Tracking URL (https://…)" style={{ marginTop: 6 }} />
                 )}
-                {carrierByKey(trkCarrier)?.note && <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--slate)', lineHeight: 1.4 }}>{carrierByKey(trkCarrier)!.note}</p>}
-                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                  <button type="button" onClick={() => setShowTracking(false)} style={{ flex: 1, padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--slate)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
-                  <button type="button" onClick={submitTracking} disabled={trkSending || !trkNumber.trim()} style={{ flex: 2, padding: '9px 12px', borderRadius: 9, border: 'none', background: (trkSending || !trkNumber.trim()) ? 'var(--border)' : ACCENT, color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: (trkSending || !trkNumber.trim()) ? 'default' : 'pointer' }}>{trkSending ? 'Sending…' : 'Send tracking'}</button>
+                {carrierByKey(trkCarrier)?.note && <p className="od-muted" style={{ marginTop: 6, fontSize: 12 }}>{carrierByKey(trkCarrier)!.note}</p>}
+                <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
+                  <button type="button" className="cv-btn" onClick={() => setShowTracking(false)} style={{ height: 36 }}>Cancel</button>
+                  <button type="button" className="cv-btn ord-primary" onClick={submitTracking} disabled={trkSending || !trkNumber.trim()} style={{ height: 36 }}>{trkSending ? 'Sending…' : 'Send tracking'}</button>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Order actions — one row; scrolls sideways if a store adds more */}
+          {/* Order actions */}
           <CollapseSection style={sect} storageKey="order-actions" title="Order actions">
-            <div className="ord-actions" style={{ display: 'flex', gap: 6, marginTop: 8, overflowX: 'auto', scrollbarWidth: 'none' }}>
-              {(() => { const b = (color: string): React.CSSProperties => ({ flex: '1 0 auto', fontSize: 12, fontWeight: 700, color, background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 9, padding: '7px 10px', cursor: 'pointer', whiteSpace: 'nowrap', textAlign: 'center' })
+            <div className="od-wrap">
+              {(() => {
                 const isWoo = order.sales_channel === 'woocommerce'
                 const isStore = isWoo || (isShopifyOrder && !!order.external_order_id)
                 const shopDomain = order.metadata?.shopify?.shop
                 return <>
-                  {isWoo && wooStoreUrl && <button type="button" onClick={editInWoo} style={b(ACCENT)}>Edit</button>}
-                  {isShopifyOrder && shopDomain && order.external_order_id && <a href={`https://${shopDomain}/admin/orders/${order.external_order_id}`} target="_blank" rel="noopener noreferrer" style={{ ...b('#008060'), textDecoration: 'none' }}>Shopify</a>}
-                  {isStore && !['shipped', 'cancelled', 'refunded'].includes(order.status) && <button type="button" disabled={actBusy === 'done'} onClick={() => markCompleted()} style={b('#15803d')}>{actBusy === 'done' ? '…' : 'Complete'}</button>}
-                  {isClickCollect(order) && order.status !== 'shipped' && order.status !== 'cancelled' && <button type="button" disabled={actBusy === 'notify'} onClick={notifyPickup} style={b('#2563eb')}>{actBusy === 'notify' ? '…' : 'Ready'}</button>}
-                  {isStore && order.status !== 'refunded' && !(refundedTotal > 0 && refundedTotal + 0.005 >= (Number(order.total) || 0)) && <button type="button" disabled={actBusy === 'refund'} onClick={issueRefund} style={b('#b45309')}>{actBusy === 'refund' ? '…' : 'Refund'}</button>}
-                  <button type="button" disabled={actBusy === 'invoice'} onClick={genInvoice} style={b('var(--ink)')}>{actBusy === 'invoice' ? '…' : 'Invoice'}</button>
-                  <button type="button" onClick={copyOrderLink} style={b('var(--slate)')}>Copy link</button>
+                  {isWoo && wooStoreUrl && <button type="button" className="od-small" onClick={editInWoo}><svg {...I} width={14} height={14}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>Edit in WooCommerce</button>}
+                  {isShopifyOrder && shopDomain && order.external_order_id && <a className="od-small" href={`https://${shopDomain}/admin/orders/${order.external_order_id}`} target="_blank" rel="noopener noreferrer"><svg {...I} width={14} height={14}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>Open in Shopify</a>}
+                  {isStore && !['shipped', 'cancelled', 'refunded'].includes(order.status) && <button type="button" className="od-small green" disabled={actBusy === 'done'} onClick={() => markCompleted()}><svg {...I} width={14} height={14}><path d="M20 6 9 17l-5-5" /></svg>{actBusy === 'done' ? 'Completing…' : 'Complete'}</button>}
+                  {isClickCollect(order) && order.status !== 'shipped' && order.status !== 'cancelled' && <button type="button" className="od-small blue" disabled={actBusy === 'notify'} onClick={notifyPickup}><svg {...I} width={14} height={14}><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 5L2 7" /></svg>{actBusy === 'notify' ? 'Sending…' : 'Ready for pickup'}</button>}
+                  {isStore && order.status !== 'refunded' && !(refundedTotal > 0 && refundedTotal + 0.005 >= (Number(order.total) || 0)) && <button type="button" className="od-small amber" disabled={actBusy === 'refund'} onClick={issueRefund}><svg {...I} width={14} height={14}><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></svg>{actBusy === 'refund' ? '…' : 'Refund'}</button>}
+                  <button type="button" className="od-small" disabled={actBusy === 'invoice'} onClick={genInvoice}><svg {...I} width={14} height={14}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" /></svg>{actBusy === 'invoice' ? 'Making…' : 'Invoice'}</button>
+                  <button type="button" className="od-small" onClick={copyOrderLink}><svg {...I} width={14} height={14}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>Copy link</button>
                 </>
               })()}
             </div>
-            <style>{`.ord-actions::-webkit-scrollbar{display:none}`}</style>
           </CollapseSection>
 
           {/* Tasks */}
           <CollapseSection style={sect} storageKey="order-tasks" title="Tasks">
-            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-              <input value={taskText} onChange={e => setTaskText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addTask() }} placeholder="Add a task (e.g. Pack aquarium)…" style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12.5, outline: 'none' }} />
-              <button type="button" onClick={addTask} disabled={!taskText.trim()} style={{ padding: '7px 12px', borderRadius: 8, border: 'none', background: taskText.trim() ? ACCENT : 'var(--border)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: taskText.trim() ? 'pointer' : 'default' }}>Add</button>
+            <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+              <input className="od-field" value={taskText} onChange={e => setTaskText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addTask() }} placeholder="Add a task, e.g. Pack the aquarium" aria-label="New task" />
+              <button type="button" className="od-small primary" onClick={addTask} disabled={!taskText.trim()} style={{ height: 40, padding: '0 16px' }}>Add</button>
             </div>
-            {tasks.length > 0 && <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {tasks.length > 0 && <div style={{ marginTop: 8 }}>
               {tasks.map((t: any) => { const done = t.done || t.status === 'done'; return (
-                <div key={t.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                  <button type="button" onClick={() => toggleTask(t)} style={{ marginTop: 1, width: 15, height: 15, flexShrink: 0, borderRadius: 4, border: `1.5px solid ${done ? ACCENT : 'var(--slate)'}`, background: done ? ACCENT : 'transparent', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>{done && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}</button>
-                  <span style={{ fontSize: 12.5, color: done ? 'var(--slate)' : 'var(--ink)', textDecoration: done ? 'line-through' : 'none' }}>{t.title || t.text}</span>
+                <div key={t.id} className="od-task">
+                  <button type="button" className={`od-check${done ? ' on' : ''}`} onClick={() => toggleTask(t)} aria-label={done ? 'Mark not done' : 'Mark done'} aria-pressed={done}>
+                    {done && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
+                  </button>
+                  <span style={{ color: done ? '#a1a1aa' : 'var(--ink)', textDecoration: done ? 'line-through' : 'none' }}>{t.title || t.text}</span>
                 </div>
               ) })}
             </div>}
@@ -2815,73 +2944,79 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
             const hasCheckout = !!checkoutNote
             return (
               <CollapseSection style={sect} storageKey="order-cust-notes" title="Customer notes">
-                {wooNotes === null && !hasCheckout && <p style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>Loading notes…</p>}
-                {wooNotes !== null && customerWoo.length === 0 && !hasCheckout && <p style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>No customer notes.</p>}
-                <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {wooNotes === null && !hasCheckout && <p className="od-muted">Loading notes…</p>}
+                {wooNotes !== null && customerWoo.length === 0 && !hasCheckout && <p className="od-muted">No customer notes.</p>}
+                {(hasCheckout || customerWoo.length > 0) && <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {hasCheckout && (
-                    <div className="ord-note" style={{ position: 'relative', padding: '8px 11px', borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a' }}>
-                      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', whiteSpace: 'pre-wrap', lineHeight: 1.5, paddingRight: 24 }}>{checkoutNote}</p>
-                      <p style={{ margin: '4px 0 0', fontSize: 10.5, color: 'var(--slate)' }}>Customer note at checkout</p>
-                      <div className="ord-note-actions" style={{ position: 'absolute', top: 6, right: 8 }}><CopyBtn title="Copy note" onClick={() => copyToClipboard(checkoutNote, onFlash)} /></div>
+                    <div className="od-note">
+                      <p style={{ paddingRight: 28 }}>{checkoutNote}</p>
+                      <div className="meta">Customer note at checkout</div>
+                      <div className="od-note-tools"><CopyBtn title="Copy note" onClick={() => copyToClipboard(checkoutNote, onFlash)} /></div>
                     </div>
                   )}
                   {customerWoo.map((n: any) => (
-                    <div key={n.id} className="ord-note" style={{ position: 'relative', padding: '8px 11px', borderRadius: 10, background: '#eff6ff', border: '1px solid #bfdbfe' }}>
-                      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', whiteSpace: 'pre-wrap', lineHeight: 1.5, paddingRight: 24 }} dangerouslySetInnerHTML={{ __html: sanitizeHtml(String(n.note || '')) }} />
-                      <p style={{ margin: '4px 0 0', fontSize: 10.5, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 9, fontWeight: 800, color: '#1d4ed8', background: '#dbeafe', padding: '1px 6px', borderRadius: 20 }}>TO CUSTOMER</span>
-                        {n.author || 'WooCommerce'}{n.date ? ` · ${new Date(n.date).toLocaleString('en-AU')}` : ''}
-                      </p>
-                      <div className="ord-note-actions" style={{ position: 'absolute', top: 6, right: 8 }}><CopyBtn title="Copy note" onClick={() => copyToClipboard(String(n.note || '').replace(/<[^>]+>/g, ''), onFlash)} /></div>
+                    <div key={n.id} className="od-note blue">
+                      <p style={{ paddingRight: 28 }} dangerouslySetInnerHTML={{ __html: sanitizeHtml(String(n.note || '')) }} />
+                      <div className="meta">
+                        <span className="ord-tag" style={{ ['--tag' as any]: '#2563eb', height: 20, fontSize: 11.5 }}>To customer</span>
+                        {n.author || 'WooCommerce'}{n.date ? ` · ${when(n.date)}` : ''}
+                      </div>
+                      <div className="od-note-tools"><CopyBtn title="Copy note" onClick={() => copyToClipboard(String(n.note || '').replace(/<[^>]+>/g, ''), onFlash)} /></div>
                     </div>
                   ))}
-                </div>
+                </div>}
               </CollapseSection>
             )
           })()}
 
           {/* Timeline + notes */}
-          <CollapseSection style={{ ...sect, borderBottom: 'none' }} storageKey="order-timeline" title="Order timeline">
-            <div style={{ display: 'flex', gap: 6, margin: '10px 0' }}>
-              <textarea id="ord-note" value={noteBody} onChange={e => setNoteBody(e.target.value)} placeholder="Add a note… use @ to mention someone" rows={2} style={{ flex: 1, padding: '8px 10px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 12.5, resize: 'vertical', outline: 'none', fontFamily: 'inherit' }} />
-              <button type="button" onClick={addNote} disabled={!noteBody.trim()} style={{ padding: '0 12px', borderRadius: 9, border: 'none', background: noteBody.trim() ? ACCENT : 'var(--border)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: noteBody.trim() ? 'pointer' : 'default' }}>Note</button>
+          <CollapseSection style={{ ...sect, marginBottom: 0 }} storageKey="order-timeline" title="Order timeline">
+            <div style={{ margin: '10px 0 14px' }}>
+              <textarea id="ord-note" className="od-field" value={noteBody} onChange={e => setNoteBody(e.target.value)} placeholder="Add a note… use @ to mention someone" rows={2}
+                onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addNote() }} />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                <button type="button" className="od-small primary" onClick={addNote} disabled={!noteBody.trim()}>Add note</button>
+              </div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 4 }}>
+            {notes.length > 0 && <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
               {notes.map((n: any) => (
-                <div key={n.id} className="ord-note" style={{ position: 'relative', padding: '8px 11px', borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a' }}>
+                <div key={n.id} className="od-note">
                   {editNoteId === n.id ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      <textarea autoFocus value={editNoteText} onChange={e => setEditNoteText(e.target.value)} rows={2} style={{ width: '100%', padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12.5, resize: 'vertical', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
-                      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                        <button type="button" onClick={() => setEditNoteId(null)} style={{ background: 'none', border: 'none', color: 'var(--slate)', fontSize: 12, cursor: 'pointer' }}>Cancel</button>
-                        <button type="button" onClick={() => saveNoteEdit(n)} style={{ background: 'none', border: 'none', color: ACCENT, fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>Save</button>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <textarea autoFocus className="od-field" value={editNoteText} onChange={e => setEditNoteText(e.target.value)} rows={2} style={{ background: '#fff' }} />
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        <button type="button" className="od-small" onClick={() => setEditNoteId(null)} style={{ background: '#fff' }}>Cancel</button>
+                        <button type="button" className="od-small primary" onClick={() => saveNoteEdit(n)}>Save</button>
                       </div>
                     </div>
                   ) : (
                     <>
-                      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', whiteSpace: 'pre-wrap', lineHeight: 1.5, paddingRight: 60 }}>{n.body}</p>
-                      <p style={{ margin: '4px 0 0', fontSize: 10.5, color: 'var(--slate)' }}>{n.author_name || 'Someone'} · {n.created_at ? new Date(n.created_at).toLocaleString('en-AU') : ''}</p>
-                      <div className="ord-note-actions" style={{ position: 'absolute', top: 6, right: 8, display: 'flex', gap: 4 }}>
-                        <button type="button" title="Copy" onClick={() => copyToClipboard(n.body, onFlash)} style={{ background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 6, padding: 4, cursor: 'pointer', color: 'var(--slate)', display: 'inline-flex' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg></button>
-                        <button type="button" title="Edit" onClick={() => { setEditNoteId(n.id); setEditNoteText(n.body || '') }} style={{ background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 6, padding: 4, cursor: 'pointer', color: 'var(--slate)', display: 'inline-flex' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg></button>
-                        <button type="button" title="Delete" onClick={() => deleteNote(n)} style={{ background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 6, padding: 4, cursor: 'pointer', color: '#dc2626', display: 'inline-flex' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /></svg></button>
+                      <p style={{ paddingRight: 84 }}>{n.body}</p>
+                      <div className="meta">{n.author_name || 'Someone'}{n.created_at ? ` · ${when(n.created_at)}` : ''}</div>
+                      <div className="od-note-tools">
+                        <button type="button" className="od-tool" title="Copy" aria-label="Copy note" onClick={() => copyToClipboard(n.body, onFlash)}><svg {...I} width={13} height={13}><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg></button>
+                        <button type="button" className="od-tool" title="Edit" aria-label="Edit note" onClick={() => { setEditNoteId(n.id); setEditNoteText(n.body || '') }}><svg {...I} width={13} height={13}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg></button>
+                        <button type="button" className="od-tool danger" title="Delete" aria-label="Delete note" onClick={() => deleteNote(n)}><svg {...I} width={13} height={13}><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /></svg></button>
                       </div>
                     </>
                   )}
                 </div>
               ))}
+            </div>}
+            {events.length > 0 && <div>
               {events.map((ev: any) => (
-                <div key={ev.id} style={{ display: 'flex', gap: 9 }}>
-                  <span style={{ marginTop: 4, width: 7, height: 7, borderRadius: '50%', background: ACCENT, flexShrink: 0 }} />
+                <div key={ev.id} className="od-tl">
+                  <span className="od-tl-dot" />
                   <div>
-                    <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)' }}>{ev.detail || ev.type}</p>
-                    <p style={{ margin: '1px 0 0', fontSize: 10.5, color: 'var(--slate)' }}>{ev.created_at ? new Date(ev.created_at).toLocaleString('en-AU') : ''}{ev.actor_name ? ` by ${ev.actor_name}` : ''}</p>
+                    <p>{ev.detail || ev.type}</p>
+                    <small>{when(ev.created_at)}{ev.actor_name ? ` · ${ev.actor_name}` : ''}</small>
                   </div>
                 </div>
               ))}
-              {notes.length === 0 && events.length === 0 && <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>No activity yet.</p>}
-            </div>
+            </div>}
+            {notes.length === 0 && events.length === 0 && <p className="od-muted" style={{ marginTop: 0 }}>No activity yet.</p>}
           </CollapseSection>
+          </div>
         </div>
       </div>
 
