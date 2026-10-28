@@ -7,6 +7,8 @@ import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin } from '@/lib/redirect'
 import OmniInboxDemo from '@/components/OmniInboxDemo'
 import ColvyAppDemo from '@/components/ColvyAppDemo'
+import TeamInboxDemo from '@/components/marketing/TeamInboxDemo'
+import ChannelFlow from '@/components/marketing/ChannelFlow'
 import ScrollStory from '@/components/ScrollStory'
 import MarketingFooter from '@/components/MarketingFooter'
 import MarketingNav from '@/components/MarketingNav'
@@ -471,6 +473,35 @@ export default function LandingPage() {
         <div style={{ position: 'relative', WebkitMaskImage: 'linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent)', maskImage: 'linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent)' }}>
           <div className="cv-marquee-track">{[...BRANDS, ...BRANDS].map((b, i) => (<div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 30px', flexShrink: 0 }}><img src={b.logo} alt="" loading="lazy" decoding="async" width={24} height={24} style={{ width: 24, height: 24, opacity: dark ? 0.85 : 0.7, filter: dark ? 'invert(1)' : 'none' }} /><span style={{ fontSize: 17, fontWeight: 800, color: muted, whiteSpace: 'nowrap' }}>{b.name}</span></div>))}</div>
         </div>
+      </section>
+
+      {/* SEE IT IN ACTION — a life-size inbox where Colvy AI and two teammates
+          work side by side, their named cursors gliding about (Sellio-style). */}
+      <section style={{ padding: 'clamp(56px, 8vw, 104px) 24px clamp(40px, 6vw, 72px)', background: bg }}>
+        <Reveal>
+          <div style={{ maxWidth: 760, margin: '0 auto clamp(28px, 4vw, 48px)', textAlign: 'center' }}>
+            <p style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: CORAL }}>See it in action</p>
+            <h2 style={{ margin: '0 0 14px', fontSize: 'clamp(32px, 5vw, 56px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.04 }}>Your whole team, one inbox.</h2>
+            <p style={{ margin: 0, fontSize: 'clamp(16px, 1.7vw, 19px)', lineHeight: 1.6, color: muted }}>Colvy AI answers first, day and night. Your team picks up the rest together, in real time.</p>
+          </div>
+        </Reveal>
+        <TeamInboxDemo />
+      </section>
+
+      {/* EVERY CHANNEL, ONE INBOX — messages travel from each channel into
+          Colvy and on to whoever answers. */}
+      <section style={{ padding: 'clamp(48px, 7vw, 96px) 24px', background: bg }}>
+        <Reveal>
+          <div style={{ maxWidth: 720, margin: '0 auto clamp(32px, 5vw, 60px)', textAlign: 'center' }}>
+            <h2 style={{ margin: '0 0 14px', fontSize: 'clamp(32px, 5vw, 56px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.04 }}>Every channel, one inbox.</h2>
+            <p style={{ margin: '0 0 26px', fontSize: 'clamp(16px, 1.7vw, 19px)', lineHeight: 1.6, color: muted }}>Customers write from your website, Instagram, Messenger, SMS or email, or they call. Colvy AI or the right person on your team answers, all from one place.</p>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <InviteCta cta={{ id: 'home_channels_start_free', location: 'home' }} onClick={handleDashboard} className="cv-btn-primary" style={btnPrimary}>{user ? 'Go to dashboard' : 'Start for free'}</InviteCta>
+              <a href="/demo" className="cv-btn-ghost" style={btnGhost}>Get a demo</a>
+            </div>
+          </div>
+        </Reveal>
+        <ChannelFlow />
       </section>
 
       {/* SCROLL STORY — pins while you scroll; colours shift and the product
