@@ -932,6 +932,18 @@ button:hover .action-tooltip,
   transform-origin: top right; animation: cvAcctIn 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 @keyframes cvAcctIn { from { opacity: 0; transform: translateY(-4px) scale(0.96); } to { opacity: 1; transform: none; } }
+/* In the admin on wider screens the avatar sits at the foot of the rail
+   (components/AdminRail), with a green "online" dot, like Sellio's; its menu
+   opens beside the rail, upwards. */
+.cv-acct-rail { position: relative; width: 100%; display: flex; justify-content: center; padding-top: 8px; }
+.cv-acct-rail-btn { position: relative; width: 44px; height: 44px; padding: 0; border: none; border-radius: 50%; color: #fff; font: inherit; font-size: 17px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); transition: transform 0.12s ease, box-shadow 0.15s ease; }
+.cv-acct-rail-btn:hover { box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.1); }
+.cv-acct-rail-btn:active { transform: scale(0.95); }
+.cv-acct-rail-btn:focus-visible { outline: 2px solid var(--coral); outline-offset: 2px; }
+.cv-acct-rail-btn img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.cv-acct-dot { position: absolute; right: -1px; bottom: -1px; width: 14px; height: 14px; border-radius: 50%; background: #22c55e; border: 2.5px solid #f4f4f6; box-sizing: border-box; }
+.cv-acct.cv-acct-up { left: calc(100% + 6px); bottom: 0; transform-origin: bottom left; animation-name: cvAcctUp; }
+@keyframes cvAcctUp { from { opacity: 0; transform: translateX(-4px) scale(0.96); } to { opacity: 1; transform: none; } }
 .cv-acct-head { display: flex; align-items: center; gap: 11px; padding: 10px 10px 12px; }
 .cv-acct-av { width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 16px; font-weight: 700; }
 .cv-acct-av img { width: 100%; height: 100%; object-fit: cover; }

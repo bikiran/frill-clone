@@ -99,6 +99,7 @@
     root.setAttribute('data-ready', '1');
     setCh(root, root.getAttribute('data-ch') || 'sms');
     if (!root.hasAttribute('data-variable')) place(root);
+    ownLine(root);
     // Prefill: what they typed last time, else their WooCommerce account details.
     var last = {}; try { last = JSON.parse(store('colvy_bis_me') || '{}') || {}; } catch (e) {}
     var me = cfg.me || {};
@@ -210,17 +211,22 @@
   // Some themes print the stock line in a row beside the price (or in an
   // indented column). Give the form its own full-width line under that row,
   // lined up with the price. Variation forms stay put — Woo swaps those.
+  // The price nearest the form in the page structure (a few levels up at
+  // most) — not one from a header product-nav popup, sticky bar or related
+  // products elsewhere on the page.
+  function nearPrice(root) {
+    var SKIP = '.wd-product-nav, .product-nav, header, .related, .upsells, .cross-sells, .wd-sticky-btn, .sticky-add-to-cart, .colvy-bis';
+    var up = root.parentElement;
+    for (var lvl = 0; up && lvl < 5; lvl++, up = up.parentElement) {
+      var list = up.querySelectorAll('p.price, .price, .wp-block-woocommerce-product-price');
+      for (var i = 0; i < list.length; i++) { if (!list[i].closest(SKIP) && list[i].offsetParent) return list[i]; }
+    }
+    return null;
+  }
+
   function place(root) {
     if (root.getAttribute('data-preview') || root.closest('.woocommerce-variation, .single_variation_wrap, .woocommerce-variation-availability, .wd-single-stock-status, .variations_form')) return;
-    // The price nearest the form in the page structure (a few levels up at
-    // most) — not one from a header product-nav popup, sticky bar or related
-    // products elsewhere on the page.
-    var SKIP = '.wd-product-nav, .product-nav, header, .related, .upsells, .cross-sells, .wd-sticky-btn, .sticky-add-to-cart, .colvy-bis';
-    var price = null, up = root.parentElement;
-    for (var lvl = 0; up && lvl < 5 && !price; lvl++, up = up.parentElement) {
-      var list = up.querySelectorAll('p.price, .price, .wp-block-woocommerce-product-price');
-      for (var i = 0; i < list.length; i++) { if (!list[i].closest(SKIP) && list[i].offsetParent) { price = list[i]; break; } }
-    }
+    var price = nearPrice(root);
     if (!price) return;
     var r = root.getBoundingClientRect(), p = price.getBoundingClientRect();
     var beside = r.top < p.bottom - 4 && r.left > p.right - 4;
@@ -244,6 +250,28 @@
     // Safety net: a move should only ever nudge the form under the price row.
     // If it jumped far (an unexpected layout), put it back where it was.
     if (Math.abs(root.getBoundingClientRect().top - before) > 400) homeParent.insertBefore(root, homeNext);
+  }
+
+  // Themes that print the stock line (and so the form) inside a box that sits
+  // in a wrapping row beside the price (WoodMart, Elementor rows) size that
+  // box to its contents: the form stayed under the price while its text was
+  // long, then jumped up beside it when a shorter one showed ("Email me",
+  // "You're on the list"). Give that box the row's whole width, always.
+  function ownLine(root) {
+    if (root.getAttribute('data-preview')) return;
+    var price = nearPrice(root);
+    if (!price) return;
+    var common = root.parentElement;
+    while (common && !common.contains(price)) common = common.parentElement;
+    if (!common) return;
+    var box = root;
+    while (box.parentElement && box.parentElement !== common) box = box.parentElement;
+    if (box === root) return; // the form is the row's own item: its CSS already takes a whole line
+    var cs = getComputedStyle(common);
+    if (cs.display.indexOf('flex') > -1 && cs.flexDirection.indexOf('row') === 0 && cs.flexWrap !== 'nowrap') {
+      box.style.flexBasis = '100%';
+      box.style.maxWidth = '100%';
+    }
   }
 
   function initAll() { dedupe(); var all = document.querySelectorAll('.colvy-bis'); for (var i = 0; i < all.length; i++) init(all[i]); }

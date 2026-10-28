@@ -12,6 +12,10 @@
 // pointer leaves (time to reach it on a slanting path), and another section
 // only takes over once the pointer settles on it. While a panel is open the
 // rest of the screen fades back a little, so the panel stands out.
+//
+// Your avatar sits at the foot of the rail, like Sellio's: the app chrome
+// (app/AppChrome) renders its account button and menu into the slot here
+// (#rail-account-slot) instead of the top bar's corner.
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -182,6 +186,11 @@ export default function AdminRail({ workspace, sections, settings, search, ring,
     return () => window.removeEventListener('resize', fades)
   }, [sections.length])
   useEffect(() => { setOpen(null) }, [pathname])
+  // Tell the app chrome the account slot has come (or gone).
+  useEffect(() => {
+    window.dispatchEvent(new Event('colvy:rail-slot'))
+    return () => { setTimeout(() => window.dispatchEvent(new Event('colvy:rail-slot')), 0) }
+  }, [])
   useEffect(() => {
     if (!open) return
     const close = (e: PointerEvent) => { if (!(e.target as HTMLElement)?.closest?.('.rail-item.open')) setOpen(null) }
@@ -201,6 +210,11 @@ export default function AdminRail({ workspace, sections, settings, search, ring,
         .admin-rail.dim { z-index: 960; transition-delay: 0s; }
         .rail-scrim { position: fixed; inset: 0; z-index: -1; background: rgba(17,17,20,.15); opacity: 0; pointer-events: none; transition: opacity .3s cubic-bezier(.4,0,.2,1); }
         .admin-rail.dim .rail-scrim { opacity: 1; transition-duration: .22s; }
+        /* The account menu (in the slot at the foot) gets the same veil. */
+        .rail-acct { width: 100%; }
+        .admin-rail:has(.cv-acct) { z-index: 960; transition-delay: 0s; }
+        .admin-rail:has(.cv-acct) .rail-scrim { opacity: 1; transition-duration: .22s; }
+        .admin-rail:has(.cv-acct) :is(.rail-top, .rail-bottom > :not(.rail-item):not(.rail-acct), .rail-item > .rail-tile) { opacity: .5; }
         .rail-top, .rail-bottom > :not(.rail-item), .rail-item > .rail-tile { transition: opacity .25s ease, background .2s, color .15s, box-shadow .2s; }
         .admin-rail.dim :is(.rail-top, .rail-bottom > :not(.rail-item), .rail-item:not(.open) > .rail-tile) { opacity: .5; }
         .rail-item.open > .rail-tile { background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 4px 14px rgba(0,0,0,.08); }
@@ -276,6 +290,7 @@ export default function AdminRail({ workspace, sections, settings, search, ring,
           <span className="rail-label">Search</span>
         </button>
         {settings && <RailEntry s={settings} open={open === settings.key} aim={aim} onLocked={onLocked} />}
+        <div id="rail-account-slot" className="rail-acct" />
       </div>
     </aside>
   )
