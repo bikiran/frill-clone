@@ -274,7 +274,12 @@ export default function AdminRail({ workspace, sections, settings, search, ring,
         @media (min-width: 861px) {
           .admin-rail { top: var(--imp-h, 0px); z-index: 45; }
           .rail-top { padding-top: 6px; }
-          body:has(.admin-rail) .cv-app-header { padding-left: ${RAIL_W}px; }
+          /* The top bar is a panel beside the rail with a rounded top-left
+             corner (like Sellio): the rail's grey shows round the curve, and
+             the rail's edge line starts below the bar. */
+          body:has(.admin-rail) .cv-app-header { margin-left: ${RAIL_W}px; padding-left: 0; border-top-left-radius: 22px; background: #fff; }
+          body:has(.admin-rail)::before { content: ''; position: fixed; left: ${RAIL_W}px; top: var(--imp-h, 0px); width: 24px; height: 24px; background: #f4f4f6; z-index: 39; pointer-events: none; }
+          .admin-rail::after { content: ''; position: absolute; top: 0; right: -1px; width: 1px; height: 56px; background: #f4f4f6; pointer-events: none; }
         }
         @media (max-width: 860px) { .admin-rail { display: none; } }
         @media (prefers-reduced-motion: reduce) { .rail-fly, .rail-ic, .rail-scrim { transition: none !important; } }
