@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -166,6 +167,15 @@ export default function AppChrome({
   const [user, setUser] = useState<any>(null)
   const [isAdmin, setIsAdmin] = useState(false)
   const [avatarUrl, setAvatarUrl] = useState<string>('')
+  // In the admin on wider screens the avatar and its menu sit at the foot of
+  // the rail (components/AdminRail's #rail-account-slot), like Sellio's.
+  const [railSlot, setRailSlot] = useState<HTMLElement | null>(null)
+  useEffect(() => {
+    const find = () => setRailSlot(document.getElementById('rail-account-slot'))
+    find()
+    window.addEventListener('colvy:rail-slot', find)
+    return () => window.removeEventListener('colvy:rail-slot', find)
+  }, [])
   const [isCompanyOwner, setIsCompanyOwner] = useState(false)
 
   useEffect(() => {
@@ -1045,79 +1055,94 @@ export default function AppChrome({
                   
                   </div>
 
-                  <div ref={userMenuRef} className="relative" id="colvy-user-btn">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setShowUserMenu(!showUserMenu) }}
-                      className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white transition-smooth hover:shadow-md cursor-pointer overflow-hidden"
-                      style={{ background: avatarUrl ? undefined : 'var(--coral)' }}>
-                      {avatarUrl ? (
-                        <img src={avatarUrl} alt="Profile" className="w-full h-full object-cover" />
+                  {(() => {
+                    const account = (inRail: boolean) => (
+                    <div ref={userMenuRef} className={inRail ? 'cv-acct-rail' : 'relative'} id="colvy-user-btn">
+                      {inRail ? (
+                        <button type="button" onClick={(e) => { e.stopPropagation(); setShowUserMenu(!showUserMenu) }}
+                          className="cv-acct-rail-btn" aria-label="Your account" aria-haspopup="menu" aria-expanded={showUserMenu}
+                          title={user?.user_metadata?.display_name || user.email}
+                          style={{ background: avatarUrl ? '#fff' : 'var(--coral)' }}>
+                          {avatarUrl ? <img src={avatarUrl} alt="" /> : userInitial}
+                          <span className="cv-acct-dot" title="Online" />
+                        </button>
                       ) : (
-                        userInitial
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setShowUserMenu(!showUserMenu) }}
+                        className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white transition-smooth hover:shadow-md cursor-pointer overflow-hidden"
+                        style={{ background: avatarUrl ? undefined : 'var(--coral)' }}>
+                        {avatarUrl ? (
+                          <img src={avatarUrl} alt="Profile" className="w-full h-full object-cover" />
+                        ) : (
+                          userInitial
+                        )}
+                      </button>
                       )}
-                    </button>
                     
-                    {showUserMenu && (() => {
-                      // Account menu: who you are, then your things, then the
-                      // business's, then sign out. Grouped and plainly named.
-                      const close = () => setShowUserMenu(false)
-                      const I = (d: React.ReactNode) => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>
-                      const name = user?.user_metadata?.display_name || user.email
-                      const inAdmin = !!pathname?.startsWith('/admin')
-                      return (
-                      <>
-                        <div className="fixed inset-0 z-30" onClick={close} />
-                        <div id="colvy-user-menu" role="menu" className="cv-acct absolute top-full right-0 mt-2 z-40">
-                          <div className="cv-acct-head">
-                            <span className="cv-acct-av" style={{ background: avatarUrl ? undefined : 'var(--coral)' }}>
-                              {avatarUrl ? <img src={avatarUrl} alt="" /> : userInitial}
-                            </span>
-                            <span style={{ minWidth: 0, flex: 1 }}>
-                              <span className="cv-acct-name">{name}</span>
-                              <span className="cv-acct-mail">{user.email}</span>
-                            </span>
+                      {showUserMenu && (() => {
+                        // Account menu: who you are, then your things, then the
+                        // business's, then sign out. Grouped and plainly named.
+                        const close = () => setShowUserMenu(false)
+                        const I = (d: React.ReactNode) => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>
+                        const name = user?.user_metadata?.display_name || user.email
+                        const inAdmin = !!pathname?.startsWith('/admin')
+                        return (
+                        <>
+                          <div className="fixed inset-0 z-30" onClick={close} />
+                          <div id="colvy-user-menu" role="menu" className={`cv-acct absolute z-40 ${inRail ? 'cv-acct-up' : 'top-full right-0 mt-2'}`}>
+                            <div className="cv-acct-head">
+                              <span className="cv-acct-av" style={{ background: avatarUrl ? undefined : 'var(--coral)' }}>
+                                {avatarUrl ? <img src={avatarUrl} alt="" /> : userInitial}
+                              </span>
+                              <span style={{ minWidth: 0, flex: 1 }}>
+                                <span className="cv-acct-name">{name}</span>
+                                <span className="cv-acct-mail">{user.email}</span>
+                              </span>
+                            </div>
+                            <div className="cv-acct-sep" />
+                            {isCompanyOwner && !inAdmin && (
+                              <a href="/admin" onClick={close} role="menuitem" className="cv-acct-item">
+                                {I(<><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>)}
+                                Open dashboard
+                              </a>
+                            )}
+                            <Link href="/profile" onClick={close} role="menuitem" className="cv-acct-item">
+                              {I(<><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>)}
+                              Your profile
+                            </Link>
+                            {isCompanyOwner && <>
+                              <Link href="/admin/settings" onClick={close} role="menuitem" className="cv-acct-item">
+                                {I(<><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></>)}
+                                Business settings
+                              </Link>
+                              <Link href="/admin/billing" onClick={close} role="menuitem" className="cv-acct-item">
+                                {I(<><rect x="2.5" y="5" width="19" height="14" rx="2.5" /><path d="M2.5 10h19" /></>)}
+                                Plan &amp; billing
+                              </Link>
+                            </>}
+                            {/* Their private chat with Colvy (components/inbox/ColvyChat):
+                                opened in place when the inbox is already showing. */}
+                            {inAdmin && (
+                              <Link href="/admin/inbox?colvy=1" role="menuitem" className="cv-acct-item"
+                                onClick={e => { close(); if (pathname?.startsWith('/admin/inbox')) { e.preventDefault(); window.dispatchEvent(new Event('colvy:open')) } }}>
+                                {I(<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.9-.9L3 21l1.9-4.6A8 8 0 0 1 3.5 11.5 8.5 8.5 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z" />)}
+                                Message Colvy
+                              </Link>
+                            )}
+                            <div className="cv-acct-sep" />
+                            <button type="button" onClick={handleLogout} role="menuitem" className="cv-acct-item cv-acct-out" data-no-press>
+                              {I(<><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></>)}
+                              Sign out
+                            </button>
                           </div>
-                          <div className="cv-acct-sep" />
-                          {isCompanyOwner && !inAdmin && (
-                            <a href="/admin" onClick={close} role="menuitem" className="cv-acct-item">
-                              {I(<><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>)}
-                              Open dashboard
-                            </a>
-                          )}
-                          <Link href="/profile" onClick={close} role="menuitem" className="cv-acct-item">
-                            {I(<><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>)}
-                            Your profile
-                          </Link>
-                          {isCompanyOwner && <>
-                            <Link href="/admin/settings" onClick={close} role="menuitem" className="cv-acct-item">
-                              {I(<><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></>)}
-                              Business settings
-                            </Link>
-                            <Link href="/admin/billing" onClick={close} role="menuitem" className="cv-acct-item">
-                              {I(<><rect x="2.5" y="5" width="19" height="14" rx="2.5" /><path d="M2.5 10h19" /></>)}
-                              Plan &amp; billing
-                            </Link>
-                          </>}
-                          {/* Their private chat with Colvy (components/inbox/ColvyChat):
-                              opened in place when the inbox is already showing. */}
-                          {inAdmin && (
-                            <Link href="/admin/inbox?colvy=1" role="menuitem" className="cv-acct-item"
-                              onClick={e => { close(); if (pathname?.startsWith('/admin/inbox')) { e.preventDefault(); window.dispatchEvent(new Event('colvy:open')) } }}>
-                              {I(<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.9-.9L3 21l1.9-4.6A8 8 0 0 1 3.5 11.5 8.5 8.5 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z" />)}
-                              Message Colvy
-                            </Link>
-                          )}
-                          <div className="cv-acct-sep" />
-                          <button type="button" onClick={handleLogout} role="menuitem" className="cv-acct-item cv-acct-out" data-no-press>
-                            {I(<><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></>)}
-                            Sign out
-                          </button>
-                        </div>
-                      </>
-                      )
-                    })()}
-                  </div>
-                  {isCompanyOwner && (
+                        </>
+                        )
+                      })()}
+                    </div>
+                    )
+                    return railSlot ? createPortal(account(true), railSlot) : account(false)
+                  })()}
+                  {isCompanyOwner && !pathname?.startsWith('/admin') && (
                     <Link
                       href="/admin"
                       className="hidden md:flex px-4 py-2 rounded-lg text-sm font-medium transition-smooth"
