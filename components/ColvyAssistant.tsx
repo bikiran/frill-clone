@@ -1,6 +1,7 @@
 'use client'
 
 import { authFetch } from '@/lib/auth-fetch'
+import AiBuddy from '@/components/AiBuddy'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -393,12 +394,11 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
             aria-label="Open Colvy AI (drag to move)"
             className="colvy-ai-orb"
             style={{
-              width: ORB, height: ORB, borderRadius: '50%', border: 'none', cursor: 'grab',
-              background: GRAD, boxShadow: '0 12px 28px -6px rgba(255,122,107,0.6)', color: '#fff',
+              width: ORB, height: ORB, padding: 0, border: 'none', cursor: 'grab', background: 'none',
               display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'none',
             }}
           >
-            <SparkIcon />
+            <AiBuddy size={ORB + 4} shadow />
           </button>
         </div>
       )}
@@ -573,11 +573,8 @@ function CardIcon({ name, size = 16 }: { name: string; size?: number }) {
   }
 }
 
-const Orb = ({ size = 28 }: { size?: number }) => (
-  <span style={{ width: size, height: size, borderRadius: '50%', background: GRAD, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 6px 16px -6px rgba(255,122,107,.7)' }}>
-    <SparkIcon size={Math.round(size * 0.55)} />
-  </span>
-)
+// Colvy AI's face, with eyes that follow the pointer and blink.
+const Orb = ({ size = 28 }: { size?: number }) => <AiBuddy size={size} />
 
 function ActionCard({ card, onUndo }: { card: Card; onUndo: () => void }) {
   if (card.kind === '__undone') {
@@ -751,15 +748,6 @@ function TypingDots() {
         <span key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: '#c4c4cc', display: 'inline-block', animation: `caiDot 1.1s ${i * 0.15}s infinite ease-in-out` }} />
       ))}
     </span>
-  )
-}
-
-function SparkIcon({ size = 22 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9L12 3z" />
-      <path d="M19 14l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8.8-2z" />
-    </svg>
   )
 }
 

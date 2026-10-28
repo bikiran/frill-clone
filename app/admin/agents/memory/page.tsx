@@ -602,6 +602,7 @@ textarea.bm-input{min-height:44px}
 .bm-note.err{background:#fef3f2;color:#b42318;border:1px solid #fecdca}
 /* The soft card-and-pill look shared with the rest of the admin. */
 .bm-page{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.admin-main:has(.bm-page){overflow-x:clip!important;overflow-y:visible!important;min-width:0}
 .bm-page button::before{display:none}
 .bm-card,.bm-know{border-color:transparent;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04)}
 .bm-learn{border-color:color-mix(in srgb,var(--coral) 30%,transparent)}

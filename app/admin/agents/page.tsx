@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import AiBuddy from '@/components/AiBuddy'
 import { authFetch } from '@/lib/auth-fetch'
 import { supabase } from '@/lib/supabase'
 import { resolveCompanyUser, peekCompanyUser, readStored, writeStored, readCache, writeCache } from '@/lib/client-cache'
@@ -183,6 +184,24 @@ export default function AgentsPage() {
   const [reloadKey, setReloadKey] = useState(0)
   const [who, setWho] = useState('')
 
+  // Which section is in view, for the side menu on wide screens.
+  const [spy, setSpy] = useState('ag-top')
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') return
+    const ids = ['ag-top', 'ag-needs', 'ag-support', 'ag-reception', 'ag-reputation', 'ag-sales', 'ag-operations', 'ag-tools', 'ag-try', 'ag-activity']
+    const seen = new Map<string, number>()
+    const io = new IntersectionObserver(entries => {
+      for (const e of entries) {
+        if (e.isIntersecting && e.boundingClientRect.height > 0) seen.set(e.target.id, e.boundingClientRect.top)
+        else seen.delete(e.target.id)
+      }
+      const first = ids.find(id => seen.has(id))
+      if (first) setSpy(first)
+    }, { rootMargin: '-72px 0px -55% 0px' })
+    ids.forEach(id => { const el = document.getElementById(id); if (el) io.observe(el) })
+    return () => io.disconnect()
+  }, [companyId, needsMigration])
+
   // Live pilot: kill switch, auto-send settings, and what's waiting for a person.
   const [settings, setSettingsState] = useState<Settings | null>(() => readStored<Settings>(ck('settings')) || null)
   const setSettings = useCallback((s: Settings) => { setSettingsState(s); writeStored(companyId ? `agents-settings:${companyId}` : null, s) }, [companyId])
@@ -291,21 +310,54 @@ export default function AgentsPage() {
     finally { setBusy(false) }
   }
 
+  // The side menu and the "at a glance" card (wide screens only).
+  const paused = !!settings?.pause.paused
+  const navAgents = [
+    { key: 'support', label: 'Support', on: supportOn }, { key: 'reception', label: 'Reception', on: recOn },
+    { key: 'reputation', label: 'Reputation', on: repOn }, { key: 'sales', label: 'Sales', on: salesOn },
+    { key: 'operations', label: 'Operations', on: opsOn },
+  ]
+  const onCount = navAgents.filter(a => a.on).length
+
   return (
     <div style={{ minHeight: '100%', background: 'var(--canvas, #f6f7f9)' }}>
       <style>{CSS}</style>
+      <div className="ag-shell">
+      {/* Wide screens: a menu of this page's sections on the left… */}
+      <aside className="ag-nav" aria-label="AI agents">
+        <div className="ag-rail-card">
+          <p className="ag-nav-title">AI agent</p>
+          <a href="#ag-top" className={spy === 'ag-top' ? 'on' : ''}>{I.layers} Overview</a>
+          <a href="#ag-needs" className={spy === 'ag-needs' ? 'on' : ''}>{I.flag} Needs you</a>
+          <a href="#ag-try" className={spy === 'ag-try' ? 'on' : ''}>{I.play} Try an agent</a>
+          <a href="#ag-activity" className={spy === 'ag-activity' ? 'on' : ''}>{I.inbox} Activity</a>
+          <p className="ag-nav-group">Agents</p>
+          {navAgents.map(a => (
+            <a key={a.key} href={`#ag-${a.key}`} className={spy === `ag-${a.key}` ? 'on' : ''}>
+              <span className={`ag-nav-dot${paused ? ' paused' : a.on ? ' on' : ''}`} aria-hidden="true" />
+              {a.label}
+              <span className="ag-nav-state">{a.on == null ? '' : paused ? 'Paused' : a.on ? 'On' : 'Off'}</span>
+            </a>
+          ))}
+          <a href="#ag-tools" className={spy === 'ag-tools' ? 'on' : ''}>{I.bolt} Outside tools</a>
+          <p className="ag-nav-group">More</p>
+          <a href="/admin/agents/needs-you">{I.flag} Everything waiting</a>
+          <a href="/admin/agents/results">{I.layers} Results</a>
+          <a href="/admin/agents/memory">{I.brain} Business memory</a>
+        </div>
+      </aside>
       <div className="ag-page" style={{ maxWidth: 1160, margin: '0 auto', padding: '24px 16px 120px' }}>
-        <div style={{ marginBottom: 20, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div id="ag-top" style={{ marginBottom: 20, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ minWidth: 0, flex: '1 1 320px' }}>
             <h1 style={{ margin: 0, fontSize: 'clamp(26px, 3.4vw, 30px)', fontWeight: 800, letterSpacing: '-0.025em', lineHeight: 1.1, color: 'var(--ink)' }}>AI agents</h1>
             <p style={{ margin: '8px 0 0', fontSize: 14.5, color: '#71717a', maxWidth: 640, lineHeight: 1.55 }}>Everything Colvy’s AI does, in one place — the Support Agent, the auto-reply, the assistant and connected apps. Each run shows what it knew, what it decided, which permission allowed it, and why.</p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <a href="/admin/agents/needs-you" className="ag-ghost" style={{ display: 'inline-flex', alignItems: 'center', height: 38, textDecoration: 'none' }}>Needs you</a>
-            <a href="/admin/agents/results" className="ag-ghost" style={{ display: 'inline-flex', alignItems: 'center', height: 38, textDecoration: 'none' }}>Results</a>
-            <a href="/admin/agents/memory" className="ag-ghost" style={{ display: 'inline-flex', alignItems: 'center', height: 38, textDecoration: 'none' }}>Business memory</a>
+            <a href="/admin/agents/needs-you" className="ag-ghost ag-headlink" style={{ display: 'inline-flex', alignItems: 'center', height: 38, textDecoration: 'none' }}>Needs you</a>
+            <a href="/admin/agents/results" className="ag-ghost ag-headlink" style={{ display: 'inline-flex', alignItems: 'center', height: 38, textDecoration: 'none' }}>Results</a>
+            <a href="/admin/agents/memory" className="ag-ghost ag-headlink" style={{ display: 'inline-flex', alignItems: 'center', height: 38, textDecoration: 'none' }}>Business memory</a>
             {settings && !settings.pause.paused && (
-              <button type="button" className="ag-kill" onClick={pauseAll} disabled={savingSettings}>{I.pause} Pause all agents</button>
+              <button type="button" className="ag-kill ag-head-pause" onClick={pauseAll} disabled={savingSettings}>{I.pause} Pause all agents</button>
             )}
           </div>
         </div>
@@ -334,13 +386,13 @@ export default function AgentsPage() {
         {error && <div className="ag-note err ag-fade" style={{ marginBottom: 16 }} role="alert">{I.alert}<span>{error}</span></div>}
 
         {/* What needs a person right now (Phase 10) */}
-        {companyId && !needsMigration && <NeedsYouCard companyId={companyId} />}
+        <div id="ag-needs">{companyId && !needsMigration && <NeedsYouCard companyId={companyId} />}</div>
 
         {/* This week + earned-trust suggestions (Phase 9) */}
         {companyId && !needsMigration && <ResultsStrip companyId={companyId} onSettingsChanged={() => { loadSettings() }} />}
 
         {/* Live switch */}
-        <div className="ag-card ag-fade" style={{ marginBottom: 16 }}>
+        <div id="ag-support" className="ag-card ag-fade" style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'space-between' }}>
             <div style={{ minWidth: 0 }}>
               <p className="ag-h">Support Agent on incoming messages</p>
@@ -356,7 +408,7 @@ export default function AgentsPage() {
           {supportOn && settings && <AutoSendPanel settings={settings} saving={savingSettings} onSave={a => saveSettings({ autoSend: a })} />}
         </div>
 
-        <div className="ag-card ag-fade" style={{ marginBottom: 16 }}>
+        <div id="ag-reception" className="ag-card ag-fade" style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'space-between' }}>
             <div style={{ minWidth: 0 }}>
               <p className="ag-h">Reception Agent for bookings</p>
@@ -373,7 +425,7 @@ export default function AgentsPage() {
           )}
         </div>
 
-        <div className="ag-card ag-fade" style={{ marginBottom: 16 }}>
+        <div id="ag-reputation" className="ag-card ag-fade" style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'space-between' }}>
             <div style={{ minWidth: 0 }}>
               <p className="ag-h">Reputation Agent on reviews and comments</p>
@@ -385,7 +437,7 @@ export default function AgentsPage() {
           {repOn && settings?.commentAuto && <CommentPanel value={settings.commentAuto} saving={savingSettings} onSave={v => saveSettings({ commentAuto: v })} />}
         </div>
 
-        <div className="ag-card ag-fade" style={{ marginBottom: 16 }}>
+        <div id="ag-sales" className="ag-card ag-fade" style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'space-between' }}>
             <div style={{ minWidth: 0 }}>
               <p className="ag-h">Sales Agent for carts, quotes and enquiries</p>
@@ -397,7 +449,7 @@ export default function AgentsPage() {
           {salesOn && settings?.salesFollowup && <FollowupPanel value={settings.salesFollowup} saving={savingSettings} onSave={v => saveSettings({ salesFollowup: v })} />}
         </div>
 
-        <div className="ag-card ag-fade" style={{ marginBottom: 16 }}>
+        <div id="ag-operations" className="ag-card ag-fade" style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'space-between' }}>
             <div style={{ minWidth: 0 }}>
               <p className="ag-h">Operations Agent for late and stuck orders</p>
@@ -460,12 +512,12 @@ export default function AgentsPage() {
         )}
 
         {/* Outside tools (MCP connections) */}
-        {companyId && !needsMigration && <AgentConnections companyId={companyId} />}
+        <div id="ag-tools">{companyId && !needsMigration && <AgentConnections companyId={companyId} />}</div>
 
         {/* Try it */}
-        <div className="ag-card ag-fade" style={{ marginBottom: 16 }}>
+        <div id="ag-try" className="ag-card ag-fade" style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-            <span className="ag-orb">{I.spark}</span>
+            <AiBuddy size={44} />
             <div style={{ minWidth: 0, flex: 1 }}>
               <p className="ag-h">Try an agent</p>
               <p className="ag-p">Sandbox — it reads your real data, but nothing is sent, posted or changed. Anything it would do is recorded as a suggestion.</p>
@@ -505,7 +557,7 @@ export default function AgentsPage() {
           </div>
         </div>
 
-        <div className="ag-grid">
+        <div id="ag-activity" className="ag-grid">
           {/* Runs */}
           <div className="ag-card" style={{ padding: 0, overflow: 'hidden' }}>
             <p className="ag-label" style={{ padding: '16px 16px 6px', margin: 0 }}>Activity</p>
@@ -538,6 +590,45 @@ export default function AgentsPage() {
             {detail && companyId && <RunDetail run={detail.run} steps={detail.steps} approvals={detail.approvals} companyId={companyId} onDecided={() => { setReloadKey(k => k + 1); loadRuns() }} />}
           </div>
         </div>
+      </div>
+      {/* …and Colvy AI at a glance on the right. */}
+      <aside className="ag-side" aria-label="Colvy AI at a glance">
+        <div className="ag-rail-card ag-me">
+          <div className="ag-me-face"><AiBuddy size={76} shadow /></div>
+          <p className="ag-me-name">Colvy AI</p>
+          <p className={`ag-me-state${paused ? ' paused' : onCount ? '' : ' off'}`}><span className="dot" />{paused ? 'All agents are paused' : onCount ? `${onCount} of ${navAgents.length} agents on` : 'No agents on yet'}</p>
+          {settings && !paused && <button type="button" className="ag-kill" onClick={pauseAll} disabled={savingSettings} style={{ width: '100%', justifyContent: 'center' }}>{I.pause} Pause all agents</button>}
+          {settings && paused && !settings.pause.platform && <button type="button" className="ag-primary small" onClick={() => saveSettings({ paused: false })} disabled={savingSettings} style={{ width: '100%' }}>{savingSettings ? 'Resuming…' : 'Resume agents'}</button>}
+          {settings && (
+            <div className="ag-me-stats">
+              <div><b>{settings.sentToday ?? 0}</b><span>Sent on its own today</span></div>
+              <div><b>{settings.waiting ?? 0}</b><span>Waiting for you</span></div>
+            </div>
+          )}
+        </div>
+        <div className="ag-rail-card">
+          <div className="ag-rail-h"><span>Latest activity</span>{runs.length > 0 && <a href="#ag-activity">See all</a>}</div>
+          {loaded && runs.length === 0 && <p className="ag-p" style={{ margin: '0 6px 6px', fontSize: 13 }}>Nothing yet. Try an agent to watch it work.</p>}
+          {runs.slice(0, 4).map(r => {
+            const st = STATUS[r.status] || { label: r.status, tone: 'muted' }
+            return (
+              <button key={r.id} type="button" className="ag-mini-run" onClick={() => { pick(r.id); document.getElementById('ag-activity')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}>
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  <span className="t">{String(r.input?.message || r.summary || r.input?.tool || r.trigger_type).slice(0, 60)}</span>
+                  <span className="s">{actorOf(r)} · {when(r.created_at)}</span>
+                </span>
+                <span className={`ag-chip ${st.tone}`}>{st.label}</span>
+              </button>
+            )
+          })}
+        </div>
+        <div className="ag-rail-card ag-know">
+          <div className="ag-rail-h"><span>What it knows</span></div>
+          <a href="/admin/agents/memory"><span className="ag-know-ic" style={{ ['--t' as any]: '#8b5cf6' }}>{I.brain}</span><span><b>Business memory</b><small>Your tone and the rules it follows</small></span></a>
+          <a href="/admin/crm-settings/ai-knowledge"><span className="ag-know-ic" style={{ ['--t' as any]: '#3b82f6' }}>{I.layers}</span><span><b>AI knowledge</b><small>Articles, website pages and files</small></span></a>
+          <a href="/admin/help"><span className="ag-know-ic" style={{ ['--t' as any]: '#22c55e' }}>{I.inbox}</span><span><b>Help centre</b><small>Answers customers can read too</small></span></a>
+        </div>
+      </aside>
       </div>
     </div>
   )
@@ -1090,5 +1181,58 @@ const CSS = `
 .ag-paused{border:none;box-shadow:0 0 0 1px #fecdca}
 .ag-paused-ic{border:none;border-radius:50%}
 .ag-switch.on{background:#34c759}
+/* Wide screens: a section menu on the left and Colvy AI at a glance on the right. */
+.admin-main:has(.ag-shell){overflow-x:clip!important;overflow-y:visible!important;min-width:0}
+.ag-nav,.ag-side{display:none}
+.ag-shell [id^="ag-"]{scroll-margin-top:84px}
+.ag-rail-card{background:#fff;border-radius:20px;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04);padding:12px}
+.ag-rail-card + .ag-rail-card{margin-top:12px}
+.ag-nav-title{margin:4px 10px 10px;font-size:17px;font-weight:700;color:var(--ink)}
+.ag-nav-group{margin:16px 10px 4px;font-size:12.5px;font-weight:600;color:#8e8e93}
+.ag-nav a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:12px;font-size:14px;font-weight:500;color:#3f3f46;text-decoration:none;transition:background-color .15s,color .15s}
+.ag-nav a:hover{background:#f4f4f5;color:#18181b}
+.ag-nav a.on{background:#f4f4f5;color:#18181b;font-weight:600}
+.ag-nav a svg{flex-shrink:0;width:15px;height:15px;color:#8e8e93}
+.ag-nav a.on svg{color:var(--coral)}
+.ag-nav-dot{width:8px;height:8px;margin:0 3.5px;border-radius:50%;background:#d4d4d8;flex-shrink:0}
+.ag-nav-dot.on{background:#34c759;box-shadow:0 0 0 3px color-mix(in srgb,#34c759 18%,transparent)}
+.ag-nav-dot.paused{background:#f59e0b}
+.ag-nav-state{margin-left:auto;font-size:12px;font-weight:500;color:#a1a1aa}
+.ag-me{padding:22px 16px 16px;text-align:center;background:radial-gradient(120% 70% at 50% 0%,color-mix(in srgb,var(--coral) 9%,#fff),#fff 70%)}
+.ag-me-face{display:flex;justify-content:center;margin-bottom:12px}
+.ag-me-name{margin:0;font-size:18px;font-weight:800;letter-spacing:-.01em;color:var(--ink)}
+.ag-me-state{display:inline-flex;align-items:center;gap:7px;margin:6px 0 16px;font-size:13.5px;color:#71717a}
+.ag-me-state .dot{width:8px;height:8px;border-radius:50%;background:#34c759}
+.ag-me-state.paused .dot{background:#f59e0b}.ag-me-state.off .dot{background:#d4d4d8}
+.ag-me .ag-kill{height:38px}
+.ag-me-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;text-align:left}
+.ag-me-stats div{padding:10px 12px;border-radius:14px;background:#fafafa;box-shadow:0 0 0 1px rgba(0,0,0,.04)}
+.ag-me-stats b{display:block;font-size:20px;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums}
+.ag-me-stats span{display:block;margin-top:1px;font-size:12px;line-height:1.3;color:#8e8e93}
+.ag-rail-h{display:flex;align-items:center;justify-content:space-between;margin:4px 8px 6px;font-size:14.5px;font-weight:700;color:var(--ink)}
+.ag-rail-h a{font-size:13px;font-weight:600;color:#71717a;text-decoration:none}
+.ag-rail-h a:hover{color:var(--ink)}
+.ag-mini-run{width:100%;display:flex;align-items:center;gap:8px;padding:9px 8px;border:none;background:none;border-radius:12px;text-align:left;cursor:pointer;font-family:inherit;transition:background-color .15s}
+.ag-mini-run:hover{background:#f4f4f5}
+.ag-mini-run .t{display:block;font-size:13.5px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ag-mini-run .s{display:block;margin-top:1px;font-size:12px;color:#8e8e93;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ag-know a{display:flex;align-items:center;gap:11px;padding:9px 8px;border-radius:12px;text-decoration:none;transition:background-color .15s}
+.ag-know a:hover{background:#f4f4f5}
+.ag-know-ic{width:34px;height:34px;border-radius:11px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--t) 11%,#fff);color:var(--t)}
+.ag-know-ic svg{width:16px;height:16px}
+.ag-know b{display:block;font-size:13.5px;font-weight:600;color:var(--ink)}
+.ag-know small{display:block;margin-top:1px;font-size:12px;color:#8e8e93}
+.ag-nav a:focus-visible,.ag-mini-run:focus-visible,.ag-know a:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 28%,transparent)}
+@media (min-width:1180px){
+  .ag-shell{display:grid;grid-template-columns:216px minmax(0,1fr);gap:20px;align-items:start;max-width:1640px;margin:0 auto;padding:24px 28px 120px}
+  .ag-shell>.ag-page{max-width:none!important;margin:0!important;padding:0!important}
+  .ag-nav{display:block;position:sticky;top:72px;max-height:calc(100vh - 88px);overflow:auto;scrollbar-width:none}
+  .ag-headlink{display:none!important}
+}
+@media (min-width:1500px){
+  .ag-shell{grid-template-columns:216px minmax(0,1fr) 296px}
+  .ag-side{display:block;position:sticky;top:72px;max-height:calc(100vh - 88px);overflow:auto;scrollbar-width:none}
+  .ag-head-pause{display:none!important}
+}
 .ag-primary:focus-visible,.ag-ghost:focus-visible,.ag-kill:focus-visible,.ag-switch:focus-visible,.ag-who button:focus-visible,.ag-topic:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 28%,transparent)}
 `
