@@ -18,7 +18,6 @@ import { PlatformLogo } from '@/components/StoreLogo'
 import OrderDraftsPanel, { useOrderDraftCount } from '@/components/OrderDraftsPanel'
 import OutOfStockModal from '@/components/OutOfStockModal'
 import RefundOrderModal from '@/components/RefundOrderModal'
-import PageHeader from '@/components/PageHeader'
 import { CARRIERS as TRACK_CARRIERS, carrierByKey } from '@/lib/carriers'
 import { barcodeSVG } from '@/lib/barcode'
 import { confirmDialog } from '@/components/ConfirmDialog'
@@ -51,6 +50,45 @@ export function ClickCollectIcon({ size = 14 }: { size?: number }) {
   )
 }
 
+// "Awaiting Shipment" → "Awaiting shipment" for chips and tags.
+const sentence = (s: string) => s ? s.charAt(0) + s.slice(1).toLowerCase() : s
+
+// The page's line icons (one stroke style, like the rest of the admin).
+const ORD_ICONS: Record<string, React.ReactNode> = {
+  file: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><path d="M9 15h6" /></>,
+  plus: <><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></>,
+  box: <><path d="M21 8 12 3 3 8v8l9 5 9-5z" /><path d="m3 8 9 5 9-5" /><path d="M12 13v8" /></>,
+  clock: <><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></>,
+  pause: <><circle cx="12" cy="12" r="9" /><line x1="10" y1="9" x2="10" y2="15" /><line x1="14" y1="9" x2="14" y2="15" /></>,
+  truck: <><path d="M1 4h13v12H1z" /><path d="M14 8h4l4 4v4h-8" /><circle cx="5.5" cy="18.5" r="2" /><circle cx="18.5" cy="18.5" r="2" /></>,
+  alert: <><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></>,
+  star: <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />,
+  printer: <><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" /></>,
+  tag: <><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></>,
+  chev: <polyline points="6 9 12 15 18 9" />,
+  x: <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>,
+  search: <><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></>,
+  pin: <><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></>,
+  store: <><path d="M3 9 4.5 4h15L21 9" /><path d="M3 9h18v2a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z" /><path d="M5 12v8h14v-8" /></>,
+  inbox: <><polyline points="22 12 16 12 14 15 10 15 8 12 2 12" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></>,
+  gear: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></>,
+  bookmark: <path d="M19 21 12 16 5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />,
+  refresh: <><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></>,
+  sliders: <><line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" /><line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" /><line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" /><line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" /></>,
+  panel: <><rect x="3" y="3" width="18" height="18" rx="2" /><line x1="15" y1="3" x2="15" y2="21" /></>,
+  up: <><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" /></>,
+  down: <><line x1="12" y1="5" x2="12" y2="19" /><polyline points="19 12 12 19 5 12" /></>,
+  left: <polyline points="15 18 9 12 15 6" />,
+  right: <polyline points="9 18 15 12 9 6" />,
+}
+function OrdIcon({ name, size = 16, fill, className }: { name: string; size?: number; fill?: boolean; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={fill ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      {ORD_ICONS[name]}
+    </svg>
+  )
+}
+
 // ── Colour-coded tags ─────────────────────────────────────────────────────────
 export const TAG_PALETTE = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#db2777', '#0891b2', '#4b5563', '#e11d48', '#ca8a04']
 export function hashColor(name: string): string { let h = 0; for (const c of String(name)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return TAG_PALETTE[h % TAG_PALETTE.length] }
@@ -60,10 +98,11 @@ export function readableText(hex?: string): string {
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.62 ? '#111827' : '#ffffff'
 }
 export function TagChip({ name, color, onRemove }: { name: string; color?: string; onRemove?: () => void }) {
-  const bg = color || hashColor(name); const fg = readableText(bg)
+  const c = color || hashColor(name)
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 20, background: bg, color: fg, fontSize: 11.5, fontWeight: 700, letterSpacing: '0.01em' }}>
-      {name}{onRemove && <button type="button" onClick={e => { e.stopPropagation(); onRemove() }} title="Remove" style={{ background: 'none', border: 'none', color: fg, cursor: 'pointer', padding: 0, fontSize: 13, lineHeight: 1, opacity: 0.85 }}>×</button>}
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 24, padding: onRemove ? '0 5px 0 9px' : '0 10px 0 9px', borderRadius: 999, background: `color-mix(in srgb, ${c} 10%, #fff)`, color: `color-mix(in srgb, ${c} 88%, #000)`, fontSize: 12.5, fontWeight: 600, lineHeight: 1, whiteSpace: 'nowrap', boxSizing: 'border-box' }}>
+      <span style={{ width: 6, height: 6, borderRadius: '50%', background: c, flexShrink: 0 }} />
+      {name}{onRemove && <button type="button" onClick={e => { e.stopPropagation(); onRemove() }} title="Remove" aria-label={`Remove ${name}`} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, width: 16, height: 16, borderRadius: 999, fontSize: 14, lineHeight: 1, opacity: 0.7, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>×</button>}
     </span>
   )
 }
@@ -171,7 +210,9 @@ export default function OrdersPage() {
   const [toast, setToast] = useState('')
 
   const [tab, setTab] = useState('all')
-  const [statusMenuOpen, setStatusMenuOpen] = useState(false)
+  const [locMenuOpen, setLocMenuOpen] = useState(false)
+  const [viewsMenuOpen, setViewsMenuOpen] = useState(false)
+  const [displayMenuOpen, setDisplayMenuOpen] = useState(false)
   const [defaultStatus, setDefaultStatus] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -792,17 +833,27 @@ export default function OrdersPage() {
   const toggleOne = (id: string) => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
 
   // ── Styles ─────────────────────────────────────────────────────────────────
-  const card: React.CSSProperties = { borderRadius: 14, border: '1px solid var(--border)', background: 'var(--card, #fff)' }
-  const ctrl: React.CSSProperties = { padding: '7px 10px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card, #fff)', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', cursor: 'pointer', outline: 'none' }
-  const th: React.CSSProperties = { padding: '10px 12px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', whiteSpace: 'nowrap', textAlign: 'left', position: 'sticky', top: 0, background: 'var(--canvas)', zIndex: 1 }
-  const td: React.CSSProperties = { padding: '11px 12px', fontSize: 13, color: 'var(--ink)', whiteSpace: 'nowrap' }
-
-  const kpi = (label: string, value: number, color: string) => (
-    <div style={{ ...card, padding: '10px 14px', minWidth: 96 }}>
-      <p style={{ margin: 0, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em', color: 'var(--slate)' }}>{label}</p>
-      <p style={{ margin: '3px 0 0', fontSize: 19, fontWeight: 800, color }}>{value}</p>
-    </div>
-  )
+  // How many orders each status chip holds (scoped to the Location filter).
+  const countFor = (t: { key: string; match?: string[] }) => t.key === 'all' ? counts.all : t.key === 'alerts' ? counts.alerts : t.key === 'awaiting_payment' ? (counts.awaiting_payment || 0) : (t.match || []).reduce((n: number, s: string) => n + (counts[s] || 0), 0)
+  const tabLabel = (key: string | null) => sentence(STATUS_TABS.find(t => t.key === key)?.label || '')
+  const thisYear = new Date().getFullYear()
+  const fmtDate = (d?: string | null) => {
+    if (!d) return '—'
+    const t = new Date(d); if (isNaN(t.getTime())) return '—'
+    return t.toLocaleString('en-AU', { day: 'numeric', month: 'short', ...(t.getFullYear() !== thisYear ? { year: 'numeric' } : {}), hour: 'numeric', minute: '2-digit' })
+  }
+  const locLabel = fStore === 'all' ? 'All stores' : fStore === 'unassigned' ? 'Unassigned' : (locations.find(l => l.id === fStore)?.name || 'All stores')
+  const viewName = savedViews.find(v => v.id === activeView)?.name
+  const filtersOn = tab !== 'all' || !!search || fStore !== 'all' || fAssignee !== 'all' || fTag !== 'all' || fDate !== 'all' || !!saved
+  const clearFilters = () => { setTab('all'); setSearch(''); setFStore('all'); setFAssignee('all'); setFTag('all'); setFDate('all'); setSaved(''); setActiveView(null) }
+  const stats = [
+    { key: 'all', label: 'All orders', n: counts.all, color: '#18181b', icon: 'box' as const },
+    { key: 'awaiting_shipment', label: 'Awaiting shipment', n: (counts.awaiting_shipment || 0) + (counts.packed || 0) + (counts.click_and_collect || 0), color: ACCENT, icon: 'clock' as const },
+    { key: 'on_hold', label: 'On hold', n: counts.on_hold || 0, color: '#d97706', icon: 'pause' as const },
+    { key: 'shipped', label: 'Shipped', n: counts.shipped || 0, color: '#16a34a', icon: 'truck' as const },
+    { key: 'alerts', label: 'Alerts', n: counts.alerts || 0, color: '#dc2626', icon: 'alert' as const },
+  ]
+  const cols: [string, string][] = [['order_number', 'Order'], ['age', 'Age'], ['order_date', 'Date'], ['customer', 'Customer'], ['items', 'Items'], ['sku', 'SKU'], ['shipping', 'Shipping'], ['status', 'Status'], ['assignee', 'Assignee'], ['total', 'Total'], ['ind', '']]
 
   if (loading) return <div style={{ padding: 24, color: 'var(--slate)', display: 'flex', gap: 8 }}><div style={{ width: 18, height: 18, border: '2px solid var(--border)', borderTopColor: ACCENT, borderRadius: '50%', animation: 'ospin .8s linear infinite' }} /><style>{`@keyframes ospin{to{transform:rotate(360deg)}}`}</style>Loading orders…</div>
 
@@ -810,280 +861,496 @@ export default function OrdersPage() {
   const drawerOrder = orders.find(o => o.id === drawerId) || null
 
   return (
-    <div style={{ padding: 24, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
-      <style>{`@keyframes ospin{to{transform:rotate(360deg)}} .ord-row:hover{background:var(--canvas)} .tag-opt:hover{background:var(--canvas)} .ord-item:hover{background:var(--canvas)} .ord-note-actions{opacity:0;transition:opacity .12s} .ord-note:hover .ord-note-actions{opacity:1}
+    <div className="ord-page" style={{ ['--ord-accent' as any]: ACCENT }}>
+      <style>{`@keyframes ospin{to{transform:rotate(360deg)}} .tag-opt:hover{background:var(--canvas)} .ord-item:hover{background:var(--canvas)} .ord-note-actions{opacity:0;transition:opacity .12s} .ord-note:hover .ord-note-actions{opacity:1}
         @keyframes ordFade{from{opacity:0}to{opacity:1}}
         @keyframes ordPop{from{opacity:0;transform:translateY(8px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
-        .ord-create-btn{position:relative;transition:transform .16s cubic-bezier(.16,1,.3,1),box-shadow .16s ease,border-color .16s ease,background .16s ease;box-shadow:0 1px 2px rgba(15,23,42,.06)}
-        .ord-create-btn:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(15,23,42,.14);border-color:var(--ink)}
-        .ord-create-btn:active{transform:translateY(0) scale(.97);box-shadow:0 1px 2px rgba(15,23,42,.08)}
-        .ord-create-btn .ord-plus{transition:transform .22s cubic-bezier(.16,1,.3,1)}
-        .ord-create-btn:hover .ord-plus{transform:rotate(90deg)}`}</style>
+        @keyframes ordMenuIn{from{opacity:0;transform:translateY(-4px) scale(.98)}to{opacity:1;transform:none}}
+        .ord-page { padding: 26px 28px 28px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 
-      {/* Header + KPIs */}
-      <PageHeader
-        title="Orders"
-        subtitle={`Manage and fulfil customer orders${syncing ? ' · syncing…' : ''}`}
-        bleed={24}
-        action={<>
-          <button type="button" onClick={() => setShowDrafts(true)} className="ord-create-btn" title="Draft orders saved to finish later"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 14px', borderRadius: 11, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><path d="M9 15h6" /></svg>
-            Drafts
-            {draftCount > 0 && <span style={{ minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: ACCENT, color: '#fff', fontSize: 11, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>{draftCount}</span>}
-          </button>
-          <button type="button" onClick={() => { setOpenDraft(null); setShowCreateOrder(true) }} className="ord-create-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 18px', borderRadius: 11, border: 'none', background: ACCENT, color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', letterSpacing: '-0.01em', whiteSpace: 'nowrap' }}>
-            <span className="ord-plus" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18 }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-            </span>
-            Create Order
-          </button>
-        </>}>
-        {kpi('All Orders', counts.all, 'var(--ink)')}
-        {kpi('Awaiting', (counts.awaiting_shipment || 0) + (counts.packed || 0) + (counts.click_and_collect || 0), ACCENT)}
-        {kpi('On Hold', counts.on_hold || 0, '#d97706')}
-        {kpi('Shipped', counts.shipped || 0, '#16a34a')}
-        {kpi('Alerts', counts.alerts || 0, '#dc2626')}
-      </PageHeader>
+        /* Header */
+        .ord-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+        .ord-head h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.025em; line-height: 1.1; color: var(--ink); }
+        .ord-head p { margin: 6px 0 0; font-size: 14px; color: #71717a; }
+        .ord-actions { display: flex; gap: 8px; }
+        .ord-primary { background: var(--ord-accent); border-color: transparent; color: #fff; box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 1px 2px rgba(16,24,40,.12); }
+        .ord-primary svg { color: currentColor; }
+        .ord-primary:hover { background: var(--ord-accent); border-color: transparent; filter: brightness(.95); }
+        .ord-count { min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 999px; background: var(--ord-accent); color: #fff; font-size: 11.5px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
 
-      {/* On a phone, the labelled chip rows and control buttons scroll sideways
-          on one line instead of wrapping into a ragged multi-line stack. */}
-      <style>{`
-        .ord-scroll { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-        @media (max-width: 640px) {
-          /* Each row takes a full line and scrolls its own overflow, rather than
-             growing to content width and pushing the layout ragged. */
-          .ord-scroll { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; flex: 1 1 100%; min-width: 0; }
-          .ord-scroll::-webkit-scrollbar { display: none; }
-          .ord-scroll > * { flex-shrink: 0; }
-          .ord-search { flex: 1 1 100%; }
-          .ord-search input { width: 100% !important; min-width: 0 !important; }
-          .ord-sidebar-toggle { margin-left: 0 !important; }
+        /* Stat cards — each one is also a shortcut to its status */
+        .ord-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+        .ord-stat { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border-radius: 20px; border: 1.5px solid transparent; background: var(--card, #fff); box-shadow: 0 0 0 1px rgba(0,0,0,.05), 0 1px 2px rgba(16,24,40,.04); font: inherit; text-align: left; cursor: pointer; transition: box-shadow .15s ease, border-color .15s ease, transform .1s ease; }
+        .ord-stat::before { display: none; }
+        .ord-stat:hover { box-shadow: 0 0 0 1px rgba(0,0,0,.08), 0 6px 18px rgba(16,24,40,.07); }
+        .ord-stat:active { transform: scale(.99); }
+        .ord-stat.on { border-color: var(--ink); box-shadow: none; }
+        .ord-stat:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ord-accent) 28%, transparent); }
+        .ord-stat-ic { width: 42px; height: 42px; border-radius: 14px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--c) 10%, #fff); color: var(--c); }
+        .ord-stat-l { display: block; font-size: 13px; font-weight: 500; color: #71717a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .ord-stat-n { display: block; margin-top: 2px; font-size: 26px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+        /* The list card */
+        .ord-card { border-radius: 22px; background: var(--card, #fff); box-shadow: 0 0 0 1px rgba(0,0,0,.05), 0 1px 2px rgba(16,24,40,.04); }
+        .ord-tools { padding: 16px 18px 14px; display: flex; flex-direction: column; gap: 12px; border-bottom: 1px solid #f0f0f2; }
+        .ord-row1, .ord-row2 { display: flex; align-items: center; gap: 8px; min-width: 0; }
+        .ord-chips { display: flex; align-items: center; gap: 6px; overflow-x: auto; scrollbar-width: none; min-width: 0; flex: 1; padding: 1px; }
+        .ord-chips::-webkit-scrollbar { display: none; }
+        .ord-chip { flex-shrink: 0; height: 32px; display: inline-flex; align-items: center; gap: 7px; padding: 0 12px; border: none; border-radius: 999px; background: #f4f4f5; color: #52525b; font: inherit; font-size: 13.5px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background .15s ease, color .15s ease; }
+        .ord-chip::before { display: none; }
+        .ord-chip:hover { background: #ececef; color: #18181b; }
+        .ord-chip.on { background: #18181b; color: #fff; }
+        .ord-chip-n { min-width: 18px; height: 18px; padding: 0 6px; box-sizing: border-box; border-radius: 999px; background: #fff; color: #52525b; font-size: 11.5px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums; }
+        .ord-chip.on .ord-chip-n { background: rgba(255,255,255,.18); color: #fff; }
+        .ord-chip-star { color: #f59e0b; font-size: 12px; line-height: 1; margin-left: -2px; }
+        .ord-search-wrap { position: relative; flex: 1 1 240px; min-width: 180px; max-width: 380px; }
+        .ord-search-wrap > svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: #a1a1aa; pointer-events: none; }
+        .ord-search { width: 100%; box-sizing: border-box; height: 38px; padding: 0 34px 0 38px; border: 1.5px solid transparent; border-radius: 999px; background: #f4f4f5; font: inherit; font-size: 14px; color: var(--ink); outline: none; transition: background .15s ease, border-color .15s ease, box-shadow .15s ease; }
+        .ord-search::placeholder { color: #a1a1aa; }
+        .ord-search:focus { background: #fff; border-color: #d4d4d8; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ord-accent) 16%, transparent); }
+        .ord-search-x { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); width: 24px; height: 24px; border: none; border-radius: 999px; background: #e4e4e7; color: #52525b; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+        .ord-search-x::before { display: none; }
+        .ord-pill, .ord-select { flex-shrink: 0; height: 38px; display: inline-flex; align-items: center; gap: 7px; padding: 0 14px; border: none; border-radius: 999px; background: #f4f4f5; color: #18181b; font: inherit; font-size: 13.5px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background .15s ease, color .15s ease; }
+        .ord-pill::before { display: none; }
+        .ord-pill > svg { color: #71717a; flex-shrink: 0; }
+        .ord-pill:hover, .ord-select:hover, .ord-pill[aria-expanded="true"] { background: #ececef; }
+        .ord-pill.set, .ord-select.set { background: color-mix(in srgb, var(--ord-accent) 12%, #fff); color: color-mix(in srgb, var(--ord-accent) 85%, #000); }
+        .ord-pill.set > svg { color: currentColor; }
+        .ord-pill .cv-chev { margin-right: -3px; }
+        .ord-pill.danger { background: #fef2f2; color: #dc2626; }
+        .ord-pill.danger > svg { color: currentColor; }
+        .ord-pill.danger:hover { background: #fee2e2; }
+        .ord-pill.dark { background: #18181b; color: #fff; }
+        .ord-pill.dark > svg { color: currentColor; }
+        .ord-pill.dark:hover { background: #2a2a2e; }
+        .ord-select { appearance: none; -webkit-appearance: none; padding-right: 34px; outline: none;
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+          background-repeat: no-repeat; background-position: right 12px center; background-size: 14px; }
+        .ord-pill:focus-visible, .ord-select:focus-visible, .ord-chip:focus-visible, .ord-icon:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ord-accent) 28%, transparent); }
+        .ord-icon { flex-shrink: 0; width: 38px; height: 38px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: none; border-radius: 999px; background: transparent; color: #52525b; cursor: pointer; transition: background .15s ease, color .15s ease; }
+        .ord-icon::before { display: none; }
+        .ord-icon:hover { background: #f4f4f5; color: #18181b; }
+        .ord-icon:disabled { opacity: .4; cursor: default; background: transparent; }
+        .ord-icon.on { color: #f59e0b; }
+        .ord-spin { animation: ospin .9s linear infinite; }
+        .ord-row2 { align-items: flex-start; }
+        .ord-row2-rest { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; }
+        .ord-push { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+        .ord-select.w-assignee { width: 170px; text-overflow: ellipsis; }
+        .ord-select.w-date { width: 140px; }
+        .ord-pill-t { max-width: 190px; overflow: hidden; text-overflow: ellipsis; }
+        .ord-sync:disabled { opacity: 1; }
+        .ord-oos svg { color: #dc2626; }
+        .ord-m { display: none; }
+        .ord-menu-row .ord-switch { padding: 0; margin-right: 4px; }
+        .ord-sep { width: 1px; height: 22px; background: #e4e4e7; flex-shrink: 0; margin: 0 2px; }
+        .ord-switch { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; font-size: 13.5px; font-weight: 600; color: #52525b; cursor: pointer; user-select: none; white-space: nowrap; padding: 0 4px; }
+        .ord-switch i { position: relative; width: 34px; height: 20px; border-radius: 999px; background: #d4d4d8; transition: background .18s ease; flex-shrink: 0; }
+        .ord-switch i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); transition: transform .18s cubic-bezier(.22,1,.36,1); }
+        .ord-switch input { position: absolute; opacity: 0; pointer-events: none; }
+        .ord-switch input:checked + i { background: var(--ord-accent); }
+        .ord-switch input:checked + i::after { transform: translateX(14px); }
+        .ord-switch input:focus-visible + i { box-shadow: 0 0 0 3px color-mix(in srgb, var(--ord-accent) 28%, transparent); }
+        .ord-selbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .ord-selbar b { font-size: 14px; font-weight: 700; color: var(--ink); margin-right: 4px; }
+        .ord-link { background: none; border: none; padding: 0; font: inherit; font-size: 13.5px; font-weight: 600; color: var(--ord-accent); cursor: pointer; }
+        .ord-link::before { display: none; }
+
+        /* Menus */
+        .ord-pop { position: relative; flex-shrink: 0; }
+        .ord-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 4501; min-width: 230px; max-height: 340px; overflow-y: auto; padding: 6px; border-radius: 16px; background: var(--card, #fff); box-shadow: 0 16px 44px rgba(0,0,0,.14), 0 0 0 1px rgba(0,0,0,.05); transform-origin: top left; animation: ordMenuIn .18s cubic-bezier(.22,1,.36,1); }
+        .ord-menu.right { left: auto; right: 0; transform-origin: top right; }
+        .ord-menu-h { padding: 6px 10px 6px; font-size: 12.5px; font-weight: 500; color: #8e8e93; }
+        .ord-menu-row { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px; padding: 0 6px 0 10px; margin-bottom: 2px; border: none; border-radius: 10px; background: none; font: inherit; font-size: 14px; color: var(--ink); text-align: left; cursor: pointer; box-sizing: border-box; }
+        .ord-menu-row::before { display: none; }
+        .ord-menu-row:last-child { margin-bottom: 0; }
+        .ord-menu-row:hover { background: #f7f7f8; }
+        .ord-menu-row.cur { background: #efeff1; font-weight: 650; }
+        .ord-menu-row > svg { color: #71717a; flex-shrink: 0; }
+        .ord-menu-row .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 8px 0; }
+        .ord-menu-row .sub { display: block; font-size: 12px; font-weight: 400; color: #8e8e93; margin-top: 1px; }
+        .ord-menu-row.accent { color: var(--ord-accent); font-weight: 600; }
+        .ord-menu-row.accent > svg { color: currentColor; }
+        .ord-menu-tool { flex-shrink: 0; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: 999px; background: none; color: #a1a1aa; cursor: pointer; padding: 0; font-size: 14px; line-height: 1; }
+        .ord-menu-tool::before { display: none; }
+        .ord-menu-tool:hover { background: #e4e4e7; color: #18181b; }
+        .ord-menu-tool.on { color: #f59e0b; }
+        .ord-menu-sep { height: 1px; background: #f0f0f2; margin: 4px 6px 6px; }
+        .ord-menu-empty { padding: 8px 10px 10px; font-size: 13px; color: #8e8e93; }
+
+        /* Table */
+        .ord-scrollbox { overflow: auto; max-height: max(420px, calc(100vh - 56px - var(--admin-banners-h, 0px) - 380px)); }
+        .ord-table { width: 100%; border-collapse: collapse; min-width: 1000px; }
+        .ord-table th { position: sticky; top: 0; z-index: 1; padding: 11px 12px; background: var(--card, #fff); border-bottom: 1px solid #f0f0f2; font-size: 12.5px; font-weight: 500; color: #8e8e93; text-align: left; white-space: nowrap; user-select: none; }
+        .ord-table th:first-child, .ord-table td:first-child { padding-left: 20px; }
+        .ord-table th:last-child, .ord-table td:last-child { padding-right: 18px; }
+        .ord-table th.sort { cursor: pointer; }
+        .ord-table th.sort:hover { color: #18181b; }
+        .ord-table th.sorted { color: #18181b; }
+        .ord-th { display: inline-flex; align-items: center; gap: 4px; }
+        .ord-table td { padding: 12px; font-size: 13.5px; color: var(--ink); white-space: nowrap; border-bottom: 1px solid #f4f4f5; }
+        .ord-table tbody tr:last-child td { border-bottom: none; }
+        .ord-row { cursor: pointer; transition: background .12s ease; }
+        .ord-row:hover { background: #fafafa; }
+        .ord-row.cc { background: color-mix(in srgb, #3b82f6 5%, transparent); }
+        .ord-row.sel { background: color-mix(in srgb, var(--ord-accent) 6%, transparent); }
+        .ord-row.open { background: color-mix(in srgb, var(--ord-accent) 10%, transparent); }
+        .ord-check { width: 16px; height: 16px; margin: 0; accent-color: #18181b; cursor: pointer; vertical-align: middle; }
+        .ord-num { font-weight: 650; }
+        .ord-num span { color: #a1a1aa; font-weight: 500; }
+        .ord-age { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; }
+        .ord-age::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+        .ord-muted { color: #71717a; }
+        .ord-tag { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px 0 9px; border-radius: 999px; background: color-mix(in srgb, var(--tag) 10%, #fff); color: color-mix(in srgb, var(--tag) 88%, #000); font-size: 12.5px; font-weight: 600; line-height: 1; white-space: nowrap; }
+        .ord-tag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--tag); flex-shrink: 0; }
+        .ord-empty { padding: 56px 20px; text-align: center; }
+        .ord-empty-ic { width: 52px; height: 52px; margin: 0 auto 14px; border-radius: 18px; background: #f4f4f5; color: #71717a; display: flex; align-items: center; justify-content: center; }
+        .ord-empty h3 { margin: 0; font-size: 16px; font-weight: 700; color: var(--ink); }
+        .ord-empty p { margin: 5px 0 16px; font-size: 13.5px; color: #71717a; }
+        .ord-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 12px 18px 14px; border-top: 1px solid #f0f0f2; }
+        .ord-foot-l { font-size: 13.5px; color: #71717a; }
+        .ord-foot-r { display: flex; align-items: center; gap: 4px; }
+        .ord-foot-r .pg { font-size: 13.5px; font-weight: 600; color: var(--ink); padding: 0 6px; font-variant-numeric: tabular-nums; }
+
+        @media (max-width: 1100px) {
+          .ord-stats { grid-template-columns: repeat(5, minmax(150px, 1fr)); overflow-x: auto; scrollbar-width: none; margin: 0 -28px 16px; padding: 2px 28px; }
+          .ord-stats::-webkit-scrollbar { display: none; }
         }
-      `}</style>
-      {/* Location filters (left) + status filter (right) share one row. */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-      {locations.length > 0 ? (
-        <div className="ord-scroll" style={{ gap: 8 }}>
-          <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', marginRight: 2 }}>Location</span>
-          <button type="button" onClick={() => setFStore('unassigned')} title="Orders not assigned to any outlet"
-            style={{ padding: '6px 12px', borderRadius: 20, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: `1px solid ${fStore === 'unassigned' ? '#d97706' : 'var(--border)'}`, background: fStore === 'unassigned' ? 'color-mix(in srgb, #d97706 12%, transparent)' : 'var(--card,#fff)', color: fStore === 'unassigned' ? '#b45309' : 'var(--slate)' }}>Unassigned</button>
-          <button type="button" onClick={() => setFStore('all')}
-            style={{ padding: '6px 12px', borderRadius: 20, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: `1px solid ${fStore === 'all' ? ACCENT : 'var(--border)'}`, background: fStore === 'all' ? `color-mix(in srgb, ${ACCENT} 12%, transparent)` : 'var(--card,#fff)', color: fStore === 'all' ? ACCENT : 'var(--slate)' }}>All Stores</button>
-          {locations.map(l => {
-            const active = fStore === l.id; const isDefault = defaultOutlet === l.id
-            return (
-              <span key={l.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, padding: '4px 6px 4px 12px', borderRadius: 20, border: `1px solid ${active ? ACCENT : 'var(--border)'}`, background: active ? `color-mix(in srgb, ${ACCENT} 12%, transparent)` : 'var(--card,#fff)' }}>
-                <button type="button" onClick={() => setFStore(active ? 'all' : l.id)} style={{ background: 'none', border: 'none', padding: 0, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', color: active ? ACCENT : 'var(--slate)' }}>{l.name}</button>
-                <button type="button" title={isDefault ? 'Clear default outlet' : 'Set as my default outlet'} onClick={() => setDefaultOutletPref(isDefault ? null : l.id)}
-                  style={{ background: 'none', border: 'none', padding: '0 2px', cursor: 'pointer', fontSize: 13, lineHeight: 1, color: isDefault ? '#f59e0b' : 'var(--slate)' }}>{isDefault ? '★' : '☆'}</button>
-              </span>
-            )
-          })}
+        @media (max-width: 640px) {
+          .ord-page { padding: 18px 16px 20px; }
+          .ord-head { align-items: flex-start; margin-bottom: 16px; }
+          .ord-head h1 { font-size: 26px; }
+          .ord-actions { width: 100%; }
+          .ord-actions > :not(.ord-sync):not(.ord-oos) { flex: 1 1 0; }
+          .ord-oos { width: 38px; padding: 0; }
+          .ord-oos-t { display: none; }
+          .ord-stats { margin: 0 -16px 14px; padding: 2px 16px; grid-template-columns: repeat(5, 148px); }
+          .ord-stat { flex-direction: column; align-items: flex-start; padding: 13px 14px; gap: 10px; border-radius: 18px; }
+          .ord-stat-ic { width: 36px; height: 36px; border-radius: 12px; }
+          .ord-stat-n { font-size: 22px; }
+          .ord-card { border-radius: 20px; }
+          .ord-tools { padding: 14px 14px 12px; }
+          .ord-row2 { flex-wrap: wrap; }
+          .ord-search-wrap { flex: 1 1 100%; max-width: none; }
+          .ord-row2-rest { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; flex: 1 1 100%; margin: 0 -14px; padding: 0 14px; }
+          .ord-row2-rest::-webkit-scrollbar { display: none; }
+          .ord-row2-rest .ord-sep { display: none; }
+          .ord-push { margin-left: 0 !important; }
+          .ord-menu { position: fixed; top: auto !important; bottom: 12px; left: 12px !important; right: 12px !important; max-height: 60vh; }
+          .ord-foot { padding: 12px 14px; }
+          .ord-scrollbox { max-height: none; overflow: visible; }
+          .ord-table { min-width: 0; }
+          .ord-table thead { display: none; }
+          .ord-table td:not(:first-child):not(.ord-m) { display: none; }
+          .ord-table td:first-child { padding: 14px 4px 14px 14px; vertical-align: top; width: 1%; }
+          .ord-table td.ord-empty-td { width: auto; padding: 0; }
+          .ord-table td.ord-m { display: table-cell; padding: 12px 14px 12px 8px; white-space: normal; }
+          .ord-m-top, .ord-m-mid { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
+          .ord-m-top { font-size: 14px; }
+          .ord-m-top .ord-age { font-size: 12.5px; margin-left: 8px; }
+          .ord-m-mid { margin-top: 5px; }
+          .ord-m-name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+          .ord-m-sub { display: flex; align-items: center; gap: 6px; margin-top: 5px; font-size: 12.5px; color: #71717a; min-width: 0; }
+          .ord-m-sub > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        }
+        @media (prefers-reduced-motion: reduce) { .ord-menu { animation: none; } }`}</style>
+
+      {/* Header */}
+      <div className="ord-head">
+        <div>
+          <h1>Orders</h1>
+          <p>Manage and fulfil customer orders{syncing ? ' · syncing…' : ''}</p>
         </div>
-      ) : <div />}
-
-      {/* Status filter — collapsed into a Filters button + dropdown. Right-click
-          (or the ★) sets a status as the default, applied on next visit. */}
-      {(() => {
-        const countFor = (t: any) => t.key === 'all' ? counts.all : t.key === 'alerts' ? counts.alerts : t.key === 'awaiting_payment' ? (counts.awaiting_payment || 0) : (t.match as string[]).reduce((n: number, s: string) => n + (counts[s] || 0), 0)
-        const activeTab = STATUS_TABS.find(t => t.key === tab) || STATUS_TABS[0]
-        return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', position: 'relative' }}>
-            <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', marginRight: 2 }}>Filter</span>
-            <button type="button" onClick={() => setStatusMenuOpen(v => !v)}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 14px', borderRadius: 20, border: `1px solid ${ACCENT}`, background: `color-mix(in srgb, ${ACCENT} 10%, transparent)`, color: ACCENT, fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
-              {activeTab.label}
-              <span style={{ fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 20, background: `color-mix(in srgb, ${ACCENT} 18%, transparent)` }}>{countFor(activeTab)}</span>
-              <span style={{ fontSize: 9, opacity: 0.8 }}>▾</span>
-            </button>
-            {defaultStatus && defaultStatus !== tab && (
-              <button type="button" onClick={() => setTab(defaultStatus)} title="Jump to your default filter" style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', background: 'none', border: 'none', cursor: 'pointer' }}>
-                Default: {STATUS_TABS.find(t => t.key === defaultStatus)?.label}
-              </button>
-            )}
-            {statusMenuOpen && (
-              <>
-                <div onClick={() => setStatusMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 4500 }} />
-                <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 4501, width: 268, background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 14px 40px rgba(0,0,0,0.16)', padding: 7 }}>
-                  <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--slate)', padding: '4px 8px 6px' }}>Order status · right-click to set default</div>
-                  {STATUS_TABS.map(t => {
-                    const active = tab === t.key; const isDefault = defaultStatus === t.key; const n = countFor(t)
-                    return (
-                      <div key={t.key} onContextMenu={e => { e.preventDefault(); setDefaultStatusPref(isDefault ? null : t.key) }}
-                        style={{ display: 'flex', alignItems: 'center', gap: 6, borderRadius: 9, background: active ? `color-mix(in srgb, ${ACCENT} 12%, transparent)` : 'transparent' }} className="tag-opt">
-                        <button type="button" onClick={() => { setTab(t.key); setStatusMenuOpen(false) }}
-                          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 10px', background: 'none', border: 'none', cursor: 'pointer', color: active ? ACCENT : 'var(--ink)', fontSize: 13, fontWeight: 700 }}>
-                          <span>{t.label}</span>
-                          <span style={{ fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 20, background: 'var(--canvas)', color: 'var(--slate)' }}>{n}</span>
-                        </button>
-                        <button type="button" title={isDefault ? 'Clear default filter' : 'Set as my default filter'} onClick={() => setDefaultStatusPref(isDefault ? null : t.key)}
-                          style={{ background: 'none', border: 'none', padding: '0 8px', cursor: 'pointer', fontSize: 14, lineHeight: 1, color: isDefault ? '#f59e0b' : 'var(--slate)' }}>{isDefault ? '★' : '☆'}</button>
-                      </div>
-                    )
-                  })}
-                </div>
-              </>
-            )}
-          </div>
-        )
-      })()}
-      </div>
-
-      {/* Saved views — a named combination of filters (ShipStation-style) */}
-      <div className="ord-scroll" style={{ gap: 8, marginBottom: 14 }}>
-        <span style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', marginRight: 2 }}>Views</span>
-        {savedViews.length === 0 && <span style={{ fontSize: 12, color: 'var(--slate)' }}>No saved views yet</span>}
-        {savedViews.map(v => {
-          const on = activeView === v.id
-          return (
-            <span key={v.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, padding: '4px 6px 4px 12px', borderRadius: 20, border: `1px solid ${on ? ACCENT : 'var(--border)'}`, background: on ? `color-mix(in srgb, ${ACCENT} 12%, transparent)` : 'var(--card,#fff)' }}>
-              <button type="button" onClick={() => applyView(v)} style={{ background: 'none', border: 'none', padding: 0, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', color: on ? ACCENT : 'var(--slate)' }}>{v.name}</button>
-              <button type="button" title="Delete view" onClick={async () => { if (await confirmDialog(`Delete view “${v.name}”?`)) deleteView(v.id) }} style={{ background: 'none', border: 'none', padding: '0 2px', cursor: 'pointer', color: 'var(--slate)', fontSize: 13, lineHeight: 1 }}>×</button>
-            </span>
-          )
-        })}
-        <button type="button" onClick={saveView} title="Save the current filters as a view" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 12px', borderRadius: 20, border: `1px dashed ${ACCENT}`, background: 'var(--card,#fff)', color: ACCENT, fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>＋ Save view</button>
-      </div>
-
-      {/* Bulk toolbar OR filter row */}
-      {selCount > 0 ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-          <span style={{ fontSize: 12.5, fontWeight: 700, color: ACCENT }}>{selCount} selected</span>
-          {/* Selection is per-page; let staff extend it to the whole filtered
-              queue so a bulk action isn't capped at one page of results. */}
-          {selCount < filtered.length && pageRows.length > 0 && pageRows.every(o => selected.has(o.id)) && (
-            <button type="button" onClick={() => setSelected(new Set(filtered.map(o => o.id)))}
-              style={{ background: 'none', border: 'none', color: ACCENT, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', padding: '2px 0' }}>
-              Select all {filtered.length}
-            </button>
-          )}
-          {selCount === filtered.length && filtered.length > pageSize && (
-            <span style={{ fontSize: 12, color: 'var(--slate)' }}>· all in filter</span>
-          )}
-          <button type="button" onClick={() => openPrint('packing_slip', [...selected])} style={{ ...ctrl, background: ACCENT, color: '#fff', border: 'none', fontWeight: 700 }}>Packing Slips</button>
-          <button type="button" onClick={() => openPrint('label', [...selected])} style={ctrl}>Print Labels</button>
-          <select value="" onChange={e => { if (e.target.value) { assign([...selected], e.target.value === 'none' ? null : e.target.value); setSelected(new Set()) } }} style={ctrl}>
-            <option value="">Assign…</option>
-            <option value="none">Unassign</option>
-            {team.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select>
-          {locations.length > 0 && (
-            <select value="" onChange={e => { if (e.target.value) { assignOutlet([...selected], e.target.value === 'none' ? null : e.target.value); setSelected(new Set()) } }} style={ctrl}>
-              <option value="">{locations.find(l => l.id === fStore) ? `Outlet: ${locations.find(l => l.id === fStore)!.name}` : 'Assign outlet…'}</option>
-              {locations.find(l => l.id === fStore) && <option value={fStore}>✓ Assign to {locations.find(l => l.id === fStore)!.name}</option>}
-              <option value="none">No outlet</option>
-              {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
-          )}
-          <div style={{ position: 'relative' }}>
-            <button type="button" onClick={() => setTagMenuOpen(v => !v)} style={{ ...ctrl, display: 'flex', alignItems: 'center', gap: 5 }}>Tag<span style={{ fontSize: 9, color: 'var(--slate)' }}>▾</span></button>
-            {tagMenuOpen && (
-              <TagApplyMenu tagDefs={tagDefs} selectedOrders={orders.filter(o => selected.has(o.id))} accent={ACCENT}
-                onClose={() => setTagMenuOpen(false)}
-                onToggle={(t, on) => applyTagToSelected([...selected], t, on)}
-                onCreate={async (name, color) => { await ensureTagDef(name, color); await applyTagToSelected([...selected], name, true) }}
-                onManage={() => { setTagMenuOpen(false); setManageTagsOpen(true) }} />
-            )}
-          </div>
-          <select value="" onChange={e => { if (e.target.value) { setStatus([...selected], e.target.value); setSelected(new Set()) } }} style={ctrl}>
-            <option value="">Bulk Update…</option>
-            <option value="awaiting_shipment">Awaiting Shipment</option>
-            <option value="packed">Packed</option>
-            <option value="on_hold">On Hold</option>
-            <option value="shipped">Shipped</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
-          <button type="button" onClick={() => flash('Allocation arrives with the inventory phase.')} style={ctrl}>Allocate</button>
-          <button type="button" onClick={() => setSelected(new Set())} style={{ ...ctrl, color: 'var(--slate)' }}>Clear</button>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-          <div className="ord-search" style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
-            <input value={search} onFocus={ensureItemIndex} onChange={e => { ensureItemIndex(); setSearch(e.target.value) }} placeholder="Order #, name, phone, email, address, SKU, product…" style={{ ...ctrl, minWidth: 280, paddingRight: search ? 28 : 10, cursor: 'text', fontWeight: 500 }} />
-            {search && <button type="button" onClick={() => setSearch('')} title="Clear search" style={{ position: 'absolute', right: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--slate)', fontSize: 15, lineHeight: 1, padding: 2 }}>×</button>}
-          </div>
-          <div className="ord-scroll" style={{ gap: 8 }}>
-          <button type="button" onClick={() => setShowOOS(true)} title="Items flagged out of stock across all orders"
-            style={{ ...ctrl, display: 'inline-flex', alignItems: 'center', gap: 6, borderColor: '#f0a5a5', color: '#dc2626', fontWeight: 700 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
-            Out of Stock List
+        <div className="ord-actions">
+          <button type="button" className="cv-btn cv-btn-icon ord-sync" onClick={() => runSync(companyId!, true)} disabled={syncing} title={syncing ? 'Syncing…' : 'Sync every order from the store'} aria-label="Sync orders">
+            <OrdIcon name="refresh" size={17} className={syncing ? 'ord-spin' : undefined} />
           </button>
-          <select value={fAssignee} onChange={e => setFAssignee(e.target.value)} style={ctrl}><option value="all">Any assignee</option><option value="none">Unassigned</option>{team.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
-          <div style={{ position: 'relative' }}>
-            <button type="button" onClick={() => setTagFilterOpen(v => !v)} style={{ ...ctrl, display: 'flex', alignItems: 'center', gap: 6 }}>
-              {fTag === 'all' ? 'Any tag' : <TagChip name={fTag} color={tagColor(fTag)} />}
-              <span style={{ fontSize: 9, color: 'var(--slate)' }}>▾</span>
+          <button type="button" className="cv-btn ord-oos" onClick={() => setShowOOS(true)} title="Items flagged out of stock across all orders" aria-label="Out of stock list">
+            <OrdIcon name="alert" size={16} /><span className="ord-oos-t">Out of stock</span>
+          </button>
+          <button type="button" onClick={() => setShowDrafts(true)} className="cv-btn" title="Draft orders saved to finish later">
+            <OrdIcon name="file" size={16} />
+            Drafts
+            {draftCount > 0 && <span className="ord-count">{draftCount}</span>}
+          </button>
+          <button type="button" onClick={() => { setOpenDraft(null); setShowCreateOrder(true) }} className="cv-btn ord-primary">
+            <OrdIcon name="plus" size={16} />
+            Create order
+          </button>
+        </div>
+      </div>
+
+      {/* Stats — click one to show just those orders */}
+      <div className="ord-stats">
+        {stats.map(st => (
+          <button key={st.key} type="button" className={`ord-stat${tab === st.key ? ' on' : ''}`} aria-pressed={tab === st.key}
+            onClick={() => setTab(tab === st.key && st.key !== 'all' ? 'all' : st.key)} title={`Show ${st.label.toLowerCase()}`}>
+            <span className="ord-stat-ic" style={{ ['--c' as any]: st.color }}><OrdIcon name={st.icon} size={19} /></span>
+            <span style={{ minWidth: 0 }}>
+              <span className="ord-stat-l">{st.label}</span>
+              <span className="ord-stat-n">{st.n.toLocaleString('en-AU')}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <div className="ord-card">
+        <div className="ord-tools">
+          {/* Status chips. Right-click one (or use the star) to make it your default. */}
+          <div className="ord-row1">
+            <div className="ord-chips" role="tablist" aria-label="Order status">
+              {STATUS_TABS.map(t => {
+                const on = tab === t.key
+                return (
+                  <button key={t.key} type="button" role="tab" aria-selected={on} className={`ord-chip${on ? ' on' : ''}`}
+                    onClick={() => setTab(t.key)}
+                    onContextMenu={e => { e.preventDefault(); setDefaultStatusPref(defaultStatus === t.key ? null : t.key) }}
+                    title={defaultStatus === t.key ? 'Your default · right-click to clear' : 'Right-click to make this your default'}>
+                    {sentence(t.label)}
+                    <span className="ord-chip-n">{countFor(t).toLocaleString('en-AU')}</span>
+                    {defaultStatus === t.key && <span className="ord-chip-star" aria-label="Default">★</span>}
+                  </button>
+                )
+              })}
+            </div>
+            <button type="button" className={`ord-icon${defaultStatus === tab ? ' on' : ''}`} aria-pressed={defaultStatus === tab}
+              onClick={() => setDefaultStatusPref(defaultStatus === tab ? null : tab)}
+              title={defaultStatus === tab ? `“${tabLabel(tab)}” opens first · click to clear` : `Open on “${tabLabel(tab)}” next time`}
+              aria-label={defaultStatus === tab ? 'Clear default status' : 'Make this status my default'}>
+              <OrdIcon name="star" size={17} fill={defaultStatus === tab} />
             </button>
-            {tagFilterOpen && (
-              <>
-                <div onClick={() => setTagFilterOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 4500 }} />
-                <div style={{ position: 'absolute', top: 'calc(100% + 5px)', left: 0, zIndex: 4501, minWidth: 210, maxHeight: 300, overflowY: 'auto', background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 11, boxShadow: '0 10px 30px rgba(0,0,0,0.16)', padding: 6 }}>
-                  <button type="button" className="tag-opt" onClick={() => { setFTag('all'); setTagFilterOpen(false) }} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '7px 9px', borderRadius: 8, border: 'none', background: 'none', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', cursor: 'pointer' }}>{fTag === 'all' ? '✓' : ' '} Any tag</button>
-                  {Array.from(new Set([...tagDefs.map(t => t.name), ...allTags])).map(t => (
-                    <button key={t} type="button" className="tag-opt" onClick={() => { setFTag(t); setTagFilterOpen(false) }} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '7px 9px', borderRadius: 8, border: 'none', background: 'none', cursor: 'pointer' }}>
-                      <span style={{ width: 12, color: accent }}>{fTag === t ? '✓' : ''}</span><TagChip name={t} color={tagColor(t)} />
+          </div>
+
+          {selCount > 0 ? (
+            <div className="ord-selbar">
+              <b>{selCount} selected</b>
+              {/* Selection is per-page; let staff extend it to the whole filtered
+                  queue so a bulk action isn't capped at one page of results. */}
+              {selCount < filtered.length && pageRows.length > 0 && pageRows.every(o => selected.has(o.id)) && (
+                <button type="button" className="ord-link" onClick={() => setSelected(new Set(filtered.map(o => o.id)))}>Select all {filtered.length}</button>
+              )}
+              {selCount === filtered.length && filtered.length > pageSize && <span className="ord-muted" style={{ fontSize: 13 }}>· all in filter</span>}
+              <span className="ord-sep" />
+              <button type="button" className="ord-pill dark" onClick={() => openPrint('packing_slip', [...selected])}><OrdIcon name="file" size={15} />Packing slips</button>
+              <button type="button" className="ord-pill" onClick={() => openPrint('label', [...selected])}><OrdIcon name="printer" size={15} />Print labels</button>
+              <select className="ord-select" aria-label="Assign" value="" onChange={e => { if (e.target.value) { assign([...selected], e.target.value === 'none' ? null : e.target.value); setSelected(new Set()) } }}>
+                <option value="">Assign…</option>
+                <option value="none">Unassign</option>
+                {team.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+              {locations.length > 0 && (
+                <select className="ord-select" aria-label="Assign outlet" value="" onChange={e => { if (e.target.value) { assignOutlet([...selected], e.target.value === 'none' ? null : e.target.value); setSelected(new Set()) } }}>
+                  <option value="">{locations.find(l => l.id === fStore) ? `Outlet: ${locations.find(l => l.id === fStore)!.name}` : 'Assign outlet…'}</option>
+                  {locations.find(l => l.id === fStore) && <option value={fStore}>✓ Assign to {locations.find(l => l.id === fStore)!.name}</option>}
+                  <option value="none">No outlet</option>
+                  {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+              )}
+              <div className="ord-pop">
+                <button type="button" className="ord-pill" aria-expanded={tagMenuOpen} onClick={() => setTagMenuOpen(v => !v)}><OrdIcon name="tag" size={15} />Tag<OrdIcon name="chev" size={14} className="cv-chev" /></button>
+                {tagMenuOpen && (
+                  <TagApplyMenu tagDefs={tagDefs} selectedOrders={orders.filter(o => selected.has(o.id))} accent={ACCENT}
+                    onClose={() => setTagMenuOpen(false)}
+                    onToggle={(t: string, on: boolean) => applyTagToSelected([...selected], t, on)}
+                    onCreate={async (name: string, color?: string) => { await ensureTagDef(name, color); await applyTagToSelected([...selected], name, true) }}
+                    onManage={() => { setTagMenuOpen(false); setManageTagsOpen(true) }} />
+                )}
+              </div>
+              <select className="ord-select" aria-label="Update status" value="" onChange={e => { if (e.target.value) { setStatus([...selected], e.target.value); setSelected(new Set()) } }}>
+                <option value="">Update status…</option>
+                <option value="awaiting_shipment">Awaiting shipment</option>
+                <option value="packed">Packed</option>
+                <option value="on_hold">On hold</option>
+                <option value="shipped">Shipped</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+              <button type="button" className="ord-pill" onClick={() => flash('Allocation arrives with the inventory phase.')}>Allocate</button>
+              <button type="button" className="ord-icon" onClick={() => setSelected(new Set())} title="Clear selection" aria-label="Clear selection"><OrdIcon name="x" size={17} /></button>
+            </div>
+          ) : (
+            <div className="ord-row2">
+              <div className="ord-search-wrap">
+                <OrdIcon name="search" size={16} />
+                <input className="ord-search" value={search} onFocus={ensureItemIndex} onChange={e => { ensureItemIndex(); setSearch(e.target.value) }} placeholder="Order #, name, phone, email, address, SKU, product…" aria-label="Search orders" />
+                {search && <button type="button" className="ord-search-x" onClick={() => setSearch('')} title="Clear search" aria-label="Clear search"><OrdIcon name="x" size={13} /></button>}
+              </div>
+              <div className="ord-row2-rest">
+                {locations.length > 0 && (
+                  <div className="ord-pop">
+                    <button type="button" className={`ord-pill${fStore !== 'all' ? ' set' : ''}`} aria-expanded={locMenuOpen} onClick={() => setLocMenuOpen(v => !v)}>
+                      <OrdIcon name="pin" size={15} /><span className="ord-pill-t">{locLabel}</span><OrdIcon name="chev" size={14} className="cv-chev" />
                     </button>
-                  ))}
-                  <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0 0', paddingTop: 6 }}>
-                    <button type="button" className="tag-opt" onClick={() => { setTagFilterOpen(false); setManageTagsOpen(true) }} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '7px 9px', borderRadius: 8, border: 'none', background: 'none', fontSize: 12.5, fontWeight: 700, color: ACCENT, cursor: 'pointer' }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
-                      Manage tags…
+                    {locMenuOpen && (
+                      <>
+                        <div onClick={() => setLocMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 4500 }} />
+                        <div className="ord-menu" style={{ minWidth: 280 }}>
+                          <div className="ord-menu-h">Location · ☆ sets your default</div>
+                          <button type="button" className={`ord-menu-row${fStore === 'all' ? ' cur' : ''}`} onClick={() => { setFStore('all'); setLocMenuOpen(false) }}>
+                            <OrdIcon name="store" size={16} /><span className="grow">All stores</span>
+                          </button>
+                          <button type="button" className={`ord-menu-row${fStore === 'unassigned' ? ' cur' : ''}`} onClick={() => { setFStore('unassigned'); setLocMenuOpen(false) }}>
+                            <OrdIcon name="inbox" size={16} /><span className="grow">Unassigned<span className="sub">Not assigned to an outlet yet</span></span>
+                          </button>
+                          <div className="ord-menu-sep" />
+                          {locations.map(l => {
+                            const isDefault = defaultOutlet === l.id
+                            return (
+                              <div key={l.id} role="button" tabIndex={0} className={`ord-menu-row${fStore === l.id ? ' cur' : ''}`}
+                                onClick={() => { setFStore(l.id); setLocMenuOpen(false) }}
+                                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFStore(l.id); setLocMenuOpen(false) } }}>
+                                <OrdIcon name="pin" size={16} /><span className="grow">{l.name}</span>
+                                <button type="button" className={`ord-menu-tool${isDefault ? ' on' : ''}`} title={isDefault ? 'Clear default outlet' : 'Set as my default outlet'} aria-label={isDefault ? 'Clear default outlet' : 'Set as my default outlet'}
+                                  onClick={e => { e.stopPropagation(); setDefaultOutletPref(isDefault ? null : l.id) }}>{isDefault ? '★' : '☆'}</button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+                <select className={`ord-select w-assignee${fAssignee !== 'all' ? ' set' : ''}`} aria-label="Assignee" value={fAssignee} onChange={e => setFAssignee(e.target.value)}>
+                  <option value="all">Any assignee</option><option value="none">Unassigned</option>{team.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+                <div className="ord-pop">
+                  <button type="button" className={`ord-pill${fTag !== 'all' ? ' set' : ''}`} aria-expanded={tagFilterOpen} onClick={() => setTagFilterOpen(v => !v)}>
+                    <OrdIcon name="tag" size={15} /><span className="ord-pill-t">{fTag === 'all' ? 'Any tag' : fTag}</span><OrdIcon name="chev" size={14} className="cv-chev" />
+                  </button>
+                  {tagFilterOpen && (
+                    <>
+                      <div onClick={() => setTagFilterOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 4500 }} />
+                      <div className="ord-menu">
+                        <button type="button" className={`ord-menu-row${fTag === 'all' ? ' cur' : ''}`} onClick={() => { setFTag('all'); setTagFilterOpen(false) }}>
+                          <OrdIcon name="tag" size={16} /><span className="grow">Any tag</span>
+                        </button>
+                        {Array.from(new Set([...tagDefs.map(t => t.name), ...allTags])).map(t => (
+                          <button key={t} type="button" className={`ord-menu-row${fTag === t ? ' cur' : ''}`} onClick={() => { setFTag(t); setTagFilterOpen(false) }}>
+                            <span style={{ width: 16, display: 'inline-flex', justifyContent: 'center' }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: tagColor(t) }} /></span>
+                            <span className="grow">{t}</span>
+                          </button>
+                        ))}
+                        <div className="ord-menu-sep" />
+                        <button type="button" className="ord-menu-row" onClick={() => { setTagFilterOpen(false); setManageTagsOpen(true) }}>
+                          <OrdIcon name="gear" size={16} /><span className="grow">Manage tags…</span>
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+                <select className={`ord-select w-date${fDate !== 'all' ? ' set' : ''}`} aria-label="Date" value={fDate} onChange={e => setFDate(e.target.value)}>
+                  <option value="all">All time</option><option value="today">Today</option><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option>
+                </select>
+                {/* Saved views — a named combination of filters (ShipStation-style) */}
+                <div className="ord-pop">
+                  <button type="button" className={`ord-pill${viewName ? ' set' : ''}`} aria-expanded={viewsMenuOpen} onClick={() => setViewsMenuOpen(v => !v)}>
+                    <OrdIcon name="bookmark" size={15} /><span className="ord-pill-t">{viewName || 'Views'}</span><OrdIcon name="chev" size={14} className="cv-chev" />
+                  </button>
+                  {viewsMenuOpen && (
+                    <>
+                      <div onClick={() => setViewsMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 4500 }} />
+                      <div className="ord-menu" style={{ minWidth: 250 }}>
+                        <div className="ord-menu-h">Saved views</div>
+                        {savedViews.length === 0 && <div className="ord-menu-empty">None yet. Save the filters you use most.</div>}
+                        {savedViews.map(v => (
+                          <div key={v.id} role="button" tabIndex={0} className={`ord-menu-row${activeView === v.id ? ' cur' : ''}`}
+                            onClick={() => { applyView(v); setViewsMenuOpen(false) }}
+                            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); applyView(v); setViewsMenuOpen(false) } }}>
+                            <OrdIcon name="bookmark" size={16} /><span className="grow">{v.name}</span>
+                            <button type="button" className="ord-menu-tool" title="Delete view" aria-label={`Delete view ${v.name}`}
+                              onClick={async e => { e.stopPropagation(); if (await confirmDialog(`Delete view “${v.name}”?`)) deleteView(v.id) }}><OrdIcon name="x" size={14} /></button>
+                          </div>
+                        ))}
+                        <div className="ord-menu-sep" />
+                        <button type="button" className="ord-menu-row accent" onClick={() => { setViewsMenuOpen(false); saveView() }}>
+                          <OrdIcon name="plus" size={16} /><span className="grow">Save current filters…</span>
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+                <div className="ord-push">
+                  {filtersOn && <button type="button" className="ord-link" onClick={clearFilters} style={{ padding: '0 6px', whiteSpace: 'nowrap' }}>Clear filters</button>}
+                  <div className="ord-pop">
+                    <button type="button" className="ord-icon" aria-expanded={displayMenuOpen} onClick={() => setDisplayMenuOpen(v => !v)} title="Display options" aria-label="Display options">
+                      <OrdIcon name="sliders" size={17} />
                     </button>
+                    {displayMenuOpen && (
+                      <>
+                        <div onClick={() => setDisplayMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 4500 }} />
+                        <div className="ord-menu right" style={{ minWidth: 270 }}>
+                          <label className="ord-menu-row" title="On: an order opens in a side panel. Off: it opens full screen.">
+                            <OrdIcon name="panel" size={16} />
+                            <span className="grow">Open orders in a side panel</span>
+                            <span className="ord-switch"><input type="checkbox" checked={showSidebar} onChange={e => setSidebarPref(e.target.checked)} /><i /></span>
+                          </label>
+                          <button type="button" className="ord-menu-row" onClick={() => { setDisplayMenuOpen(false); setManageTagsOpen(true) }}>
+                            <OrdIcon name="gear" size={16} /><span className="grow">Manage tags…</span>
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
-              </>
-            )}
-          </div>
-          <select value={fDate} onChange={e => setFDate(e.target.value)} style={ctrl}><option value="all">All time</option><option value="today">Today</option><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option></select>
-          <button type="button" onClick={() => runSync(companyId!, true)} disabled={syncing} title="Backfill every order from the store" style={{ ...ctrl, color: ACCENT }}>{syncing ? 'Syncing…' : 'Sync'}</button>
-          </div>
-          <label className="ord-sidebar-toggle" title="On: rows open the side drawer. Off: rows open the full order page." style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 'auto', fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', cursor: 'pointer' }}>
-            <input type="checkbox" checked={showSidebar} onChange={e => setSidebarPref(e.target.checked)} style={{ accentColor: ACCENT }} />
-            Show Sidebar
-          </label>
+              </div>
+            </div>
+          )}
         </div>
-      )}
 
-      {/* Table */}
-      <div style={{ ...card, overflow: 'hidden' }}>
-        <div style={{ overflowX: 'auto', maxHeight: 'calc(100vh - 320px)', overflowY: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
+        {/* Table */}
+        <div className="ord-scrollbox">
+          <table className="ord-table">
             <thead>
               <tr>
-                <th style={{ ...th, width: 34 }}><input type="checkbox" checked={pageRows.length > 0 && pageRows.every(o => selected.has(o.id))} onChange={toggleAll} /></th>
-                {([['order_number', 'Order #'], ['age', 'Age'], ['order_date', 'Order Date'], ['customer', 'Customer'], ['items', 'Items'], ['sku', 'SKU'], ['shipping', 'Shipping'], ['status', 'Status'], ['assignee', 'Assignee'], ['total', 'Total'], ['ind', '']] as [string, string][]).map(([key, label]) => {
+                <th style={{ width: 34 }}><input type="checkbox" className="ord-check" aria-label="Select all on this page" checked={pageRows.length > 0 && pageRows.every(o => selected.has(o.id))} onChange={toggleAll} /></th>
+                {cols.map(([key, label]) => {
                   const sortable = ['order_number', 'age', 'order_date', 'total'].includes(key)
-                  return <th key={key} style={{ ...th, cursor: sortable ? 'pointer' : 'default', textAlign: key === 'total' ? 'right' : 'left' }}
-                    onClick={() => { if (!sortable) return; const col = key === 'age' ? 'order_date' : key as any; if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortCol(col); setSortDir(key === 'total' ? 'desc' : 'desc') } }}>
-                    {label}{sortable && (sortCol === (key === 'age' ? 'order_date' : key) ? (sortDir === 'asc' ? ' ↑' : ' ↓') : '')}
+                  const col = key === 'age' ? 'order_date' : key
+                  const sorted = sortable && key !== 'age' && sortCol === col
+                  return <th key={key} className={`${sortable ? 'sort' : ''}${sorted ? ' sorted' : ''}`} style={{ textAlign: key === 'total' ? 'right' : 'left' }}
+                    aria-sort={sorted ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
+                    onClick={() => { if (!sortable) return; if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortCol(col as any); setSortDir('desc') } }}>
+                    <span className="ord-th">{label}{sorted && <OrdIcon name={sortDir === 'asc' ? 'up' : 'down'} size={13} />}</span>
                   </th>
                 })}
               </tr>
             </thead>
             <tbody>
-              {pageRows.length === 0 && <tr><td colSpan={12} style={{ padding: 32, textAlign: 'center', color: 'var(--slate)' }}>No orders match.</td></tr>}
+              {pageRows.length === 0 && (
+                <tr><td colSpan={13} className="ord-empty-td" style={{ borderBottom: 'none' }}>
+                  <div className="ord-empty">
+                    <div className="ord-empty-ic"><OrdIcon name="box" size={24} /></div>
+                    <h3>{orders.length ? 'No orders match' : 'No orders yet'}</h3>
+                    <p>{orders.length ? 'Try another status, or clear the search and filters.' : 'Orders from your store show up here as they come in.'}</p>
+                    {orders.length > 0 && filtersOn && <button type="button" className="cv-btn" onClick={clearFilters}>Clear filters</button>}
+                  </div>
+                </td></tr>
+              )}
               {pageRows.map((o: any) => {
                 const sm = statusMeta(displayStatus(o))
                 const age = orderAge(o.order_date)
                 const sel = selected.has(o.id)
+                const cc = isClickCollect(o)
                 return (
-                  <tr key={o.id} className="ord-row" onClick={() => openOrder(o.id)} style={{ borderTop: '1px solid var(--border)', cursor: 'pointer', background: drawerId === o.id ? `color-mix(in srgb, ${ACCENT} 10%, transparent)` : sel ? `color-mix(in srgb, ${ACCENT} 5%, transparent)` : isClickCollect(o) ? 'color-mix(in srgb, #3b82f6 9%, transparent)' : undefined }}>
-                    <td style={td} onClick={e => { e.stopPropagation(); toggleOne(o.id) }}><input type="checkbox" checked={sel} onChange={() => {}} /></td>
-                    <td style={{ ...td, color: ACCENT, fontWeight: 700 }}>{o.order_number}</td>
-                    <td style={{ ...td, fontWeight: 700, color: age.color }}>{age.label}</td>
-                    <td style={{ ...td, color: 'var(--slate)' }}>{o.order_date ? new Date(o.order_date).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
-                    <td style={{ ...td, fontWeight: 600 }}>{o.customer_name || '—'}</td>
-                    <td style={td}>{o.item_count || 0}</td>
-                    <td style={{ ...td, color: 'var(--slate)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.primary_sku || '—'}</td>
-                    <td style={{ ...td, color: 'var(--slate)' }}>{isClickCollect(o)
-                      ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontWeight: 700, color: '#2563eb' }}><ClickCollectIcon size={14} />Click &amp; Collect</span>
+                  <tr key={o.id} className={`ord-row${drawerId === o.id ? ' open' : sel ? ' sel' : cc ? ' cc' : ''}`} onClick={() => openOrder(o.id)}>
+                    <td onClick={e => { e.stopPropagation(); toggleOne(o.id) }}><input type="checkbox" className="ord-check" aria-label={`Select order ${o.order_number}`} checked={sel} onChange={() => {}} /></td>
+                    <td className="ord-m">
+                      <div className="ord-m-top"><span><span className="ord-num"><span>#</span>{o.order_number}</span><span className="ord-age" style={{ color: age.color }}>{age.label}</span></span><b style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(o.total, o.currency)}</b></div>
+                      <div className="ord-m-mid"><span className="ord-m-name">{o.customer_name || '—'}</span><span className="ord-tag" style={{ ['--tag' as any]: sm.fg }}>{sentence(sm.label)}</span></div>
+                      <div className="ord-m-sub"><ChannelIcon channel={o.sales_channel} size={12} /><span>{cc ? 'Click & Collect' : (o.shipping_method || 'Free shipping')} · {o.item_count || 0} item{(o.item_count || 0) === 1 ? '' : 's'}{(o.assignee_name || teamName(o.assignee_id)) ? ` · ${o.assignee_name || teamName(o.assignee_id)}` : ''}</span></div>
+                    </td>
+                    <td className="ord-num"><span>#</span>{o.order_number}</td>
+                    <td><span className="ord-age" style={{ color: age.color }}>{age.label}</span></td>
+                    <td className="ord-muted">{fmtDate(o.order_date)}</td>
+                    <td style={{ fontWeight: 600 }}>{o.customer_name || '—'}</td>
+                    <td>{o.item_count || 0}</td>
+                    <td className="ord-muted" style={{ maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.primary_sku || '—'}</td>
+                    <td className="ord-muted">{cc
+                      ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600, color: '#2563eb' }}><ClickCollectIcon size={14} />Click &amp; Collect</span>
                       : (Number(o.shipping_total) || 0) > 0 ? <span>{o.shipping_method || 'Shipping'} <span style={{ color: 'var(--ink)', fontWeight: 600 }}>{fmtMoney(o.shipping_total, o.currency)}</span></span> : (o.shipping_method || 'Free')}</td>
-                    <td style={td}><span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: sm.bg, color: sm.fg }}>{sm.label}</span></td>
-                    <td style={td}><Avatar name={o.assignee_name || teamName(o.assignee_id)} /></td>
-                    <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{fmtMoney(o.total, o.currency)}</td>
-                    <td style={td}><ChannelIcon channel={o.sales_channel} /></td>
+                    <td><span className="ord-tag" style={{ ['--tag' as any]: sm.fg }}>{sentence(sm.label)}</span></td>
+                    <td><Avatar name={o.assignee_name || teamName(o.assignee_id)} /></td>
+                    <td style={{ textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(o.total, o.currency)}</td>
+                    <td><ChannelIcon channel={o.sales_channel} /></td>
                   </tr>
                 )
               })}
@@ -1091,13 +1358,13 @@ export default function OrdersPage() {
           </table>
         </div>
         {/* Pagination */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderTop: '1px solid var(--border)', flexWrap: 'wrap', gap: 10 }}>
-          <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>Showing {filtered.length === 0 ? 0 : page * pageSize + 1}–{Math.min(filtered.length, (page + 1) * pageSize)} of {filtered.length}</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <button type="button" disabled={page === 0} onClick={() => setPage(p => Math.max(0, p - 1))} style={{ ...ctrl, opacity: page === 0 ? 0.4 : 1 }}>‹</button>
-            <span style={{ fontSize: 12.5, fontWeight: 700 }}>{page + 1} / {totalPages}</span>
-            <button type="button" disabled={page + 1 >= totalPages} onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} style={{ ...ctrl, opacity: page + 1 >= totalPages ? 0.4 : 1 }}>›</button>
-            <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(0) }} style={ctrl}>{[25, 50, 100].map(n => <option key={n} value={n}>{n} / page</option>)}</select>
+        <div className="ord-foot">
+          <span className="ord-foot-l">Showing {filtered.length === 0 ? 0 : page * pageSize + 1}–{Math.min(filtered.length, (page + 1) * pageSize)} of {filtered.length.toLocaleString('en-AU')}</span>
+          <div className="ord-foot-r">
+            <button type="button" className="ord-icon" disabled={page === 0} onClick={() => setPage(p => Math.max(0, p - 1))} aria-label="Previous page"><OrdIcon name="left" size={17} /></button>
+            <span className="pg">Page {page + 1} of {totalPages}</span>
+            <button type="button" className="ord-icon" disabled={page + 1 >= totalPages} onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} aria-label="Next page"><OrdIcon name="right" size={17} /></button>
+            <select className="ord-select" aria-label="Orders per page" value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(0) }} style={{ marginLeft: 6, height: 34 }}>{[25, 50, 100].map(n => <option key={n} value={n}>{n} per page</option>)}</select>
           </div>
         </div>
       </div>
@@ -1156,21 +1423,21 @@ export default function OrdersPage() {
 
       {saveViewName !== null && (
         <div onClick={() => setSaveViewName(null)} style={{ position: 'fixed', inset: 0, zIndex: 5200, background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, animation: 'ordFade .15s ease' }}>
-          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, background: 'var(--card,#fff)', borderRadius: 16, boxShadow: '0 24px 60px rgba(0,0,0,0.28)', padding: 22, animation: 'ordPop .18s cubic-bezier(.16,1,.3,1)' }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, background: 'var(--card,#fff)', borderRadius: 22, boxShadow: '0 24px 60px rgba(0,0,0,0.22)', padding: 24, animation: 'ordPop .18s cubic-bezier(.16,1,.3,1)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: 10, background: `color-mix(in srgb, ${ACCENT} 14%, transparent)`, color: ACCENT }}>
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
               </span>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>Save this view</h3>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--ink)' }}>Save this view</h3>
             </div>
             <p style={{ margin: '0 0 14px 44px', fontSize: 12.5, color: 'var(--slate)' }}>Give the current filters a name so you can jump back to them.</p>
             <input autoFocus value={saveViewName} onChange={e => setSaveViewName(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') confirmSaveView(); else if (e.key === 'Escape') setSaveViewName(null) }}
               placeholder="e.g. Somerton — Backorder"
-              style={{ width: '100%', padding: '11px 13px', borderRadius: 11, border: `1.5px solid ${ACCENT}`, fontSize: 14, outline: 'none', boxSizing: 'border-box', color: 'var(--ink)', background: 'var(--card,#fff)' }} />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 9, marginTop: 18 }}>
-              <button type="button" onClick={() => setSaveViewName(null)} style={{ padding: '9px 18px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--slate)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
-              <button type="button" onClick={confirmSaveView} disabled={!saveViewName.trim()} style={{ padding: '9px 20px', borderRadius: 10, border: 'none', background: saveViewName.trim() ? ACCENT : 'var(--border)', color: '#fff', fontSize: 13, fontWeight: 800, cursor: saveViewName.trim() ? 'pointer' : 'default' }}>Save view</button>
+              className="ord-search" style={{ height: 42, padding: '0 16px', fontSize: 14.5 }} />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+              <button type="button" className="cv-btn" onClick={() => setSaveViewName(null)}>Cancel</button>
+              <button type="button" className="cv-btn ord-primary" onClick={confirmSaveView} disabled={!saveViewName.trim()}>Save view</button>
             </div>
           </div>
         </div>
@@ -1393,7 +1660,7 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
   }
 
   const field: React.CSSProperties = { width: '100%', padding: '9px 10px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, outline: 'none', boxSizing: 'border-box', background: 'var(--card,#fff)', color: 'var(--ink)' }
-  const lbl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block', marginBottom: 5 }
+  const lbl: React.CSSProperties = { fontSize: 12.5, fontWeight: 500, color: '#8e8e93', display: 'block', marginBottom: 5 }
   const addr = order.shipping_address || {}
   const hasAddr = addr.address_1 || addr.city
   const noRates = ratesConfigured === false // no rate provider connected → manual picker
@@ -1532,11 +1799,11 @@ export function CreateLabelModal({ order, companyId, accent, onClose, onDone, on
         <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border)', flex: '0 0 auto' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Cost review</div>
+              <div style={{ fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>Cost review</div>
               <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)', lineHeight: 1.1 }}>{costLabel}</div>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Est. arrival</div>
+              <div style={{ fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>Est. arrival</div>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{etaLabel}</div>
             </div>
           </div>
@@ -1638,30 +1905,28 @@ function TagApplyMenu({ tagDefs, selectedOrders, accent, onToggle, onCreate, onM
   return (
     <>
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 4500 }} />
-      <div style={{ position: 'absolute', top: 'calc(100% + 5px)', left: 0, zIndex: 4501, width: 260, background: 'var(--card, #fff)', border: '1px solid var(--border)', borderRadius: 11, boxShadow: '0 10px 30px rgba(0,0,0,0.16)', padding: 7 }}>
+      <div className="ord-menu" style={{ width: 270, maxHeight: 'none', overflow: 'visible' }}>
         <input autoFocus value={q} onChange={e => setQ(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && canCreate) { onCreate(query); setQ('') } else if (e.key === 'Escape') onClose() }}
-          placeholder="Find or create tag…" style={{ width: '100%', padding: '7px 9px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12.5, outline: 'none', boxSizing: 'border-box' }} />
-        <div style={{ maxHeight: 240, overflowY: 'auto', marginTop: 6, display: 'flex', flexDirection: 'column', gap: 1 }}>
+          placeholder="Find or create a tag…" className="ord-search" style={{ height: 36, padding: '0 12px' }} />
+        <div style={{ maxHeight: 240, overflowY: 'auto', marginTop: 6 }}>
           {list.map((t: any) => {
             const c = countWith(t.name); const all = n > 0 && c === n
             return (
-              <button key={t.id} type="button" className="tag-opt" onClick={() => onToggle(t.name, !all)}
-                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 8, border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left' }}>
-                <input type="checkbox" readOnly checked={all} ref={el => { if (el) el.indeterminate = c > 0 && !all }} style={{ accentColor: accent, pointerEvents: 'none' }} />
-                <TagChip name={t.name} color={t.color} />
+              <button key={t.id} type="button" className="ord-menu-row" onClick={() => onToggle(t.name, !all)}>
+                <input type="checkbox" readOnly tabIndex={-1} checked={all} ref={el => { if (el) el.indeterminate = c > 0 && !all }} className="ord-check" style={{ pointerEvents: 'none' }} />
+                <span className="grow" style={{ display: 'flex' }}><TagChip name={t.name} color={t.color} /></span>
               </button>
             )
           })}
           {canCreate && (
-            <button type="button" className="tag-opt" onClick={() => { onCreate(query); setQ('') }}
-              style={{ textAlign: 'left', padding: '7px 8px', borderRadius: 8, border: 'none', background: 'none', fontSize: 12.5, fontWeight: 700, color: accent, cursor: 'pointer' }}>+ Create “{query}”</button>
+            <button type="button" className="ord-menu-row accent" onClick={() => { onCreate(query); setQ('') }}>
+              <OrdIcon name="plus" size={16} /><span className="grow">Create “{query}”</span></button>
           )}
-          {!list.length && !canCreate && <span style={{ padding: '7px 8px', fontSize: 12, color: 'var(--slate)' }}>No tags — type to create one</span>}
+          {!list.length && !canCreate && <div className="ord-menu-empty">No tags yet. Type a name to create one.</div>}
         </div>
-        <div style={{ borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 6 }}>
-          <button type="button" onClick={onManage} style={{ width: '100%', textAlign: 'left', padding: '7px 8px', borderRadius: 8, border: 'none', background: 'none', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', cursor: 'pointer' }}>⚙ Manage Tags</button>
-        </div>
+        <div className="ord-menu-sep" />
+        <button type="button" className="ord-menu-row" onClick={onManage}><OrdIcon name="gear" size={16} /><span className="grow">Manage tags…</span></button>
       </div>
     </>
   )
@@ -1736,7 +2001,7 @@ function ManageTagsModal({ companyId, accent, tagDefs, setTagDefs, orders, setOr
           <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, color: 'var(--slate)', cursor: 'pointer' }}>✕</button>
         </div>
         <div style={{ padding: '8px 20px', overflowY: 'auto', flex: 1 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', padding: '10px 0 6px' }}><span>Name</span><span>Actions</span></div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, fontWeight: 500, color: '#8e8e93', padding: '10px 0 6px' }}><span>Name</span><span>Actions</span></div>
           {rows.length === 0 && <p style={{ fontSize: 13, color: 'var(--slate)', padding: '8px 0' }}>No tags yet. Add one below.</p>}
           {rows.map((t: any) => {
             const editing = editingKey === rowKey(t)
@@ -1757,7 +2022,7 @@ function ManageTagsModal({ companyId, accent, tagDefs, setTagDefs, orders, setOr
           )})}
         </div>
         <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border)' }}>
-          <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Add Tag</p>
+          <p style={{ margin: '0 0 8px', fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>Add a tag</p>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <input value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') create() }} placeholder="Tag name…" style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none' }} />
             <button type="button" onClick={create} disabled={busy || !newName.trim()} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: newName.trim() ? accent : 'var(--border)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: newName.trim() ? 'pointer' : 'default' }}>Add</button>
@@ -2251,7 +2516,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
   }
 
   const sect: React.CSSProperties = { padding: '16px 18px', borderBottom: '1px solid var(--border)' }
-  const kick: React.CSSProperties = { margin: 0, fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }
+  const kick: React.CSSProperties = { margin: 0, fontSize: 14, fontWeight: 700, letterSpacing: '-0.005em', color: 'var(--ink)' }
   const quick = (icon: React.ReactNode, label: string, onClick: () => void, primary = false) => (
     <button type="button" onClick={onClick} title={label}
       style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '9px 6px', borderRadius: 11, border: `1px solid ${primary ? ACCENT : 'var(--border)'}`, background: primary ? ACCENT : 'var(--card, #fff)', color: primary ? '#fff' : 'var(--ink)', cursor: 'pointer', flex: '0 0 auto', width: 72 }}>
@@ -2352,7 +2617,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
 
           {/* Shipping address */}
           {(addr.address_1 || addr.city) && (
-            <CollapseSection style={sect} storageKey="order-address" title="Shipping Address"
+            <CollapseSection style={sect} storageKey="order-address" title="Shipping address"
               right={<CopyBtn title="Copy address" onClick={() => copyToClipboard([order.customer_name, [addr.address_1, addr.address_2].filter(Boolean).join(', '), [addr.city, (addr.state || '').toUpperCase(), addr.postcode].filter(Boolean).join(' '), addr.country].filter(Boolean).join('\n'), onFlash)} />}>
               <p onClick={() => copyToClipboard([order.customer_name, [addr.address_1, addr.address_2].filter(Boolean).join(', '), [addr.city, (addr.state || '').toUpperCase(), addr.postcode].filter(Boolean).join(' '), addr.country].filter(Boolean).join('\n'), onFlash)} title="Click to copy address" style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--ink)', lineHeight: 1.6, cursor: 'copy' }}>
                 {order.customer_name}<br />
@@ -2364,7 +2629,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
           )}
 
           {/* Order summary */}
-          <CollapseSection style={sect} storageKey="order-summary" title="Order Summary">
+          <CollapseSection style={sect} storageKey="order-summary" title="Order summary">
             <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 7 }}>
               {([
                 ['Outlet', store || 'No outlet'],
@@ -2465,7 +2730,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
 
           {/* Assign Outlet */}
           {locations && locations.length > 0 && (
-            <CollapseSection style={sect} storageKey="order-outlet" title="Assign Outlet">
+            <CollapseSection style={sect} storageKey="order-outlet" title="Assign outlet">
               <select value={order.store_location_id || ''} onChange={e => { const v = e.target.value || null; onPatch({ store_location_id: v }, { type: 'outlet', detail: v ? `Assigned to ${outletName?.(v) || 'outlet'}` : 'Outlet cleared' }); order.store_location_id = v }}
                 style={{ width: '100%', marginTop: 8, padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer', outline: 'none' }}>
                 <option value="">No outlet</option>
@@ -2506,7 +2771,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
           </div>
 
           {/* Order actions — one row; scrolls sideways if a store adds more */}
-          <CollapseSection style={sect} storageKey="order-actions" title="Order Actions">
+          <CollapseSection style={sect} storageKey="order-actions" title="Order actions">
             <div className="ord-actions" style={{ display: 'flex', gap: 6, marginTop: 8, overflowX: 'auto', scrollbarWidth: 'none' }}>
               {(() => { const b = (color: string): React.CSSProperties => ({ flex: '1 0 auto', fontSize: 12, fontWeight: 700, color, background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 9, padding: '7px 10px', cursor: 'pointer', whiteSpace: 'nowrap', textAlign: 'center' })
                 const isWoo = order.sales_channel === 'woocommerce'
@@ -2549,7 +2814,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
             const checkoutNote = (order.customer_note || wooCustomerNote || '').trim()
             const hasCheckout = !!checkoutNote
             return (
-              <CollapseSection style={sect} storageKey="order-cust-notes" title="Customer Notes">
+              <CollapseSection style={sect} storageKey="order-cust-notes" title="Customer notes">
                 {wooNotes === null && !hasCheckout && <p style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>Loading notes…</p>}
                 {wooNotes !== null && customerWoo.length === 0 && !hasCheckout && <p style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>No customer notes.</p>}
                 <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -2576,7 +2841,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
           })()}
 
           {/* Timeline + notes */}
-          <CollapseSection style={{ ...sect, borderBottom: 'none' }} storageKey="order-timeline" title="Order Timeline">
+          <CollapseSection style={{ ...sect, borderBottom: 'none' }} storageKey="order-timeline" title="Order timeline">
             <div style={{ display: 'flex', gap: 6, margin: '10px 0' }}>
               <textarea id="ord-note" value={noteBody} onChange={e => setNoteBody(e.target.value)} placeholder="Add a note… use @ to mention someone" rows={2} style={{ flex: 1, padding: '8px 10px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 12.5, resize: 'vertical', outline: 'none', fontFamily: 'inherit' }} />
               <button type="button" onClick={addNote} disabled={!noteBody.trim()} style={{ padding: '0 12px', borderRadius: 9, border: 'none', background: noteBody.trim() ? ACCENT : 'var(--border)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: noteBody.trim() ? 'pointer' : 'default' }}>Note</button>
