@@ -9,6 +9,7 @@ import { useEntitlements } from '@/lib/entitlements-client'
 import { renderMarkdown } from '@/lib/markdown'
 import { StatusMark } from '@/components/StatusMark'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import HelpShell from '@/components/help/HelpShell'
 
 // Help Centre → Import from your website.
 //
@@ -242,14 +243,11 @@ export default function HelpImportPage() {
   }, [stage, drafts, selected])
 
   return (
-    <div className="hi-root" style={{ minHeight: '100%', background: 'var(--canvas, #f6f7f9)' }}>
+    <HelpShell>
+    <div className="hi-root" style={{ minHeight: '100%' }}>
       <style>{CSS}</style>
-      <div style={{ maxWidth: stage === 'review' ? 1180 : 860, margin: '0 auto', padding: '20px 16px 120px', transition: `max-width .5s ${EASE}` }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 18 }}>
-          <Link href="/admin/help" style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--coral)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
-            Help Centre
-          </Link>
+      <div style={{ maxWidth: stage === 'review' ? 1180 : 860, margin: '0 auto', padding: '24px 24px 120px', transition: `max-width .5s ${EASE}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12, marginBottom: 18, minHeight: 20 }}>
           {stage === 'scan' && <button type="button" onClick={cancel} className="hi-ghost">Cancel</button>}
           {stage === 'review' && <button type="button" onClick={async () => { if (await confirmDialog({ title: 'Start over?', message: 'The articles written so far will be discarded.', confirmLabel: 'Start over', tone: 'danger' })) { setStage('start'); setDrafts([]) } }} className="hi-ghost">Start over</button>}
         </div>
@@ -384,6 +382,7 @@ export default function HelpImportPage() {
         )}
       </div>
     </div>
+    </HelpShell>
   )
 }
 
@@ -511,17 +510,17 @@ const CSS = `
 @keyframes hiSwap{from{opacity:0;transform:translateY(6px);filter:blur(4px)}to{opacity:1;transform:none;filter:none}}
 .hi-orb{width:76px;height:76px;margin:0 auto;border-radius:24px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--coral),color-mix(in srgb,var(--coral) 55%,#a855f7));box-shadow:0 18px 40px color-mix(in srgb,var(--coral) 35%,transparent);animation:hiOrb 4s ease-in-out infinite}
 @keyframes hiOrb{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-6px) rotate(-3deg)}}
-.hi-field{display:flex;align-items:center;gap:10px;max-width:600px;background:#fff;border:1px solid var(--border);border-radius:18px;padding:8px 8px 8px 16px;box-shadow:0 10px 30px rgba(15,23,42,.08);transition:box-shadow .25s ease,border-color .25s ease}
+.hi-field{display:flex;align-items:center;gap:10px;max-width:600px;background:#fff;border:1px solid #e4e4e7;border-radius:999px;padding:8px 8px 8px 16px;box-shadow:0 10px 30px rgba(15,23,42,.08);transition:box-shadow .25s ease,border-color .25s ease}
 .hi-field input,.hi-field input:focus{border:none!important;box-shadow:none!important;outline:none!important;padding:6px 0!important}
 .hi-text{margin:0 0 7px;line-height:1.45;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;animation:hiFade .45s ${EASE} both}
 .hi-field:focus-within{border-color:color-mix(in srgb,var(--coral) 55%,var(--border));box-shadow:0 0 0 4px color-mix(in srgb,var(--coral) 14%,transparent),0 12px 34px rgba(15,23,42,.1)}
-.hi-primary{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:11px 20px;border-radius:13px;border:none;background:var(--coral);color:#fff;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit;transition:transform .15s ${EASE},opacity .2s ease,box-shadow .2s ease;box-shadow:0 6px 16px color-mix(in srgb,var(--coral) 30%,transparent)}
-.hi-primary:hover{transform:translateY(-1px)}.hi-primary:active{transform:scale(.97)}.hi-primary:disabled{opacity:.45;cursor:default;transform:none}
-.hi-secondary{display:inline-flex;align-items:center;justify-content:center;padding:11px 18px;border-radius:13px;border:1px solid var(--border);background:#fff;color:var(--ink);font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit;transition:transform .15s ${EASE},background .2s ease}
+.hi-primary{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:11px 22px;border-radius:999px;border:none;background:var(--coral);color:#fff;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit;transition:transform .15s ${EASE},opacity .2s ease,box-shadow .2s ease;box-shadow:0 6px 16px color-mix(in srgb,var(--coral) 30%,transparent)}
+.hi-primary:hover{filter:brightness(.96)}.hi-primary:active{transform:scale(.97)}.hi-primary:disabled{opacity:.45;cursor:default;transform:none}
+.hi-secondary{display:inline-flex;align-items:center;justify-content:center;padding:11px 18px;border-radius:999px;border:1.5px solid #e4e4e7;background:#fff;color:var(--ink);font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit;transition:transform .15s ${EASE},background .2s ease}
 .hi-secondary:hover{background:#fafafa}.hi-secondary:active{transform:scale(.97)}.hi-secondary:disabled{opacity:.45;cursor:default}
-.hi-ghost{border:none;background:none;color:var(--slate);font-size:13.5px;font-weight:600;cursor:pointer;font-family:inherit}
+.hi-ghost{height:34px;padding:0 14px;border:none;border-radius:999px;background:#f4f4f5;color:#3f3f46;font-size:13.5px;font-weight:600;cursor:pointer;font-family:inherit}
 .hi-link{border:none;background:none;color:var(--coral);font-size:12px;font-weight:700;cursor:pointer;padding:0;font-family:inherit}
-.hi-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:20px;background:#fff;border:1px solid var(--border);font-size:12.5px;font-weight:600;color:var(--ink);animation:hiFade .5s ${EASE} both}
+.hi-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;background:#f4f4f5;border:none;font-size:12.5px;font-weight:600;color:var(--ink);animation:hiFade .5s ${EASE} both}
 .hi-step{width:14px;height:14px;border-radius:50%;border:1.5px solid color-mix(in srgb,var(--slate) 45%,transparent);display:inline-flex;align-items:center;justify-content:center;transition:all .35s ${EASE}}
 .hi-step.now{border-color:var(--coral);box-shadow:0 0 0 4px color-mix(in srgb,var(--coral) 16%,transparent);animation:hiPulse 1.6s ease-in-out infinite}
 .hi-step.done{background:var(--coral);border-color:var(--coral)}
@@ -529,7 +528,7 @@ const CSS = `
 .hi-scan{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:22px;align-items:start}
 @media (max-width: 760px){.hi-scan{grid-template-columns:minmax(0,1fr)}}
 .hi-stage{position:relative;height:300px}
-.hi-card{position:absolute;inset:0;background:#fff;border:1px solid var(--border);border-radius:20px;padding:16px 18px;overflow:hidden}
+.hi-card{position:absolute;inset:0;background:#fff;border:1px solid #ececf0;border-radius:20px;padding:16px 18px;overflow:hidden}
 .hi-card.back2{transform:translateY(22px) scale(.9);opacity:.45;box-shadow:0 4px 14px rgba(15,23,42,.05)}
 .hi-card.back1{transform:translateY(11px) scale(.95);opacity:.75;box-shadow:0 6px 18px rgba(15,23,42,.06)}
 .hi-card.front{box-shadow:0 22px 50px rgba(15,23,42,.12);animation:hiCardIn .6s ${EASE} both}
@@ -538,7 +537,7 @@ const CSS = `
 @keyframes hiShimmer{from{background-position:200% 0}to{background-position:-200% 0}}
 .hi-beam{position:absolute;left:0;right:0;top:0;height:70px;background:linear-gradient(180deg,transparent,color-mix(in srgb,var(--coral) 14%,transparent) 60%,color-mix(in srgb,var(--coral) 45%,transparent) 96%,transparent);border-bottom:2px solid color-mix(in srgb,var(--coral) 70%,transparent);animation:hiBeam 2.2s ${EASE} infinite;pointer-events:none}
 @keyframes hiBeam{0%{transform:translateY(-80px)}100%{transform:translateY(310px)}}
-.hi-feed{background:#fff;border:1px solid var(--border);border-radius:20px;padding:10px;max-height:300px;overflow:hidden;-webkit-mask-image:linear-gradient(180deg,#000 82%,transparent);mask-image:linear-gradient(180deg,#000 82%,transparent)}
+.hi-feed{background:#fff;border:1px solid #ececf0;border-radius:20px;padding:10px;max-height:300px;overflow:hidden;-webkit-mask-image:linear-gradient(180deg,#000 82%,transparent);mask-image:linear-gradient(180deg,#000 82%,transparent)}
 .hi-feed-row{display:flex;align-items:center;gap:10px;padding:7px 6px;border-radius:10px;animation:hiFade .45s ${EASE} both}
 .hi-dot{width:16px;height:16px;flex-shrink:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;transition:all .35s ${EASE}}
 .hi-dot.queued{border:1.5px solid color-mix(in srgb,var(--slate) 35%,transparent)}
@@ -549,34 +548,34 @@ const CSS = `
 @keyframes hiSpin{to{transform:rotate(360deg)}}
 .hi-spin{display:inline-block;width:14px;height:14px;border-radius:50%;border:2px solid color-mix(in srgb,var(--coral) 25%,transparent);border-top-color:var(--coral);animation:hiSpin .8s linear infinite;flex-shrink:0}
 .hi-cloud{position:relative;min-height:320px;display:flex;flex-wrap:wrap;justify-content:center;align-content:center;gap:10px;padding:20px 0}
-.hi-float{padding:7px 13px;border-radius:20px;background:#fff;border:1px solid var(--border);font-size:12.5px;font-weight:600;color:var(--ink);box-shadow:0 6px 16px rgba(15,23,42,.06);animation:hiDrift 3.2s ease-in-out infinite,hiFade .6s ${EASE} both;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hi-float{padding:7px 13px;border-radius:20px;background:#fff;border:1px solid #ececf0;font-size:12.5px;font-weight:600;color:var(--ink);box-shadow:0 6px 16px rgba(15,23,42,.06);animation:hiDrift 3.2s ease-in-out infinite,hiFade .6s ${EASE} both;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @keyframes hiDrift{0%,100%{transform:translate(0,0)}50%{transform:translate(var(--dx),-8px)}}
 .hi-core{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:0;height:0;pointer-events:none}
 .hi-core span{position:absolute;left:-90px;top:-90px;width:180px;height:180px;border-radius:50%;border:1.5px solid color-mix(in srgb,var(--coral) 30%,transparent);animation:hiRing 3s ${EASE} infinite}
 .hi-core span:nth-child(2){animation-delay:1s}.hi-core span:nth-child(3){animation-delay:2s}
 @keyframes hiRing{0%{transform:scale(.3);opacity:.9}100%{transform:scale(2.4);opacity:0}}
 .hi-topics{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
-.hi-topic{background:#fff;border:1px solid var(--border);border-radius:18px;padding:14px 16px;box-shadow:0 6px 18px rgba(15,23,42,.05);animation:hiCardIn .55s ${EASE} both}
+.hi-topic{background:#fff;border:1px solid #ececf0;border-radius:18px;padding:14px 16px;box-shadow:0 6px 18px rgba(15,23,42,.05);animation:hiCardIn .55s ${EASE} both}
 .hi-art{display:flex;align-items:center;gap:9px;padding:5px 0;transition:opacity .3s ease}
 .hi-art.writing span:last-child{background:linear-gradient(90deg,var(--ink) 40%,color-mix(in srgb,var(--ink) 35%,transparent) 50%,var(--ink) 60%);background-size:250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent!important;animation:hiShimmer 1.4s linear infinite}
 .hi-review{display:grid;grid-template-columns:320px minmax(0,1fr);gap:16px;align-items:start}
 @media (max-width: 860px){.hi-review{grid-template-columns:minmax(0,1fr)}}
-.hi-list{background:#fff;border:1px solid var(--border);border-radius:18px;padding:12px;max-height:calc(100vh - 230px);overflow-y:auto;position:sticky;top:12px}
+.hi-list{background:#fff;border:1px solid #ececf0;border-radius:18px;padding:12px;max-height:calc(100vh - 230px);overflow-y:auto;position:sticky;top:12px}
 @media (max-width: 860px){.hi-list{position:static;max-height:none}}
 .hi-row{display:flex;align-items:center;gap:9px;padding:8px 8px;border-radius:10px;cursor:pointer;transition:background .18s ease}
 .hi-row:hover{background:color-mix(in srgb,var(--slate) 6%,transparent)}
 .hi-row.on{background:var(--peach)}
-.hi-editor{background:#fff;border:1px solid var(--border);border-radius:18px;padding:20px 22px;min-height:420px}
-.hi-select{padding:7px 10px;border-radius:9px;border:1px solid var(--border);background:#fff;font-size:12.5px;font-weight:600;color:var(--ink);font-family:inherit}
-.hi-seg{display:inline-flex;padding:3px;border-radius:10px;background:color-mix(in srgb,var(--slate) 10%,transparent)}
-.hi-seg button{border:none;background:none;padding:5px 12px;border-radius:8px;font-size:12px;font-weight:700;color:var(--slate);cursor:pointer;font-family:inherit;transition:background .2s ease,color .2s ease,box-shadow .2s ease}
+.hi-editor{background:#fff;border:1px solid #ececf0;border-radius:18px;padding:20px 22px;min-height:420px}
+.hi-select{padding:7px 12px;border-radius:999px;border:none;background:#f4f4f5;font-size:12.5px;font-weight:600;color:var(--ink);font-family:inherit}
+.hi-seg{display:inline-flex;padding:3px;border-radius:999px;background:color-mix(in srgb,var(--slate) 10%,transparent)}
+.hi-seg button{border:none;background:none;padding:5px 12px;border-radius:999px;font-size:12px;font-weight:700;color:var(--slate);cursor:pointer;font-family:inherit;transition:background .2s ease,color .2s ease,box-shadow .2s ease}
 .hi-seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.1)}
-.hi-textarea{width:100%;min-height:420px;border:1px solid var(--border);border-radius:12px;padding:14px;font-size:13.5px;line-height:1.65;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;resize:vertical;outline:none;box-sizing:border-box}
+.hi-textarea{width:100%;min-height:420px;border:1px solid #ececf0;border-radius:12px;padding:14px;font-size:13.5px;line-height:1.65;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;resize:vertical;outline:none;box-sizing:border-box}
 .hi-textarea:focus{border-color:color-mix(in srgb,var(--coral) 50%,var(--border))}
 .hi-preview{font-size:14.5px;line-height:1.7;color:var(--ink)}
 .hi-preview h2{font-size:18px;margin:20px 0 8px}.hi-preview h3{font-size:15.5px;margin:16px 0 6px}.hi-preview ul,.hi-preview ol{padding-left:20px}.hi-preview a{color:var(--coral)}
 .hi-src{font-size:11.5px;font-weight:600;color:var(--coral);background:var(--peach);padding:2px 8px;border-radius:20px;text-decoration:none;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.hi-bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);width:min(760px,calc(100vw - 32px));display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 10px 10px 18px;border-radius:18px;background:rgba(255,255,255,.86);backdrop-filter:saturate(180%) blur(18px);-webkit-backdrop-filter:saturate(180%) blur(18px);border:1px solid var(--border);box-shadow:0 18px 40px rgba(15,23,42,.14);z-index:30;animation:hiBar .5s ${EASE} both}
+.hi-bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);width:min(760px,calc(100vw - 32px));display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 10px 10px 18px;border-radius:18px;background:rgba(255,255,255,.86);backdrop-filter:saturate(180%) blur(18px);-webkit-backdrop-filter:saturate(180%) blur(18px);border:1px solid #ececf0;box-shadow:0 18px 40px rgba(15,23,42,.14);z-index:30;animation:hiBar .5s ${EASE} both}
 @keyframes hiBar{from{opacity:0;transform:translate(-50%,16px)}to{opacity:1;transform:translate(-50%,0)}}
 @media (prefers-reduced-motion: reduce){.hi-root *{animation-duration:.001s!important;animation-iteration-count:1!important;transition:none!important}}
 `

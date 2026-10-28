@@ -279,7 +279,9 @@ export default function NewHelpArticlePage() {
   if (!user) return <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--canvas)' }}>Loading...</div>
 
   return (
-    <div className="min-h-screen" style={{ background: 'var(--canvas)' }}>
+    <div className="min-h-screen he-root" style={{ background: 'var(--canvas)' }}>
+      {/* Buttons drawn with utility classes take the pill shape, like the rest of the Help Centre. */}
+      <style>{`.he-root :is(button, a):is(.rounded-lg, .rounded-xl):is([class*="px-"], [class*="py-"]):not(:has(div, p, img, h3, h4, ul)) { border-radius: 999px !important; }`}</style>
       {/* Top bar */}
       <div className="sticky top-0 z-40 bg-white border-b" style={{ borderColor: 'var(--border)' }}>
         <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
