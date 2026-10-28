@@ -132,7 +132,7 @@ export default function IndustryCarousel({ dark = false, text, muted }: { dark?:
             <div key={x.key} className={`ind-card ${where}`} style={{ ['--acc' as string]: x.accent }}
               aria-hidden={where !== 'mid'} aria-roledescription="slide" aria-label={`${x.title}, ${i + 1} of ${N}`}
               onClick={side ? () => go(where === 'next' ? 1 : -1) : undefined}>
-              <Image src={`/industries/${x.key}.jpg`} alt="" fill sizes="(max-width: 700px) 92vw, 760px" className="ind-photo" />
+              <Image src={`/industries/${x.key}.jpg`} alt="" fill sizes="(max-width: 760px) 92vw, 70vw" className="ind-photo" />
               <span className="ind-tint" />
               <span className="ind-shade" />
               <span className="ind-glyph"><Ic d={x.icon} s={22} /></span>
@@ -183,7 +183,7 @@ const IND_CSS = `
 .ind-head h2{margin:0 0 14px;font-size:clamp(32px,5vw,56px);font-weight:900;letter-spacing:-.03em;line-height:1.04}
 .ind-head p{max-width:640px;margin:0 auto;font-size:clamp(16px,1.7vw,19px);line-height:1.6}
 
-.ind-track{--s:166px;--g:12px;position:relative;max-width:1112px;height:clamp(440px,40vw,524px);margin:0 auto;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.ind-track{--s:clamp(120px,15%,250px);--g:clamp(10px,1vw,16px);position:relative;width:calc(100% - 64px);max-width:1480px;aspect-ratio:2.3;min-height:440px;max-height:660px;margin:0 auto;touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .ind-card{position:absolute;top:0;bottom:0;border-radius:24px;overflow:hidden;background:color-mix(in srgb,var(--acc) 40%,#111);isolation:isolate;transition:left .75s cubic-bezier(.65,0,.35,1),width .75s cubic-bezier(.65,0,.35,1),opacity .5s ease;will-change:left,width}
 .ind-card.mid{left:calc(var(--s) + var(--g));width:calc(100% - 2 * var(--s) - 2 * var(--g));z-index:2}
 .ind-card.prev{left:0;width:var(--s);cursor:pointer;z-index:1}
@@ -199,19 +199,19 @@ const IND_CSS = `
 .ind-glyph{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);color:#fff;opacity:0;transition:opacity .4s ease;filter:drop-shadow(0 2px 6px rgba(0,0,0,.25))}
 .ind-card.prev .ind-glyph,.ind-card.next .ind-glyph{opacity:1;transition-delay:.35s}
 
-.ind-cap{position:absolute;left:clamp(20px,2.6vw,30px);bottom:clamp(20px,2.6vw,28px);max-width:min(380px,48%);color:#fff;animation:indUp .7s cubic-bezier(.22,1,.36,1) .35s both}
-.ind-cap h3{display:flex;align-items:center;gap:10px;margin:0 0 8px;font-size:clamp(22px,2.2vw,27px);font-weight:800;letter-spacing:-.02em}
-.ind-cap p{margin:0 0 12px;font-size:14.5px;line-height:1.5;color:rgba(255,255,255,.88)}
+.ind-cap{position:absolute;left:clamp(20px,2.4vw,40px);bottom:clamp(20px,2.4vw,38px);max-width:min(480px,46%);color:#fff;animation:indUp .7s cubic-bezier(.22,1,.36,1) .35s both}
+.ind-cap h3{display:flex;align-items:center;gap:10px;margin:0 0 8px;font-size:clamp(22px,2.1vw,34px);font-weight:800;letter-spacing:-.02em}
+.ind-cap p{margin:0 0 14px;font-size:clamp(14.5px,1.05vw,17px);line-height:1.5;color:rgba(255,255,255,.88)}
 .ind-cap a{display:inline-flex;align-items:center;gap:4px;color:#fff;font-size:13.5px;font-weight:700;text-decoration:none;padding:7px 12px 7px 14px;border-radius:999px;background:rgba(255,255,255,.16);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:inset 0 0 0 1px rgba(255,255,255,.22);transition:background .2s ease}
 .ind-cap a:hover{background:rgba(255,255,255,.28)}
 
-.ind-chat{position:absolute;right:clamp(16px,2.6vw,28px);bottom:clamp(86px,9vw,110px);width:min(300px,46%);display:flex;flex-direction:column;align-items:flex-end;gap:10px}
-.ind-ask{max-width:100%;padding:11px 15px;border-radius:18px 18px 6px 18px;background:color-mix(in srgb,var(--acc) 30%,rgb(20 16 14 / .5));backdrop-filter:blur(14px) saturate(1.3);-webkit-backdrop-filter:blur(14px) saturate(1.3);box-shadow:inset 0 0 0 1px rgba(255,255,255,.18),0 8px 24px rgba(0,0,0,.14);color:#fff;font-size:14px;font-weight:600;line-height:1.4;animation:indPop .5s cubic-bezier(.34,1.56,.64,1) both;transform-origin:100% 100%}
+.ind-chat{position:absolute;right:clamp(16px,2.4vw,40px);bottom:clamp(86px,8vw,140px);width:min(390px,42%);display:flex;flex-direction:column;align-items:flex-end;gap:10px}
+.ind-ask{max-width:100%;padding:11px 15px;border-radius:18px 18px 6px 18px;background:color-mix(in srgb,var(--acc) 30%,rgb(20 16 14 / .5));backdrop-filter:blur(14px) saturate(1.3);-webkit-backdrop-filter:blur(14px) saturate(1.3);box-shadow:inset 0 0 0 1px rgba(255,255,255,.18),0 8px 24px rgba(0,0,0,.14);color:#fff;font-size:clamp(14px,1vw,16px);font-weight:600;line-height:1.4;animation:indPop .5s cubic-bezier(.34,1.56,.64,1) both;transform-origin:100% 100%}
 .ind-dots{align-self:flex-start;display:inline-flex;gap:4px;padding:12px 15px;border-radius:999px;background:#fff;box-shadow:0 10px 30px rgba(0,0,0,.18);animation:indPop .4s cubic-bezier(.34,1.56,.64,1) both;transform-origin:0 100%}
 .ind-dots i{width:6px;height:6px;border-radius:50%;background:#a1a1aa;animation:indDot 1.1s ease-in-out infinite}
 .ind-dots i:nth-child(2){animation-delay:.15s}.ind-dots i:nth-child(3){animation-delay:.3s}
 .ind-reply{align-self:stretch;padding:13px 15px 11px;border-radius:18px 18px 18px 6px;background:#fff;color:#18181b;box-shadow:0 18px 44px rgba(0,0,0,.22);animation:indPop .55s cubic-bezier(.34,1.56,.64,1) both;transform-origin:0 100%}
-.ind-reply p{margin:0 0 9px;font-size:14px;line-height:1.45;font-weight:500}
+.ind-reply p{margin:0 0 9px;font-size:clamp(14px,1vw,16px);line-height:1.45;font-weight:500}
 .ind-reply span{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#71717a}
 
 .ind-arrow{position:absolute;top:50%;z-index:3;width:38px;height:38px;margin-top:-19px;border-radius:50%;border:0;background:#fff;color:#18181b;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.18);transition:transform .2s ease}
@@ -221,8 +221,8 @@ const IND_CSS = `
 .ind-arrow.l{left:calc(var(--s) / 2 - 19px)}
 .ind-arrow.r{right:calc(var(--s) / 2 - 19px)}
 
-.ind-chips{list-style:none;display:flex;justify-content:center;flex-wrap:wrap;margin:clamp(22px,3vw,30px) auto 0;padding:0 24px;max-width:1112px;gap:0}
-.ind-chips li{display:inline-flex;align-items:center;gap:11px;padding:6px clamp(18px,3vw,36px);font-size:14.5px;font-weight:600;animation:indUp .55s cubic-bezier(.22,1,.36,1) both}
+.ind-chips{list-style:none;display:flex;justify-content:center;flex-wrap:wrap;margin:clamp(22px,3vw,30px) auto 0;padding:0 24px;max-width:1480px;gap:0}
+.ind-chips li{display:inline-flex;align-items:center;gap:11px;padding:6px clamp(18px,3vw,44px);font-size:clamp(14.5px,1vw,16px);font-weight:600;animation:indUp .55s cubic-bezier(.22,1,.36,1) both}
 .ind-chips li+li{border-left:1px solid rgba(15,17,25,.1)}
 .ind.dark .ind-chips li+li{border-left-color:rgba(255,255,255,.12)}
 .ind-chips li>span{width:30px;height:30px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;color:var(--acc);background:color-mix(in srgb,var(--acc) 12%,transparent);flex-shrink:0}
@@ -238,9 +238,8 @@ const IND_CSS = `
 @keyframes indUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 @keyframes indDot{0%,60%,100%{transform:translateY(0);opacity:.5}30%{transform:translateY(-4px);opacity:1}}
 
-@media (max-width:1160px){.ind-track{margin:0 24px}}
 @media (max-width:760px){
-  .ind-track{--s:22px;--g:8px;height:560px;margin:0 12px}
+  .ind-track{--s:22px;--g:8px;width:calc(100% - 24px);aspect-ratio:auto;height:560px;max-height:none}
   .ind-card{border-radius:20px}
   .ind-arrow{display:none}
   .ind-glyph{display:none}
