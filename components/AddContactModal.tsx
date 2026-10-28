@@ -43,6 +43,8 @@ export default function AddContactModal({
   const [error, setError] = useState('')
   const [existingMatch, setExistingMatch] = useState<any>(null)
   const [allowDuplicate, setAllowDuplicate] = useState(false)
+  // The address fields fold away until wanted (a scanned card that fills them opens them).
+  const [addrOpen, setAddrOpen] = useState(false)
 
   // Scan a photo (business card, signature, handwritten details) → fill the form.
   const fileRef = useRef<HTMLInputElement>(null)
@@ -203,14 +205,44 @@ export default function AddContactModal({
     }
   }
 
-  const L: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: 'var(--slate)', display: 'block', margin: '14px 0 6px' }
-  const I: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box' }
+  const showAddr = addrOpen || !!(address || city || state || postcode)
+  const opt = <span style={{ fontWeight: 400, color: '#8e8e93' }}> (optional)</span>
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 500, padding: 20 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: '95vw', maxHeight: '90dvh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: '24px 24px 0' }}>
-        <h3 style={{ margin: '0 0 2px', fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>New contact</h3>
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--slate)' }}>Added manually — you can message them through Colvy.</p>
+    <div className="acm-scrim" onClick={onClose}>
+      <style>{`
+        .acm-scrim { position: fixed; inset: 0; z-index: 500; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(17,17,20,.32); animation: acmFade .18s ease both; }
+        .acm-card { position: relative; width: 460px; max-width: 95vw; max-height: 90dvh; overflow-y: auto; padding: 26px 26px 0; border-radius: 22px; background: #fff; box-shadow: 0 24px 64px rgba(0,0,0,.18), 0 0 0 1px rgba(0,0,0,.04); animation: acmIn .28s cubic-bezier(.22,1,.36,1) both; }
+        @keyframes acmFade { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes acmIn { from { opacity: 0; transform: translateY(10px) scale(.98) } to { opacity: 1; transform: none } }
+        .acm-x { position: absolute; top: 18px; right: 18px; width: 34px; height: 34px; border: none; border-radius: 999px; background: #f4f4f5; color: #52525b; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .acm-x:hover { background: #ececef; color: #18181b; }
+        .acm-label { display: block; margin: 18px 0 7px; font-size: 13.5px; font-weight: 600; color: #18181b; }
+        .acm-input { width: 100%; box-sizing: border-box; height: 42px; padding: 0 14px; border: 1.5px solid transparent; border-radius: 12px; background: #f4f4f5; font: inherit; font-size: 14px; color: #111; outline: none; transition: background .15s, border-color .15s, box-shadow .15s; }
+        textarea.acm-input { height: auto; min-height: 64px; padding: 11px 14px; resize: vertical; line-height: 1.45; }
+        .acm-input:focus { background: #fff; border-color: #d4d4d8; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 16%, transparent); }
+        .acm-input::placeholder { color: #a1a1aa; }
+        .acm-scan { margin-top: 18px; width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: none; border-radius: 14px; background: #f6f6f7; font: inherit; text-align: left; cursor: pointer; transition: background .15s; }
+        .acm-scan:hover:not(:disabled) { background: #efeff1; }
+        .acm-scan:disabled { cursor: default; opacity: .75; }
+        .acm-scan-ic { width: 40px; height: 40px; flex-shrink: 0; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: #fff; color: var(--coral); box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+        .acm-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+        .acm-pill { height: 34px; padding: 0 14px; border: none; border-radius: 999px; background: #f4f4f5; color: #52525b; font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; transition: background .15s, color .15s; }
+        .acm-pill:hover { background: #ececef; color: #18181b; }
+        .acm-pill.on { background: #18181b; color: #fff; }
+        .acm-pill:focus-visible, .acm-more:focus-visible, .acm-scan:focus-visible { outline: 2px solid var(--coral); outline-offset: 2px; }
+        .acm-more { margin-top: 16px; display: inline-flex; align-items: center; gap: 6px; padding: 0; border: none; background: none; font: inherit; font-size: 13.5px; font-weight: 600; color: var(--coral); cursor: pointer; }
+        .acm-spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #e4e4e7; border-top-color: var(--coral); animation: acmSpin .7s linear infinite; }
+        @keyframes acmSpin { to { transform: rotate(360deg) } }
+        .acm-card .modal-sticky-foot { border-top-color: #f0f0f2; }
+        @media (prefers-reduced-motion: reduce) { .acm-scrim, .acm-card { animation: none; } }
+      `}</style>
+      <div className="acm-card" role="dialog" aria-modal="true" aria-labelledby="acm-title" onClick={e => e.stopPropagation()}>
+        <button type="button" className="acm-x" onClick={onClose} aria-label="Close">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden><path d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
+        <h3 id="acm-title" style={{ margin: '0 44px 3px 0', fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', color: '#111' }}>New contact</h3>
+        <p style={{ margin: 0, fontSize: 13.5, color: '#71717a' }}>Added by hand. You can message them through Colvy.</p>
 
         {/* Scan a photo → auto-fill. A hidden input drives both file pick and,
             on mobile, the camera (capture="environment"). */}
@@ -226,111 +258,90 @@ export default function AddContactModal({
             e.target.value = '' // allow re-selecting the same file
           }}
         />
-        <button
-          type="button"
-          onClick={() => fileRef.current?.click()}
-          disabled={scanning}
-          style={{
-            marginTop: 14, width: '100%', padding: '11px 12px', borderRadius: 11,
-            border: '1px dashed var(--coral)', background: 'var(--peach)', color: 'var(--coral)',
-            fontSize: 13.5, fontWeight: 700, cursor: scanning ? 'default' : 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: scanning ? 0.7 : 1,
-          }}
-        >
-          {!scanning && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>}
-          {scanning ? 'Scanning photo…' : 'Scan a business card or photo'}
+        <button type="button" className="acm-scan" onClick={() => fileRef.current?.click()} disabled={scanning}>
+          <span className="acm-scan-ic">
+            {scanning ? <span className="acm-spin" /> : <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>}
+          </span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontSize: 14.5, fontWeight: 650, color: '#18181b' }}>{scanning ? 'Reading the photo…' : 'Scan a business card'}</span>
+            <span style={{ display: 'block', marginTop: 1, fontSize: 12.5, color: '#71717a' }}>Snap or upload one and Colvy fills in the form</span>
+          </span>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="9 18 15 12 9 6" /></svg>
         </button>
-        <p style={{ margin: '6px 0 0', fontSize: 11.5, color: 'var(--slate)', textAlign: 'center' }}>
-          Upload or snap a card — Colvy reads the details and fills the form below.
-        </p>
-        {scanError && <p style={{ margin: '8px 0 0', fontSize: 12.5, color: '#dc2626' }}>{scanError}</p>}
-        {scanNote && !scanError && <p style={{ margin: '8px 0 0', fontSize: 12.5, color: '#047857', fontWeight: 600 }}>{scanNote}</p>}
+        {scanError && <p style={{ margin: '8px 2px 0', fontSize: 13, color: '#dc2626' }}>{scanError}</p>}
+        {scanNote && !scanError && <p style={{ margin: '8px 2px 0', fontSize: 13, color: '#047857', fontWeight: 600 }}>{scanNote}</p>}
 
-        <label style={L}>Name</label>
-        <input value={name} onChange={e => setName(e.target.value)} placeholder="Full name" style={I} autoFocus />
+        <label className="acm-label" htmlFor="acm-name">Name</label>
+        <input id="acm-name" className="acm-input" value={name} onChange={e => setName(e.target.value)} placeholder="Full name" autoFocus />
 
-        <label style={L}>Relationship</label>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
-          {RELATIONSHIPS.map(r => {
-            const on = relationship === r.key
-            return (
-              <button key={r.key} type="button" onClick={() => setRelationship(r.key)}
-                style={{ padding: '9px 0', borderRadius: 9, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
-                  border: '1px solid ' + (on ? 'var(--coral)' : 'var(--border)'),
-                  background: on ? 'var(--peach)' : '#fff', color: on ? 'var(--coral)' : 'var(--slate)' }}>
-                {r.label}
-              </button>
-            )
-          })}
+        <span className="acm-label">Who are they?</span>
+        <div className="acm-pills" role="radiogroup" aria-label="Relationship">
+          {RELATIONSHIPS.map(r => (
+            <button key={r.key} type="button" role="radio" aria-checked={relationship === r.key} className={`acm-pill${relationship === r.key ? ' on' : ''}`} onClick={() => setRelationship(r.key)}>
+              {r.label}
+            </button>
+          ))}
         </div>
         {relationship !== 'customer' && (
-          <p style={{ margin: '7px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>
-            Excluded from marketing by default. You can opt them in later on their profile.
+          <p style={{ margin: '8px 2px 0', fontSize: 12.5, color: '#8e8e93' }}>
+            Left out of marketing by default. You can opt them in later on their profile.
           </p>
         )}
 
-        <label style={L}>Phone</label>
-        <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+61…" style={I} />
-
-        <label style={L}>Email</label>
-        <input value={email} onChange={e => setEmail(e.target.value)} placeholder="name@example.com" style={I} />
-
-        <label style={L}>Company / business name <span style={{ fontWeight: 400 }}>(optional)</span></label>
-        <input value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="e.g. Aqua Supplies Pty Ltd" style={I} />
-
-        <label style={L}>Address</label>
-        <input value={address} onChange={e => setAddress(e.target.value)} placeholder="5 Clunes Avenue" style={I} />
-
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <div>
-            <label style={L}>City / suburb</label>
-            <input value={city} onChange={e => setCity(e.target.value)} placeholder="Dallas" style={I} />
+            <label className="acm-label" htmlFor="acm-phone">Phone</label>
+            <input id="acm-phone" className="acm-input" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+61…" inputMode="tel" />
           </div>
           <div>
-            <label style={L}>State</label>
-            <input value={state} onChange={e => setState(e.target.value)} placeholder="VIC" style={I} />
+            <label className="acm-label" htmlFor="acm-email">Email</label>
+            <input id="acm-email" className="acm-input" value={email} onChange={e => setEmail(e.target.value)} placeholder="name@example.com" inputMode="email" />
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <div>
-            <label style={L}>Postcode</label>
-            <input value={postcode} onChange={e => setPostcode(e.target.value)} placeholder="3047" style={I} />
-          </div>
-          <div>
-            <label style={L}>Country</label>
-            <input value={country} onChange={e => setCountry(e.target.value)} placeholder="Australia" style={I} />
-          </div>
-        </div>
+        <label className="acm-label" htmlFor="acm-co">Business name{opt}</label>
+        <input id="acm-co" className="acm-input" value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="e.g. Aqua Supplies Pty Ltd" />
 
-        <label style={L}>Notes <span style={{ fontWeight: 400 }}>(optional)</span></label>
-        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Anything worth remembering…" style={{ ...I, resize: 'vertical', fontFamily: 'inherit' }} />
+        {!showAddr ? (
+          <button type="button" className="acm-more" onClick={() => setAddrOpen(true)}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+            Add an address
+          </button>
+        ) : (
+          <>
+            <label className="acm-label" htmlFor="acm-addr">Address</label>
+            <input id="acm-addr" className="acm-input" value={address} onChange={e => setAddress(e.target.value)} placeholder="5 Clunes Avenue" />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+              <input className="acm-input" aria-label="City or suburb" value={city} onChange={e => setCity(e.target.value)} placeholder="Suburb" />
+              <input className="acm-input" aria-label="State" value={state} onChange={e => setState(e.target.value)} placeholder="State" />
+              <input className="acm-input" aria-label="Postcode" value={postcode} onChange={e => setPostcode(e.target.value)} placeholder="Postcode" inputMode="numeric" />
+              <input className="acm-input" aria-label="Country" value={country} onChange={e => setCountry(e.target.value)} placeholder="Country" />
+            </div>
+          </>
+        )}
+
+        <label className="acm-label" htmlFor="acm-notes">Notes{opt}</label>
+        <textarea id="acm-notes" className="acm-input" value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Anything worth remembering…" />
 
         {existingMatch && (
-          <div style={{ marginTop: 14, padding: '12px 14px', borderRadius: 11, background: '#fffbeb', border: '1px solid #fde68a' }}>
-            <p style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 700, color: '#92400e' }}>This contact already exists</p>
-            <p style={{ margin: '0 0 10px', fontSize: 12.5, color: '#92400e', lineHeight: 1.45 }}>
+          <div style={{ marginTop: 16, padding: '14px 16px', borderRadius: 14, background: '#fff7e6' }}>
+            <p style={{ margin: '0 0 3px', fontSize: 14, fontWeight: 650, color: '#92400e' }}>This contact already exists</p>
+            <p style={{ margin: '0 0 12px', fontSize: 13, color: '#92400e', lineHeight: 1.45 }}>
               {existingMatch.name || 'Unnamed'}{existingMatch.email ? ` · ${existingMatch.email}` : ''}{existingMatch.phone ? ` · ${existingMatch.phone}` : ''}
               {existingMatch.source ? ` (added via ${existingMatch.source})` : ''}
             </p>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button type="button" onClick={() => { onCreated(existingMatch); }}
-                style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
-                Open existing
-              </button>
-              <button type="button" onClick={() => { setAllowDuplicate(true); setExistingMatch(null) }}
-                style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: '1px solid #fde68a', background: '#fff', color: '#92400e', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
-                Add anyway
-              </button>
+              <button type="button" onClick={() => { onCreated(existingMatch); }} className="cv-btn cv-btn-dark" style={{ flex: 1, height: 36, fontSize: 13.5 }}>Open existing</button>
+              <button type="button" onClick={() => { setAllowDuplicate(true); setExistingMatch(null) }} className="cv-btn" style={{ flex: 1, height: 36, fontSize: 13.5 }}>Add anyway</button>
             </div>
           </div>
         )}
 
-        {error && <p style={{ margin: '12px 0 0', fontSize: 13, color: '#dc2626' }}>{error}</p>}
+        {error && <p style={{ margin: '12px 2px 0', fontSize: 13, color: '#dc2626' }}>{error}</p>}
 
         <div className="modal-sticky-foot">
-          <button type="button" onClick={onClose} style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
-          <button type="button" onClick={save} disabled={saving} style={{ flex: 2, padding: '11px 0', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+          <button type="button" onClick={onClose} className="cv-btn" style={{ flex: 1, height: 44 }}>Cancel</button>
+          <button type="button" onClick={save} disabled={saving} className="cv-btn cv-btn-primary" style={{ flex: 2, height: 44 }}>
             {saving ? 'Saving…' : 'Create contact'}
           </button>
         </div>
