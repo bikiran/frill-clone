@@ -9,11 +9,11 @@ import { ratingSummary } from '@/lib/testimonials'
 const ASK = encodeURIComponent('Tell me about Colvy (colvy.com), the shared inbox, business phone and AI platform for small businesses. What does it do, who is it for, and how does it compare with the alternatives?')
 const SI = (name: string) => `url(https://cdn.jsdelivr.net/npm/simple-icons@v13/icons/${name}.svg) center / contain no-repeat`
 const ASK_AI: { name: string; href: string; icon: React.ReactNode }[] = [
-  { name: 'ChatGPT', href: `https://chatgpt.com/?q=${ASK}`, icon: <span style={{ width: 22, height: 22, background: '#0d0d0d', mask: SI('openai'), WebkitMask: SI('openai') }} /> },
+  { name: 'ChatGPT', href: `https://chatgpt.com/?q=${ASK}`, icon: <span style={{ width: 22, height: 22, background: '#fff', mask: SI('openai'), WebkitMask: SI('openai') }} /> },
   { name: 'Claude', href: `https://claude.ai/new?q=${ASK}`, icon: <span style={{ width: 22, height: 22, background: '#d97757', mask: SI('claude'), WebkitMask: SI('claude') }} /> },
   { name: 'Perplexity', href: `https://www.perplexity.ai/search?q=${ASK}`, icon: <span style={{ width: 22, height: 22, background: '#1fb8cd', mask: SI('perplexity'), WebkitMask: SI('perplexity') }} /> },
   { name: 'Google AI', href: `https://www.google.com/search?udm=50&q=${ASK}`, icon: <span style={{ width: 22, height: 22, background: 'linear-gradient(135deg,#4285f4,#9b72cb 55%,#d96570)', mask: SI('googlegemini'), WebkitMask: SI('googlegemini') }} /> },
-  { name: 'Grok', href: `https://grok.com/?q=${ASK}`, icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0d0d0d" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="7" /><line x1="4.5" y1="19.5" x2="19.5" y2="4.5" /></svg> },
+  { name: 'Grok', href: `https://grok.com/?q=${ASK}`, icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="7" /><line x1="4.5" y1="19.5" x2="19.5" y2="4.5" /></svg> },
 ]
 
 // Shared marketing footer — big and bold (ManyChat-style): tall dark band, the
@@ -57,9 +57,9 @@ export default function MarketingFooter({ dark = false }: { dark?: boolean }) {
         @media (max-width:1100px){ .cvf-cols{ grid-template-columns:repeat(4,minmax(0,1fr)); } }
         .cvf-brandbox{ position:relative; border:1px solid ${line}; border-radius:16px; min-height:220px; overflow:hidden; display:flex; align-items:center; justify-content:center; background:
           linear-gradient(${line} 1px,transparent 1px),linear-gradient(90deg,${line} 1px,transparent 1px); background-size:25% 33.33%; }
-        .cvf-ai{ width:46px; height:46px; padding:0; border:none; border-radius:13px; background:#fff; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 0 0 1px rgba(255,255,255,0.12); transition:transform .18s cubic-bezier(.22,1,.36,1), box-shadow .18s; }
+        .cvf-ai{ width:48px; height:48px; padding:0; border:1px solid rgba(255,255,255,0.12); border-radius:14px; background:transparent; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; transition:transform .18s cubic-bezier(.22,1,.36,1), border-color .18s, background .18s; }
         .cvf-ai::before{ display:none; }
-        .cvf-ai:hover{ transform:translateY(-2px); box-shadow:0 8px 20px rgba(0,0,0,0.35); }
+        .cvf-ai:hover{ transform:translateY(-2px); border-color:rgba(255,255,255,0.3); background:rgba(255,255,255,0.04); }
         .cvf-word{ font-weight:900; letter-spacing:-0.04em; font-size:clamp(48px,7vw,104px); line-height:1; }
         @media (max-width:820px){
           .cvf-top{ grid-template-columns:1fr; gap:36px; }

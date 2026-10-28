@@ -1099,9 +1099,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <div style={{ position: 'relative' }}>
                 <button type="button" onClick={() => { setShowWorkspaces(v => !v); if (!workspaces.length) loadWorkspaces() }}
                   title={company?.name || 'Workspace'} aria-haspopup="menu" aria-expanded={showWorkspaces}
-                  style={{ display: 'flex', width: 44, height: 44, padding: 0, border: 'none', borderRadius: 13, background: 'none', cursor: 'pointer', overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,.08)' }}>
+                  style={{ display: 'flex', width: 44, height: 44, padding: 0, border: 'none', borderRadius: 13, background: 'none', cursor: 'pointer', overflow: 'hidden' }}>
+                  {/* The logo as it is: no white square behind a transparent one. */}
                   {company?.logo_url
-                    ? <img src={company.logo_url} alt={company?.name || ''} style={{ width: 44, height: 44, objectFit: 'cover', background: '#fff' }} />
+                    ? <img src={company.logo_url} alt={company?.name || ''} style={{ width: 44, height: 44, objectFit: 'contain' }} />
                     : <span style={{ width: 44, height: 44, background: company?.accent_color || 'var(--coral)', color: '#fff', fontWeight: 800, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{(company?.name?.[0] || user?.email?.[0] || '?').toUpperCase()}</span>}
                 </button>
                 {showWorkspaces && (

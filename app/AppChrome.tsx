@@ -793,6 +793,7 @@ export default function AppChrome({
         <Analytics />
         {/* Header */}
         <header ref={headerRef} className="cv-app-header sticky top-0 z-40 backdrop-blur-md border-b bg-white/80" style={{ borderColor: 'var(--border)' }}>
+          <style>{`@media (min-width: 861px) { .cv-hdr-logo-admin { display: none !important; } }`}</style>
           <nav className="h-14 px-6 flex items-center justify-between">
             {/* Left: logo */}
             <div className="flex items-center gap-2">
@@ -809,7 +810,9 @@ export default function AppChrome({
                 </button>
               )}
               {/* Logo */}
-              <Link href={isSubdomain ? homePath : '/'} className="flex items-center gap-2 font-bold text-lg transition-smooth hover:opacity-70">
+              {/* On admin pages the rail shows the workspace logo (wider than
+                  860px), so the header doesn't repeat it there. */}
+              <Link href={isSubdomain ? homePath : '/'} className={`flex items-center gap-2 font-bold text-lg transition-smooth hover:opacity-70${pathname?.startsWith('/admin') ? ' cv-hdr-logo-admin' : ''}`}>
               {/* On subdomains show company branding; on colvy.com show Colvy */}
               {isSubdomain && company ? (
                 <>
