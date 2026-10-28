@@ -9,6 +9,7 @@ import ContactsProfileDemo from '@/components/marketing/ContactsProfileDemo'
 import ColvyAppDemo from '@/components/ColvyAppDemo'
 import TeamInboxDemo from '@/components/marketing/TeamInboxDemo'
 import ChannelFlow from '@/components/marketing/ChannelFlow'
+import IndustryCarousel from '@/components/marketing/IndustryCarousel'
 import ScrollStory from '@/components/ScrollStory'
 import MarketingFooter from '@/components/MarketingFooter'
 import MarketingNav from '@/components/MarketingNav'
@@ -591,6 +592,10 @@ export default function LandingPage() {
 
       {/* AI TEAM — the five agents, linking to /ai-agents */}
       <AgentTeamBand dark={dark} />
+
+      {/* SUPPORT THAT FITS YOUR INDUSTRY — a photo per trade, with a customer
+          question and Colvy AI's answer playing over it. */}
+      <IndustryCarousel dark={dark} text={text} muted={muted} />
 
       {/* BEYOND THE INBOX — engagement suite carousel (slides in from the right) */}
       <FeatureSuite dark={dark} text={text} muted={muted} cardBorder={cardBorder} canvas={canvas} />
