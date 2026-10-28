@@ -227,7 +227,7 @@ const grid = (min: number): React.CSSProperties => ({ display: 'grid', gridTempl
 // ── Views ────────────────────────────────────────────────────────────────────
 
 function OverviewView({ d }: { d: any }) {
-  const c = d.current, p = d.previous
+  const c = d.current || {}, p = d.previous || {}
   const points = (d.series || []).map((s: any) => ({ label: new Date(`${s.day}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }), values: [s.visitors, s.pageviews] }))
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

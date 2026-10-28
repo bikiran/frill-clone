@@ -22,13 +22,28 @@ export function adminDb(): any {
 }
 
 /** The signed-in platform super admin (Bearer access token), or null. */
+// A token already checked with Supabase Auth is trusted again for a minute
+// (never past its own expiry), so pages that poll or load several reports at
+// once don't each wait on an Auth round trip.
+const verified = new Map<string, { until: number; who: { id: string; email: string } }>()
+function tokenExpiry(token: string): number {
+  try { const exp = JSON.parse(Buffer.from(token.split('.')[1] || '', 'base64url').toString('utf8'))?.exp; return Number(exp) * 1000 || 0 } catch { return 0 }
+}
+
 export async function superAdmin(req: NextRequest, db: any): Promise<{ id: string; email: string } | null> {
   try {
     const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
     if (!token) return null
+    const hit = verified.get(token)
+    if (hit && hit.until > Date.now()) return hit.who
     const { data } = await db.auth.getUser(token)
     const u = data?.user
-    return u && isSuperAdminEmail((u.email || '').toLowerCase()) ? { id: u.id, email: u.email } : null
+    const who = u && isSuperAdminEmail((u.email || '').toLowerCase()) ? { id: u.id, email: u.email } : null
+    if (who) {
+      if (verified.size > 100) verified.clear()
+      verified.set(token, { until: Math.min(Date.now() + 60_000, tokenExpiry(token) || 0), who })
+    }
+    return who
   } catch { return null }
 }
 

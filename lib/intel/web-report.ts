@@ -106,28 +106,130 @@ async function kpis(a: Date, b: Date, errors: string[]) {
   }
 }
 
+// Both periods in one pass: each query reads from the start of the previous
+// period to the end of this one and splits the counts at the boundary, so the
+// overview asks PostHog three questions instead of six (PostHog runs only a
+// few queries at a time per project, so fewer questions answer sooner).
+const isCur = (v: any) => v === true || v === 1 || v === '1' || v === 'true'
+async function kpisBoth(p: Period): Promise<{ cur: any; prev: any }> {
+  const v = { from: ch(p.from), to: ch(p.to), pfrom: ch(p.prevFrom) }
+  const span = `timestamp >= toDateTime({pfrom}) AND timestamp < toDateTime({to})`
+  const now = `timestamp >= toDateTime({from})`
+  const [[base], sess, conv] = await Promise.all([
+    hogql(`SELECT uniqIf(person_id, ${now}) AS visitors, uniqIf(properties.$session_id, ${now}) AS sessions, countIf(${now}) AS pageviews,
+                  uniqIf(person_id, NOT (${now})) AS p_visitors, uniqIf(properties.$session_id, NOT (${now})) AS p_sessions, countIf(NOT (${now})) AS p_pageviews
+           FROM events WHERE event = '$pageview' AND ${MKT} AND ${span}`, v),
+    hogql(`SELECT cur, avg(dur) AS avg_duration, avg(bounce) AS bounce_rate FROM (
+             SELECT properties.$session_id AS sid, if(min(timestamp) >= toDateTime({from}), 1, 0) AS cur,
+                    dateDiff('second', min(timestamp), max(timestamp)) AS dur, if(countIf(event = '$pageview') <= 1, 1, 0) AS bounce
+             FROM events WHERE event IN ('$pageview', '$pageleave') AND ${MKT} AND ${span} AND notEmpty(properties.$session_id)
+             GROUP BY sid)
+           GROUP BY cur`, v),
+    hogql(`SELECT event, if(${now}, 1, 0) AS cur, count() AS n, uniq(person_id) AS people FROM events
+           WHERE event IN ('pricing_viewed', 'pricing_cta_clicked', 'cta_clicked', 'signup_started', 'signup_completed', 'account_created', 'business_created', 'checkout_started', 'checkout_completed', 'demo_requested')
+             AND ${span} GROUP BY event, cur LIMIT 100`, v),
+  ])
+  const side = (cur: boolean) => {
+    const pre = cur ? '' : 'p_'
+    const s1 = sess.find(r => isCur(r.cur) === cur) || {}
+    const byEvent = Object.fromEntries(conv.filter(r => isCur(r.cur) === cur).map(r => [r.event, { n: num(r.n), people: num(r.people) }]))
+    const people = (e: string) => byEvent[e]?.people || 0
+    const visitors = num(base?.[`${pre}visitors`])
+    const signups = Math.max(people('account_created'), people('signup_completed'))
+    return {
+      visitors, sessions: num(base?.[`${pre}sessions`]), pageviews: num(base?.[`${pre}pageviews`]),
+      avgDuration: Math.round(num(s1.avg_duration)), bounceRate: num(s1.bounce_rate),
+      pricingViews: people('pricing_viewed'), pricingClicks: byEvent.pricing_cta_clicked?.n || 0, ctaClicks: byEvent.cta_clicked?.n || 0,
+      signupStarted: people('signup_started'), signups, businesses: people('business_created'),
+      checkouts: people('checkout_started'), demos: people('demo_requested'),
+      conversionRate: visitors ? signups / visitors : 0,
+    }
+  }
+  return { cur: side(true), prev: side(false) }
+}
+
+/** New workspaces in a window, counted without fetching their rows. */
+async function workspaceCount(db: any, a: Date, b: Date): Promise<number> {
+  try {
+    const { count, error } = await db.from('companies').select('id', { count: 'exact', head: true }).gte('created_at', a.toISOString()).lt('created_at', b.toISOString())
+    return error ? 0 : count || 0
+  } catch { return 0 }
+}
+
 async function overview(p: Period, errors: string[]) {
   const db = serviceDb()
-  const [cur, prev, series, newBusinesses, prevBusinesses] = await Promise.all([
-    kpis(p.from, p.to, errors),
-    kpis(p.prevFrom, p.prevTo, errors),
+  // Combined questions first; if PostHog won't run them, ask the old way.
+  const both = kpisBoth(p).catch(async (e: any) => {
+    console.warn('[intel] combined overview query failed, asking per period:', e?.message || e)
+    const [cur, prev] = await Promise.all([kpis(p.from, p.to, errors), kpis(p.prevFrom, p.prevTo, errors)])
+    return { cur, prev }
+  })
+  const [{ cur, prev }, series, newBusinesses, prevBusinesses] = await Promise.all([
+    both,
     attempt(errors, 'daily traffic', () => hogql(
       `SELECT toDate(timestamp) AS day, uniq(person_id) AS visitors, count() AS pageviews,
               uniqIf(person_id, event = 'signup_started') AS starts
        FROM events WHERE ((event = '$pageview' AND ${MKT}) OR event = 'signup_started') AND ${between}
        GROUP BY day ORDER BY day LIMIT 500`, vals(p.from, p.to)), [] as any[]),
-    safe<any[]>(db.from('companies').select('id', { count: 'exact', head: false }).gte('created_at', p.from.toISOString()).lt('created_at', p.to.toISOString()).limit(10000), []),
-    safe<any[]>(db.from('companies').select('id').gte('created_at', p.prevFrom.toISOString()).lt('created_at', p.prevTo.toISOString()).limit(10000), []),
+    workspaceCount(db, p.from, p.to),
+    workspaceCount(db, p.prevFrom, p.prevTo),
   ])
   return {
-    current: { ...cur, newWorkspaces: newBusinesses.data.length },
-    previous: { ...prev, newWorkspaces: prevBusinesses.data.length },
+    current: { ...cur, newWorkspaces: newBusinesses },
+    previous: { ...prev, newWorkspaces: prevBusinesses },
     series: series.map(r => ({ day: String(r.day).slice(0, 10), visitors: num(r.visitors), pageviews: num(r.pageviews), starts: num(r.starts) })),
   }
 }
 
+const LIVE_SCOPE = `(${MKT} OR properties.site = 'app')`
+const LIVE_QUIET = `('$feature_flag_called', '$set', '$identify', '$groupidentify', '$autocapture', '$web_vitals', '$rageclick', '$dead_click', '$exception')`
+
+/** Live, in two questions: one row per session of the last 30 minutes (the
+ *  counts, minutes, pages and places are worked out here) and the activity feed. */
+async function liveFast() {
+  const [rows, recent] = await Promise.all([
+    hogql(`SELECT properties.$session_id AS sid, any(person_id) AS pid, any(properties.site) AS site,
+                  dateDiff('second', max(timestamp), now()) AS idle,
+                  dateDiff('second', maxIf(timestamp, properties.site = 'app'), now()) AS app_idle,
+                  argMax(properties.$geoip_country_name, timestamp) AS country, argMax(properties.$geoip_country_code, timestamp) AS code,
+                  groupUniqArray(toStartOfMinute(timestamp)) AS mins,
+                  groupUniqArrayIf(properties.$pathname, event = '$pageview') AS paths
+           FROM events WHERE timestamp > now() - INTERVAL 30 MINUTE AND ${LIVE_SCOPE}
+           GROUP BY sid LIMIT 10000`),
+    hogql(`SELECT timestamp, event, properties.$pathname AS path, properties.cta_id AS cta, properties.site AS site,
+                  properties.$geoip_city_name AS city, properties.$geoip_country_code AS country, properties.$device_type AS device, properties.$browser AS browser
+           FROM events WHERE timestamp > now() - INTERVAL 30 MINUTE AND ${LIVE_SCOPE} AND event NOT IN ${LIVE_QUIET}
+           ORDER BY timestamp DESC LIMIT 30`),
+  ])
+  const active = rows.filter(r => num(r.idle) <= 300)
+  const people = new Set(active.map(r => String(r.pid || '')).filter(Boolean))
+  // Minutes inside arrays can come back as "YYYY-MM-DD hh:mm:ss" (UTC).
+  const iso = (m: any) => { const t = String(m); return /^\d{4}-\d\d-\d\d \d\d:\d\d(:\d\d)?$/.test(t) ? `${t.replace(' ', 'T')}Z` : t }
+  const perMinute = new Map<string, number>(), perPage = new Map<string, { site: string; sessions: number }>(), perPlace = new Map<string, { country: string; code: string; sessions: number }>()
+  for (const r of rows) {
+    for (const m of (Array.isArray(r.mins) ? r.mins : [])) perMinute.set(iso(m), (perMinute.get(iso(m)) || 0) + 1)
+    for (const path of (Array.isArray(r.paths) ? r.paths : [])) {
+      const k = String(path || '/'), e = perPage.get(k) || { site: r.site || 'marketing', sessions: 0 }
+      e.sessions++; perPage.set(k, e)
+    }
+    const k = `${r.country || 'Unknown'}|${r.code || ''}`, e = perPlace.get(k) || { country: r.country || 'Unknown', code: r.code || '', sessions: 0 }
+    e.sessions++; perPlace.set(k, e)
+  }
+  return {
+    activeSessions: active.length, activeVisitors: people.size,
+    appSessions: rows.filter(r => r.app_idle != null && num(r.app_idle) >= 0 && num(r.app_idle) <= 300).length,
+    minutes: [...perMinute.entries()].sort((a, b) => Date.parse(a[0]) - Date.parse(b[0])).map(([minute, sessions]) => ({ minute, sessions })),
+    pages: [...perPage.entries()].map(([path, e]) => ({ path, site: e.site, sessions: e.sessions })).sort((a, b) => b.sessions - a.sessions).slice(0, 12),
+    countries: [...perPlace.values()].sort((a, b) => b.sessions - a.sessions).slice(0, 10),
+    recent: recent.map(r => ({ at: r.timestamp, event: r.event, path: r.path || '', cta: r.cta || '', site: r.site || '', place: [r.city, r.country].filter(Boolean).join(', '), device: [r.device, r.browser].filter(Boolean).join(' · ') })),
+  }
+}
+
 async function live(errors: string[]) {
-  const scope = `(${MKT} OR properties.site = 'app')`
+  try { return await liveFast() } catch (e: any) {
+    console.warn('[intel] combined live query failed, asking separately:', e?.message || e)
+  }
+  const scope = LIVE_SCOPE
   const [[now], minutes, pages, countries, recent] = await Promise.all([
     attempt(errors, 'active now', () => hogql(
       `SELECT uniq(properties.$session_id) AS sessions, uniq(person_id) AS visitors,
@@ -313,7 +415,9 @@ export function reportKey(report: string, range: string, from = '', to = ''): st
 
 /** Freshness window and how long a saved copy may still be shown while it refreshes. */
 export function reportTtl(report: string): { ttlMs: number; maxStaleMs: number } {
-  if (report === 'live') return { ttlMs: 15_000, maxStaleMs: 0 }
+  // Live: anything up to two minutes old shows at once and refreshes behind it
+  // (the page asks again a few seconds later for the new numbers).
+  if (report === 'live') return { ttlMs: 15_000, maxStaleMs: 2 * 60_000 }
   if (report === 'system') return { ttlMs: 60_000, maxStaleMs: 30 * 60_000 }
   if (SUPABASE_ONLY.has(report)) return { ttlMs: 2 * 60_000, maxStaleMs: 24 * 3600_000 }
   return { ttlMs: 5 * 60_000, maxStaleMs: 24 * 3600_000 }
