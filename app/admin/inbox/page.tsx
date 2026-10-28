@@ -11531,7 +11531,7 @@ export default function InboxPage() {
                     </div>
                     <h3 style={{ margin: '12px 0 0', fontSize: 20, fontWeight: 800, color: 'var(--ink)', maxWidth: '100%', overflowWrap: 'anywhere', wordBreak: 'break-word', textAlign: 'center' }}>{contact.name || contact.email || 'Visitor'}</h3>
                     {(contact as any).is_blocked && (
-                      <span style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 800, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', padding: '3px 9px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                      <span style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', padding: '3px 9px', borderRadius: 20 }}>
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/></svg>
                         Blocked
                       </span>
@@ -11673,7 +11673,7 @@ export default function InboxPage() {
                     })()}
                     {[['name', 'Name', 'text'], ['email', 'Email', 'email'], ['phone', 'Phone', 'tel'], ['address', 'Address', 'text'], ['city', 'City', 'text'], ['state', 'State', 'text'], ['postcode', 'Postcode', 'text'], ['country', 'Country', 'text']].map(([field, label, type]) => (
                       <div key={field}>
-                        <label style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 3 }}>{label}</label>
+                        <label style={{ fontSize: 12.5, fontWeight: 500, color: '#8e8e93', display: 'block', marginBottom: 3 }}>{label}</label>
                         {field === 'address' ? (
                           // Address lookup (keyless by default; Google when a key is
                           // set). Picking a suggestion fills the street line and
@@ -11697,7 +11697,7 @@ export default function InboxPage() {
                       </div>
                     ))}
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 3 }}>Relationship</label>
+                      <label style={{ fontSize: 12.5, fontWeight: 500, color: '#8e8e93', display: 'block', marginBottom: 3 }}>Relationship</label>
                       <select
                         value={(editContact as any).relationship_type || 'customer'}
                         onChange={e => {
@@ -11796,7 +11796,7 @@ export default function InboxPage() {
                         return (
                         <div key={field} className="contact-field-row"
                           style={{ position: 'relative', borderRadius: 8, padding: aiFilled ? '5px 7px' : 0, margin: aiFilled ? '0 -7px' : 0, background: aiFilled ? '#f7f8fa' : 'transparent' }}>
-                          <p style={{ margin: '0 0 2px 0', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <p style={{ margin: '0 0 2px 0', fontSize: 12.5, fontWeight: 500, color: '#8e8e93', display: 'flex', alignItems: 'center', gap: 4 }}>
                             {label}
                             {showOrderTag && <span style={{ fontSize: 8.5, color: '#2563eb', background: '#eef4ff', padding: '1px 5px', borderRadius: 10, letterSpacing: 0 }}>from order</span>}
                           </p>
@@ -11865,7 +11865,7 @@ export default function InboxPage() {
                         by contact match). Clicking opens the reviews dashboard. */}
                     {contactReviews.count > 0 && contactReviews.latest && (
                       <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4 }}>
-                        <p style={{ margin: '0 0 3px 0', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Google review</p>
+                        <p style={{ margin: '0 0 3px 0', fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>Google review</p>
                         <a href="/admin/reviews" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none' }} title="View on the reviews dashboard">
                           <span style={{ fontSize: 15, letterSpacing: 1, color: '#f5b301' }}>
                             {'★'.repeat(Math.max(0, Math.min(5, contactReviews.latest.rating || 0)))}
@@ -11888,7 +11888,7 @@ export default function InboxPage() {
                         opens the comment in the Social Engagement manager. */}
                     {contactReviews.commentCount > 0 && contactReviews.latestComment && (
                       <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4 }}>
-                        <p style={{ margin: '0 0 3px 0', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Social engagement</p>
+                        <p style={{ margin: '0 0 3px 0', fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>Social engagement</p>
                         <a href={`/admin/social?comment=${encodeURIComponent(contactReviews.latestComment.id)}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }} title="View on the Social Engagement manager">
                           <span style={{ fontSize: 13 }}>💬</span>
                           <span style={{ fontSize: 12, color: 'var(--slate)' }}>
@@ -11908,7 +11908,7 @@ export default function InboxPage() {
                         on no answer the call still rings everyone else. */}
                     {contact && (
                       <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4 }}>
-                        <label style={{ fontSize: 10, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block', marginBottom: 5 }}>Preferred agent</label>
+                        <label style={{ fontSize: 12.5, fontWeight: 500, color: '#8e8e93', display: 'block', marginBottom: 5 }}>Preferred agent</label>
                         <select
                           value={(contact as any).preferred_agent_user_id || ''}
                           onChange={async (e) => {
@@ -11958,8 +11958,8 @@ export default function InboxPage() {
                     {/* ── Delivery (Coax-style) ─────────────────────────────
                         Scheduled delivery date + status, saved inline. */}
                     <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
-                      <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 5 }}>
-                        {Icon.calendar(12)} Scheduled Delivery
+                      <p style={{ margin: '0 0 4px', fontSize: 12.5, fontWeight: 500, color: '#8e8e93', display: 'flex', alignItems: 'center', gap: 5 }}>
+                        {Icon.calendar(12)} Scheduled delivery
                       </p>
                       {/* Opens the full calendar slide-out rather than a bare
                           date box — you can pick the date, set the window, add
@@ -11977,7 +11977,7 @@ export default function InboxPage() {
                     </div>
 
                     <div>
-                      <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <p style={{ margin: '0 0 4px', fontSize: 12.5, fontWeight: 500, color: '#8e8e93', display: 'flex', alignItems: 'center', gap: 5 }}>
                         {Icon.box(12)} Delivery status
                       </p>
                       <select
@@ -12017,7 +12017,7 @@ export default function InboxPage() {
                 ) : (
                   (selected as any)?.sms_number ? (
                     <div>
-                      <p style={{ margin: '0 0 2px', fontSize: 11, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Phone</p>
+                      <p style={{ margin: '0 0 2px', fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>Phone</p>
                       <p style={{ margin: '0 0 8px', fontSize: 14, color: 'var(--ink)' }}>{(selected as any).sms_number}</p>
                       <p style={{ fontSize: 12.5, color: '#9ca3af', margin: 0 }}>Not saved as a contact yet. Click &ldquo;+ Create&rdquo; to add their name and details.</p>
                     </div>
@@ -12043,7 +12043,7 @@ export default function InboxPage() {
                       linked by shared email/phone. Same human, one profile. */}
                   {linkedChannels.length > 1 && (
                     <div style={{ marginBottom: 14, padding: 10, borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)' }}>
-                      <p style={{ margin: '0 0 7px', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--slate)' }}>Also reachable on</p>
+                      <p style={{ margin: '0 0 7px', fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>Also reachable on</p>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                         {linkedChannels.map((lc, i) => {
                           const isCommerce = ['woocommerce', 'pos', 'shopify', 'prexty'].includes(String(lc.channel).toLowerCase())
@@ -12091,7 +12091,7 @@ export default function InboxPage() {
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div>
-                      <p style={{ margin: '0 0 2px', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Channel</p>
+                      <p style={{ margin: '0 0 2px', fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>Channel</p>
                       {/* The LIVE channel, not the one the conversation started
                           on — a customer who began on the widget and is now
                           texting should read "SMS" here. */}
@@ -12106,18 +12106,18 @@ export default function InboxPage() {
                       )}
                     </div>
                     <div>
-                      <p style={{ margin: '0 0 2px', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Status</p>
+                      <p style={{ margin: '0 0 2px', fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>Status</p>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 28, padding: '0 11px 0 9px', borderRadius: 999, background: STATUS_COLOR[selected.status]?.bg || '#f3f4f6', color: STATUS_COLOR[selected.status]?.color || '#6b7280', fontSize: 12.5, fontWeight: 650, textTransform: 'capitalize' }}>
                         {STATUS_ICON[selected.status] || STATUS_ICON.open}{selected.status}
                       </span>
                     </div>
                     <div>
-                      <p style={{ margin: '0 0 2px', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Started</p>
+                      <p style={{ margin: '0 0 2px', fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>Started</p>
                       <p style={{ margin: 0, fontSize: 12, color: 'var(--ink)' }}>{fmtDateTime(selected.updated_at)}</p>
                     </div>
                     {selected.assigned_name && (
                       <div>
-                        <p style={{ margin: '0 0 2px', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Assigned to</p>
+                        <p style={{ margin: '0 0 2px', fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>Assigned to</p>
                         <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6 }}>{Icon.person(13)}{selected.assigned_name}</p>
                       </div>
                     )}
@@ -12253,7 +12253,7 @@ export default function InboxPage() {
                   )}
                   {aiTodos.length > 0 && (
                     <div style={{ marginTop: 10 }}>
-                      <p style={{ margin: '0 0 5px', fontSize: 11, fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase' }}>To-dos</p>
+                      <p style={{ margin: '0 0 5px', fontSize: 12, fontWeight: 600, color: '#7c3aed' }}>To-dos</p>
                       {aiTodos.map((t: any, i: number) => (
                         <label key={i} style={{ display: 'flex', gap: 7, alignItems: 'flex-start', fontSize: 12, color: 'var(--ink)', marginBottom: 4, cursor: 'pointer' }}>
                           <input type="checkbox" checked={!!t.done} onChange={() => {
@@ -12326,7 +12326,7 @@ export default function InboxPage() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {[...selected.page_history].reverse().map((h: any, i: number) => (
                         <div key={i} style={{ padding: '9px 12px', borderRadius: 8, background: 'var(--canvas)', border: i === 0 ? '1.5px solid var(--coral)' : '1px solid var(--border)' }}>
-                          {i === 0 && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--coral)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 3 }}>Current</span>}
+                          {i === 0 && <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--coral)', display: 'block', marginBottom: 3 }}>Current</span>}
                           <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dec(h.title) || 'Untitled'}</p>
                           <a href={h.url} target="_blank" rel="noopener" style={{ fontSize: 11, color: 'var(--coral)', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{h.url}</a>
                           <p style={{ margin: '3px 0 0', fontSize: 10, color: '#9ca3af' }}>{fmtTime(h.ts)}</p>
@@ -12349,7 +12349,7 @@ export default function InboxPage() {
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                       <div>
-                        <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Total Spend</p>
+                        <p style={{ margin: 0, fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>Total spend</p>
                         <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>
                           {(() => {
                             const spend = (parseFloat(wooCustomer.total_spend) || 0) || wooOrders.reduce((s, o) => s + (parseFloat(o.total) || 0), 0)
@@ -12358,7 +12358,7 @@ export default function InboxPage() {
                         </p>
                       </div>
                       <div>
-                        <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' }}>Orders</p>
+                        <p style={{ margin: 0, fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>Orders</p>
                         <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>{wooCustomer.total_orders || wooOrders.length || 0}</p>
                       </div>
                     </div>
@@ -12620,3 +12620,4 @@ function ReviewCard({ msg, companyId, render }: { msg: any; companyId: string | 
   const [s] = useLinkStats(companyId, codes)
   return <>{render(s || null)}</>
 }
+

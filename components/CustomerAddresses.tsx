@@ -62,7 +62,7 @@ export default function CustomerAddresses({ contactId, canEdit = true, userName 
   return (
     <div style={{ marginTop: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <p style={{ margin: 0, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--slate)' }}>Addresses</p>
+        <p style={{ margin: 0, fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>Addresses</p>
         {canEdit && <button type="button" onClick={() => setAdding(v => !v)} style={{ border: 'none', background: 'none', color: 'var(--coral)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{adding ? 'Cancel' : '+ Add'}</button>}
       </div>
 
