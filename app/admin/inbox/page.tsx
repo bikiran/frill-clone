@@ -7494,10 +7494,13 @@ export default function InboxPage() {
         .th-av.sm { width: 26px; height: 26px; font-size: 12px; }
         .th-status { position: relative; display: inline-flex; align-items: center; flex-shrink: 0; color: var(--st-fg); }
         .th-status select { field-sizing: content; appearance: none; -webkit-appearance: none; height: 36px; margin: 0; padding: 0 32px 0 35px; border: none; border-radius: 999px; background: var(--st-bg); color: var(--st-fg); font: inherit; font-size: 14px; font-weight: 650; cursor: pointer; transition: filter .15s ease; }
-        .th-status select:hover { filter: brightness(.97); }
-        .th-status select:focus-visible { outline: 2px solid var(--st-fg); outline-offset: 2px; }
-        .th-status-ic { position: absolute; left: 13px; display: flex; pointer-events: none; }
-        .th-status-chev { position: absolute; right: 12px; pointer-events: none; }
+        /* Hover darkens with an inset shadow, not a filter: a filter lifts the
+           select above its own icon and chevron, which then vanish. */
+        .th-status select:hover { box-shadow: inset 0 0 0 999px rgba(0,0,0,.035); }
+        .th-status select:focus { outline: none; }
+        .th-status select:focus-visible { box-shadow: 0 0 0 3px color-mix(in srgb, var(--st-fg) 22%, transparent); }
+        .th-status-ic { position: absolute; left: 13px; z-index: 1; display: flex; pointer-events: none; }
+        .th-status-chev { position: absolute; right: 12px; z-index: 1; pointer-events: none; }
         .th-menu { z-index: 50; padding: 6px; border-radius: 16px; background: #fff; box-shadow: 0 16px 44px rgba(0,0,0,.14), 0 0 0 1px rgba(0,0,0,.05); transform-origin: top right; animation: thMenuIn .18s cubic-bezier(.22,1,.36,1); }
         @keyframes thMenuIn { from { opacity: 0; transform: translateY(-4px) scale(.98); } to { opacity: 1; transform: none; } }
         .th-menu-search { width: 100%; box-sizing: border-box; height: 40px; margin: 0 0 4px; padding: 0 30px 0 12px; border-radius: 12px; border: 1.5px solid #e4e4e7; background: #fff; font: inherit; font-size: 14px; color: #111; outline: none; transition: border-color .15s ease, box-shadow .15s ease; }
@@ -7515,7 +7518,7 @@ export default function InboxPage() {
         /* The contact panel, in the same style: pill tabs, a tinted Action
            pill, small pill buttons. */
         .cp-tabs { display: flex; gap: 2px; margin: 12px 14px 0; padding: 3px; border-radius: 999px; background: #f4f4f5; flex-shrink: 0; }
-        .cp-tab { flex: 1; height: 32px; border: none; border-radius: 999px; background: transparent; font: inherit; font-size: 13px; font-weight: 600; color: #71717a; cursor: pointer; white-space: nowrap; transition: background .18s ease, color .15s ease, box-shadow .18s ease; }
+        .cp-tab { flex: 1 1 auto; height: 32px; padding: 0 10px; border: none; border-radius: 999px; background: transparent; font: inherit; font-size: 13px; font-weight: 600; color: #71717a; cursor: pointer; white-space: nowrap; transition: background .18s ease, color .15s ease, box-shadow .18s ease; }
         .cp-tab:hover { color: #18181b; }
         .cp-tab:hover { background: transparent; }
         .cp-tab.on, .cp-tab.on:hover { background: #fff; color: #111; box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 0 0 1px rgba(0,0,0,.04); }
