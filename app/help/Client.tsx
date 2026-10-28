@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { useTerminology } from '@/lib/terminologyContext'
 import { HELP_LIST_COLUMNS, helpExcerpt, helpSubtitleOf, toCatMap } from '@/lib/help-shared'
 import type { HelpIndexData } from '@/lib/help-public'
+import EmptyScroll from '@/components/EmptyScroll'
 
 const ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
@@ -380,10 +381,10 @@ export default function HelpCentrePage({ initial }: { initial?: HelpIndexData } 
             <div className="w-8 h-8 rounded-full border-2 animate-spin" style={{ borderColor: 'var(--coral)', borderTopColor: 'transparent' }} />
           </div>
         ) : filtered.length === 0 ? (
-          <div className="text-center py-20">
-            <div className="mb-4 flex justify-center" style={{ color: "var(--slate)", opacity: 0.4 }}><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
-            <p className="text-lg font-semibold" style={{ color: 'var(--ink)' }}>No articles found</p>
-            <p className="mt-1" style={{ color: 'var(--slate)' }}>Try a different search or browse by category</p>
+          <div className="py-12">
+            <EmptyScroll kinds={['article']} title={search.trim() ? 'No articles found' : 'No articles here yet'}
+              line={search.trim() ? `Nothing matches “${search.trim()}”. Try a different word, or browse by category.` : 'Check back soon, or get in touch and we’ll help.'}
+              action={search.trim() ? <button type="button" className="cv-btn" onClick={() => setSearch('')}>Clear search</button> : undefined} />
           </div>
         ) : (
           <>

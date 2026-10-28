@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import PageHeader from '@/components/PageHeader'
 import { SuggestionCard, type Suggestion } from '@/components/AgentSuggestion'
+import EmptyScroll from '@/components/EmptyScroll'
 
 type Review = {
   id: string
@@ -163,7 +164,7 @@ const REVIEWS_CSS = `
   .rv-grid { display:grid; grid-template-columns: minmax(0, 1fr) 320px; gap:20px; align-items:start; }
   .rv-panel { background: var(--card, #fff); border:1px solid var(--border); border-radius:16px; }
   .rv-filters { padding:16px 18px; margin-bottom:16px; }
-  .rv-empty { padding:40px; text-align:center; color:var(--slate); }
+  .rv-empty { padding:12px; text-align:center; color:var(--slate); }
 
   /* Review card (desktop look). */
   .rv-card { background: var(--card, #fff); border:1px solid var(--border); border-radius:16px; padding:18px 20px; margin-bottom:14px; transition: box-shadow .4s; min-width:0; }
@@ -805,7 +806,11 @@ export default function ReviewsPage() {
           {/* Review list */}
           {pageItems.length === 0 ? (
             <div className="rv-panel rv-empty">
-              {reviews.length === 0 ? 'No reviews synced yet. Connect Google and hit “Sync Google reviews”.' : 'No reviews match these filters.'}
+              {reviews.length === 0
+                ? <EmptyScroll kinds={['review']} title="No reviews yet" line="Connect Google, then sync to bring your reviews in. You can reply to them right here." />
+                : <EmptyScroll kinds={['review']} title={search.trim() ? 'No matches' : 'No reviews match these filters'}
+                    line={search.trim() ? `Nothing matches “${search.trim()}”. Try a name or a word from the review.` : 'Try another rating, date or reply filter.'}
+                    action={<button type="button" className="cv-btn" onClick={() => { setRatingFilter(0); setRepliesFilter('all'); setDateFrom(''); setDateTo(''); setSearch(''); setPreset('all'); setPage(1) }}>Clear filters</button>} />}
             </div>
           ) : pageItems.map(review => {
             const linked = !!review.contact_id

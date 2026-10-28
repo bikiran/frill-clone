@@ -14,7 +14,8 @@ import { waitlistItemKey } from '@/lib/waitlist-keys'
 import { WAITLIST_SEEN_KEY, resolveNewSince, collectNewIds, isTaggedNew, countNew, sortNewFirst } from '@/lib/waitlist-new'
 import { isAiAdded, countAiAdded } from '@/lib/waitlist-ai'
 import { AiAddedPill, AiSpark, AI_VIOLET } from '@/components/AiAddedBadge'
-import { BellIcon, GearIcon, PlusIcon, ChatIcon, TagIcon, XIcon, EditIcon, ExternalIcon, ChevronDownIcon } from '@/components/booking/icons'
+import { GearIcon, PlusIcon, ChatIcon, TagIcon, XIcon, EditIcon, ExternalIcon, ChevronDownIcon } from '@/components/booking/icons'
+import EmptyScroll from '@/components/EmptyScroll'
 
 // Back-in-stock waitlists. Customers who asked for something that's out of
 // stock are grouped by item; when it's back, everyone waiting gets one SMS —
@@ -384,13 +385,13 @@ export default function WaitlistsPage() {
       </div>
 
       {groups.length === 0 ? (
-        <div style={{ ...card, textAlign: 'center', padding: '48px 20px' }}>
-          <div style={{ width: 54, height: 54, borderRadius: 17, background: 'var(--peach, #fff1ee)', color: 'var(--coral, #ff7a6b)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}><BellIcon size={26} /></div>
-          <p style={{ margin: '0 0 6px', fontWeight: 800, fontSize: 16, color: 'var(--ink)' }}>{aiOnly ? 'No one added by AI here' : tab === 'waiting' ? 'Nobody is waiting right now' : 'Nothing here yet'}</p>
-          <p style={{ margin: '0 auto 16px', fontSize: 13.5, color: 'var(--slate)', maxWidth: 440, lineHeight: 1.55 }}>
-            When a customer asks for something that's out of stock, add them here (or with <b>Waitlist</b> on their conversation). The moment it's back, they get a text.
-          </p>
-          {!setupMsg && <button onClick={() => setShowAdd(true)} style={{ ...btnPrimary, display: 'inline-flex', alignItems: 'center', gap: 6 }}><PlusIcon size={15} strokeWidth={2.4} /> Add to waitlist</button>}
+        <div style={{ ...card, padding: '24px 12px' }}>
+          {search.trim()
+            ? <EmptyScroll kinds={['order', 'sms']} title="No matches" line={`Nobody here matches “${search.trim()}”. Try an item or a customer’s name.`}
+                action={<button type="button" className="cv-btn" onClick={() => setSearch('')}>Clear search</button>} />
+            : <EmptyScroll kinds={['order', 'sms']} title={aiOnly ? 'No one added by AI here' : tab === 'waiting' ? 'Nobody is waiting right now' : 'Nothing here yet'}
+                line={<>When a customer asks for something that's out of stock, add them here (or with <b>Waitlist</b> on their conversation). The moment it's back, they get a text.</>}
+                action={!setupMsg ? <button onClick={() => setShowAdd(true)} style={{ ...btnPrimary, display: 'inline-flex', alignItems: 'center', gap: 6 }}><PlusIcon size={15} strokeWidth={2.4} /> Add to waitlist</button> : undefined} />}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

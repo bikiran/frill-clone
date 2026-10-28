@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { api, money, card, btnGhost } from './shared'
 import { WarnIcon, ArrowRightIcon, CheckIcon } from '@/components/booking/icons'
+import EmptyScroll from '@/components/EmptyScroll'
 
 // Today at a glance: headline numbers, then today's bookings in a column per
 // person (one column when the business takes bookings as a whole).
@@ -91,7 +92,9 @@ export default function TodayTab({ companyId, onOpenBookings, reloadKey }: { com
         <button onClick={onOpenBookings} style={{ ...btnGhost, height: 30, fontSize: 12.5 }}>All bookings <ArrowRightIcon size={13} /></button>
       </div>
       {!columns.length ? (
-        <div style={{ ...card, textAlign: 'center', padding: '30px 20px', color: 'var(--slate,#6b7280)', fontSize: 14 }}>Nothing booked today.</div>
+        <div style={{ ...card, padding: '8px 12px' }}>
+          <EmptyScroll compact kinds={['calendar']} title="Nothing booked today" line="Today’s bookings show up here, one column per person." />
+        </div>
       ) : (
         <div className="td-cols">
           {columns.map(col => (

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatVariable, variablesInUse, type LogicForm } from '@/lib/form-logic'
 import { cellFor, exportQuestions, formatDateTime, formatDuration, prep, plural, titleOr, type ResultRow, type VerifyContext } from './aggregate'
 import { Icon } from './icons'
+import EmptyScroll from '@/components/EmptyScroll'
 
 const PAGE = 50
 
@@ -30,7 +31,7 @@ export function ResponsesTable({ rows, logic, verify, selected, onSelect, onOpen
   useEffect(() => { if (headRef.current) headRef.current.indeterminate = selectedHere > 0 && !allOn }, [selectedHere, allOn])
 
   if (rows.length === 0) {
-    return <div className="fr-card" style={{ padding: 40, textAlign: 'center' }}><p className="fr-muted" style={{ margin: 0 }}>No responses match these filters.</p></div>
+    return <div className="fr-card" style={{ padding: '24px 12px' }}><EmptyScroll kinds={['form']} title="No responses match" line="Try clearing a filter or the search to see more." /></div>
   }
 
   const toggle = (id: string) => {

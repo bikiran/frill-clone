@@ -5,6 +5,7 @@ import Link from 'next/link'
 import SlotPicker from '@/components/booking/SlotPicker'
 import { api, money, card, btn, btnGhost, input, Modal, Toggle } from './shared'
 import { PinIcon, CheckIcon, ChatIcon, CalendarIcon, XIcon, LinkIcon } from '@/components/booking/icons'
+import EmptyScroll from '@/components/EmptyScroll'
 
 // The team's list of online bookings, grouped by day: filters (status, date
 // range, search, sort), a roomy card per booking, and its actions — chat,
@@ -116,9 +117,10 @@ export default function BookingsList({ companyId, bookings, timezone, scope, set
 
       {!groups.length || !rows.length ? (
         <div className="bl-empty">
-          <span className="bl-empty-ic"><CalendarIcon size={26} /></span>
-          <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--ink,#111)', marginBottom: 4 }}>{search || range !== 'all' ? 'No bookings match' : scope === 'upcoming' ? 'No upcoming bookings yet' : 'Nothing here'}</div>
-          <div style={{ fontSize: 13.5, color: 'var(--slate,#6b7280)' }}>{search || range !== 'all' ? 'Try a different search or date range.' : scope === 'upcoming' ? 'Share your booking link to get started.' : ''}</div>
+          <EmptyScroll kinds={['calendar']}
+            title={search || range !== 'all' ? 'No bookings match' : scope === 'upcoming' ? 'No upcoming bookings yet' : 'Nothing here'}
+            line={search || range !== 'all' ? 'Try a different search or date range.' : scope === 'upcoming' ? 'Share your booking link to get started.' : 'Bookings show up here as they’re made.'}
+            action={search || range !== 'all' ? <button type="button" className="cv-btn" onClick={() => { setSearch(''); setRange('all') }}>Clear filters</button> : undefined} />
         </div>
       ) : (
         <div style={{ display: 'grid', gap: 22 }}>
@@ -286,8 +288,7 @@ const CSS = `
 .bl-note{font-size:13.5px;color:#4b5563;font-style:italic;margin-top:4px}
 .bl-tags{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
 .bl-chip{display:inline-flex;align-items:center;gap:4px;font-size:12.5px;font-weight:700;padding:5px 11px;border-radius:999px;background:#f3f4f6;color:#4b5563;white-space:nowrap}
-.bl-empty{background:#fff;border:1px solid var(--border,#ececec);border-radius:16px;text-align:center;padding:48px 20px}
-.bl-empty-ic{width:54px;height:54px;border-radius:17px;background:var(--peach,#fff1ee);color:var(--coral,#ff7a6b);display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px}
+.bl-empty{background:#fff;border:1px solid var(--border,#ececec);border-radius:16px;text-align:center;padding:16px 12px}
 @keyframes blIn{from{opacity:0;transform:translate3d(0,8px,0)}to{opacity:1;transform:none}}
 @keyframes blMenu{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
 @media(max-width:860px){.bl-top{flex-wrap:wrap}.bl-actions{width:100%;order:3}}

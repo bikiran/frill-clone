@@ -10,6 +10,7 @@ import {
   PUBLIC_LINK_CHANNELS, PUBLIC_CHANNEL_LABEL, linkFunnel,
   type Funnel, type FunnelClick, type FunnelConversion,
 } from '@/lib/link-channels'
+import EmptyScroll from '@/components/EmptyScroll'
 
 function parseTs(d: string | null | undefined): Date | null {
   if (!d) return null
@@ -366,9 +367,10 @@ export default function LinksGeneratorPage() {
 
       <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: '#fff', overflow: 'hidden' }}>
         {visible.length === 0 && (
-          <p style={{ padding: 30, textAlign: 'center', color: 'var(--slate)', fontSize: 13.5, margin: 0 }}>
-            {links.length === 0 ? 'No links yet — shorten one above.' : 'No links match that search.'}
-          </p>
+          links.length === 0
+            ? <EmptyScroll kinds={['link']} title="No links yet" line="Shorten a link above to track every click, and who it came from." />
+            : <EmptyScroll kinds={['link']} title="No matches" line={`Nothing matches “${search.trim()}”. Try part of the address or label.`}
+                action={<button type="button" className="cv-btn" onClick={() => setSearch('')}>Clear search</button>} />
         )}
         {visible.map(l => {
           const full = shortUrlFor(l)

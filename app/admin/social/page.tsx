@@ -9,6 +9,7 @@ import { SuggestionCard, type Suggestion } from '@/components/AgentSuggestion'
 import Pagination, { usePagination } from '@/components/Pagination'
 import VideoPlayer from '@/components/VideoPlayer'
 import MediaGallery from '@/components/MediaGallery'
+import EmptyScroll from '@/components/EmptyScroll'
 
 type Comment = {
   id: string
@@ -465,8 +466,13 @@ export default function SocialEngagementPage() {
           {/* Feed */}
           <div>
             {filtered.length === 0 ? (
-              <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: 40, textAlign: 'center', color: 'var(--slate)' }}>
-                {comments.length === 0 ? 'No comments yet — hit “Sync comments” to pull them from your page.' : 'No comments match these filters.'}
+              <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: 12 }}>
+                {comments.length === 0
+                  ? <EmptyScroll kinds={['chat', 'photo']} title="No comments yet" line="Sync to pull in comments from your Facebook and Instagram posts."
+                      action={connected ? <button type="button" className="cv-btn" onClick={sync} disabled={syncing}>{syncing ? 'Syncing…' : 'Sync comments'}</button> : undefined} />
+                  : <EmptyScroll kinds={['chat', 'photo']} title={search.trim() ? 'No matches' : 'No comments match these filters'}
+                      line={search.trim() ? `Nothing matches “${search.trim()}”.` : 'Try clearing a filter to see more.'}
+                      action={<button type="button" className="cv-btn" onClick={() => { setSearch(''); setRisk('all'); setType('all'); setCat(''); setPlatform('all') }}>Clear filters</button>} />}
               </div>
             ) : pg.items.map(c => {
               const critical = (c.risk_level || 'safe') === 'critical'

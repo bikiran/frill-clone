@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { authFetch } from '@/lib/auth-fetch'
+import EmptyScroll from '@/components/EmptyScroll'
 
 export type PickedMedia = { url: string; name?: string; type?: string; kind?: string }
 
@@ -57,7 +58,9 @@ export default function GalleryPicker({ companyId, onClose, onPick }: {
           {loading ? (
             <p style={{ padding: 30, textAlign: 'center', color: 'var(--slate)', fontSize: 13.5 }}>Loading your gallery…</p>
           ) : filtered.length === 0 ? (
-            <p style={{ padding: 30, textAlign: 'center', color: 'var(--slate)', fontSize: 13.5 }}>{items.length === 0 ? 'Your gallery is empty.' : 'Nothing matches your search.'}</p>
+            <EmptyScroll compact kinds={['photo']} title={items.length === 0 ? 'Your gallery is empty' : 'No matches'}
+              line={items.length === 0 ? 'Photos and videos you upload to the Gallery show up here.' : `Nothing matches “${q.trim()}”.`}
+              action={items.length > 0 ? <button type="button" className="cv-btn" onClick={() => setQ('')}>Clear search</button> : undefined} />
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 10 }}>
               {filtered.map(it => {

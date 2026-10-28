@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth-fetch'
 import Link from 'next/link'
+import EmptyScroll from '@/components/EmptyScroll'
 
 const ACTIVITY_ICONS: Record<string, string> = {
   form_created: '📝',
@@ -198,9 +199,8 @@ export default function AuditLogsPage() {
         {loading ? (
           <div style={{ textAlign: 'center', padding: 40, color: 'var(--slate)' }}>Loading...</div>
         ) : logs.length === 0 ? (
-          <div className="bg-white rounded-2xl border p-8 text-center" style={{ borderColor: 'var(--border)' }}>
-            <p style={{ color: 'var(--slate)', marginBottom: 16 }}>No activity logs yet</p>
-            <p style={{ fontSize: 12, color: 'var(--slate)' }}>Activity logs appear here as your team uses the platform</p>
+          <div className="bg-white rounded-2xl border p-4" style={{ borderColor: 'var(--border)' }}>
+            <EmptyScroll kinds={['note', 'contact', 'task']} title="No activity yet" line="What your team changes shows up here as they use Colvy." />
           </div>
         ) : (
           <div className="space-y-3">
