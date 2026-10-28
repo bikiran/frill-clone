@@ -126,7 +126,8 @@ export default function AiBuddy({ size = 40, color = '#ff7a6b', shape = 'star', 
       <defs>
         <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor={mix(color, '#ffffff', 0.18)} />
-          <stop offset="1" stopColor={mix(color, '#e2541f', 0.28)} />
+          {/* Coral deepens towards orange; any other colour towards a darker shade of itself. */}
+          <stop offset="1" stopColor={/^#ff7a6b$/i.test(color) ? mix(color, '#e2541f', 0.28) : mix(color, '#000000', 0.16)} />
         </linearGradient>
       </defs>
       <path d={d} fill={`url(#${id})`} />
