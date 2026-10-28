@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import TickSlider from '@/components/TickSlider'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -109,19 +110,7 @@ export default function PrioritiesPage() {
   }
 
   const Slider = ({ label, value, onChange, color = 'var(--coral)' }: any) => (
-    <div>
-      <div className="flex items-center justify-between mb-1">
-        <label className="text-xs font-medium" style={{ color: 'var(--slate)' }}>{label}</label>
-        <span className="text-xs font-bold w-6 text-center" style={{ color }}>{value}</span>
-      </div>
-      <input type="range" min={1} max={5} step={1} value={value}
-        onChange={e => onChange(parseInt(e.target.value))}
-        className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
-        style={{ accentColor: color }} />
-      <div className="flex justify-between text-xs mt-0.5" style={{ color: 'var(--slate)' }}>
-        <span>Low</span><span>High</span>
-      </div>
-    </div>
+    <TickSlider label={label} min={1} max={5} ticks={21} value={value} onChange={onChange} color={color} showMax={false} format={n => `${n} of 5`} />
   )
 
   const rice = ideas.map(i => ({ ...i, rice: riceScore(i.reach ?? 1, i.impact ?? 3, i.confidence ?? 3, i.effort ?? 3), value: valueScore(i.impact ?? 3, i.effort ?? 3) }))

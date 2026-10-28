@@ -11,6 +11,7 @@
 // pass campaignId and it saves the design against that campaign.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import TickSlider from '@/components/TickSlider'
 import { authFetch } from '@/lib/auth-fetch'
 import { fillTemplate, renderEmail, sampleVars, safeImage, safeUrl } from './render'
 import { blankBlock, newId } from './templates'
@@ -340,8 +341,7 @@ function BlockFields({ b, brand, companyId, update, field, wrap }: { b: Block; b
       return <p className="ed-hint">A thin line to separate sections.</p>
     case 'spacer':
       return (<>
-        <label className="ed-label">Height: {b.height || 24}px</label>
-        <input type="range" min={8} max={80} step={4} value={b.height || 24} onChange={e => update({ height: Number(e.target.value) })} style={{ width: '100%' }} />
+        <TickSlider label="Height" min={8} max={80} step={4} ticks={28} value={b.height || 24} onChange={n => update({ height: n })} format={n => `${n}px`} showMax={false} />
       </>)
     case 'social':
       return (<>
