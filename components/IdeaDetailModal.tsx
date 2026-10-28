@@ -1,6 +1,7 @@
 'use client'
 
 import { authFetch } from '@/lib/auth-fetch'
+import TickSlider from '@/components/TickSlider'
 import { useState, useEffect, useRef } from 'react'
 import ImageViewer from './ImageViewer'
 import { supabase } from '@/lib/supabase'
@@ -970,24 +971,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
 
                 {/* Reward slider */}
                 <div className="mb-5">
-                  <label className="text-sm font-medium mb-3 block" style={{ color: 'var(--ink)' }}>Reward</label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    step="25"
-                    value={reward}
-                    onChange={(e) => setReward(parseInt(e.target.value))}
-                    className="w-full accent-blue-500"
-                    style={{ accentColor: '#3b82f6' }}
-                  />
-                  <div className="flex justify-between text-xs mt-1" style={{ color: 'var(--slate)' }}>
-                    <span>0%</span>
-                    <span>25%</span>
-                    <span>50%</span>
-                    <span>75%</span>
-                    <span>100%</span>
-                  </div>
+                  <TickSlider label="Reward" min={0} max={100} step={25} ticks={25} value={reward} onChange={setReward} color="#3b82f6" format={n => `${n}%`} />
                 </div>
 
                 {/* Effort */}

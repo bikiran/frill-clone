@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import TickSlider from '@/components/TickSlider'
 import AiBuddy from '@/components/AiBuddy'
 import { authFetch } from '@/lib/auth-fetch'
 import { supabase } from '@/lib/supabase'
@@ -667,10 +668,9 @@ function ReviewAutoPanel({ value, saving, onSave }: { value: ReviewAuto; saving:
                 <option value={5}>5 star reviews only</option>
               </select>
             </label>
-            <label className="ag-limit">
-              <span>Most a day</span>
-              <input type="number" min={1} max={200} className="ag-input" value={d.max_per_day} onChange={e => setD({ ...d, max_per_day: Number(e.target.value) })} tabIndex={d.enabled ? 0 : -1} />
-            </label>
+            <div className="ag-limit ag-limit-slide">
+              <TickSlider label="Most a day" min={1} max={200} value={d.max_per_day} onChange={n => setD({ ...d, max_per_day: n })} tabIndex={d.enabled ? 0 : -1} />
+            </div>
           </div>
           <p className="ag-step-dec" style={{ marginTop: 10 }}>Replies that mention an order number, phone, email or address always wait for you, and so does anything it hands to your team.</p>
         </div>
@@ -840,10 +840,9 @@ function DailyAutoPanel({ value, saving, onSave, copy, onLabel = 'Send on its ow
       <div className={`ag-auto-body ${d.enabled ? 'open' : ''}`} aria-hidden={!d.enabled}>
         <div style={{ overflow: 'hidden' }}>
           <div className="ag-limits">
-            <label className="ag-limit">
-              <span>{copy.perDay}</span>
-              <input type="number" min={1} max={500} className="ag-input" value={d.max_per_day} onChange={e => setD({ ...d, max_per_day: Number(e.target.value) })} tabIndex={d.enabled ? 0 : -1} />
-            </label>
+            <div className="ag-limit ag-limit-slide">
+              <TickSlider label={copy.perDay} min={1} max={500} value={d.max_per_day} onChange={n => setD({ ...d, max_per_day: n })} tabIndex={d.enabled ? 0 : -1} />
+            </div>
           </div>
           <p className="ag-step-dec" style={{ marginTop: 10 }}>{copy.note}</p>
         </div>
@@ -906,14 +905,12 @@ function AutoSendPanel({ settings, saving, onSave }: { settings: Settings; savin
             })}
           </div>
           <div className="ag-limits">
-            <label className="ag-limit">
-              <span>Most replies on its own a day</span>
-              <input type="number" min={1} max={500} className="ag-input" value={draft.max_per_day} onChange={e => set({ max_per_day: Number(e.target.value) })} tabIndex={draft.enabled ? 0 : -1} />
-            </label>
-            <label className="ag-limit">
-              <span>Most per conversation an hour</span>
-              <input type="number" min={1} max={10} className="ag-input" value={draft.max_per_conversation_per_hour} onChange={e => set({ max_per_conversation_per_hour: Number(e.target.value) })} tabIndex={draft.enabled ? 0 : -1} />
-            </label>
+            <div className="ag-limit ag-limit-slide">
+              <TickSlider label="Most replies on its own a day" min={1} max={500} value={draft.max_per_day} onChange={n => set({ max_per_day: n })} tabIndex={draft.enabled ? 0 : -1} />
+            </div>
+            <div className="ag-limit ag-limit-slide">
+              <TickSlider label="Most per conversation an hour" min={1} max={10} ticks={28} value={draft.max_per_conversation_per_hour} onChange={n => set({ max_per_conversation_per_hour: n })} tabIndex={draft.enabled ? 0 : -1} />
+            </div>
           </div>
           <div className="ag-verified">
             <div style={{ minWidth: 0 }}>
@@ -1137,6 +1134,7 @@ const CSS = `
 .ag-limits{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;margin-top:14px}
 @media (min-width:560px){.ag-limits{grid-template-columns:1fr 1fr}}
 .ag-limit{display:flex;flex-direction:column;gap:6px;font-size:12.5px;font-weight:600;color:var(--slate)}
+.ag-limit-slide{grid-column:1 / -1;padding:14px 16px 12px;border-radius:16px;background:#fafafa;font-weight:400}
 .ag-verified{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;padding:11px 13px;border-radius:13px;border:1px solid var(--border)}
 .ag-auto-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:14px}
 .ag-count{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;margin-left:8px;border-radius:999px;background:var(--coral);color:#fff;font-size:11.5px;font-weight:800}

@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState, type ReactNode } from 'react'
+import TickSlider from '@/components/TickSlider'
 import { track } from '@/lib/analytics'
 import InviteCta from '@/components/InviteCta'
 import { CHANNELS, EXTRAS, FREE_SEATS, SMS_INCLUDED, recommendPlan, smsOverage, type Brand, type FinderAnswers, type PlanId } from '@/lib/plan-finder'
@@ -106,7 +107,6 @@ export default function PlanFinder({ dark, annual, setAnnual, tiers, onChoose, o
   // A number box over a pill-thumbed slider, like a dial. `max` is the
   // slider's end ("10k+"); the box takes any number up to `cap`.
   const dial = (value: number, set: (n: number) => void, opts: { min: number; max: number; step: number; cap: number; ticks: number[]; label: string; fmt?: (n: number) => string }) => {
-    const pct = ((Math.min(value, opts.max) - opts.min) / (opts.max - opts.min)) * 100
     const fmt = opts.fmt || String
     return (
       <div>
@@ -114,11 +114,8 @@ export default function PlanFinder({ dark, annual, setAnnual, tiers, onChoose, o
         <input type="number" inputMode="numeric" aria-label={opts.label} value={value} min={opts.min} max={opts.cap}
           onChange={e => { const n = Math.round(Number(e.target.value)); set(Number.isFinite(n) ? Math.max(opts.min, Math.min(opts.cap, n)) : opts.min) }}
           style={{ width: '100%', boxSizing: 'border-box', padding: '16px 20px', borderRadius: 16, border: `1.5px solid ${line}`, background: 'transparent', color: text, fontFamily: 'inherit', fontSize: 34, fontWeight: 900, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums', outline: 'none' }} />
-        <div style={{ position: 'relative', height: 44, margin: '18px 0 6px' }}>
-          <div style={{ position: 'absolute', left: 0, right: 0, top: 20, height: 4, borderRadius: 4, background: line }} />
-          <div style={{ position: 'absolute', left: 0, width: `${pct}%`, top: 20, height: 4, borderRadius: 4, background: ink }} />
-          <input className="pf-range" type="range" aria-label={`${opts.label} slider`} min={opts.min} max={opts.max} step={opts.step} value={Math.min(value, opts.max)}
-            onChange={e => set(Number(e.target.value))} style={{ position: 'absolute', inset: 0, width: '100%', margin: 0, background: 'transparent' }} />
+        <div style={{ margin: '16px 0 8px' }}>
+          <TickSlider ariaLabel={`${opts.label} slider`} min={opts.min} max={opts.max} step={opts.step} value={Math.min(value, opts.max)} onChange={set} showMax={false} color={CORAL} dark={dark} />
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: muted, fontVariantNumeric: 'tabular-nums', padding: '0 4px' }}>
           {opts.ticks.map((t, k) => <span key={t}>{fmt(t)}{k === opts.ticks.length - 1 ? '+' : ''}</span>)}
@@ -237,12 +234,6 @@ export default function PlanFinder({ dark, annual, setAnnual, tiers, onChoose, o
         .pf-go:hover,.pf-nav:hover:not(:disabled){transform:translateY(-1px)}
         .pf-step{animation:pfIn .45s cubic-bezier(0.16,1,0.3,1)}
         @keyframes pfIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
-        .pf-range{-webkit-appearance:none;appearance:none;cursor:pointer}
-        .pf-range::-webkit-slider-runnable-track{height:44px;background:transparent}
-        .pf-range::-moz-range-track{height:44px;background:transparent}
-        .pf-range::-webkit-slider-thumb{-webkit-appearance:none;width:64px;height:36px;margin-top:4px;border-radius:999px;background:${ink} url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='10' viewBox='0 0 24 10'%3E%3Cpath d='M6 0 0 5l6 5zM18 0l6 5-6 5z' fill='${encodeURIComponent(onInk)}'/%3E%3C/svg%3E") center/22px 9px no-repeat;border:none;box-shadow:0 6px 16px rgba(15,17,25,.2)}
-        .pf-range::-moz-range-thumb{width:64px;height:36px;border-radius:999px;background:${ink} url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='10' viewBox='0 0 24 10'%3E%3Cpath d='M6 0 0 5l6 5zM18 0l6 5-6 5z' fill='${encodeURIComponent(onInk)}'/%3E%3C/svg%3E") center/22px 9px no-repeat;border:none;box-shadow:0 6px 16px rgba(15,17,25,.2)}
-        .pf-range:focus-visible::-webkit-slider-thumb{outline:2px solid ${CORAL};outline-offset:2px}
         input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
         input[type=number]{-moz-appearance:textfield}
         @media (prefers-reduced-motion: reduce){.pf-step{animation:none}.pf-chip,.pf-nav,.pf-go{transition:none}}
