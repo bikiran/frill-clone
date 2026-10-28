@@ -43,7 +43,7 @@ export default function CollapseSection({
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, minHeight: 22, ...headStyle }}>
         <button type="button" onClick={toggle} aria-expanded={open} className="colvy-sect-head"
           style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: 0, margin: 0, border: 'none', background: 'none', cursor: 'pointer', font: 'inherit', textAlign: 'left', minWidth: 0 }}>
-          <span style={{ margin: 0, fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>{title}</span>
+          <span style={{ margin: 0, fontSize: 14, fontWeight: 700, letterSpacing: '-0.005em', color: 'var(--ink)' }}>{title}</span>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"
             style={{ color: 'var(--slate)', opacity: 0.7, flexShrink: 0, transform: open ? 'rotate(0deg)' : 'rotate(-90deg)', transition: `transform .32s ${EASE}` }}>
             <path d="m6 9 6 6 6-6" />
