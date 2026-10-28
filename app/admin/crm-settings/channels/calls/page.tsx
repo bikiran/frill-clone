@@ -13,6 +13,7 @@ import { Icon } from '@/components/integrations/ui'
 import { finalizeNext } from '@/lib/number-finalize-poll'
 import NumberPortingCard from '@/components/NumberPortingCard'
 import { KIND_LABEL, TOLLFREE_NOTE, TOLLFREE_VOLUME_NOTE, NO_TOLLFREE, LOCAL_RATE_SOON, type NumberKind } from '@/lib/number-types'
+import BrandLogo from '@/components/BrandLogo'
 
 export default function TelnyxIntegration() {
   const [companyId, setCompanyId] = useState<string | null>(null)
@@ -310,7 +311,7 @@ export default function TelnyxIntegration() {
         />
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        <img src="/logos/calls.svg" alt="" width={48} height={48} style={{ width: 48, height: 48, flexShrink: 0 }} />
+        <BrandLogo brand="calls" size={48} />
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>Calls & SMS</h1>
           <p style={{ fontSize: 13.5, color: 'var(--slate)', margin: '2px 0 0' }}>Call customers from your browser and text them from the inbox.</p>

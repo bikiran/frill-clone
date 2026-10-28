@@ -5,45 +5,52 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth-fetch'
 import { useCompanyUser, S } from '../_shared'
-import WhatsAppGlyph from '@/components/WhatsAppGlyph'
+import BrandLogo, { type BrandKey } from '@/components/BrandLogo'
 
 // Each channel points at the page that actually connects it. Channels that
 // aren't built yet say so honestly instead of offering a button that does
 // nothing (which is exactly what this page used to do).
-const CHANNELS = [
-  { id: 'web_form',  name: 'Live Chat Widget', color: '#F59E0B', icon: 'C',
+type Channel = { id: string; name: string; brand: BrandKey; group: string; href: string; ready: boolean; note: string }
+const CHANNELS: Channel[] = [
+  { id: 'web_form', name: 'Live chat widget', brand: 'colvy', group: 'chat',
     href: '/admin/crm-settings/chat-widget', ready: true,
-    note: 'Embedded on your website.' },
-  { id: 'email',     name: 'Email',            color: '#EA4335', icon: 'M',
-    href: '/admin/crm-settings/channels/email', ready: true,
-    note: 'Customers email you; replies thread back.' },
-  { id: 'sending_domain', name: 'Email sending domain', color: '#7C3AED', icon: '@',
-    href: '/admin/crm-settings/channels/sending-domain', ready: true,
-    note: 'Send campaign email from your own domain.' },
-  { id: 'webform',   name: 'Web Form',         color: '#0EA5E9', icon: '▤',
-    href: '/admin/crm-settings/channels/web-form', ready: true,
-    note: 'Point your website forms at a per-location address.' },
-  { id: 'sms',       name: 'SMS',              color: '#00c08b', icon: '✉',
-    href: '/admin/crm-settings/channels/calls', ready: true,
-    note: 'Two-way texting with a business number.' },
-  { id: 'phone',     name: 'Calls',            color: '#6366F1', icon: '☎',
-    href: '/admin/crm-settings/channels/calls', ready: true,
-    note: 'Inbound and outbound calling.' },
-  { id: 'google',    name: 'Google Reviews',   color: '#4285F4', icon: 'G',
-    href: '/admin/crm-settings/channels/google-reviews', ready: true,
-    note: 'See and reply to your reviews.' },
-  { id: 'realestate', name: 'RealEstate',       color: '#E4002B', icon: 'RE',
-    href: '/admin/crm-settings/channels/realestate', ready: true,
-    note: 'realestate.com.au listing enquiries land in your inbox.' },
-  { id: 'whatsapp',  name: 'WhatsApp',         color: '#25D366', icon: <WhatsAppGlyph size={20} color="#fff" />,
+    note: 'Chat with visitors on your website.' },
+  { id: 'whatsapp', name: 'WhatsApp', brand: 'whatsapp', group: 'chat',
     href: '/admin/crm-settings/channels/whatsapp', ready: true,
     note: 'WhatsApp Business messages in your inbox. Colvy registers your number with Meta.' },
-  { id: 'instagram', name: 'Instagram',        color: '#E4405F', icon: 'IG',
+  { id: 'instagram', name: 'Instagram', brand: 'instagram', group: 'chat',
     href: '/admin/crm-settings/channels/meta', ready: true,
-    note: 'Connect IG accounts per outlet.' },
-  { id: 'facebook',  name: 'Messenger',        color: '#1877F2', icon: 'f',
+    note: 'DMs and comments from your Instagram accounts.' },
+  { id: 'facebook', name: 'Messenger', brand: 'messenger', group: 'chat',
     href: '/admin/crm-settings/channels/meta', ready: true,
-    note: 'Connect Pages per outlet.' },
+    note: 'Messages to your Facebook Pages.' },
+  { id: 'sms', name: 'SMS', brand: 'sms', group: 'phone',
+    href: '/admin/crm-settings/channels/calls', ready: true,
+    note: 'Two-way texting from a business number.' },
+  { id: 'phone', name: 'Calls', brand: 'calls', group: 'phone',
+    href: '/admin/crm-settings/channels/calls', ready: true,
+    note: 'Answer and make calls in your browser.' },
+  { id: 'email', name: 'Email', brand: 'gmail', group: 'email',
+    href: '/admin/crm-settings/channels/email', ready: true,
+    note: 'Connect Gmail or any mailbox; replies thread back.' },
+  { id: 'sending_domain', name: 'Email sending domain', brand: 'domain', group: 'email',
+    href: '/admin/crm-settings/channels/sending-domain', ready: true,
+    note: 'Send campaign email from your own domain.' },
+  { id: 'google', name: 'Google reviews', brand: 'google', group: 'leads',
+    href: '/admin/crm-settings/channels/google-reviews', ready: true,
+    note: 'See and reply to your Google reviews.' },
+  { id: 'realestate', name: 'realestate.com.au', brand: 'realestate', group: 'leads',
+    href: '/admin/crm-settings/channels/realestate', ready: true,
+    note: 'Listing enquiries land in your inbox.' },
+  { id: 'webform', name: 'Web form', brand: 'webform', group: 'leads',
+    href: '/admin/crm-settings/channels/web-form', ready: true,
+    note: 'Point your website forms at a per-location address.' },
+]
+const GROUPS: { key: string; title: string; sub: string }[] = [
+  { key: 'chat', title: 'Chat and social', sub: 'Your website chat and the apps your customers message you on.' },
+  { key: 'phone', title: 'Phone and text', sub: 'A business number for calls and SMS.' },
+  { key: 'email', title: 'Email', sub: 'Your inbox, and the domain your campaigns send from.' },
+  { key: 'leads', title: 'Reviews and leads', sub: 'Reviews, listing enquiries and website forms.' },
 ]
 
 export default function ChannelsSettings() {
@@ -111,61 +118,74 @@ export default function ChannelsSettings() {
   if (loading) return <div style={{ color: 'var(--slate)' }}>Loading…</div>
 
   return (
-    <div style={{ maxWidth: 860 }}>
+    <div className="chn">
+      <style>{CHN_CSS}</style>
       <h1 style={S.h1}>Channels</h1>
       <p style={S.sub}>Connect the places your customers reach you. Messages from every connected channel land in one inbox.</p>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 16, marginTop: 22 }}>
-        {CHANNELS.map(ch => {
-          const isConnected = !!connected[ch.id]
-          // WhatsApp's own states: Request access / Pending approval / Connected.
-          const wa = ch.id === 'whatsapp' ? ({
-            not_requested: { label: 'Not connected', dot: '#d1d5db', fg: 'var(--slate)', cta: 'Request access', primary: true },
-            pending: { label: 'Pending approval', dot: '#f59e0b', fg: '#b45309', cta: 'View request', primary: false },
-            approved: { label: 'Connected', dot: '#22c55e', fg: '#059669', cta: 'Manage', primary: false },
-            rejected: { label: 'Not approved', dot: '#ef4444', fg: '#b91c1c', cta: 'Details', primary: false },
-            disabled: { label: 'Switched off', dot: '#d1d5db', fg: 'var(--slate)', cta: 'Details', primary: false },
-          } as Record<string, { label: string; dot: string; fg: string; cta: string; primary: boolean }>)[waStatus] || null : null
-          return (
-            <div key={ch.name} style={{ border: '1px solid var(--border)', borderRadius: 14, padding: 18, background: '#fff', opacity: ch.ready ? 1 : 0.72 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 12 }}>
-                <div style={{ width: 38, height: 38, borderRadius: 10, background: ch.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 14, flexShrink: 0 }}>
-                  {ch.icon}
+      {GROUPS.map(g => (
+        <section key={g.key} className="chn-group">
+          <div className="chn-gh"><h2>{g.title}</h2><p>{g.sub}</p></div>
+          <div className="chn-grid">
+            {CHANNELS.filter(ch => ch.group === g.key).map(ch => {
+              const isConnected = !!connected[ch.id]
+              // WhatsApp's own states: Request access / Pending approval / Connected.
+              const wa = ch.id === 'whatsapp' ? ({
+                not_requested: { label: 'Not connected', tone: '', cta: 'Request access', primary: true },
+                pending: { label: 'Pending approval', tone: 'warn', cta: 'View request', primary: false },
+                approved: { label: 'Connected', tone: 'on', cta: 'Manage', primary: false },
+                rejected: { label: 'Not approved', tone: 'bad', cta: 'Details', primary: false },
+                disabled: { label: 'Switched off', tone: '', cta: 'Details', primary: false },
+              } as Record<string, { label: string; tone: string; cta: string; primary: boolean }>)[waStatus] || null : null
+              const label = wa ? wa.label : isConnected ? 'Connected' : ch.ready ? 'Not connected' : 'Coming soon'
+              const tone = wa ? wa.tone : isConnected ? 'on' : ''
+              const primary = wa ? wa.primary : !isConnected
+              return (
+                <div key={ch.id} className={`chn-card${tone === 'on' ? ' on' : ''}`} onClick={() => ch.ready && router.push(ch.href)} role="link" tabIndex={-1}>
+                  <div className="chn-top">
+                    <BrandLogo brand={ch.brand} size={46} />
+                    <span className={`chn-state ${tone}`}><i />{label}</span>
+                  </div>
+                  <b className="chn-name">{ch.name}</b>
+                  <p className="chn-note">{ch.note}</p>
+                  {ch.ready ? (
+                    <button type="button" className={`chn-btn${primary ? ' primary' : ''}`} onClick={e => { e.stopPropagation(); router.push(ch.href) }}>
+                      {wa ? wa.cta : isConnected ? 'Manage' : 'Connect'}
+                    </button>
+                  ) : (
+                    <button type="button" className="chn-btn" disabled title="Not available yet">Coming soon</button>
+                  )}
                 </div>
-                <span style={{ fontSize: 15.5, fontWeight: 700, color: 'var(--ink)' }}>{ch.name}</span>
-              </div>
-
-              <p style={{ fontSize: 12.5, color: 'var(--slate)', margin: '0 0 14px', lineHeight: 1.5, minHeight: 34 }}>{ch.note}</p>
-
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 600, color: wa ? wa.fg : isConnected ? '#059669' : 'var(--slate)' }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: wa ? wa.dot : isConnected ? '#22c55e' : '#d1d5db', flexShrink: 0 }} />
-                  {wa ? wa.label : isConnected ? 'Connected' : ch.ready ? 'Not connected' : 'Coming soon'}
-                </span>
-
-                {wa ? (
-                  <button
-                    onClick={() => router.push(ch.href)}
-                    style={{ padding: '7px 15px', borderRadius: 999, border: wa.primary ? 'none' : '1.5px solid #e4e4e7', background: wa.primary ? 'var(--coral)' : '#fff', color: wa.primary ? '#fff' : 'var(--ink)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                    {wa.cta}
-                  </button>
-                ) : ch.ready ? (
-                  <button
-                    onClick={() => router.push(ch.href)}
-                    style={{ padding: '7px 15px', borderRadius: 999, border: isConnected ? '1.5px solid #e4e4e7' : 'none', background: isConnected ? '#fff' : 'var(--coral)', color: isConnected ? 'var(--ink)' : '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
-                    {isConnected ? 'Manage' : 'Connect'}
-                  </button>
-                ) : (
-                  <button disabled title="Not available yet"
-                    style={{ padding: '7px 15px', borderRadius: 999, border: '1.5px solid #e4e4e7', background: 'var(--canvas)', color: '#b6bac0', fontSize: 12.5, fontWeight: 700, cursor: 'not-allowed' }}>
-                    Connect
-                  </button>
-                )}
-              </div>
-            </div>
-          )
-        })}
-      </div>
+              )
+            })}
+          </div>
+        </section>
+      ))}
     </div>
   )
 }
+
+const CHN_CSS = `
+.chn{max-width:980px}
+.chn button::before{display:none!important}
+.chn-group{margin-top:26px}
+.chn-gh h2{margin:0;font-size:16px;font-weight:700;color:#111;letter-spacing:-.01em}
+.chn-gh p{margin:3px 0 12px;font-size:13.5px;color:#71717a}
+.chn-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(214px,1fr));gap:12px}
+.chn-card{display:flex;flex-direction:column;align-items:flex-start;padding:16px;border-radius:20px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04);cursor:pointer;transition:box-shadow .2s,transform .25s cubic-bezier(.22,1,.36,1)}
+.chn-card:hover{box-shadow:0 0 0 1px rgba(0,0,0,.08),0 12px 30px -14px rgba(16,24,40,.25);transform:translateY(-2px)}
+.chn-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;width:100%;margin-bottom:14px}
+.chn-state{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:#f4f4f5;font-size:11.5px;font-weight:600;color:#71717a;white-space:nowrap}
+.chn-state i{width:6px;height:6px;border-radius:50%;background:#d4d4d8}
+.chn-state.on{background:#dcfce7;color:#15803d}.chn-state.on i{background:#22c55e}
+.chn-state.warn{background:#fef3c7;color:#b45309}.chn-state.warn i{background:#f59e0b}
+.chn-state.bad{background:#fee2e2;color:#b91c1c}.chn-state.bad i{background:#ef4444}
+.chn-name{font-size:15.5px;font-weight:700;color:#111;letter-spacing:-.01em}
+.chn-note{flex:1;margin:4px 0 14px;font-size:13px;line-height:1.5;color:#71717a}
+.chn-btn{padding:8px 16px;border-radius:999px;border:0;background:#fff;color:#18181b;font:inherit;font-size:13px;font-weight:650;cursor:pointer;box-shadow:0 0 0 1.5px #e4e4e7;transition:background .15s}
+.chn-btn:hover{background:#f7f7f8}
+.chn-btn.primary{background:var(--coral);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 1px 2px rgba(16,24,40,.12)}
+.chn-btn.primary:hover{filter:brightness(.96);background:var(--coral)}
+.chn-btn:disabled{background:#f4f4f5;color:#a1a1aa;cursor:not-allowed;box-shadow:none}
+.chn-btn:focus-visible{outline:2px solid var(--coral);outline-offset:2px}
+`

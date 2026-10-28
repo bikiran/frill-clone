@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useCompanyUser, S } from '../../_shared'
+import BrandLogo from '@/components/BrandLogo'
 
 export default function RealEstateChannelPage() {
   const { companyId, loading } = useCompanyUser()
@@ -87,7 +88,7 @@ export default function RealEstateChannelPage() {
     <div style={{ maxWidth: 640 }}>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-        <div style={{ width: 40, height: 40, borderRadius: 10, background: '#E4002B', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>RE</div>
+        <BrandLogo brand="realestate" size={44} />
         <h1 style={{ ...S.h1, margin: 0 }}>realestate.com.au</h1>
       </div>
       <p style={S.sub}>Buyer enquiries submitted on your realestate.com.au listings land straight in your inbox. Connect once and Colvy handles the rest — no API keys to manage.</p>

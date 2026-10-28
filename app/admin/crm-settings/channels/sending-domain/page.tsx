@@ -12,6 +12,7 @@ import { authFetch } from '@/lib/auth-fetch'
 import { useCompanyUser, S } from '../../_shared'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { DIcon } from '@/components/EmailDesigner/icons'
+import BrandLogo from '@/components/BrandLogo'
 
 type Rec = { purpose: string; type: string; fqdn: string; host: string; value: string; priority?: number | null; status: string; required: boolean }
 type Dom = { id: string; domain: string; status: 'pending' | 'verified' | 'failed'; provider_status?: string | null; records: Rec[]; from_name: string | null; from_local_part: string; reply_to: string | null; verified_at: string | null; last_checked_at: string | null; last_error?: string | null }
@@ -83,7 +84,10 @@ export default function SendingDomainPage() {
   return (
     <div className="sd">
       <style>{CSS}</style>
-      <h1 style={S.h1}>Email sending domain</h1>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+        <BrandLogo brand="domain" size={44} />
+        <h1 style={{ ...S.h1, margin: 0 }}>Email sending domain</h1>
+      </div>
       <p style={S.sub}>Send campaign emails from your own domain, so they arrive from your business and reach more inboxes. Add a few DNS records once; we check them for you.</p>
 
       {err && <div className="sd-err" role="alert">{err}</div>}

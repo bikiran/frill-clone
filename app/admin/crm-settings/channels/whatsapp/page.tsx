@@ -9,7 +9,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { authFetch } from '@/lib/auth-fetch'
 import { useCompanyUser, S } from '../../_shared'
-import WhatsAppGlyph from '@/components/WhatsAppGlyph'
+import BrandLogo from '@/components/BrandLogo'
 
 type Sender = { status: string; phoneNumber?: string | null; displayName?: string | null; request?: any; requestedAt?: string | null; approvedAt?: string | null; note?: string | null }
 type State = { ready: boolean; sender: Sender; canSend: boolean; reason: string | null; reasonText: string | null; numbers: string[]; canRequest: boolean }
@@ -108,9 +108,8 @@ export default function WhatsAppChannelPage() {
 
   return (
     <div style={{ maxWidth: 760 }}>
-      <Link href="/admin/crm-settings/channels" style={{ fontSize: 13, color: 'var(--slate)', textDecoration: 'none' }}>← Channels</Link>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '10px 0 6px', flexWrap: 'wrap' }}>
-        <span style={{ width: 40, height: 40, borderRadius: 11, background: '#25D366', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><WhatsAppGlyph size={22} color="#fff" /></span>
+        <BrandLogo brand="whatsapp" size={44} />
         <h1 style={{ ...S.h1, margin: 0 }}>WhatsApp</h1>
         <Pill status={status} />
       </div>

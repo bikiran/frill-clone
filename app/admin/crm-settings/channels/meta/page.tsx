@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { currentSetupReturn, addQuery } from '@/lib/setup-return'
+import BrandLogo from '@/components/BrandLogo'
 
 // Whether Meta is sending this account's messages to Colvy, asked live from
 // Meta (GET /{page-id}/subscribed_apps) each time the page opens. Colvy
@@ -163,7 +164,10 @@ export default function MetaChannelsPage() {
 
   return (
     <div style={{ maxWidth: 820, padding: '8px 4px' }}>
-      <h1 style={{ margin: '0 0 6px', fontSize: 24, fontWeight: 800, color: 'var(--ink)' }}>Instagram &amp; Messenger</h1>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+        <span style={{ display: 'inline-flex' }}><BrandLogo brand="instagram" size={44} /><span style={{ marginLeft: -10 }}><BrandLogo brand="messenger" size={44} /></span></span>
+        <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: 'var(--ink)' }}>Instagram &amp; Messenger</h1>
+      </div>
       <p style={{ margin: '0 0 20px', fontSize: 14, color: 'var(--slate)', lineHeight: 1.55 }}>
         Connect each outlet's Facebook Page and Instagram account, then map it to that outlet so its DMs land in the right inbox.
       </p>
