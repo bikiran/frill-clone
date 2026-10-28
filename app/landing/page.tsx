@@ -5,7 +5,7 @@ import AgentTeamBand from '@/components/AgentTeamBand'
 import { useEffect, useState, useRef, ReactNode } from 'react'
 import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin } from '@/lib/redirect'
-import OmniInboxDemo from '@/components/OmniInboxDemo'
+import ContactsProfileDemo from '@/components/marketing/ContactsProfileDemo'
 import ColvyAppDemo from '@/components/ColvyAppDemo'
 import TeamInboxDemo from '@/components/marketing/TeamInboxDemo'
 import ChannelFlow from '@/components/marketing/ChannelFlow'
@@ -369,7 +369,6 @@ export default function LandingPage() {
 
   // Full-bleed feature bands (edge-to-edge colour — kills the empty sides).
   const BIG = [
-    { color: CORAL, band: dark ? 'rgba(255,106,77,0.10)' : '#fff1ec', tag: 'One shared inbox', title: 'Every channel. One conversation.', body: 'Instagram, Messenger, email, SMS and live chat land in a single shared inbox — each message tied to a full customer profile, so anyone on your team can pick up the thread.', bullets: ['Unified omnichannel inbox', 'Full customer profile beside every chat', 'Voice typing: speak a reply, send it polished'], href: '/inbox-crm', visual: 'demo' as const },
     { color: BLUE, band: dark ? 'rgba(43,89,255,0.10)' : '#eef2ff', tag: 'Sell inside the chat', title: 'Turn a message into money.', body: 'Look up live WooCommerce orders, take payments, recover abandoned carts, text everyone on a waitlist the moment stock is back and record off-Stripe sales — right where the customer is talking to you. Then see the real revenue each conversation drove.', bullets: ['Live orders, refunds & payment links', 'Abandoned carts & back-in-stock waitlists', 'Revenue-per-conversation reporting'], href: '/inbox-crm#woo', visual: 'sale' as const },
     { color: GREEN, band: dark ? 'rgba(0,196,140,0.10)' : '#eafaf4', tag: 'Online booking', title: 'Bookings that fill themselves.', body: 'Customers book a service, a time and a team member on your own booking page, pay a deposit, and get SMS reminders. If plans change, they move it themselves. Every booking lands in the same thread as their messages.', bullets: ['Live staff & location availability', 'Stripe deposits and SMS reminders', 'Self-serve reschedule & cancel'], href: '/product/booking', visual: 'booking' as const },
     { color: PURPLE, band: dark ? 'rgba(124,92,255,0.10)' : '#f3efff', tag: 'Work less, close more', title: 'Automations that never sleep.', body: 'Auto-reply, route and follow up. Schedule a reply for the right moment, turn any conversation into an assignable task on a calendar, trigger order updates, and let AI draft the reply — you stay in control.', bullets: ['Order-status & follow-up automations', 'Scheduled replies — edit, send now or cancel', 'Tasks, calendar & reminders', 'AI-assisted replies with an undo'], href: '/inbox-crm#tasks', visual: 'flow' as const },
@@ -397,7 +396,7 @@ export default function LandingPage() {
         .cv-suite-track::-webkit-scrollbar { display:none; }
         .cv-suite-card:hover { transform:translateY(-6px) !important; box-shadow:0 40px 90px rgba(15,17,25,0.42) !important; }
         .cv-sm{ display:none; }
-        @media (max-width:900px){ .cv-hero{ flex-direction:column !important; align-items:stretch !important; } .cv-big-row{ grid-template-columns:1fr !important; } .cv-hero-grid{ grid-template-columns:1fr !important; } .cv-desktop{ display:none !important; } .cv-mobile-toggle{ display:flex !important; } .cv-bubbles{ display:none !important; } .cv-brand-huge{ font-size:64px !important; } .cv-trust{ position:static !important; margin-top:32px; bottom:auto !important; width:100% !important; } .cv-lg{ display:none !important; } .cv-sm{ display:inline !important; } .cv-hero-cta{ flex-wrap:nowrap !important; } .cv-hero-cta > *{ flex:1 1 0 !important; min-width:0 !important; justify-content:center !important; padding-left:14px !important; padding-right:14px !important; white-space:nowrap !important; } }
+        @media (max-width:900px){ .cv-prof-head{ grid-template-columns:1fr !important; align-items:start !important; } .cv-hero{ flex-direction:column !important; align-items:stretch !important; } .cv-big-row{ grid-template-columns:1fr !important; } .cv-hero-grid{ grid-template-columns:1fr !important; } .cv-desktop{ display:none !important; } .cv-mobile-toggle{ display:flex !important; } .cv-bubbles{ display:none !important; } .cv-brand-huge{ font-size:64px !important; } .cv-trust{ position:static !important; margin-top:32px; bottom:auto !important; width:100% !important; } .cv-lg{ display:none !important; } .cv-sm{ display:inline !important; } .cv-hero-cta{ flex-wrap:nowrap !important; } .cv-hero-cta > *{ flex:1 1 0 !important; min-width:0 !important; justify-content:center !important; padding-left:14px !important; padding-right:14px !important; white-space:nowrap !important; } }
         @media (prefers-reduced-motion: reduce){ .cv-marquee-track{ animation:none } [class*="cv-float"]{ animation:none !important } .cv-live-ring{ animation:none !important } .cv-hiw-bar{ animation:none !important; width:100% !important } }
         /* Below the fold: let the browser skip layout/paint (and pause the CSS
            animations) of sections until they're near the viewport. */
@@ -543,6 +542,22 @@ export default function LandingPage() {
 
       {/* BIG FEATURE BANDS (full-bleed colour, edge-to-edge) */}
       <div id="features">
+        {/* EVERY CUSTOMER, ONE PROFILE — Colvy's contacts with a profile
+            beside them: details, value and every chat on every channel. */}
+        <section style={{ background: dark ? 'rgba(255,106,77,0.10)' : '#fff1ec', padding: 'clamp(56px, 8vw, 100px) 24px', overflow: 'hidden' }}>
+          <div className="cv-prof-head" style={{ maxWidth: 1200, margin: '0 auto clamp(32px, 5vw, 56px)', display: 'grid', gridTemplateColumns: 'minmax(0, 1.25fr) minmax(0, 1fr)', gap: 'clamp(20px, 4vw, 64px)', alignItems: 'end' }}>
+            <Reveal>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: CORAL, color: '#fff', fontSize: 12.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 18 }}>One shared inbox</span>
+              <h3 style={{ fontSize: 'clamp(32px, 4.8vw, 56px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.04, margin: 0, color: text }}>Every customer, one profile.<br /><span style={{ color: dark ? 'rgba(244,245,251,0.45)' : 'rgba(15,17,25,0.4)' }}>Every chat they ever had.</span></h3>
+            </Reveal>
+            <Reveal delay={0.1}>
+              <p style={{ fontSize: 17, color: muted, lineHeight: 1.6, margin: '0 0 16px' }}>A first message on any channel makes a contact. Orders, segments and every conversation stay on one profile, so anyone on your team can pick up the thread.</p>
+              <a href="/inbox-crm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 16, fontWeight: 700, color: text, textDecoration: 'none' }}>Explore <ArrowRight s={15} /></a>
+            </Reveal>
+          </div>
+          <ContactsProfileDemo />
+        </section>
+
         {BIG.map((f, i) => {
           const flip = i % 2 === 1
           return (
@@ -562,7 +577,6 @@ export default function LandingPage() {
                 <div style={{ order: flip ? 1 : 2, display: 'flex', justifyContent: 'center' }}>
                   <Parallax strength={flip ? -0.05 : 0.05}>
                     <Reveal>
-                      {f.visual === 'demo' && <div style={{ width: '100%', maxWidth: 520, borderRadius: 20, overflow: 'hidden', border: `1px solid ${cardBorder}`, boxShadow: '0 30px 70px rgba(15,17,25,0.18)' }}><OmniInboxDemo dark={dark} /></div>}
                       {f.visual === 'sale' && <SaleMock color={f.color} text={text} muted={muted} cardBg={dark ? '#171826' : '#fff'} border={cardBorder} />}
                       {f.visual === 'booking' && <BookingMock color={f.color} text={text} muted={muted} cardBg={dark ? '#171826' : '#fff'} border={cardBorder} />}
                       {f.visual === 'flow' && <FlowMock color={f.color} text={text} cardBg={dark ? '#171826' : '#fff'} border={cardBorder} />}
