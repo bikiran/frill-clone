@@ -47,6 +47,10 @@ export default function SettingsPage() {
   const [ogImageUrl, setOgImageUrl] = useState('')
   const [logoLink, setLogoLink] = useState('')
   const [customScript, setCustomScript] = useState('')
+  // How people can sign in (Sign-in & security). Saved in site_settings
+  // 'general' as signIn; the sign-in page reads it. Email & password is always on.
+  const [signIn, setSignIn] = useState<{ google: boolean; github: boolean; magicLink: boolean }>({ google: true, github: true, magicLink: false })
+  const [signInSaving, setSignInSaving] = useState(false)
   const [navIdeas, setNavIdeas] = useState(true)
   const [navRoadmap, setNavRoadmap] = useState(true)
   const [navAnnouncements, setNavAnnouncements] = useState(true)
@@ -121,6 +125,26 @@ export default function SettingsPage() {
   const [guestSubmitEnabled, setGuestSubmitEnabled] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const saveSignIn = async (next: { google: boolean; github: boolean; magicLink: boolean }) => {
+    const before = signIn
+    setSignIn(next)
+    const cid = company?.id
+    if (!cid) { setSignIn(before); showToast('Workspace not loaded yet. Try again in a moment.', 'error', 3000); return }
+    setSignInSaving(true)
+    try {
+      // Through the settings API (members only), keeping everything else in the row.
+      const cur = await authFetch(`/api/admin/settings?company_id=${cid}`).then(r => r.json())
+      const value = { ...(cur?.settings?.value || {}), signIn: next }
+      const res = await authFetch('/api/admin/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ company_id: cid, value }) })
+      const out = await res.json().catch(() => ({}))
+      if (!res.ok || out.error) throw new Error(out.error || 'save failed')
+      try { localStorage.setItem(`site_settings_${company?.slug || 'colvy'}`, JSON.stringify(value)) } catch {}
+      showToast('Saved', 'success', 1500)
+    } catch (e: any) {
+      setSignIn(before)
+      showToast('Couldn’t save: ' + (e?.message || 'try again'), 'error', 4000)
+    } finally { setSignInSaving(false) }
+  }
   // Miscellaneous settings
   const [allowAnnSubsc, setAllowAnnSubsc] = useState(true)
   const [allowAnnComments, setAllowAnnComments] = useState(true)
@@ -285,6 +309,7 @@ export default function SettingsPage() {
           else setOgImageUrl('')
           if (s.logoLink) setLogoLink(s.logoLink)
           if (s.customScript) setCustomScript(s.customScript)
+          if (s.signIn && typeof s.signIn === 'object') setSignIn(v => ({ ...v, ...s.signIn }))
           if (s.navIdeas !== undefined) setNavIdeas(s.navIdeas)
           if (s.navRoadmap !== undefined) setNavRoadmap(s.navRoadmap)
           if (s.navAnnouncements !== undefined) setNavAnnouncements(s.navAnnouncements)
@@ -344,6 +369,7 @@ export default function SettingsPage() {
       } catch {
         try {
           const s = JSON.parse(localStorage.getItem('site_settings') || '{}')
+          if (s.signIn && typeof s.signIn === 'object') setSignIn(v => ({ ...v, ...s.signIn }))
           if (s.navIdeas !== undefined) setNavIdeas(s.navIdeas)
           if (s.navRoadmap !== undefined) setNavRoadmap(s.navRoadmap)
           if (s.navAnnouncements !== undefined) setNavAnnouncements(s.navAnnouncements)
@@ -414,6 +440,8 @@ export default function SettingsPage() {
       allowAnnSubsc, allowAnnComments, showAnnComments, disableAnnReactions,
       disableAnimGifs, disableCommentReactions, allowIdeaComments, showIdeaMRR,
       showIdeaNumber, showRoadmapDesc, showIdeaDate, showIdeaActivity, requireIdeaTopic,
+      // The whole row is replaced on save, so the sign-in choices ride along.
+      signIn,
     }
     
     const companyId = company.id
@@ -1231,31 +1259,52 @@ export default function SettingsPage() {
         {/* Authentication tab */}
         {activeSettingsTab === 'auth' && (
           <div className="space-y-4">
-            <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
-              <h2 className="font-bold mb-5" style={{ color: 'var(--ink)' }}>Sign-in Methods</h2>
-              <div className="space-y-3">
-                {[
-                  { label: 'Email & Password', desc: 'Standard email/password authentication', icon: '✉️', enabled: true },
-                  { label: 'Google OAuth', desc: 'Let users sign in with their Google account', icon: '🔵', enabled: true },
-                  { label: 'GitHub OAuth', desc: 'Let users sign in with their GitHub account', icon: '⚫', enabled: false },
-                  { label: 'Magic Link', desc: 'Passwordless sign-in via email link', icon: '🔮', enabled: false },
-                ].map(m => (
-                  <div key={m.label} className="flex items-center justify-between p-4 rounded-xl border" style={{ borderColor: 'var(--border)' }}>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xl">{m.icon}</span>
-                      <div>
-                        <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{m.label}</p>
-                        <p className="text-xs" style={{ color: 'var(--slate)' }}>{m.desc}</p>
+            <div className="st-sec">
+              <h2>Sign-in methods</h2>
+              <p>How people sign in to your board and help centre. Email and password always works, so nobody gets locked out.</p>
+              <div className="si-list">
+                <style>{`
+                  .si-list { display: flex; flex-direction: column; border-radius: 16px; box-shadow: 0 0 0 1px #ececf0; overflow: hidden; }
+                  .si-row { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-top: 1px solid #f0f0f2; }
+                  .si-row:first-child { border-top: none; }
+                  .si-ic { width: 38px; height: 38px; flex-shrink: 0; border-radius: 11px; background: #f4f4f5; color: #3f3f46; display: flex; align-items: center; justify-content: center; }
+                  .si-sw { position: relative; width: 44px; height: 26px; flex-shrink: 0; border: none; border-radius: 999px; background: #d4d4d8; cursor: pointer; transition: background .2s ease; }
+                  .si-sw::before { display: none; }
+                  .si-sw span { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.2); transition: transform .22s cubic-bezier(.22,1,.36,1); }
+                  .si-sw[aria-checked="true"] { background: var(--coral); }
+                  .si-sw[aria-checked="true"] span { transform: translateX(18px); }
+                  .si-sw:focus-visible { outline: 2px solid var(--coral); outline-offset: 2px; }
+                  .si-sw:disabled { opacity: .6; cursor: default; }
+                `}</style>
+                {([
+                  { key: null, label: 'Email & password', desc: 'Their email and a password', icon: <><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="m3.5 7 8.5 6 8.5-6" /></> },
+                  { key: 'google', label: 'Google', desc: 'Continue with their Google account', icon: <><path d="M20.5 12.2c0-.6-.1-1.2-.2-1.7H12v3.3h4.8a4.1 4.1 0 0 1-1.8 2.7" /><path d="M12 20.5a8.5 8.5 0 1 1 5.7-14.8" /><path d="M12 12h8.5" /></> },
+                  { key: 'github', label: 'GitHub', desc: 'Continue with their GitHub account', icon: <path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" /> },
+                  { key: 'magicLink', label: 'Magic link', desc: 'We email them a one-time sign-in link, no password needed', icon: <><path d="m15 4 1.5 3L20 8.5 16.5 10 15 13l-1.5-3L10 8.5 13.5 7z" /><path d="M5.5 14.5 3 21l6.5-2.5" /><path d="m7 17 6-6" /></> },
+                ] as const).map(m => {
+                  const on = m.key ? signIn[m.key] : true
+                  return (
+                    <div key={m.label} className="si-row">
+                      <span className="si-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>{m.icon}</svg></span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ margin: 0, fontSize: 14.5, fontWeight: 600, color: '#18181b' }}>{m.label}</p>
+                        <p style={{ margin: '2px 0 0', fontSize: 13, color: '#71717a' }}>{m.desc}</p>
                       </div>
+                      {m.key ? (
+                        <button type="button" role="switch" aria-checked={on} aria-label={m.label} className="si-sw" disabled={signInSaving}
+                          onClick={() => saveSignIn({ ...signIn, [m.key!]: !on })}><span /></button>
+                      ) : (
+                        <span style={{ fontSize: 12.5, fontWeight: 600, color: '#71717a', background: '#f4f4f5', borderRadius: 999, padding: '4px 10px', whiteSpace: 'nowrap' }}>Always on</span>
+                      )}
                     </div>
-                    <button className="relative inline-flex h-6 w-11 items-center rounded-full cursor-pointer shrink-0"
-                      style={{ background: m.enabled ? 'var(--coral)' : '#d1d5db' }}>
-                      <span className="inline-block h-4 w-4 transform rounded-full bg-white shadow"
-                        style={{ transform: m.enabled ? 'translateX(24px)' : 'translateX(4px)' }} />
-                    </button>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
+              {signIn.magicLink && (
+                <p style={{ margin: '12px 0 0', fontSize: 13, color: '#71717a', lineHeight: 1.5 }}>
+                  The sign-in page now offers “Email me a sign-in link”. Links work for people who already have an account, and each one works once.
+                </p>
+              )}
             </div>
           </div>
         )}

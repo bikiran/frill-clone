@@ -8,6 +8,30 @@ import { Suspense } from 'react'
 import ColvyLogo from '@/components/ColvyLogo'
 import { StatusMark } from '@/components/StatusMark'
 
+// After a magic link: owners to their admin, staff to this workspace's admin,
+// everyone else (people who use the board) to the board.
+async function landSignedIn(userId: string) {
+  const { data: owns } = await (supabase as any).from('companies').select('id').eq('owner_id', userId).limit(1)
+  if (owns?.length) return redirectToUserAdmin(userId)
+  const { data: roles } = await (supabase as any).from('team_members').select('role').eq('user_id', userId)
+  const staff = (roles || []).some((r: any) => !r.role || String(r.role).toLowerCase() !== 'viewer')
+  window.location.href = staff ? '/admin' : '/'
+}
+
+// Left on this device by the sign-in page when it sent a magic link: the page they
+// were on (a path on this site only). Read once. It's also how we know a sign-in
+// was a magic link when Supabase has already taken the tokens out of the URL.
+function takeMagicLink(): { next: string } | null {
+  try {
+    const raw = localStorage.getItem('colvy_signin_next')
+    localStorage.removeItem('colvy_signin_next')
+    const v = raw ? JSON.parse(raw) : null
+    if (!v || Date.now() - Number(v.at) > 24 * 3600e3) return null
+    const next = typeof v.next === 'string' && v.next.startsWith('/') && !v.next.startsWith('//') ? v.next : ''
+    return { next }
+  } catch { return null }
+}
+
 function ConfirmHandler() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -45,6 +69,10 @@ function ConfirmHandler() {
           }
 
           setStatus('Signed in! Redirecting...')
+          // A magic link: back to the page they were signing in from, else by who they are.
+          const magic = takeMagicLink()
+          if (magic?.next) { window.location.href = magic.next; return }
+          if ((magic || type === 'magiclink') && data?.user?.id) { await landSignedIn(data.user.id); return }
           if (data?.user?.id) {
             await redirectToUserAdmin(data.user.id)
           } else {
@@ -66,6 +94,10 @@ function ConfirmHandler() {
         // Check if already have session
         const { data: { session } } = await supabase.auth.getSession()
         if (session?.user?.id) {
+          // Supabase may have read the link's tokens before we did.
+          const magic = takeMagicLink()
+          if (magic?.next) { window.location.href = magic.next; return }
+          if (magic) { await landSignedIn(session.user.id); return }
           await redirectToUserAdmin(session.user.id)
           return
         }
