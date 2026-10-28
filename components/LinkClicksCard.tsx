@@ -52,57 +52,59 @@ export default function LinkClicksCard({ companyId }: { companyId: string | null
   const rate = links.length ? Math.round((opened / links.length) * 100) : 0
 
   return (
-    <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-          </svg>
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>Link clicks</h3>
+    <div style={{ background: '#fff', borderRadius: 20, overflow: 'hidden', boxShadow: '0 0 0 1px rgba(0,0,0,.06), 0 1px 2px rgba(16,24,40,.04)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '16px 18px 6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ width: 30, height: 30, borderRadius: 10, background: '#eef2ff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+            </svg>
+          </span>
+          <h3 style={{ margin: 0, fontSize: 15.5, fontWeight: 700, color: 'var(--ink)' }}>Link clicks</h3>
         </div>
-        <Link href="/admin/link-reports" style={{ fontSize: 12, fontWeight: 700, color: 'var(--coral)', textDecoration: 'none' }}>
-          Full report →
+        <Link href="/admin/link-reports" style={{ height: 30, padding: '0 12px', borderRadius: 999, background: '#f4f4f5', color: '#18181b', fontSize: 13, fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
+          Full report
         </Link>
       </div>
 
       {/* Headline numbers */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, padding: '8px 12px' }}>
         {[
           { label: 'Total clicks', value: totalClicks },
           { label: 'Links opened', value: `${opened}/${links.length}` },
           { label: 'Open rate', value: `${rate}%` },
         ].map((s, i) => (
-          <div key={s.label} style={{ padding: '14px 18px', borderRight: i < 2 ? '1px solid var(--border)' : 'none' }}>
-            <p style={{ margin: '0 0 3px', fontSize: 10.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{s.label}</p>
-            <p style={{ margin: 0, fontSize: 22, fontWeight: 800, color: 'var(--ink)' }}>{loading ? '—' : s.value}</p>
+          <div key={s.label} style={{ padding: '12px 14px', borderRadius: 14, background: '#fafafa', minWidth: 0 }}>
+            <p style={{ margin: '0 0 4px', fontSize: 12.5, fontWeight: 600, color: '#71717a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.label}</p>
+            <p style={{ margin: 0, fontSize: 22, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{loading ? '—' : s.value}</p>
           </div>
         ))}
       </div>
 
       {/* Busiest links */}
-      <div style={{ borderTop: '1px solid var(--border)' }}>
+      <div style={{ padding: '4px 8px 10px' }}>
         {loading ? (
-          <p style={{ padding: 16, margin: 0, fontSize: 13, color: 'var(--slate)' }}>Loading…</p>
+          <p style={{ padding: '12px 10px', margin: 0, fontSize: 13.5, color: '#8e8e93' }}>Loading…</p>
         ) : top.length === 0 ? (
-          <p style={{ padding: 16, margin: 0, fontSize: 13, color: 'var(--slate)' }}>No links sent yet.</p>
+          <p style={{ padding: '12px 10px', margin: 0, fontSize: 13.5, color: '#8e8e93' }}>No links sent yet. Links you send in chats and campaigns show their clicks here.</p>
         ) : top.map(l => {
           const t = l.link_type || l.kind
           const colour = TYPE_COLOR[t] || { bg: '#f3f4f6', fg: '#374151' }
           return (
-            <div key={l.code} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 18px', borderBottom: '1px solid var(--border)' }}>
+            <div key={l.code} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 10px', borderRadius: 14 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {l.label || l.target_url}
                   </span>
                   {t && (
-                    <span style={{ flexShrink: 0, fontSize: 9.5, fontWeight: 700, padding: '1px 6px', borderRadius: 4, background: colour.bg, color: colour.fg }}>
+                    <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 600, height: 20, display: 'inline-flex', alignItems: 'center', padding: '0 7px', borderRadius: 999, background: colour.bg, color: colour.fg }}>
                       {TYPE_LABEL[t] || t}
                     </span>
                   )}
                 </div>
-                <div style={{ fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>/{l.code}</div>
+                <div style={{ fontSize: 12.5, color: '#a1a1aa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>/{l.code}</div>
               </div>
 
               {/* Click count with a view icon — a quick read at a glance. */}
