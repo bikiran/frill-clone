@@ -5,6 +5,7 @@ import { authFetch } from '@/lib/auth-fetch'
 import { readStored, writeStored } from '@/lib/client-cache'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { GoalsPanel } from '@/components/AgentGoals'
+import CountUp from '@/components/agents/CountUp'
 
 // Agents → Results: what the agents achieved, what they brought to the team,
 // and "ready for more freedom" suggestions the team can accept in one tap.
@@ -69,7 +70,7 @@ function Tile({ label, value, note, now, before, goodUp = true, days, neutral, f
   return (
     <div className="ar-tile">
       <span className="ar-tile-l">{label}</span>
-      <span className="ar-tile-v">{value}</span>
+      <span className="ar-tile-v"><CountUp value={value} /></span>
       {note && <span className="ar-tile-n">{note}</span>}
       {delta}
     </div>
@@ -337,7 +338,9 @@ const CSS = `
 .ar-trust-t{margin:0;font-size:14px;font-weight:700;color:var(--ink)}
 .ar-trust-d{margin:3px 0 0;font-size:13px;color:var(--slate);line-height:1.45}
 .ar-meter{margin-top:8px;height:6px;border-radius:999px;background:#d1fadf;overflow:hidden;max-width:260px}
-.ar-meter span{display:block;height:100%;border-radius:999px;background:#12b76a;transition:width .6s ${EASE}}
+.ar-meter span{display:block;height:100%;border-radius:999px;background:#12b76a;transition:width .6s ${EASE};animation:arGrow 1s ${EASE} both}
+@keyframes arGrow{from{max-width:0}to{max-width:100%}}
+@media (prefers-reduced-motion:reduce){.ar-meter span{animation:none}}
 .ar-trust-a{display:flex;flex-direction:column;gap:6px;flex-shrink:0}
 .ar-primary{height:36px;padding:0 14px;border-radius:11px;border:none;background:var(--coral);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;transition:transform .15s ${EASE},opacity .2s ease}
 .ar-primary:active:not(:disabled){transform:scale(.97)}.ar-primary:disabled{opacity:.5;cursor:default}

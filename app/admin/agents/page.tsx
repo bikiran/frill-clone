@@ -14,6 +14,7 @@ import { NeedsYouCard } from '@/components/NeedsYou'
 import ConversationPicker, { cleanPreview, type PickConv } from '@/components/ConversationPicker'
 import { waitlistEntryHref, waitlistPreview } from '@/lib/waitlist-ai'
 import { friendlyRunError } from '@/lib/agent/tool-schema'
+import { AGENTS } from '@/lib/agents-marketing'
 
 // AI Agents (Phase 1 of the Agent Engine). Every agent run is recorded — what
 // it knew, every action it asked for, the permission decision and why, and the
@@ -114,6 +115,8 @@ const I = {
   check: <Svg size={12} d={<polyline points="20 6 9 17 4 12" />} />,
   inbox: <Svg size={14} d={<><polyline points="22 12 16 12 14 15 10 15 8 12 2 12" /><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></>} />,
 }
+// Each agent's face on the team roster: its own colour and shape.
+const FACE: Record<string, { shape: 'star' | 'squircle' | 'flower' | 'blob' }> = { support: { shape: 'star' }, reception: { shape: 'squircle' }, reputation: { shape: 'flower' }, sales: { shape: 'blob' }, operations: { shape: 'squircle' } }
 const KIND_ICON: Record<string, React.ReactNode> = { context: I.layers, model: I.brain, action: I.bolt, finish: I.flag, error: I.alert, approval: I.flag }
 
 export default function AgentsPage() {
@@ -385,6 +388,35 @@ export default function AgentsPage() {
           </div>
         )}
         {error && <div className="ag-note err ag-fade" style={{ marginBottom: 16 }} role="alert">{I.alert}<span>{error}</span></div>}
+
+        {/* The team: each agent's face, whether it's working, and the last thing it did. */}
+        <section className="ag-team ag-fade" aria-label="Your AI team">
+          <div className="ag-team-head">
+            <div>
+              <p className="ag-h">Your AI team</p>
+              <p className="ag-p">{paused ? 'Everyone is paused. New messages wait for your team.' : onCount ? `${onCount} of ${navAgents.length} working for you right now.` : 'Switch an agent on to put it to work.'}</p>
+            </div>
+            <a href="#ag-try" className="ag-ghost" style={{ display: 'inline-flex', alignItems: 'center', height: 36, textDecoration: 'none' }}>{I.play}&nbsp; Try an agent</a>
+          </div>
+          <div className="ag-team-grid">
+            {navAgents.map(a => {
+              const meta = AGENTS.find(x => x.key === a.key)
+              const last = runs.find(r => r.role_key === a.key && r.mode === 'live')
+              const state = paused ? 'paused' : a.on ? 'on' : a.on == null ? '' : 'off'
+              return (
+                <a key={a.key} href={`#ag-${a.key}`} className={`ag-mate ${state}`} style={{ ['--c' as any]: meta?.color || '#ff6a4d' }}>
+                  <span className="ag-mate-face"><AiBuddy size={42} color={meta?.color} shape={FACE[a.key]?.shape} /></span>
+                  <b>{a.label}</b>
+                  <span className="ag-mate-state"><i />{a.on == null ? '…' : paused ? 'Paused' : a.on ? 'Working' : 'Off'}</span>
+                  <span className="ag-mate-line" key={last?.id || 'role'}>
+                    <span className="t">{last?.summary ? last.summary : meta?.role}</span>
+                    {last && <span className="w">{when(last.created_at)}</span>}
+                  </span>
+                </a>
+              )
+            })}
+          </div>
+        </section>
 
         {/* What needs a person right now (Phase 10) */}
         <div id="ag-needs">{companyId && !needsMigration && <NeedsYouCard companyId={companyId} />}</div>
@@ -1233,4 +1265,32 @@ const CSS = `
   .ag-head-pause{display:none!important}
 }
 .ag-primary:focus-visible,.ag-ghost:focus-visible,.ag-kill:focus-visible,.ag-switch:focus-visible,.ag-who button:focus-visible,.ag-topic:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 28%,transparent)}
+.ag-team{background:#fff;border-radius:22px;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04);padding:18px;margin-bottom:16px}
+.ag-team-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:2px 2px 14px}
+.ag-team-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:10px}
+.ag-mate{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:14px;border-radius:18px;background:#f7f7f8;color:inherit;text-decoration:none;overflow:hidden;transition:background .2s,box-shadow .2s,transform .25s cubic-bezier(.22,1,.36,1)}
+.ag-mate:hover{background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 10px 28px -12px rgba(16,24,40,.22);transform:translateY(-2px)}
+.ag-mate:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 30%,transparent)}
+.ag-mate::after{content:"";position:absolute;right:-30px;top:-30px;width:110px;height:110px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--c) 22%,transparent),transparent 70%);opacity:0;transition:opacity .4s}
+.ag-mate.on::after{opacity:1}
+.ag-mate-face{position:relative;display:inline-flex;margin-bottom:4px;transition:filter .3s,opacity .3s}
+.ag-mate.on .ag-mate-face{animation:agBob 3.2s ease-in-out infinite}
+.ag-mate.off .ag-mate-face,.ag-mate.paused .ag-mate-face{filter:grayscale(1);opacity:.55}
+.ag-mate b{font-size:14.5px;font-weight:700;color:#111;letter-spacing:-.01em}
+.ag-mate-state{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#8e8e93}
+.ag-mate-state i{position:relative;width:7px;height:7px;border-radius:50%;background:#d4d4d8}
+.ag-mate.on .ag-mate-state{color:#15803d}
+.ag-mate.on .ag-mate-state i{background:#22c55e}
+.ag-mate.on .ag-mate-state i::after{content:"";position:absolute;inset:0;border-radius:50%;background:#22c55e;animation:agPing 1.8s cubic-bezier(0,0,.2,1) infinite}
+.ag-mate.paused .ag-mate-state{color:#b45309}
+.ag-mate.paused .ag-mate-state i{background:#f59e0b}
+.ag-mate-line{display:flex;flex-direction:column;gap:2px;margin-top:4px;padding-top:8px;border-top:1px dashed #e4e4e7;width:100%;font-size:12.5px;line-height:1.45;color:#52525b}
+.ag-mate-line .t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;animation:agType 1.1s steps(28,end) .25s both}
+.ag-mate-line .w{font-size:11.5px;color:#a1a1aa}
+@media (max-width:560px){.ag-team{padding:14px}.ag-team-grid{grid-template-columns:1fr 1fr;gap:8px}.ag-mate{padding:12px}}
+@keyframes agBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+@keyframes agPing{0%{transform:scale(1);opacity:.6}80%,100%{transform:scale(2.4);opacity:0}}
+@keyframes agType{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+@media (prefers-reduced-motion:reduce){.ag-mate,.ag-mate-face{animation:none!important;transition:none}.ag-mate-line .t,.ag-mate-state i::after{animation:none!important}}
+
 `

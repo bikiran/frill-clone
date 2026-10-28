@@ -86,7 +86,8 @@ const CSS = `
 .gl-pct.good{color:#067647}.gl-pct.ok{color:#b54708}.gl-pct.bad{color:#b42318}
 .gl-n{font-size:12px;color:var(--slate)}
 .gl-meter{width:120px;height:6px;border-radius:999px;background:color-mix(in srgb,var(--slate) 14%,#fff);overflow:hidden;margin-top:3px}
-.gl-meter span{display:block;height:100%;border-radius:999px;background:var(--ink);opacity:.75;transition:width .6s ${EASE}}
+.gl-meter span{display:block;height:100%;border-radius:999px;background:var(--ink);opacity:.75;transition:width .6s ${EASE};animation:glGrow 1s ${EASE} both}
+@keyframes glGrow{from{max-width:0}to{max-width:100%}}
 .gl-open{margin-top:4px;font-size:12px;font-weight:700;color:#b42318;text-decoration:none}
 .gl-switch{position:relative;width:40px;height:24px;flex-shrink:0;margin-left:auto;border-radius:999px;border:none;cursor:pointer;background:color-mix(in srgb,var(--slate) 28%,transparent);transition:background .3s ${EASE}}
 .gl-switch span{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .3s ${EASE}}
