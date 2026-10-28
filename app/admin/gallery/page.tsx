@@ -12,7 +12,6 @@ import VideoTrimmer from '@/components/VideoTrimmer'
 import MentionInput, { resolveMentions } from '@/components/MentionInput'
 import { useGoogleDrivePicker } from '@/components/GoogleDrivePicker'
 import PhoneUploadQR from '@/components/PhoneUploadQR'
-import PageHeader from '@/components/PageHeader'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { authFetch } from '@/lib/auth-fetch'
 import { loadStaffRows } from '@/lib/team-list'
@@ -753,20 +752,44 @@ export default function GalleryPage() {
   return (
     <div className="gal-root">
       <style>{`
+        .gal-root { padding: 24px 28px 48px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); }
+        .gal-root button::before { display: none; }
+        .gal-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
+        .gal-head h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -.025em; line-height: 1.1; }
+        .gal-head p { margin: 6px 0 0; font-size: 14.5px; color: #71717a; }
         .gal-toolbar-btns { display: flex; gap: 8px; flex-wrap: wrap; }
-        .gal-root { padding: 28px 36px; }
-        .gal-layout { display: flex; gap: 24px; align-items: flex-start; }
-        .gal-sidebar { width: 210px; flex-shrink: 0; position: sticky; top: 16px; }
-        .gal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 16px; }
+        .gal-toolbar-btns .cv-btn { display: inline-flex; align-items: center; gap: 7px; }
+        .gal-note { margin-bottom: 16px; padding: 11px 16px; border-radius: 16px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.06); font-size: 13.5px; color: #3f3f46; }
+        .gal-layout { display: flex; gap: 20px; align-items: flex-start; }
+        .gal-sidebar { width: 224px; flex-shrink: 0; position: sticky; top: 16px; padding: 10px; border-radius: 20px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 1px 2px rgba(16,24,40,.04); box-sizing: border-box; }
+        .gal-sidebar > button:hover, .gal-folder-row > button:hover { background: #f4f4f5 !important; }
+        .gal-round { width: 28px; height: 28px; padding: 0; border: none; border-radius: 50%; background: #f4f4f5; color: #3f3f46; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+        .gal-round:hover { background: #ececef; color: #18181b; }
+        .gal-tools { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+        .gal-search { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 10px 0 14px; border-radius: 999px; border: 1.5px solid transparent; background: #f4f4f5; color: #a1a1aa; box-sizing: border-box; transition: background-color .15s, border-color .15s, box-shadow .15s; }
+        .gal-search:focus-within { background: #fff; border-color: #d4d4d8; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 16%, transparent); }
+        .gal-search input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font: inherit; font-size: 14px; color: var(--ink); }
+        .gal-search input:focus { box-shadow: none; }
+        .gal-x { width: 22px; height: 22px; padding: 0; border: none; border-radius: 999px; background: #e4e4e7; color: #52525b; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+        .gal-catsel { max-width: 200px; }
+        .gal-catsel.on { background-color: #18181b !important; color: #fff !important; }
+        .gal-tile { position: relative; padding: 6px; border-radius: 20px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 1px 2px rgba(16,24,40,.04); }
+        .gal-tile.sel { box-shadow: 0 0 0 2px var(--coral), 0 8px 20px -10px rgba(0,0,0,.25); }
+        .gal-tag { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 999px; background: color-mix(in srgb, var(--coral) 11%, #fff); color: color-mix(in srgb, var(--coral) 82%, #000); font-size: 11px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .gal-tag::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: var(--coral); flex-shrink: 0; }
+        .gal-picker { width: 100%; box-sizing: border-box; height: 30px; padding: 0 10px; border: none; border-radius: 999px; background: #f4f4f5; font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 4px; text-align: left; transition: background-color .15s; }
+        .gal-picker:hover { background: #ececef; }
+        .gal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 14px; }
         /* A card can shrink to its column; without this a card's own content
            (the action row) widened every column past the screen. */
         .gal-grid > * { min-width: 0; }
         .gal-grid.compact { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
         .gal-grid.large { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 18px; }
         /* Segmented view switcher */
-        .gal-viewseg { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border-radius: 10px; border: 1px solid var(--border); background: #fff; }
-        .gal-viewseg button { display: flex; align-items: center; justify-content: center; width: 30px; height: 28px; border: none; background: transparent; border-radius: 7px; cursor: pointer; color: var(--slate); transition: background 0.14s ease, color 0.14s ease; }
-        .gal-viewseg button.on { background: var(--peach); color: var(--coral); }
+        .gal-viewseg { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border-radius: 999px; background: #f4f4f5; flex-shrink: 0; }
+        .gal-viewseg button { display: flex; align-items: center; justify-content: center; width: 34px; height: 32px; border: none; background: transparent; border-radius: 999px; cursor: pointer; color: #71717a; transition: background 0.14s ease, color 0.14s ease; }
+        .gal-viewseg button:hover { color: #18181b; }
+        .gal-viewseg button.on { background: #fff; color: #18181b; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
         .gal-spin { animation: gal-spin-kf 0.7s linear infinite; }
         @keyframes gal-spin-kf { to { transform: rotate(360deg); } }
         /* Smoother cards: lift on hover, gentle image zoom, softer shadows. */
@@ -780,17 +803,18 @@ export default function GalleryPage() {
         .gal-card:hover .gal-heart, .gal-heart.on { opacity: 1; }
         .gal-heart:hover { transform: scale(1.12); background: rgba(0,0,0,0.6) !important; }
         .gal-heart.on:hover { color: #ff7a94 !important; }
-        .gal-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.10); }
+        .gal-card:hover { transform: translateY(-2px); box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 12px 28px -12px rgba(0,0,0,0.25); }
+        .gal-card.sel:hover { box-shadow: 0 0 0 2px var(--coral), 0 12px 28px -12px rgba(0,0,0,0.25); }
         .gal-card .gal-thumb img, .gal-card .gal-thumb video { transition: transform 0.28s ease; }
         .gal-card:hover .gal-thumb img, .gal-card:hover .gal-thumb video { transform: scale(1.04); }
 
         /* Category rows: the edit/delete actions stay hidden until you hover the
            row, so the list reads clean. Icons animate in and react on hover. */
-        .gal-folder-row { position: relative; display: flex; align-items: center; gap: 2px; border-radius: 8px; padding-right: 2px; transition: background 0.14s ease; }
-        .gal-folder-row:hover { background: #f6f7f9; }
+        .gal-folder-row { position: relative; display: flex; align-items: center; gap: 2px; border-radius: 12px; padding-right: 2px; transition: background 0.14s ease; }
+        .gal-folder-row:hover { background: #f4f4f5; }
         .gal-folder-actions { display: flex; align-items: center; gap: 2px; opacity: 0; transform: translateX(6px); transition: opacity 0.16s ease, transform 0.16s ease; }
         .gal-folder-row:hover .gal-folder-actions, .gal-folder-row:focus-within .gal-folder-actions { opacity: 1; transform: translateX(0); }
-        .gal-icon-btn { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; background: transparent; border-radius: 8px; cursor: pointer; color: var(--slate); flex-shrink: 0; transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease; }
+        .gal-icon-btn { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; background: transparent; border-radius: 50%; cursor: pointer; color: var(--slate); flex-shrink: 0; transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease; }
         .gal-icon-btn svg { transition: transform 0.2s ease; }
         .gal-icon-btn.edit:hover { background: var(--peach); color: var(--coral); transform: translateY(-1px); }
         .gal-icon-btn.edit:hover svg { transform: rotate(-14deg) scale(1.1); }
@@ -799,7 +823,7 @@ export default function GalleryPage() {
         @keyframes gal-shake { 0%,100% { transform: rotate(0) scale(1.08); } 25% { transform: rotate(-10deg) scale(1.08); } 75% { transform: rotate(10deg) scale(1.08); } }
 
         /* Card action row — playful hover, echoing the sidebar icons. */
-        .gal-act { flex-shrink: 0; width: 28px; height: 28px; border-radius: 7px; background: transparent; border: none; color: var(--slate); cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease; }
+        .gal-act { flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%; background: transparent; border: none; color: #71717a; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease; }
         .gal-act svg { transition: transform 0.2s ease; }
         .gal-act:hover { transform: translateY(-2px); }
         .gal-act.share:hover { background: var(--peach); color: var(--coral); }
@@ -824,25 +848,26 @@ export default function GalleryPage() {
         .gal-cat-strip { display: none; }
 
         @media (max-width: 760px) {
-          .gal-root { padding: 16px 14px; }
-          /* The header still reaches the screen edges with the smaller padding. */
-          .gal-root > .ph-root { margin: -16px -14px 16px !important; }
+          .gal-root { padding: 16px 14px 40px; }
+          .gal-head h1 { font-size: 26px; }
+          .gal-search input { font-size: 16px; }
+          .gal-catsel { max-width: 46%; }
           /* Stack: the folder sidebar becomes a horizontal chip strip on top. */
           /* Stretch, so the column is the screen's width rather than its widest
              strip of chips (which scroll sideways instead). */
           .gal-layout { flex-direction: column; gap: 12px; align-items: stretch; }
           .gal-sidebar { display: none; }
           .gal-cat-strip {
-            display: flex; gap: 7px; overflow-x: auto; padding-bottom: 4px;
+            display: flex; gap: 7px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 8px;
             -webkit-overflow-scrolling: touch; scrollbar-width: none;
           }
           .gal-cat-strip::-webkit-scrollbar { display: none; }
           .gal-cat-chip {
-            flex-shrink: 0; padding: 7px 14px; border-radius: 20px;
-            font-size: 12.5px; font-weight: 700; white-space: nowrap; cursor: pointer;
-            border: 1px solid var(--border); background: #fff; color: var(--slate);
+            flex-shrink: 0; height: 34px; padding: 0 14px; border-radius: 999px;
+            font: inherit; font-size: 13.5px; font-weight: 600; white-space: nowrap; cursor: pointer;
+            border: none; background: #f4f4f5; color: #3f3f46;
           }
-          .gal-cat-chip.on { border-color: var(--coral); background: var(--peach); color: var(--coral); }
+          .gal-cat-chip.on { background: #18181b; color: #fff; }
           /* Two cards across on a phone: room for the thumbnail, the name, the
              folder and all four actions (the density switcher is desktop-only).
              Three across left ~100px cards whose actions spilled out. */
@@ -850,57 +875,44 @@ export default function GalleryPage() {
           .gal-acts { justify-content: space-between !important; }
           .gal-act { width: 32px; height: 32px; }
           .gal-viewseg { display: none; }
-          /* Primary actions full width, secondary ones wrap. */
+          /* Upload is the main job on a phone: it gets the row to itself. */
           .gal-toolbar-btns { width: 100%; }
+          .gal-toolbar-btns .cv-btn { flex: 1 1 auto; justify-content: center; }
+          .gal-toolbar-btns .cv-btn-primary { order: -1; flex-basis: 100%; }
+          .gal-tile { padding: 5px; border-radius: 18px; }
           /* Details slideout takes the full width on a phone. */
           .gal-details-panel { width: 100% !important; max-width: 100% !important; }
         }
       `}</style>
-      <PageHeader
-        title="Media Gallery"
-        subtitle="Store and categorise photos and videos (fish, tanks, plants…) to send to customers in chat."
-        bleed={36}
-        bleedTop={28}
-        action={
-          <button onClick={() => fileRef.current?.click()} disabled={uploading} style={{ padding: '9px 18px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>{uploading ? 'Uploading…' : '+ Upload media'}</button>
-        }>
-          <button onClick={syncPrexty} style={{ padding: '9px 16px', borderRadius: 9, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>Sync from Prexty</button>
-          {driveConfigured && <button onClick={() => connectSource('google_drive')} disabled={driveLoading || driveImporting} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 9, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}><GoogleDriveIcon /> {driveImporting ? 'Importing…' : 'Google Drive'}</button>}
-          {categories.length > 0 && (
-            <select value={catFilter} onChange={e => setCatFilter(e.target.value)}
-              style={{ padding: '9px 12px', borderRadius: 9, border: `1px solid ${catFilter ? 'var(--coral)' : 'var(--border)'}`, background: catFilter ? 'var(--peach)' : '#fff', color: catFilter ? 'var(--coral)' : 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-              <option value="">All categories</option>
-              {categories.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          )}
-
-          <div className="gal-viewseg" role="group" aria-label="View options">
-            <button className={viewMode === 'compact' ? 'on' : ''} onClick={() => changeView('compact')} title="Compact grid" aria-label="Compact grid">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-            </button>
-            <button className={viewMode === 'comfortable' ? 'on' : ''} onClick={() => changeView('comfortable')} title="Comfortable grid" aria-label="Comfortable grid">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg>
-            </button>
-            <button className={viewMode === 'large' ? 'on' : ''} onClick={() => changeView('large')} title="Large grid" aria-label="Large grid">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="12" x2="21" y2="12"/></svg>
-            </button>
-          </div>
-
-          <button onClick={() => setShowQR(true)} title="Upload from your phone by scanning a QR code"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 9, background: 'var(--peach)', color: 'var(--coral)', border: '1px solid var(--coral)', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><line x1="14" y1="14" x2="14" y2="14.01"/><line x1="18" y1="14" x2="21" y2="14"/><line x1="14" y1="18" x2="14" y2="21"/><line x1="18" y1="18" x2="21" y2="21"/></svg>
+      <div className="gal-head">
+        <div style={{ minWidth: 0 }}>
+          <h1>Media gallery</h1>
+          <p>Store and sort photos and videos (fish, tanks, plants…) to send to customers in chat.</p>
+        </div>
+        <div className="gal-toolbar-btns">
+          <button type="button" className="cv-btn" onClick={syncPrexty}>Sync from Prexty</button>
+          {driveConfigured && <button type="button" className="cv-btn" onClick={() => connectSource('google_drive')} disabled={driveLoading || driveImporting}><GoogleDriveIcon /> {driveImporting ? 'Importing…' : 'Google Drive'}</button>}
+          <button type="button" className="cv-btn" onClick={() => setShowQR(true)} title="Upload from your phone by scanning a QR code">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" /><line x1="12" y1="18" x2="12.01" y2="18" /></svg>
             Phone upload
           </button>
+          <button type="button" className="cv-btn cv-btn-primary" onClick={() => fileRef.current?.click()} disabled={uploading}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+            {uploading ? 'Uploading…' : 'Upload media'}
+          </button>
           <input ref={fileRef} type="file" accept="image/*,video/*" multiple onChange={onUpload} style={{ display: 'none' }} />
-      </PageHeader>
-      {prextyStatus && <div style={{ background: 'var(--peach)', border: '1px solid var(--coral)', borderRadius: 9, padding: '9px 12px', marginBottom: 16, fontSize: 12.5, color: 'var(--ink)' }}>{prextyStatus}</div>}
+        </div>
+      </div>
+      {prextyStatus && <div className="gal-note" role="status">{prextyStatus}</div>}
 
       <div className="gal-layout">
         {/* Folders sidebar (desktop) */}
         <div className="gal-sidebar">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase' }}>Categories</span>
-            <button onClick={() => createFolder()} title="New category" style={{ background: 'none', border: 'none', color: 'var(--coral)', fontSize: 18, cursor: 'pointer', lineHeight: 1 }}>+</button>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '2px 4px 8px 8px' }}>
+            <span style={{ fontSize: 13.5, fontWeight: 600, color: '#71717a' }}>Categories</span>
+            <button type="button" className="gal-round" onClick={() => createFolder()} title="New category" aria-label="New category">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
           </div>
           <button onClick={() => setActiveFolder(null)} style={folderBtn(activeFolder === null)}>All media</button>
           <button onClick={() => setActiveFolder('__fav')} style={{ ...folderBtn(activeFolder === '__fav'), display: 'flex', alignItems: 'center', gap: 7 }}>
@@ -910,7 +922,7 @@ export default function GalleryPage() {
           {renderFolders(null, 0)}
           {/* Trash pinned at the bottom (like Notes). */}
           <button onClick={() => setActiveFolder(activeFolder === '__trash' ? null : '__trash')}
-            style={{ ...folderBtn(activeFolder === '__trash'), display: 'flex', alignItems: 'center', gap: 7, marginTop: 8, borderTop: '1px solid var(--border)', borderRadius: 0, paddingTop: 12 }}>
+            style={{ ...folderBtn(activeFolder === '__trash'), display: 'flex', alignItems: 'center', gap: 7, marginTop: 10, boxShadow: '0 -1px 0 #f0f0f2' }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
             {activeFolder === '__trash' ? 'Back to media' : 'Trash'}
           </button>
@@ -937,15 +949,38 @@ export default function GalleryPage() {
           {/* Mobile category strip (mirrors the desktop sidebar) */}
           <div className="gal-cat-strip">
             <button className={'gal-cat-chip' + (activeFolder === null ? ' on' : '')} onClick={() => setActiveFolder(null)}>All media</button>
-            <button className={'gal-cat-chip' + (activeFolder === '__fav' ? ' on' : '')} onClick={() => setActiveFolder('__fav')}>♥ Favourites{favIds.size ? ` (${favIds.size})` : ''}</button>
-            <button className={'gal-cat-chip' + (activeFolder === '__trash' ? ' on' : '')} onClick={() => setActiveFolder('__trash')}>🗑 Trash</button>
+            <button className={'gal-cat-chip' + (activeFolder === '__fav' ? ' on' : '')} onClick={() => setActiveFolder('__fav')}>Favourites{favIds.size ? ` (${favIds.size})` : ''}</button>
+            <button className={'gal-cat-chip' + (activeFolder === '__trash' ? ' on' : '')} onClick={() => setActiveFolder('__trash')}>Trash</button>
             {flatFolders().map(({ f, depth }) => (
               <button key={f.id} className={'gal-cat-chip' + (activeFolder === f.id ? ' on' : '')} onClick={() => setActiveFolder(f.id)}>
                 {depth ? '↳ ' : ''}{f.name}{f.external_source === 'prexty' ? ' 🔄' : ''}
               </button>
             ))}
           </div>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by title, SKU, description…" style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box', marginBottom: 14 }} />
+          <div className="gal-tools">
+            <label className="gal-search">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by title, SKU or description" aria-label="Search media" />
+              {search && <button type="button" className="gal-x" onClick={() => setSearch('')} aria-label="Clear search"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg></button>}
+            </label>
+            {categories.length > 0 && (
+              <select value={catFilter} onChange={e => setCatFilter(e.target.value)} className={`cv-select gal-catsel${catFilter ? ' on' : ''}`} aria-label="Filter by category">
+                <option value="">All categories</option>
+                {categories.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            )}
+            <div className="gal-viewseg" role="group" aria-label="View options">
+              <button type="button" className={viewMode === 'compact' ? 'on' : ''} onClick={() => changeView('compact')} title="Compact grid" aria-label="Compact grid">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+              </button>
+              <button type="button" className={viewMode === 'comfortable' ? 'on' : ''} onClick={() => changeView('comfortable')} title="Comfortable grid" aria-label="Comfortable grid">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg>
+              </button>
+              <button type="button" className={viewMode === 'large' ? 'on' : ''} onClick={() => changeView('large')} title="Large grid" aria-label="Large grid">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="12" x2="21" y2="12"/></svg>
+              </button>
+            </div>
+          </div>
           {loadingData ? (
             <p style={{ color: 'var(--slate)', fontSize: 13.5 }}>Loading…</p>
           ) : items.length === 0 && pending.length === 0 ? (
@@ -953,7 +988,7 @@ export default function GalleryPage() {
               onClick={() => fileRef.current?.click()}
               style={{
                 position: 'relative', textAlign: 'center', padding: '54px 24px', cursor: 'pointer', overflow: 'hidden',
-                borderRadius: 20, border: `2px dashed ${dragOver ? 'var(--coral)' : 'var(--border)'}`,
+                borderRadius: 24, border: `2px dashed ${dragOver ? 'var(--coral)' : '#e4e4e7'}`,
                 background: dragOver ? 'var(--peach)' : 'linear-gradient(160deg, #fffdfc 0%, #fff4f1 100%)',
                 transition: 'all 0.2s',
               }}>
@@ -987,11 +1022,11 @@ export default function GalleryPage() {
                     <path d="M21 15l-5-5L5 21" />
                   </svg>
                 </div>
-                <p style={{ fontSize: 17, fontWeight: 800, color: 'var(--ink)', margin: '0 0 6px' }}>{dragOver ? 'Drop to upload' : 'It feels kinda empty here'}</p>
+                <p style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--ink)', margin: '0 0 6px' }}>{dragOver ? 'Drop to upload' : 'It feels kinda empty here'}</p>
                 <p style={{ fontSize: 13.5, color: 'var(--slate)', margin: '0 0 20px' }}>Upload or drag and drop your media here — photos and videos to send to customers in chat.</p>
 
                 <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
-                  <button onClick={e => { e.stopPropagation(); fileRef.current?.click() }} style={{ padding: '10px 20px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Upload media</button>
+                  <button type="button" className="cv-btn cv-btn-primary" onClick={e => { e.stopPropagation(); fileRef.current?.click() }}>Upload media</button>
                   <button onClick={e => { e.stopPropagation(); connectSource('google_drive') }} disabled={driveLoading || driveImporting} style={connectBtn}>
                     <GoogleDriveIcon /> {driveImporting ? 'Importing…' : driveLoading ? 'Opening…' : 'Google Drive'}
                   </button>
@@ -1028,8 +1063,8 @@ export default function GalleryPage() {
               {pending.map((p: any) => {
                 const errored = p.status === 'error'
                 return (
-                  <div key={p.id} style={{ border: `1px solid ${errored ? '#dc2626' : 'var(--border)'}`, borderRadius: 12, background: '#fff', position: 'relative' }}>
-                    <div style={{ position: 'relative', paddingTop: '75%', background: 'var(--canvas)', overflow: 'hidden', borderRadius: '12px 12px 0 0' }}>
+                  <div key={p.id} className="gal-tile" style={{ boxShadow: errored ? '0 0 0 2px #fca5a5' : undefined }}>
+                    <div style={{ position: 'relative', paddingTop: '75%', background: '#f4f4f5', overflow: 'hidden', borderRadius: 14 }}>
                       {p.kind === 'video' ? (
                         <video src={p.previewUrl} muted style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.55 }} />
                       ) : (
@@ -1040,14 +1075,14 @@ export default function GalleryPage() {
                           <>
                             <span style={{ fontSize: 11.5, fontWeight: 700, color: '#dc2626' }}>Upload failed</span>
                             <button type="button" onClick={() => dismissPending(p.id)}
-                              style={{ fontSize: 11, padding: '3px 12px', borderRadius: 6, border: '1px solid #dc2626', background: '#fff', color: '#dc2626', cursor: 'pointer', fontWeight: 600 }}>Dismiss</button>
+                              style={{ fontSize: 12, height: 28, padding: '0 12px', borderRadius: 999, border: 'none', background: '#fff', color: '#dc2626', cursor: 'pointer', fontWeight: 600, boxShadow: '0 1px 3px rgba(0,0,0,.12)' }}>Dismiss</button>
                           </>
                         ) : (
                           <div className="gal-spin" style={{ width: 26, height: 26, borderRadius: '50%', border: '3px solid var(--peach)', borderTopColor: 'var(--coral)' }} />
                         )}
                       </div>
                     </div>
-                    <div style={{ padding: '7px 9px', fontSize: 11, color: errored ? '#dc2626' : 'var(--slate)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <div style={{ padding: '8px 6px 4px', fontSize: 12.5, color: errored ? '#dc2626' : '#8e8e93', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {errored ? p.name : 'Uploading…'}
                     </div>
                   </div>
@@ -1056,8 +1091,8 @@ export default function GalleryPage() {
               {visibleItems.map((item, i) => {
                 const isSelected = selected.has(item.id)
                 return (
-                <div key={item.id} className={`gal-card${freshIds.has(item.id) ? ' gal-fresh' : ''}`} style={{ border: `1px solid ${isSelected ? 'var(--coral)' : 'var(--border)'}`, borderRadius: 12, background: '#fff', boxShadow: isSelected ? '0 0 0 2px var(--peach)' : 'none', position: 'relative' }}>
-                  <div className="gal-thumb" style={{ position: 'relative', paddingTop: '75%', cursor: 'pointer', background: 'var(--canvas)', overflow: 'hidden', borderRadius: '12px 12px 0 0' }}
+                <div key={item.id} className={`gal-card gal-tile${isSelected ? ' sel' : ''}${freshIds.has(item.id) ? ' gal-fresh' : ''}`}>
+                  <div className="gal-thumb" style={{ position: 'relative', paddingTop: '75%', cursor: 'pointer', background: '#f4f4f5', overflow: 'hidden', borderRadius: 14 }}
                     onClick={() => selectMode ? toggleSelect(item.id) : setLightboxIndex(i)}
                     onMouseEnter={item.kind === 'video' ? () => setHoverVid(item.id) : undefined}
                     onMouseLeave={item.kind === 'video' ? () => setHoverVid(v => (v === item.id ? null : v)) : undefined}>
@@ -1146,33 +1181,33 @@ export default function GalleryPage() {
                       </button>
                     )}
                   </div>
-                  <div style={{ padding: '8px 10px' }}>
+                  <div style={{ padding: '9px 6px 2px' }}>
                     {editTitle?.id === item.id ? (
                       <input autoFocus value={editTitle.value}
                         onChange={e => setEditTitle({ id: item.id, value: e.target.value })}
                         onKeyDown={e => { if (e.key === 'Enter') renameItem(item, editTitle.value); if (e.key === 'Escape') setEditTitle(null) }}
                         onBlur={() => renameItem(item, editTitle.value)}
                         onClick={e => e.stopPropagation()}
-                        style={{ width: '100%', boxSizing: 'border-box', margin: 0, fontSize: 12, fontWeight: 600, color: 'var(--ink)', padding: '2px 6px', borderRadius: 6, border: '1px solid var(--coral)', outline: 'none' }} />
+                        style={{ width: '100%', boxSizing: 'border-box', margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--ink)', padding: '3px 8px', borderRadius: 8, border: '1.5px solid #d4d4d8', background: '#fff', outline: 'none' }} />
                     ) : (
                       <p onClick={() => setEditTitle({ id: item.id, value: item.title || '' })} title="Click to rename"
-                        style={{ margin: 0, fontSize: 12, fontWeight: 600, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'text' }}>{item.title || 'Untitled'}</p>
+                        style={{ margin: 0, fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'text' }}>{item.title || 'Untitled'}</p>
                     )}
-                    {item.sku && <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--slate)' }}>SKU: {item.sku}</p>}
+                    {item.sku && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#8e8e93' }}>SKU {item.sku}</p>}
                     {/* Categories — a photo can be in several at once */}
                     {(itemCats[item.id] || []).length > 0 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginTop: 5 }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
                         {(itemCats[item.id] || []).slice(0, 3).map(cid => {
                           const c = categories.find((x: any) => x.id === cid)
                           if (!c) return null
                           return (
-                            <span key={cid} style={{ fontSize: 9.5, fontWeight: 700, padding: '1px 6px', borderRadius: 5, background: 'var(--peach)', color: 'var(--coral)' }}>
+                            <span key={cid} className="gal-tag">
                               {c.name}
                             </span>
                           )
                         })}
                         {(itemCats[item.id] || []).length > 3 && (
-                          <span style={{ fontSize: 9.5, color: 'var(--slate)', fontWeight: 700 }}>+{(itemCats[item.id] || []).length - 3}</span>
+                          <span style={{ fontSize: 11.5, color: '#8e8e93', fontWeight: 600, alignSelf: 'center' }}>+{(itemCats[item.id] || []).length - 3}</span>
                         )}
                       </div>
                     )}
@@ -1184,7 +1219,7 @@ export default function GalleryPage() {
                     <div style={{ marginTop: 6, position: 'relative' }} data-cat-picker>
                       <button type="button"
                         onClick={e => { e.stopPropagation(); setCatMenuFor(catMenuFor === item.id ? null : item.id) }}
-                        style={{ width: '100%', boxSizing: 'border-box', fontSize: 11, padding: '4px 7px', borderRadius: 6, border: '1px solid var(--border)', background: '#fff', color: (itemCats[item.id] || []).length ? 'var(--ink)' : 'var(--slate)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, textAlign: 'left' }}>
+                        className="gal-picker" style={{ color: (itemCats[item.id] || []).length ? '#18181b' : '#8e8e93' }}>
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {(itemCats[item.id] || []).length
                             ? `${(itemCats[item.id] || []).length} categor${(itemCats[item.id] || []).length === 1 ? 'y' : 'ies'}`
@@ -1195,8 +1230,8 @@ export default function GalleryPage() {
 
                       {catMenuFor === item.id && (
                         <div onClick={e => e.stopPropagation()}
-                          style={{ position: 'absolute', bottom: '110%', left: 0, width: 200, maxHeight: 240, overflowY: 'auto', background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.16)', zIndex: 60, padding: 6 }}>
-                          <p style={{ margin: '2px 6px 6px', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>In categories</p>
+                          style={{ position: 'absolute', bottom: '110%', left: 0, width: 210, maxHeight: 260, overflowY: 'auto', background: '#fff', borderRadius: 16, boxShadow: '0 0 0 1px rgba(0,0,0,.06), 0 16px 40px -8px rgba(0,0,0,0.22)', zIndex: 60, padding: 6 }}>
+                          <p style={{ margin: '4px 8px 6px', fontSize: 12.5, fontWeight: 600, color: '#71717a' }}>In categories</p>
                           {categories.length === 0 && (
                             <p style={{ margin: 0, padding: '8px 6px', fontSize: 11.5, color: 'var(--slate)' }}>No categories yet — add one on the left.</p>
                           )}
@@ -1204,21 +1239,21 @@ export default function GalleryPage() {
                             const on = (itemCats[item.id] || []).includes(c.id)
                             return (
                               <label key={c.id}
-                                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 6px', borderRadius: 7, cursor: 'pointer', background: on ? 'var(--peach)' : 'transparent' }}>
+                                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', borderRadius: 10, cursor: 'pointer', background: on ? '#f4f4f5' : 'transparent' }}>
                                 <input type="checkbox" checked={on}
                                   onChange={() => toggleItemCategory(item.id, c.id)}
                                   style={{ width: 15, height: 15, accentColor: 'var(--coral)', cursor: 'pointer' }} />
-                                <span style={{ fontSize: 12, color: on ? 'var(--coral)' : 'var(--ink)', fontWeight: on ? 700 : 500 }}>{c.name}</span>
+                                <span style={{ fontSize: 13, color: 'var(--ink)', fontWeight: on ? 600 : 400 }}>{c.name}</span>
                               </label>
                             )
                           })}
-                          <div style={{ borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 6, display: 'flex', gap: 6 }}>
+                          <div style={{ borderTop: '1px solid #f0f0f2', marginTop: 6, paddingTop: 8, display: 'flex', gap: 6 }}>
                             <input value={quickCat} onChange={e => setQuickCat(e.target.value)}
                               onKeyDown={e => { if (e.key === 'Enter') quickAddCategory(item.id) }}
                               placeholder="New category…"
-                              style={{ flex: 1, fontSize: 11.5, padding: '5px 7px', borderRadius: 6, border: '1px solid var(--border)', outline: 'none', minWidth: 0 }} />
+                              style={{ flex: 1, fontSize: 13, height: 32, padding: '0 10px', borderRadius: 999, border: '1.5px solid transparent', background: '#f4f4f5', outline: 'none', minWidth: 0 }} />
                             <button type="button" onClick={() => quickAddCategory(item.id)}
-                              style={{ padding: '5px 9px', borderRadius: 6, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>Add</button>
+                              style={{ height: 32, padding: '0 12px', borderRadius: 999, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Add</button>
                           </div>
                         </div>
                       )}
@@ -1229,15 +1264,15 @@ export default function GalleryPage() {
                         the row becomes Restore / Delete forever + a countdown. */}
                     {activeFolder === '__trash' ? (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 8 }}>
-                        <span style={{ fontSize: 10.5, color: 'var(--slate)' }}>
+                        <span style={{ fontSize: 12, color: '#8e8e93' }}>
                           {(() => {
                             const days = item.trashed_at ? Math.max(0, 30 - Math.floor((Date.now() - new Date(item.trashed_at).getTime()) / 86_400_000)) : 30
                             return `Auto-deletes in ${days} day${days === 1 ? '' : 's'}`
                           })()}
                         </span>
                         <span style={{ display: 'flex', gap: 10 }}>
-                          <button onClick={() => restoreItem(item)} style={{ background: 'none', border: 'none', color: 'var(--coral)', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0 }}>Restore</button>
-                          <button onClick={() => deleteForever(item)} style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0 }}>Delete forever</button>
+                          <button onClick={() => restoreItem(item)} style={{ background: 'none', border: 'none', color: 'var(--ink)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', padding: 0 }}>Restore</button>
+                          <button onClick={() => deleteForever(item)} style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', padding: 0 }}>Delete forever</button>
                         </span>
                       </div>
                     ) : (
@@ -1442,8 +1477,8 @@ export default function GalleryPage() {
       {selectMode && (
         <div style={{
           position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 300,
-          display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 14,
-          background: '#0d0f14', color: '#fff', boxShadow: '0 12px 40px rgba(0,0,0,0.28)',
+          display: 'flex', alignItems: 'center', gap: 8, padding: '8px 8px 8px 18px', borderRadius: 999,
+          background: '#18181b', color: '#fff', boxShadow: '0 16px 40px rgba(0,0,0,0.28)',
           border: '1px solid rgba(255,255,255,0.10)',
           // Keep everything (incl. Delete + ✕) on one row; scroll horizontally
           // on narrow screens rather than wrapping Delete onto a lonely line.
@@ -1454,7 +1489,7 @@ export default function GalleryPage() {
           </span>
 
           <button onClick={selectAll} disabled={bulkBusy}
-            style={{ padding: '6px 11px', borderRadius: 8, background: 'rgba(255,255,255,0.08)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            style={{ padding: '6px 11px', borderRadius: 999, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
             Select all
           </button>
 
@@ -1462,7 +1497,7 @@ export default function GalleryPage() {
 
           <select disabled={bulkBusy} defaultValue=""
             onChange={e => { if (e.target.value !== '') bulkMove(e.target.value === '__none' ? null : e.target.value); e.target.value = '' }}
-            style={{ flexShrink: 0, padding: '6px 9px', borderRadius: 8, background: 'rgba(255,255,255,0.08)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+            style={{ flexShrink: 0, padding: '6px 9px', borderRadius: 999, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
             <option value="" disabled>Move to…</option>
             <option value="__none">Unfiled</option>
             {flatFolders().map(({ f, depth }) => (
@@ -1473,26 +1508,26 @@ export default function GalleryPage() {
           {categories.length > 0 && (
             <select disabled={bulkBusy} defaultValue=""
               onChange={e => { if (e.target.value) bulkAddCategory(e.target.value); e.target.value = '' }}
-              style={{ flexShrink: 0, padding: '6px 9px', borderRadius: 8, background: 'rgba(255,255,255,0.08)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+              style={{ flexShrink: 0, padding: '6px 9px', borderRadius: 999, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
               <option value="" disabled>Add to category…</option>
               {categories.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           )}
 
           <button onClick={() => shareItems(items.filter((i: any) => selected.has(i.id)))} disabled={bulkBusy}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 8, background: 'rgba(255,255,255,0.08)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 999, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
             Share
           </button>
 
           <button onClick={() => setForwardItems(items.filter((i: any) => selected.has(i.id)))} disabled={bulkBusy}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 8, background: 'rgba(255,255,255,0.08)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 999, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
             Send to chat
           </button>
 
           <button onClick={bulkDownload} disabled={bulkBusy}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 8, background: 'rgba(255,255,255,0.08)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 999, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Download
           </button>
@@ -1560,21 +1595,20 @@ function ConfirmDialog({ title, message, confirmLabel = 'Confirm', danger, onCon
     <div onClick={onCancel}
       style={{ position: 'fixed', inset: 0, background: 'rgba(13,15,20,0.55)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100050, padding: 20, animation: 'gal-fade 0.14s ease' }}>
       <div onClick={e => e.stopPropagation()} role="alertdialog" aria-label={title}
-        style={{ width: 400, maxWidth: '92vw', background: '#fff', borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.30)', animation: 'gal-pop 0.16s ease' }}>
-        <div style={{ width: 46, height: 46, borderRadius: 13, background: danger ? '#fee2e2' : 'var(--peach)', color: danger ? '#dc2626' : 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+        style={{ width: 400, maxWidth: '92vw', background: '#fff', borderRadius: 24, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.30)', animation: 'gal-pop 0.16s ease' }}>
+        <div style={{ width: 46, height: 46, borderRadius: 14, background: danger ? '#fee2e2' : 'var(--peach)', color: danger ? '#dc2626' : 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
           {danger ? (
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
           ) : (
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
           )}
         </div>
-        <h3 style={{ margin: '0 0 6px', fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>{title}</h3>
+        <h3 style={{ margin: '0 0 6px', fontSize: 19, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--ink)' }}>{title}</h3>
         <p style={{ margin: '0 0 22px', fontSize: 13.5, color: 'var(--slate)', lineHeight: 1.5 }}>{message}</p>
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-          <button onClick={onCancel}
-            style={{ padding: '10px 18px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
-          <button onClick={onConfirm} autoFocus
-            style={{ padding: '10px 18px', borderRadius: 10, border: 'none', background: danger ? '#dc2626' : 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>{confirmLabel}</button>
+          <button type="button" className="cv-btn" onClick={onCancel}>Cancel</button>
+          <button type="button" className="cv-btn cv-btn-primary" onClick={onConfirm} autoFocus
+            style={danger ? { background: '#dc2626', borderColor: '#dc2626' } : undefined}>{confirmLabel}</button>
         </div>
       </div>
     </div>
@@ -1590,17 +1624,15 @@ function PromptDialog({ title, value, placeholder, confirmLabel = 'Save', onSubm
     <div onClick={onCancel}
       style={{ position: 'fixed', inset: 0, background: 'rgba(13,15,20,0.55)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100050, padding: 20, animation: 'gal-fade 0.14s ease' }}>
       <div onClick={e => e.stopPropagation()} role="dialog" aria-label={title}
-        style={{ width: 400, maxWidth: '92vw', background: '#fff', borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.30)', animation: 'gal-pop 0.16s ease' }}>
-        <h3 style={{ margin: '0 0 14px', fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>{title}</h3>
+        style={{ width: 400, maxWidth: '92vw', background: '#fff', borderRadius: 24, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.30)', animation: 'gal-pop 0.16s ease' }}>
+        <h3 style={{ margin: '0 0 14px', fontSize: 19, fontWeight: 800, letterSpacing: '-.015em', color: 'var(--ink)' }}>{title}</h3>
         <input autoFocus value={v} onChange={e => setV(e.target.value)} placeholder={placeholder}
           onFocus={e => e.target.select()}
           onKeyDown={e => { if (e.key === 'Enter') onSubmit(v); if (e.key === 'Escape') onCancel() }}
-          style={{ width: '100%', boxSizing: 'border-box', padding: '11px 13px', borderRadius: 11, border: '1px solid var(--border)', fontSize: 14, outline: 'none', margin: '0 0 18px', color: 'var(--ink)' }} />
+          style={{ width: '100%', boxSizing: 'border-box', height: 44, padding: '0 14px', borderRadius: 12, border: '1.5px solid transparent', background: '#f4f4f5', fontSize: 15, outline: 'none', margin: '0 0 18px', color: 'var(--ink)' }} />
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-          <button onClick={onCancel}
-            style={{ padding: '10px 18px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
-          <button onClick={() => onSubmit(v)} disabled={!v.trim()}
-            style={{ padding: '10px 18px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: v.trim() ? 'pointer' : 'default', opacity: v.trim() ? 1 : 0.6 }}>{confirmLabel}</button>
+          <button type="button" className="cv-btn" onClick={onCancel}>Cancel</button>
+          <button type="button" className="cv-btn cv-btn-primary" onClick={() => onSubmit(v)} disabled={!v.trim()}>{confirmLabel}</button>
         </div>
       </div>
     </div>
@@ -1983,10 +2015,10 @@ function MediaDetailsPanel({ item, folders, categories, itemCats, companyId, use
 }
 
 function folderBtn(active: boolean): React.CSSProperties {
-  return { display: 'block', width: '100%', textAlign: 'left', padding: '8px 11px', borderRadius: 8, border: 'none', background: active ? 'var(--peach)' : 'transparent', color: active ? 'var(--coral)' : 'var(--ink)', fontSize: 13, fontWeight: active ? 700 : 500, cursor: 'pointer', marginBottom: 2 }
+  return { display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', borderRadius: 12, border: 'none', background: active ? '#f4f4f5' : 'transparent', color: active ? '#18181b' : '#3f3f46', fontSize: 14, fontWeight: active ? 600 : 500, cursor: 'pointer', marginBottom: 2, fontFamily: 'inherit' }
 }
 
-const connectBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 16px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
+const connectBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 7, height: 38, padding: '0 16px', borderRadius: 999, background: '#fff', color: 'var(--ink)', border: 'none', boxShadow: '0 0 0 1px rgba(0,0,0,.08)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }
 
 // Compact, fixed-size icon button for the card action row — flexShrink:0 keeps
 // them from being squeezed and spilling outside the card.

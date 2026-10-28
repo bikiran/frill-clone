@@ -294,11 +294,11 @@ export default function AgentsPage() {
   return (
     <div style={{ minHeight: '100%', background: 'var(--canvas, #f6f7f9)' }}>
       <style>{CSS}</style>
-      <div style={{ maxWidth: 1160, margin: '0 auto', padding: '24px 16px 120px' }}>
+      <div className="ag-page" style={{ maxWidth: 1160, margin: '0 auto', padding: '24px 16px 120px' }}>
         <div style={{ marginBottom: 20, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ minWidth: 0, flex: '1 1 320px' }}>
-            <h1 style={{ margin: 0, fontSize: 'clamp(22px, 3.4vw, 28px)', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--ink)' }}>AI Agents</h1>
-            <p style={{ margin: '4px 0 0', fontSize: 14, color: 'var(--slate)', maxWidth: 640 }}>Everything Colvy’s AI does, in one place — the Support Agent, the auto-reply, the assistant and connected apps. Each run shows what it knew, what it decided, which permission allowed it, and why.</p>
+            <h1 style={{ margin: 0, fontSize: 'clamp(26px, 3.4vw, 30px)', fontWeight: 800, letterSpacing: '-0.025em', lineHeight: 1.1, color: 'var(--ink)' }}>AI agents</h1>
+            <p style={{ margin: '8px 0 0', fontSize: 14.5, color: '#71717a', maxWidth: 640, lineHeight: 1.55 }}>Everything Colvy’s AI does, in one place — the Support Agent, the auto-reply, the assistant and connected apps. Each run shows what it knew, what it decided, which permission allowed it, and why.</p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <a href="/admin/agents/needs-you" className="ag-ghost" style={{ display: 'inline-flex', alignItems: 'center', height: 38, textDecoration: 'none' }}>Needs you</a>
@@ -1055,4 +1055,40 @@ const CSS = `
 .ag-wait-who{font-size:14px;font-weight:700;color:var(--ink)}
 .ag-link{display:inline-flex;align-items:center;gap:5px;margin-left:auto;font-size:12.5px;font-weight:700;color:var(--coral);text-decoration:none}
 .ag-wait .agsg{max-width:none;margin-left:0}
+/* The soft card-and-pill look shared with the rest of the admin. */
+.ag-page{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.ag-page button::before{display:none}
+@media (min-width:900px){.ag-page{padding-left:28px!important;padding-right:28px!important}}
+.ag-card{border-color:transparent;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04)}
+.ag-h{font-size:16px}
+.ag-p{color:#71717a}
+.ag-label{font-size:12.5px;font-weight:600;letter-spacing:0;text-transform:none;color:#71717a}
+.ag-input{border:1.5px solid transparent;background:#f4f4f5}
+.ag-input:focus{background:#fff;border-color:#d4d4d8!important}
+.ag-primary{border-radius:999px;box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 1px 2px rgba(16,24,40,.12)}
+.ag-ghost{border:none;border-radius:999px;background:#f4f4f5;font-weight:600;transition:background-color .15s}
+.ag-ghost:hover:not(:disabled){background:#ececef}
+.ag-kill{border:none;border-radius:999px;background:#fef2f2;font-weight:600}
+.ag-kill:hover:not(:disabled){background:#fee2e2}
+.ag-seg{border-radius:999px;background:#f4f4f5}
+.ag-seg button{border-radius:999px;font-weight:600;color:#71717a}
+.ag-seg button.on{color:#18181b}
+.ag-seg-pill{border-radius:999px}
+.ag-who button{border:none;background:#f4f4f5;color:#3f3f46;font-weight:600}
+.ag-who button.on{background:#18181b;color:#fff}
+.ag-topic{border-color:transparent;background:#f4f4f5;border-radius:999px}
+.ag-topic.on{border-color:color-mix(in srgb,var(--coral) 40%,transparent);background:color-mix(in srgb,var(--coral) 8%,#fff)}
+.ag-tick{border-radius:50%;border-color:#d4d4d8;background:#fff}
+.ag-ref{border:none;background:#f4f4f5}
+.ag-verified{border:none;background:#fafafa}
+.ag-auto{border-top-color:#f0f0f2}
+.ag-run.on{background:#f4f4f5}
+.ag-chip{font-weight:600}
+.ag-step-ic{border-radius:50%}
+.ag-note.warn{border:none;box-shadow:0 0 0 1px #fde68a}
+.ag-note.err{border:none;box-shadow:0 0 0 1px #fecdca}
+.ag-paused{border:none;box-shadow:0 0 0 1px #fecdca}
+.ag-paused-ic{border:none;border-radius:50%}
+.ag-switch.on{background:#34c759}
+.ag-primary:focus-visible,.ag-ghost:focus-visible,.ag-kill:focus-visible,.ag-switch:focus-visible,.ag-who button:focus-visible,.ag-topic:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 28%,transparent)}
 `
