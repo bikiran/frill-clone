@@ -8976,10 +8976,13 @@ export default function InboxPage() {
 
         {/* List */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {/* Until the chat widget is on their website: how to add it (owners and admins). */}
-          {isManager && !searchTerm.trim() && statusFilter !== 'closed' && activeFilterCount === 0 && <WidgetInstallCard companyId={companyId} />}
+          {/* The conversations first; the setup card sits at the foot of the
+              column (below a short list, after a long one), clear of the + button. */}
+          <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
+          <div style={{ flex: 'none' }}>
           {colvyAt === 0 && filteredConvs.length === 0 && colvyRowEl}
-          {filteredConvs.length === 0 && (() => {
+          {/* Colvy's own chat is a conversation too: no "nothing here" under it. */}
+          {filteredConvs.length === 0 && colvyAt !== 0 && (() => {
             // An empty list that still feels alive, worded for what's being looked at.
             const term = searchTerm.trim()
             const [title, line] = term ? ['No matches', `Nothing matches “${term}”. Try a name, number or a word from the chat.`]
@@ -9236,6 +9239,10 @@ export default function InboxPage() {
               Load more conversations
             </button>
           )}
+          </div>
+          {/* Until the chat widget is on their website: how to add it (owners and admins). */}
+          {isManager && !searchTerm.trim() && statusFilter !== 'closed' && activeFilterCount === 0 && <WidgetInstallCard companyId={companyId} dock />}
+          </div>
         </div>
       </div>
       )}
