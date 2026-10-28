@@ -16,6 +16,7 @@ import WidgetBoost, { trackAnnouncementView } from '@/components/announcements/W
 import { categoryOf } from '@/lib/announcements'
 import { type WidgetSize, isWidgetSize, postToHost, boardLinkFor } from '@/lib/widget-frame'
 import { publicBoardUrl } from '@/lib/board-url'
+import EmptyScroll from '@/components/EmptyScroll'
 
 // Proof that this browser started the chat (lib/widget-access.ts): the key
 // /api/widget/start returned, and — for chats saved before keys existed — this
@@ -1706,7 +1707,7 @@ function WidgetContent() {
             )}
             
             {ideas.length === 0 && (
-              <p style={{ fontSize: 13, color: '#9ca3af', textAlign: 'center', paddingTop: 24 }}>No ideas submitted yet. Be the first!</p>
+              <EmptyScroll compact kinds={['idea', 'chat']} title="No ideas yet" line="Got a suggestion? Be the first to share one." />
             )}
           </div>
         )}
@@ -2386,9 +2387,8 @@ function WidgetContent() {
 
             {/* Articles list */}
             {filteredHelpArticles.length === 0 ? (
-              <div style={{ textAlign: 'center', paddingTop: 24, color: '#9ca3af', fontSize: 13 }}>
-                {helpSearch ? 'No articles found.' : 'No help articles available yet.'}
-              </div>
+              <EmptyScroll compact kinds={['article']} title={helpSearch ? 'No articles found' : 'No help articles yet'}
+                line={helpSearch ? `Nothing matches “${helpSearch}”. Try another word.` : 'Answers to common questions will show up here.'} />
             ) : (
               <div style={{ flex: 1, overflowY: 'auto' }}>
                 {filteredHelpArticles.map((article, idx) => (

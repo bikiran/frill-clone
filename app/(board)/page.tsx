@@ -10,6 +10,7 @@ import Link from 'next/link'
 import { toggleEngagement, fetchEngagedIdeaIds } from '@/lib/engagement'
 import { notifyIntegrations } from '@/lib/integrations-notify'
 import { useTerminology } from '@/lib/terminologyContext'
+import EmptyScroll from '@/components/EmptyScroll'
 
 async function getCompanyId(): Promise<string | null> {
   if (typeof window === 'undefined') return null
@@ -913,20 +914,13 @@ export default function HomePage() {
               </div>
             </div>
           ) : filtered.length === 0 ? (
-            <div className="text-center py-16">
-              <div className="text-5xl mb-4">🚀</div>
-              <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--ink)' }}>
-                No {plural} yet
-              </h3>
-              <p style={{ color: 'var(--slate)' }} className="mb-6">
-                Be the first to add one!
-              </p>
-              <button
-                onClick={() => setShowModal(true)}
-                className="px-6 py-3 rounded-xl font-semibold text-white transition-smooth press-effect"
-                style={{ background: 'var(--coral)' }}>
-                Share an Idea
-              </button>
+            <div className="py-10">
+              {(search.trim() || topicFilter || statusFilter || adminFilter)
+                ? <EmptyScroll kinds={['idea', 'chat']} title="No matches"
+                    line={search.trim() ? `Nothing matches “${search.trim()}”. Try another word, or clear the filters.` : `No ${plural.toLowerCase()} match these filters.`}
+                    action={<button type="button" className="cv-btn" onClick={() => { setSearch(''); setTopicFilter(null); setStatusFilter(null); setAdminFilter(null) }}>Clear search and filters</button>} />
+                : <EmptyScroll kinds={['idea', 'chat']} title={`No ${plural.toLowerCase()} yet`} line="Be the first to add one."
+                    action={<button type="button" className="cv-btn cv-btn-primary" onClick={() => setShowModal(true)}>Share an idea</button>} />}
             </div>
           ) : (
             <div className="space-y-3 pt-2">
