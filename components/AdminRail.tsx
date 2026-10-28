@@ -203,7 +203,7 @@ export default function AdminRail({ workspace, sections, settings, search, ring,
   return (
     <aside className={`admin-rail${open ? ' dim' : ''}`} aria-label="Main menu">
       <style>{`
-        .admin-rail { position: fixed; top: 56px; left: 0; bottom: var(--sab-h, 0px); width: ${RAIL_W}px; z-index: 30; display: flex; flex-direction: column; align-items: center; background: #f4f4f6; border-right: 1px solid #ececf0; transition: z-index 0s linear .34s; }
+        .admin-rail { position: fixed; top: calc(56px + var(--imp-h, 0px)); left: 0; bottom: var(--sab-h, 0px); width: ${RAIL_W}px; z-index: 30; display: flex; flex-direction: column; align-items: center; background: #f4f4f6; border-right: 1px solid #ececf0; transition: z-index 0s linear .34s; }
         /* While a panel is open: a soft grey veil over everything but the
            panel and its tile. The rail lifts above the top bar for it, and
            settles back once the veil has faded. */
@@ -268,11 +268,11 @@ export default function AdminRail({ workspace, sections, settings, search, ring,
         }
         /* The phone's status pill: in the middle of the top bar, clear of the
            rail and the Settings menu. */
-        .cv-phone-pill { top: 15px; bottom: auto !important; left: 50% !important; transform: translateX(-50%); z-index: 70 !important; }
+        .cv-phone-pill { top: calc(15px + var(--imp-h, 0px)); bottom: auto !important; left: 50% !important; transform: translateX(-50%); z-index: 70 !important; }
         /* The rail runs the full height with the workspace logo at the very top,
            and the top bar starts beside it. */
         @media (min-width: 861px) {
-          .admin-rail { top: 0; z-index: 45; }
+          .admin-rail { top: var(--imp-h, 0px); z-index: 45; }
           .rail-top { padding-top: 6px; }
           body:has(.admin-rail) .cv-app-header { padding-left: ${RAIL_W}px; }
         }
