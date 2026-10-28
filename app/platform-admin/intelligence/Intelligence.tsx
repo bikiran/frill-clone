@@ -49,7 +49,7 @@ function downloadCsv(name: string, rows: Record<string, any>[], cols: { key: str
 }
 
 // ── Primitives ───────────────────────────────────────────────────────────────
-const card: React.CSSProperties = { background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 18, padding: '18px 20px' }
+const card: React.CSSProperties = { background: 'var(--sa-card)', border: '1px solid transparent', boxShadow: '0 0 0 1px var(--sa-ring), 0 1px 2px rgba(16,24,40,.04)', borderRadius: 20, padding: '18px 20px' }
 const h3: React.CSSProperties = { fontSize: 13.5, fontWeight: 700, color: 'var(--sa-text)', margin: 0, letterSpacing: '-0.005em' }
 const sub: React.CSSProperties = { fontSize: 12, color: 'var(--sa-muted)', margin: '3px 0 0' }
 

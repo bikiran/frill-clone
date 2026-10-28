@@ -9,6 +9,7 @@
 
 import { useState } from 'react'
 import { NAV_GROUPS } from './nav'
+import CountUp from '@/components/agents/CountUp'
 
 type Go = (page: string) => void
 const CORAL = '#ff7a6b', GREEN = '#10b981', AMBER = '#d97706', RED = '#ef4444', INDIGO = '#6366f1', PURPLE = '#8b5cf6', CYAN = '#0891b2'
@@ -22,16 +23,16 @@ const ago = (iso?: string | null) => {
 }
 const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening' }
 
-const card: React.CSSProperties = { background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 20, minWidth: 0 }
+const card: React.CSSProperties = { background: 'var(--sa-card)', border: '1px solid transparent', boxShadow: '0 0 0 1px var(--sa-ring), 0 1px 2px rgba(16,24,40,.04)', borderRadius: 20, padding: 20, minWidth: 0 }
 const grid = (min: number, gap = 14): React.CSSProperties => ({ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(min(${min}px, 100%), 1fr))`, gap })
-const h2: React.CSSProperties = { fontSize: 11.5, fontWeight: 800, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 10px' }
+const h2: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: 'var(--sa-muted)', margin: '0 0 10px' }
 
 function Card({ title, note, action, children, style }: { title: string; note?: string; action?: React.ReactNode; children: React.ReactNode; style?: React.CSSProperties }) {
   return (
     <section style={{ ...card, ...style }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 14 }}>
         <div style={{ minWidth: 0 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--sa-text)', margin: 0 }}>{title}</h3>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--sa-text)', margin: 0, letterSpacing: '-0.01em' }}>{title}</h3>
           {note && <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '3px 0 0' }}>{note}</p>}
         </div>
         {action}
@@ -54,9 +55,8 @@ function Skeleton({ h = 18, w = '60%' }: { h?: number; w?: string | number }) {
 function Stat({ label, value, sub, color, onClick, loading }: { label: string; value: string; sub?: string; color: string; onClick?: () => void; loading?: boolean }) {
   return (
     <button onClick={onClick} className="pa-stat" style={{ ...card, padding: '16px 18px', textAlign: 'left', cursor: onClick ? 'pointer' : 'default', display: 'flex', flexDirection: 'column', gap: 6, position: 'relative', overflow: 'hidden' }}>
-      <span aria-hidden style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: color }} />
-      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sa-muted)' }}>{label}</span>
-      {loading ? <Skeleton h={30} w="55%" /> : <span style={{ fontSize: 28, fontWeight: 800, color: 'var(--sa-text)', letterSpacing: '-0.02em', lineHeight: 1.05, fontVariantNumeric: 'tabular-nums' }}>{value}</span>}
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 600, color: 'var(--sa-muted)' }}><span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} /><span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={label}>{label}</span></span>
+      {loading ? <Skeleton h={30} w="55%" /> : <span style={{ fontSize: 28, fontWeight: 800, color: 'var(--sa-text)', letterSpacing: '-0.02em', lineHeight: 1.05, fontVariantNumeric: 'tabular-nums' }}><CountUp value={value} /></span>}
       {sub && <span style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>{sub}</span>}
     </button>
   )
@@ -250,13 +250,13 @@ export default function Dashboard({ data, pulse, live, refreshing, onRefresh, on
 
   return (
     <div>
-      <style>{`.pa-stat:hover, .pa-short:hover { border-color: ${CORAL}66 !important; } .pa-row:hover span:first-child { color: ${CORAL} !important; }`}</style>
+      <style>{`.pa-stat, .pa-short { transition: box-shadow .2s, transform .2s; } .pa-stat:hover, .pa-short:hover { box-shadow: 0 0 0 1.5px ${CORAL}66, 0 6px 18px rgba(16,24,40,.07) !important; transform: translateY(-1px); } .pa-row:hover span:first-child { color: ${CORAL} !important; }`}</style>
 
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 14, flexWrap: 'wrap', marginBottom: 22 }}>
         <div>
           <p style={{ margin: '0 0 4px', fontSize: 12.5, color: 'var(--sa-muted)' }}>{new Date().toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
-          <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: 'var(--sa-text)', letterSpacing: '-0.02em' }}>{greeting()}, Bikiran</h1>
+          <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800, color: 'var(--sa-text)', letterSpacing: '-0.025em' }}>{greeting()}, Bikiran</h1>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           {live?.overall && (
@@ -264,7 +264,7 @@ export default function Dashboard({ data, pulse, live, refreshing, onRefresh, on
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: statusColor }} />{live.overall.title}
             </button>
           )}
-          <button onClick={onRefresh} title="Recalculate now" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 13px', borderRadius: 10, border: '1px solid var(--sa-border)', background: 'var(--sa-card)', color: 'var(--sa-muted)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+          <button onClick={onRefresh} title="Recalculate now" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 14px', borderRadius: 999, border: '1.5px solid var(--sa-border)', background: 'var(--sa-card)', color: 'var(--sa-text)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" style={{ animation: refreshing ? 'spin 1s linear infinite' : undefined }}><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
             {refreshing ? 'Updating…' : data?.cachedAt ? `Updated ${ago(data.cachedAt)}` : 'Refresh'}
           </button>
@@ -276,7 +276,7 @@ export default function Dashboard({ data, pulse, live, refreshing, onRefresh, on
         <Stat label="MRR" value={money(data?.mrr)} sub={loading ? undefined : `${money(data?.arr)} a year · ${mrrNote}`} color={PURPLE} onClick={() => onGo('intel_revenue')} loading={loading} />
         <Stat label="Paying businesses" value={n(data?.paid)} sub={loading ? undefined : `${money(data?.arpa)} average a month`} color={GREEN} onClick={() => onGo('subs')} loading={loading} />
         <Stat label="Active businesses" value={n(data?.active)} sub={loading ? undefined : `of ${n(data?.companies)} · active in 30 days`} color={INDIGO} onClick={() => onGo('intel_health')} loading={loading} />
-        <Stat label="New sign-ups · 7 days" value={n(data?.newLast7)} sub={loading ? undefined : `${n(data?.today)} today`} color={CORAL} onClick={() => onGo('signups')} loading={loading} />
+        <Stat label="Sign-ups · 7 days" value={n(data?.newLast7)} sub={loading ? undefined : `${n(data?.today)} today`} color={CORAL} onClick={() => onGo('signups')} loading={loading} />
         <Stat label="On trial" value={n(data?.activeTrials)} sub={loading ? undefined : `${n(data?.trialsEndingSoon)} end this week · ${data?.conversion ?? 0}% convert`} color="#f59e0b" onClick={() => onGo('intel_business')} loading={loading} />
         <Stat label="Churn · 30 days" value={data?.churn != null ? `${data.churn}%` : '—'} sub={loading ? undefined : `${n(data?.canceledLast30)} cancelled · ${n(data?.newPaidLast30)} new paid`} color={RED} onClick={() => onGo('intel_revenue')} loading={loading} />
       </div>
