@@ -2010,6 +2010,7 @@ export default function InboxPage() {
   const [wooItemsMap, setWooItemsMap] = useState<Map<string, any[]>>(new Map())
   const wooItemsRef = useRef<{ companyId: string; map: Map<string, any[]> } | null>(null)
   const [showAssignMenu, setShowAssignMenu] = useState(false)
+  const [showStatusMenu, setShowStatusMenu] = useState(false)  // the list's Open / Closed menu
 
   // Load the email → purchased-items map when (and only when) the Purchased
   // filter is active. Mirrors the Contacts page enrichment source.
@@ -2712,9 +2713,10 @@ export default function InboxPage() {
 
   // Close the assign dropdown / actions menu when clicking elsewhere
   useEffect(() => {
-    if (!showAssignMenu && !showActions && !showCardAssign && !showCardMore) return
+    if (!showAssignMenu && !showActions && !showCardAssign && !showCardMore && !showStatusMenu) return
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement
+      if (!target.closest('[data-status-menu]')) setShowStatusMenu(false)
       if (!target.closest('[data-assign-menu]')) setShowAssignMenu(false)
       if (!target.closest('[data-actions-menu]')) setShowActions(false)
       if (!target.closest('[data-card-assign]')) setShowCardAssign(false)
@@ -2722,7 +2724,7 @@ export default function InboxPage() {
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [showAssignMenu, showActions, showCardAssign, showCardMore])
+  }, [showAssignMenu, showActions, showCardAssign, showCardMore, showStatusMenu])
 
   // Close the media-expiry selector when clicking elsewhere.
   useEffect(() => {
@@ -7531,6 +7533,28 @@ export default function InboxPage() {
         .cp-mini.violet:hover { background: #ede9fe; }
         .cp-mini:disabled { opacity: .6; cursor: default; }
         .inbox-col-contact button[style*="border-radius: 999px"]:not(:disabled):hover, .inbox-col-contact a[style*="border-radius: 999px"]:hover { filter: brightness(.97); }
+        /* The conversation list's controls, like Sellio's: borderless pill
+           chips (the chosen one dark), a grey location pill, a status menu
+           and a round filter icon. */
+        .il-chip { flex-shrink: 0; height: 30px; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border: none; border-radius: 999px; background: #f4f4f5; color: #52525b; font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background .15s ease, color .15s ease; }
+        .il-chip:hover { background: #ececef; color: #18181b; }
+        .il-chip.on { background: #18181b; color: #fff; }
+        .il-chip:focus-visible, .il-status:focus-visible, .il-loc:focus-visible { outline: 2px solid var(--coral); outline-offset: 1px; }
+        .il-chip-n { min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; background: color-mix(in srgb, var(--coral) 14%, #fff); color: var(--coral); }
+        .il-chip.on .il-chip-n { background: rgba(255,255,255,.18); color: #fff; }
+        .il-search { width: 100%; box-sizing: border-box; height: 38px; padding: 0 14px 0 38px; border: 1.5px solid transparent; border-radius: 999px; background: #f4f4f5; font: inherit; font-size: 14px; color: #111; outline: none; transition: background .15s ease, border-color .15s ease, box-shadow .15s ease; }
+        .il-search::placeholder { color: #a1a1aa; }
+        .il-search:focus { background: #fff; border-color: #d4d4d8; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 16%, transparent); }
+        .il-loc { width: 100%; height: 36px; padding: 0 34px 0 36px; border: none; border-radius: 999px; background: #f4f4f5; font: inherit; font-size: 13.5px; font-weight: 600; color: #18181b; cursor: pointer; appearance: none; -webkit-appearance: none; transition: background .15s ease; }
+        .il-loc:hover { background: #ececef; }
+        .il-loc.on { background: color-mix(in srgb, var(--coral) 12%, #fff); color: var(--coral); }
+        .il-status { height: 32px; display: inline-flex; align-items: center; gap: 7px; padding: 0 11px 0 10px; border: none; border-radius: 999px; background: transparent; color: #18181b; font: inherit; font-size: 13.5px; font-weight: 650; cursor: pointer; transition: background .15s ease; }
+        .il-status svg:first-child { color: #52525b; }
+        .il-status:hover, .il-status.on { background: #f4f4f5; }
+        .il-badge { position: absolute; top: -2px; right: -2px; min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 8px; border: 2px solid #fff; background: var(--coral); color: #fff; font-size: 9.5px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+        .cp-hint { margin-top: 8px; width: 100%; display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: none; border-radius: 12px; background: #f6f6f7; font: inherit; font-size: 13px; color: #52525b; text-align: left; cursor: pointer; transition: background .15s ease; }
+        .cp-hint:hover { background: #efeff1; }
+        .cp-hint-ic { display: inline-flex; color: var(--coral); flex-shrink: 0; }
         @media (prefers-reduced-motion: reduce) { .th-menu { animation: none; } }
         /* Desktop / tablet: the tools sit inline on the right as before */
         @media (min-width: 768px) {
@@ -8810,8 +8834,9 @@ export default function InboxPage() {
             </div>
           </div>
           <div style={{ position: 'relative' }}>
-            <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search conversations…"
-              style={{ ...inp, background: 'var(--canvas)', paddingRight: searchTerm ? 34 : undefined }} />
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#71717a', pointerEvents: 'none' }}><circle cx="11" cy="11" r="7"/><line x1="20.5" y1="20.5" x2="16" y2="16"/></svg>
+            <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search conversations…" aria-label="Search conversations"
+              className="il-search" style={{ paddingRight: searchTerm ? 36 : undefined }} />
             {searchTerm && (
               <button type="button" onClick={() => { setSearchTerm(''); setSearchScope('all') }}
                 title="Clear search"
@@ -8831,14 +8856,7 @@ export default function InboxPage() {
               ] as const).map(([key, label]) => {
                 const on = searchScope === key
                 return (
-                <button key={key} type="button" onClick={() => setSearchScope(key)}
-                  style={{
-                    padding: '6px 13px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                    border: '1px solid ' + (on ? 'var(--coral)' : 'var(--border)'),
-                    background: on ? 'var(--peach)' : '#fff',
-                    color: on ? 'var(--coral)' : 'var(--slate)',
-                    whiteSpace: 'nowrap', transition: 'all 0.12s',
-                  }}>
+                <button key={key} type="button" onClick={() => setSearchScope(key)} aria-pressed={on} className={`il-chip${on ? ' on' : ''}`}>
                   {label}
                 </button>
                 )
@@ -8851,16 +8869,17 @@ export default function InboxPage() {
             <div style={{ position: 'relative', marginTop: 10 }}>
               {/* Map-pin icon sits inside the control so the select shows a real
                   SVG rather than an emoji glyph that renders differently per OS. */}
-              <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex', color: locationFilter !== 'all' ? 'var(--coral)' : 'var(--slate)' }}>
+              <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex', color: locationFilter !== 'all' ? 'var(--coral)' : '#52525b' }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
               </span>
-              <select value={locationFilter} onChange={e => setLocationFilter(e.target.value)}
-                style={{ width: '100%', padding: '8px 10px 8px 30px', borderRadius: 10, border: '1px solid var(--border)', background: locationFilter !== 'all' ? 'var(--peach)' : 'var(--canvas)', fontSize: 13, fontWeight: 600, color: locationFilter !== 'all' ? 'var(--coral)' : 'var(--ink)', cursor: 'pointer', appearance: 'none' }}>
+              <select value={locationFilter} onChange={e => setLocationFilter(e.target.value)} aria-label="Location" className={`il-loc${locationFilter !== 'all' ? ' on' : ''}`}
+                style={{ appearance: 'none' }}>
                 <option value="all">All locations</option>
                 {outlets.map(o => (
                   <option key={o.id} value={o.id}>{o.label || o.suburb || 'Outlet'}</option>
                 ))}
               </select>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#71717a' }}><polyline points="6 9 12 15 18 9"/></svg>
             </div>
           )}
 
@@ -8874,7 +8893,7 @@ export default function InboxPage() {
               <button type="button" aria-label={dir === 'l' ? 'Scroll left' : 'Scroll right'}
                 onClick={() => assignScrollRef.current?.scrollBy({ left: dir === 'l' ? -150 : 150, behavior: 'smooth' })}
                 disabled={!enabled}
-                style={{ position: 'relative', flexShrink: 0, width: 26, height: 26, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', cursor: enabled ? 'pointer' : 'default', opacity: enabled ? 1 : 0.35, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, transition: 'opacity 0.12s' }}>
+                style={{ position: 'relative', flexShrink: 0, width: 26, height: 26, borderRadius: 999, border: 'none', background: '#f4f4f5', color: '#52525b', cursor: enabled ? 'pointer' : 'default', opacity: enabled ? 1 : 0.35, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, transition: 'opacity 0.12s' }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points={dir === 'l' ? '15 18 9 12 15 6' : '9 18 15 12 9 6'} />
                 </svg>
@@ -8895,15 +8914,8 @@ export default function InboxPage() {
                   ] as const).map(([key, label]) => {
                     const unreadN = key === 'unread' ? conversations.filter(c => c.is_unread && !['closed', 'resolved'].includes(c.status)).length : 0
                     return (
-                    <button key={key} type="button" onClick={() => setAssignFilter(key)}
-                      style={{
-                        flexShrink: 0, padding: '6px 12px', borderRadius: 20, cursor: 'pointer',
-                        border: '1px solid ' + (assignFilter === key ? 'var(--coral)' : 'var(--border)'),
-                        background: assignFilter === key ? 'var(--peach)' : '#fff',
-                        color: assignFilter === key ? 'var(--coral)' : 'var(--slate)',
-                        fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', transition: 'all 0.12s',
-                      }}>
-                      {label}{key === 'unread' && unreadN > 0 ? ` (${unreadN})` : ''}
+                    <button key={key} type="button" onClick={() => setAssignFilter(key)} aria-pressed={assignFilter === key} className={`il-chip${assignFilter === key ? ' on' : ''}`}>
+                      {label}{key === 'unread' && unreadN > 0 && <span className="il-chip-n">{unreadN}</span>}
                     </button>
                     )
                   })}
@@ -8912,22 +8924,34 @@ export default function InboxPage() {
               </div>
             )
           })()}
-          {/* Open / Closed tabs (Coax style) + filter */}
-          <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
-            <div style={{ flex: 1, display: 'flex', background: 'var(--canvas)', borderRadius: 10, padding: 3 }}>
-              {(['open', 'closed'] as const).map(s => (
-                <button key={s} type="button" onClick={() => { if (s !== statusFilter) { setConversations([]); setConvLimit(50); setStatusFilter(s) } }}
-                  style={{ flex: 1, padding: '7px 4px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, textTransform: 'capitalize', background: statusFilter === s ? '#fff' : 'transparent', color: statusFilter === s ? 'var(--ink)' : 'var(--slate)', boxShadow: statusFilter === s ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.12s' }}>
-                  {s}
-                </button>
-              ))}
-            </div>
-            <button type="button" onClick={() => setShowFilters(true)} title="Filter"
-              style={{ width: 36, height: 36, borderRadius: 10, border: `1px solid ${activeFilterCount > 0 ? 'var(--coral)' : 'var(--border)'}`, background: activeFilterCount > 0 ? 'var(--peach)' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: activeFilterCount > 0 ? 'var(--coral)' : 'var(--slate)', position: 'relative', flexShrink: 0 }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-              {activeFilterCount > 0 && (
-                <span style={{ position: 'absolute', top: -4, right: -4, width: 16, height: 16, borderRadius: '50%', background: 'var(--coral)', color: '#fff', fontSize: 9, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{activeFilterCount}</span>
+          {/* Open / Closed — a status menu like Sellio's — and the other filters */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10 }}>
+            <div style={{ position: 'relative' }} data-status-menu>
+              <button type="button" onClick={() => setShowStatusMenu(v => !v)} aria-haspopup="menu" aria-expanded={showStatusMenu}
+                className={`il-status${showStatusMenu ? ' on' : ''}`} title="Filter by status">
+                {statusFilter === 'open' ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M3 13.5 5.6 5.4A1.5 1.5 0 0 1 7 4.5h10a1.5 1.5 0 0 1 1.4.9l2.6 8.1V18.5A1.5 1.5 0 0 1 19.5 20h-15A1.5 1.5 0 0 1 3 18.5z"/><path d="M3.4 13.5h4.8l1.6 2.5h4.4l1.6-2.5h4.8"/></svg> : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="12" cy="12" r="9"/><polyline points="8 12.5 11 15.5 16 9.5"/></svg>}
+                {statusFilter === 'open' ? 'Open' : 'Closed'}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ color: '#71717a' }}><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              {showStatusMenu && (
+                <div className="th-menu" role="menu" style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, width: 210, zIndex: 40, transformOrigin: 'top left' }}>
+                  <p className="th-menu-label">Filter by status</p>
+                  {([['open', 'Open'], ['closed', 'Closed']] as const).map(([k, label]) => (
+                    <button key={k} type="button" role="menuitemradio" aria-checked={statusFilter === k} className={`th-menu-row${statusFilter === k ? ' cur' : ''}`}
+                      onClick={() => { setShowStatusMenu(false); if (k !== statusFilter) { setConversations([]); setConvLimit(50); setStatusFilter(k) } }}>
+                      {k === 'open' ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M3 13.5 5.6 5.4A1.5 1.5 0 0 1 7 4.5h10a1.5 1.5 0 0 1 1.4.9l2.6 8.1V18.5A1.5 1.5 0 0 1 19.5 20h-15A1.5 1.5 0 0 1 3 18.5z"/><path d="M3.4 13.5h4.8l1.6 2.5h4.4l1.6-2.5h4.8"/></svg> : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="12" cy="12" r="9"/><polyline points="8 12.5 11 15.5 16 9.5"/></svg>}
+                      <span style={{ flex: 1 }}>{label}</span>
+                      {statusFilter === k && <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#18181b" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="20 6 9 17 4 12"/></svg>}
+                    </button>
+                  ))}
+                </div>
               )}
+            </div>
+            <span style={{ flex: 1 }} />
+            <button type="button" onClick={() => setShowFilters(true)} title="More filters" aria-label={activeFilterCount > 0 ? `More filters (${activeFilterCount} on)` : 'More filters'}
+              className={`th-btn${activeFilterCount > 0 ? ' on' : ''}`}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><line x1="4" y1="7" x2="20" y2="7"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="10" y1="17" x2="14" y2="17"/></svg>
+              {activeFilterCount > 0 && <span className="il-badge">{activeFilterCount}</span>}
             </button>
           </div>
         </div>
@@ -11477,7 +11501,11 @@ export default function InboxPage() {
                   </div>
                 )}
                 {doaMatch && convActions.doa?.enabled && (
-                  <p style={{ margin: '8px 0 0', fontSize: 11.5, color: 'var(--coral)', fontWeight: 600 }}>💡 This customer matches an order — DOA claim available.</p>
+                  <button type="button" onClick={() => setShowDoa(true)} className="cp-hint" title="Start a DOA claim for this customer's order">
+                    <span className="cp-hint-ic">{Icon.box(15)}</span>
+                    <span style={{ flex: 1, minWidth: 0 }}><b style={{ fontWeight: 650, color: '#18181b' }}>Matches an order</b> · DOA claim</span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ color: '#a1a1aa' }}><polyline points="9 18 15 12 9 6"/></svg>
+                  </button>
                 )}
               </div>
             )
