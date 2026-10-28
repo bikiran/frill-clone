@@ -2,6 +2,19 @@
 
 import { COLVY_CONTACT } from '@/lib/colvy-contact'
 import { soonLabel } from '@/lib/feature-availability'
+import { ratingSummary } from '@/lib/testimonials'
+
+// "Ask AI about Colvy": open an AI assistant with a question about Colvy
+// already asked (each takes it as ?q=). Colvy's own opens the site chat.
+const ASK = encodeURIComponent('Tell me about Colvy (colvy.com), the shared inbox, business phone and AI platform for small businesses. What does it do, who is it for, and how does it compare with the alternatives?')
+const SI = (name: string) => `url(https://cdn.jsdelivr.net/npm/simple-icons@v13/icons/${name}.svg) center / contain no-repeat`
+const ASK_AI: { name: string; href: string; icon: React.ReactNode }[] = [
+  { name: 'ChatGPT', href: `https://chatgpt.com/?q=${ASK}`, icon: <span style={{ width: 22, height: 22, background: '#0d0d0d', mask: SI('openai'), WebkitMask: SI('openai') }} /> },
+  { name: 'Claude', href: `https://claude.ai/new?q=${ASK}`, icon: <span style={{ width: 22, height: 22, background: '#d97757', mask: SI('claude'), WebkitMask: SI('claude') }} /> },
+  { name: 'Perplexity', href: `https://www.perplexity.ai/search?q=${ASK}`, icon: <span style={{ width: 22, height: 22, background: '#1fb8cd', mask: SI('perplexity'), WebkitMask: SI('perplexity') }} /> },
+  { name: 'Google AI', href: `https://www.google.com/search?udm=50&q=${ASK}`, icon: <span style={{ width: 22, height: 22, background: 'linear-gradient(135deg,#4285f4,#9b72cb 55%,#d96570)', mask: SI('googlegemini'), WebkitMask: SI('googlegemini') }} /> },
+  { name: 'Grok', href: `https://grok.com/?q=${ASK}`, icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0d0d0d" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="7" /><line x1="4.5" y1="19.5" x2="19.5" y2="4.5" /></svg> },
+]
 
 // Shared marketing footer — big and bold (ManyChat-style): tall dark band, the
 // brand and ways to reach Colvy beside a giant Colvy wordmark in a grid, then
@@ -22,7 +35,7 @@ export default function MarketingFooter({ dark = false }: { dark?: boolean }) {
     { title: 'Explore', links: [{ l: 'All-in-one platform', h: '/all-in-one-customer-platform' }, { l: 'AI agents', h: '/ai-agents' }, { l: 'AI Assistant', h: '/ai-assistant' }, { l: 'Phones', h: '/phones' }, { l: 'Australian business numbers', h: '/business-phone-number-australia' }, { l: 'Selling chat', h: '/selling-chat' }, { l: 'WhatsApp shared inbox', h: '/whatsapp-shared-inbox' }, { l: 'Integrations', h: '/integrations' }, { l: 'Compare', h: '/compare' }] },
     { title: 'Who it’s for', links: [{ l: 'Ecommerce', h: '/for/ecommerce' }, { l: 'Multi-location retail', h: '/for/multi-location-retail' }, { l: 'Service businesses', h: '/for/service-businesses' }, { l: 'Restaurants', h: '/for/restaurants' }, { l: 'Real estate', h: '/for/real-estate' }, { l: 'All industries', h: '/industries' }] },
     { title: 'Channels', links: [{ l: soonLabel('WhatsApp', 'whatsapp'), h: '/channels/whatsapp' }, { l: 'Instagram & Messenger', h: '/channels/meta' }, { l: 'Email', h: '/channels/email' }, { l: 'Two-way SMS', h: '/channels/sms' }, { l: 'Live chat', h: '/channels/chat-widget' }, { l: 'Google Reviews', h: '/channels/google-reviews' }] },
-    { title: 'Company', links: [{ l: 'About', h: '/about' }, { l: 'Careers', h: '/careers' }, { l: 'Blog', h: '/blog' }, { l: 'Referrals', h: '/referrals' }, { l: 'Changelog', h: '/changelog' }, { l: 'Solutions', h: '/solutions' }, { l: 'Pricing', h: '/pricing' }] },
+    { title: 'Company', links: [{ l: 'About', h: '/about' }, { l: 'Testimonials', h: '/testimonials' }, { l: 'Careers', h: '/careers' }, { l: 'Blog', h: '/blog' }, { l: 'Referrals', h: '/referrals' }, { l: 'Changelog', h: '/changelog' }, { l: 'Solutions', h: '/solutions' }, { l: 'Pricing', h: '/pricing' }] },
     { title: 'Legal', links: [{ l: 'Security', h: '/security' }, { l: 'Status', h: '/status' }, { l: 'Privacy', h: '/privacy' }, { l: 'Analytics opt-out', h: '/privacy#analytics' }, { l: 'Terms', h: '/terms' }] },
   ]
 
@@ -34,6 +47,7 @@ export default function MarketingFooter({ dark = false }: { dark?: boolean }) {
   ]
 
   const bg = '#0b0c14'
+  const rating = ratingSummary()
   return (
     <footer style={{ background: bg, color: text, padding: '0' }}>
       <style>{`
@@ -43,6 +57,9 @@ export default function MarketingFooter({ dark = false }: { dark?: boolean }) {
         @media (max-width:1100px){ .cvf-cols{ grid-template-columns:repeat(4,minmax(0,1fr)); } }
         .cvf-brandbox{ position:relative; border:1px solid ${line}; border-radius:16px; min-height:220px; overflow:hidden; display:flex; align-items:center; justify-content:center; background:
           linear-gradient(${line} 1px,transparent 1px),linear-gradient(90deg,${line} 1px,transparent 1px); background-size:25% 33.33%; }
+        .cvf-ai{ width:46px; height:46px; padding:0; border:none; border-radius:13px; background:#fff; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 0 0 1px rgba(255,255,255,0.12); transition:transform .18s cubic-bezier(.22,1,.36,1), box-shadow .18s; }
+        .cvf-ai::before{ display:none; }
+        .cvf-ai:hover{ transform:translateY(-2px); box-shadow:0 8px 20px rgba(0,0,0,0.35); }
         .cvf-word{ font-weight:900; letter-spacing:-0.04em; font-size:clamp(48px,7vw,104px); line-height:1; }
         @media (max-width:820px){
           .cvf-top{ grid-template-columns:1fr; gap:36px; }
@@ -93,6 +110,17 @@ export default function MarketingFooter({ dark = false }: { dark?: boolean }) {
                 <span style={{ lineHeight: 1.1 }}><span style={{ display: 'block', fontSize: 9.5, color: muted }}>Get it on</span><span style={{ display: 'block', fontSize: 15, fontWeight: 700 }}>Google Play</span></span>
               </a>
             </div>
+            {/* Ask AI about Colvy */}
+            <p style={{ margin: '22px 0 10px', fontSize: 13, fontWeight: 700, color: muted }}>Ask AI about Colvy</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              <button type="button" onClick={() => window.dispatchEvent(new Event('colvy-open-chat'))} title="Ask Colvy" aria-label="Ask Colvy" className="cvf-ai">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/icon-192.png" alt="" width={24} height={24} style={{ borderRadius: 7 }} />
+              </button>
+              {ASK_AI.map(a => (
+                <a key={a.name} href={a.href} target="_blank" rel="noopener noreferrer" title={`Ask ${a.name} about Colvy`} aria-label={`Ask ${a.name} about Colvy`} className="cvf-ai">{a.icon}</a>
+              ))}
+            </div>
           </div>
           {/* Right: giant wordmark in a grid box */}
           <div className="cvf-brandbox">
@@ -107,7 +135,8 @@ export default function MarketingFooter({ dark = false }: { dark?: boolean }) {
               <h3 style={{ fontSize: 12, fontWeight: 800, color: dim, margin: '0 0 14px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{col.title}</h3>
               {col.links.map(lk => (
                 <a key={lk.l} href={lk.h} className="cvf-link" style={{ display: 'block', fontSize: 14.5, color: muted, textDecoration: 'none', marginBottom: 11, transition: 'color 0.2s' }}
-                  onMouseEnter={e => (e.currentTarget.style.color = '#fff')} onMouseLeave={e => (e.currentTarget.style.color = muted)}>{lk.l}</a>
+                  onMouseEnter={e => (e.currentTarget.style.color = '#fff')} onMouseLeave={e => (e.currentTarget.style.color = muted)}>{lk.l}
+                  {lk.h === '/testimonials' && rating && <span style={{ marginLeft: 8, color: '#fff', fontWeight: 700 }}>{rating.average.toFixed(1)} <span style={{ color: '#f5a524' }}>★</span></span>}</a>
               ))}
             </div>
           ))}

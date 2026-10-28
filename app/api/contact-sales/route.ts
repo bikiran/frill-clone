@@ -48,7 +48,8 @@ export async function POST(req: NextRequest) {
         from: 'Colvy <noreply@updates.colvy.com>',
         to: [TO],
         reply_to: cleanEmail,
-        subject: `Sales enquiry — ${name}${company ? ` (${company})` : ''}`,
+        // "Add yours" on /testimonials comes through here too.
+        subject: `${source === 'testimonial' ? 'Testimonial' : 'Sales enquiry'} — ${name}${company ? ` (${company})` : ''}`,
         html: mail.html,
         text: mail.text,
       }),
