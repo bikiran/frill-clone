@@ -90,6 +90,7 @@ import EmptyScroll from '@/components/EmptyScroll'
 import CustomerGlance from '@/components/inbox/CustomerGlance'
 import { ColvyChatRow, ColvyChatThread, ColvyChatInfo, useColvySummary } from '@/components/inbox/ColvyChat'
 import WidgetInstallCard from '@/components/inbox/WidgetInstallCard'
+import { boardUrl } from '@/lib/redirect'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -2611,7 +2612,7 @@ export default function InboxPage() {
   const pendingSendChannelRef = useRef<string | null>(null)
   useEffect(() => {
     if (selected) return
-    if (typeof window === 'undefined') return
+    if (typeof window === 'undefined' || !companyId) return
     const convId = new URLSearchParams(window.location.search).get('conversation')
     if (!convId || deepLinkedRef.current === convId) return
     const wantCh = new URLSearchParams(window.location.search).get('channel')
@@ -2623,6 +2624,18 @@ export default function InboxPage() {
       deepLinkedRef.current = convId
       const { data: conv } = await (supabase as any).from('conversations').select('*').eq('id', convId).maybeSingle()
       if (!conv) { deepLinkedRef.current = null; return }
+      // Only this workspace's conversations open here. Someone in several
+      // workspaces can read the others too, and a link (or a notification)
+      // from one used to open that conversation inside this one, replying
+      // from that workspace's inbox. Send them to its own workspace instead.
+      if (conv.company_id !== companyId) {
+        const { data: home } = await (supabase as any).from('companies').select('slug').eq('id', conv.company_id).maybeSingle()
+        const host = window.location.hostname
+        if (home?.slug && host.endsWith('colvy.com')) { window.location.href = boardUrl(home.slug, `/admin/inbox?conversation=${encodeURIComponent(convId)}`); return }
+        showToast('That conversation is in another workspace.')
+        try { window.history.replaceState(null, '', '/admin/inbox') } catch {}
+        return
+      }
       if (conv.contact_id) {
         const { data: ct } = await (supabase as any).from('contacts').select('id, name, email, phone, relationship_type, prexty_customer_id').eq('id', conv.contact_id).maybeSingle()
         if (ct) (conv as any).contacts = ct
@@ -2630,7 +2643,7 @@ export default function InboxPage() {
       setConversations(prev => prev.some(c => c.id === conv.id) ? prev : [conv, ...prev])
       selectConversation(conv)
     })()
-  }, [conversations, selected])
+  }, [conversations, selected, companyId])
 
   // Deep-link: open (or start) a thread with a specific contact from
   // ?contact=<id>&channel=<sms|email|chat>. This is what the "Message" / "Email"
@@ -2644,8 +2657,10 @@ export default function InboxPage() {
   const openContactDeepLink = useCallback(async (contactId: string, wantCh: string | null) => {
     if (!companyId || !user || !contactId) return
     try {
+      // This workspace's contact only (never another workspace's, which would
+      // start a conversation here with someone else's customer).
       const { data: ct } = await (supabase as any).from('contacts')
-        .select('id, name, email, phone, relationship_type, prexty_customer_id').eq('id', contactId).maybeSingle()
+        .select('id, name, email, phone, relationship_type, prexty_customer_id').eq('id', contactId).eq('company_id', companyId).maybeSingle()
       if (!ct) { deepContactRef.current = null; return }
       // Find-or-create a conversation for this contact.
       const { data: existing } = await (supabase as any).from('conversations')

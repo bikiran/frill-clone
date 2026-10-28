@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { getCompanyForCurrentHost } from '@/lib/board'
 import { confirmDialog } from '@/components/ConfirmDialog'
 
 /**
@@ -105,14 +106,20 @@ export default function MobileNav() {
     })()
   }, [])
 
-  // Unread count on the Inbox tab, the way a native app badges it.
+  // Unread count on the Inbox tab, the way a native app badges it: this
+  // workspace's (someone in several can read them all, and the badge used to
+  // add every workspace's unread chats together).
   useEffect(() => {
     let cancelled = false
+    let companyId: string | null | undefined
     const tick = async () => {
       try {
-        const { count } = await (supabase as any).from('conversations')
+        if (companyId === undefined) companyId = (await getCompanyForCurrentHost())?.id || null
+        let q = (supabase as any).from('conversations')
           .select('*', { count: 'exact', head: true })
           .eq('is_unread', true).neq('status', 'resolved')
+        if (companyId) q = q.eq('company_id', companyId)
+        const { count } = await q
         if (!cancelled) setUnread(count || 0)
       } catch { /* badge is cosmetic */ }
     }
