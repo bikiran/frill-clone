@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Collapse from '@/components/Collapse'
 import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
 import FeatureIcon from '@/components/FeatureIcon'
@@ -183,9 +184,11 @@ export default function AiAgentsPage() {
           {FAQ.map((f, i) => (
             <div key={f.q} style={{ borderTop: `1px solid ${line}` }}>
               <button type="button" className="ag-faq" aria-expanded={open === i} onClick={() => setOpen(open === i ? null : i)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, width: '100%', padding: '18px 0', background: 'none', border: 'none', cursor: 'pointer', color: text, fontFamily: 'inherit', transition: 'color .2s', fontSize: 16.5, fontWeight: 700, textAlign: 'left' }}>
-                {f.q}<span aria-hidden style={{ color: CORAL, fontSize: 20, transform: open === i ? 'rotate(45deg)' : 'none', transition: 'transform .25s' }}>+</span>
+                {f.q}<span aria-hidden style={{ color: CORAL, fontSize: 20, flexShrink: 0, transform: open === i ? 'rotate(45deg)' : 'none', transition: 'transform 0.55s cubic-bezier(0.32,0.72,0,1)' }}>+</span>
               </button>
-              {open === i && <p style={{ margin: '0 0 18px', fontSize: 15.5, lineHeight: 1.65, color: muted }}>{f.a}</p>}
+              <Collapse open={open === i}>
+                <p style={{ margin: '0 0 18px', fontSize: 15.5, lineHeight: 1.65, color: muted }}>{f.a}</p>
+              </Collapse>
             </div>
           ))}
         </div>

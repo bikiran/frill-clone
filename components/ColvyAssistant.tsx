@@ -65,6 +65,17 @@ const SUGGEST_LABEL: Record<string, string> = {
 export default function ColvyAssistant({ companyId, userId, agentName }: { companyId?: string | null; userId?: string | null; agentName?: string | null }) {
   const pathname = usePathname() || ''
   const [open, setOpen] = useState(false)
+  // How the orb comes back when the panel closes: a different entrance each
+  // time (never the same twice running), just after the panel slides away.
+  const [orbIn, setOrbIn] = useState<{ name: string; late: boolean }>({ name: 'pop', late: false })
+  const wasOpen = useRef(false)
+  useEffect(() => {
+    if (wasOpen.current && !open) setOrbIn(cur => {
+      const pool = ORB_ENTRANCES.filter(n => n !== cur.name)
+      return { name: pool[Math.floor(Math.random() * pool.length)], late: true }
+    })
+    wasOpen.current = open
+  }, [open])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [msgs, setMsgs] = useState<Msg[]>([])
@@ -369,6 +380,7 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
               : { right: 18, bottom: 'calc(58px + env(safe-area-inset-bottom, 0px) + 16px)' }),
           }}
         >
+          <div className={`cvo cvo-${orbIn.name}${orbIn.late ? ' cvo-late' : ''}`}>
           {/* Dismiss-for-session tab — slides out on hover. */}
           <button
             type="button"
@@ -400,6 +412,7 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
           >
             <AiBuddy size={ORB + 4} shadow />
           </button>
+          </div>
         </div>
       )}
 
@@ -503,6 +516,42 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
       )}
 
       <style>{`
+        .colvy-ai-orb::before { display: none; }
+        /* The orb's entrances (ORB_ENTRANCES): springy keyframes, each a
+           little different, starting once the panel has slid away. */
+        .cvo { position: relative; width: 100%; height: 100%; animation-duration: .85s; animation-timing-function: cubic-bezier(.33, 1, .68, 1); animation-fill-mode: backwards; will-change: transform, opacity; }
+        .cvo-late { animation-delay: .18s; }
+        .cvo-pop { animation-name: cvoPop; animation-duration: .6s; }
+        .cvo-grow { animation-name: cvoGrow; animation-duration: .95s; }
+        .cvo-fly { animation-name: cvoFly; }
+        .cvo-drop { animation-name: cvoDrop; animation-duration: 1s; transform-origin: 50% 100%; }
+        .cvo-genie { animation-name: cvoGenie; animation-duration: .9s; transform-origin: 50% 0%; }
+        .cvo-spin { animation-name: cvoSpin; }
+        .cvo-rise { animation-name: cvoRise; animation-duration: .95s; }
+        .cvo-jelly { animation-name: cvoJelly; animation-duration: .95s; }
+        .cvo-flip { animation-name: cvoFlip; }
+        .cvo-swing { animation-name: cvoSwing; animation-duration: 1.1s; transform-origin: 50% -70px; }
+        .cvo-zoom { animation-name: cvoZoom; animation-duration: .75s; }
+        .cvo-boomerang { animation-name: cvoBoomerang; animation-duration: .95s; }
+        .cvo-bubble { animation-name: cvoBubble; animation-duration: 1s; }
+        .cvo-twirl { animation-name: cvoTwirl; animation-duration: 1s; }
+        .cvo-peek { animation-name: cvoPeek; animation-duration: 1.05s; transform-origin: 50% 100%; }
+        @keyframes cvoPop { 0% { opacity: 0; transform: scale(0) } 55% { opacity: 1; transform: scale(1.18) } 78% { transform: scale(.94) } 100% { transform: scale(1) } }
+        @keyframes cvoGrow { 0% { opacity: 0; transform: scale(.5) } 40% { opacity: 1; transform: scale(1.5) } 62% { transform: scale(.9) } 80% { transform: scale(1.06) } 100% { transform: scale(1) } }
+        @keyframes cvoFly { 0% { opacity: 0; transform: translateX(150px) rotate(28deg) } 62% { opacity: 1; transform: translateX(-12px) rotate(-7deg) } 82% { transform: translateX(4px) rotate(2deg) } 100% { transform: none } }
+        @keyframes cvoDrop { 0% { opacity: 0; transform: translateY(-280px) } 45% { opacity: 1; transform: translateY(0) scale(1, 1) } 57% { transform: translateY(0) scale(1.18, .8) } 72% { transform: translateY(-30px) scale(.94, 1.07) } 86% { transform: translateY(0) scale(1.06, .95) } 100% { transform: none } }
+        @keyframes cvoGenie { 0% { opacity: 0; transform: translateY(-170px) scale(.22, 2.6); filter: blur(3px) } 45% { opacity: 1; transform: translateY(-20px) scale(.7, 1.5); filter: blur(0) } 70% { transform: translateY(4px) scale(1.12, .9) } 86% { transform: scale(.97, 1.04) } 100% { transform: none } }
+        @keyframes cvoSpin { 0% { opacity: 0; transform: rotate(-540deg) scale(0) } 70% { opacity: 1; transform: rotate(12deg) scale(1.1) } 100% { transform: none } }
+        @keyframes cvoRise { 0% { opacity: 0; transform: translateY(130px) } 55% { opacity: 1; transform: translateY(-14px) rotate(-9deg) } 72% { transform: translateY(0) rotate(7deg) } 86% { transform: rotate(-3deg) } 100% { transform: none } }
+        @keyframes cvoJelly { 0% { opacity: 0; transform: scale(0) } 30% { opacity: 1; transform: scale(1.28, .74) } 45% { transform: scale(.78, 1.22) } 60% { transform: scale(1.13, .9) } 75% { transform: scale(.95, 1.05) } 90% { transform: scale(1.02, .98) } 100% { transform: none } }
+        @keyframes cvoFlip { 0% { opacity: 0; transform: perspective(420px) rotateY(100deg) scale(.6) } 60% { opacity: 1; transform: perspective(420px) rotateY(-22deg) scale(1.06) } 80% { transform: perspective(420px) rotateY(9deg) } 100% { transform: perspective(420px) rotateY(0) } }
+        @keyframes cvoSwing { 0% { opacity: 0; transform: rotate(-95deg) } 40% { opacity: 1; transform: rotate(28deg) } 60% { transform: rotate(-15deg) } 76% { transform: rotate(8deg) } 90% { transform: rotate(-3deg) } 100% { transform: none } }
+        @keyframes cvoZoom { 0% { opacity: 0; transform: scale(2.8); filter: blur(12px) } 60% { opacity: 1; transform: scale(.92); filter: blur(0) } 100% { transform: none } }
+        @keyframes cvoBoomerang { 0% { opacity: 0; transform: translateX(-170px) rotate(-240deg) scale(.5) } 55% { opacity: 1; transform: translateX(34px) rotate(24deg) scale(1.06) } 76% { transform: translateX(-9px) rotate(-7deg) } 100% { transform: none } }
+        @keyframes cvoBubble { 0% { opacity: 0; transform: translate(0, 70px) scale(.3) } 35% { opacity: 1; transform: translate(-8px, 10px) scale(.75) } 55% { transform: translate(7px, -8px) scale(.95) } 70% { transform: translate(-3px, -2px) scale(1.16) } 84% { transform: scale(.95) } 100% { transform: none } }
+        @keyframes cvoTwirl { 0% { opacity: 0; transform: rotate(-400deg) translateX(80px) rotate(400deg) scale(.35) } 75% { opacity: 1; transform: rotate(10deg) translateX(0) rotate(-10deg) scale(1.08) } 100% { transform: rotate(0) translateX(0) rotate(0) scale(1) } }
+        @keyframes cvoPeek { 0% { opacity: 0; transform: translateX(120px) } 38% { opacity: 1; transform: translateX(-6px) } 52% { transform: translateX(0) scale(1.12, .86) } 68% { transform: translateY(-26px) scale(.93, 1.09) } 84% { transform: translateY(0) scale(1.05, .96) } 100% { transform: none } }
+        @media (prefers-reduced-motion: reduce) { .cvo { animation: cvoFade .3s ease backwards !important } @keyframes cvoFade { from { opacity: 0 } } }
         .colvy-ai-orb:hover { filter: brightness(1.04); transform: translateY(-1px); }
         .colvy-ai-orb { transition: transform .15s ease, filter .15s ease; }
         /* Phones: in an open inbox thread the orb's default spot sits on the
@@ -574,6 +623,8 @@ function CardIcon({ name, size = 16 }: { name: string; size?: number }) {
 }
 
 // Colvy AI's face, with eyes that follow the pointer and blink.
+const ORB_ENTRANCES = ['grow', 'fly', 'drop', 'genie', 'spin', 'rise', 'jelly', 'flip', 'swing', 'zoom', 'boomerang', 'bubble', 'twirl', 'peek', 'pop']
+
 const Orb = ({ size = 28 }: { size?: number }) => <AiBuddy size={size} />
 
 function ActionCard({ card, onUndo }: { card: Card; onUndo: () => void }) {
