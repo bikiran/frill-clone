@@ -146,9 +146,9 @@ function Spark({ data, color = '#ff7a6b', h = 36 }: { data: number[]; color?: st
 function KPI({ label, value, sub, trend, color = '#ff7a6b', spark }: any) {
   const up = trend > 0
   return (
-    <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div style={{ background: 'var(--sa-card)', borderRadius: 20, boxShadow: '0 0 0 1px var(--sa-ring), 0 1px 2px rgba(16,24,40,.04)', padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--sa-muted)' }}>{label}</span>
         {spark && <Spark data={spark} color={color} />}
       </div>
       <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--sa-text)', letterSpacing: '-0.02em' }}>{value}</div>
@@ -199,8 +199,8 @@ function Progress({ value, max = 100, color = '#ff7a6b', label }: { value: numbe
 // ── Toggle ──────────────────────────────────────────────────────────────────
 function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
   return (
-    <button onClick={onChange} style={{ width: 40, height: 22, borderRadius: 999, background: on ? '#10b981' : 'var(--sa-border)', border: 'none', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
-      <div style={{ width: 16, height: 16, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: on ? 21 : 3, transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+    <button onClick={onChange} role="switch" aria-checked={on} style={{ width: 44, height: 26, borderRadius: 999, background: on ? '#ff6a4d' : '#d4d4d8', border: 'none', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
+      <div style={{ width: 20, height: 20, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: on ? 21 : 3, transition: 'left 0.25s cubic-bezier(.34,1.56,.64,1)', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
     </button>
   )
 }
@@ -210,8 +210,8 @@ function SectionHeader({ title, sub, action }: { title: string; sub?: string; ac
   return (
     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24 }}>
       <div>
-        <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--sa-text)', marginBottom: sub ? 4 : 0, letterSpacing: '-0.01em' }}>{title}</h1>
-        {sub && <p style={{ fontSize: 13, color: 'var(--sa-muted)' }}>{sub}</p>}
+        <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--sa-text)', marginBottom: sub ? 6 : 0, letterSpacing: '-0.025em', lineHeight: 1.1 }}>{title}</h1>
+        {sub && <p style={{ fontSize: 14.5, color: 'var(--sa-muted)', lineHeight: 1.5, maxWidth: 680 }}>{sub}</p>}
       </div>
       {action}
     </div>
@@ -224,7 +224,7 @@ function SearchBar({ placeholder, value, onChange }: { placeholder: string; valu
     <div style={{ position: 'relative', width: '100%', maxWidth: 320 }}>
       <div style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--sa-muted)' }}>{I.search}</div>
       <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-        style={{ width: '100%', padding: '8px 12px 8px 36px', borderRadius: 10, border: '1px solid var(--sa-border)', background: 'var(--sa-card)', color: 'var(--sa-text)', fontSize: 13, outline: 'none', boxSizing: 'border-box' as const }} />
+        style={{ width: '100%', height: 40, padding: '0 14px 0 38px', borderRadius: 999, border: '1px solid transparent', background: 'var(--sa-field)', color: 'var(--sa-text)', fontSize: 13.5, outline: 'none', boxSizing: 'border-box' as const }} />
     </div>
   )
 }
@@ -1014,20 +1014,21 @@ function Pill({ text, color }: { text: string; color: string }) {
 }
 function Notice({ tone = 'warn', children }: { tone?: 'warn' | 'error' | 'info'; children: React.ReactNode }) {
   const c = tone === 'error' ? '#ef4444' : tone === 'info' ? '#6366f1' : '#f59e0b'
-  return <div style={{ padding: '12px 14px', borderRadius: 10, background: c + '18', border: `1px solid ${c}55`, fontSize: 13, color: 'var(--sa-text)', marginBottom: 14, lineHeight: 1.5 }}>{children}</div>
+  return <div style={{ padding: '12px 16px', borderRadius: 16, background: c + '14', fontSize: 13.5, color: 'var(--sa-text)', marginBottom: 14, lineHeight: 1.5 }}>{children}</div>
 }
 function StatTile({ label, value, color = 'var(--sa-text)', loading }: { label: string; value: React.ReactNode; color?: string; loading?: boolean }) {
   return (
-    <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 16 }}>
-      <p style={{ fontSize: 24, fontWeight: 800, color, margin: 0 }}>{loading ? '…' : value}</p>
-      <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '2px 0 0' }}>{label}</p>
+    <div style={{ background: 'var(--sa-tile)', borderRadius: 18, padding: '16px 18px' }}>
+      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--sa-muted)', margin: '0 0 4px' }}>{label}</p>
+      <p style={{ fontSize: 26, fontWeight: 800, color, margin: 0, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>{loading ? '…' : value}</p>
     </div>
   )
 }
-const paTh: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }
-const paTd: React.CSSProperties = { padding: '11px 16px', fontSize: 12.5, color: 'var(--sa-text)' }
+const paTh: React.CSSProperties = { padding: '12px 16px', textAlign: 'left', fontSize: 12.5, fontWeight: 600, color: 'var(--sa-muted)', whiteSpace: 'nowrap', background: 'var(--sa-tile)' }
+const paTd: React.CSSProperties = { padding: '13px 16px', fontSize: 13, color: 'var(--sa-text)' }
 function paChip(active: boolean, color?: string): React.CSSProperties {
-  return { padding: '7px 13px', borderRadius: 9, border: `1px solid ${active ? (color || '#ff7a6b') : 'var(--sa-border)'}`, background: active ? (color || '#ff7a6b') + '22' : 'var(--sa-card)', color: active ? (color || '#ff7a6b') : 'var(--sa-text)', fontSize: 12.5, fontWeight: active ? 700 : 500, cursor: 'pointer' }
+  // Sellio filter pills: grey, and dark (or the filter's own colour) when on.
+  return { padding: '8px 14px', borderRadius: 999, border: '1px solid transparent', background: active ? (color || 'var(--sa-text)') : 'var(--sa-field)', color: active ? (color ? '#fff' : 'var(--sa-bg)') : 'var(--sa-text)', fontSize: 13, fontWeight: active ? 650 : 500, cursor: 'pointer', transition: 'background .15s, color .15s' }
 }
 
 // Pause / resume every AI agent for one business — the same switch the
@@ -2713,10 +2714,10 @@ function DemoWorkspacesPage() {
 const CONSOLE_PLANS = ['free', 'trial', 'feedback', 'omnichannel', 'everything', 'enterprise', 'suspended']
 
 function paBtn(color = 'var(--sa-muted)', filled = false): React.CSSProperties {
-  return { padding: '7px 13px', borderRadius: 9, border: filled ? 'none' : '1px solid var(--sa-border)', background: filled ? color : 'transparent', color: filled ? '#fff' : color, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', display: 'inline-block' }
+  return { padding: '8px 15px', borderRadius: 999, border: filled ? 'none' : '1.5px solid var(--sa-border)', background: filled ? color : 'var(--sa-card)', color: filled ? '#fff' : color, fontSize: 13, fontWeight: 650, cursor: 'pointer', whiteSpace: 'nowrap', display: 'inline-block', boxShadow: filled ? 'inset 0 1px 0 rgba(255,255,255,.22), 0 1px 2px rgba(16,24,40,.12)' : 'none' }
 }
-const paLabel: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--sa-muted)', marginTop: 14, marginBottom: 5 }
-const paInput: React.CSSProperties = { width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'var(--sa-bg)', color: 'var(--sa-text)', fontSize: 13.5, boxSizing: 'border-box', fontFamily: 'inherit' }
+const paLabel: React.CSSProperties = { display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--sa-text)', marginTop: 14, marginBottom: 6 }
+const paInput: React.CSSProperties = { width: '100%', padding: '11px 13px', borderRadius: 12, border: '1px solid transparent', background: 'var(--sa-field)', color: 'var(--sa-text)', fontSize: 14, boxSizing: 'border-box', fontFamily: 'inherit', outline: 'none' }
 function paField(label: string, value: string, onChange: (v: string) => void, placeholder = '', hint = '') {
   return (
     <div>
@@ -2929,7 +2930,7 @@ function CompaniesPage() {
     <div>
       <SectionHeader title="Companies" sub={`${companies.length} total companies on the platform`}
         action={<div style={{ display: 'flex', gap: 8 }}>
-          <a href="https://colvy.com/admin/create-company" style={{ padding: '8px 14px', borderRadius: 10, background: '#ff7a6b', color: '#fff', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>+ New Company</a>
+          <a href="https://colvy.com/admin/create-company" style={{ ...paBtn('#ff6a4d', true), textDecoration: 'none' }}>+ New company</a>
         </div>}
       />
       {msg && <div style={{ padding: '10px 16px', borderRadius: 10, background: '#d1fae5', color: '#065f46', fontSize: 13, marginBottom: 16, fontWeight: 500 }}>{msg}</div>}
@@ -2975,7 +2976,7 @@ function CompaniesPage() {
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', minWidth: 0 }}>
           {['all', ...CONSOLE_PLANS].map(f => (
             <button key={f} onClick={() => setFilter(f)}
-              style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid var(--sa-border)', background: filter === f ? '#ff7a6b' : 'var(--sa-card)', color: filter === f ? '#fff' : 'var(--sa-muted)', fontSize: 12, fontWeight: filter === f ? 700 : 400, cursor: 'pointer', textTransform: 'capitalize' as const }}>
+              style={{ ...paChip(filter === f), textTransform: 'capitalize' as const }}>
               {f}
             </button>
           ))}
@@ -4583,24 +4584,34 @@ export default function SuperAdmin() {
   }, [])
 
   // ── CSS vars ────────────────────────────────────────────────────────────────
+  // Sellio-style: a grey sidebar, a soft canvas, white cards with a hairline
+  // ring, grey tiles and fields.
   const css = dark ? {
-    '--sa-bg': '#0a0a0a',
-    '--sa-sidebar': '#111111',
-    '--sa-card': '#161616',
-    '--sa-border': '#2a2a2a',
-    '--sa-text': '#f0f0f0',
-    '--sa-muted': '#6b6b70',
-    '--sa-hover': '#1e1e1e',
-    '--sa-active': '#1a1a2e',
+    '--sa-bg': '#0e0e10',
+    '--sa-sidebar': '#08080a',
+    '--sa-card': '#17171a',
+    '--sa-border': '#2a2a2e',
+    '--sa-text': '#f2f2f3',
+    '--sa-muted': '#8e8e93',
+    '--sa-hover': 'rgba(255,255,255,.06)',
+    '--sa-active': '#1f1f23',
+    '--sa-tile': '#1d1d21',
+    '--sa-field': '#1f1f23',
+    '--sa-ring': 'rgba(255,255,255,.08)',
+    '--sa-nav': '#c7c7cc',
   } : {
-    '--sa-bg': '#f4f5f7',
-    '--sa-sidebar': '#ffffff',
+    '--sa-bg': '#fafafa',
+    '--sa-sidebar': '#f4f4f6',
     '--sa-card': '#ffffff',
-    '--sa-border': '#e8e8eb',
-    '--sa-text': '#0d0d0d',
-    '--sa-muted': '#6b6b80',
-    '--sa-hover': '#f8f8f8',
-    '--sa-active': '#fff4f1',
+    '--sa-border': '#ececf0',
+    '--sa-text': '#111111',
+    '--sa-muted': '#71717a',
+    '--sa-hover': 'rgba(0,0,0,.045)',
+    '--sa-active': '#ffffff',
+    '--sa-tile': '#f7f7f8',
+    '--sa-field': '#f4f4f5',
+    '--sa-ring': 'rgba(0,0,0,.06)',
+    '--sa-nav': '#3f3f46',
   }
 
   if (!authed) return (
@@ -4626,19 +4637,20 @@ export default function SuperAdmin() {
         className={`pa-nav${active ? ' pa-nav-on' : ''}`}
         style={{
           width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-          padding: rail ? '9px' : '7px 10px', justifyContent: rail ? 'center' : 'flex-start',
-          borderRadius: 9, border: 'none', cursor: 'pointer', marginBottom: 1,
-          background: active ? '#ff7a6b18' : 'transparent', color: active ? '#ff7a6b' : 'var(--sa-muted)',
-          fontSize: 13, fontWeight: active ? 650 : 500, textAlign: 'left',
+          padding: rail ? '10px' : '8px 10px', justifyContent: rail ? 'center' : 'flex-start',
+          borderRadius: 12, border: 'none', cursor: 'pointer', marginBottom: 2,
+          background: active ? 'var(--sa-active)' : 'transparent', color: active ? 'var(--sa-text)' : 'var(--sa-nav)',
+          boxShadow: active ? '0 0 0 1px var(--sa-ring), 0 1px 3px rgba(0,0,0,.06)' : 'none',
+          fontSize: 13.5, fontWeight: active ? 650 : 500, textAlign: 'left',
         }}>
-        <span style={{ flexShrink: 0, display: 'flex' }}>{(I as any)[item.icon]}</span>
+        <span style={{ flexShrink: 0, display: 'flex', color: active ? '#ff6a4d' : 'var(--sa-muted)' }}>{(I as any)[item.icon]}</span>
         {!rail && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>}
       </button>
     )
   }
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Segoe UI", sans-serif', ...css as any } as any}>
+    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--sa-sidebar)', fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Segoe UI", sans-serif', ...css as any } as any}>
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
         ::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -4650,6 +4662,22 @@ export default function SuperAdmin() {
         input { font-family: inherit; }
         select { font-family: inherit; }
         .pa-nav:not(.pa-nav-on):hover { background: var(--sa-hover) !important; color: var(--sa-text) !important; }
+        .pa-content button::before { display: none !important; }
+        /* Sellio cards everywhere: a hairline ring instead of a border, rounder corners. */
+        .pa-content [style*="background: var(--sa-card)"][style*="border: 1px solid var(--sa-border)"] { border-color: transparent !important; box-shadow: 0 0 0 1px var(--sa-ring), 0 1px 2px rgba(16,24,40,.04); }
+        .pa-content [style*="background: var(--sa-card)"]:is([style*="border-radius: 12px"],[style*="border-radius: 14px"],[style*="border-radius: 16px"],[style*="border-radius: 18px"]) { border-radius: 20px !important; }
+        .pa-content [style*="border-radius: 12px"][style*="overflow: hidden"]:has(> table), .pa-content [style*="border-radius: 14px"][style*="overflow: hidden"]:has(> table) { border-radius: 20px !important; }
+        /* Plain-English labels instead of shouting caps. */
+        .pa-content [style*="text-transform: uppercase"] { text-transform: none !important; letter-spacing: 0 !important; }
+        .pa-content th { text-transform: none !important; letter-spacing: 0 !important; font-weight: 600 !important; }
+        .pa-content :is(button, a):is([style*="border-radius: 6px"],[style*="border-radius: 7px"],[style*="border-radius: 8px"],[style*="border-radius: 9px"],[style*="border-radius: 10px"]):not([style*="width: 100%"]):not([style*="display: flex"]):not([style*="display: grid"]):not([style*="display: block"]):not([style*="text-align: left"]):not([style*="position: absolute"]) { border-radius: 999px !important; }
+        .pa-content thead th { background: var(--sa-tile); }
+        .pa-content thead tr { border-bottom-color: transparent !important; }
+        .pa-content tbody tr { transition: background .15s; }
+        .pa-content tbody tr:hover { background: var(--sa-hover); }
+        /* Grey fields. */
+        .pa-content :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]), select, textarea)[style*="border: 1px solid var(--sa-border)"] { border-color: transparent !important; background: var(--sa-field) !important; border-radius: 12px !important; }
+        .pa-content :is(input, select, textarea):focus { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, #ff6a4d 45%, transparent) !important; }
         .pa-group:hover { color: var(--sa-text) !important; }
         @media (max-width: 640px) {
           .pa-content { padding: 16px 12px !important; }
@@ -4662,7 +4690,7 @@ export default function SuperAdmin() {
       {mobile && menuOpen && <div onClick={() => setMenuOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 39 }} />}
       <aside style={{
         width: SIDEBAR_W, flexShrink: 0, background: 'var(--sa-sidebar)',
-        borderRight: '1px solid var(--sa-border)',
+        borderRight: 'none',
         position: 'fixed', top: 0, left: 0, bottom: 0,
         display: 'flex', flexDirection: 'column',
         transition: 'width 0.2s ease, transform 0.2s ease', overflow: 'hidden', zIndex: 40,
@@ -4671,9 +4699,8 @@ export default function SuperAdmin() {
       }}>
         {/* Logo */}
         <div style={{ padding: '16px 14px 12px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 9, background: 'linear-gradient(135deg, #ff7a6b, #ff5247)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icon-192.png" alt="" width={34} height={34} style={{ width: 34, height: 34, borderRadius: 10, display: 'block', flexShrink: 0 }} />
           {!rail && (
             <div>
               <p style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--sa-text)', lineHeight: 1.2 }}>Colvy</p>
@@ -4696,8 +4723,8 @@ export default function SuperAdmin() {
             style={{
               width: '100%', display: 'flex', alignItems: 'center', gap: 9,
               padding: rail ? '9px' : '8px 10px', justifyContent: rail ? 'center' : 'flex-start',
-              borderRadius: 9, border: '1px solid var(--sa-border)', cursor: 'pointer', marginBottom: 10,
-              background: 'var(--sa-hover)', color: 'var(--sa-muted)', fontSize: 13,
+              borderRadius: 12, border: 'none', cursor: 'pointer', marginBottom: 12,
+              background: 'var(--sa-card)', boxShadow: '0 0 0 1px var(--sa-ring)', color: 'var(--sa-muted)', fontSize: 13,
             }}>
             {I.search}
             {!rail && <>
@@ -4715,7 +4742,7 @@ export default function SuperAdmin() {
               <div key={g.title} style={{ marginTop: rail ? 6 : 10, paddingTop: rail ? 6 : 0, borderTop: rail ? '1px solid var(--sa-border)' : 'none' }}>
                 {!rail && (
                   <button onClick={() => toggleGroup(g.title)} className="pa-group" aria-expanded={open}
-                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', background: 'none', border: 'none', cursor: hasActive ? 'default' : 'pointer', color: hasActive ? 'var(--sa-text)' : 'var(--sa-muted)', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px 4px', background: 'none', border: 'none', cursor: hasActive ? 'default' : 'pointer', color: 'var(--sa-muted)', fontSize: 12.5, fontWeight: 600 }}>
                     <span style={{ flex: 1, textAlign: 'left' }}>{g.title}</span>
                     {!hasActive && <span style={{ display: 'flex', transform: open ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s' }}>{I.chevron}</span>}
                   </button>
@@ -4727,7 +4754,7 @@ export default function SuperAdmin() {
         </nav>
 
         {/* Bottom */}
-        <div style={{ padding: '10px 8px', borderTop: '1px solid var(--sa-border)', flexShrink: 0 }}>
+        <div style={{ padding: '10px 8px', borderTop: 'none', flexShrink: 0 }}>
           <button onClick={() => setDark(!dark)} className="pa-nav"
             style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: rail ? '9px' : '8px 10px', justifyContent: rail ? 'center' : 'flex-start', borderRadius: 9, border: 'none', cursor: 'pointer', background: 'transparent', color: 'var(--sa-muted)', fontSize: 13 }}>
             <span style={{ display: 'flex' }}>{dark ? I.sun : I.moon}</span>
@@ -4782,9 +4809,9 @@ export default function SuperAdmin() {
       )}
 
       {/* ── MAIN ────────────────────────────────────────────────────────────── */}
-      <main style={{ marginLeft: mobile ? 0 : SIDEBAR_W, flex: 1, minWidth: 0, background: 'var(--sa-bg)', minHeight: '100vh', transition: 'margin-left 0.2s ease' }}>
+      <main style={{ marginLeft: mobile ? 0 : SIDEBAR_W, flex: 1, minWidth: 0, background: 'var(--sa-bg)', minHeight: '100vh', transition: 'margin-left 0.2s ease', borderTopLeftRadius: mobile ? 0 : 22, boxShadow: mobile ? 'none' : '0 0 0 1px var(--sa-ring)' }}>
         {/* Topbar */}
-        <div className="pa-topbar" style={{ height: 54, borderBottom: '1px solid var(--sa-border)', display: 'flex', alignItems: 'center', padding: '0 24px', gap: 12, background: 'var(--sa-sidebar)', position: 'sticky', top: 0, zIndex: 30 }}>
+        <div className="pa-topbar" style={{ height: 58, borderBottom: '1px solid var(--sa-border)', display: 'flex', alignItems: 'center', padding: '0 24px', gap: 12, background: 'var(--sa-card)', position: 'sticky', top: 0, zIndex: 30, borderTopLeftRadius: mobile ? 0 : 22 }}>
           {mobile && (
             <button onClick={() => setMenuOpen(true)} aria-label="Open menu" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--sa-text)', padding: 4, display: 'flex' }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
@@ -4797,7 +4824,7 @@ export default function SuperAdmin() {
           </div>
           <div className="pa-topsearch" style={{ position: 'relative', width: 260, marginLeft: 'auto' }}>
             <div style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--sa-muted)', display: 'flex' }}>{I.search}</div>
-            <input readOnly onFocus={e => { e.currentTarget.blur(); setSearchOpen(true) }} onClick={() => setSearchOpen(true)} placeholder="Find a page… ⌘K" style={{ cursor: 'pointer', width: '100%', padding: '7px 12px 7px 34px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'var(--sa-hover)', color: 'var(--sa-text)', fontSize: 13, outline: 'none' }} />
+            <input readOnly onFocus={e => { e.currentTarget.blur(); setSearchOpen(true) }} onClick={() => setSearchOpen(true)} placeholder="Find a page… ⌘K" style={{ cursor: 'pointer', width: '100%', height: 38, padding: '0 14px 0 36px', borderRadius: 999, border: '1px solid transparent', background: 'var(--sa-field)', color: 'var(--sa-text)', fontSize: 13, outline: 'none' }} />
           </div>
           <div style={{ display: 'flex', gap: 6, marginLeft: mobile ? 'auto' : 0, minWidth: 0, flexShrink: 0 }}>
             {(() => {
