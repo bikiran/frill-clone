@@ -135,7 +135,7 @@ export default function ProfileSettings() {
       </div>
 
       {/* Notifications */}
-      <div className="st-sec">
+      <div className="st-sec" id="notifications" style={{ scrollMarginTop: 80 }}>
         <h2 style={S.h2}>Notifications</h2>
         <ToggleRow title="Browser Notifications" desc="Colvy will send a browser notification whenever you get new activity." checked={s.browser_notifications} onChange={v => set('browser_notifications', v)} />
         <ToggleRow title="Message Notifications" desc="Get notified whenever you receive a new message." checked={s.message_notifications} onChange={v => set('message_notifications', v)} />
