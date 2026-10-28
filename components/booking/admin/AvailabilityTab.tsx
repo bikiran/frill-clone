@@ -6,7 +6,7 @@ import { VIC_PUBLIC_HOLIDAYS } from '@/lib/holidays'
 import { outletGaps } from '@/lib/booking-outlets'
 import WeekHoursEditor from './WeekHoursEditor'
 import { WarnIcon } from '@/components/booking/icons'
-import { card, btnGhost, input, label, hint, Toggle } from './shared'
+import { card, input, label, hint, Toggle } from './shared'
 
 // When people can book: business hours, which teammates take bookings (and
 // their own hours / days off), and closed dates.
@@ -60,7 +60,7 @@ export default function AvailabilityTab({ settings, setSettings, staff, location
             : 'Nobody is switched on, so bookings go to the business as a whole — one booking at a time, on business hours. Switch people on to let customers book them individually (several bookings can then run at once).'}
         </div>
         {gaps.length > 0 && (
-          <div role="status" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', fontSize: 13, marginBottom: 12 }}>
+          <div role="status" className="bk-warn">
             <WarnIcon size={15} style={{ marginTop: 1, flexShrink: 0 }} />
             <span>Nobody is set to take bookings at {gaps.map(g => g.label).join(', ')}, so everyone is offered there. Open a person’s “Hours &amp; days off” to choose where they work.</span>
           </div>
@@ -71,36 +71,36 @@ export default function AvailabilityTab({ settings, setSettings, staff, location
             const at: string[] = (st.locations || []).filter((id: string) => outletName(id))
             const expanded = openStaff === s.id
             return (
-              <div key={s.id} style={{ border: '1px solid var(--border, #f1f1f1)', borderRadius: 12, padding: '10px 12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <Toggle on={!!st.bookable} onChange={v => setStaff(s.id, { bookable: v })} />
-                  <span style={{ fontWeight: 600, fontSize: 14, flex: 1 }}>{s.name}</span>
+              <div key={s.id} className={`bk-staff${st.bookable ? ' on' : ''}`}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <Toggle on={!!st.bookable} onChange={v => setStaff(s.id, { bookable: v })} label={`${s.name} takes bookings`} />
+                  <span style={{ fontWeight: 600, fontSize: 14.5, flex: 1, minWidth: 120 }}>{s.name}</span>
                   {st.bookable && (
                     <span style={{ fontSize: 12, color: 'var(--slate, #6b7280)' }}>
                       {locations.length > 1 && at.length ? `${at.map(outletName).join(', ')} · ` : ''}{st.hours ? 'Own hours' : 'Business hours'}{st.off?.length ? ` · ${st.off.length} day${st.off.length > 1 ? 's' : ''} off` : ''}
                     </span>
                   )}
-                  {st.bookable && <button type="button" onClick={() => setOpenStaff(expanded ? null : s.id)} style={{ ...btnGhost, height: 30, fontSize: 12.5 }}>{expanded ? 'Done' : 'Hours & days off'}</button>}
+                  {st.bookable && <button type="button" onClick={() => setOpenStaff(expanded ? null : s.id)} className="cv-btn bk-sm">{expanded ? 'Done' : 'Hours & days off'}</button>}
                 </div>
                 {st.bookable && expanded && (
-                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #f5f5f5' }}>
+                  <div style={{ marginTop: 12, paddingTop: 14, borderTop: '1px solid #f0f0f2' }}>
                     {locations.length > 1 && (
                       <div style={{ marginBottom: 14 }}>
                         <span style={label}>Takes bookings at</span>
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }} role="group" aria-label={`Outlets ${s.name} takes bookings at`}>
-                          <button type="button" aria-pressed={!at.length} onClick={() => setStaff(s.id, { locations: [] })} style={outletChip(!at.length)}>Any outlet</button>
+                          <button type="button" aria-pressed={!at.length} onClick={() => setStaff(s.id, { locations: [] })} className={`bk-pick${!at.length ? ' on' : ''}`}>Any outlet</button>
                           {locations.map(l => {
                             const on = at.includes(l.id)
-                            return <button key={l.id} type="button" aria-pressed={on} onClick={() => setStaff(s.id, { locations: on ? at.filter(x => x !== l.id) : [...at, l.id] })} style={outletChip(on)}>{l.label}</button>
+                            return <button key={l.id} type="button" aria-pressed={on} onClick={() => setStaff(s.id, { locations: on ? at.filter(x => x !== l.id) : [...at, l.id] })} className={`bk-pick${on ? ' on' : ''}`}>{l.label}</button>
                           })}
                         </div>
                         <div style={hint}>When a customer picks an outlet, only people who work there are offered (and “anyone available” picks from them).</div>
                       </div>
                     )}
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, marginBottom: 10, cursor: 'pointer' }}>
-                      <input type="checkbox" checked={!!st.hours} onChange={e => setStaff(s.id, { hours: e.target.checked ? JSON.parse(JSON.stringify(settings.hours || DEFAULT_HOURS)) : null })} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, fontWeight: 600, marginBottom: 10 }}>
+                      <Toggle on={!!st.hours} onChange={v => setStaff(s.id, { hours: v ? JSON.parse(JSON.stringify(settings.hours || DEFAULT_HOURS)) : null })} label="Different hours from the business" />
                       Different hours from the business
-                    </label>
+                    </div>
                     {st.hours && <WeekHoursEditor value={st.hours as WeekHours} onChange={hours => setStaff(s.id, { hours })} />}
                     <div style={{ marginTop: 12 }}>
                       <span style={label}>Days off</span>
@@ -125,21 +125,21 @@ export default function AvailabilityTab({ settings, setSettings, staff, location
             if (!closedDate || settings.closed?.some((c: any) => c.date === closedDate)) return
             setSettings({ ...settings, closed: [...(settings.closed || []), { date: closedDate, label: closedLabel }].sort((a: any, b: any) => a.date.localeCompare(b.date)) })
             setClosedDate(''); setClosedLabel('')
-          }} style={btnGhost}>Add</button>
+          }} className="cv-btn">Add</button>
           {holidays.length > 0 && (
-            <button type="button" onClick={addHolidays} style={btnGhost} title={holidays.map(h => `${fmtDay(h.date)} · ${h.label}`).join('\n')}>
+            <button type="button" onClick={addHolidays} className="cv-btn" title={holidays.map(h => `${fmtDay(h.date)} · ${h.label}`).join('\n')}>
               Add Victorian public holidays ({holidays.length})
             </button>
           )}
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {(settings.closed || []).map((c: any) => (
-            <span key={c.date} style={chip}>
+            <span key={c.date} className="bk-chip-x">
               {fmtDay(c.date)}{c.label ? ` · ${c.label}` : ''}
-              <button type="button" aria-label={`Remove ${fmtDay(c.date)}`} onClick={() => setSettings({ ...settings, closed: settings.closed.filter((x: any) => x.date !== c.date) })} style={chipX}>×</button>
+              <button type="button" aria-label={`Remove ${fmtDay(c.date)}`} onClick={() => setSettings({ ...settings, closed: settings.closed.filter((x: any) => x.date !== c.date) })}>×</button>
             </span>
           ))}
-          {!(settings.closed || []).length && <span style={{ fontSize: 13, color: '#9ca3af' }}>None</span>}
+          {!(settings.closed || []).length && <span style={{ fontSize: 13.5, color: '#a1a1aa' }}>None yet</span>}
         </div>
       </section>
     </div>
@@ -152,10 +152,10 @@ function DateList({ dates, onChange }: { dates: string[]; onChange: (d: string[]
     <div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
         <input type="date" value={d} onChange={e => setD(e.target.value)} style={{ ...input, width: 160 }} />
-        <button type="button" disabled={!d} onClick={() => { if (d && !dates.includes(d)) onChange([...dates, d].sort()); setD('') }} style={btnGhost}>Add</button>
+        <button type="button" disabled={!d} onClick={() => { if (d && !dates.includes(d)) onChange([...dates, d].sort()); setD('') }} className="cv-btn">Add</button>
       </div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        {dates.map(x => <span key={x} style={chip}>{fmtDay(x)}<button type="button" aria-label={`Remove ${fmtDay(x)}`} onClick={() => onChange(dates.filter(y => y !== x))} style={chipX}>×</button></span>)}
+        {dates.map(x => <span key={x} className="bk-chip-x">{fmtDay(x)}<button type="button" aria-label={`Remove ${fmtDay(x)}`} onClick={() => onChange(dates.filter(y => y !== x))}>×</button></span>)}
       </div>
     </div>
   )
@@ -163,7 +163,4 @@ function DateList({ dates, onChange }: { dates: string[]; onChange: (d: string[]
 
 const todayIn = (tz: string) => new Date().toLocaleDateString('en-CA', { timeZone: tz })
 const fmtDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
-const outletChip = (on: boolean): React.CSSProperties => ({ height: 32, padding: '0 12px', borderRadius: 999, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', border: `1px solid ${on ? 'var(--coral, #ff7a6b)' : 'var(--border, #e5e7eb)'}`, background: on ? 'color-mix(in srgb, var(--coral, #ff7a6b) 10%, #fff)' : '#fff', color: on ? 'color-mix(in srgb, var(--coral, #ff7a6b) 80%, #000)' : 'var(--ink, #111)' })
-const sectionTitle: React.CSSProperties = { fontWeight: 800, fontSize: 15, color: 'var(--ink, #111)' }
-const chip: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 600, padding: '4px 6px 4px 10px', borderRadius: 999, background: '#f3f4f6', color: '#374151' }
-const chipX: React.CSSProperties = { border: 'none', background: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 15, lineHeight: 1, padding: 0 }
+const sectionTitle: React.CSSProperties = { fontWeight: 800, fontSize: 17, letterSpacing: '-.01em', color: 'var(--ink, #111)' }

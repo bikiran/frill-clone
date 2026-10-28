@@ -4,10 +4,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { resolveCompanyUser } from '@/lib/client-cache'
-import PageHeader from '@/components/PageHeader'
 import { SkeletonList } from '@/components/Skeleton'
-import { api, btn, btnGhost } from '@/components/booking/admin/shared'
-import { LinkIcon, CodeIcon, ExternalIcon, WarnIcon, CheckIcon, CalendarIcon, ClockIcon, TagIcon, GearIcon, SparkleIcon } from '@/components/booking/icons'
+import { api } from '@/components/booking/admin/shared'
+import { LinkIcon, CodeIcon, ExternalIcon, WarnIcon, CheckIcon } from '@/components/booking/icons'
 import BookingsList from '@/components/booking/admin/BookingsList'
 import ServicesTab from '@/components/booking/admin/ServicesTab'
 import AvailabilityTab from '@/components/booking/admin/AvailabilityTab'
@@ -99,60 +98,40 @@ export default function BookingsPage() {
 
   return (
     <div className="bk-page">
-      <PageHeader
-        title="Bookings"
-        icon={<CalendarIcon size={21} />}
-        subtitle="Let customers book appointments online — and pay a deposit if you want one."
-        bleed={24}
-        bleedTop={0}
-        action={meta?.bookingUrl ? (
-          <>
-            <button onClick={copyLink} style={btnGhost} title="Copy booking link"><LinkIcon size={15} /><span className="bkh-l">Copy booking link</span></button>
-            <button onClick={() => setShowEmbed(true)} style={btnGhost} title="Add to your website"><CodeIcon size={15} /><span className="bkh-l">Embed</span></button>
-            <a href={meta.bookingUrl} target="_blank" rel="noreferrer" style={{ ...btn, textDecoration: 'none' }} title="Open booking page"><span className="bkh-l">Open booking page</span><ExternalIcon size={15} /></a>
-          </>
-        ) : undefined}
-      />
-      <style>{`
-        .bk-page{padding:0 24px 60px}
-        @media(max-width:700px){.bkh-l{display:none}.bk-page{padding:0 14px 60px}.bk-page>div:first-child{margin-left:-14px!important;margin-right:-14px!important}}
-        .bk-tabs{display:flex;gap:2px;border-bottom:1px solid var(--border,#ececec);margin:16px 0 18px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
-        .bk-tabs::-webkit-scrollbar{display:none}
-        .bk-tab{display:inline-flex;align-items:center;gap:7px;border:none;background:none;padding:11px 14px;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit;color:var(--slate,#6b7280);box-shadow:inset 0 -2px 0 transparent;transition:color .2s,box-shadow .25s cubic-bezier(.22,1,.36,1);outline:none}
-        .bk-tab:hover{color:var(--ink,#111)}
-        .bk-tab,.bk-tab:hover,.bk-tab:active,.bk-tab:focus{background:transparent!important}
-        .bk-tab.on{color:var(--ink,#111);box-shadow:inset 0 -2px 0 var(--coral,#ff7a6b)}
-        .bk-tab:focus-visible{box-shadow:inset 0 0 0 2px var(--coral,#ff7a6b);border-radius:8px}
-        .bk-tab svg{opacity:.75;transition:opacity .2s}
-        .bk-tab.on svg{opacity:1;color:var(--coral,#ff7a6b)}
-        .bk-count{min-width:20px;height:20px;padding:0 6px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:800;background:#f1f1f3;color:var(--slate,#6b7280);font-variant-numeric:tabular-nums;transition:background .2s,color .2s}
-        .bk-tab.on .bk-count{background:var(--peach,#fff1ee);color:var(--coral,#e5604f)}
-        .bk-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
-        @media(max-width:760px){.bk-steps{grid-template-columns:1fr}}
-        .bk-step{display:flex;gap:11px;align-items:flex-start;text-align:left;padding:12px 13px;border-radius:12px;border:1px solid var(--border,#ececec);background:#fff;cursor:pointer;font:inherit;color:inherit;transition:transform .2s cubic-bezier(.22,1,.36,1),box-shadow .2s,border-color .2s}
-        .bk-step:hover{transform:translate3d(0,-1px,0);box-shadow:0 8px 20px -14px rgba(0,0,0,.35);border-color:#e2e2e2}
-        .bk-num{width:24px;height:24px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:800;background:var(--peach,#fff1ee);color:var(--coral,#e5604f)}
-        .bk-num.done{background:#dcfce7;color:#15803d}
-      `}</style>
+      <style>{BK_CSS}</style>
+      <div className="bk-head">
+        <div style={{ minWidth: 0 }}>
+          <h1>Bookings</h1>
+          <p>Let customers book appointments online, and pay a deposit if you want one.</p>
+        </div>
+        {meta?.bookingUrl && (
+          <div className="bk-head-acts">
+            <a href={meta.bookingUrl} target="_blank" rel="noreferrer" className="bk-ic" title="Open booking page" aria-label="Open booking page"><ExternalIcon size={16} /></a>
+            <button type="button" onClick={() => setShowEmbed(true)} className="bk-ic" title="Add to your website" aria-label="Add booking to your website"><CodeIcon size={16} /></button>
+            <button type="button" onClick={copyLink} className="cv-btn cv-btn-primary bk-copy" title="Copy booking link"><LinkIcon size={15} /><span className="bkh-l">Copy booking link</span></button>
+          </div>
+        )}
+      </div>
 
       {setupMsg && (
-        <div style={{ margin: '14px 0', padding: '12px 14px', borderRadius: 12, background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', fontSize: 13.5, display: 'flex', gap: 8, alignItems: 'flex-start' }}><WarnIcon size={16} style={{ marginTop: 1 }} /><span>{setupMsg}</span></div>
+        <div className="bk-warn"><WarnIcon size={16} style={{ marginTop: 1, flexShrink: 0 }} /><span>{setupMsg}</span></div>
       )}
 
       {!loading && settings && !setupMsg && (!services.length || !meta?.saved) && (
-        <div style={{ margin: '4px 0 14px', padding: 14, borderRadius: 16, background: 'var(--peach, #fff6f3)', border: '1px solid #fde4dc' }}>
-          <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10, color: 'var(--ink, #111)' }}>Get set up in 3 steps</div>
+        <div className="bk-setup">
+          <div className="bk-setup-h">Get set up in 3 steps</div>
+          <div className="bk-setup-sub">Then share your link and bookings start coming in.</div>
           <div className="bk-steps">
             {([
               [services.length > 0, 'Add a service', 'What people can book, how long it takes and the price.', () => switchTab('services')],
               [!!meta?.saved, 'Set your hours', 'Opening hours and who takes bookings, under Availability.', () => switchTab('availability')],
               [false, 'Share your link', 'Website, Instagram bio, or text it to a customer.', copyLink],
             ] as [boolean, string, string, () => void][]).map(([done, t, d, go], i) => (
-              <button key={t} className="bk-step" onClick={go}>
+              <button key={t} type="button" className={`bk-step${done ? ' done' : ''}`} onClick={go}>
                 <span className={`bk-num${done ? ' done' : ''}`}>{done ? <CheckIcon size={13} strokeWidth={3} /> : i + 1}</span>
                 <span style={{ minWidth: 0 }}>
-                  <span style={{ display: 'block', fontWeight: 700, fontSize: 13.5, color: 'var(--ink, #111)', textDecoration: done ? 'line-through' : undefined, textDecorationColor: '#9ca3af' }}>{t}</span>
-                  <span style={{ display: 'block', fontSize: 12.5, color: 'var(--slate, #6b7280)', marginTop: 2, lineHeight: 1.45 }}>{d}</span>
+                  <span className="bk-step-t">{t}</span>
+                  <span className="bk-step-d">{d}</span>
                 </span>
               </button>
             ))}
@@ -160,16 +139,16 @@ export default function BookingsPage() {
         </div>
       )}
 
-      <div className="bk-tabs" role="tablist">
+      <div className="bk-tabs" role="tablist" aria-label="Bookings">
         {([
-          ['today', 'Today', <SparkleIcon key="i" size={15} />, null],
-          ['bookings', 'Bookings', <CalendarIcon key="i" size={15} />, upcomingCount],
-          ['waitlist', 'Waitlist', <ClockIcon key="i" size={15} />, null],
-          ['services', 'Services', <TagIcon key="i" size={15} />, services.length || null],
-          ['availability', 'Availability', <ClockIcon key="i" size={15} />, null],
-          ['settings', 'Settings', <GearIcon key="i" size={15} />, null],
-        ] as [Tab, string, React.ReactNode, number | null][]).map(([k, l, ic, n]) => (
-          <button key={k} role="tab" aria-selected={tab === k} onClick={() => switchTab(k)} className={`bk-tab${tab === k ? ' on' : ''}`}>{ic}{l}{n ? <span className="bk-count">{n}</span> : null}</button>
+          ['today', 'Today', null],
+          ['bookings', 'Bookings', upcomingCount],
+          ['waitlist', 'Waitlist', null],
+          ['services', 'Services', services.length || null],
+          ['availability', 'Availability', null],
+          ['settings', 'Settings', null],
+        ] as [Tab, string, number | null][]).map(([k, l, n]) => (
+          <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => switchTab(k)} className={`bk-tab${tab === k ? ' on' : ''}`}>{l}{n ? <span className="bk-count">{n}</span> : null}</button>
         ))}
       </div>
 
@@ -185,16 +164,86 @@ export default function BookingsPage() {
       )}
 
       {dirty && (tab === 'availability' || tab === 'settings') && (
-        <div style={{ position: 'sticky', bottom: 16, marginTop: 18, display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '10px 12px', background: '#fff', border: '1px solid var(--border, #ececec)', borderRadius: 12, boxShadow: '0 10px 30px -12px rgba(0,0,0,.2)' }}>
-          <span style={{ marginRight: 'auto', alignSelf: 'center', fontSize: 13, color: 'var(--slate, #6b7280)' }}>Unsaved changes</span>
-          <button onClick={() => { setSettings(JSON.parse(savedSettings.current)) }} style={btnGhost}>Discard</button>
-          <button onClick={saveSettings} disabled={savingSettings} style={btn}>{savingSettings ? 'Saving…' : 'Save changes'}</button>
+        <div className="bk-savebar" role="status">
+          <span className="bk-dirty">Unsaved changes</span>
+          <button onClick={() => { setSettings(JSON.parse(savedSettings.current)) }} className="cv-btn">Discard</button>
+          <button onClick={saveSettings} disabled={savingSettings} className="cv-btn cv-btn-primary">{savingSettings ? 'Saving…' : 'Save changes'}</button>
         </div>
       )}
 
       {showEmbed && meta?.bookingUrl && <EmbedDialog bookingUrl={meta.bookingUrl} services={services.filter(x => x.active)} onClose={() => setShowEmbed(false)} flash={flash} />}
 
-      {toast && <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: '#111', color: '#fff', padding: '10px 16px', borderRadius: 10, fontSize: 13.5, zIndex: 1100, boxShadow: '0 10px 30px rgba(0,0,0,.25)' }}>{toast}</div>}
+      {toast && <div className="bk-toast" role="status">{toast}</div>}
     </div>
   )
 }
+
+// The Bookings look, shared by every tab (they all render inside .bk-page):
+// a big bold header, pill tabs, soft grey fields and pill buttons.
+const BK_CSS = `
+.bk-page{padding:24px 28px 60px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink,#111)}
+.bk-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:20px}
+.bk-head h1{margin:0;font-size:30px;font-weight:800;letter-spacing:-.025em;line-height:1.1;color:var(--ink,#111)}
+.bk-head p{margin:6px 0 0;font-size:14px;color:#71717a}
+.bk-head-acts{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.bk-ic{width:38px;height:38px;flex-shrink:0;padding:0;border:none;border-radius:999px;background:#f4f4f5;color:#3f3f46;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;text-decoration:none;transition:background-color .15s,color .15s}
+.bk-ic:hover{background-color:#ececef;color:#18181b}
+.bk-page button::before{display:none}
+.bk-warn{display:flex;gap:9px;align-items:flex-start;margin:0 0 14px;padding:12px 14px;border-radius:16px;background:#fffbeb;color:#92400e;font-size:13.5px;line-height:1.45}
+.bk-setup{margin:0 0 16px;padding:18px;border-radius:20px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04)}
+.bk-setup-h{font-weight:800;font-size:17px;letter-spacing:-.01em;color:var(--ink,#111)}
+.bk-setup-sub{margin:3px 0 14px;font-size:13.5px;color:#71717a}
+.bk-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.bk-step{display:flex;gap:12px;align-items:flex-start;text-align:left;padding:14px;border-radius:16px;border:none;background:#f4f4f5;cursor:pointer;font:inherit;color:inherit;transition:background-color .15s}
+.bk-step:hover{background-color:#ececef}
+.bk-step.done{background:#f0fdf4}
+.bk-num{width:26px;height:26px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:800;background:#fff;color:var(--ink,#111);box-shadow:0 0 0 1px rgba(0,0,0,.06)}
+.bk-num.done{background:#22c55e;color:#fff;box-shadow:none}
+.bk-step-t{display:block;font-weight:700;font-size:14px;color:var(--ink,#111)}
+.bk-step.done .bk-step-t{text-decoration:line-through;text-decoration-color:#a1a1aa;color:#71717a}
+.bk-step-d{display:block;font-size:12.5px;color:#71717a;margin-top:2px;line-height:1.45}
+.bk-tabs{display:flex;gap:6px;margin:0 0 18px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;padding:1px 0 2px}
+.bk-tabs::-webkit-scrollbar{display:none}
+.bk-tab{flex-shrink:0;height:34px;padding:0 14px;border-radius:999px;border:none;background:#f4f4f5;color:#52525b;font:inherit;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;transition:background-color .15s,color .15s}
+.bk-tab:hover{background-color:#ececef;color:#18181b}
+.bk-tab.on{background-color:#18181b;color:#fff}
+.bk-tab:focus-visible,.bk-ic:focus-visible,.bk-step:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral,#ff7a6b) 28%,transparent)}
+.bk-count{min-width:18px;height:18px;padding:0 6px;box-sizing:border-box;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:700;background:#fff;color:#52525b;font-variant-numeric:tabular-nums}
+.bk-tab.on .bk-count{background:rgba(255,255,255,.18);color:#fff}
+.bk-savebar{position:sticky;bottom:16px;z-index:20;margin-top:18px;display:flex;align-items:center;gap:8px;padding:8px 8px 8px 18px;background:#fff;border-radius:999px;box-shadow:0 12px 36px rgba(0,0,0,.14),0 0 0 1px rgba(0,0,0,.05)}
+.bk-dirty{margin-right:auto;font-size:13.5px;font-weight:600;color:#52525b;display:inline-flex;align-items:center;gap:8px}
+.bk-dirty::before{content:'';width:7px;height:7px;border-radius:50%;background:#f59e0b}
+.bk-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#18181b;color:#fff;padding:11px 18px;border-radius:999px;font-size:13.5px;font-weight:500;z-index:1100;box-shadow:0 12px 30px rgba(0,0,0,.25);max-width:calc(100vw - 32px)}
+.bk-page .cv-btn.bk-sm{height:32px;padding:0 12px;font-size:13px}
+.bk-arrow{width:24px;height:24px;padding:0;border:none;border-radius:999px;background:#f4f4f5;color:#52525b;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:background-color .15s}
+.bk-arrow:hover:not(:disabled){background-color:#ececef;color:#18181b}
+.bk-arrow:disabled{opacity:.35;cursor:default}
+.bk-sect-t{font-weight:800;font-size:17px;letter-spacing:-.01em;color:var(--ink,#111)}
+.bk-chip-x{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 6px 0 12px;border-radius:999px;background:#f4f4f5;color:#3f3f46;font-size:13px;font-weight:600}
+.bk-chip-x button{width:20px;height:20px;padding:0;border:none;border-radius:999px;background:#e4e4e7;color:#52525b;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;line-height:1}
+.bk-chip-x button:hover{background:#d4d4d8;color:#18181b}
+.bk-pick{height:34px;padding:0 13px;border-radius:999px;border:none;background:#f4f4f5;color:#52525b;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;transition:background-color .15s,color .15s}
+.bk-pick:hover{background-color:#ececef;color:#18181b}
+.bk-pick.on{background-color:#18181b;color:#fff}
+.bk-staff{padding:12px 14px;border-radius:16px;background:#fafafa}
+.bk-staff.on{background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.07)}
+.bk-page .cv-btn.bk-sm.cv-btn-icon{width:32px;padding:0}
+.bk-page .cv-btn.bk-danger,.bkm-panel .cv-btn.bk-danger{background:#dc2626;border-color:transparent;color:#fff}
+.bk-page .cv-btn.bk-danger:hover{background:#dc2626;filter:brightness(.95)}
+.bk-page .cv-btn.bk-del{color:#dc2626}
+/* Soft grey fields: white with a ring when focused; selects get a chevron. */
+.bk-page :is(input:not([type=checkbox]):not([type=radio]):not([type=color]),select,textarea):focus{background-color:#fff!important;border-color:#d4d4d8!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral,#ff7a6b) 16%,transparent)}
+.bk-page select:not([multiple]){appearance:none;-webkit-appearance:none;padding-right:34px!important;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;background-size:14px;cursor:pointer}
+.bk-page select.bk-tight{padding-left:12px!important;padding-right:26px!important;background-position:right 9px center}
+.bk-page input::placeholder,.bk-page textarea::placeholder{color:#a1a1aa}
+.bk-page input[type=checkbox]{accent-color:#18181b}
+@media(max-width:760px){.bk-steps{grid-template-columns:1fr}}
+@media(max-width:700px){
+  .bk-page{padding:16px 14px 60px}
+  .bk-head{align-items:center}
+  .bk-head h1{font-size:26px}
+  .bk-head p{display:none}
+  .bkh-l{display:none}
+  .bk-copy{width:38px;padding:0}
+}
+`

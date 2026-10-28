@@ -21,18 +21,18 @@ export default function WeekHoursEditor({ value, onChange }: { value: WeekHours;
         const ranges = value[k] || []
         const open = ranges.length > 0
         return (
-          <div key={k} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '8px 0', borderBottom: '1px solid #f5f5f5', flexWrap: 'wrap' }}>
+          <div key={k} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '10px 0', borderBottom: '1px solid #f4f4f5', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: 140, paddingTop: 5 }}>
-              <Toggle on={open} onChange={v => set(k, v ? [{ start: '09:00', end: '17:00' }] : [])} />
-              <span style={{ fontWeight: 600, fontSize: 13.5, color: open ? 'var(--ink, #111)' : '#9ca3af' }}>{DAY_LABEL[k]}</span>
+              <Toggle on={open} onChange={v => set(k, v ? [{ start: '09:00', end: '17:00' }] : [])} label={`Open on ${DAY_LABEL[k]}`} />
+              <span style={{ fontWeight: 600, fontSize: 14, color: open ? 'var(--ink, #111)' : '#a1a1aa' }}>{DAY_LABEL[k]}</span>
             </div>
             <div style={{ flex: 1, minWidth: 'min(220px, 100%)', display: 'grid', gap: 6 }}>
-              {!open && <span style={{ fontSize: 13, color: '#9ca3af', paddingTop: 7 }}>Closed</span>}
+              {!open && <span style={{ fontSize: 13.5, color: '#a1a1aa', paddingTop: 9 }}>Closed</span>}
               {ranges.map((r, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                  <input type="time" value={r.start} step={300} onChange={e => set(k, ranges.map((x, j) => j === i ? { ...x, start: e.target.value } : x))} style={{ ...input, width: 118 }} />
+                  <input type="time" value={r.start} step={300} onChange={e => set(k, ranges.map((x, j) => j === i ? { ...x, start: e.target.value } : x))} style={{ ...input, width: 142, padding: "9px 12px" }} />
                   <span style={{ color: '#9ca3af' }}>–</span>
-                  <input type="time" value={r.end} step={300} onChange={e => set(k, ranges.map((x, j) => j === i ? { ...x, end: e.target.value } : x))} style={{ ...input, width: 118 }} />
+                  <input type="time" value={r.end} step={300} onChange={e => set(k, ranges.map((x, j) => j === i ? { ...x, end: e.target.value } : x))} style={{ ...input, width: 142, padding: "9px 12px" }} />
                   {r.end <= r.start && <span style={{ fontSize: 11.5, color: '#dc2626' }}>End must be after start</span>}
                   <button type="button" onClick={() => set(k, ranges.filter((_, j) => j !== i))} title="Remove" style={iconBtn}><XIcon size={13} /></button>
                   {i === ranges.length - 1 && (
@@ -56,4 +56,4 @@ function addHour(t: string, n: number) {
   return `${String(Math.min(23, h + n)).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
-const iconBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border, #e5e7eb)', background: '#fff', color: 'var(--slate, #6b7280)', cursor: 'pointer', fontSize: 15, lineHeight: 1, fontFamily: 'inherit' }
+const iconBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, padding: 0, borderRadius: 999, border: 'none', background: '#f4f4f5', color: '#52525b', cursor: 'pointer', fontSize: 13, fontWeight: 600, lineHeight: 1, fontFamily: 'inherit' }

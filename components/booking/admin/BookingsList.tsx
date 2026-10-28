@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import SlotPicker from '@/components/booking/SlotPicker'
-import { api, money, card, btn, btnGhost, input, Modal, Toggle } from './shared'
+import { api, money, card, input, Modal, Toggle } from './shared'
 import { PinIcon, CheckIcon, ChatIcon, CalendarIcon, XIcon, LinkIcon } from '@/components/booking/icons'
 import EmptyScroll from '@/components/EmptyScroll'
 
@@ -31,6 +31,8 @@ const SearchIcon = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="n
 const DotsIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="12" cy="19" r="1.8" /></svg>
 
 const initials = (n: string) => (n || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()
+const hue = (n: string) => { let h = 0; for (const ch of n) h = (h * 31 + ch.charCodeAt(0)) % 360; return h }
+const tint = (c: string) => ({ ['--t' as any]: c }) as React.CSSProperties
 
 export default function BookingsList({ companyId, bookings, timezone, scope, setScope, reload, flash }: {
   companyId: string; bookings: any[]; timezone: string
@@ -104,9 +106,9 @@ export default function BookingsList({ companyId, bookings, timezone, scope, set
     <div>
       <style>{CSS}</style>
       <div className="bl-filters">
-        <div className="bl-pills">
+        <div className="bl-seg" role="tablist" aria-label="Which bookings">
           {[['upcoming', 'Upcoming'], ['past', 'Past'], ['cancelled', 'Cancelled'], ['all', 'All']].map(([k, l]) => (
-            <button key={k} onClick={() => setScope(k)} className={`bl-pill${scope === k ? ' on' : ''}`}>{l}</button>
+            <button key={k} type="button" role="tab" aria-selected={scope === k} onClick={() => setScope(k)} className={scope === k ? 'on' : ''}>{l}</button>
           ))}
         </div>
         <div className="bl-right">
@@ -127,7 +129,7 @@ export default function BookingsList({ companyId, bookings, timezone, scope, set
           {groups.map(([day, list], gi) => (
             <section key={day}>
               <div className="bl-group">
-                <div><b>{dayTitle(day)}</b><span> · {list.length} booking{list.length === 1 ? '' : 's'}</span></div>
+                <div><b className={day === today ? 'today' : ''}>{dayTitle(day)}</b><span>{list.length} booking{list.length === 1 ? '' : 's'}</span></div>
                 {gi === 0 && (
                   <label className="bl-sort">Sort by
                     <select value={sort} onChange={e => setSort(e.target.value)}>{SORTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
@@ -172,20 +174,20 @@ function Row({ b, i, t, dayChip, onAct, onMove, onCancel, onNoShow, onRepeat, ca
   const cancelled = b.status === 'cancelled' || b.status === 'expired'
 
   return (
-    <article className="bl-card" style={{ ['--bar' as any]: st.bar, animationDelay: `${Math.min(i, 8) * 35}ms` }}>
+    <article className={`bl-card${cancelled ? ' x' : ''}`} style={{ animationDelay: `${Math.min(i, 8) * 35}ms` }}>
       <div className="bl-when">
         <div className="bl-day">{dTop}<span>{dSub}</span></div>
         <div className={`bl-time${cancelled ? ' x' : ''}`}>{t(b.starts_at)}</div>
         <div className="bl-end">{t(b.ends_at)}</div>
-        {live && <div className="bl-now">● Now</div>}
+        {live && <div className="bl-now">Now</div>}
       </div>
       <div className="bl-body">
         <div className="bl-top">
-          <span className="bl-av">{initials(b.customer_name)}</span>
+          <span className="bl-av" style={{ background: `hsl(${hue(b.customer_name || '')} 60% 92%)`, color: `hsl(${hue(b.customer_name || '')} 45% 36%)` }}>{initials(b.customer_name)}</span>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div className="bl-name">
               {b.customer_name || 'Customer'}
-              {b.contact_id && <span className={`bl-tag${visits ? ' ret' : ''}`}>{visits ? `Returning · ${visits + 1} visits` : 'New customer'}</span>}
+              {b.contact_id && <span className="bl-chip dot" style={tint(visits ? '#22c55e' : '#6366f1')}>{visits ? `Returning · ${visits + 1} visits` : 'New customer'}</span>}
             </div>
             <div className="bl-contact">
               {b.customer_phone && <a href={`tel:${b.customer_phone}`}><PhoneIcon />{b.customer_phone}</a>}
@@ -199,7 +201,7 @@ function Row({ b, i, t, dayChip, onAct, onMove, onCancel, onNoShow, onRepeat, ca
             {b.status === 'confirmed' && past && <button onClick={() => onAct(b, 'complete')} className="bl-btn"><CheckIcon size={14} strokeWidth={2.6} /> Done</button>}
             {(b.status === 'confirmed' || b.status === 'pending') && !past && <button onClick={() => onCancel(b)} className="bl-btn danger">Cancel</button>}
             <div ref={ref} style={{ position: 'relative' }}>
-              <button onClick={() => setMenu(m => !m)} className="bl-btn icon" aria-label="More actions"><DotsIcon /></button>
+              <button onClick={() => setMenu(m => !m)} className="bl-btn icon" aria-label="More actions" aria-haspopup="menu" aria-expanded={menu}><DotsIcon /></button>
               {menu && (
                 <div className="bl-menu" role="menu">
                   {b.manage_url && <button onClick={() => { navigator.clipboard?.writeText(b.manage_url).then(() => flash('Customer’s booking link copied')); setMenu(false) }}><LinkIcon size={14} /> Copy customer’s link</button>}
@@ -217,11 +219,11 @@ function Row({ b, i, t, dayChip, onAct, onMove, onCancel, onNoShow, onRepeat, ca
         {answers.length > 0 && <div className="bl-ans">{answers.map((a: any, j: number) => <span key={j}><em>{a.label}:</em> {a.value}</span>)}</div>}
         {b.notes && <div className="bl-note">“{b.notes}”</div>}
         <div className="bl-tags">
-          <span className="bl-chip" style={{ background: st.bg, color: st.c }}>{st.label}</span>
-          {b.status === 'confirmed' && b.customer_confirmed_at && <span className="bl-chip" style={{ background: '#ecfdf5', color: '#047857' }} title="Replied C to the reminder"><CheckIcon size={11} strokeWidth={3} /> Customer confirmed</span>}
+          <span className="bl-chip dot" style={tint(st.bar)}>{st.label}</span>
+          {b.status === 'confirmed' && b.customer_confirmed_at && <span className="bl-chip dot" style={tint('#22c55e')} title="Replied C to the reminder">Customer confirmed</span>}
           {b.status === 'confirmed' && !b.customer_confirmed_at && (b.reminder_24h_at || b.reminder_2h_at) && <span className="bl-chip">Reminded</span>}
           {b.amount_due_cents > 0 && PAY[b.payment_status] && (
-            <span className="bl-chip" style={{ background: b.payment_status === 'paid' ? '#eef2ff' : undefined, color: b.payment_status === 'paid' ? '#4338ca' : undefined }}>{PAY[b.payment_status]} {money(b.payment_status === 'refunded' || b.payment_status === 'partially_refunded' ? b.refunded_cents : b.amount_due_cents, b.currency)}</span>
+            <span className={`bl-chip${b.payment_status === 'paid' ? ' dot' : ''}`} style={b.payment_status === 'paid' ? tint('#6366f1') : undefined}>{PAY[b.payment_status]} {money(b.payment_status === 'refunded' || b.payment_status === 'partially_refunded' ? b.refunded_cents : b.amount_due_cents, b.currency)}</span>
           )}
           {b.price_cents > b.amount_due_cents && b.status !== 'cancelled' && <span className="bl-chip">{money(b.price_cents - (b.payment_status === 'paid' ? b.amount_due_cents : 0), b.currency)} due on the day</span>}
           {b.series_id && <span className="bl-chip" title="Part of a regular booking (repeats every few weeks)"><RepeatIcon /> Regular</span>}
@@ -233,73 +235,84 @@ function Row({ b, i, t, dayChip, onAct, onMove, onCancel, onNoShow, onRepeat, ca
 }
 
 const CSS = `
-.bl-filters{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px}
-.bl-pills{display:flex;gap:8px;flex-wrap:wrap}
-.bl-pill{height:38px;padding:0 16px;border-radius:12px;border:1px solid transparent;background:#f3f4f6;color:#4b5563;font:inherit;font-size:14px;font-weight:700;cursor:pointer;transition:background .2s,color .2s,transform .15s}
-.bl-pill:hover{background:#eceef1}
-.bl-pill:active{transform:scale(.97)}
-.bl-pill.on{background:color-mix(in srgb,var(--coral,#ff7a6b) 13%,#fff);color:color-mix(in srgb,var(--coral,#ff7a6b) 80%,#000);border-color:color-mix(in srgb,var(--coral,#ff7a6b) 25%,#fff)}
-.bl-right{display:flex;gap:10px;margin-left:auto;flex-wrap:wrap}
-.bl-search,.bl-select{display:flex;align-items:center;gap:8px;height:40px;padding:0 12px;border-radius:12px;border:1px solid var(--border,#e5e7eb);background:#fff;color:#9ca3af}
-.bl-search input{border:none;outline:none;font:inherit;font-size:14px;width:220px;background:transparent;color:var(--ink,#111)}
-.bl-select select{border:none;outline:none;font:inherit;font-size:14px;font-weight:600;background-color:transparent;color:var(--ink,#111);cursor:pointer;padding-right:22px}
-.bl-search:focus-within{border-color:var(--coral,#ff7a6b);box-shadow:0 0 0 3px rgba(255,122,107,.12)}
+.bl-filters{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:18px}
+.bl-seg{display:inline-flex;gap:2px;padding:3px;border-radius:999px;background:#f4f4f5}
+.bl-seg button{height:32px;padding:0 14px;border:none;border-radius:999px;background:transparent;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;color:#52525b;white-space:nowrap;transition:background .15s,color .15s,box-shadow .15s}
+.bl-seg button:hover{color:#18181b}
+.bl-seg button.on{background:#fff;color:#18181b;box-shadow:0 1px 3px rgba(0,0,0,.1),0 0 0 .5px rgba(0,0,0,.04)}
+.bl-right{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
+.bl-search,.bl-select{display:flex;align-items:center;gap:8px;height:38px;padding:0 14px;border-radius:999px;border:1.5px solid transparent;background:#f4f4f5;color:#a1a1aa;transition:background-color .15s,border-color .15s,box-shadow .15s}
+.bl-search input{border:none;outline:none;font:inherit;font-size:14px;width:220px;background:transparent!important;box-shadow:none!important;color:var(--ink,#111);padding:0;min-height:0}
+.bl-select select{border:none!important;outline:none;font:inherit;font-size:13.5px;font-weight:600;background-color:transparent!important;box-shadow:none!important;color:var(--ink,#111);cursor:pointer;padding:0 22px 0 0!important;background-position:right 0 center!important}
+.bl-search:focus-within{background-color:#fff;border-color:#d4d4d8;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral,#ff7a6b) 16%,transparent)}
+.bl-select svg{color:#71717a}
 @media(max-width:720px){.bl-right{margin-left:0;width:100%}.bl-search{flex:1}.bl-search input{width:100%}}
-.bl-group{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;font-size:16px;color:var(--slate,#6b7280)}
-.bl-group b{color:var(--ink,#111);font-weight:800}
-.bl-sort{display:flex;align-items:center;gap:8px;font-size:13px}
-.bl-sort select{height:36px;border-radius:10px;border:1px solid var(--border,#e5e7eb);background-color:#fff;font:inherit;font-size:13px;font-weight:600;color:var(--ink,#111);padding:0 28px 0 10px;cursor:pointer}
-.bl-card{display:grid;grid-template-columns:150px minmax(0,1fr);background:#fff;border:1px solid var(--border,#ececec);border-radius:16px;box-shadow:0 1px 2px rgba(0,0,0,.03);overflow:hidden;position:relative;animation:blIn .4s cubic-bezier(.22,1,.36,1) backwards;transition:box-shadow .25s,transform .25s cubic-bezier(.22,1,.36,1)}
-.bl-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--bar)}
-.bl-card:hover{box-shadow:0 12px 30px -18px rgba(0,0,0,.28)}
-.bl-when{padding:18px 16px 18px 26px;border-right:1px solid #f1f1f3}
-.bl-day{font-size:11.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#9ca3af;line-height:1.35}
-.bl-day span{display:block}
-.bl-time{font-size:22px;font-weight:800;color:var(--ink,#111);margin-top:8px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
-.bl-time.x{color:#9ca3af;text-decoration:line-through}
-.bl-end{font-size:14px;color:#9ca3af;margin-top:2px}
-.bl-now{display:inline-block;margin-top:8px;font-size:11px;font-weight:800;color:#c2410c;background:#fff1ee;padding:2px 8px;border-radius:999px}
+.bl-group{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.bl-group > div{display:flex;align-items:baseline;gap:8px;min-width:0}
+.bl-group b{font-size:17px;font-weight:800;letter-spacing:-.01em;color:var(--ink,#111)}
+.bl-group b.today{color:var(--coral,#ff7a6b)}
+.bl-group span{font-size:13.5px;color:#8e8e93}
+.bl-sort{display:flex;align-items:center;gap:8px;font-size:13px;color:#8e8e93}
+.bl-sort select{height:34px;border-radius:999px;border:none;background-color:#f4f4f5;font:inherit;font-size:13px;font-weight:600;color:var(--ink,#111);padding:0 30px 0 12px;cursor:pointer}
+.bl-card{display:grid;grid-template-columns:140px minmax(0,1fr);background:#fff;border-radius:20px;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04);overflow:visible;position:relative;animation:blIn .4s cubic-bezier(.22,1,.36,1) backwards;transition:box-shadow .25s}
+.bl-card:hover{box-shadow:0 0 0 1px rgba(0,0,0,.07),0 12px 30px -18px rgba(0,0,0,.28)}
+.bl-card.x{opacity:.7}
+.bl-when{padding:18px 16px 18px 20px;border-right:1px solid #f4f4f5}
+.bl-day{font-size:13px;font-weight:600;color:#8e8e93;line-height:1.35}
+.bl-day span{display:block;font-weight:500}
+.bl-time{font-size:24px;font-weight:800;color:var(--ink,#111);margin-top:8px;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.bl-time.x{color:#a1a1aa;text-decoration:line-through}
+.bl-end{font-size:13.5px;color:#a1a1aa;margin-top:2px;font-variant-numeric:tabular-nums}
+.bl-now{display:inline-flex;align-items:center;gap:5px;margin-top:8px;height:22px;padding:0 8px;border-radius:999px;font-size:12px;font-weight:600;background:color-mix(in srgb,var(--coral,#ff7a6b) 12%,#fff);color:color-mix(in srgb,var(--coral,#ff7a6b) 80%,#000)}
+.bl-now::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--coral,#ff7a6b);animation:blPulse 1.6s ease-in-out infinite}
 .bl-body{padding:16px 18px;min-width:0}
 .bl-top{display:flex;gap:12px;align-items:flex-start}
-.bl-av{width:42px;height:42px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14.5px;background:color-mix(in srgb,var(--coral,#ff7a6b) 12%,#fff);color:color-mix(in srgb,var(--coral,#ff7a6b) 85%,#000)}
-.bl-name{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:16.5px;font-weight:800;color:var(--ink,#111)}
-.bl-tag{font-size:11.5px;font-weight:700;padding:3px 8px;border-radius:999px;background:#eef2ff;color:#4338ca}
-.bl-tag.ret{background:#ecfdf5;color:#047857}
-.bl-contact{display:flex;gap:16px;flex-wrap:wrap;margin-top:5px;font-size:13.5px;color:#4b5563}
+.bl-av{width:42px;height:42px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14.5px}
+.bl-name{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:16.5px;font-weight:700;color:var(--ink,#111)}
+.bl-contact{display:flex;gap:6px 16px;flex-wrap:wrap;margin-top:5px;font-size:13.5px;color:#52525b}
 .bl-contact a,.bl-contact span{display:inline-flex;align-items:center;gap:6px;color:inherit;text-decoration:none;min-width:0;max-width:100%}
 .bl-contact a:hover{color:var(--ink,#111)}
-.bl-contact svg{color:#9ca3af;flex-shrink:0}
-.bl-actions{display:flex;gap:8px;align-items:center;flex-shrink:0}
-.bl-btn{display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 14px;border-radius:11px;border:1px solid var(--border,#e5e7eb);background:#fff;color:var(--ink,#111);font:inherit;font-size:13.5px;font-weight:700;cursor:pointer;text-decoration:none;transition:background .15s,border-color .15s,transform .15s}
-.bl-btn:hover{background:#f8f8f9;border-color:#d9dbe0}
+.bl-contact svg{color:#a1a1aa;flex-shrink:0}
+.bl-actions{display:flex;gap:6px;align-items:center;flex-shrink:0}
+.bl-btn{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 14px;border-radius:999px;border:none;background:#f4f4f5;color:#18181b;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap;transition:background-color .15s,color .15s,transform .15s}
+.bl-btn svg{color:#52525b}
+.bl-btn:hover{background-color:#ececef}
 .bl-btn:active{transform:scale(.97)}
 .bl-btn.danger{color:#dc2626}
-.bl-btn.danger:hover{background:#fef2f2;border-color:#fecaca}
-.bl-btn.icon{width:38px;padding:0;justify-content:center;border-color:transparent;color:#6b7280}
-.bl-btn.icon:hover{border-color:var(--border,#e5e7eb)}
-.bl-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:30;min-width:220px;background:#fff;border:1px solid var(--border,#ececec);border-radius:12px;box-shadow:0 16px 40px -14px rgba(0,0,0,.3);padding:6px;animation:blMenu .18s cubic-bezier(.22,1,.36,1) both;transform-origin:top right}
-.bl-menu button{display:flex;align-items:center;gap:8px;width:100%;padding:9px 10px;border:none;background:none;border-radius:8px;text-align:left;font:inherit;font-size:13.5px;font-weight:600;color:var(--ink,#111);cursor:pointer}
-.bl-menu button:hover{background:#f5f5f6}
+.bl-btn.danger:hover{background-color:#fef2f2}
+.bl-btn.icon{width:36px;padding:0;justify-content:center;background:transparent;color:#71717a}
+.bl-btn.icon:hover,.bl-btn.icon[aria-expanded="true"]{background-color:#f4f4f5;color:#18181b}
+.bl-btn:focus-visible,.bl-seg button:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral,#ff7a6b) 28%,transparent)}
+.bl-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:30;min-width:230px;background:#fff;border-radius:16px;box-shadow:0 16px 44px rgba(0,0,0,.14),0 0 0 1px rgba(0,0,0,.05);padding:6px;animation:blMenu .16s cubic-bezier(.22,1,.36,1) both;transform-origin:top right}
+.bl-menu button{display:flex;align-items:center;gap:9px;width:100%;padding:9px 10px;border:none;background:none;border-radius:10px;text-align:left;font:inherit;font-size:13.5px;font-weight:500;color:var(--ink,#111);cursor:pointer}
+.bl-menu button svg{color:#71717a}
+.bl-menu button:hover{background-color:#f4f4f5}
 .bl-menu button.danger{color:#dc2626}
-.bl-svc{font-size:15px;font-weight:700;color:var(--ink,#111);margin-top:14px}
-.bl-svc span{font-weight:500;color:#6b7280}
-.bl-ans{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13.5px;color:#4b5563;margin-top:6px}
-.bl-ans em{font-style:normal;color:#9ca3af}
-.bl-note{font-size:13.5px;color:#4b5563;font-style:italic;margin-top:4px}
-.bl-tags{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
-.bl-chip{display:inline-flex;align-items:center;gap:4px;font-size:12.5px;font-weight:700;padding:5px 11px;border-radius:999px;background:#f3f4f6;color:#4b5563;white-space:nowrap}
-.bl-empty{background:#fff;border:1px solid var(--border,#ececec);border-radius:16px;text-align:center;padding:16px 12px}
+.bl-svc{font-size:15px;font-weight:600;color:var(--ink,#111);margin-top:14px}
+.bl-svc span{font-weight:500;color:#71717a}
+.bl-ans{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13.5px;color:#52525b;margin-top:6px}
+.bl-ans em{font-style:normal;color:#a1a1aa}
+.bl-note{font-size:13.5px;color:#52525b;margin-top:8px;padding:9px 12px;border-radius:12px;background:#fefce8}
+.bl-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}
+.bl-chip{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px;border-radius:999px;font-size:12.5px;font-weight:600;background:#f4f4f5;color:#52525b;white-space:nowrap}
+.bl-chip svg{flex-shrink:0}
+.bl-chip.dot{background:color-mix(in srgb,var(--t) 12%,#fff);color:color-mix(in srgb,var(--t) 78%,#000)}
+.bl-chip.dot::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--t)}
+.bl-name .bl-chip{font-size:12px;height:22px}
+.bl-empty{background:#fff;border-radius:20px;box-shadow:0 0 0 1px rgba(0,0,0,.06);text-align:center;padding:16px 12px}
 @keyframes blIn{from{opacity:0;transform:translate3d(0,8px,0)}to{opacity:1;transform:none}}
 @keyframes blMenu{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+@keyframes blPulse{0%,100%{opacity:1}50%{opacity:.35}}
 @media(max-width:860px){.bl-top{flex-wrap:wrap}.bl-actions{width:100%;order:3}}
 @media(max-width:640px){
   .bl-card{grid-template-columns:1fr}
-  .bl-when{display:flex;align-items:baseline;gap:10px;padding:14px 16px 10px 20px;border-right:none;border-bottom:1px solid #f1f1f3}
+  .bl-when{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px;padding:14px 16px 10px;border-right:none;border-bottom:1px solid #f4f4f5}
   .bl-day span{display:inline;margin-left:4px}
-  .bl-time{margin-top:0;font-size:18px}.bl-now{margin:0}
+  .bl-time{margin-top:0;font-size:19px}.bl-now{margin:0}
   .bl-actions .bl-btn:not(.icon){flex:1;justify-content:center}
+  .bl-seg{width:100%}.bl-seg button{flex:1;padding:0 8px}
 }
-@media (prefers-reduced-motion: reduce){.bl-card,.bl-menu{animation:none}}
+@media (prefers-reduced-motion: reduce){.bl-card,.bl-menu,.bl-now::before{animation:none}}
 `
 
 function CancelDialog({ companyId, b, laterInSeries, onClose, onDone }: { companyId: string; b: any; laterInSeries: number; onClose: () => void; onDone: (m: string) => void }) {
@@ -320,8 +333,8 @@ function CancelDialog({ companyId, b, laterInSeries, onClose, onDone }: { compan
   }
   return (
     <Modal title="Cancel booking" onClose={onClose} width={460} footer={<>
-      <button onClick={onClose} style={btnGhost}>Keep it</button>
-      <button onClick={go} disabled={busy} style={{ ...btn, background: '#dc2626' }}>{busy ? 'Cancelling…' : 'Cancel booking'}</button>
+      <button onClick={onClose} className="cv-btn">Keep it</button>
+      <button onClick={go} disabled={busy} className="cv-btn bk-danger">{busy ? 'Cancelling…' : 'Cancel booking'}</button>
     </>}>
       <div style={{ fontSize: 14, marginBottom: 14 }}><b>{b.customer_name}</b> · {b.service_name}</div>
       <div style={{ display: 'grid', gap: 12 }}>
@@ -348,8 +361,8 @@ function NoShowDialog({ companyId, b, onClose, onDone }: { companyId: string; b:
   }
   return (
     <Modal title="Mark as no-show" onClose={onClose} width={440} footer={<>
-      <button onClick={onClose} style={btnGhost}>Cancel</button>
-      <button onClick={go} disabled={busy} style={btn}>{busy ? 'Saving…' : 'Mark no-show'}</button>
+      <button onClick={onClose} className="cv-btn">Cancel</button>
+      <button onClick={go} disabled={busy} className="cv-btn cv-btn-primary">{busy ? 'Saving…' : 'Mark no-show'}</button>
     </>}>
       <div style={{ fontSize: 14, marginBottom: 14 }}><b>{b.customer_name}</b> · {b.service_name}</div>
       <label style={row}><Toggle on={notify} onChange={setNotify} /> Send “Sorry we missed you — pick another time?” with a booking link</label>
@@ -373,8 +386,8 @@ function MoveDialog({ companyId, b, timezone, onClose, onDone }: { companyId: st
   return (
     <Modal title={`Move ${b.customer_name || 'booking'}`} onClose={onClose} width={720} footer={<>
       <label style={{ ...row, marginRight: 'auto' }}><Toggle on={notify} onChange={setNotify} /> Tell the customer</label>
-      <button onClick={onClose} style={btnGhost}>Cancel</button>
-      <button onClick={go} disabled={!slot || busy} style={btn}>{busy ? 'Moving…' : 'Move booking'}</button>
+      <button onClick={onClose} className="cv-btn">Cancel</button>
+      <button onClick={go} disabled={!slot || busy} className="cv-btn cv-btn-primary">{busy ? 'Moving…' : 'Move booking'}</button>
     </>}>
       <SlotPicker businessTz={timezone} fetchSlots={fetchSlots} selected={slot} onSelect={setSlot} accent="#ff7a6b" />
       {error && <div style={{ color: '#b91c1c', fontSize: 13, marginTop: 10 }}>{error}</div>}
@@ -421,8 +434,8 @@ function RepeatDialog({ companyId, b, timezone, onClose, onDone }: { companyId: 
   return (
     <Modal title={`${b.series_id ? 'Extend' : 'Repeat'} ${b.service_name || 'booking'}`} onClose={onClose} width={560} footer={<>
       <label style={{ ...row, marginRight: 'auto' }}><Toggle on={notify} onChange={setNotify} /> Tell the customer</label>
-      <button onClick={onClose} style={btnGhost}>Cancel</button>
-      <button onClick={go} disabled={busy || loading || !free} style={btn}>{busy ? 'Booking…' : `Book ${free} visit${free === 1 ? '' : 's'}`}</button>
+      <button onClick={onClose} className="cv-btn">Cancel</button>
+      <button onClick={go} disabled={busy || loading || !free} className="cv-btn cv-btn-primary">{busy ? 'Booking…' : `Book ${free} visit${free === 1 ? '' : 's'}`}</button>
     </>}>
       <div style={{ fontSize: 14, marginBottom: 14, color: 'var(--slate,#4b5563)', lineHeight: 1.5 }}>
         <b style={{ color: 'var(--ink,#111)' }}>{b.customer_name || 'Customer'}</b> · same time ({time(b.starts_at)}){b.staff_name ? `, with ${b.staff_name}` : ''}{b.address || b.location_label ? `, ${b.address || b.location_label}` : ''}. Each visit gets its own reminder and link to move or cancel it.

@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { api, money, card, btnGhost } from './shared'
-import { WarnIcon, ArrowRightIcon, CheckIcon } from '@/components/booking/icons'
+import { api, money, card } from './shared'
+import { WarnIcon, ArrowRightIcon } from '@/components/booking/icons'
 import EmptyScroll from '@/components/EmptyScroll'
 
 // Today at a glance: headline numbers, then today's bookings in a column per
@@ -47,7 +47,7 @@ export default function TodayTab({ companyId, onOpenBookings, reloadKey }: { com
 
   if (error) return <div style={{ ...card, color: '#b91c1c', fontSize: 13.5 }}>{error}</div>
   if (!data) return <div className="bk-skel-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))', gap: 12 }}>{[0, 1, 2, 3].map(i => <div key={i} style={{ ...card, height: 92, background: '#f6f6f7', border: 'none' }} />)}</div>
-  if (data.hint) return <div style={{ ...card, background: '#fffbeb', borderColor: '#fde68a', color: '#92400e', fontSize: 13.5, display: 'flex', gap: 8 }}><WarnIcon size={16} /> {data.hint}</div>
+  if (data.hint) return <div className="bk-warn"><WarnIcon size={16} style={{ marginTop: 1, flexShrink: 0 }} /><span>{data.hint}</span></div>
 
   const s: Stats = data.stats || { today: 0, next7: 0, newThisWeek: 0, confirmedRate: null, remindedCount: 0, noShowRate: null, noShows: 0, paidCents30: 0, currency: 'aud' }
   const todayLabel = new Date(now).toLocaleDateString('en-AU', { timeZone: tz, weekday: 'long', day: 'numeric', month: 'long' })
@@ -59,13 +59,21 @@ export default function TodayTab({ companyId, onOpenBookings, reloadKey }: { com
         .td-tile{animation:tdIn .45s cubic-bezier(.22,1,.36,1) backwards}
         @keyframes tdIn{from{opacity:0;transform:translate3d(0,8px,0)}to{opacity:1;transform:none}}
         .td-cols{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(260px,1fr);gap:12px;overflow-x:auto;padding-bottom:6px;scroll-snap-type:x mandatory}
-        .td-col{scroll-snap-align:start}
-        .td-card{display:block;padding:11px 12px;border-radius:12px;border:1px solid var(--border,#ececec);background:#fff;text-decoration:none;color:inherit;transition:transform .2s cubic-bezier(.22,1,.36,1),box-shadow .2s}
-        .td-card:hover{transform:translate3d(0,-1px,0);box-shadow:0 8px 20px -14px rgba(0,0,0,.35)}
+        .td-col{scroll-snap-align:start;padding:12px;border-radius:20px;background:#f4f4f5}
+        .td-col-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 4px 10px;font-weight:700;font-size:14px;color:var(--ink,#111)}
+        .td-n{min-width:20px;height:20px;padding:0 6px;box-sizing:border-box;border-radius:999px;background:#fff;color:#52525b;font-size:11.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
+        .td-card{display:block;padding:12px 14px;border-radius:16px;background:#fff;text-decoration:none;color:inherit;box-shadow:0 0 0 1px rgba(0,0,0,.04),0 1px 2px rgba(16,24,40,.04);transition:transform .2s cubic-bezier(.22,1,.36,1),box-shadow .2s}
+        .td-card:hover{transform:translate3d(0,-1px,0);box-shadow:0 0 0 1px rgba(0,0,0,.05),0 8px 20px -12px rgba(0,0,0,.3)}
+        .td-card.live{box-shadow:0 0 0 2px var(--coral,#ff7a6b),0 8px 20px -12px rgba(0,0,0,.3)}
+        .td-tag{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 7px;border-radius:999px;font-size:11.5px;font-weight:600;white-space:nowrap;background:color-mix(in srgb,var(--t) 12%,#fff);color:color-mix(in srgb,var(--t) 78%,#000)}
+        .td-tag::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--t)}
+        .td-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+        .td-h h2{margin:0;font-size:19px;font-weight:800;letter-spacing:-.015em;color:var(--ink,#111)}
+        .td-h small{font-size:13.5px;color:#8e8e93}
         .td-ins{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
         .td-bars{display:flex;align-items:flex-end;gap:6px;height:120px;margin-top:14px}
         .td-bar{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:4px}
-        .td-bar i{display:block;width:100%;max-width:34px;border-radius:4px 4px 0 0;background:var(--coral,#ff7a6b);opacity:.35;transition:opacity .2s}
+        .td-bar i{display:block;width:100%;max-width:34px;border-radius:7px 7px 3px 3px;background:var(--coral,#ff7a6b);opacity:.3;transition:opacity .2s}
         .td-bar.top i{opacity:1}
         .td-bar:hover i{opacity:.8}
         .td-bar b{font-size:11.5px;font-weight:700;color:var(--ink,#111);font-variant-numeric:tabular-nums}
@@ -82,14 +90,15 @@ export default function TodayTab({ companyId, onOpenBookings, reloadKey }: { com
       <div className="td-tiles">
         <Tile i={0} label="Today" value={String(s.today)} sub={todayLabel} />
         <Tile i={1} label="Next 7 days" value={String(s.next7)} sub={`${s.newThisWeek} booked this week`} />
-        <Tile i={2} label="Confirmed by customer" value={s.confirmedRate == null ? '—' : `${s.confirmedRate}%`} sub={s.remindedCount ? `of ${s.remindedCount} reminded, replied C` : 'after reminders go out'} />
+        <Tile i={2} label="Confirmed by customers" value={s.confirmedRate == null ? '—' : `${s.confirmedRate}%`} sub={s.remindedCount ? `of ${s.remindedCount} reminded, replied C` : 'after reminders go out'} />
         <Tile i={3} label="No-shows (30 days)" value={s.noShowRate == null ? '—' : `${s.noShowRate}%`} sub={s.noShows ? `${s.noShows} missed` : 'none marked'} />
         <Tile i={4} label="Paid online (30 days)" value={money(s.paidCents30, s.currency)} sub="deposits + full payments" />
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
-        <div style={{ fontWeight: 800, fontSize: 15, flex: 1 }}>Today’s schedule</div>
-        <button onClick={onOpenBookings} style={{ ...btnGhost, height: 30, fontSize: 12.5 }}>All bookings <ArrowRightIcon size={13} /></button>
+      <div className="td-h">
+        <h2>Today’s schedule</h2>
+        <small>{todayLabel}</small>
+        <button onClick={onOpenBookings} className="cv-btn bk-sm" style={{ marginLeft: 'auto', alignSelf: 'center' }}>All bookings <ArrowRightIcon size={13} /></button>
       </div>
       {!columns.length ? (
         <div style={{ ...card, padding: '8px 12px' }}>
@@ -98,27 +107,25 @@ export default function TodayTab({ companyId, onOpenBookings, reloadKey }: { com
       ) : (
         <div className="td-cols">
           {columns.map(col => (
-            <div key={col.name} className="td-col" style={{ ...card, padding: 12, background: '#fafafa' }}>
-              <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 10, display: 'flex', justifyContent: 'space-between' }}>
-                <span>{col.name}</span><span style={{ color: 'var(--slate,#6b7280)', fontWeight: 600 }}>{col.rows.length}</span>
-              </div>
+            <div key={col.name} className="td-col">
+              <div className="td-col-h"><span>{col.name}</span><span className="td-n">{col.rows.length}</span></div>
               <div style={{ display: 'grid', gap: 8 }}>
                 {col.rows.map(b => {
                   const start = Date.parse(b.starts_at), end = Date.parse(b.ends_at)
                   const live = now >= start && now < end
                   const past = now >= end
                   return (
-                    <Link key={b.id} href={b.conversation_id ? `/admin/inbox?conversation=${b.conversation_id}` : '/admin/bookings?tab=bookings'} className="td-card"
-                      style={{ opacity: past && !live ? 0.6 : 1, borderColor: live ? 'var(--coral,#ff7a6b)' : undefined, boxShadow: live ? '0 0 0 3px rgba(255,122,107,.15)' : undefined }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--slate,#6b7280)', fontWeight: 600 }}>
+                    <Link key={b.id} href={b.conversation_id ? `/admin/inbox?conversation=${b.conversation_id}` : '/admin/bookings?tab=bookings'} className={`td-card${live ? ' live' : ''}`}
+                      style={{ opacity: past && !live ? 0.6 : 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', fontSize: 13, color: '#52525b', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
                         <span>{t(b.starts_at)} – {t(b.ends_at)}</span>
-                        {live && <span style={{ ...pill, background: '#fff1ee', color: '#c2410c' }}>● Now</span>}
-                        {b.status === 'no_show' && <span style={{ ...pill, background: '#f3f4f6', color: '#4b5563' }}>No-show</span>}
-                        {b.status === 'completed' && <span style={{ ...pill, background: '#eff6ff', color: '#1d4ed8' }}>Done</span>}
-                        {b.status === 'confirmed' && b.customer_confirmed_at && <span style={{ ...pill, background: '#ecfdf5', color: '#047857' }}><CheckIcon size={10} strokeWidth={3} style={{ marginRight: 3 }} />Confirmed</span>}
+                        {live && <span className="td-tag" style={tint('#ff7a6b')}>Now</span>}
+                        {b.status === 'no_show' && <span className="td-tag" style={tint('#71717a')}>No-show</span>}
+                        {b.status === 'completed' && <span className="td-tag" style={tint('#3b82f6')}>Done</span>}
+                        {b.status === 'confirmed' && b.customer_confirmed_at && <span className="td-tag" style={tint('#22c55e')}>Confirmed</span>}
                       </div>
-                      <div style={{ fontWeight: 700, fontSize: 14, marginTop: 3 }}>{b.customer_name || 'Customer'}</div>
-                      <div style={{ fontSize: 12.5, color: 'var(--slate,#6b7280)', marginTop: 1 }}>{b.service_name}{b.address || b.location_label ? ` · ${b.address || b.location_label}` : ''}</div>
+                      <div style={{ fontWeight: 700, fontSize: 14.5, marginTop: 4, color: 'var(--ink,#111)' }}>{b.customer_name || 'Customer'}</div>
+                      <div style={{ fontSize: 13, color: '#71717a', marginTop: 2 }}>{b.service_name}{b.address || b.location_label ? ` · ${b.address || b.location_label}` : ''}</div>
                     </Link>
                   )
                 })}
@@ -152,8 +159,8 @@ function InsightsPanel({ ins, currency }: { ins: Insights; currency: string }) {
   return (
     <section style={{ marginTop: 26 }} aria-label={`Last ${ins.days} days`}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-        <div style={{ fontWeight: 800, fontSize: 15 }}>Last {ins.days} days</div>
-        <div style={{ fontSize: 12.5, color: 'var(--slate,#6b7280)' }}>{facts}</div>
+        <div style={{ fontWeight: 800, fontSize: 19, letterSpacing: '-.015em' }}>Last {ins.days} days</div>
+        <div style={{ fontSize: 13.5, color: '#8e8e93' }}>{facts}</div>
       </div>
       <div className="td-ins">
         <div style={card}>
@@ -203,17 +210,17 @@ function InsightsPanel({ ins, currency }: { ins: Insights; currency: string }) {
   )
 }
 
-const insTitle: React.CSSProperties = { fontWeight: 800, fontSize: 14, color: 'var(--ink,#111)' }
-const insSub: React.CSSProperties = { fontSize: 12.5, color: 'var(--slate,#6b7280)', marginTop: 2 }
+const insTitle: React.CSSProperties = { fontWeight: 700, fontSize: 15, color: 'var(--ink,#111)' }
+const insSub: React.CSSProperties = { fontSize: 13, color: '#8e8e93', marginTop: 2 }
 
 function Tile({ label, value, sub, i }: { label: string; value: string; sub: string; i: number }) {
   return (
-    <div className="td-tile" style={{ ...card, padding: '14px 16px', animationDelay: `${i * 50}ms` }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--slate,#6b7280)', textTransform: 'uppercase', letterSpacing: '.05em' }}>{label}</div>
-      <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--ink,#111)', margin: '6px 0 2px', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
-      <div style={{ fontSize: 12, color: 'var(--slate,#6b7280)' }}>{sub}</div>
+    <div className="td-tile" style={{ ...card, padding: '16px 18px', animationDelay: `${i * 50}ms` }}>
+      <div style={{ fontSize: 13.5, fontWeight: 600, color: '#71717a' }}>{label}</div>
+      <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-.02em', color: 'var(--ink,#111)', margin: '6px 0 2px', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+      <div style={{ fontSize: 12.5, color: '#8e8e93' }}>{sub}</div>
     </div>
   )
 }
 
-const pill: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 999, whiteSpace: 'nowrap' }
+const tint = (c: string) => ({ ['--t' as any]: c }) as React.CSSProperties
