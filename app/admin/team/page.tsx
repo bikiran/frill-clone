@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
 import ConfirmModal from '@/components/ConfirmModal'
 import { SkeletonList } from '@/components/Skeleton'
-import PageHeader from '@/components/PageHeader'
+import { confirmDialog } from '@/components/ConfirmDialog'
 import { PERMISSION_SUITES, ALL_FEATURE_KEYS, restrictedDefault } from '@/lib/permissions'
 import { loadTeamList, loadMoreViewers, mergeTeam, isViewerRow, VIEWER_PAGE } from '@/lib/team-list'
 import EmptyScroll from '@/components/EmptyScroll'
@@ -83,25 +83,15 @@ export default function TeamPage() {
   const [myRole, setMyRole] = useState<string | null>(null)
   const [canManage, setCanManage] = useState<boolean | null>(null)
   const viewOnly = canManage === false
-  const MY_ROLE_LABEL: Record<string, string> = { owner: 'Owner', admin: 'Admin', editor: 'Agent', viewer: 'Viewer' }
-  const myRoleLabel = MY_ROLE_LABEL[myRole || 'owner'] || 'Owner'
-  // Owner edit of a member's profile (display name + photo).
-  const [editMember, setEditMember] = useState<any>(null)
+  // The member panel's profile fields (display name, photo, department).
   const [editName, setEditName] = useState('')
   const [editAvatar, setEditAvatar] = useState<string>('')
   const [editDept, setEditDept] = useState<string>('')
-  const [editSaving, setEditSaving] = useState(false)
   const [editUploading, setEditUploading] = useState(false)
   // Department is organisational only (grouping/reporting/routing), separate from
   // role + permissions which control access.
   const DEPARTMENTS = ['Sales', 'Support', 'Fulfillment', 'Front Desk', 'Marketing', 'Management']
 
-  const openEdit = (m: any) => {
-    setEditName(m.display_name || m.name || '')
-    setEditAvatar(m.avatar_url || '')
-    setEditDept(m.department || '')
-    setEditMember(m)
-  }
   const uploadMemberPhoto = async (file: File) => {
     setEditUploading(true)
     try {
@@ -137,38 +127,16 @@ export default function TeamPage() {
     return data
   }
 
-  const saveMemberProfile = async () => {
-    if (!editMember) return
-    setEditSaving(true)
-    try {
-      const patch = { name: editName.trim() || null, avatar_url: editAvatar || null, department: editDept || null }
-      await teamApi('PATCH', { memberId: editMember.id, ...patch })
-      setMembers(ms => ms.map(m => m.id === editMember.id
-        ? { ...m, name: patch.name, avatar_url: patch.avatar_url, department: patch.department, display_name: patch.name || m.display_name }
-        : m))
-      showMsg('Member profile updated.')
-      setEditMember(null)
-    } catch (e: any) {
-      showMsg('Could not save: ' + String(e?.message || 'error'), true)
-    } finally {
-      setEditSaving(false)
-    }
-  }
-
-  // Per-member feature permissions editor.
-  const [permMember, setPermMember] = useState<any>(null)
+  // Per-member feature permissions, edited in the member panel.
   const [permDraft, setPermDraft] = useState<Record<string, boolean>>({})
-  const [permSaving, setPermSaving] = useState(false)
-
-  const openPermissions = (m: any) => {
+  // Show what actually applies: everything ON when the member has no map yet
+  // (full access); otherwise their saved choices, with features the map doesn't
+  // mention yet at their restricted default (new pages start hidden).
+  const permsOf = (m: any) => {
     const existing = m.permissions && typeof m.permissions === 'object' ? m.permissions : null
     const draft: Record<string, boolean> = {}
-    // Show what actually applies: everything ON when the member has no map yet
-    // (full access); otherwise their saved choices, with features the map doesn't
-    // mention yet at their restricted default (new pages start hidden).
     for (const key of ALL_FEATURE_KEYS) draft[key] = existing ? (key in existing ? existing[key] !== false : restrictedDefault(key)) : true
-    setPermDraft(draft)
-    setPermMember(m)
+    return draft
   }
   const toggleFeature = (key: string) => setPermDraft(d => ({ ...d, [key]: !d[key] }))
   const setSuite = (suiteKey: string, on: boolean) => {
@@ -176,20 +144,19 @@ export default function TeamPage() {
     if (!suite) return
     setPermDraft(d => { const n = { ...d }; for (const f of suite.features) n[f.key] = on; return n })
   }
-  const savePermissions = async () => {
-    if (!permMember) return
-    setPermSaving(true)
-    try {
-      await teamApi('PATCH', { memberId: permMember.id, permissions: permDraft })
-      setMembers(ms => ms.map(m => m.id === permMember.id ? { ...m, permissions: permDraft } : m))
-      showMsg(`Permissions updated for ${permMember.display_name || permMember.email}.`)
-      setPermMember(null)
-    } catch (e: any) {
-      showMsg('Could not save permissions: ' + String(e?.message || 'error'), true)
-    } finally {
-      setPermSaving(false)
-    }
-  }
+
+  // The member open in the side panel. Everything there (profile, role,
+  // outlet, mobile, access) waits for one Save; `panelBase` is what the panel
+  // opened with, so it knows what changed.
+  const [panelId, setPanelId] = useState<string | null>(null)
+  const [panelBase, setPanelBase] = useState<{ name: string; avatar: string; dept: string; role: string; outlet: string; phone: string; perms: string } | null>(null)
+  const [roleDraft, setRoleDraft] = useState('editor')
+  const [outletDraft, setOutletDraft] = useState('')
+  const [phoneDraft, setPhoneDraft] = useState('')
+  const [panelSaving, setPanelSaving] = useState(false)
+  // Filters: a summary tile picks who's listed; the search narrows it.
+  const [view, setView] = useState<'all' | 'admin' | 'editor' | 'viewer' | 'invited'>('all')
+  const [query, setQuery] = useState('')
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -277,12 +244,6 @@ export default function TeamPage() {
       showMsg('Could not load more viewers: ' + String(e?.message || 'error'), true)
     }
     setLoadingMore(false)
-  }
-
-  const updateDefaultOutlet = async (id: string, locId: string) => {
-    setMembers(ms => ms.map(m => m.id === id ? { ...m, default_location_id: locId || null } : m))
-    try { await teamApi('PATCH', { memberId: id, default_location_id: locId || null }) }
-    catch (e: any) { showMsg('Could not change the outlet: ' + e.message, true); fetchMembers() }
   }
 
   const showMsg = (text: string, isError = false) => {
@@ -407,23 +368,85 @@ export default function TeamPage() {
     fetchMembers()
   }
 
-  // Mobile number used for SMS reminders on assigned calendar events. The
-  // server tidies it into +61 form ("0405 636 304" and "405636304" both become
-  // "+61405636304") so Telnyx accepts it.
-  const updatePhone = async (id: string, raw: string) => {
-    const before = members.find(m => m.id === id)?.phone || null
-    if ((raw.trim() || null) === before) return
-    try {
-      const { member } = await teamApi('PATCH', { memberId: id, phone: raw.trim() || null })
-      setMembers(ms => ms.map(m => m.id === id ? { ...m, phone: member?.phone ?? null } : m))
-    } catch (e: any) { showMsg('Could not save the number: ' + e.message, true) }
-  }
-
   const removeMember = async (id: string) => {
     try { await teamApi('DELETE', { memberId: id }) }
     catch (e: any) { showMsg('Could not remove them: ' + e.message, true) }
     setConfirmDelete(null)
+    setPanelId(p => (p === id ? null : p))
     fetchMembers()
+  }
+
+  const openPanel = (m: any) => {
+    const name = m.display_name || m.name || ''
+    const perms = permsOf(m)
+    setEditName(name); setEditAvatar(m.avatar_url || ''); setEditDept(m.department || '')
+    setRoleDraft(m.role || 'editor'); setOutletDraft(m.default_location_id || ''); setPhoneDraft(m.phone || '')
+    setPermDraft(perms)
+    setPanelBase({ name, avatar: m.avatar_url || '', dept: m.department || '', role: m.role || 'editor', outlet: m.default_location_id || '', phone: m.phone || '', perms: JSON.stringify(perms) })
+    setPanelId(m.id)
+  }
+  const pm = panelId ? members.find(m => m.id === panelId) || null : null
+  const draftHasAccess = ['editor', 'viewer'].includes(roleDraft.toLowerCase())
+  const changed = panelBase ? {
+    profile: editName.trim() !== panelBase.name.trim() || editAvatar !== panelBase.avatar || editDept !== panelBase.dept,
+    role: roleDraft !== panelBase.role,
+    outlet: outletDraft !== panelBase.outlet,
+    phone: phoneDraft.trim() !== panelBase.phone.trim(),
+    perms: draftHasAccess && JSON.stringify(permDraft) !== panelBase.perms,
+  } : null
+  const dirty = !!changed && Object.values(changed).some(Boolean)
+  const asking = useRef(false)
+  const closePanel = async () => {
+    if (asking.current) return
+    if (dirty) {
+      asking.current = true
+      const ok = await confirmDialog({ title: 'Discard changes?', message: 'Your changes to this team member haven’t been saved.', confirmLabel: 'Discard', tone: 'danger' })
+      asking.current = false
+      if (!ok) return
+    }
+    setPanelId(null); setPanelBase(null)
+  }
+  // Each part goes through /api/team/members on its own, as the rows did.
+  const savePanel = async () => {
+    if (!pm || !changed) return
+    setPanelSaving(true)
+    try {
+      if (changed.profile) {
+        const patch = { name: editName.trim() || null, avatar_url: editAvatar || null, department: editDept || null }
+        await teamApi('PATCH', { memberId: pm.id, ...patch })
+        setMembers(ms => ms.map(m => m.id === pm.id ? { ...m, name: patch.name, avatar_url: patch.avatar_url, department: patch.department, display_name: patch.name || m.display_name } : m))
+      }
+      if (changed.role) {
+        await teamApi('PATCH', { memberId: pm.id, role: roleDraft })
+        setMembers(ms => ms.map(m => m.id === pm.id ? { ...m, role: roleDraft } : m))
+      }
+      if (changed.outlet) {
+        await teamApi('PATCH', { memberId: pm.id, default_location_id: outletDraft || null })
+        setMembers(ms => ms.map(m => m.id === pm.id ? { ...m, default_location_id: outletDraft || null } : m))
+      }
+      // Mobile for SMS reminders on assigned calendar events. The server tidies
+      // it into +61 form ("0405 636 304" and "405636304" both become
+      // "+61405636304") so Telnyx accepts it.
+      let phone = phoneDraft.trim()
+      if (changed.phone) {
+        const { member } = await teamApi('PATCH', { memberId: pm.id, phone: phone || null })
+        phone = member?.phone ?? ''
+        setPhoneDraft(phone)
+        setMembers(ms => ms.map(m => m.id === pm.id ? { ...m, phone: member?.phone ?? null } : m))
+      }
+      if (changed.perms) {
+        await teamApi('PATCH', { memberId: pm.id, permissions: permDraft })
+        setMembers(ms => ms.map(m => m.id === pm.id ? { ...m, permissions: permDraft } : m))
+      }
+      setPanelBase({ name: editName, avatar: editAvatar, dept: editDept, role: roleDraft, outlet: outletDraft, phone, perms: JSON.stringify(permDraft) })
+      showMsg(`Saved changes for ${editName.trim() || pm.display_name || pm.email}`)
+      if (changed.role) fetchMembers()
+    } catch (e: any) {
+      showMsg('Could not save: ' + String(e?.message || 'error'), true)
+      fetchMembers()
+    } finally {
+      setPanelSaving(false)
+    }
   }
 
   const [resendingId, setResendingId] = useState<string | null>(null)
@@ -461,311 +484,242 @@ export default function TeamPage() {
     }
   }
 
-  if (!user) return <SkeletonList rows={6} />
+  // Escape closes the member panel (asking first if something's unsaved).
+  useEffect(() => {
+    if (!panelId) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closePanel() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
-  // The current viewer is already shown as the "You (Owner)" row at the top, so
-  // don't list them AGAIN from team_members below — that duplicate is why the
-  // owner appeared a second time with a different role (e.g. Editor). Match on
-  // user_id first, then fall back to email for rows that were invited before the
-  // person signed in (no user_id yet).
+  if (!user) return <div style={{ padding: '36px 44px' }}><SkeletonList rows={6} /></div>
+
+  // The current viewer is already shown as the "You" row at the top, so don't
+  // list them AGAIN from team_members below — that duplicate is why the owner
+  // appeared a second time with a different role (e.g. Editor). Match on
+  // user_id first, then fall back to email for rows that were invited before
+  // the person signed in (no user_id yet).
   const meEmail = (user.email || '').toLowerCase()
   const visibleMembers = members.filter(
     (m: any) => m.user_id !== user.id && (m.email || '').toLowerCase() !== meEmail
   )
+  const roleKey = (m: any): 'admin' | 'editor' | 'viewer' => {
+    const r = String(m.role || 'editor').toLowerCase()
+    return r === 'owner' || r === 'admin' ? 'admin' : r === 'viewer' ? 'viewer' : 'editor'
+  }
+  const q = query.trim().toLowerCase()
+  const matches = (m: any) =>
+    (view === 'all' || (view === 'invited' ? m.status !== 'active' : roleKey(m) === view)) &&
+    (!q || [m.display_name, m.name, m.email, m.department, m.phone].filter(Boolean).join(' ').toLowerCase().includes(q))
   // A busy board: staff first, so the board's visitors can't push them down
   // the list, then the viewers a page at a time. Otherwise everyone is listed
   // together, newest first, as before.
-  const listed = split ? visibleMembers.filter(m => !isViewerRow(m)) : visibleMembers
-  const listedViewers = split ? visibleMembers.filter(isViewerRow) : []
+  const staffRows = split ? visibleMembers.filter(m => !isViewerRow(m)) : visibleMembers
+  const listed = staffRows.filter(matches)
+  const listedViewers = split ? visibleMembers.filter(isViewerRow).filter(matches) : []
   const viewersLoaded = members.filter(isViewerRow).length
+  const meIsAdmin = !myRole || myRole === 'owner' || myRole === 'admin'
+  const showMe = !q && (view === 'all' || (view === 'admin' && meIsAdmin))
+  const counts = {
+    all: 1 + staffRows.length + (split ? viewerTotal : 0),
+    admin: (meIsAdmin ? 1 : 0) + visibleMembers.filter(m => roleKey(m) === 'admin').length,
+    editor: (myRole === 'editor' ? 1 : 0) + visibleMembers.filter(m => roleKey(m) === 'editor').length,
+    viewer: (myRole === 'viewer' ? 1 : 0) + (split ? viewerTotal : visibleMembers.filter(m => roleKey(m) === 'viewer').length),
+    invited: visibleMembers.filter(m => m.status !== 'active').length,
+  }
+  const outletName = (id: string | null) => {
+    const o = id ? outlets.find((x: any) => x.id === id) : null
+    return o ? (o.label || o.suburb || 'Outlet') : null
+  }
+  const nameOf = (m: any) => m.display_name || m.email || 'Team member'
+  const myName = user.user_metadata?.display_name || user.user_metadata?.full_name || ''
 
-  const memberRow = (m: any) => (
-    <div key={m.id} className="tm-row tm-grid px-5 py-4 border-b last:border-b-0 items-center" style={{ borderColor: 'var(--border)' }}>
-      <div className="tm-user">
-        <div className="tm-avatar w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold overflow-hidden shrink-0" style={{ background: '#6b7280' }}>
-          {m.avatar_url ? <img src={m.avatar_url} alt="" className="w-full h-full object-cover" /> : (m.display_name || m.email || '?')[0].toUpperCase()}
-        </div>
-        <div className="min-w-0">
-          <p className="text-sm truncate flex items-center gap-1.5" style={{ color: 'var(--ink)', fontWeight: 600 }}>
-            <span className="truncate">{m.display_name || m.email}</span>
-            {m.department && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0" style={{ background: '#eef2ff', color: '#4338ca' }}>{m.department}</span>}
-          </p>
-          {m.display_name && <p className="text-xs truncate" style={{ color: 'var(--slate)' }}>{m.email}</p>}
+  const avatar = (name: string, url: string | null, size: number) => {
+    const h = hueOf(name)
+    return url
+      ? <img src={url} alt="" className="tp-av" style={{ width: size, height: size }} />
+      : <span className="tp-av" aria-hidden="true" style={{ width: size, height: size, background: h.bg, color: h.fg, fontSize: Math.round(size * 0.36) }}>{initialsOf(name)}</span>
+  }
+  const roleTag = (role: string) => {
+    const k = String(role || 'editor').toLowerCase()
+    const meta = ROLE_META[k] || ROLE_META.editor
+    return <span className="tp-tag dot" style={tint(meta.color)}>{meta.label}</span>
+  }
+  const statusTag = (m: any) => m.status === 'active'
+    ? <span className="tp-tag dot" style={tint('#22c55e')}>Active</span>
+    : <span className="tp-tag dot" style={tint('#f59e0b')}>Invited</span>
+  const I = (d: React.ReactNode, size = 16) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>
+  const chev = I(<path d="m9 18 6-6-6-6" />, 16)
+
+  const memberRow = (m: any) => {
+    const owner = String(m.role || '').toLowerCase() === 'owner'
+    const out = outletName(m.default_location_id)
+    return (
+      <div key={m.id} className={`tp-row${panelId === m.id ? ' sel' : ''}`} role="button" tabIndex={0} aria-label={`Open ${nameOf(m)}`}
+        onClick={() => openPanel(m)} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openPanel(m) } }}>
+        <div className="tp-who">
+          {avatar(nameOf(m), m.avatar_url, 40)}
+          <div className="tp-who-t">
+            <span className="tp-name"><b>{nameOf(m)}</b>{m.department && <span className="tp-tag sm">{m.department}</span>}</span>
+            {m.display_name && <small>{m.email}</small>}
+          </div>
         </div>
         {outlets.length > 0 && (
-          <label className="tm-outlet">
-            <span className="tm-mlabel">Default outlet</span>
-            <select value={m.default_location_id || ''} onChange={e => updateDefaultOutlet(m.id, e.target.value)} disabled={viewOnly}
-              title="Default outlet — used to pre-filter their Tasks page"
-              className="tm-field tm-select text-xs rounded border focus:outline-none cursor-pointer bg-white max-w-full"
-              style={{ borderColor: 'var(--border)', color: m.default_location_id ? 'var(--coral)' : 'var(--slate)' }}>
-              <option value="">No default outlet</option>
-              {outlets.map((o: any) => <option key={o.id} value={o.id}>{o.label || o.suburb || 'Outlet'}</option>)}
+          <div className="tp-out">
+            {out ? <>{I(<><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></>, 14)}<span>{out}</span></> : <span className="tp-muted">No default outlet</span>}
+          </div>
+        )}
+        <div className="tp-role" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+          {owner || viewOnly ? roleTag(m.role) : (
+            <select className="cv-select tp-sel" value={m.role} aria-label={`Role for ${nameOf(m)}`} onChange={e => updateRole(m.id, e.target.value)}>
+              <option value="admin">Admin</option>
+              <option value="editor">Agent</option>
+              <option value="viewer">Viewer</option>
             </select>
-          </label>
-        )}
+          )}
+        </div>
+        <div className="tp-status">{statusTag(m)}</div>
+        <span className="tp-chev">{chev}</span>
       </div>
-      {/* Mobile — SMS reminders for assigned events go to this number.
-          Saved on blur so it doesn't write on every keystroke. */}
-      <label className="tm-phone">
-        <span className="tm-mlabel">Mobile for SMS</span>
-        <input
-          type="tel"
-          defaultValue={m.phone || ''}
-          placeholder="+61…"
-          aria-label="Mobile for SMS"
-          onBlur={e => updatePhone(m.id, e.target.value)}
-          disabled={viewOnly}
-          className="tm-field text-xs px-2 py-1 rounded border focus:outline-none w-full bg-white"
-          style={{ borderColor: 'var(--border)', color: 'var(--ink)' }} />
-      </label>
-      <div className="tm-role">
-        <select value={m.role} aria-label="Role" onChange={e => updateRole(m.id, e.target.value)} disabled={viewOnly}
-          className="tm-field tm-select text-xs rounded border focus:outline-none cursor-pointer bg-white"
-          style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-          {/* A co-owner shows as Owner; ownership isn't handed out from here. */}
-          {(m.role || '').toLowerCase() === 'owner' && <option value={m.role} disabled>Owner</option>}
-          <option value="admin">Admin</option>
-          <option value="editor">Agent</option>
-          <option value="viewer">Viewer</option>
-        </select>
-      </div>
-      <div className="tm-status">
-        <span className="tm-pill text-xs px-2 py-1 rounded-full whitespace-nowrap"
-          style={{ background: m.status === 'active' ? '#d1fae5' : '#fef3c7', color: m.status === 'active' ? '#059669' : '#ca8a04' }}>
-          {m.status === 'active' ? 'Active' : 'Invited'}
-        </span>
-      </div>
-      <div className={`tm-actions${viewOnly ? ' tm-actions-none' : ''}`}>
-        {viewOnly ? <span className="text-xs" style={{ color: 'var(--slate)' }}>—</span> : <>
-        <button onClick={() => openEdit(m)} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: 'var(--slate)' }}>
-          Edit
+    )
+  }
+
+  const tiles: { key: typeof view; label: string; sub: string; color: string; icon: React.ReactNode }[] = [
+    { key: 'all', label: 'Everyone', sub: 'In this workspace', color: '#52525b', icon: I(<><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>) },
+    { key: 'admin', label: 'Admins', sub: 'Full access', color: ROLE_META.admin.color, icon: I(<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />) },
+    { key: 'editor', label: 'Agents', sub: 'Day-to-day work', color: ROLE_META.editor.color, icon: I(<><path d="M3 18v-6a9 9 0 0 1 18 0v6" /><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3z" /><path d="M3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" /></>) },
+    { key: 'viewer', label: 'Viewers', sub: 'Read only', color: ROLE_META.viewer.color, icon: I(<><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></>) },
+    { key: 'invited', label: 'Waiting to join', sub: 'Invite not accepted yet', color: '#d97706', icon: I(<><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" /></>) },
+  ]
+  const nothingListed = !loading && visibleMembers.length > 0 && listed.length === 0 && listedViewers.length === 0 && !showMe
+
+  const roleOptions = (value: string, onPick: (k: string) => void, disabled = false) => (
+    <div className="tp-roles" role="radiogroup" aria-label="Role">
+      {ROLE_CHOICES.map(rc => (
+        <button key={rc.key} type="button" role="radio" aria-checked={value === rc.key} disabled={disabled}
+          className={`tp-roleopt${value === rc.key ? ' on' : ''}`} onClick={() => onPick(rc.key)}>
+          <span className="tp-radio" aria-hidden="true" />
+          <span className="tp-roleopt-t"><b>{rc.label}</b><small>{rc.desc}</small></span>
         </button>
-        {['editor', 'viewer'].includes((m.role || '').toLowerCase()) && (
-          <button onClick={() => openPermissions(m)} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: 'var(--slate)' }}>
-            Permissions
-          </button>
-        )}
-        {m.status !== 'active' && (
-          <button onClick={() => resendInvite(m)} disabled={resendingId === m.id} className="text-xs font-medium cursor-pointer hover:underline" style={{ color: 'var(--coral)' }}>
-            {resendingId === m.id ? 'Sending…' : 'Resend'}
-          </button>
-        )}
-        <button onClick={() => setConfirmDelete(m)} className="tm-remove text-xs font-medium cursor-pointer hover:underline" style={{ color: '#dc2626' }}>
-          Remove
-        </button>
-        </>}
-      </div>
+      ))}
     </div>
   )
 
   return (
-    <div className="team-page" style={{ padding: '36px 44px 48px' }}>
-      <style>{`
-        /* Table (768px and up): the header and every row share one column
-           template, so the columns always line up. Status and Actions have a
-           floor (an "Invited" pill, four action links that may wrap), so on a
-           narrow screen the User column gives way instead of the actions
-           spilling over the status pill or the table scrolling sideways.
-           Role and Status floors fit their widest content (a 'Viewer' select,
-           an 'Invited' pill), so the User column gets the slack. */
-        .tm-grid { display: grid; grid-template-columns: minmax(0, 4fr) minmax(120px, 2fr) minmax(84px, 2fr) minmax(70px, 1fr) minmax(160px, 3fr); }
-        /* padding-right: a gutter so the outlet select and a cut-off email
-           never touch the Mobile field next to them. */
-        .tm-user { display: grid; grid-template-columns: 36px minmax(0, 1fr); column-gap: 12px; align-items: center; min-width: 0; padding-right: 12px; }
-        .tm-avatar { grid-row: 1 / span 2; }
-        .tm-outlet { grid-column: 2; justify-self: start; min-width: 0; max-width: 100%; margin-top: 4px; }
-        /* Narrow tables: the outlet select takes the whole User cell under the
-           name (not just the part right of the avatar), so outlet names fit. */
-        @media (min-width: 768px) and (max-width: 1099px) {
-          .tm-avatar { grid-row: auto; }
-          .tm-outlet { grid-column: 1 / -1; margin-top: 8px; }
-        }
-        .tm-phone { display: block; min-width: 0; padding-right: 12px; }
-        .tm-mlabel { display: none; }
-        /* Selects keep the global arrow (globals.css) with room for it. */
-        .tm-select { padding: 4px 26px 4px 8px; background-position: right 7px center; text-overflow: ellipsis; }
-        .tm-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 2px 10px; min-width: 0; }
-        .tm-actions button { white-space: nowrap; padding: 4px 0; }
-        @media (max-width: 767px) {
-          .team-page { padding: 24px 16px !important; }
-          .team-page > .ph-root { margin: -24px -16px 16px !important; }
-          /* Phones: each member is a small card instead of a table row:
-             name, then outlet and mobile full width, then role and status on
-             one row, then the actions. */
-          .tm-head { display: none !important; }
-          .tm-row { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 16px !important; }
-          .tm-user, .tm-phone, .tm-actions { grid-column: 1 / -1; }
-          .tm-role { grid-column: 1; min-width: 0; }
-          .tm-status { grid-column: 2; justify-self: end; }
-          .tm-avatar { grid-row: auto; }
-          .tm-outlet { grid-column: 1 / -1; justify-self: stretch; margin-top: 12px; }
-          .tm-user, .tm-phone { padding-right: 0; }
-          .tm-phone:empty { display: none; }
-          .tm-mlabel { display: block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--slate); margin-bottom: 4px; }
-          /* 16px so iOS doesn't zoom the page when a field is tapped. */
-          .tm-field { display: block; width: 100%; max-width: none; min-height: 44px; font-size: 16px; line-height: 22px; padding: 10px 12px; border-radius: 10px; }
-          .tm-select { padding-right: 36px; background-position: right 13px center; }
-          .tm-role .tm-select { width: auto; min-width: 140px; max-width: 100%; }
-          .tm-pill { display: inline-block; font-size: 12.5px; padding: 5px 11px; }
-          .tm-actions { justify-content: flex-start; gap: 6px; }
-          .tm-actions button { flex: 1 1 auto; min-height: 40px; padding: 0 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); font-size: 13px; font-weight: 600; text-decoration: none; }
-          .tm-actions button:active { border-color: currentColor; }
-          .tm-actions-none { display: none !important; }
-          .tm-viewers-note { display: block; margin: 2px 0 0 !important; }
-          .tm-modal > div { padding: 20px; }
-          .team-page > .ph-root .ph-actions > button { min-height: 42px; }
-          .tm-invite-link { font-size: 16px; }
-        }
-        /* Touch screens at table widths (an iPad, a touch laptop): the table
-           keeps its layout, but every control is a 40px+ tap target. A mouse
-           keeps the compact table. */
-        @media (min-width: 768px) and (pointer: coarse) {
-          /* A wider Actions floor keeps Edit / Permissions / Remove on one
-             line at 768 now that each is a 40px target. */
-          .tm-grid { grid-template-columns: minmax(0, 4fr) minmax(120px, 2fr) minmax(84px, 2fr) minmax(70px, 1fr) minmax(190px, 3fr); }
-          .tm-field { min-height: 40px; }
-          .tm-actions { gap: 0 2px; }
-          .tm-actions button { min-height: 40px; min-width: 40px; padding: 0 6px; }
-          .team-page > .ph-root .ph-actions > button { min-height: 42px; }
-        }
-        /* #dc2626 is too dark to read on the dark theme's card (Remove,
-           Remove photo). */
-        [data-theme="dark"] .tm-remove { color: #f87171 !important; }
-        /* Invite link panel: Copy link and the dismiss button on touch. */
-        @media (max-width: 767px), (pointer: coarse) {
-          .tm-tap { min-height: 40px; min-width: 40px; display: inline-flex; align-items: center; justify-content: center; }
-          .tm-invite-link { min-height: 40px; }
-        }
-      `}</style>
-      <PageHeader
-        title="Team Members"
-        subtitle="Manage who can access your workspace"
-        bleed={24}
-        bleedTop={32}
-        action={viewOnly ? undefined :
-          <>
-          <button onClick={() => setShowCreate(true)} className="cv-btn">
-            + Create User
-          </button>
-          <button onClick={() => setShowInvite(true)} className="cv-btn cv-btn-primary">
-            + Invite Member
-          </button>
-          </>
-        }
-      />
+    <div className="tp">
+      <style>{TP_CSS}</style>
+      <div className="tp-head">
+        <div>
+          <h1>Team</h1>
+          <p>Who can sign in, what they can open and where they work.</p>
+        </div>
+        {!viewOnly && (
+          <div className="tp-head-acts">
+            <button type="button" className="cv-btn" onClick={() => setShowCreate(true)}>Create a login</button>
+            <button type="button" className="cv-btn cv-btn-primary" onClick={() => setShowInvite(true)}>
+              {I(<><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></>, 15)} Invite member
+            </button>
+          </div>
+        )}
+      </div>
 
       {viewOnly && (
-        <div className="mb-4 p-3 rounded-lg text-sm" style={{ background: '#f8fafc', border: '1px solid var(--border)', color: 'var(--slate)' }}>
-          Only the owner or an admin can invite people or change roles and access. Ask one of them if something here needs updating.
-        </div>
-      )}
-
-      {msg && (
-        <div className="mb-4 p-3 rounded-lg text-sm font-medium flex items-start gap-2" style={msgErr ? { background: '#fee2e2', color: '#b91c1c' } : { background: '#d1fae5', color: '#059669' }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0" style={{ marginTop: 2 }}>
-            {msgErr ? <><circle cx="12" cy="12" r="10" /><path d="M12 8v4" /><path d="M12 16h.01" /></> : <path d="M20 6 9 17l-5-5" />}
-          </svg>
-          <span className="min-w-0">{msg}</span>
+        <div className="tp-banner">
+          {I(<><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></>, 16)}
+          <span>Only the owner or an admin can invite people or change roles and access. Ask one of them if something here needs updating.</span>
         </div>
       )}
 
       {lastInvite && (
-        <div className="mb-4 p-3 rounded-lg text-sm" style={{ background: '#f8fafc', border: '1px solid var(--border)' }}>
-          <div className="mb-2" style={{ color: 'var(--slate)' }}>
-            Invite link for <strong>{lastInvite.email}</strong> — send it to them directly (email, SMS, WhatsApp):
-          </div>
-          <div className="flex items-center gap-2">
-            <input
-              readOnly
-              value={lastInvite.link}
-              onFocus={(e) => e.currentTarget.select()}
-              aria-label="Invite link"
-              className="tm-invite-link flex-1 min-w-0 px-3 py-2 rounded-lg border text-xs"
-              style={{ borderColor: 'var(--border)', background: 'white' }}
-            />
-            <button
-              onClick={async () => {
+        <div className="tp-invite">
+          <span className="tp-invite-ic">{I(<><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></>, 17)}</span>
+          <div className="tp-invite-main">
+            <p>Invite link for <b>{lastInvite.email}</b></p>
+            <small>Send it to them directly by email, SMS or WhatsApp.</small>
+            <div className="tp-invite-row">
+              <input readOnly value={lastInvite.link} onFocus={e => e.currentTarget.select()} aria-label="Invite link" className="tp-invite-link" />
+              <button type="button" className="cv-btn cv-btn-primary" onClick={async () => {
                 try { await navigator.clipboard.writeText(lastInvite.link); showMsg('Invite link copied.') }
                 catch { showMsg('Could not copy — select the link and copy it manually.', true) }
-              }}
-              className="tm-tap px-3 py-2 rounded-lg text-white text-xs font-semibold whitespace-nowrap"
-              style={{ background: 'var(--coral, #ff7a6b)' }}
-            >
-              Copy link
-            </button>
-            <button
-              onClick={() => setLastInvite(null)}
-              className="tm-tap px-2 py-2 rounded-lg text-xs"
-              style={{ color: 'var(--slate)' }}
-              aria-label="Dismiss invite link"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
-            </button>
+              }}>Copy link</button>
+            </div>
           </div>
+          <button type="button" className="tp-round" onClick={() => setLastInvite(null)} aria-label="Dismiss invite link">{I(<><path d="M18 6 6 18" /><path d="m6 6 12 12" /></>, 14)}</button>
         </div>
       )}
 
-      {/* One card: a table from 768px up (columns from .tm-grid, which never
-          needs a sideways scroll), a list of member cards on phones. */}
-      <div className="tm-card bg-white overflow-hidden" style={{ borderRadius: 16, boxShadow: '0 0 0 1px #ececf0' }}>
-        {/* Header */}
-        <div className="tm-head tm-grid px-5 py-3 border-b text-xs font-semibold uppercase tracking-wider" style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
-          <div>User</div>
-          <div className="pr-3">Mobile (for SMS)</div>
-          <div>Role</div>
-          <div>Status</div>
-          <div className="text-right">Actions</div>
+      {/* Who's here; a tile filters the list. */}
+      <div className="tp-tiles">
+        {tiles.map(t => (
+          <button key={t.key} type="button" className={`tp-tile${view === t.key ? ' on' : ''}`} aria-pressed={view === t.key}
+            onClick={() => setView(view === t.key && t.key !== 'all' ? 'all' : t.key)} style={{ ['--t' as any]: t.color }}>
+            <span className="tp-tile-top"><span className="tp-tile-l">{t.label}</span><span className="tp-tile-ic">{t.icon}</span></span>
+            <span className="tp-tile-v">{loading && t.key !== 'all' ? '–' : counts[t.key].toLocaleString()}</span>
+            <span className="tp-tile-s">{t.sub}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="tp-bar">
+        <label className="tp-search">
+          {I(<><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></>, 15)}
+          <input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search by name, email or department" aria-label="Search the team" />
+          {query && <button type="button" className="tp-x" onClick={() => setQuery('')} aria-label="Clear search">{I(<><path d="M18 6 6 18" /><path d="m6 6 12 12" /></>, 12)}</button>}
+        </label>
+        {view !== 'all' && <button type="button" className="tp-clear" onClick={() => setView('all')}>Show everyone</button>}
+      </div>
+
+      <div className={`tp-card${outlets.length ? '' : ' no-out'}`}>
+        <div className="tp-thead" aria-hidden="true">
+          <span>Member</span>{outlets.length > 0 && <span>Default outlet</span>}<span>Role</span><span>Status</span><span />
         </div>
 
-        {/* Current admin — same column template as the header, so the Owner
-            and Active pills line up under Role and Status. */}
-        <div className="tm-row tm-grid px-5 py-4 border-b items-center" style={{ borderColor: 'var(--border)' }}>
-          <div className="tm-user">
-            <div className="tm-avatar w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0" style={{ background: 'var(--coral)' }}>
-              {user.email?.[0].toUpperCase()}
+        {showMe && (
+          <div className="tp-row me" role="button" tabIndex={0} onClick={() => router.push('/admin/crm-settings/profile')}
+            onKeyDown={e => { if (e.key === 'Enter') router.push('/admin/crm-settings/profile') }} title="Edit your profile">
+            <div className="tp-who">
+              {avatar(myName || user.email || 'You', user.user_metadata?.avatar_url || null, 40)}
+              <div className="tp-who-t">
+                <span className="tp-name"><b>{myName || user.email}</b><span className="tp-tag sm you">You</span></span>
+                {myName && <small>{user.email}</small>}
+              </div>
             </div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold truncate" style={{ color: 'var(--ink)' }}>{user.email}</p>
-              <p className="text-xs" style={{ color: 'var(--slate)' }}>You ({myRoleLabel})</p>
-            </div>
+            {outlets.length > 0 && <div className="tp-out"><span className="tp-muted">—</span></div>}
+            <div className="tp-role">{roleTag(myRole || 'owner')}</div>
+            <div className="tp-status"><span className="tp-tag dot" style={tint('#22c55e')}>Active</span></div>
+            <span className="tp-chev">{chev}</span>
           </div>
-          <div className="tm-phone" />
-          <div className="tm-role">
-            <span className="tm-pill text-xs px-2 py-1 rounded-full font-semibold whitespace-nowrap" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>{myRoleLabel}</span>
-          </div>
-          <div className="tm-status">
-            <span className="tm-pill text-xs px-2 py-1 rounded-full whitespace-nowrap" style={{ background: '#d1fae5', color: '#059669' }}>Active</span>
-          </div>
-          <div className="tm-actions tm-actions-none text-xs" style={{ color: 'var(--slate)' }}>—</div>
-        </div>
+        )}
 
         {loading ? (
-          <SkeletonList rows={5} />
+          <div style={{ padding: '8px 20px' }}><SkeletonList rows={5} /></div>
         ) : visibleMembers.length === 0 ? (
-          <div className="px-6 py-4">
+          <div className="tp-empty">
             <EmptyScroll kinds={['contact']} title="No team members yet" line="Invite colleagues by email, or create a login for them yourself."
-              action={!viewOnly ? <div className="flex flex-wrap gap-2 justify-center">
-                <button onClick={() => setShowInvite(true)} className="cv-btn cv-btn-primary">Invite member</button>
-                <button onClick={() => setShowCreate(true)} className="cv-btn">Create user</button>
+              action={!viewOnly ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
+                <button type="button" onClick={() => setShowInvite(true)} className="cv-btn cv-btn-primary">Invite member</button>
+                <button type="button" onClick={() => setShowCreate(true)} className="cv-btn">Create a login</button>
               </div> : undefined} />
+          </div>
+        ) : nothingListed ? (
+          <div className="tp-empty">
+            <EmptyScroll kinds={['contact']} title="No one matches" line={q ? `Nobody here matches “${query.trim()}”.` : 'Nobody in this group yet.'}
+              action={<button type="button" className="cv-btn" onClick={() => { setQuery(''); setView('all') }}>Show everyone</button>} />
           </div>
         ) : (
           <>
             {listed.map(memberRow)}
-            {split && (
+            {split && listedViewers.length + (viewersLoaded < viewerTotal ? 1 : 0) > 0 && (
               <>
-                <div className="px-5 py-2.5 border-b text-xs" style={{ borderColor: 'var(--border)', background: '#f8fafc', color: 'var(--slate)' }}>
-                  <span className="font-semibold uppercase tracking-wider">Viewers · {viewerTotal.toLocaleString()}</span>
-                  <span className="tm-viewers-note ml-2">Board visitors and anyone given the Viewer role, newest first</span>
+                <div className="tp-group">
+                  <b>Viewers</b><span className="tp-count">{viewerTotal.toLocaleString()}</span>
+                  <small>Board visitors and anyone given the Viewer role, newest first</small>
                 </div>
                 {listedViewers.map(memberRow)}
                 {viewersLoaded < viewerTotal && (
-                  <div className="px-5 py-3 text-center text-xs" style={{ color: 'var(--slate)' }}>
-                    Showing {viewersLoaded.toLocaleString()} of {viewerTotal.toLocaleString()} ·{' '}
-                    <button onClick={showMoreViewers} disabled={loadingMore} className="font-medium cursor-pointer hover:underline disabled:opacity-50" style={{ color: 'var(--coral)' }}>
-                      {loadingMore ? 'Loading…' : 'Show more'}
-                    </button>
+                  <div className="tp-more">
+                    <span>Showing {viewersLoaded.toLocaleString()} of {viewerTotal.toLocaleString()}</span>
+                    <button type="button" className="cv-btn" onClick={showMoreViewers} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'Show more'}</button>
                   </div>
                 )}
               </>
@@ -774,208 +728,224 @@ export default function TeamPage() {
         )}
       </div>
 
-      {/* Role legend */}
-      <div className="mt-6" style={{ padding: '18px 20px', borderRadius: 16, background: '#f6f6f7' }}>
-        <p className="mb-3" style={{ fontSize: 15, fontWeight: 700, color: '#111' }}>Role permissions</p>
-        <div className="grid sm:grid-cols-3 gap-3" style={{ fontSize: 13.5, color: '#52525b', lineHeight: 1.5 }}>
-          <div><strong style={{ color: '#111' }}>Admin</strong> — Full access, settings, team</div>
-          <div><strong style={{ color: '#111' }}>Agent</strong> — Day-to-day work; exact access set per member in Permissions</div>
-          <div><strong style={{ color: '#111' }}>Viewer</strong> — Read-only dashboard access</div>
+      {/* What each role can do */}
+      <div className="tp-roles-explain">
+        <h2>What each role can do</h2>
+        <div className="tp-explain-grid">
+          {ROLE_CHOICES.map(rc => (
+            <div key={rc.key} className="tp-explain" style={{ ['--t' as any]: ROLE_META[rc.key].color }}>
+              <span className="tp-explain-ic">{rc.key === 'admin' ? tiles[1].icon : rc.key === 'editor' ? tiles[2].icon : tiles[3].icon}</span>
+              <b>{rc.label}</b>
+              <p>{rc.long}</p>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* Invite Modal */}
-      {showInvite && (
-        <>
-          <div className="fixed inset-0 z-40 backdrop-blur-sm animate-backdrop" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setShowInvite(false)} />
-          <div className="tm-modal fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[calc(100%-2rem)] max-w-md bg-white rounded-2xl shadow-2xl animate-modal flex flex-col" style={{ maxHeight: 'calc(100dvh - 2rem)' }}>
-            <div className="p-6 border-b shrink-0" style={{ borderColor: 'var(--border)' }}>
-              <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Invite team member</h2>
-              <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>They'll receive a magic link to sign in</p>
-            </div>
-            <div className="p-6 space-y-4 flex-auto min-h-0 overflow-y-auto">
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Email address</label>
-                <input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)}
-                  placeholder="colleague@company.com" autoFocus
-                  className="w-full px-4 py-2.5 rounded-lg border focus:outline-none"
-                  style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Role</label>
-                <select value={inviteRole} onChange={e => setInviteRole(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-lg border focus:outline-none cursor-pointer bg-white"
-                  style={{ borderColor: 'var(--border)', fontSize: '16px' }}>
-                  <option value="admin">Admin</option>
-                  <option value="editor">Agent</option>
-                  <option value="viewer">Viewer</option>
-                </select>
-              </div>
-            </div>
-            <div className="flex gap-3 p-6 border-t shrink-0" style={{ borderColor: 'var(--border)' }}>
-              <button onClick={() => setShowInvite(false)} className="cv-btn flex-1" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Cancel</button>
-              <button onClick={inviteMember} disabled={!inviteEmail.trim() || working}
-                className="cv-btn cv-btn-primary flex-1"
-                style={{ background: 'var(--coral)' }}>
-                {working ? 'Sending...' : 'Send Invite'}
-              </button>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Edit Member Profile Modal */}
-      {editMember && (
-        <>
-          <div className="fixed inset-0 z-40 backdrop-blur-sm animate-backdrop" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setEditMember(null)} />
-          <div className="tm-modal fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[calc(100%-2rem)] max-w-md bg-white rounded-2xl shadow-2xl animate-modal flex flex-col" style={{ maxHeight: 'calc(100dvh - 2rem)' }}>
-            <div className="p-6 border-b shrink-0" style={{ borderColor: 'var(--border)' }}>
-              <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Edit member</h2>
-              <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>{editMember.email}</p>
-            </div>
-            <div className="p-6 space-y-5 flex-auto min-h-0 overflow-y-auto">
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-full overflow-hidden flex items-center justify-center text-white text-xl font-bold shrink-0" style={{ background: '#6b7280' }}>
-                  {editAvatar ? <img src={editAvatar} alt="" className="w-full h-full object-cover" /> : (editName || editMember.email || '?')[0].toUpperCase()}
-                </div>
-                <div className="flex flex-col gap-3">
-                  <label className="text-sm font-medium text-center cursor-pointer px-3 py-2.5 rounded-lg border inline-block" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                    {editUploading ? 'Uploading…' : 'Upload photo'}
-                    <input type="file" accept="image/*" style={{ display: 'none' }}
-                      onChange={e => { const f = e.target.files?.[0]; if (f) uploadMemberPhoto(f) }} disabled={editUploading} />
-                  </label>
-                  {editAvatar && (
-                    <button onClick={() => setEditAvatar('')} className="tm-remove text-sm font-medium cursor-pointer px-3 py-2.5 rounded-lg border" style={{ borderColor: 'var(--border)', color: '#dc2626' }}>Remove photo</button>
-                  )}
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Display name</label>
-                <input type="text" value={editName} onChange={e => setEditName(e.target.value)}
-                  placeholder="Full name"
-                  className="w-full px-4 py-2.5 rounded-lg border focus:outline-none"
-                  style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
-                <p className="text-xs mt-1.5" style={{ color: 'var(--slate)' }}>Shows across the inbox, read receipts and everywhere this member appears.</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Department</label>
-                <select value={DEPARTMENTS.includes(editDept) || !editDept ? editDept : '__custom'} onChange={e => { if (e.target.value !== '__custom') setEditDept(e.target.value) }}
-                  className="w-full px-4 py-2.5 rounded-lg border focus:outline-none cursor-pointer bg-white"
-                  style={{ borderColor: 'var(--border)', fontSize: '16px' }}>
-                  <option value="">No department</option>
-                  {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
-                  {editDept && !DEPARTMENTS.includes(editDept) && <option value="__custom">{editDept}</option>}
-                </select>
-                <p className="text-xs mt-1.5" style={{ color: 'var(--slate)' }}>Organisational only — for grouping and routing. Doesn’t change what they can access.</p>
-              </div>
-            </div>
-            <div className="flex gap-3 p-6 border-t shrink-0" style={{ borderColor: 'var(--border)' }}>
-              <button onClick={() => setEditMember(null)} className="cv-btn flex-1" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Cancel</button>
-              <button onClick={saveMemberProfile} disabled={editSaving || editUploading}
-                className="cv-btn cv-btn-primary flex-1"
-                style={{ background: 'var(--coral)' }}>
-                {editSaving ? 'Saving…' : 'Save'}
-              </button>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Permissions Modal */}
-      {permMember && (
-        <>
-          <div className="fixed inset-0 z-40 backdrop-blur-sm animate-backdrop" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setPermMember(null)} />
-          <div className="tm-modal fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[calc(100%-2rem)] max-w-lg bg-white rounded-2xl shadow-2xl animate-modal flex flex-col" style={{ maxHeight: 'min(85vh, calc(100dvh - 2rem))' }}>
-            <div className="p-6 border-b shrink-0" style={{ borderColor: 'var(--border)' }}>
-              <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Permissions</h2>
-              <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>
-                Choose what <strong>{permMember.display_name || permMember.email}</strong> can see and open. Off = hidden from their sidebar and blocked if they open the link directly.
-              </p>
-            </div>
-            <div className="p-6 space-y-5 flex-auto min-h-0 overflow-y-auto">
-              {PERMISSION_SUITES.map(suite => {
-                const allOn = suite.features.every(f => permDraft[f.key])
-                return (
-                  <div key={suite.key}>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--slate)' }}>{suite.label}</span>
-                      <button onClick={() => setSuite(suite.key, !allOn)} className="text-xs font-medium cursor-pointer hover:underline min-h-[40px] px-2 -mr-2 -my-3" style={{ color: 'var(--coral)' }}>
-                        {allOn ? 'Turn all off' : 'Turn all on'}
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      {suite.features.map(f => (
-                        <label key={f.key} className="flex items-center gap-2 px-3 py-2 min-h-[44px] min-w-0 rounded-lg border cursor-pointer text-sm"
-                          style={{ borderColor: 'var(--border)', color: 'var(--ink)', background: permDraft[f.key] ? 'var(--peach)' : 'white' }}>
-                          <input type="checkbox" checked={!!permDraft[f.key]} onChange={() => toggleFeature(f.key)} className="shrink-0" />
-                          <span className="min-w-0 leading-snug break-words">{f.label}</span>
-                        </label>
-                      ))}
-                    </div>
+      {/* Member panel: floats in from the right. */}
+      {pm && panelBase && (() => {
+        const owner = String(pm.role || '').toLowerCase() === 'owner'
+        const shownName = editName.trim() || pm.display_name || pm.email
+        return (
+          <>
+            <div className="tp-scrim" onClick={closePanel} />
+            <aside className="tp-panel" role="dialog" aria-modal="true" aria-label={`Team member ${shownName}`}>
+              <div className="tp-ph">
+                <div className="tp-ph-top">
+                  {avatar(shownName, editAvatar || null, 56)}
+                  <div className="tp-ph-t">
+                    <h2>{shownName}</h2>
+                    <p>{pm.email}</p>
                   </div>
-                )
-              })}
+                  <button type="button" className="tp-round lg" onClick={closePanel} aria-label="Close" title="Close">{I(<><path d="M18 6 6 18" /><path d="m6 6 12 12" /></>, 16)}</button>
+                </div>
+                <div className="tp-ph-tags">
+                  {roleTag(pm.role)}{statusTag(pm)}
+                  {pm.department && <span className="tp-tag">{pm.department}</span>}
+                  {outletName(pm.default_location_id) && <span className="tp-tag">{outletName(pm.default_location_id)}</span>}
+                </div>
+                {pm.status !== 'active' && !viewOnly && (
+                  <div className="tp-ph-note">
+                    <span>They haven’t accepted their invite yet.</span>
+                    <button type="button" className="tp-pill" onClick={() => resendInvite(pm)} disabled={resendingId === pm.id}>{resendingId === pm.id ? 'Sending…' : 'Resend invite'}</button>
+                  </div>
+                )}
+              </div>
+
+              <div className="tp-pbody">
+                {viewOnly && <p className="tp-sect tp-fine" style={{ margin: 0 }}>Only the owner or an admin can change a team member.</p>}
+
+                <section className="tp-sect">
+                  <p className="tp-sect-h">Profile</p>
+                  <div className="tp-photo">
+                    {avatar(shownName, editAvatar || null, 52)}
+                    {!viewOnly && (
+                      <>
+                        <label className={`tp-pill${editUploading ? ' busy' : ''}`}>
+                          {editUploading ? 'Uploading…' : editAvatar ? 'Change photo' : 'Upload photo'}
+                          <input type="file" accept="image/*" style={{ display: 'none' }} disabled={editUploading}
+                            onChange={e => { const f = e.target.files?.[0]; if (f) uploadMemberPhoto(f); e.target.value = '' }} />
+                        </label>
+                        {editAvatar && <button type="button" className="tp-pill danger" onClick={() => setEditAvatar('')}>Remove</button>}
+                      </>
+                    )}
+                  </div>
+                  <label className="tp-field">
+                    <span>Display name</span>
+                    <input type="text" value={editName} onChange={e => setEditName(e.target.value)} placeholder="Full name" disabled={viewOnly} />
+                    <small>Shows across the inbox, read receipts and everywhere they appear.</small>
+                  </label>
+                  <label className="tp-field">
+                    <span>Department</span>
+                    <select value={DEPARTMENTS.includes(editDept) || !editDept ? editDept : '__custom'} disabled={viewOnly}
+                      onChange={e => { if (e.target.value !== '__custom') setEditDept(e.target.value) }}>
+                      <option value="">No department</option>
+                      {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                      {editDept && !DEPARTMENTS.includes(editDept) && <option value="__custom">{editDept}</option>}
+                    </select>
+                    <small>For grouping and routing only. It doesn’t change what they can open.</small>
+                  </label>
+                </section>
+
+                <section className="tp-sect">
+                  <p className="tp-sect-h">Role</p>
+                  {owner
+                    ? <p className="tp-fine">Owners can open everything. Ownership isn’t changed from here.</p>
+                    : roleOptions(roleDraft, setRoleDraft, viewOnly)}
+                </section>
+
+                <section className="tp-sect">
+                  <p className="tp-sect-h">Where they work</p>
+                  {outlets.length > 0 && (
+                    <label className="tp-field">
+                      <span>Default outlet</span>
+                      <select value={outletDraft} onChange={e => setOutletDraft(e.target.value)} disabled={viewOnly}>
+                        <option value="">No default outlet</option>
+                        {outlets.map((o: any) => <option key={o.id} value={o.id}>{o.label || o.suburb || 'Outlet'}</option>)}
+                      </select>
+                      <small>Their Tasks page opens filtered to this outlet.</small>
+                    </label>
+                  )}
+                  <label className="tp-field">
+                    <span>Mobile for SMS</span>
+                    <input type="tel" value={phoneDraft} onChange={e => setPhoneDraft(e.target.value)} placeholder="+61…" disabled={viewOnly} />
+                    <small>Reminders for calendar events assigned to them are texted here.</small>
+                  </label>
+                </section>
+
+                <section className="tp-sect">
+                  <p className="tp-sect-h">What they can open</p>
+                  {!draftHasAccess ? (
+                    <p className="tp-fine">{owner ? 'Owners' : 'Admins'} can open everything, including settings and the team.</p>
+                  ) : (
+                    <>
+                      <p className="tp-fine" style={{ margin: '-2px 0 12px' }}>Anything turned off is hidden from their menu and blocked if they open the link.</p>
+                      <div className="tp-suites">
+                        {PERMISSION_SUITES.map(suite => {
+                          const on = suite.features.filter(f => permDraft[f.key]).length
+                          const allOn = on === suite.features.length
+                          return (
+                            <div key={suite.key} className="tp-suite">
+                              <div className="tp-suite-h">
+                                <b>{suite.label}</b>
+                                <span className="tp-count">{on}/{suite.features.length}</span>
+                                {!viewOnly && <button type="button" className="tp-link" onClick={() => setSuite(suite.key, !allOn)}>{allOn ? 'Turn all off' : 'Turn all on'}</button>}
+                              </div>
+                              <div className="tp-feats">
+                                {suite.features.map(f => (
+                                  <label key={f.key} className="tp-feat">
+                                    <span>{f.label}</span>
+                                    <input type="checkbox" role="switch" className="tp-switch" checked={!!permDraft[f.key]} onChange={() => toggleFeature(f.key)} disabled={viewOnly} aria-label={f.label} />
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </>
+                  )}
+                </section>
+
+                {!viewOnly && !owner && (
+                  <section className="tp-sect tp-danger">
+                    <div>
+                      <b>Remove from the team</b>
+                      <small>They’ll no longer be able to sign in to this workspace.</small>
+                    </div>
+                    <button type="button" className="tp-pill danger" onClick={() => setConfirmDelete(pm)}>Remove</button>
+                  </section>
+                )}
+              </div>
+
+              {dirty && !viewOnly && (
+                <div className="tp-savebar" role="region" aria-label="Unsaved changes">
+                  <span>Unsaved changes</span>
+                  <button type="button" className="tp-pill" onClick={() => openPanel(pm)} disabled={panelSaving}>Discard</button>
+                  <button type="button" className="cv-btn cv-btn-primary" onClick={savePanel} disabled={panelSaving || editUploading}>{panelSaving ? 'Saving…' : 'Save changes'}</button>
+                </div>
+              )}
+            </aside>
+          </>
+        )
+      })()}
+
+      {/* Invite */}
+      {showInvite && (
+        <div className="tp-overlay" onClick={() => setShowInvite(false)}>
+          <div className="tp-modal" role="dialog" aria-modal="true" aria-label="Invite a team member" onClick={e => e.stopPropagation()}>
+            <div className="tp-mh">
+              <div>
+                <h2>Invite a team member</h2>
+                <p>We’ll email them a link to join. You can copy the link too.</p>
+              </div>
+              <button type="button" className="tp-round lg" onClick={() => setShowInvite(false)} aria-label="Close">{I(<><path d="M18 6 6 18" /><path d="m6 6 12 12" /></>, 16)}</button>
             </div>
-            <div className="flex gap-3 p-6 border-t shrink-0" style={{ borderColor: 'var(--border)' }}>
-              <button onClick={() => setPermMember(null)} className="cv-btn flex-1" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Cancel</button>
-              <button onClick={savePermissions} disabled={permSaving}
-                className="cv-btn cv-btn-primary flex-1"
-                style={{ background: 'var(--coral)' }}>
-                {permSaving ? 'Saving…' : 'Save permissions'}
-              </button>
+            <div className="tp-mb">
+              <label className="tp-field">
+                <span>Email address</span>
+                <input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="colleague@company.com" autoFocus
+                  onKeyDown={e => { if (e.key === 'Enter' && inviteEmail.trim() && !working) inviteMember() }} />
+              </label>
+              <div className="tp-field"><span>Role</span>{roleOptions(inviteRole, setInviteRole)}</div>
+            </div>
+            <div className="tp-mf">
+              <button type="button" className="cv-btn" onClick={() => setShowInvite(false)}>Cancel</button>
+              <button type="button" className="cv-btn cv-btn-primary" onClick={inviteMember} disabled={!inviteEmail.trim() || working}>{working ? 'Sending…' : 'Send invite'}</button>
             </div>
           </div>
-        </>
+        </div>
       )}
 
-      {/* Create User Modal */}
+      {/* Create a login */}
       {showCreate && (
-        <>
-          <div className="fixed inset-0 z-40 backdrop-blur-sm animate-backdrop" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setShowCreate(false)} />
-          <div className="tm-modal fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[calc(100%-2rem)] max-w-md bg-white rounded-2xl shadow-2xl animate-modal flex flex-col" style={{ maxHeight: 'calc(100dvh - 2rem)' }}>
-            <div className="p-6 border-b shrink-0" style={{ borderColor: 'var(--border)' }}>
-              <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Create new user</h2>
-              <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>Add a user to your team on-the-fly</p>
+        <div className="tp-overlay" onClick={() => setShowCreate(false)}>
+          <div className="tp-modal" role="dialog" aria-modal="true" aria-label="Create a login" onClick={e => e.stopPropagation()}>
+            <div className="tp-mh">
+              <div>
+                <h2>Create a login</h2>
+                <p>Add someone to the team straight away, without an invite.</p>
+              </div>
+              <button type="button" className="tp-round lg" onClick={() => setShowCreate(false)} aria-label="Close">{I(<><path d="M18 6 6 18" /><path d="m6 6 12 12" /></>, 16)}</button>
             </div>
-            <div className="p-6 space-y-4 flex-auto min-h-0 overflow-y-auto">
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Email address</label>
-                <input type="email" value={createEmail} onChange={e => setCreateEmail(e.target.value)}
-                  placeholder="user@company.com" autoFocus
-                  className="w-full px-4 py-2.5 rounded-lg border focus:outline-none"
-                  style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Display name (optional)</label>
-                <input type="text" value={createName} onChange={e => setCreateName(e.target.value)}
-                  placeholder="Jane Smith"
-                  className="w-full px-4 py-2.5 rounded-lg border focus:outline-none"
-                  style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Role</label>
-                <select value={createRole} onChange={e => setCreateRole(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-lg border focus:outline-none cursor-pointer bg-white"
-                  style={{ borderColor: 'var(--border)', fontSize: '16px' }}>
-                  <option value="admin">Admin</option>
-                  <option value="editor">Agent</option>
-                  <option value="viewer">Viewer</option>
-                </select>
-              </div>
-              <div className="p-3 rounded-lg text-xs" style={{ background: '#fef3c7', color: '#92400e' }}>
-                <strong>Note:</strong> This adds the user to your team roster. They can sign in at any time using their email. To set their password, they use the "Forgot password" flow or you can share their email with them.
-              </div>
+            <div className="tp-mb">
+              <label className="tp-field">
+                <span>Email address</span>
+                <input type="email" value={createEmail} onChange={e => setCreateEmail(e.target.value)} placeholder="user@company.com" autoFocus />
+              </label>
+              <label className="tp-field">
+                <span>Display name <em>(optional)</em></span>
+                <input type="text" value={createName} onChange={e => setCreateName(e.target.value)} placeholder="Jane Smith" />
+              </label>
+              <div className="tp-field"><span>Role</span>{roleOptions(createRole, setCreateRole)}</div>
+              <p className="tp-tip">They can sign in with this email at any time. To set their own password they use “Forgot password” on the sign-in page.</p>
             </div>
-            <div className="flex gap-3 p-6 border-t shrink-0" style={{ borderColor: 'var(--border)' }}>
-              <button onClick={() => setShowCreate(false)} className="cv-btn flex-1" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Cancel</button>
-              <button onClick={createUser} disabled={!createEmail.trim() || working}
-                className="cv-btn cv-btn-primary flex-1"
-                style={{ background: 'var(--coral)' }}>
-                {working ? 'Creating...' : 'Add to Team'}
-              </button>
+            <div className="tp-mf">
+              <button type="button" className="cv-btn" onClick={() => setShowCreate(false)}>Cancel</button>
+              <button type="button" className="cv-btn cv-btn-primary" onClick={createUser} disabled={!createEmail.trim() || working}>{working ? 'Creating…' : 'Add to team'}</button>
             </div>
           </div>
-        </>
+        </div>
       )}
 
       {confirmDelete && (
@@ -988,6 +958,225 @@ export default function TeamPage() {
           onCancel={() => setConfirmDelete(null)}
         />
       )}
+
+      {msg && (
+        <div className={`tp-toast${msgErr ? ' err' : ''}`} role="status">
+          {msgErr ? I(<><circle cx="12" cy="12" r="10" /><path d="M12 8v4" /><path d="M12 16h.01" /></>, 16) : I(<path d="M20 6 9 17l-5-5" />, 16)}
+          <span>{msg}</span>
+        </div>
+      )}
     </div>
   )
 }
+
+const ROLE_META: Record<string, { label: string; color: string }> = {
+  owner: { label: 'Owner', color: '#7c3aed' },
+  admin: { label: 'Admin', color: '#2563eb' },
+  editor: { label: 'Agent', color: '#0891b2' },
+  viewer: { label: 'Viewer', color: '#71717a' },
+}
+const ROLE_CHOICES = [
+  { key: 'admin', label: 'Admin', desc: 'Everything, including settings and the team', long: 'Full access to everything, including settings, billing and the team.' },
+  { key: 'editor', label: 'Agent', desc: 'Day-to-day work; you choose what they can open', long: 'Day-to-day work. You choose exactly what each agent can open.' },
+  { key: 'viewer', label: 'Viewer', desc: 'Can look, can’t change', long: 'Read-only access to the dashboard.' },
+]
+const tint = (c: string) => ({ ['--t' as any]: c }) as React.CSSProperties
+const HUES: [string, string][] = [['#e0f2fe', '#0369a1'], ['#fce7f3', '#be185d'], ['#ede9fe', '#6d28d9'], ['#dcfce7', '#15803d'], ['#fef3c7', '#b45309'], ['#ffe4e6', '#be123c'], ['#e0e7ff', '#4338ca'], ['#ccfbf1', '#0f766e']]
+const hueOf = (s: string) => { let h = 0; for (const ch of s || '?') h = (h * 31 + ch.charCodeAt(0)) >>> 0; const [bg, fg] = HUES[h % HUES.length]; return { bg, fg } }
+const initialsOf = (s: string) => {
+  const w = String(s || '?').replace(/@.*/, '').split(/[\s._-]+/).filter(Boolean)
+  return ((w[0]?.[0] || '?') + (w.length > 1 ? w[w.length - 1][0] : '')).toUpperCase()
+}
+
+// The Team look: a big bold header, tiles that filter, a soft list of
+// members and a floating panel per member.
+const TP_CSS = `
+.tp{padding:36px 44px 48px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
+.tp button::before,.tp-panel button::before,.tp-modal button::before{display:none}
+.tp-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:22px}
+.tp-head h1{margin:0;font-size:30px!important;font-weight:800;letter-spacing:-.025em;line-height:1.1}
+.tp-head p{margin:6px 0 0;font-size:14.5px;color:#71717a}
+.tp-head-acts{display:flex;gap:8px;flex-wrap:wrap}
+.tp-banner{display:flex;gap:10px;align-items:flex-start;margin-bottom:16px;padding:12px 16px;border-radius:16px;background:#f4f4f5;color:#52525b;font-size:13.5px;line-height:1.5}
+.tp-banner svg{flex-shrink:0;margin-top:2px}
+.tp-invite{display:flex;gap:12px;align-items:flex-start;margin-bottom:16px;padding:14px 16px;border-radius:18px;background:color-mix(in srgb,var(--coral) 6%,#fff);box-shadow:0 0 0 1px color-mix(in srgb,var(--coral) 18%,transparent)}
+.tp-invite-ic{width:36px;height:36px;border-radius:999px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--coral) 14%,#fff);color:var(--coral)}
+.tp-invite-main{flex:1;min-width:0}
+.tp-invite-main p{margin:0;font-size:14px;color:var(--ink)}
+.tp-invite-main small{display:block;margin-top:2px;font-size:12.5px;color:#71717a}
+.tp-invite-row{display:flex;gap:8px;margin-top:10px}
+.tp .tp-invite-link{flex:1;min-width:0;height:38px;padding:0 14px;border:1.5px solid transparent;border-radius:999px!important;background-color:#fff!important;font:inherit;font-size:13px;color:#3f3f46}
+.tp-tiles{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:16px}
+.tp-tile{display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:14px 16px;border:none;border-radius:18px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.07),0 1px 2px rgba(16,24,40,.04);font:inherit;color:inherit;text-align:left;cursor:pointer;min-width:0;transition:box-shadow .15s,transform .2s cubic-bezier(.22,1,.36,1)}
+.tp-tile:hover{transform:translateY(-1px);box-shadow:0 0 0 1px rgba(0,0,0,.08),0 10px 24px -14px rgba(0,0,0,.3)}
+.tp-tile.on{box-shadow:0 0 0 2px var(--t)}
+.tp-tile-top{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%}
+.tp-tile-l{font-size:13.5px;font-weight:600;color:#71717a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tp-tile-ic{width:30px;height:30px;border-radius:10px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--t) 11%,#fff);color:var(--t)}
+.tp-tile-ic svg{width:15px;height:15px}
+.tp-tile-v{margin-top:2px;font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1.1;font-variant-numeric:tabular-nums}
+.tp-tile-s{font-size:12.5px;color:#8e8e93;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.tp-bar{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.tp-search{flex:1;min-width:0;max-width:440px;display:flex;align-items:center;gap:8px;height:40px;padding:0 10px 0 14px;border-radius:999px;border:1.5px solid transparent;background:#f4f4f5;color:#a1a1aa;box-sizing:border-box;transition:background-color .15s,border-color .15s,box-shadow .15s}
+.tp-search:focus-within{background:#fff;border-color:#d4d4d8;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 16%,transparent)}
+.tp .tp-search input{flex:1;min-width:0;height:36px;padding:0;border:none!important;background:transparent!important;box-shadow:none!important;outline:none;font:inherit;font-size:14px;color:var(--ink);-webkit-appearance:none;appearance:none}
+.tp-search input::-webkit-search-cancel-button{display:none}
+.tp-x{width:24px;height:24px;padding:0;border:none;border-radius:999px;background:#e4e4e7;color:#52525b;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.tp-clear{height:36px;padding:0 12px;border:none;border-radius:999px;background:none;font:inherit;font-size:13.5px;font-weight:600;color:var(--coral);cursor:pointer}
+.tp-clear:hover{background:#f4f4f5}
+.tp-card{background:#fff;border-radius:20px;box-shadow:0 0 0 1px rgba(0,0,0,.07),0 1px 2px rgba(16,24,40,.04);overflow:hidden}
+.tp-thead,.tp-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,220px) 140px 104px 18px;align-items:center;gap:16px;padding:0 20px}
+.tp-card.no-out .tp-thead,.tp-card.no-out .tp-row{grid-template-columns:minmax(0,1fr) 140px 104px 18px}
+.tp-thead{height:44px;font-size:12.5px;font-weight:600;color:#8e8e93;border-bottom:1px solid #f0f0f2}
+.tp-row{min-height:68px;padding-top:12px;padding-bottom:12px;border-bottom:1px solid #f4f4f5;cursor:pointer;transition:background-color .12s}
+.tp-row:last-child{border-bottom:none}
+.tp-row:hover{background-color:#fafafa}
+.tp-row.sel{background-color:color-mix(in srgb,var(--coral) 6%,#fff)}
+.tp-row:focus-visible{outline:none;box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--coral) 45%,transparent)}
+.tp-who{display:flex;align-items:center;gap:12px;min-width:0}
+.tp-av{border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;font-weight:700;object-fit:cover;letter-spacing:.01em}
+.tp-who-t{min-width:0;display:flex;flex-direction:column;gap:1px}
+.tp-name{display:flex;align-items:center;gap:7px;min-width:0}
+.tp-name b{font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tp-who-t small{font-size:13px;color:#8e8e93;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tp-out{display:flex;align-items:center;gap:6px;min-width:0;font-size:13.5px;color:#3f3f46}
+.tp-out svg{flex-shrink:0;color:#a1a1aa}
+.tp-out span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tp-muted{color:#a1a1aa}
+.tp-chev{color:#c4c4c8;display:inline-flex}
+.tp-row:hover .tp-chev{color:#71717a}
+.tp .tp-sel{height:32px;max-width:100%;padding:0 32px 0 12px;border:none;border-radius:999px;background-color:#f4f4f5;background-position:right 11px center;font-size:13px;font-weight:600;color:var(--ink);box-shadow:none}
+.tp .tp-sel:hover{background-color:#ececef}
+.tp-tag{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px;border-radius:999px;font-size:12.5px;font-weight:600;white-space:nowrap;background:#f4f4f5;color:#52525b;flex-shrink:0}
+.tp-tag.dot{background:color-mix(in srgb,var(--t) 12%,#fff);color:color-mix(in srgb,var(--t) 80%,#000)}
+.tp-tag.dot::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--t)}
+.tp-tag.sm{height:20px;padding:0 7px;font-size:11.5px}
+.tp-tag.you{background:#18181b;color:#fff}
+.tp-group{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:14px 20px 10px;background:#fafafa;border-bottom:1px solid #f0f0f2}
+.tp-group b{font-size:14px}
+.tp-group small{font-size:12.5px;color:#8e8e93}
+.tp-count{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 7px;box-sizing:border-box;border-radius:999px;background:rgba(0,0,0,.06);font-size:11.5px;font-weight:700;color:#52525b}
+.tp-more{display:flex;align-items:center;justify-content:center;gap:12px;padding:14px 20px;font-size:13px;color:#8e8e93}
+.tp-empty{padding:24px 12px}
+.tp-roles-explain{margin-top:28px}
+.tp-roles-explain h2{margin:0 0 12px;font-size:17px;font-weight:700;letter-spacing:-.01em}
+.tp-explain-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.tp-explain{padding:16px;border-radius:18px;background:#f6f6f7}
+.tp-explain-ic{width:32px;height:32px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--t) 12%,#fff);color:var(--t);margin-bottom:10px}
+.tp-explain b{display:block;font-size:14.5px}
+.tp-explain p{margin:3px 0 0;font-size:13.5px;color:#52525b;line-height:1.5}
+.tp-round{width:32px;height:32px;padding:0;border:none;border-radius:999px;background:#f4f4f5;color:#52525b;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;transition:background-color .15s}
+.tp-round:hover{background-color:#ececef;color:#18181b}
+.tp-round.lg{width:34px;height:34px}
+.tp-pill{display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 14px;border:none;border-radius:999px;background:#f4f4f5;color:#18181b;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background-color .15s}
+.tp-pill:hover{background-color:#ececef}
+.tp-pill:disabled,.tp-pill.busy{opacity:.6;cursor:default}
+.tp-pill.danger{color:#e11d48}
+.tp-pill.danger:hover{background-color:#fff1f2}
+.tp-link{border:none;background:none;padding:0;font:inherit;font-size:12.5px;font-weight:600;color:var(--coral);cursor:pointer}
+@keyframes tpIn{from{transform:translateX(28px);opacity:0}to{transform:none;opacity:1}}
+@keyframes tpFade{from{opacity:0}to{opacity:1}}
+@keyframes tpRise{from{transform:translateY(12px) scale(.98);opacity:0}to{transform:none;opacity:1}}
+@keyframes tpUp{from{transform:translateY(100%)}to{transform:none}}
+.tp-scrim{position:fixed;inset:0;z-index:5600;background:rgba(15,15,20,.3);animation:tpFade .2s ease}
+.tp-panel{position:fixed;top:8px;right:8px;bottom:8px;width:480px;max-width:calc(100vw - 16px);z-index:5601;display:flex;flex-direction:column;background:#f4f4f5;border-radius:24px;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,.22),0 0 0 1px rgba(0,0,0,.05);animation:tpIn .32s cubic-bezier(.22,1,.36,1);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
+.tp-ph{flex-shrink:0;background:#fff;border-bottom:1px solid #ececef;padding:16px 18px}
+.tp-ph-top{display:flex;align-items:center;gap:14px}
+.tp-ph-t{flex:1;min-width:0}
+.tp-ph-t h2{margin:0;font-size:22px;font-weight:800;letter-spacing:-.02em;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tp-ph-t p{margin:2px 0 0;font-size:13.5px;color:#71717a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tp-ph-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+.tp-ph-note{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;padding:10px 10px 10px 14px;border-radius:14px;background:color-mix(in srgb,#f59e0b 10%,#fff);font-size:13px;color:#92400e}
+.tp-ph-note .tp-pill{background:#fff}
+.tp-pbody{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:10px}
+.tp-sect{background:#fff;border-radius:18px;padding:16px}
+.tp-sect-h{margin:0 0 12px;font-size:15px;font-weight:700;letter-spacing:-.01em}
+.tp-fine{margin:0;font-size:13px;color:#71717a;line-height:1.5}
+.tp-photo{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.tp-photo .tp-av{margin-right:6px}
+.tp-field{display:block;margin-bottom:14px}
+.tp-field:last-child{margin-bottom:0}
+.tp-field > span{display:block;margin-bottom:6px;font-size:13.5px;font-weight:600;color:var(--ink)}
+.tp-field > span em{font-style:normal;font-weight:400;color:#8e8e93}
+.tp-field > small{display:block;margin-top:6px;font-size:12.5px;color:#8e8e93;line-height:1.45}
+.tp-panel .tp-field :is(input,select),.tp-modal .tp-field :is(input,select){display:block;width:100%;box-sizing:border-box;height:42px;padding:0 14px;border:1.5px solid transparent;border-radius:12px;background-color:#f4f4f5;font:inherit;font-size:14.5px;color:var(--ink);outline:none}
+.tp-panel .tp-field select,.tp-modal .tp-field select{appearance:none;-webkit-appearance:none;padding-right:38px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;background-size:14px}
+.tp-panel .tp-field :is(input,select):focus,.tp-modal .tp-field :is(input,select):focus{background-color:#fff;border-color:#d4d4d8;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 16%,transparent)}
+.tp-panel .tp-field :is(input,select):disabled{opacity:.7;cursor:default}
+.tp-roles{display:flex;flex-direction:column;gap:6px}
+.tp-roleopt{display:flex;align-items:flex-start;gap:12px;width:100%;padding:12px 14px;border:none;border-radius:14px;background:#f4f4f5;font:inherit;text-align:left;cursor:pointer;color:inherit;transition:background-color .15s,box-shadow .15s}
+.tp-roleopt:hover:not(:disabled){background-color:#ececef}
+.tp-roleopt.on{background:color-mix(in srgb,var(--coral) 8%,#fff);box-shadow:0 0 0 1.5px var(--coral)}
+.tp-roleopt:disabled{cursor:default;opacity:.75}
+.tp-radio{width:18px;height:18px;border-radius:50%;flex-shrink:0;margin-top:1px;box-sizing:border-box;border:2px solid #c4c4c8;background:#fff;transition:border .15s}
+.tp-roleopt.on .tp-radio{border:5.5px solid var(--coral)}
+.tp-roleopt-t b{display:block;font-size:14px;font-weight:600}
+.tp-roleopt-t small{display:block;margin-top:1px;font-size:12.5px;color:#71717a;line-height:1.4}
+.tp-suites{display:flex;flex-direction:column;gap:8px}
+.tp-suite{border-radius:16px;background:#fafafa;box-shadow:0 0 0 1px #f0f0f2;padding:12px}
+.tp-suite-h{display:flex;align-items:center;gap:8px;margin:0 2px 8px}
+.tp-suite-h b{font-size:13.5px;font-weight:700}
+.tp-suite-h .tp-link{margin-left:auto}
+.tp-feats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.tp-feat{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:40px;padding:6px 8px 6px 12px;border-radius:12px;background:#fff;box-shadow:0 0 0 1px #ececef;font-size:13px;font-weight:500;cursor:pointer;min-width:0}
+.tp-feat span{min-width:0;line-height:1.3}
+.tp-switch{appearance:none;-webkit-appearance:none;flex-shrink:0;width:36px;height:22px;margin:0;border-radius:999px;background:#d4d4d8;position:relative;cursor:pointer;transition:background-color .2s}
+.tp-switch::after{content:'';position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .2s cubic-bezier(.22,1,.36,1)}
+.tp-switch:checked{background:#34c759}
+.tp-switch:checked::after{transform:translateX(14px)}
+.tp-switch:disabled{opacity:.6;cursor:default}
+.tp-switch:focus{outline:none;box-shadow:none}
+.tp-switch:focus-visible{box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 28%,transparent)}
+.tp-danger{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.tp-danger b{display:block;font-size:14px}
+.tp-danger small{display:block;margin-top:2px;font-size:12.5px;color:#8e8e93}
+.tp-savebar{flex-shrink:0;display:flex;align-items:center;gap:8px;padding:12px 14px 12px 18px;background:#fff;border-top:1px solid #ececef;animation:tpUp .25s cubic-bezier(.22,1,.36,1)}
+.tp-savebar > span{flex:1;font-size:13.5px;font-weight:600;color:#52525b}
+.tp-overlay{position:fixed;inset:0;z-index:5700;background:rgba(15,15,20,.35);display:flex;align-items:center;justify-content:center;padding:20px;animation:tpFade .18s ease}
+.tp-modal{width:480px;max-width:100%;max-height:calc(100dvh - 40px);display:flex;flex-direction:column;background:#fff;border-radius:24px;box-shadow:0 24px 64px rgba(0,0,0,.22);animation:tpRise .24s cubic-bezier(.22,1,.36,1);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
+.tp-mh{display:flex;align-items:flex-start;gap:12px;padding:22px 22px 6px}
+.tp-mh > div{flex:1;min-width:0}
+.tp-mh h2{margin:0;font-size:22px;font-weight:800;letter-spacing:-.02em}
+.tp-mh p{margin:4px 0 0;font-size:14px;color:#71717a}
+.tp-mb{flex:1;min-height:0;overflow-y:auto;padding:14px 22px 6px}
+.tp-mf{display:flex;justify-content:flex-end;gap:8px;padding:14px 22px 20px}
+.tp-tip{margin:4px 0 8px;padding:12px 14px;border-radius:14px;background:#f6f6f7;font-size:13px;color:#52525b;line-height:1.5}
+.tp-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:5800;display:flex;align-items:flex-start;gap:8px;padding:12px 18px;border-radius:18px;background:#18181b;color:#fff;font-size:13.5px;font-weight:500;line-height:1.45;box-shadow:0 12px 30px rgba(0,0,0,.25);width:max-content;max-width:min(560px,calc(100vw - 32px))}
+.tp-toast svg{flex-shrink:0;margin-top:1px;color:#4ade80}
+.tp-toast.err svg{color:#f87171}
+.tp-tile:focus-visible,.tp-pill:focus-visible,.tp-round:focus-visible,.tp-roleopt:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 28%,transparent)}
+@media(max-width:1180px){.tp-tiles{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:1000px){
+  .tp-thead,.tp-row{grid-template-columns:minmax(0,1fr) 130px 96px 18px}
+  .tp-thead > :nth-child(2),.tp-row > .tp-out{display:none}
+  .tp-card.no-out .tp-thead,.tp-card.no-out .tp-row{grid-template-columns:minmax(0,1fr) 130px 96px 18px}
+}
+@media(max-width:700px){
+  .tp{padding:20px 16px 40px}
+  .tp-head{align-items:flex-start}
+  .tp-head h1{font-size:26px!important}
+  .tp-head-acts{width:100%}
+  .tp-head-acts .cv-btn{flex:1}
+  .tp-tiles{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .tp-tiles > :first-child{grid-column:1 / -1}
+  .tp-tile{padding:12px 14px}
+  .tp-tile-v{font-size:22px}
+  .tp-search{max-width:none}
+  .tp-thead{display:none}
+  .tp-row,.tp-card.no-out .tp-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:14px 16px}
+  .tp-who{flex:1 1 calc(100% - 30px);order:1}
+  .tp-chev{order:2}
+  .tp-role{order:3;margin-left:52px}
+  .tp-status{order:4}
+  .tp-row > .tp-out{display:flex;order:5;flex-basis:100%;margin-left:52px}
+  .tp-row > .tp-out:has(.tp-muted){display:none}
+  .tp-explain-grid{grid-template-columns:1fr}
+  .tp-panel{top:6px;right:6px;bottom:6px;left:6px;width:auto;max-width:none;border-radius:22px}
+  .tp-feats{grid-template-columns:1fr}
+  .tp-overlay{padding:0;align-items:flex-end}
+  .tp-modal{width:100%;border-radius:24px 24px 0 0;max-height:94dvh}
+  .tp-panel .tp-field :is(input,select),.tp-modal .tp-field :is(input,select){font-size:16px}
+  .tp-invite-row{flex-direction:column}
+}
+@media (prefers-reduced-motion: reduce){.tp-panel,.tp-scrim,.tp-modal,.tp-overlay,.tp-savebar{animation:none}.tp-tile:hover{transform:none}}
+`
