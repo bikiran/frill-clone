@@ -241,8 +241,16 @@ const CSS = `
 
 type Row = { kind: 'one'; n: N } | { kind: 'stack'; key: string; items: N[] }
 
-export default function NotificationsPanel({ userId, unreadCount, onUnread, onOpen, onClose, settingsHref }: {
+/** Notifications for one workspace: its own, plus ones that aren't tied to
+ *  any (board notifications). Without a workspace (the root domain), all. */
+export function inWorkspace<Q extends { or: (f: string) => Q }>(q: Q, companyId: string | null | undefined): Q {
+  return companyId && /^[0-9a-f-]{36}$/i.test(companyId) ? q.or(`company_id.eq.${companyId},company_id.is.null`) : q
+}
+
+export default function NotificationsPanel({ userId, companyId = null, unreadCount, onUnread, onOpen, onClose, settingsHref }: {
   userId: string
+  /** The workspace being viewed: only its notifications are listed. */
+  companyId?: string | null
   /** Where "Notification settings" goes (staff only; none on the public board). */
   settingsHref?: string | null
   unreadCount: number
@@ -270,20 +278,20 @@ export default function NotificationsPanel({ userId, unreadCount, onUnread, onOp
   }, [])
 
   const load = useCallback(async (from = 0) => {
-    const { data } = await (supabase as any).from('notifications').select('*').eq('user_id', userId)
+    const { data } = await inWorkspace((supabase as any).from('notifications').select('*').eq('user_id', userId), companyId)
       .order('created_at', { ascending: false }).range(from, from + PAGE - 1)
     const rows: N[] = data || []
     setItems(prev => from === 0 ? rows : [...prev, ...rows.filter(r => !prev.some(p => p.id === r.id))])
     setMore(rows.length === PAGE)
-  }, [userId])
+  }, [userId, companyId])
   useEffect(() => { setLoading(true); load(0).finally(() => setLoading(false)) }, [load])
 
   // New ones arrive live while the panel is open (the header relays them).
   useEffect(() => {
-    const onNew = (e: any) => { const n = e.detail; if (n?.id) setItems(prev => prev.some(p => p.id === n.id) ? prev : [n, ...prev]) }
+    const onNew = (e: any) => { const n = e.detail; if (companyId && n?.company_id && n.company_id !== companyId) return; if (n?.id) setItems(prev => prev.some(p => p.id === n.id) ? prev : [n, ...prev]) }
     window.addEventListener('colvy:notification', onNew)
     return () => window.removeEventListener('colvy:notification', onNew)
-  }, [])
+  }, [companyId])
 
   const setRead = async (n: N, read: boolean) => {
     if (!!n.is_read === read) return
@@ -300,7 +308,7 @@ export default function NotificationsPanel({ userId, unreadCount, onUnread, onOp
   const markAll = async () => {
     setItems(prev => prev.map(x => ({ ...x, is_read: true })))
     onUnread('zero')
-    try { await (supabase as any).from('notifications').update({ is_read: true }).eq('user_id', userId).eq('is_read', false) } catch {}
+    try { await inWorkspace((supabase as any).from('notifications').update({ is_read: true }).eq('user_id', userId).eq('is_read', false), companyId) } catch {}
   }
   const openOne = async (n: N) => { if (!n.is_read) await setRead(n, true); onOpen({ ...n, is_read: true }) }
 

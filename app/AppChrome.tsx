@@ -11,7 +11,7 @@ import { termFor } from '@/lib/terminology'
 import { ToastProvider } from '@/components/ToastProvider'
 import LiveChat from '@/components/LiveChat'
 import UpdateNotification from '@/components/UpdateNotification'
-import NotificationsPanel, { notificationSoundOn } from '@/components/NotificationsPanel'
+import NotificationsPanel, { notificationSoundOn, inWorkspace } from '@/components/NotificationsPanel'
 import Analytics from '@/components/Analytics'
 import { NEUTRAL_ICON } from '@/lib/tenant-meta'
 
@@ -553,11 +553,11 @@ export default function AppChrome({
     if (!user) { setUnreadCount(0); return }
     const getCount = async () => {
       try {
-        const { count } = await (supabase as any)
+        const { count } = await inWorkspace((supabase as any)
           .from('notifications')
           .select('*', { count: 'exact', head: true })
           .eq('user_id', user.id)
-          .eq('is_read', false)
+          .eq('is_read', false), companyIdRef.current)
         setUnreadCount(count || 0)
       } catch { setUnreadCount(0) }
     }
@@ -571,17 +571,17 @@ export default function AppChrome({
         try {
           if (payload.eventType === 'INSERT' && payload.new) {
             const n = payload.new
-            // An open notifications panel adds it to its list straight away.
-            try { window.dispatchEvent(new CustomEvent('colvy:notification', { detail: n })) } catch {}
-
-            // Only alert for the company this tab is viewing. The same user can
-            // belong to several companies (several Colvy subdomains open at once);
-            // without this, EVERY tab chimes for EVERY company's notifications.
-            // The unread badge (getCount above) still reflects all of them; only
-            // the chime + popup are scoped. On the root domain (no company
-            // context) nothing is filtered.
+            // Only for the workspace this tab is viewing. The same person can
+            // belong to several (several Colvy subdomains open at once): another
+            // workspace's notification isn't listed, counted, chimed or popped
+            // up here, and opening it used to show that workspace's
+            // conversation inside this one. On the root domain (no workspace)
+            // nothing is filtered.
             const currentCo = companyIdRef.current
             if (currentCo && n.company_id && n.company_id !== currentCo) return
+
+            // An open notifications panel adds it to its list straight away.
+            try { window.dispatchEvent(new CustomEvent('colvy:notification', { detail: n })) } catch {}
 
             // A soft two-note chime — pleasant, quiet, and short. Synthesised so
             // there's no audio file to load, and it fails silently if the browser
@@ -633,7 +633,7 @@ export default function AppChrome({
       })
       .subscribe()
     return () => { supabase.removeChannel(ch) }
-  }, [user])
+  }, [user, company?.id])
 
   // Ask for browser-notification permission once the user is signed in to the
   // admin. Only prompts if they haven't decided yet.
@@ -709,11 +709,11 @@ export default function AppChrome({
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.user.id) { setUnreadCount(0); return }
-      const { count } = await (supabase as any)
+      const { count } = await inWorkspace((supabase as any)
         .from('notifications')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', session.user.id)
-        .eq('is_read', false)
+        .eq('is_read', false), companyIdRef.current)
       setUnreadCount(count || 0)
     } catch { setUnreadCount(0) }
   }
@@ -922,7 +922,7 @@ export default function AppChrome({
                           (anchored to the bell it ran off the left edge). */}
                       <style>{`@media (max-width: 640px) { .notif-panel { position: fixed !important; top: 64px !important; left: 8px !important; right: 8px !important; margin-top: 0 !important; z-index: 1000 !important; } }`}</style>
                       <div className="notif-panel absolute top-full right-0 mt-2 z-40">
-                        <NotificationsPanel userId={user.id} unreadCount={unreadCount}
+                        <NotificationsPanel userId={user.id} companyId={company?.id || null} unreadCount={unreadCount}
                           onUnread={d => setUnreadCount(c => d === 'zero' ? 0 : Math.max(0, c + d))}
                           onOpen={handleNotificationClick}
                           onClose={() => setShowNotifications(false)}
