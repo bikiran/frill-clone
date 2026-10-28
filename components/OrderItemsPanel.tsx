@@ -276,8 +276,8 @@ export default function OrderItemsPanel({
           <input type="checkbox" checked={checked} onChange={() => setSel(s => { const n = new Set(s); n.has(it.id) ? n.delete(it.id) : n.add(it.id); return n })}
             style={{ width: 16, height: 16, accentColor: ACCENT, cursor: 'pointer', flexShrink: 0 }} />
         )}
-        <span onClick={rowClick} style={{ position: 'relative', width: 40, height: 40, borderRadius: 8, flexShrink: 0, overflow: 'hidden', background: 'var(--peach)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /></svg>
+        <span onClick={rowClick} style={{ position: 'relative', width: 46, height: 46, borderRadius: 13, flexShrink: 0, overflow: 'hidden', background: '#f4f4f5', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /></svg>
           {it.image_url && <img src={it.image_url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} onError={(e: any) => { e.currentTarget.style.display = 'none' }} />}
           {pickMode && picked && (
             <span style={{ position: 'absolute', inset: 0, background: 'rgba(5,150,105,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -286,19 +286,19 @@ export default function OrderItemsPanel({
           )}
         </span>
         <div onClick={rowClick} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
-          <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: (sent || fullyRefunded) && !pickMode ? 'line-through' : 'none' }}>{it.product_name}</p>
+          <p title={it.product_name} style={{ margin: 0, fontSize: 13.5, fontWeight: 600, lineHeight: 1.35, color: 'var(--ink)', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflowWrap: 'anywhere', textDecoration: (sent || fullyRefunded) && !pickMode ? 'line-through' : 'none' }}>{it.product_name}</p>
           {variationLabel(it) && (
-            <span style={{ display: 'inline-block', margin: '2px 0 0', padding: '1px 8px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)', fontSize: 10.5, fontWeight: 700, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{variationLabel(it)}</span>
+            <span style={{ display: 'inline-block', margin: '3px 0 0', padding: '2px 9px', borderRadius: 999, background: '#f4f4f5', color: '#52525b', fontSize: 11.5, fontWeight: 600, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{variationLabel(it)}</span>
           )}
-          <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <p style={{ margin: '3px 0 0', fontSize: 12, color: '#8e8e93', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             {it.sku ? <span title={`SKU: ${it.sku}`} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>SKU: {it.sku}</span> : null}
-            {oosFlag && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 20, background: '#fee2e2', color: '#b91c1c', fontWeight: 800, fontSize: 10, letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>⚠ OUT OF STOCK</span>}
+            {oosFlag && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 20, padding: '0 8px', borderRadius: 999, background: '#fef2f2', color: '#b91c1c', fontWeight: 600, fontSize: 11.5, whiteSpace: 'nowrap' }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: '#dc2626' }} />Out of stock</span>}
             {rf && (
-              <span title={`Refunded ${fmtMoney(rf.amount, currency)}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 7px', borderRadius: 20, background: '#fef3c7', color: '#b45309', fontWeight: 800, fontSize: 10, letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>
+              <span title={`Refunded ${fmtMoney(rf.amount, currency)}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 20, padding: '0 8px', borderRadius: 999, background: '#fffbeb', color: '#b45309', fontWeight: 600, fontSize: 11.5, whiteSpace: 'nowrap' }}>
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></svg>
-                {fullyRefunded ? (qty > 1 ? `ALL ${qty} REFUNDED` : 'REFUNDED')
-                  : rf.qty > 0 ? `${rf.qty} OF ${qty} REFUNDED`
-                  : `REFUNDED ${fmtMoney(rf.amount, currency)}`}
+                {fullyRefunded ? (qty > 1 ? `All ${qty} refunded` : 'Refunded')
+                  : rf.qty > 0 ? `${rf.qty} of ${qty} refunded`
+                  : `Refunded ${fmtMoney(rf.amount, currency)}`}
               </span>
             )}
             {sent && !pickMode && <span style={{ color: '#059669', fontWeight: 700 }}>✓ Sent</span>}
@@ -306,8 +306,8 @@ export default function OrderItemsPanel({
           </p>
         </div>
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)' }}>Qty {it.quantity}</p>
-          <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>{priceIncl(it.total_price ?? it.unit_price)}</p>
+          <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{priceIncl(it.total_price ?? it.unit_price)}</p>
+          <p style={{ margin: '2px 0 0', fontSize: 12, color: '#8e8e93' }}>Qty {it.quantity}</p>
         </div>
         {pickMode && (
           <span aria-hidden style={{ flexShrink: 0, width: 24, height: 24, borderRadius: '50%', border: `2px solid ${picked ? '#059669' : 'var(--border)'}`, background: picked ? '#059669' : 'transparent', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
@@ -317,12 +317,12 @@ export default function OrderItemsPanel({
         {!pickMode && multi && !splitMode && (
           <div data-reassign style={{ position: 'relative', flexShrink: 0 }}>
             <button type="button" title="Move to another shipment" aria-label="Move to another shipment" aria-expanded={reassign === it.id} onClick={() => setReassign(r => r === it.id ? null : it.id)}
-              style={{ width: 30, height: 30, borderRadius: 8, border: `1px solid ${reassign === it.id ? ACCENT : 'var(--border)'}`, background: 'var(--card,#fff)', color: reassign === it.id ? ACCENT : 'var(--slate)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              style={{ width: 32, height: 32, borderRadius: 999, border: 'none', background: reassign === it.id ? `color-mix(in srgb, ${ACCENT} 12%, #fff)` : '#f4f4f5', color: reassign === it.id ? ACCENT : '#52525b', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3l4 4-4 4" /><path d="M3 7h18" /><path d="M7 21l-4-4 4-4" /><path d="M21 17H3" /></svg>
             </button>
             {reassign === it.id && (
-              <div className="ord-reassign" role="menu" style={{ position: 'absolute', top: 36, right: 0, zIndex: 40, background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,.14)', padding: 5, minWidth: 170, transformOrigin: 'top right' }}>
-                <p style={{ margin: 0, padding: '6px 9px 4px', fontSize: 10.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--slate)', whiteSpace: 'nowrap' }}>Move to</p>
+              <div className="ord-reassign" role="menu" style={{ position: 'absolute', top: 38, right: 0, zIndex: 40, background: 'var(--card,#fff)', borderRadius: 16, boxShadow: '0 16px 44px rgba(0,0,0,.14), 0 0 0 1px rgba(0,0,0,.05)', padding: 6, minWidth: 180, transformOrigin: 'top right' }}>
+                <p style={{ margin: 0, padding: '6px 10px 4px', fontSize: 12.5, fontWeight: 500, color: '#8e8e93', whiteSpace: 'nowrap' }}>Move to</p>
                 {groupNums.filter(g => g !== groupOf(it)).map(g => (
                   <button key={g} type="button" role="menuitem" className="ord-reassign-opt" onClick={() => moveTo(it, g)} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '7px 9px', borderRadius: 8, border: 'none', background: 'none', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: 5, background: ACCENT, color: '#fff', fontSize: 10.5, fontWeight: 800 }}>{g}</span>
@@ -342,13 +342,13 @@ export default function OrderItemsPanel({
         )}
         {!pickMode && !splitMode && (
           <button type="button" onClick={() => toggleOos(it)} title={oosFlag ? 'In stock — clear out-of-stock flag' : 'Flag as out of stock'} aria-label={oosFlag ? 'Clear out-of-stock flag' : 'Flag as out of stock'}
-            style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: 8, border: `1px solid ${oosFlag ? '#dc2626' : 'var(--border)'}`, background: oosFlag ? '#dc2626' : 'var(--card,#fff)', color: oosFlag ? '#fff' : 'var(--slate)', cursor: 'pointer' }}>
+            style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, borderRadius: 999, border: 'none', background: oosFlag ? '#dc2626' : '#f4f4f5', color: oosFlag ? '#fff' : '#71717a', cursor: 'pointer' }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
           </button>
         )}
         {!pickMode && (
           <button type="button" onClick={() => toggleSent(it)} title={sent ? 'Mark as not sent' : 'Mark item sent'}
-            style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 9px', borderRadius: 8, border: `1px solid ${sent ? '#059669' : 'var(--border)'}`, background: sent ? '#059669' : 'var(--card,#fff)', color: sent ? '#fff' : 'var(--slate)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
+            style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 5, height: 32, padding: '0 12px', borderRadius: 999, border: 'none', background: sent ? '#059669' : '#f4f4f5', color: sent ? '#fff' : '#18181b', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
             {sent ? 'Sent' : 'Send'}
           </button>
@@ -360,12 +360,12 @@ export default function OrderItemsPanel({
   return (
     <div>
       {pickMode && (
-        <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 11, background: allPicked ? 'color-mix(in srgb, #059669 12%, transparent)' : `color-mix(in srgb, ${ACCENT} 10%, transparent)`, border: `1px solid ${allPicked ? '#059669' : `color-mix(in srgb, ${ACCENT} 40%, transparent)`}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 14, background: allPicked ? 'color-mix(in srgb, #059669 12%, transparent)' : `color-mix(in srgb, ${ACCENT} 10%, transparent)`, border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 800, color: allPicked ? '#047857' : 'var(--ink)' }}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M9 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3" /><path d="m9 14 2 2 4-4" /></svg>
             {allPicked ? 'All items picked' : `Picking · ${pickedTotal}/${items.length}`}
           </span>
-          <button type="button" onClick={() => onExitPick?.()} style={{ fontSize: 12, fontWeight: 800, color: '#fff', background: allPicked ? '#059669' : ACCENT, border: 'none', borderRadius: 8, padding: '6px 14px', cursor: 'pointer' }}>Done</button>
+          <button type="button" onClick={() => onExitPick?.()} style={{ height: 32, fontSize: 13, fontWeight: 600, color: '#fff', background: allPicked ? '#059669' : ACCENT, border: 'none', borderRadius: 999, padding: '0 16px', cursor: 'pointer', fontFamily: 'inherit' }}>Done</button>
         </div>
       )}
 
@@ -373,23 +373,23 @@ export default function OrderItemsPanel({
         title={<>Items · {items.length}{items.length ? ` · ${sentTotal} sent` : ''}{pickedTotal ? ` · ${pickedTotal} picked` : ''}{refundedTotal ? <span style={{ color: '#b45309' }}> · {refundedTotal} refunded</span> : null}{gstF > 1 ? <span style={{ textTransform: 'none', fontWeight: 600 }}> · incl GST</span> : null}</>}
         right={!pickMode && items.length > 1 && !splitMode ? (
           <button type="button" onClick={() => setSplitMode(true)} title="Split this order into multiple shipments"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: ACCENT, background: 'none', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 28, padding: '0 12px', borderRadius: 999, fontSize: 13, fontWeight: 600, color: ACCENT, background: '#f4f4f5', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="6" y1="3" x2="6" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></svg>
             Split ship
           </button>
         ) : null}>
 
       {splitMode && (
-        <div className="ord-split-bar" style={{ marginTop: 10, padding: '10px 12px', borderRadius: 12, background: `color-mix(in srgb, ${ACCENT} 7%, transparent)`, border: `1px solid color-mix(in srgb, ${ACCENT} 22%, transparent)` }}>
+        <div className="ord-split-bar" style={{ marginTop: 10, padding: '12px 14px', borderRadius: 14, background: `color-mix(in srgb, ${ACCENT} 8%, #fff)` }}>
           <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: 'var(--ink)' }}>
             {sel.size ? `${sel.size} item${sel.size === 1 ? '' : 's'} selected` : 'Select items for a new shipment'}
           </p>
           <p style={{ margin: '2px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>They&rsquo;ll ship separately from the rest of the order.</p>
           <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
             <button type="button" onClick={() => { setSplitMode(false); setSel(new Set()) }}
-              style={{ flex: 1, padding: '8px 10px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--slate)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>Cancel</button>
+              style={{ flex: 1, height: 36, padding: '0 12px', borderRadius: 999, border: 'none', background: '#fff', color: '#18181b', fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>Cancel</button>
             <button type="button" onClick={moveToNewShipment} disabled={!sel.size}
-              style={{ flex: 2, padding: '8px 10px', borderRadius: 9, border: 'none', background: sel.size ? ACCENT : 'color-mix(in srgb, var(--slate) 22%, transparent)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: sel.size ? 'pointer' : 'default', whiteSpace: 'nowrap', transition: 'background .2s ease' }}>
+              style={{ flex: 2, height: 36, padding: '0 12px', borderRadius: 999, border: 'none', background: sel.size ? ACCENT : '#e4e4e7', color: sel.size ? '#fff' : '#a1a1aa', fontSize: 13, fontWeight: 600, fontFamily: 'inherit', cursor: sel.size ? 'pointer' : 'default', whiteSpace: 'nowrap', transition: 'background .2s ease' }}>
               Move to new shipment
             </button>
           </div>
@@ -398,19 +398,19 @@ export default function OrderItemsPanel({
       )}
 
       {!multi && (
-        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
           {ordered.map(({ it, idx }) => renderItem(it, idx))}
-          {items.length === 0 && <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>No items synced.</p>}
+          {items.length === 0 && <p style={{ margin: 0, fontSize: 13, color: '#8e8e93' }}>No items synced yet.</p>}
         </div>
       )}
 
       {multi && groups.map(([g, rows]) => {
         const allSent = rows.every(r => sentOf(r.it))
         return (
-          <div key={g} style={{ marginTop: 12, border: '1px solid var(--border)', borderRadius: 11, padding: 12, background: 'color-mix(in srgb, var(--slate) 3%, transparent)' }}>
+          <div key={g} style={{ marginTop: 12, borderRadius: 16, padding: 12, background: '#fafafa' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 800, color: 'var(--ink)' }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: 6, background: ACCENT, color: '#fff', fontSize: 11 }}>{g}</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: 999, background: ACCENT, color: '#fff', fontSize: 11 }}>{g}</span>
                 Shipment {g} · {rows.length} item{rows.length === 1 ? '' : 's'}
                 {allSent && <span style={{ color: '#059669', fontSize: 11, fontWeight: 700 }}>✓ All sent</span>}
               </span>
