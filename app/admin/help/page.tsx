@@ -173,10 +173,11 @@ export default function HelpAdminPage() {
       )}
       <style>{`
         .hc-art { display: block; width: 100%; padding: 9px 10px; margin-bottom: 2px; border: none; border-radius: 11px; background: none; font: inherit; text-align: left; cursor: pointer; transition: background .12s; }
-        .hc-art:hover { background: #f4f4f5; }
-        .hc-art.on { background: #f4f4f5; }
+        .hc-art:hover { background: #f7f7f8; }
+        .hc-art::before { display: none; }
+        .hc-art.on { background: #efeff1; }
         .hc-art.on .hc-art-t { font-weight: 650; color: #111; }
-        .hc-art:focus-visible { outline: 2px solid var(--coral); outline-offset: -2px; }
+        .hc-art:focus-visible { outline: none; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--coral) 40%, transparent); }
         .hc-art-t { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14.5px; font-weight: 500; color: #27272a; }
         .hc-act { width: 100%; justify-content: flex-start; height: 40px; }
       `}</style>
