@@ -14,7 +14,7 @@ export default function BookingSettingsTab({ settings, setSettings }: { settings
       <section style={card}>
         <div style={title}>Booking page</div>
         <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
-          <Row label="Online booking on" sub="Turn off to take the page down (existing bookings are kept)."><Toggle on={settings.enabled} onChange={v => set({ enabled: v })} /></Row>
+          <Row label="Online booking on" sub="Turn off to take the page down (existing bookings are kept)."><Toggle on={settings.enabled} onChange={v => set({ enabled: v })} label="Online booking on" /></Row>
           <div>
             <span style={label}>Heading</span>
             <input value={settings.page_title} onChange={e => set({ page_title: e.target.value })} placeholder="Book with us" style={input} />
@@ -137,9 +137,9 @@ export default function BookingSettingsTab({ settings, setSettings }: { settings
 
 function Row({ label: l, sub, children }: { label: string; sub?: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink, #111)' }}>{l}</div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 14px', borderRadius: 14, background: '#fafafa' }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink, #111)' }}>{l}</div>
         {sub && <div style={hint}>{sub}</div>}
       </div>
       {children}
@@ -147,4 +147,4 @@ function Row({ label: l, sub, children }: { label: string; sub?: string; childre
   )
 }
 
-const title: React.CSSProperties = { fontWeight: 800, fontSize: 15, color: 'var(--ink, #111)' }
+const title: React.CSSProperties = { fontWeight: 800, fontSize: 17, letterSpacing: '-.01em', color: 'var(--ink, #111)' }

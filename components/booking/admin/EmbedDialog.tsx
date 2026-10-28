@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Modal, btn, btnGhost, input, label, hint } from './shared'
+import { Modal, input, label, hint } from './shared'
 
 // Copy-paste snippets for putting booking on the business's own website:
 // an inline booking page that sizes itself, or a "Book now" button.
@@ -39,10 +39,10 @@ export default function EmbedDialog({ bookingUrl, services, onClose, flash }: {
 
   return (
     <Modal title="Add booking to your website" onClose={onClose} width={640}
-      footer={<><button onClick={onClose} style={btnGhost}>Done</button><button onClick={() => navigator.clipboard?.writeText(code).then(() => flash('Code copied — paste it into your website')).catch(() => {})} style={btn}>Copy code</button></>}>
-      <div style={{ display: 'flex', background: '#f3f4f6', borderRadius: 10, padding: 3, marginBottom: 16, width: 'fit-content' }}>
+      footer={<><button onClick={onClose} className="cv-btn">Done</button><button onClick={() => navigator.clipboard?.writeText(code).then(() => flash('Code copied — paste it into your website')).catch(() => {})} className="cv-btn cv-btn-primary">Copy code</button></>}>
+      <div role="tablist" style={{ display: 'flex', gap: 2, background: '#f4f4f5', borderRadius: 999, padding: 3, marginBottom: 16, width: 'fit-content', maxWidth: '100%' }}>
         {([['inline', 'Booking page on your site'], ['button', '“Book now” button']] as const).map(([k, l]) => (
-          <button key={k} onClick={() => setKind(k)} style={{ border: 'none', borderRadius: 8, padding: '7px 12px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', background: kind === k ? '#fff' : 'transparent', boxShadow: kind === k ? '0 1px 2px rgba(0,0,0,.08)' : 'none', color: kind === k ? 'var(--ink,#111)' : 'var(--slate,#6b7280)' }}>{l}</button>
+          <button key={k} type="button" role="tab" aria-selected={kind === k} onClick={() => setKind(k)} style={{ height: 32, border: 'none', borderRadius: 999, padding: '0 14px', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', background: kind === k ? '#fff' : 'transparent', boxShadow: kind === k ? '0 1px 3px rgba(0,0,0,.1), 0 0 0 .5px rgba(0,0,0,.04)' : 'none', color: kind === k ? 'var(--ink,#111)' : '#52525b' }}>{l}</button>
         ))}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12, marginBottom: 14 }}>
@@ -61,11 +61,11 @@ export default function EmbedDialog({ bookingUrl, services, onClose, flash }: {
         )}
       </div>
       {kind === 'button' && (
-        <div style={{ padding: 18, borderRadius: 12, background: '#f9fafb', border: '1px dashed #e5e7eb', textAlign: 'center', marginBottom: 14 }}>
+        <div style={{ padding: 22, borderRadius: 16, background: '#fafafa', textAlign: 'center', marginBottom: 14 }}>
           <span style={{ display: 'inline-block', padding: '12px 22px', borderRadius: 12, background: color, color: '#fff', fontWeight: 600, fontSize: 15 }}>{text}</span>
         </div>
       )}
-      <pre style={{ margin: 0, padding: 14, borderRadius: 12, background: '#0f172a', color: '#e2e8f0', fontSize: 12, lineHeight: 1.55, overflowX: 'auto', whiteSpace: 'pre' }}>{code}</pre>
+      <pre style={{ margin: 0, padding: 16, borderRadius: 16, background: '#18181b', color: '#e2e8f0', fontSize: 12, lineHeight: 1.55, overflowX: 'auto', whiteSpace: 'pre' }}>{code}</pre>
       <div style={hint}>
         {kind === 'inline'
           ? 'Paste it where the booking page should appear (WordPress: a “Custom HTML” block). It grows to fit as customers move through the steps; card payments open Stripe in the full window.'

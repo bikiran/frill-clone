@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { api, card, btn, btnGhost, input, label, hint } from './shared'
+import { api, card, input, label, hint } from './shared'
 import { ClockIcon, ChatIcon, WarnIcon, GearIcon, CalendarIcon, CheckIcon } from '@/components/booking/icons'
 import EmptyScroll from '@/components/EmptyScroll'
 
@@ -16,12 +16,12 @@ type Entry = {
   status: string; created_at: string; offers_count: number; last_offered_at: string | null; wants: string; source: string; offers: Offer[]
 }
 
-const STATUS: Record<string, { label: string; bg: string; c: string }> = {
-  waiting: { label: 'Waiting', bg: '#fffbeb', c: '#b45309' },
-  offered: { label: 'Offered', bg: '#eff6ff', c: '#1d4ed8' },
-  booked: { label: 'Booked', bg: '#ecfdf5', c: '#047857' },
-  expired: { label: 'Expired', bg: '#f3f4f6', c: '#6b7280' },
-  removed: { label: 'Removed', bg: '#f3f4f6', c: '#6b7280' },
+const STATUS: Record<string, { label: string; dot: string }> = {
+  waiting: { label: 'Waiting', dot: '#f59e0b' },
+  offered: { label: 'Offered', dot: '#3b82f6' },
+  booked: { label: 'Booked', dot: '#22c55e' },
+  expired: { label: 'Expired', dot: '#a1a1aa' },
+  removed: { label: 'Removed', dot: '#a1a1aa' },
 }
 const OFFER: Record<string, string> = { sent: 'Offered', sending: 'Sending', claimed: 'Booked it', gone: 'Taken by someone else', expired: 'Lapsed', failed: 'Couldn’t send', skipped: 'Skipped (replied STOP)' }
 const FILTERS: [string, string][] = [['live', 'Waiting'], ['booked', 'Booked'], ['expired', 'Expired'], ['removed', 'Removed'], ['all', 'All']]
@@ -78,15 +78,15 @@ export default function WaitlistTab({ companyId, services, timezone, enabled, on
             <div style={{ fontWeight: 700, color: 'var(--ink,#111)', fontSize: 14 }}>The waitlist is off</div>
             <div style={{ ...hint, marginTop: 2 }}>Turn it on and a full day on your booking page offers “Join the waitlist”. When a time frees up, the people waiting get a text to book it.</div>
           </div>
-          <button onClick={onGoSettings} style={btnGhost}><GearIcon size={14} /> Settings</button>
+          <button onClick={onGoSettings} className="cv-btn"><GearIcon size={14} /> Settings</button>
         </div>
       )}
 
       {enabled && !hintMsg && <OfferTime companyId={companyId} services={services.filter(s => s.active)} timezone={timezone} onDone={(m) => { flash(m); load() }} />}
 
       <div className="wl-filters">
-        <div className="wl-pills">
-          {FILTERS.map(([k, l]) => <button key={k} onClick={() => setStatus(k)} className={`wl-pill${status === k ? ' on' : ''}`}>{l}</button>)}
+        <div className="bl-seg wl-seg" role="tablist" aria-label="Which entries">
+          {FILTERS.map(([k, l]) => <button key={k} type="button" role="tab" aria-selected={status === k} onClick={() => setStatus(k)} className={status === k ? 'on' : ''}>{l}</button>)}
         </div>
         <div className="wl-right">
           <select value={serviceId} onChange={e => setServiceId(e.target.value)} style={{ ...input, width: 'auto', minWidth: 0, flex: '1 1 150px' }} aria-label="Service">
@@ -94,7 +94,7 @@ export default function WaitlistTab({ companyId, services, timezone, enabled, on
             {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
           <input type="date" value={day} onChange={e => setDay(e.target.value)} style={{ ...input, width: 'auto', minWidth: 0, flex: '1 1 140px' }} aria-label="Waiting for this day" />
-          {day && <button onClick={() => setDay('')} style={btnGhost}>Any day</button>}
+          {day && <button onClick={() => setDay('')} className="cv-btn">Any day</button>}
         </div>
       </div>
 
@@ -130,7 +130,7 @@ export default function WaitlistTab({ companyId, services, timezone, enabled, on
                     </div>
                     <div className="wl-wants"><CalendarIcon size={14} /> {e.wants}</div>
                     <div className="wl-tags">
-                      <span className="wl-chip" style={{ background: st.bg, color: st.c }}>{st.label}</span>
+                      <span className="wl-chip dot" style={{ ['--t' as any]: st.dot }}>{st.label}</span>
                       <span className="wl-chip">Joined {joined(e.created_at)}</span>
                       <span className="wl-chip">{e.offers_count ? `${e.offers_count} offer${e.offers_count === 1 ? '' : 's'} sent` : 'No offers yet'}</span>
                       {e.source === 'staff' && <span className="wl-chip">Added by the team</span>}
@@ -185,7 +185,7 @@ function OfferTime({ companyId, services, timezone, onDone }: { companyId: strin
   if (!services.length) return null
   return (
     <section style={card}>
-      <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--ink,#111)' }}>Offer a free time</div>
+      <div style={{ fontWeight: 800, fontSize: 17, letterSpacing: '-.01em', color: 'var(--ink,#111)' }}>Offer a free time</div>
       <div style={{ ...hint, marginTop: 2 }}>Had a gap open up some other way? Offer it to the people waiting for that day, the same way a cancellation would.</div>
       <div className="wl-offer-form">
         <label style={{ minWidth: 0 }}><span style={label}>Service</span>
@@ -194,7 +194,7 @@ function OfferTime({ companyId, services, timezone, onDone }: { companyId: strin
         <label style={{ minWidth: 0 }}><span style={label}>Day</span>
           <input type="date" value={date} min={today} onChange={e => { setDate(e.target.value); setSlots(null) }} style={input} />
         </label>
-        <button onClick={find} disabled={loading || !serviceId} style={{ ...btn, alignSelf: 'end' }}>{loading ? 'Finding…' : 'Find free times'}</button>
+        <button onClick={find} disabled={loading || !serviceId} className="cv-btn cv-btn-primary" style={{ alignSelf: 'end' }}>{loading ? 'Finding…' : 'Find free times'}</button>
       </div>
       {slots && (slots.length ? (
         <div className="wl-slots">
@@ -206,35 +206,46 @@ function OfferTime({ companyId, services, timezone, onDone }: { companyId: strin
 }
 
 const CSS = `
-.wl-warn{padding:12px 14px;border-radius:12px;background:#fffbeb;border:1px solid #fde68a;color:#92400e;font-size:13.5px;display:flex;gap:8px;align-items:flex-start}
-.wl-off{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;padding:14px;border-radius:14px;background:var(--peach,#fff6f3);border:1px solid #fde4dc}
+.wl-warn{padding:12px 14px;border-radius:16px;background:#fffbeb;color:#92400e;font-size:13.5px;display:flex;gap:8px;align-items:flex-start}
+.wl-off{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:16px;border-radius:20px;background:color-mix(in srgb,var(--coral,#ff7a6b) 8%,#fff)}
 .wl-filters{display:flex;gap:10px;justify-content:space-between;align-items:center;flex-wrap:wrap}
-.wl-pills{display:flex;gap:8px;flex-wrap:wrap}
-.wl-pill{height:36px;padding:0 14px;border-radius:12px;border:1px solid transparent;background:#f3f4f6;color:#4b5563;font:inherit;font-size:13.5px;font-weight:700;cursor:pointer}
-.wl-pill.on{background:color-mix(in srgb,var(--coral,#ff7a6b) 13%,#fff);color:color-mix(in srgb,var(--coral,#ff7a6b) 80%,#000);border-color:color-mix(in srgb,var(--coral,#ff7a6b) 25%,#fff)}
+.bl-seg{display:inline-flex;gap:2px;padding:3px;border-radius:999px;background:#f4f4f5;max-width:100%;overflow-x:auto;scrollbar-width:none}
+.bl-seg::-webkit-scrollbar{display:none}
+.bl-seg button{flex-shrink:0;height:32px;padding:0 14px;border:none;border-radius:999px;background:transparent;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;color:#52525b;white-space:nowrap;transition:background .15s,color .15s,box-shadow .15s}
+.bl-seg button:hover{color:#18181b}
+.bl-seg button.on{background:#fff;color:#18181b;box-shadow:0 1px 3px rgba(0,0,0,.1),0 0 0 .5px rgba(0,0,0,.04)}
 .wl-right{display:flex;gap:8px;flex-wrap:wrap;flex:1 1 280px;justify-content:flex-end;min-width:0}
-.wl-group{font-size:13.5px;color:var(--slate,#6b7280);margin:4px 0 10px}
-.wl-group b{color:var(--ink,#111);font-size:14.5px}
-.wl-card{background:#fff;border:1px solid var(--border,#ececec);border-radius:14px;padding:14px 16px;min-width:0}
+.wl-group{display:flex;align-items:baseline;gap:8px;margin:6px 0 10px}
+.wl-group b{color:var(--ink,#111);font-size:17px;font-weight:800;letter-spacing:-.01em}
+.wl-group span{font-size:13.5px;color:#8e8e93}
+.wl-card{background:#fff;border-radius:20px;padding:16px 18px;min-width:0;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04)}
 .wl-top{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
-.wl-pos{width:26px;height:26px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:800;background:var(--peach,#fff1ee);color:var(--coral,#e5604f)}
-.wl-name{font-weight:700;font-size:15px;color:var(--ink,#111);overflow-wrap:anywhere}
-.wl-contact{display:flex;gap:12px;flex-wrap:wrap;font-size:13px;margin-top:2px;min-width:0}
-.wl-contact a{color:var(--slate,#6b7280);text-decoration:none;overflow-wrap:anywhere}
+.wl-pos{width:28px;height:28px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:800;background:#18181b;color:#fff}
+.wl-name{font-weight:700;font-size:15.5px;color:var(--ink,#111);overflow-wrap:anywhere}
+.wl-contact{display:flex;gap:12px;flex-wrap:wrap;font-size:13.5px;margin-top:3px;min-width:0}
+.wl-contact a{color:#71717a;text-decoration:none;overflow-wrap:anywhere}
+.wl-contact a:hover{color:var(--ink,#111)}
 .wl-actions{display:flex;gap:6px;flex-wrap:wrap}
-.wl-btn{display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 11px;border-radius:9px;border:1px solid var(--border,#e5e7eb);background:#fff;color:var(--ink,#111);font:inherit;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap}
+.wl-btn{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 13px;border-radius:999px;border:none;background:#f4f4f5;color:#18181b;font:inherit;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap;transition:background-color .15s}
+.wl-btn::before{display:none}
+.wl-btn svg{color:#52525b}
+.wl-btn:hover{background-color:#ececef}
 .wl-btn.danger{color:#dc2626}
-.wl-wants{display:flex;gap:7px;align-items:center;margin-top:10px;font-size:13.5px;color:#374151;font-weight:600;overflow-wrap:anywhere}
-.wl-wants svg{color:#9ca3af}
+.wl-btn.danger:hover{background-color:#fef2f2}
+.wl-wants{display:flex;gap:8px;align-items:center;margin-top:12px;padding:10px 12px;border-radius:12px;background:#fafafa;font-size:13.5px;color:#3f3f46;font-weight:600;overflow-wrap:anywhere}
+.wl-wants svg{color:#a1a1aa;flex-shrink:0}
 .wl-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
-.wl-chip{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:700;padding:3px 8px;border-radius:999px;background:#f3f4f6;color:#4b5563;white-space:nowrap}
-.wl-offers{margin-top:10px;border-top:1px solid #f3f4f6;padding-top:8px;display:grid;gap:4px}
-.wl-offer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12.5px;color:var(--slate,#6b7280)}
-.wl-offer .ok{color:#047857;font-weight:700;display:inline-flex;align-items:center;gap:3px}
-.wl-empty{text-align:center;padding:12px;border:1px solid var(--border,#e5e7eb);border-radius:16px;background:#fff}
-.wl-offer-form{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) auto;gap:10px;margin-top:12px}
+.wl-chip{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px;border-radius:999px;font-size:12.5px;font-weight:600;background:#f4f4f5;color:#52525b;white-space:nowrap}
+.wl-chip.dot{background:color-mix(in srgb,var(--t) 12%,#fff);color:color-mix(in srgb,var(--t) 78%,#000)}
+.wl-chip.dot::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--t)}
+.wl-offers{margin-top:12px;border-top:1px solid #f4f4f5;padding-top:10px;display:grid;gap:5px}
+.wl-offer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:13px;color:#71717a}
+.wl-offer .ok{color:#15803d;font-weight:600;display:inline-flex;align-items:center;gap:4px}
+.wl-empty{text-align:center;padding:12px;border-radius:20px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.06)}
+.wl-offer-form{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) auto;gap:10px;margin-top:14px}
 @media(max-width:600px){.wl-offer-form{grid-template-columns:1fr}.wl-offer-form button{width:100%;justify-content:center}}
-.wl-slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:12px}
-.wl-slot{min-height:40px;border-radius:10px;border:1.5px solid color-mix(in srgb,var(--coral,#ff7a6b) 35%,#fff);background:#fff;color:color-mix(in srgb,var(--coral,#ff7a6b) 80%,#000);font:inherit;font-size:13.5px;font-weight:700;cursor:pointer}
-.wl-slot:hover{border-color:var(--coral,#ff7a6b)}
+.wl-slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:14px}
+.wl-slot{min-height:40px;border-radius:999px;border:none;background:color-mix(in srgb,var(--coral,#ff7a6b) 10%,#fff);color:color-mix(in srgb,var(--coral,#ff7a6b) 80%,#000);font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;transition:background-color .15s}
+.wl-slot::before{display:none}
+.wl-slot:hover{background-color:color-mix(in srgb,var(--coral,#ff7a6b) 18%,#fff)}
 `

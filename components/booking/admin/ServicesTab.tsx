@@ -1,8 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { api, money, dur, card, btn, btnGhost, input, label, hint, Toggle, Modal } from './shared'
-import { PlusIcon, CalendarIcon, WarnIcon, LinkIcon } from '@/components/booking/icons'
+import { api, money, dur, card, input, label, hint, Toggle, Modal } from './shared'
+import { PlusIcon, WarnIcon, LinkIcon } from '@/components/booking/icons'
+import EmptyScroll from '@/components/EmptyScroll'
 import { availabilityIssue } from '@/lib/booking-time'
 import { confirmDialog } from '@/components/ConfirmDialog'
 
@@ -40,14 +41,13 @@ export default function ServicesTab({ companyId, services, reload, staff, locati
     <div>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12, gap: 10 }}>
         <div style={{ flex: 1, fontSize: 13, color: 'var(--slate, #6b7280)' }}>{services.length ? 'What customers can book, in the order shown. Each service has its own link.' : ''}</div>
-        <button onClick={() => setEditing({ ...BLANK })} style={btn}><PlusIcon size={15} strokeWidth={2.4} /> New service</button>
+        <button onClick={() => setEditing({ ...BLANK })} className="cv-btn cv-btn-primary"><PlusIcon size={15} strokeWidth={2.4} /> New service</button>
       </div>
       {!services.length && (
-        <div style={{ ...card, textAlign: 'center', padding: '40px 20px' }}>
-          <div style={{ width: 52, height: 52, borderRadius: 16, background: 'var(--peach,#fff1ee)', color: 'var(--coral,#ff7a6b)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}><CalendarIcon size={26} /></div>
-          <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 6 }}>Add your first service</div>
-          <div style={{ fontSize: 13.5, color: 'var(--slate, #6b7280)', maxWidth: 420, margin: '0 auto 16px', lineHeight: 1.5 }}>e.g. “Aquarium setup consultation — 45 min, $50 deposit” or “Tank cleaning visit — 1 hr, at the customer’s address”.</div>
-          <button onClick={() => setEditing({ ...BLANK })} style={btn}><PlusIcon size={15} strokeWidth={2.4} /> New service</button>
+        <div style={{ ...card, padding: '20px 12px' }}>
+          <EmptyScroll kinds={['calendar']} title="Add your first service"
+            line="e.g. “Aquarium setup consultation, 45 min, $50 deposit” or “Tank cleaning visit, 1 hr, at the customer’s address”."
+            action={<button onClick={() => setEditing({ ...BLANK })} className="cv-btn cv-btn-primary"><PlusIcon size={15} strokeWidth={2.4} /> New service</button>} />
         </div>
       )}
       <div style={{ display: 'grid', gap: 10 }}>
@@ -55,15 +55,15 @@ export default function ServicesTab({ companyId, services, reload, staff, locati
           const url = bookingUrl ? `${bookingUrl}/${s.slug}` : null
           const needsStripe = s.payment_mode !== 'none' && !stripeReady
           return (
-            <div key={s.id} style={{ ...card, padding: 14, display: 'flex', gap: 12, alignItems: 'center', opacity: s.active ? 1 : 0.55, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <button onClick={() => move(i, -1)} disabled={i === 0} style={arrow}>▲</button>
-                <button onClick={() => move(i, 1)} disabled={i === services.length - 1} style={arrow}>▼</button>
+            <div key={s.id} style={{ ...card, padding: '14px 16px', display: 'flex', gap: 12, alignItems: 'center', opacity: s.active ? 1 : 0.6, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <button type="button" className="bk-arrow" onClick={() => move(i, -1)} disabled={i === 0} aria-label={`Move ${s.name} up`}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="m6 15 6-6 6 6" /></svg></button>
+                <button type="button" className="bk-arrow" onClick={() => move(i, 1)} disabled={i === services.length - 1} aria-label={`Move ${s.name} down`}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg></button>
               </div>
-              <span style={{ width: 4, alignSelf: 'stretch', borderRadius: 4, background: s.color || 'var(--coral, #ff7a6b)' }} />
+              <span style={{ width: 12, height: 12, borderRadius: '50%', flexShrink: 0, background: s.color || 'var(--coral, #ff7a6b)', boxShadow: `0 0 0 4px color-mix(in srgb, ${s.color || '#ff7a6b'} 18%, #fff)` }} />
               <div style={{ flex: 1, minWidth: 200 }}>
-                <div style={{ fontWeight: 700, fontSize: 15 }}>{s.name} {!s.active && <span style={{ fontSize: 11.5, fontWeight: 700, color: '#6b7280', background: '#f3f4f6', borderRadius: 6, padding: '2px 6px', marginLeft: 4 }}>Hidden</span>}</div>
-                <div style={{ fontSize: 12.5, color: 'var(--slate, #6b7280)', marginTop: 3, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ fontWeight: 700, fontSize: 15.5, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>{s.name} {!s.active && <span style={{ height: 22, display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 600, color: '#52525b', background: '#f4f4f5', borderRadius: 999, padding: '0 8px' }}>Hidden</span>}</div>
+                <div style={{ fontSize: 13, color: '#71717a', marginTop: 4, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <span>{dur(s.duration_mins)}</span>
                   <span>· {s.price_cents ? money(s.price_cents, s.currency) : 'Free'}</span>
                   {s.payment_mode === 'deposit' && <span>· {money(s.deposit_cents, s.currency)} deposit online</span>}
@@ -81,8 +81,8 @@ export default function ServicesTab({ companyId, services, reload, staff, locati
                   </div>
                 )}
               </div>
-              {url && s.active && <button onClick={() => copy(url)} style={{ ...btnGhost, height: 32, fontSize: 12.5 }}><LinkIcon size={14} /> Copy link</button>}
-              <button onClick={() => setEditing({ ...s })} style={{ ...btnGhost, height: 32, fontSize: 12.5 }}>Edit</button>
+              {url && s.active && <button onClick={() => copy(url)} className="cv-btn bk-sm"><LinkIcon size={14} /> Copy link</button>}
+              <button onClick={() => setEditing({ ...s })} className="cv-btn bk-sm">Edit</button>
             </div>
           )
         })}
@@ -124,9 +124,9 @@ function ServiceEditor({ companyId, initial, staff, locations, stripeReady, onCl
   return (
     <Modal title={initial.id ? 'Edit service' : 'New service'} onClose={onClose} width={640}
       footer={<>
-        {initial.id && <button onClick={remove} style={{ ...btnGhost, color: '#dc2626', marginRight: 'auto' }}>Delete</button>}
-        <button onClick={onClose} style={btnGhost}>Cancel</button>
-        <button onClick={save} disabled={saving} style={btn}>{saving ? 'Saving…' : 'Save'}</button>
+        {initial.id && <button onClick={remove} className="cv-btn bk-del" style={{ marginRight: 'auto' }}>Delete</button>}
+        <button onClick={onClose} className="cv-btn">Cancel</button>
+        <button onClick={save} disabled={saving} className="cv-btn cv-btn-primary">{saving ? 'Saving…' : 'Save'}</button>
       </>}>
       <div style={{ display: 'grid', gap: 16 }}>
         <div style={grid2}>
@@ -148,7 +148,7 @@ function ServiceEditor({ companyId, initial, staff, locations, stripeReady, onCl
           <div>
             <span style={label}>Colour</span>
             <div style={{ display: 'flex', gap: 6, paddingTop: 3 }}>
-              {COLORS.map(c => <button key={c} type="button" onClick={() => set({ color: c })} style={{ width: 24, height: 24, borderRadius: '50%', background: c, border: s.color === c ? '2px solid #111' : '2px solid #fff', boxShadow: '0 0 0 1px #e5e7eb', cursor: 'pointer' }} />)}
+              {COLORS.map(c => <button key={c} type="button" aria-label={`Colour ${c}`} aria-pressed={s.color === c} onClick={() => set({ color: c })} style={{ width: 28, height: 28, padding: 0, borderRadius: '50%', background: c, border: '3px solid #fff', boxShadow: s.color === c ? `0 0 0 2px ${c}` : '0 0 0 1px #e4e4e7', cursor: 'pointer' }} />)}
             </div>
           </div>
         </div>
@@ -158,10 +158,10 @@ function ServiceEditor({ companyId, initial, staff, locations, stripeReady, onCl
             <div>
               <span style={label}>Duration</span>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <select aria-label="Hours" value={Math.floor((s.duration_mins || 0) / 60)} onChange={e => set({ duration_mins: Math.max(5, Number(e.target.value) * 60 + ((s.duration_mins || 0) % 60)) })} style={{ ...input, flex: 1 }}>
+                <select aria-label="Hours" className="bk-tight" value={Math.floor((s.duration_mins || 0) / 60)} onChange={e => set({ duration_mins: Math.max(5, Number(e.target.value) * 60 + ((s.duration_mins || 0) % 60)) })} style={{ ...input, flex: 1 }}>
                   {Array.from({ length: 25 }, (_, h) => <option key={h} value={h}>{h} hr</option>)}
                 </select>
-                <select aria-label="Minutes" value={(s.duration_mins || 0) % 60 - ((s.duration_mins || 0) % 5)} onChange={e => set({ duration_mins: Math.max(5, Math.floor((s.duration_mins || 0) / 60) * 60 + Number(e.target.value)) })} style={{ ...input, flex: 1 }}>
+                <select aria-label="Minutes" className="bk-tight" value={(s.duration_mins || 0) % 60 - ((s.duration_mins || 0) % 5)} onChange={e => set({ duration_mins: Math.max(5, Math.floor((s.duration_mins || 0) / 60) * 60 + Number(e.target.value)) })} style={{ ...input, flex: 1 }}>
                   {Array.from({ length: 12 }, (_, i) => i * 5).map(m => <option key={m} value={m}>{m} min</option>)}
                 </select>
               </div>
@@ -258,11 +258,11 @@ function ServiceEditor({ companyId, initial, staff, locations, stripeReady, onCl
                   <option value="text">Short text</option><option value="textarea">Long text</option><option value="select">Dropdown</option><option value="checkbox">Tick box</option>
                 </select>
                 <label style={{ fontSize: 12.5, display: 'flex', gap: 4, alignItems: 'center' }}><input type="checkbox" checked={!!x.required} onChange={e => setQ(i, { required: e.target.checked })} /> Required</label>
-                <button type="button" onClick={() => set({ questions: q.filter((_: any, j: number) => j !== i) })} style={{ ...btnGhost, height: 32, padding: '0 10px' }}>×</button>
+                <button type="button" onClick={() => set({ questions: q.filter((_: any, j: number) => j !== i) })} className="cv-btn cv-btn-icon bk-sm" aria-label="Remove question"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg></button>
                 {x.type === 'select' && <input value={(x.options || []).join(', ')} onChange={e => setQ(i, { options: e.target.value.split(',').map((o: string) => o.trim()) })} placeholder="Options, comma separated" style={{ ...input, flexBasis: '100%' }} />}
               </div>
             ))}
-            <button type="button" onClick={() => set({ questions: [...q, { id: `q${Date.now().toString(36)}`, label: '', type: 'text', options: [], required: false }] })} style={{ ...btnGhost, justifySelf: 'start', height: 32, fontSize: 12.5 }}><PlusIcon size={14} /> Add question</button>
+            <button type="button" onClick={() => set({ questions: [...q, { id: `q${Date.now().toString(36)}`, label: '', type: 'text', options: [], required: false }] })} className="cv-btn bk-sm" style={{ justifySelf: 'start' }}><PlusIcon size={14} /> Add question</button>
           </div>
           <div style={hint}>Name, mobile and email are always asked.</div>
         </Group>
@@ -289,22 +289,22 @@ function ServiceEditor({ companyId, initial, staff, locations, stripeReady, onCl
           <div style={hint}>Texts “Time for your next {s.name || 'visit'}?” with a booking link — only if they haven’t booked again and haven’t opted out. Good for regular services like tank cleans.</div>
         </Group>
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13.5 }}>
-          <Toggle on={s.active !== false} onChange={v => set({ active: v })} /> Show on the booking page
-        </label>
-        {error && <div style={{ padding: '9px 12px', borderRadius: 9, background: '#fef2f2', color: '#b91c1c', fontSize: 13 }}>{error}</div>}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 14px', borderRadius: 14, background: '#fafafa' }}>
+          <span><span style={{ display: 'block', fontSize: 14, fontWeight: 600 }}>Show on the booking page</span><span style={{ display: 'block', fontSize: 12.5, color: '#8e8e93', marginTop: 2 }}>Turn it off to hide it without deleting it.</span></span>
+          <Toggle on={s.active !== false} onChange={v => set({ active: v })} label="Show on the booking page" />
+        </div>
+        {error && <div style={{ padding: '10px 14px', borderRadius: 12, background: '#fef2f2', color: '#b91c1c', fontSize: 13.5 }}>{error}</div>}
       </div>
     </Modal>
   )
 }
 
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
-  return <div style={{ borderTop: '1px solid #f3f4f6', paddingTop: 14 }}><div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 10 }}>{title}</div>{children}</div>
+  return <div style={{ borderTop: '1px solid #f0f0f2', paddingTop: 16 }}><div style={{ fontWeight: 800, fontSize: 16, letterSpacing: '-.01em', color: 'var(--ink, #111)', marginBottom: 12 }}>{title}</div>{children}</div>
 }
 function NumField({ label: l, value, onChange, min = 0 }: { label: string; value: number; onChange: (v: number) => void; min?: number }) {
   return <div><span style={label}>{l}</span><input type="number" min={min} value={value ?? 0} onChange={e => onChange(Math.max(min, Number(e.target.value) || 0))} style={input} /></div>
 }
-const pill = (on: boolean): React.CSSProperties => ({ padding: '6px 12px', borderRadius: 999, border: `1.5px solid ${on ? 'var(--coral, #ff7a6b)' : 'var(--border, #e5e7eb)'}`, background: on ? 'var(--peach, #fff1ee)' : '#fff', color: on ? 'var(--coral, #e5604f)' : 'var(--ink, #374151)', fontWeight: 600, fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit' })
+const pill = (on: boolean): React.CSSProperties => ({ height: 34, padding: '0 13px', borderRadius: 999, border: 'none', background: on ? '#18181b' : '#f4f4f5', color: on ? '#fff' : '#52525b', fontWeight: 600, fontSize: 13.5, cursor: 'pointer', fontFamily: 'inherit', transition: 'background-color .15s, color .15s' })
 const grid2: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }
 const grid3: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }
-const arrow: React.CSSProperties = { border: 'none', background: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: 9, padding: 0, lineHeight: 1 }
