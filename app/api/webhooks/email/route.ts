@@ -8,7 +8,7 @@ import { passesRules, sanitizeEmailHtml } from '@/lib/gmail'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 import { parseInboundAlias } from '@/lib/inbound-alias'
-import { fetchResendReceivedEmailResult, readReceived, hostResendAttachments as hostResendFiles, findEmailThread, splitQuoted, htmlToPlain, emailPreview, parseMessageIds, idVariants } from '@/lib/inbound-email'
+import { fetchResendReceivedEmailResult, readReceived, hostResendAttachments as hostResendFiles, findEmailThread, splitQuoted, htmlToPlain, emailPreview, parseMessageIds, idVariants, resolveCidImages } from '@/lib/inbound-email'
 import { emitInboundEvent } from '@/lib/integration-hooks'
 import { scheduleMessageThumbs } from '@/lib/image-thumb'
 import { isFormsTestEmail } from '@/lib/forms-mail'
@@ -320,7 +320,8 @@ export async function POST(req: NextRequest) {
     // auto-reply or notification. Only our verified sending address counts.
     const isTest = isForm && isFormsTestEmail(from.email, subject, auth)
     const emailAtts = await hostResendAttachments(evt, companyId as string)
-    const emailHtml = htmlBody ? sanitizeEmailHtml(String(htmlBody)) : ''
+    // Photos pasted into the email body arrive as cid: images; point them at the stored files first.
+    const emailHtml = htmlBody ? sanitizeEmailHtml(resolveCidImages(String(htmlBody), emailAtts)) : ''
     // Never blank: a blank last_message reads "No messages yet" in the list.
     const preview = emailPreview(content, emailAtts.length, subject)
 
@@ -415,7 +416,7 @@ export async function POST(req: NextRequest) {
         email_subject: subject,
         email_html: emailHtml || null,
         email_quoted: emailQuoted || null,
-        email_attachments: emailAtts.map(a => ({ name: a.name, mime: a.type, url: a.url, ...(a.size ? { size: a.size } : {}) })),
+        email_attachments: emailAtts.map(a => ({ name: a.name, mime: a.type, url: a.url, ...(a.size ? { size: a.size } : {}), ...(a.cid ? { cid: a.cid } : {}) })),
       }),
       // The Resend id lets the body backfill re-fetch this email later.
       metadata: { inbound_email: { provider: resendEmailId ? 'resend' : 'webhook', ...(resendEmailId ? { resend_email_id: String(resendEmailId) } : {}), body: bodyFetch, ...pendingMeta(), auth, ...(auth === 'fail' ? { unverified: true } : {}), ...(receivedAt ? { received_at: receivedAt } : {}), ...(threadedVia ? { threaded_via: threadedVia } : {}) } },

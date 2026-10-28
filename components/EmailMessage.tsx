@@ -3,7 +3,7 @@
 import { useAttachmentToken } from '@/lib/useAttachmentToken'
 import { VoiceTag } from '@/components/VoiceTag'
 import { useEffect, useRef, useState } from 'react'
-import { quotedDateOf, emailFrameDoc, estimateEmailHeight } from '@/lib/email-text'
+import { quotedDateOf, emailFrameDoc, estimateEmailHeight, emailHtmlHasContent } from '@/lib/email-text'
 import { toPublicUrl, sizedImageUrl, sizedImageFallback } from '@/lib/storage-url'
 
 // Email card. A customer's email reads as a RECEIVED message: on the left,
@@ -128,7 +128,9 @@ export default function EmailMessage({ msg, agentColor, onOpenMedia, businessNam
   const to = msg.email_to || ''
   const cc = msg.email_cc || ''
   const subject = msg.email_subject || ''
-  const html = msg.email_html || ''
+  // Only a formatted copy with something in it (a photo-only email used to
+  // open an empty frame: its pasted photo was a cid: image that couldn't load).
+  const html = emailHtmlHasContent(msg.email_html) ? msg.email_html : ''
   const quoted = msg.email_quoted || ''
   // Files on a received email are in email_attachments. Files sent from Colvy
   // with an email are kept on the message like any chat attachment
@@ -193,7 +195,7 @@ export default function EmailMessage({ msg, agentColor, onOpenMedia, businessNam
 
         {/* Body */}
         <div ref={bodyRef} style={{ padding: '8px 14px 14px' }}>
-          {showFull && html ? (
+          {(showFull || !text) && html ? (
             // The full formatted email, in a sandboxed frame: no scripts and
             // not same-origin, so nothing in a customer's email can touch the
             // inbox even if it got past the sanitiser (which runs again here,
@@ -277,7 +279,7 @@ export default function EmailMessage({ msg, agentColor, onOpenMedia, businessNam
           )}
 
           {/* Formatted version */}
-          {html && (
+          {html && text && (
             <button type="button" onClick={() => setShowFull(v => !v)}
               style={{ marginTop: 12, marginLeft: quoted && !showFull ? 0 : undefined, display: 'block', background: '#eef4ff', border: 'none', borderRadius: 8, padding: '7px 12px', color: '#2563eb', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
               {showFull ? 'Show less' : 'View full message'}
