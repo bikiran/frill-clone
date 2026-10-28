@@ -7,7 +7,6 @@ import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
 import CreatePaymentLinkModal from '@/components/CreatePaymentLinkModal'
-import PageHeader from '@/components/PageHeader'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import EmptyScroll from '@/components/EmptyScroll'
 
@@ -427,99 +426,99 @@ export default function PaymentsPage() {
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
   }
 
-  // ── styles ────────────────────────────────────────────────────────────────
-  const CORAL = 'var(--coral)'
-  const ctrl: React.CSSProperties = { padding: '8px 12px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer', outline: 'none' }
-  const th: React.CSSProperties = { textAlign: 'left', padding: '11px 16px', fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.4, whiteSpace: 'nowrap' }
-  const td: React.CSSProperties = { padding: '12px 16px', fontSize: 13, color: 'var(--ink)', borderTop: '1px solid var(--border)', verticalAlign: 'middle' }
-
-  const kpi = (label: string, value: string, sub: string, icon: React.ReactNode, tone: { bg: string; fg: string }) => (
-    <div style={{ flex: 1, minWidth: 170, background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 16, padding: 16, display: 'flex', gap: 12, alignItems: 'center' }}>
-      <span style={{ width: 44, height: 44, borderRadius: 12, background: tone.bg, color: tone.fg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{icon}</span>
-      <div style={{ minWidth: 0 }}>
-        <p style={{ margin: 0, fontSize: 11.5, fontWeight: 700, color: 'var(--slate)' }}>{label}</p>
-        <p style={{ margin: '2px 0 0', fontSize: 21, fontWeight: 800, color: 'var(--ink)', lineHeight: 1.1 }}>{value}</p>
-        <p style={{ margin: '1px 0 0', fontSize: 11, color: 'var(--slate)' }}>{sub}</p>
-      </div>
-    </div>
-  )
   const I = (p: any) => ({ width: 20, height: 20, fill: 'none', stroke: 'currentColor', strokeWidth: 1.9, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, viewBox: '0 0 24 24', ...p })
+  const channelName = (ch: string) => ch ? (ch === 'sms' ? 'SMS' : ch.charAt(0).toUpperCase() + ch.slice(1)) : ''
+  const countOf = (st: string) => st === 'all' ? payments.length : payments.filter(p => p.status === st).length
+  const filtersOn = methodFilter !== 'all' || channelFilter !== 'all'
+
+  const kpi = (label: string, value: string, sub: string, icon: React.ReactNode, tone: string, onClick?: () => void) => (
+    <button type="button" className="py-card py-kpi" onClick={onClick} disabled={!onClick}>
+      <span className="py-kpi-top">
+        <span className="py-label">{label}</span>
+        <span className="py-ic" style={{ background: `color-mix(in srgb, ${tone} 12%, #fff)`, color: tone }}>{icon}</span>
+      </span>
+      <span className="py-kpi-v">{value}</span>
+      <span className="py-sub">{sub}</span>
+    </button>
+  )
+  const statusTag = (st: string) => <span className="py-tag dot" style={tint(STATUS_DOT[st] || '#a1a1aa')}>{statusMeta(st).label}</span>
+  const method = (p: Payment) => p.card_brand
+    ? <span className="py-method"><b>{p.card_brand.toUpperCase()}</b> ···· {p.card_last4 || '••••'}</span>
+    : p.source === 'sale'
+      ? <span className="py-method"><b>{prettyMethod(p.payment_method) || 'Recorded'}</b></span>
+      : <span className="py-method">{p.status === 'paid' ? 'Card' : '—'}</span>
 
   return (
-    <div style={{ padding: 24 }}>
-      <PageHeader
-        title="Payments"
-        subtitle="Track payments, refunds, and payment links across Colvy."
-        bleed={24}
-        action={
-          /* Revive pending payment links sent before durable links — repoints the
-             short link a customer already has at the /pay resolver. Owner/admin
-             only (enforced server-side); safe to run more than once. */
-          <button type="button" onClick={repairLinks} disabled={repairing} title="Fix older pending payment links that expired on Stripe"
-            style={{ padding: '8px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--slate)', fontSize: 12.5, fontWeight: 700, cursor: repairing ? 'default' : 'pointer', whiteSpace: 'nowrap' }}>
+    <div className="py">
+      <style>{PY_CSS}</style>
+      <div className="py-head">
+        <div>
+          <h1>Payments</h1>
+          <p>Payments, refunds and payment links across Colvy.</p>
+        </div>
+        <div className="py-head-acts">
+          {/* Revive pending payment links sent before durable links — repoints the
+              short link a customer already has at the /pay resolver. Owner/admin
+              only (enforced server-side); safe to run more than once. */}
+          <button type="button" className="py-pill" onClick={repairLinks} disabled={repairing} title="Fix older pending payment links that expired on Stripe">
             {repairing ? 'Repairing…' : 'Repair old links'}
           </button>
-        }
-      />
+          <button type="button" className="py-icbtn" onClick={exportCsv} title="Export these payments as CSV" aria-label="Export CSV">
+            <svg {...I({ width: 17, height: 17 })}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+          </button>
+          <button type="button" className="cv-btn cv-btn-primary" onClick={() => setShowCreate(true)}>
+            <svg {...I({ width: 15, height: 15, strokeWidth: 2.2 })}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
+            <span className="py-hide-sm">Create payment link</span><span className="py-show-sm">New link</span>
+          </button>
+        </div>
+      </div>
 
-      {/* KPIs */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
-        {kpi('Collected', money(collected), 'Total collected',
-          <svg {...I({})}><path d="M20 12V8H6a2 2 0 0 1 0-4h12v4" /><path d="M4 6v12a2 2 0 0 0 2 2h14v-4" /><path d="M18 12a2 2 0 0 0 0 4h4v-4Z" /></svg>, { bg: '#dcfce7', fg: '#16a34a' })}
-        {kpi('Paid payments', String(paidCount), 'Completed',
-          <svg {...I({})}><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>, { bg: '#dcfce7', fg: '#16a34a' })}
+      {/* KPIs over the loaded range; a tap filters the list. */}
+      <div className="py-kpis">
+        {kpi('Collected', money(collected), range === 'all' ? 'All time' : `Last ${range} days`,
+          <svg {...I({ width: 16, height: 16 })}><path d="M20 12V8H6a2 2 0 0 1 0-4h12v4" /><path d="M4 6v12a2 2 0 0 0 2 2h14v-4" /><path d="M18 12a2 2 0 0 0 0 4h4v-4Z" /></svg>, '#16a34a', () => setStatusFilter('paid'))}
+        {kpi('Paid', String(paidCount), paidCount === 1 ? 'payment' : 'payments',
+          <svg {...I({ width: 16, height: 16 })}><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>, '#16a34a', () => setStatusFilter('paid'))}
         {kpi('Pending', String(pendingCount), 'Awaiting payment',
-          <svg {...I({})}><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg>, { bg: '#fef3c7', fg: '#d97706' })}
-        {kpi('Refunded', money(refunded), 'Total refunded',
-          <svg {...I({})}><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></svg>, { bg: '#ffe4e6', fg: '#e11d48' })}
-        {kpi('Failed', String(failedCount), 'Failed attempts',
-          <svg {...I({})}><circle cx="12" cy="12" r="9" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>, { bg: '#f3f4f6', fg: '#6b7280' })}
+          <svg {...I({ width: 16, height: 16 })}><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg>, '#d97706', () => setStatusFilter('pending'))}
+        {kpi('Refunded', money(refunded), 'Given back',
+          <svg {...I({ width: 16, height: 16 })}><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></svg>, '#e11d48', () => setStatusFilter('refunded'))}
+        {kpi('Failed', String(failedCount), 'Attempts that didn’t go through',
+          <svg {...I({ width: 16, height: 16 })}><circle cx="12" cy="12" r="9" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>, '#71717a', () => setStatusFilter('failed'))}
       </div>
 
       {/* Toolbar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-        <div style={{ display: 'inline-flex', borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden' }}>
-          {(['all', 'paid', 'pending', 'refunded', 'failed'] as const).map(s => (
-            <button key={s} type="button" onClick={() => setStatusFilter(s)}
-              style={{ padding: '8px 14px', border: 'none', background: statusFilter === s ? CORAL : 'var(--card,#fff)', color: statusFilter === s ? '#fff' : 'var(--slate)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>{s === 'all' ? 'All' : statusMeta(s).label}</button>
+      <div className="py-bar">
+        <div className="py-seg" role="tablist" aria-label="Status">
+          {(['all', 'paid', 'pending', 'refunded', 'failed'] as const).map(st => (
+            <button key={st} type="button" role="tab" aria-selected={statusFilter === st} className={statusFilter === st ? 'on' : ''} onClick={() => setStatusFilter(st)}>
+              {st === 'all' ? 'All' : statusMeta(st).label}<span className="n">{countOf(st)}</span>
+            </button>
           ))}
         </div>
-        <select value={range} onChange={e => setRange(e.target.value as any)} style={ctrl}>
+        <div className="py-search">
+          <svg {...I({ width: 15, height: 15 })}><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search customer, amount, description…" aria-label="Search payments" />
+          {search && <button type="button" className="py-x" onClick={() => setSearch('')} aria-label="Clear search"><svg {...I({ width: 12, height: 12, strokeWidth: 2.6 })}><path d="M18 6 6 18M6 6l12 12" /></svg></button>}
+        </div>
+      </div>
+      <div className="py-bar2">
+        <select className={`py-sel${range !== '30' ? ' set' : ''}`} value={range} onChange={e => setRange(e.target.value as any)} aria-label="Date range">
           <option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="all">All time</option>
         </select>
-        <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
-          <svg {...I({ width: 15, height: 15 })} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--slate)' }}><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search customer, amount, description…"
-            style={{ ...ctrl, width: '100%', boxSizing: 'border-box', paddingLeft: 32, fontWeight: 500, cursor: 'text' }} />
-        </div>
-        <button type="button" onClick={() => setShowCreate(true)}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 16px', borderRadius: 10, border: 'none', background: CORAL, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-          <svg {...I({ width: 15, height: 15 })}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
-          Create payment link
-        </button>
-        <button type="button" onClick={exportCsv} style={{ ...ctrl, display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-          <svg {...I({ width: 15, height: 15 })}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-          Export
-        </button>
-      </div>
-
-      {/* Secondary filters */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-        <select value={methodFilter} onChange={e => setMethodFilter(e.target.value)} style={{ ...ctrl, fontSize: 12.5 }}>
+        <select className={`py-sel${methodFilter !== 'all' ? ' set' : ''}`} value={methodFilter} onChange={e => setMethodFilter(e.target.value)} aria-label="Method">
           <option value="all">Any method</option>
-          {methodOptions.map(m => <option key={m} value={m}>{m.toUpperCase()}</option>)}
+          {methodOptions.map(m => <option key={m} value={m}>{prettyMethod(m)}</option>)}
         </select>
-        <select value={channelFilter} onChange={e => setChannelFilter(e.target.value)} style={{ ...ctrl, fontSize: 12.5 }}>
+        <select className={`py-sel${channelFilter !== 'all' ? ' set' : ''}`} value={channelFilter} onChange={e => setChannelFilter(e.target.value)} aria-label="Channel">
           <option value="all">Any channel</option>
-          {channelOptions.map(c => <option key={c} value={c}>{c === 'sms' ? 'SMS' : c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
+          {channelOptions.map(c => <option key={c} value={c}>{channelName(c)}</option>)}
         </select>
-        {(methodFilter !== 'all' || channelFilter !== 'all') && (
-          <button type="button" onClick={() => { setMethodFilter('all'); setChannelFilter('all') }} style={{ fontSize: 12.5, fontWeight: 700, color: CORAL, background: 'none', border: 'none', cursor: 'pointer' }}>Clear</button>
-        )}
+        {filtersOn && <button type="button" className="py-clear" onClick={() => { setMethodFilter('all'); setChannelFilter('all') }}>Clear</button>}
       </div>
 
-      {/* Table */}
-      <div style={{ background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
+      {/* List */}
+      <div className="py-card py-tablecard">
         {loading ? (
           <div style={{ padding: 16 }}><SkeletonList rows={7} /></div>
         ) : filtered.length === 0 ? (
@@ -527,116 +526,110 @@ export default function PaymentsPage() {
             {payments.length > 0
               ? <EmptyScroll kinds={['payment']} title={search.trim() ? 'No matches' : 'No payments match these filters'}
                   line={search.trim() ? `Nothing matches “${search.trim()}”. Try a name, email or amount.` : 'Try another status or method.'}
-                  action={<button type="button" className="cv-btn" onClick={() => { setSearch(''); setStatusFilter('all'); setMethodFilter('all') }}>Clear filters</button>} />
+                  action={<button type="button" className="cv-btn" onClick={() => { setSearch(''); setStatusFilter('all'); setMethodFilter('all'); setChannelFilter('all') }}>Clear filters</button>} />
               : range !== 'all'
               ? <EmptyScroll kinds={['payment']} title="No payments in this period"
                   line="Nothing was paid in these dates. Try a longer range."
                   action={<button type="button" className="cv-btn" onClick={() => setRange('all')}>Show all time</button>} />
               : <EmptyScroll kinds={['payment']} title="No payments yet"
-                  line="Create a payment link or take a payment from the inbox to see it here." />}
+                  line="Create a payment link or take a payment from the inbox to see it here."
+                  action={<button type="button" className="cv-btn cv-btn-primary" onClick={() => setShowCreate(true)}>Create payment link</button>} />}
           </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  <th style={th}>Customer</th><th style={th}>Contact</th><th style={{ ...th, textAlign: 'right' }}>Amount</th>
-                  <th style={th}>Description</th><th style={th}>Method</th><th style={th}>Status</th><th style={th}>Date</th><th style={{ ...th, textAlign: 'right' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pageRows.map(p => {
-                  const c = customerOf(p)
-                  const sm = statusMeta(p.status)
-                  const ac = avatarColor(c.name)
-                  const isBusy = busy === p.id
-                  return (
-                    <tr key={p.id} onClick={() => openDrawer(p)} className="pay-row" style={{ cursor: 'pointer', background: selected?.id === p.id ? 'color-mix(in srgb, var(--coral) 6%, transparent)' : undefined }}>
-                      <td style={td}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <span style={{ width: 30, height: 30, borderRadius: '50%', flexShrink: 0, background: ac.bg, color: ac.fg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, fontWeight: 800 }}>{initials(c.name)}</span>
-                          <span style={{ fontWeight: 700 }}>{c.name}</span>
-                        </div>
-                      </td>
-                      <td style={{ ...td, color: 'var(--slate)' }}>{c.contact || '—'}</td>
-                      <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>
-                        {money(p.amount_cents, p.currency || 'AUD')}
-                        {p.refunded_cents ? <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, color: '#e11d48' }}>−{money(p.refunded_cents, p.currency || 'AUD')}</span> : null}
-                      </td>
-                      <td style={{ ...td, color: 'var(--slate)', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {p.source === 'sale' && (
-                          <span title="Recorded manually (not a Stripe payment)" style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.3, textTransform: 'uppercase', color: '#0e7490', background: '#cffafe', padding: '2px 6px', borderRadius: 6, marginRight: 6, verticalAlign: 'middle' }}>Recorded</span>
-                        )}
-                        {p.description || '—'}
-                      </td>
-                      <td style={{ ...td, color: 'var(--slate)', whiteSpace: 'nowrap' }}>
-                        {p.card_brand
-                          ? <span style={{ fontVariantNumeric: 'tabular-nums' }}><span style={{ fontWeight: 700, color: 'var(--ink)' }}>{p.card_brand.toUpperCase()}</span> ···· {p.card_last4 || '••••'}</span>
-                          : p.source === 'sale'
-                            ? <span style={{ fontWeight: 700, color: 'var(--ink)' }}>{prettyMethod(p.payment_method) || 'Recorded'}</span>
-                            : (p.status === 'paid' ? 'Card' : '—')}
-                      </td>
-                      <td style={td}><span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: sm.bg, color: sm.fg }}>{sm.label}</span></td>
-                      <td style={{ ...td, color: 'var(--slate)', whiteSpace: 'nowrap' }}>{fmtDate(p.paid_at || p.created_at)}</td>
-                      <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
-                          {p.status === 'pending' && (
-                            <button type="button" disabled={isBusy} onClick={() => doRemind(p)} style={{ padding: '6px 11px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: isBusy ? 0.6 : 1 }}>Send reminder</button>
-                          )}
-                          {p.status === 'paid' && p.source !== 'sale' && (
-                            <button type="button" disabled={isBusy} onClick={() => doResend(p)} style={{ padding: '6px 11px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: isBusy ? 0.6 : 1 }}>Resend receipt</button>
-                          )}
-                          {p.checkout_url && (
-                            <button type="button" onClick={() => copyLink(p)} title="Copy payment link" style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--slate)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                              <svg {...I({ width: 14, height: 14 })}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
-                            </button>
-                          )}
-                          {p.status === 'paid' && p.source !== 'sale' && (
-                            <button type="button" disabled={isBusy} onClick={() => doRefund(p)} style={{ padding: '6px 11px', borderRadius: 8, border: '1px solid #f4b4bf', background: 'var(--card,#fff)', color: '#e11d48', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: isBusy ? 0.6 : 1 }}>Refund</button>
-                          )}
-                          <button type="button" onClick={() => openDrawer(p)} title="Details" style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--slate)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <svg {...I({ width: 15, height: 15 })}><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /><circle cx="5" cy="12" r="1" /></svg>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {/* Pagination */}
-        {!loading && filtered.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', borderTop: '1px solid var(--border)', flexWrap: 'wrap', gap: 10 }}>
-            <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>Showing {filtered.length === 0 ? 0 : page * PER + 1}–{Math.min((page + 1) * PER, filtered.length)} of {filtered.length} payments</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <button type="button" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={{ ...ctrl, padding: '6px 10px', color: page === 0 ? '#cbd5e1' : 'var(--slate)', cursor: page === 0 ? 'default' : 'pointer' }}>‹</button>
-              <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink)' }}>{page + 1} / {pageCount}</span>
-              <button type="button" onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))} disabled={page + 1 >= pageCount} style={{ ...ctrl, padding: '6px 10px', color: page + 1 >= pageCount ? '#cbd5e1' : 'var(--slate)', cursor: page + 1 >= pageCount ? 'default' : 'pointer' }}>›</button>
+          <>
+            <div className="py-tablewrap">
+              <table className="py-table">
+                <thead>
+                  <tr>
+                    <th>Customer</th><th className="r">Amount</th><th>Description</th><th>Method</th><th>Status</th><th>Date</th><th className="r"><span className="sr">Actions</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageRows.map(p => {
+                    const c = customerOf(p)
+                    const ac = avatarColor(c.name)
+                    const isBusy = busy === p.id
+                    return (
+                      <tr key={p.id} onClick={() => openDrawer(p)} className={selected?.id === p.id ? 'sel' : ''}>
+                        <td>
+                          <div className="py-who">
+                            <span className="py-av" style={{ background: ac.bg, color: ac.fg }}>{initials(c.name)}</span>
+                            <span className="py-who-t">
+                              <b>{c.name}</b>
+                              {c.contact && <small>{c.contact}</small>}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="r">
+                          <span className="py-amt">{money(p.amount_cents, p.currency || 'AUD')}</span>
+                          {p.refunded_cents ? <span className="py-refd">−{money(p.refunded_cents, p.currency || 'AUD')}</span> : null}
+                        </td>
+                        <td className="py-desc">
+                          {p.source === 'sale' && <span className="py-tag dot sm" style={tint('#0891b2')} title="Recorded manually (not a Stripe payment)">Recorded</span>}
+                          <span>{p.description || '—'}</span>
+                        </td>
+                        <td>{method(p)}</td>
+                        <td>{statusTag(p.status)}</td>
+                        <td className="py-date">{fmtDate(p.paid_at || p.created_at)}</td>
+                        <td className="r" onClick={e => e.stopPropagation()}>
+                          <div className="py-acts">
+                            {p.status === 'pending' && <button type="button" className="py-mini" disabled={isBusy} onClick={() => doRemind(p)}>Send reminder</button>}
+                            {p.status === 'paid' && p.source !== 'sale' && <button type="button" className="py-mini" disabled={isBusy} onClick={() => doResend(p)}>Resend receipt</button>}
+                            {p.checkout_url && (
+                              <button type="button" className="py-round" onClick={() => copyLink(p)} title="Copy payment link" aria-label="Copy payment link">
+                                <svg {...I({ width: 14, height: 14 })}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
+                              </button>
+                            )}
+                            {p.status === 'paid' && p.source !== 'sale' && <button type="button" className="py-mini danger" disabled={isBusy} onClick={() => doRefund(p)}>Refund</button>}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
-          </div>
+            {/* Phones: one soft card per payment. */}
+            <div className="py-mlist">
+              {pageRows.map(p => {
+                const c = customerOf(p)
+                const ac = avatarColor(c.name)
+                return (
+                  <button key={p.id} type="button" className="py-m" onClick={() => openDrawer(p)}>
+                    <span className="py-av" style={{ background: ac.bg, color: ac.fg }}>{initials(c.name)}</span>
+                    <span className="py-m-main">
+                      <b>{c.name}</b>
+                      <small>{p.description || methodLabel(p)}</small>
+                      <span className="py-m-meta">{statusTag(p.status)}<span>{fmtShort(p.paid_at || p.created_at)}</span></span>
+                    </span>
+                    <span className="py-m-amt">{money(p.amount_cents, p.currency || 'AUD')}{p.refunded_cents ? <small>−{money(p.refunded_cents, p.currency || 'AUD')}</small> : null}</span>
+                  </button>
+                )
+              })}
+            </div>
+            <div className="py-pager">
+              <span>Showing {page * PER + 1}–{Math.min((page + 1) * PER, filtered.length)} of {filtered.length}</span>
+              <div>
+                <button type="button" className="py-round" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} aria-label="Previous page"><svg {...I({ width: 14, height: 14, strokeWidth: 2.4 })}><path d="m15 18-6-6 6-6" /></svg></button>
+                <b>{page + 1} / {pageCount}</b>
+                <button type="button" className="py-round" onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))} disabled={page + 1 >= pageCount} aria-label="Next page"><svg {...I({ width: 14, height: 14, strokeWidth: 2.4 })}><path d="m9 18 6-6-6-6" /></svg></button>
+              </div>
+            </div>
+          </>
         )}
       </div>
 
-      <style>{`.pay-row:hover td { background: color-mix(in srgb, var(--coral) 5%, transparent); }`}</style>
-
-      {/* Detail drawer */}
+      {/* Detail panel: floats in from the right, like an order. */}
       {selected && (() => {
         const p = selected
         const c = customerOf(p)
-        const sm = statusMeta(p.status)
         const ac = avatarColor(c.name)
         const remaining = (p.amount_cents || 0) - (p.refunded_cents || 0)
         const isSale = p.source === 'sale'
         const canRefund = p.status === 'paid' && remaining > 0 && !isSale
         const isBusy = busy === p.id
-        const kick: React.CSSProperties = { margin: 0, fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }
-        const field = (label: string, val: React.ReactNode) => (
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '9px 0', borderBottom: '1px solid var(--border)' }}>
-            <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>{label}</span>
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', textAlign: 'right', wordBreak: 'break-word', maxWidth: 240 }}>{val}</span>
-          </div>
+        const row = (label: string, val: React.ReactNode) => (
+          <div className="py-row"><span>{label}</span><span>{val}</span></div>
         )
         // Build the activity timeline from real signals.
         const items: { label: string; at: string | null; tone: string; sub?: string }[] = []
@@ -652,105 +645,101 @@ export default function PaymentsPage() {
         items.sort((a, b) => (parseTs(a.at)?.getTime() || Infinity) - (parseTs(b.at)?.getTime() || Infinity))
 
         return (
-          <div onClick={() => setSelected(null)} style={{ position: 'fixed', inset: 0, zIndex: 5600, background: 'rgba(15,23,42,0.45)', display: 'flex', justifyContent: 'flex-end' }}>
-            <div onClick={e => e.stopPropagation()} style={{ width: 460, maxWidth: '96vw', height: '100%', background: 'var(--card,#fff)', boxShadow: '-20px 0 60px rgba(0,0,0,0.25)', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-              {/* Header */}
-              <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>Payment {payNumber(p.id)}</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: sm.bg, color: sm.fg }}>{sm.label}</span>
+          <>
+            <div className="py-scrim" onClick={() => setSelected(null)} />
+            <aside className="py-panel" role="dialog" aria-modal="true" aria-label={`Payment ${payNumber(p.id)}`}>
+              <div className="py-ph">
+                <div className="py-ph-top">
+                  {!isSale && <span className="py-ph-no">{payNumber(p.id)}</span>}
+                  {statusTag(p.status)}
+                  {isSale && <span className="py-tag dot" style={tint('#0891b2')}>Recorded sale</span>}
+                  <span style={{ flex: 1 }} />
+                  <button type="button" className="py-round lg" onClick={() => setSelected(null)} aria-label="Close" title="Close">
+                    <svg {...I({ width: 16, height: 16, strokeWidth: 2.2 })}><path d="M18 6 6 18M6 6l12 12" /></svg>
+                  </button>
                 </div>
-                <button type="button" onClick={() => setSelected(null)} title="Close" style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--slate)', cursor: 'pointer' }}>✕</button>
+                <p className="py-ph-amt">{money(p.amount_cents, p.currency || 'AUD')}</p>
+                <p className="py-ph-sub">{p.description || 'Payment'}{p.refunded_cents ? ` · ${money(p.refunded_cents, p.currency || 'AUD')} refunded` : ''}</p>
+                <div className="py-ph-acts">
+                  {p.status === 'paid' && !isSale && <button type="button" className="py-act primary" disabled={isBusy} onClick={() => doResend(p)}>Resend receipt</button>}
+                  {p.status === 'pending' && <button type="button" className="py-act primary" disabled={isBusy} onClick={() => doRemind(p)}>Send reminder</button>}
+                  {p.checkout_url && <button type="button" className="py-act" onClick={() => copyLink(p)}>Copy link</button>}
+                  {p.status !== 'pending' && <button type="button" className="py-act" onClick={() => setReceiptModal(p)}>View receipt</button>}
+                  {c.conv?.id && <button type="button" className="py-act" onClick={() => router.push(`/admin/inbox?conversation=${c.conv.id}`)}>Open in inbox</button>}
+                </div>
               </div>
 
-              <div style={{ padding: '16px 20px 24px' }}>
+              <div className="py-pbody">
                 {/* Customer */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <span style={{ width: 44, height: 44, borderRadius: '50%', background: ac.bg, color: ac.fg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, flexShrink: 0 }}>{initials(c.name)}</span>
-                  <div style={{ minWidth: 0 }}>
-                    <p style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--ink)' }}>{c.name}</p>
-                    {c.phone && <p style={{ margin: '1px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>{c.phone}</p>}
-                    {c.email2 && <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.email2}</p>}
+                <section className="py-sect">
+                  <div className="py-cust">
+                    <span className="py-av lg" style={{ background: ac.bg, color: ac.fg }}>{initials(c.name)}</span>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <b>{c.name}</b>
+                      {c.phone && <small>{c.phone}</small>}
+                      {c.email2 && <small>{c.email2}</small>}
+                    </div>
+                    {c.contactId && <button type="button" className="py-mini" onClick={() => router.push(`/admin/customers/profile?id=${c.contactId}`)}>View customer</button>}
                   </div>
-                </div>
-                {c.contactId && (
-                  <button type="button" onClick={() => router.push(`/admin/customers/profile?id=${c.contactId}`)}
-                    style={{ marginTop: 12, width: '100%', padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                    View customer
-                    <svg {...I({ width: 13, height: 13 })}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
-                  </button>
-                )}
+                </section>
 
-                {/* Fields */}
-                <div style={{ marginTop: 18 }}>
-                  {field('Amount', money(p.amount_cents, p.currency || 'AUD'))}
-                  {p.refunded_cents ? field('Refunded', <span style={{ color: '#e11d48' }}>−{money(p.refunded_cents, p.currency || 'AUD')} · {money(remaining, p.currency || 'AUD')} kept</span>) : null}
-                  {field('Description', p.description || '—')}
+                {/* Details */}
+                <section className="py-sect">
+                  <p className="py-sect-h">Details</p>
+                  {row('Amount', money(p.amount_cents, p.currency || 'AUD'))}
+                  {p.refunded_cents ? row('Refunded', <span style={{ color: '#e11d48' }}>−{money(p.refunded_cents, p.currency || 'AUD')} · {money(remaining, p.currency || 'AUD')} kept</span>) : null}
+                  {row('Description', p.description || '—')}
                   {isSale ? (
                     <>
-                      {field('Source', <span style={{ color: '#0e7490', fontWeight: 700 }}>Recorded sale</span>)}
-                      {field('Method', prettyMethod(p.payment_method) || '—')}
-                      {field('Recorded by', p.sold_by_name || '—')}
-                      {field('Date', fmtDate(p.paid_at || p.created_at))}
-                      {field('Channel', c.channel ? (c.channel === 'sms' ? 'SMS' : c.channel.charAt(0).toUpperCase() + c.channel.slice(1)) : '—')}
+                      {row('Method', prettyMethod(p.payment_method) || '—')}
+                      {row('Recorded by', p.sold_by_name || '—')}
+                      {row('Date', fmtDate(p.paid_at || p.created_at))}
+                      {row('Channel', channelName(c.channel) || '—')}
                     </>
                   ) : (
                     <>
-                      {field('Payment link', p.status === 'pending' ? <span style={{ color: '#16a34a', fontWeight: 700 }}>● Active</span> : p.checkout_url ? 'Used' : '—')}
-                      {field('Created', fmtDate(p.created_at))}
-                      {field('Method', detailsLoading && !p.card_brand ? 'Loading…' : (p.card_brand ? `${p.card_brand.toUpperCase()} •••• ${p.card_last4 || (details?.last4 || '••••')}` : (details?.brand ? `${details.brand.toUpperCase()} •••• ${details.last4}` : (p.status === 'paid' ? 'Card' : '—'))))}
-                      {field('Channel', c.channel ? (c.channel === 'sms' ? 'SMS' : c.channel.charAt(0).toUpperCase() + c.channel.slice(1)) : '—')}
-                      {field('Stripe payment', details?.paymentIntentId || p.stripe_payment_intent || '—')}
+                      {row('Payment link', p.status === 'pending' ? <span className="py-tag dot sm" style={tint('#22c55e')}>Active</span> : p.checkout_url ? 'Used' : '—')}
+                      {row('Created', fmtDate(p.created_at))}
+                      {row('Method', detailsLoading && !p.card_brand ? 'Loading…' : (p.card_brand ? `${p.card_brand.toUpperCase()} •••• ${p.card_last4 || (details?.last4 || '••••')}` : (details?.brand ? `${details.brand.toUpperCase()} •••• ${details.last4}` : (p.status === 'paid' ? 'Card' : '—'))))}
+                      {row('Channel', channelName(c.channel) || '—')}
+                      {row('Stripe payment', <span className="py-mono">{details?.paymentIntentId || p.stripe_payment_intent || '—'}</span>)}
                     </>
                   )}
-                </div>
+                </section>
 
-                {/* Refund box */}
+                {/* Refund */}
                 {canRefund && (
-                  <div style={{ marginTop: 18, padding: 14, borderRadius: 12, border: '1px solid var(--border)', background: 'color-mix(in srgb, var(--slate) 3%, transparent)' }}>
-                    <p style={{ ...kick, margin: '0 0 8px' }}>Refund</p>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      <div style={{ position: 'relative', flex: 1 }}>
-                        <span style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: 'var(--slate)' }}>$</span>
-                        <input value={refundAmt} onChange={e => setRefundAmt(e.target.value.replace(/[^\d.]/g, ''))} placeholder={`${(remaining / 100).toFixed(2)} (full)`}
-                          style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px 9px 22px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, outline: 'none' }} />
+                  <section className="py-sect">
+                    <p className="py-sect-h">Refund</p>
+                    <div className="py-refund">
+                      <div className="py-field">
+                        <span>$</span>
+                        <input value={refundAmt} onChange={e => setRefundAmt(e.target.value.replace(/[^\d.]/g, ''))} placeholder={`${(remaining / 100).toFixed(2)} (full)`} inputMode="decimal" aria-label="Refund amount" />
                       </div>
-                      <button type="button" disabled={isBusy} onClick={() => doRefund(p, refundAmt.trim() ? parseFloat(refundAmt) : null)}
-                        style={{ padding: '9px 16px', borderRadius: 9, border: 'none', background: '#e11d48', color: '#fff', fontSize: 13, fontWeight: 700, cursor: isBusy ? 'default' : 'pointer', opacity: isBusy ? 0.6 : 1, whiteSpace: 'nowrap' }}>
-                        {refundAmt.trim() ? `Refund $${refundAmt.trim()}` : 'Refund full'}
+                      <button type="button" className="py-act danger" disabled={isBusy} onClick={() => doRefund(p, refundAmt.trim() ? parseFloat(refundAmt) : null)}>
+                        {refundAmt.trim() ? `Refund $${refundAmt.trim()}` : 'Refund in full'}
                       </button>
                     </div>
-                    <p style={{ margin: '7px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>Leave blank to refund the full remaining {money(remaining, p.currency || 'AUD')}.</p>
-                  </div>
+                    <p className="py-fine">Leave it blank to refund the full {money(remaining, p.currency || 'AUD')} still kept.</p>
+                  </section>
                 )}
 
-                {/* Actions */}
-                <div style={{ marginTop: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  {p.status === 'paid' && !isSale && <button type="button" disabled={isBusy} onClick={() => doResend(p)} style={{ padding: '10px 12px', borderRadius: 9, border: 'none', background: CORAL, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: isBusy ? 0.6 : 1 }}>Resend receipt</button>}
-                  {p.status === 'pending' && <button type="button" disabled={isBusy} onClick={() => doRemind(p)} style={{ padding: '10px 12px', borderRadius: 9, border: 'none', background: CORAL, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: isBusy ? 0.6 : 1 }}>Send reminder</button>}
-                  {canRefund && <button type="button" disabled={isBusy} onClick={() => doRefund(p)} style={{ padding: '10px 12px', borderRadius: 9, border: '1px solid #f4b4bf', background: 'var(--card,#fff)', color: '#e11d48', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Refund payment</button>}
-                  {c.conv?.id && <button type="button" onClick={() => router.push(`/admin/inbox?conversation=${c.conv.id}`)} style={{ padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Open in inbox</button>}
-                  {p.checkout_url && <button type="button" onClick={() => copyLink(p)} style={{ padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Copy payment link</button>}
-                  {p.status !== 'pending' && <button type="button" onClick={() => setReceiptModal(p)} style={{ padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>View receipt</button>}
-                </div>
-
                 {/* Activity */}
-                <p style={{ ...kick, margin: '22px 0 10px' }}>Activity</p>
-                <div style={{ position: 'relative', paddingLeft: 6 }}>
+                <section className="py-sect">
+                  <p className="py-sect-h">Activity</p>
                   {items.map((it, i) => (
-                    <div key={i} style={{ display: 'flex', gap: 12, position: 'relative', paddingBottom: i === items.length - 1 ? 0 : 16 }}>
-                      {i < items.length - 1 && <span style={{ position: 'absolute', left: 5, top: 14, bottom: 0, width: 2, background: 'var(--border)' }} />}
-                      <span style={{ width: 12, height: 12, borderRadius: '50%', flexShrink: 0, marginTop: 2, background: it.tone, boxShadow: `0 0 0 3px color-mix(in srgb, ${it.tone} 18%, transparent)` }} />
+                    <div key={i} className="py-tl">
+                      <span className="py-tl-dot" style={{ background: it.tone, boxShadow: `0 0 0 3px color-mix(in srgb, ${it.tone} 18%, #fff)` }} />
                       <div style={{ minWidth: 0 }}>
-                        <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{it.label}</p>
-                        <p style={{ margin: '1px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>{it.at ? fmtShort(it.at) : 'Now'}{it.sub ? ` · ${it.sub}` : ''}</p>
+                        <p>{it.label}</p>
+                        <small>{it.at ? fmtShort(it.at) : 'Now'}{it.sub ? ` · ${it.sub}` : ''}</small>
                       </div>
                     </div>
                   ))}
-                </div>
+                </section>
               </div>
-            </div>
-          </div>
+            </aside>
+          </>
         )
       })()}
 
@@ -761,22 +750,22 @@ export default function PaymentsPage() {
         const sm = statusMeta(p.status)
         const refunded = p.refunded_cents || 0
         const kept = (p.amount_cents || 0) - refunded
-        const line: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', gap: 12, padding: '7px 0', fontSize: 13 }
+        const line: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', gap: 12, padding: '7px 0', fontSize: 13.5 }
         return (
-          <div onClick={() => setReceiptModal(null)} style={{ position: 'fixed', inset: 0, zIndex: 6300, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-            <div onClick={e => e.stopPropagation()} style={{ width: 420, maxWidth: '95vw', maxHeight: '92vh', overflowY: 'auto', background: 'var(--card,#fff)', borderRadius: 16, boxShadow: '0 30px 80px rgba(0,0,0,0.3)' }}>
+          <div className="py-overlay" onClick={() => setReceiptModal(null)}>
+            <div className="py-modal" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Receipt">
               <div id="rcpt-print" style={{ padding: '26px 26px 8px' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
                   <div>
-                    <p style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>{companyName || 'Receipt'}</p>
-                    <p style={{ margin: '2px 0 0', fontSize: 11.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--slate)' }}>Payment receipt</p>
+                    <p style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: '-0.01em', color: '#111' }}>{companyName || 'Receipt'}</p>
+                    <p style={{ margin: '3px 0 0', fontSize: 13, color: '#71717a' }}>Payment receipt</p>
                   </div>
-                  <span style={{ fontSize: 11, fontWeight: 800, padding: '4px 11px', borderRadius: 20, background: sm.bg, color: sm.fg }}>{p.status === 'refunded' ? 'REFUNDED' : 'PAID'}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, padding: '4px 11px', borderRadius: 999, background: sm.bg, color: sm.fg }}>{p.status === 'refunded' ? 'Refunded' : 'Paid'}</span>
                 </div>
 
-                <div style={{ marginTop: 18, display: 'flex', justifyContent: 'space-between', gap: 16, fontSize: 12.5, color: 'var(--slate)' }}>
+                <div style={{ marginTop: 20, display: 'flex', justifyContent: 'space-between', gap: 16, fontSize: 13, color: '#71717a' }}>
                   <div>
-                    <p style={{ margin: 0, fontWeight: 700, color: 'var(--ink)' }}>Billed to</p>
+                    <p style={{ margin: 0, fontWeight: 700, color: '#111' }}>Billed to</p>
                     <p style={{ margin: '3px 0 0' }}>{c.name}</p>
                     {c.phone && <p style={{ margin: 0 }}>{c.phone}</p>}
                     {c.email2 && <p style={{ margin: 0 }}>{c.email2}</p>}
@@ -787,29 +776,29 @@ export default function PaymentsPage() {
                   </div>
                 </div>
 
-                <div style={{ marginTop: 18, borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', padding: '6px 0' }}>
-                  <div style={line}><span style={{ color: 'var(--ink)' }}>{p.description || 'Payment'}</span><span style={{ fontWeight: 700 }}>{money(p.amount_cents, p.currency || 'AUD')}</span></div>
+                <div style={{ marginTop: 18, borderTop: '1px solid #ececef', borderBottom: '1px solid #ececef', padding: '6px 0' }}>
+                  <div style={line}><span style={{ color: '#111' }}>{p.description || 'Payment'}</span><span style={{ fontWeight: 700 }}>{money(p.amount_cents, p.currency || 'AUD')}</span></div>
                 </div>
                 <div style={{ padding: '8px 0' }}>
-                  <div style={line}><span style={{ color: 'var(--slate)' }}>Total</span><span style={{ fontWeight: 800 }}>{money(p.amount_cents, p.currency || 'AUD')}</span></div>
+                  <div style={line}><span style={{ color: '#71717a' }}>Total</span><span style={{ fontWeight: 800 }}>{money(p.amount_cents, p.currency || 'AUD')}</span></div>
                   {refunded > 0 && <div style={line}><span style={{ color: '#e11d48' }}>Refunded</span><span style={{ fontWeight: 700, color: '#e11d48' }}>−{money(refunded, p.currency || 'AUD')}</span></div>}
-                  {refunded > 0 && <div style={line}><span style={{ color: 'var(--slate)' }}>Amount kept</span><span style={{ fontWeight: 700 }}>{money(kept, p.currency || 'AUD')}</span></div>}
+                  {refunded > 0 && <div style={line}><span style={{ color: '#71717a' }}>Amount kept</span><span style={{ fontWeight: 700 }}>{money(kept, p.currency || 'AUD')}</span></div>}
                 </div>
 
-                <div style={{ marginTop: 4, fontSize: 12, color: 'var(--slate)' }}>
+                <div style={{ marginTop: 4, fontSize: 12.5, color: '#71717a' }}>
                   <p style={{ margin: 0 }}>Paid with {p.card_brand ? `${p.card_brand.toUpperCase()} •••• ${p.card_last4 || '••••'}` : (p.source === 'sale' ? (prettyMethod(p.payment_method) || 'recorded payment') : 'card')}</p>
                   {p.source === 'sale' && p.sold_by_name && <p style={{ margin: '2px 0 0' }}>Recorded by {p.sold_by_name}</p>}
-                  {(p.stripe_payment_intent) && <p style={{ margin: '2px 0 0', fontSize: 10.5, wordBreak: 'break-all' }}>Ref: {p.stripe_payment_intent}</p>}
+                  {(p.stripe_payment_intent) && <p style={{ margin: '2px 0 0', fontSize: 11, wordBreak: 'break-all' }}>Ref: {p.stripe_payment_intent}</p>}
                 </div>
-                <p style={{ margin: '16px 0 0', fontSize: 11, color: 'var(--slate)', textAlign: 'center' }}>Thank you for your payment.</p>
+                <p style={{ margin: '18px 0 0', fontSize: 12, color: '#a1a1aa', textAlign: 'center' }}>Thank you for your payment.</p>
               </div>
 
-              <div style={{ display: 'flex', gap: 8, padding: '10px 20px 18px' }}>
-                <button type="button" onClick={printReceipt} style={{ flex: 1, padding: '10px 12px', borderRadius: 9, border: 'none', background: CORAL, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Print</button>
+              <div className="py-modal-foot">
+                <button type="button" className="cv-btn cv-btn-primary" onClick={printReceipt}>Print</button>
                 {(details?.receiptUrl || p.receipt_url) && (
-                  <a href={details?.receiptUrl || p.receipt_url || undefined} target="_blank" rel="noopener noreferrer" style={{ flex: 1, textAlign: 'center', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>Stripe receipt</a>
+                  <a className="cv-btn" href={details?.receiptUrl || p.receipt_url || undefined} target="_blank" rel="noopener noreferrer">Stripe receipt</a>
                 )}
-                <button type="button" onClick={() => setReceiptModal(null)} style={{ flex: 1, padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--slate)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Close</button>
+                <button type="button" className="cv-btn" style={{ marginLeft: 'auto' }} onClick={() => setReceiptModal(null)}>Close</button>
               </div>
             </div>
           </div>
@@ -817,14 +806,182 @@ export default function PaymentsPage() {
       })()}
 
       {showCreate && companyId && (
-        <CreatePaymentLinkModal companyId={companyId} accent={CORAL} senderName={senderName}
+        <CreatePaymentLinkModal companyId={companyId} accent="var(--coral)" senderName={senderName}
           onClose={() => setShowCreate(false)}
           onCreated={() => { setShowCreate(false); setToast('Payment link created & sent'); if (companyId) load(companyId, range) }} />
       )}
 
-      {toast && (
-        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 6200, padding: '11px 18px', borderRadius: 11, background: '#111827', color: '#fff', fontSize: 13, fontWeight: 600, boxShadow: '0 10px 30px rgba(0,0,0,0.3)' }}>{toast}</div>
-      )}
+      {toast && <div className="py-toast" role="status">{toast}</div>}
     </div>
   )
 }
+
+const STATUS_DOT: Record<string, string> = { paid: '#22c55e', pending: '#f59e0b', refunded: '#e11d48', failed: '#a1a1aa' }
+const tint = (c: string) => ({ ['--t' as any]: c }) as React.CSSProperties
+
+// The Payments look: a big bold header, KPI tiles, a segmented status switch,
+// grey pill filters, a soft table (cards on phones) and a floating panel.
+const PY_CSS = `
+.py{padding:24px 28px 48px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
+.py button::before{display:none}
+.py-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+.py-head h1{margin:0;font-size:30px;font-weight:800;letter-spacing:-.025em;line-height:1.1}
+.py-head p{margin:6px 0 0;font-size:14px;color:#71717a}
+.py-head-acts{display:flex;align-items:center;gap:8px}
+.py-pill{height:38px;padding:0 14px;border:none;border-radius:999px;background:#f4f4f5;color:#3f3f46;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background-color .15s}
+.py-pill:hover{background-color:#ececef}
+.py-pill:disabled{opacity:.6;cursor:default}
+.py-icbtn{width:38px;height:38px;padding:0;border:none;border-radius:999px;background:#f4f4f5;color:#3f3f46;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:background-color .15s}
+.py-icbtn:hover{background-color:#ececef;color:#18181b}
+.py-show-sm{display:none}
+.py-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:18px}
+.py-card{background:#fff;border-radius:20px;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04);min-width:0}
+.py-kpi{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:16px 18px;border:none;font:inherit;text-align:left;cursor:pointer;color:inherit;transition:box-shadow .2s,transform .2s cubic-bezier(.22,1,.36,1)}
+.py-kpi:hover{box-shadow:0 0 0 1px rgba(0,0,0,.07),0 12px 28px -14px rgba(0,0,0,.25);transform:translateY(-1px)}
+.py-kpi-top{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%}
+.py-label{font-size:13.5px;font-weight:600;color:#71717a}
+.py-ic{width:32px;height:32px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.py-kpi-v{margin-top:4px;font-size:26px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.py-sub{font-size:12.5px;color:#8e8e93;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.py-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.py-seg{display:inline-flex;gap:2px;padding:3px;border-radius:999px;background:#f4f4f5;max-width:100%;overflow-x:auto;scrollbar-width:none}
+.py-seg::-webkit-scrollbar{display:none}
+.py-seg button{flex-shrink:0;height:32px;padding:0 12px 0 14px;border:none;border-radius:999px;background:transparent;font:inherit;font-size:13.5px;font-weight:600;color:#52525b;cursor:pointer;display:inline-flex;align-items:center;gap:7px;white-space:nowrap;transition:background .15s,color .15s,box-shadow .15s}
+.py-seg button:hover{color:#18181b}
+.py-seg button.on{background:#fff;color:#18181b;box-shadow:0 1px 3px rgba(0,0,0,.1),0 0 0 .5px rgba(0,0,0,.04)}
+.py-seg .n{min-width:18px;height:18px;padding:0 6px;box-sizing:border-box;border-radius:999px;background:rgba(0,0,0,.06);font-size:11.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
+.py-search{flex:1;min-width:220px;position:relative;display:flex;align-items:center;gap:8px;height:38px;padding:0 10px 0 14px;border-radius:999px;border:1.5px solid transparent;background:#f4f4f5;color:#a1a1aa;box-sizing:border-box;transition:background-color .15s,border-color .15s,box-shadow .15s}
+.py-search:focus-within{background:#fff;border-color:#d4d4d8;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 16%,transparent)}
+.py-search input{flex:1;min-width:0;border:none;outline:none;background:transparent;font:inherit;font-size:14px;color:var(--ink)}
+.py-search input::placeholder{color:#a1a1aa}
+.py-search input:focus,.py-field input:focus{box-shadow:none}
+.py-x{width:24px;height:24px;padding:0;border:none;border-radius:999px;background:#e4e4e7;color:#52525b;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.py-bar2{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.py-sel{appearance:none;-webkit-appearance:none;height:36px;padding:0 34px 0 14px;border:none;border-radius:999px;background-color:#f4f4f5;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;background-size:14px;font:inherit;font-size:13.5px;font-weight:600;color:var(--ink);cursor:pointer}
+.py-sel:hover{background-color:#ececef}
+.py-sel.set{background-color:color-mix(in srgb,var(--coral) 12%,#fff);color:color-mix(in srgb,var(--coral) 85%,#000)}
+.py-clear{height:36px;padding:0 12px;border:none;border-radius:999px;background:none;font:inherit;font-size:13.5px;font-weight:600;color:var(--coral);cursor:pointer}
+.py-clear:hover{background:#f4f4f5}
+.py-tablecard{overflow:hidden}
+.py-tablewrap{overflow-x:auto}
+.py-table{width:100%;border-collapse:collapse}
+.py-table th{text-align:left;padding:14px 16px 10px;font-size:12.5px;font-weight:600;color:#8e8e93;white-space:nowrap;border-bottom:1px solid #f0f0f2}
+.py-table td{padding:12px 16px;font-size:13.5px;color:var(--ink);border-bottom:1px solid #f4f4f5;vertical-align:middle}
+.py-table tbody tr{cursor:pointer;transition:background-color .12s}
+.py-table tbody tr:hover td{background:#fafafa}
+.py-table tbody tr.sel td{background:color-mix(in srgb,var(--coral) 6%,#fff)}
+.py-table tbody tr:last-child td{border-bottom:none}
+.py-table .r{text-align:right}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.py-who{display:flex;align-items:center;gap:10px;min-width:0}
+.py-who-t{display:flex;flex-direction:column;min-width:0}
+.py-who-t b{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
+.py-who-t small{font-size:12.5px;color:#8e8e93;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
+.py-av{width:34px;height:34px;border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+.py-av.lg{width:46px;height:46px;font-size:15px}
+.py-amt{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.py-refd{display:block;font-size:12px;font-weight:600;color:#e11d48;font-variant-numeric:tabular-nums}
+.py-desc{max-width:260px;color:#52525b}
+.py-desc > span:last-child{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
+.py-method{color:#71717a;white-space:nowrap;font-variant-numeric:tabular-nums}
+.py-method b{color:var(--ink);font-weight:600}
+.py-date{color:#71717a;white-space:nowrap}
+.py-tag{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px;border-radius:999px;font-size:12.5px;font-weight:600;white-space:nowrap;background:#f4f4f5;color:#52525b}
+.py-tag.dot{background:color-mix(in srgb,var(--t) 12%,#fff);color:color-mix(in srgb,var(--t) 78%,#000)}
+.py-tag.dot::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--t)}
+.py-tag.sm{height:20px;padding:0 7px;font-size:11.5px;margin-right:6px;vertical-align:middle}
+.py-acts{display:inline-flex;align-items:center;gap:6px;justify-content:flex-end}
+.py-mini{height:30px;padding:0 12px;border:none;border-radius:999px;background:#f4f4f5;color:#18181b;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background-color .15s}
+.py-mini:hover{background-color:#ececef}
+.py-mini:disabled{opacity:.55;cursor:default}
+.py-mini.danger{color:#e11d48}
+.py-mini.danger:hover{background-color:#fff1f2}
+.py-round{width:30px;height:30px;padding:0;border:none;border-radius:999px;background:#f4f4f5;color:#52525b;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:background-color .15s}
+.py-round:hover:not(:disabled){background-color:#ececef;color:#18181b}
+.py-round:disabled{opacity:.4;cursor:default}
+.py-round.lg{width:34px;height:34px}
+.py-pager{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 16px;border-top:1px solid #f0f0f2;font-size:13px;color:#8e8e93}
+.py-pager > div{display:flex;align-items:center;gap:8px}
+.py-pager b{font-size:13px;color:var(--ink);font-variant-numeric:tabular-nums}
+.py-mlist{display:none}
+.py-m{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;border:none;border-bottom:1px solid #f4f4f5;background:none;font:inherit;text-align:left;cursor:pointer;color:inherit}
+.py-m:last-child{border-bottom:none}
+.py-m-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.py-m-main b{font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.py-m-main small{font-size:12.5px;color:#8e8e93;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.py-m-meta{display:flex;align-items:center;gap:8px;margin-top:4px;font-size:12px;color:#a1a1aa}
+.py-m-amt{flex-shrink:0;text-align:right;font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+.py-m-amt small{display:block;font-size:12px;font-weight:600;color:#e11d48}
+@keyframes pyIn{from{transform:translateX(28px);opacity:0}to{transform:none;opacity:1}}
+@keyframes pyFade{from{opacity:0}to{opacity:1}}
+@keyframes pyRise{from{transform:translateY(12px) scale(.98);opacity:0}to{transform:none;opacity:1}}
+.py-scrim{position:fixed;inset:0;z-index:5600;background:rgba(15,15,20,.3);animation:pyFade .2s ease}
+.py-panel{position:fixed;top:8px;right:8px;bottom:8px;width:440px;max-width:calc(100vw - 16px);z-index:5601;display:flex;flex-direction:column;background:#f4f4f5;border-radius:24px;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,.22),0 0 0 1px rgba(0,0,0,.05);animation:pyIn .32s cubic-bezier(.22,1,.36,1);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
+.py-panel button::before{display:none}
+.py-ph{flex-shrink:0;background:#fff;border-bottom:1px solid #ececef;padding:14px 18px 16px}
+.py-ph-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-right:-6px}
+.py-ph-no{font-size:13.5px;font-weight:600;color:#71717a;font-variant-numeric:tabular-nums}
+.py-ph-amt{margin:10px 0 0;font-size:32px;font-weight:800;letter-spacing:-.025em;font-variant-numeric:tabular-nums}
+.py-ph-sub{margin:4px 0 0;font-size:14px;color:#71717a;overflow-wrap:anywhere}
+.py-ph-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
+.py-act{flex-shrink:0;height:36px;padding:0 14px;border:none;border-radius:999px;background:#f4f4f5;color:#18181b;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background-color .15s}
+.py-act:hover{background-color:#ececef}
+.py-act:disabled{opacity:.55;cursor:default}
+.py-act.primary{background:var(--coral);color:#fff}
+.py-act.primary:hover{background:var(--coral);filter:brightness(.95)}
+.py-act.danger{background:#e11d48;color:#fff}
+.py-act.danger:hover{background:#e11d48;filter:brightness(.95)}
+.py-pbody{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:10px}
+.py-sect{background:#fff;border-radius:18px;padding:14px 16px}
+.py-sect-h{margin:0 0 8px;font-size:14px;font-weight:700}
+.py-cust{display:flex;align-items:center;gap:12px}
+.py-cust b{display:block;font-size:15.5px;font-weight:700}
+.py-cust small{display:block;font-size:13px;color:#71717a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.py-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:7px 0;font-size:13.5px;border-top:1px solid #f4f4f5}
+.py-row:first-of-type{border-top:none}
+.py-row > span:first-child{color:#71717a;flex-shrink:0}
+.py-row > span:last-child{font-weight:600;text-align:right;min-width:0;overflow-wrap:anywhere}
+.py-mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:500;color:#52525b}
+.py-refund{display:flex;gap:8px;align-items:center}
+.py-field{flex:1;display:flex;align-items:center;gap:4px;height:40px;padding:0 14px;border-radius:12px;border:1.5px solid transparent;background:#f4f4f5;box-sizing:border-box;transition:background-color .15s,border-color .15s,box-shadow .15s}
+.py-field:focus-within{background:#fff;border-color:#d4d4d8;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 16%,transparent)}
+.py-field span{color:#a1a1aa;font-size:14px}
+.py-field input{flex:1;min-width:0;border:none;outline:none;background:transparent;font:inherit;font-size:14px;color:var(--ink)}
+.py-fine{margin:8px 0 0;font-size:12.5px;color:#8e8e93}
+.py-tl{position:relative;display:flex;gap:12px;padding-bottom:14px}
+.py-tl:last-child{padding-bottom:0}
+.py-tl::before{content:'';position:absolute;left:5px;top:16px;bottom:0;width:1.5px;background:#ececef}
+.py-tl:last-child::before{display:none}
+.py-tl-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:3px}
+.py-tl p{margin:0;font-size:13.5px;font-weight:600}
+.py-tl small{display:block;margin-top:2px;font-size:12px;color:#8e8e93}
+.py-overlay{position:fixed;inset:0;z-index:6300;background:rgba(15,15,20,.35);display:flex;align-items:center;justify-content:center;padding:20px;animation:pyFade .18s ease}
+.py-modal{width:440px;max-width:100%;max-height:92vh;overflow-y:auto;background:#fff;border-radius:24px;box-shadow:0 24px 64px rgba(0,0,0,.22);animation:pyRise .24s cubic-bezier(.22,1,.36,1)}
+.py-modal-foot{display:flex;gap:8px;padding:12px 22px 20px;border-top:1px solid #f0f0f2}
+.py-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:6400;padding:11px 18px;border-radius:999px;background:#18181b;color:#fff;font-size:13.5px;font-weight:500;box-shadow:0 12px 30px rgba(0,0,0,.25);max-width:calc(100vw - 32px)}
+.py-kpi:focus-visible,.py-seg button:focus-visible,.py-mini:focus-visible,.py-round:focus-visible,.py-act:focus-visible,.py-pill:focus-visible,.py-icbtn:focus-visible,.py-sel:focus-visible,.py-m:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 28%,transparent)}
+@media(max-width:1100px){.py-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:700px){
+  .py{padding:16px 14px 40px}
+  .py-head{flex-wrap:nowrap;align-items:center}
+  .py-head h1{font-size:26px}
+  .py-head p{display:none}
+  .py-pill{display:none}
+  .py-hide-sm{display:none}
+  .py-show-sm{display:inline}
+  .py-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .py-kpis > :first-child{grid-column:1 / -1}
+  .py-kpi{padding:14px}
+  .py-kpi-v{font-size:22px}
+  .py-search{min-width:0;flex:1 1 100%}
+  .py-bar2{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -14px 14px;padding:0 14px}
+  .py-bar2::-webkit-scrollbar{display:none}
+  .py-sel,.py-clear{flex-shrink:0}
+  .py-tablewrap{display:none}
+  .py-mlist{display:block}
+  .py-panel{top:6px;right:6px;bottom:6px;left:6px;width:auto;max-width:none;border-radius:22px}
+  .py-overlay{padding:0;align-items:flex-end}
+  .py-modal{width:100%;border-radius:24px 24px 0 0;max-height:94dvh}
+}
+@media (prefers-reduced-motion: reduce){.py-panel,.py-scrim,.py-modal,.py-overlay{animation:none}.py-kpi:hover{transform:none}}
+`
