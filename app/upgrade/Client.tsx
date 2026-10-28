@@ -1,6 +1,7 @@
 'use client'
 
 import { authFetch } from '@/lib/auth-fetch'
+import Collapse from '@/components/Collapse'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
@@ -275,15 +276,15 @@ export default function UpgradePage() {
                   className="w-full flex items-center justify-between px-5 py-4 text-left cursor-pointer hover:bg-gray-50 transition-all">
                   <span className="font-semibold text-sm" style={{ color: 'var(--ink)' }}>{faq.q}</span>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                    style={{ color: 'var(--slate)', transform: openFaq === i ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}>
+                    style={{ color: 'var(--slate)', transform: openFaq === i ? 'rotate(180deg)' : 'none', transition: 'transform 0.55s cubic-bezier(0.32,0.72,0,1)', flexShrink: 0 }}>
                     <polyline points="6 9 12 15 18 9"/>
                   </svg>
                 </button>
-                {openFaq === i && (
+                <Collapse open={openFaq === i}>
                   <div className="px-5 pb-4 text-sm leading-relaxed" style={{ color: 'var(--slate)', borderTop: '1px solid var(--border)', paddingTop: 12 }}>
                     {faq.a}
                   </div>
-                )}
+                </Collapse>
               </div>
             ))}
           </div>

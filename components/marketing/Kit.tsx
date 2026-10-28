@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, ReactNode, CSSProperties } from 'react'
+import Collapse from '@/components/Collapse'
 import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 
@@ -93,15 +94,13 @@ export function Faq({ q, a, accent, text, muted, cardBg, cardBorder }: { q: stri
     <div style={{ borderRadius: 16, background: cardBg, border: `1px solid ${cardBorder}`, overflow: 'hidden' }}>
       <button onClick={() => setOpen(o => !o)} aria-expanded={open} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: '18px 20px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', color: text, fontSize: 16, fontWeight: 800, fontFamily: 'inherit' }}>
         {q}
-        <span style={{ flexShrink: 0, width: 26, height: 26, borderRadius: '50%', background: accent + '18', color: accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', transform: open ? 'rotate(45deg)' : 'none', transition: 'transform 0.22s cubic-bezier(0.16,1,0.3,1)' }}>
+        <span style={{ flexShrink: 0, width: 26, height: 26, borderRadius: '50%', background: accent + '18', color: accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', transform: open ? 'rotate(45deg)' : 'none', transition: 'transform 0.55s cubic-bezier(0.32,0.72,0,1)' }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
         </span>
       </button>
-      <div style={{ display: 'grid', gridTemplateRows: open ? '1fr' : '0fr', transition: 'grid-template-rows 0.3s cubic-bezier(0.16,1,0.3,1)' }}>
-        <div style={{ overflow: 'hidden' }}>
-          <p style={{ margin: 0, padding: '0 20px 18px', fontSize: 14.5, lineHeight: 1.65, color: muted }}>{a}</p>
-        </div>
-      </div>
+      <Collapse open={open}>
+        <p style={{ margin: 0, padding: '0 20px 18px', fontSize: 14.5, lineHeight: 1.65, color: muted }}>{a}</p>
+      </Collapse>
     </div>
   )
 }

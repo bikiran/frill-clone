@@ -105,6 +105,14 @@ button:hover::before {
   opacity: 0.05;
 }
 
+/* ── SMOOTH COLLAPSE (components/Collapse) ── */
+.sc { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .42s cubic-bezier(.32, .72, 0, 1); }
+.sc.open { grid-template-rows: 1fr; transition: grid-template-rows .62s cubic-bezier(.32, .72, 0, 1); }
+.sc > .sc-in { overflow: hidden; min-height: 0; }
+.sc .sc-body { opacity: 0; transform: translateY(-10px); transition: opacity .22s ease, transform .42s cubic-bezier(.32, .72, 0, 1); }
+.sc.open .sc-body { opacity: 1; transform: none; transition: opacity .45s ease .1s, transform .62s cubic-bezier(.32, .72, 0, 1) .04s; }
+@media (prefers-reduced-motion: reduce) { .sc, .sc .sc-body { transition: none !important; } }
+
 /* ── FADE IN ANIMATION ── */
 @keyframes fadeInUp {
   from { 

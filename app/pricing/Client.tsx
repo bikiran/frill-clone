@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, ReactNode, Fragment } from 'react'
+import Collapse from '@/components/Collapse'
 import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 import { track } from '@/lib/analytics'
@@ -308,9 +309,9 @@ export default function PricingPage() {
               <div key={i} style={{ borderRadius: 16, border: `1px solid ${cardBorder}`, background: cardBg, overflow: 'hidden' }}>
                 <button type="button" onClick={() => setOpenFaq(openFaq === i ? null : i)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '18px 22px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 15.5, fontWeight: 700, color: text, textAlign: 'left', gap: 12 }}>
                   {faq.q}
-                  <svg style={{ flexShrink: 0, transform: openFaq === i ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', color: CORAL }} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="6 9 12 15 18 9" /></svg>
+                  <svg style={{ flexShrink: 0, transform: openFaq === i ? 'rotate(180deg)' : 'none', transition: 'transform 0.55s cubic-bezier(0.32,0.72,0,1)', color: CORAL }} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="6 9 12 15 18 9" /></svg>
                 </button>
-                {openFaq === i && <div style={{ padding: '0 22px 18px', fontSize: 14.5, color: muted, lineHeight: 1.65 }}>{faq.a}</div>}
+                <Collapse open={openFaq === i}><div style={{ padding: '0 22px 18px', fontSize: 14.5, color: muted, lineHeight: 1.65 }}>{faq.a}</div></Collapse>
               </div>
             ))}
           </div>
