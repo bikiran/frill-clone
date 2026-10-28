@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useCompanyUser } from '../crm-settings/_shared'
-import PageHeader from '@/components/PageHeader'
 import { SuggestionCard, type Suggestion } from '@/components/AgentSuggestion'
 import Pagination, { usePagination } from '@/components/Pagination'
 import VideoPlayer from '@/components/VideoPlayer'
@@ -59,8 +58,8 @@ const PLACEHOLDER_AUTHOR = /^(instagram|facebook) user$/i
 /** A round avatar; falls back to the initial when there's no photo or it has expired. */
 function Avatar({ src, name }: { src?: string | null; name: string }) {
   const [broken, setBroken] = useState(false)
-  if (src && !broken) return <img src={src} alt="" referrerPolicy="no-referrer" onError={() => setBroken(true)} style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', display: 'block' }} />
-  return <span style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13 }}>{(name || '?').charAt(0).toUpperCase()}</span>
+  if (src && !broken) return <img src={src} alt="" referrerPolicy="no-referrer" onError={() => setBroken(true)} style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', display: 'block' }} />
+  return <span style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 15 }}>{(name || '?').charAt(0).toUpperCase()}</span>
 }
 
 type PostMedia = { kind: 'image' | 'video'; url: string; poster?: string | null }
@@ -123,7 +122,7 @@ function PostPreview({ post, platform }: { post: Post; platform: string }) {
           {thumbs.map((t, i) => (
             <button key={i} type="button" onClick={() => tap(i)} disabled={!clickable}
               title={!clickable ? undefined : inlineVideo ? (playing ? 'Close' : `Play the ${post.post_type || 'video'}`) : 'Open the photos'}
-              style={{ position: 'relative', width: 44, height: 44, borderRadius: 8, overflow: 'hidden', border: 'none', padding: 0, background: '#e7e5e4', cursor: clickable ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              style={{ position: 'relative', width: 44, height: 44, borderRadius: 10, overflow: 'hidden', border: 'none', padding: 0, background: '#e4e4e7', cursor: clickable ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               {t && !broken[i]
                 ? <img src={t} alt="" referrerPolicy="no-referrer" onError={() => setBroken(b => ({ ...b, [i]: true }))} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 : <PlatformMark platform={platform} size={20} />}
@@ -148,7 +147,7 @@ function PostPreview({ post, platform }: { post: Post; platform: string }) {
         )}
       </div>
       {inlineVideo && playing && (
-        <div style={{ marginTop: 8, width: '100%', maxWidth: 360, aspectRatio: '9 / 16', borderRadius: 12, overflow: 'hidden', background: '#000', display: 'flex' }}>
+        <div style={{ marginTop: 8, width: '100%', maxWidth: 360, aspectRatio: '9 / 16', borderRadius: 16, overflow: 'hidden', background: '#000', display: 'flex' }}>
           {media[0]?.kind === 'video' && !embed
             ? <VideoPlayer src={media[0].url} poster={media[0].poster || undefined} ambient onError={() => setEmbed(true)} style={{ width: '100%', height: '100%', borderRadius: 12 }} />
             : platform === 'instagram' && igEmbed
@@ -168,12 +167,6 @@ function PostPreview({ post, platform }: { post: Post; platform: string }) {
 
 export default function SocialEngagementPage() {
   const { companyId, loading } = useCompanyUser()
-  const [isMobile, setIsMobile] = useState(false)
-  useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768)
-    check(); window.addEventListener('resize', check)
-    return () => window.removeEventListener('resize', check)
-  }, [])
   const [connected, setConnected] = useState<{ page_name?: string } | null>(null)
   const [checked, setChecked] = useState(false)
   const [comments, setComments] = useState<Comment[]>([])
@@ -219,6 +212,9 @@ export default function SocialEngagementPage() {
     } catch {}
   }, [companyId])
   useEffect(() => { loadDrafts() }, [loadDrafts])
+
+  // Phones and tablets fold the filters away under search.
+  const [filtersOpen, setFiltersOpen] = useState(false)
 
   // Per-comment reply / DM composer
   const [composer, setComposer] = useState<{ id: string; mode: 'reply' | 'dm'; text: string; busy?: boolean } | null>(null)
@@ -406,73 +402,74 @@ export default function SocialEngagementPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highlightIndex, pg.pageSize])
 
-  if (loading) return <div style={{ padding: 40, color: 'var(--slate)' }}>Loading…</div>
+  if (loading) return <div style={{ padding: 40, color: '#8e8e93' }}>Loading…</div>
 
-  const Chip = ({ label, value, tone }: { label: string; value: number; tone: string }) => (
-    <button onClick={() => { if (label === 'Replied') setType('replied'); else if (label === 'Unreplied') setType('unreplied'); else setType('all') }}
-      style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '9px 15px', background: '#fff', display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
-      <span style={{ fontSize: 12.5, color: 'var(--slate)', fontWeight: 600 }}>{label}</span>
-      <span style={{ fontSize: 15, fontWeight: 800, color: tone }}>{value}</span>
-    </button>
-  )
+  const I = (d: React.ReactNode, size = 15) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>
+  const tiles: { key: string; label: string; value: number; sub: string; color: string; icon: React.ReactNode; on?: boolean; onClick?: () => void }[] = [
+    { key: 'posts', label: 'Posts', value: stats.posts, sub: 'Synced from your pages', color: '#52525b', icon: I(<><rect x="3" y="3" width="18" height="18" rx="4" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" /></>) },
+    { key: 'comments', label: 'Comments', value: stats.comments, sub: 'Not archived', color: '#2563eb', icon: I(<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />), on: type === 'all', onClick: () => setType('all') },
+    { key: 'unreplied', label: 'Needs a reply', value: stats.unreplied, sub: stats.unreplied ? 'Waiting for you' : 'All answered', color: '#ea580c', icon: I(<><polyline points="9 17 4 12 9 7" /><path d="M20 18v-2a4 4 0 0 0-4-4H4" /></>), on: type === 'unreplied', onClick: () => setType(type === 'unreplied' ? 'all' : 'unreplied') },
+    { key: 'replied', label: 'Replied', value: stats.replied, sub: stats.comments ? `${Math.round(stats.replied / stats.comments * 100)}% answered` : '—', color: '#16a34a', icon: I(<polyline points="20 6 9 17 4 12" />), on: type === 'replied', onClick: () => setType(type === 'replied' ? 'all' : 'replied') },
+  ]
+  const filtersOn = risk !== 'all' || type !== 'all' || !!cat || platform !== 'all' || !!search.trim()
+  // How many filters besides search are on (shown on the phones' Filters toggle).
+  const filterCount = (risk !== 'all' ? 1 : 0) + (type !== 'all' ? 1 : 0) + (cat ? 1 : 0) + (platform !== 'all' ? 1 : 0)
+  const clearAll = () => { setSearch(''); setRisk('all'); setType('all'); setCat(''); setPlatform('all') }
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 1500, margin: '0 auto' }}>
-      <style>{`
-        .se-act { background:none; border:none; color:var(--slate); font-size:12.5px; font-weight:700; cursor:pointer; padding:0; }
-        .se-act:hover { color:var(--coral); }
-        .se-btn { display:inline-flex; align-items:center; gap:7px; border-radius:11px; font-weight:700; font-size:13px; padding:9px 15px; cursor:pointer; border:1px solid transparent; transition:all .15s; }
-        .se-btn-primary { background:var(--coral); color:#fff; } .se-btn-primary:hover:not(:disabled){ background:var(--coral-hover); }
-        .se-btn-ghost { background:#fff; color:var(--ink); border-color:var(--border); } .se-btn-ghost:hover{ background:var(--canvas); }
-        .se-btn:disabled { opacity:.6; cursor:default; }
-        .se-fchip { padding:6px 11px; border-radius:999px; border:1px solid var(--border); background:#fff; color:var(--slate); font-size:12px; font-weight:700; cursor:pointer; }
-        .se-fchip.on { background:var(--peach); border-color:var(--coral); color:var(--coral); }
-        .se-post { display:inline-flex; align-items:center; gap:10px; max-width:100%; box-sizing:border-box; margin:0; padding:4px 4px 4px 4px; border-radius:10px; border:1px solid var(--border); background:var(--canvas); color:var(--slate); font-size:11.5px; font-weight:600; text-decoration:none; }
-        .se-post-open { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:7px; color:var(--slate); }
-        .se-post-open:hover { color:var(--ink); background:#fff; }
-      `}</style>
+    <div className="se">
+      <style>{SE_CSS}</style>
 
-      <PageHeader
-        title="Social Engagement Manager"
-        subtitle="Reply to Instagram and Facebook comments from one place."
-        bleed={32}
-        bleedTop={28}
-        action={
-          <>
-            {syncMsg && <span style={{ fontSize: 12, color: 'var(--slate)' }}>{syncMsg}</span>}
-            <Link href="/admin/social/categories" className="se-btn se-btn-ghost" style={{ textDecoration: 'none' }}>Categories</Link>
-            {connected && <button onClick={sync} disabled={syncing} className="se-btn se-btn-primary">{syncing ? 'Syncing…' : 'Sync comments'}</button>}
-          </>
-        }
-      />
+      <div className="se-head">
+        <div>
+          <h1>Social engagement</h1>
+          <p>Reply to Instagram and Facebook comments from one place.</p>
+        </div>
+        <div className="se-head-acts">
+          {syncMsg && <span className="se-note" role="status">{syncMsg}</span>}
+          <Link href="/admin/social/categories" className="se-pill">Categories</Link>
+          {connected && (
+            <button onClick={sync} disabled={syncing} className="cv-btn cv-btn-primary">
+              {I(<><path d="M21 12a9 9 0 0 1-15.36 6.36L3 16" /><path d="M3 12a9 9 0 0 1 15.36-6.36L21 8" /><polyline points="21 3 21 8 16 8" /><polyline points="3 21 3 16 8 16" /></>, 15)}
+              {syncing ? 'Syncing…' : 'Sync comments'}
+            </button>
+          )}
+        </div>
+      </div>
 
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 18 }}>
-        <Chip label="Total Posts" value={stats.posts} tone="var(--ink)" />
-        <Chip label="Total Comments" value={stats.comments} tone="var(--ink)" />
-        <Chip label="Replied" value={stats.replied} tone="#16a34a" />
-        <Chip label="Unreplied" value={stats.unreplied} tone={stats.unreplied ? '#dc2626' : 'var(--ink)'} />
+      <div className="se-tiles">
+        {tiles.map(t => {
+          const body = (
+            <>
+              <span className="se-tile-top"><span className="se-tile-l">{t.label}</span><span className="se-tile-ic">{t.icon}</span></span>
+              <span className="se-tile-v" style={t.key === 'unreplied' && t.value ? { color: '#ea580c' } : undefined}>{t.value.toLocaleString()}</span>
+              <span className="se-tile-s">{t.sub}</span>
+            </>
+          )
+          return t.onClick
+            ? <button key={t.key} type="button" className={'se-tile' + (t.on && t.key !== 'comments' ? ' on' : '')} style={{ ['--t' as any]: t.color }} aria-pressed={!!t.on} onClick={t.onClick}>{body}</button>
+            : <div key={t.key} className="se-tile static" style={{ ['--t' as any]: t.color }}>{body}</div>
+        })}
       </div>
 
       {checked && !connected ? (
-        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 18, padding: '40px 28px', textAlign: 'center' }}>
-          <p style={{ fontSize: 17, fontWeight: 800, color: 'var(--ink)', margin: '0 0 6px' }}>Connect Facebook or Instagram to access this feature</p>
-          <p style={{ fontSize: 13.5, color: 'var(--slate)', margin: '0 0 20px', lineHeight: 1.55, maxWidth: 560, marginInline: 'auto' }}>
-            Colvy unifies comments from Facebook and Instagram into one dashboard so you can reply to everything in one place.
-          </p>
-          <Link href="/admin/crm-settings/channels/meta" style={{ display: 'inline-block', padding: '11px 22px', borderRadius: 12, background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, textDecoration: 'none' }}>Connect Facebook &amp; Instagram</Link>
+        <div className="se-card se-connect">
+          <EmptyScroll kinds={['chat', 'photo']} title="Connect Facebook or Instagram"
+            line="Colvy brings comments from your Facebook and Instagram posts into one place, so you can reply to everything here."
+            action={<Link href="/admin/crm-settings/channels/meta" className="cv-btn cv-btn-primary" style={{ textDecoration: 'none' }}>Connect Facebook &amp; Instagram</Link>} />
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0,1fr) 260px', gap: 18, alignItems: 'start' }}>
+        <div className="se-grid">
           {/* Feed */}
-          <div>
+          <div style={{ minWidth: 0 }}>
             {filtered.length === 0 ? (
-              <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: 12 }}>
+              <div className="se-card" style={{ padding: '24px 12px' }}>
                 {comments.length === 0
                   ? <EmptyScroll kinds={['chat', 'photo']} title="No comments yet" line="Sync to pull in comments from your Facebook and Instagram posts."
                       action={connected ? <button type="button" className="cv-btn" onClick={sync} disabled={syncing}>{syncing ? 'Syncing…' : 'Sync comments'}</button> : undefined} />
                   : <EmptyScroll kinds={['chat', 'photo']} title={search.trim() ? 'No matches' : 'No comments match these filters'}
                       line={search.trim() ? `Nothing matches “${search.trim()}”.` : 'Try clearing a filter to see more.'}
-                      action={<button type="button" className="cv-btn" onClick={() => { setSearch(''); setRisk('all'); setType('all'); setCat(''); setPlatform('all') }}>Clear filters</button>} />}
+                      action={<button type="button" className="cv-btn" onClick={clearAll}>Clear filters</button>} />}
               </div>
             ) : pg.items.map(c => {
               const critical = (c.risk_level || 'safe') === 'critical'
@@ -482,148 +479,164 @@ export default function SocialEngagementPage() {
               const linked = c.contact_id ? contactInfo[c.contact_id] : undefined
               const authorName = (c.author_name && !PLACEHOLDER_AUTHOR.test(c.author_name) ? c.author_name : linked?.name) || c.author_name || `${PLATFORM[plat].label} user`
               return (
-              <div key={c.id} id={`comment-${c.id}`} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '16px 18px', marginBottom: 14, opacity: c.is_hidden ? 0.6 : 1, boxShadow: hot ? '0 0 0 3px var(--coral)' : undefined, transition: 'box-shadow 0.4s' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                    <span style={{ position: 'relative', flexShrink: 0 }}>
-                      <Avatar key={c.author_photo || linked?.avatar || c.id} src={c.author_photo || linked?.avatar} name={authorName} />
-                      <span style={{ position: 'absolute', right: -3, bottom: -3, borderRadius: plat === 'instagram' ? 6 : '50%', boxShadow: '0 0 0 2px #fff', display: 'flex' }}><PlatformMark platform={plat} size={16} /></span>
+              <article key={c.id} id={`comment-${c.id}`} className={'se-card se-c' + (hot ? ' hot' : '') + (c.is_hidden ? ' hidden' : '')}>
+                <div className="se-c-head">
+                  <span style={{ position: 'relative', flexShrink: 0 }}>
+                    <Avatar key={c.author_photo || linked?.avatar || c.id} src={c.author_photo || linked?.avatar} name={authorName} />
+                    <span style={{ position: 'absolute', right: -3, bottom: -3, borderRadius: plat === 'instagram' ? 6 : '50%', boxShadow: '0 0 0 2px #fff', display: 'flex' }}><PlatformMark platform={plat} size={17} /></span>
+                  </span>
+                  <div className="se-c-who">
+                    <b>{authorName}</b>
+                    <span className="se-c-meta">
+                      <span>{PLATFORM[plat].label}</span>
+                      {c.commented_at && <><span className="se-dot" /><span>{new Date(c.commented_at).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</span></>}
+                      {c.is_hidden && <><span className="se-dot" /><span>Hidden</span></>}
                     </span>
-                    <div style={{ minWidth: 0 }}>
-                      <p style={{ margin: 0, fontWeight: 800, fontSize: 14 }}>{authorName}</p>
-                      <p style={{ margin: 0, fontSize: 11, color: 'var(--slate)' }}><span style={{ color: PLATFORM[plat].color, fontWeight: 700 }}>{PLATFORM[plat].label}</span> · {c.commented_at ? new Date(c.commented_at).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}{c.is_hidden ? ' · hidden' : ''}{c.is_replied ? ' · replied' : ''}</p>
-                      <button onClick={() => openLink(c)} title="Match this commenter to a customer"
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 3, padding: '2px 8px', borderRadius: 999, border: '1px solid var(--border)', background: c.contact_id ? 'var(--peach)' : '#fff', color: c.contact_id ? 'var(--coral)' : 'var(--slate)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-                        {c.contact_id ? `Linked${c.contact_name ? `: ${c.contact_name}` : ''}` : 'Link to customer'}
-                      </button>
-                    </div>
                   </div>
-                  <span style={{ fontSize: 11.5, fontWeight: 800, padding: '4px 11px', borderRadius: 999, background: critical ? '#fee2e2' : '#dcfce7', color: critical ? '#dc2626' : '#16a34a', whiteSpace: 'nowrap' }}>
-                    {critical
-                      ? <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: 4 }}><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>Critical / Harmful</>
-                      : <><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-1px', marginRight: 4 }}><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.3 3.1 4.5 6.8 4.5c2.1 0 3.6 1.1 5.2 3 1.6-1.9 3.1-3 5.2-3 3.7 0 5.9 3.8 4.4 7.3C19.5 16.4 12 21 12 21z" /></svg>Safe / Positive</>}
+                  <span className="se-tags">
+                    <span className="se-tag dot" style={{ ['--t' as any]: c.is_replied ? '#22c55e' : '#f97316' }}>{c.is_replied ? 'Replied' : 'Needs reply'}</span>
+                    <span className="se-tag dot" style={{ ['--t' as any]: critical ? '#ef4444' : '#14b8a6' }}>{critical ? 'Critical' : 'Safe'}</span>
                   </span>
                 </div>
 
-                <p style={{ margin: '0 0 8px', fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.55 }}>{c.message || <span style={{ color: 'var(--slate)', fontStyle: 'italic' }}>(no text)</span>}</p>
-                {c.attachment_url && <img src={c.attachment_url} alt="" referrerPolicy="no-referrer" style={{ maxWidth: 200, borderRadius: 10, marginBottom: 8 }} />}
+                <p className="se-c-msg">{c.message || <span style={{ color: '#a1a1aa', fontStyle: 'italic' }}>(no text)</span>}</p>
+                {c.attachment_url && <img src={c.attachment_url} alt="" referrerPolicy="no-referrer" style={{ maxWidth: 220, borderRadius: 14, marginBottom: 10, display: 'block' }} />}
                 {post && <PostPreview key={post.id} post={post} platform={plat} />}
 
-                {c.category && <span style={{ display: 'inline-block', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 8, background: 'var(--canvas)', color: 'var(--slate)' }}>{c.category}</span>}
+                <div className="se-c-labels">
+                  {c.category && <span className="se-tag">{c.category}</span>}
+                  <button type="button" onClick={() => openLink(c)} title="Match this commenter to a customer" className={'se-link' + (c.contact_id ? ' on' : '')}>
+                    {I(<><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></>, 13)}
+                    <span>{c.contact_id ? `Linked${c.contact_name ? `: ${c.contact_name}` : ''}` : 'Link to customer'}</span>
+                  </button>
+                </div>
 
                 {c.is_replied && c.reply_text && (
-                  <div style={{ marginTop: 10, padding: '10px 13px', background: 'var(--peach)', borderRadius: 10, borderLeft: '3px solid var(--coral)' }}>
-                    <p style={{ margin: '0 0 2px', fontSize: 10.5, fontWeight: 800, color: 'var(--coral)' }}>Your reply{c.replied_by_ai ? ' (AI)' : ''}</p>
-                    <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)' }}>{c.reply_text}</p>
+                  <div className="se-reply">
+                    <p className="se-reply-h">{I(<><polyline points="9 17 4 12 9 7" /><path d="M20 18v-2a4 4 0 0 0-4-4H4" /></>, 13)} Your reply{c.replied_by_ai ? ' (AI)' : ''}</p>
+                    <p className="se-reply-t">{c.reply_text}</p>
                   </div>
                 )}
 
                 {composer?.id !== c.id && !c.is_replied && drafts[c.id] && companyId ? (
                   <div className="se-agsg" style={{ marginTop: 12 }}>
-                    <style>{'.se-agsg .agsg{max-width:none;margin-left:0}'}</style>
                     <SuggestionCard s={drafts[c.id]} companyId={companyId} compact onDone={(_id, status) => {
                       setDrafts(d => { const n = { ...d }; delete n[c.id]; return n })
                       setTimeout(() => { load(); loadDrafts() }, 600)
                     }} />
                   </div>
                 ) : composer?.id === c.id ? (
-                  <div style={{ marginTop: 10 }}>
+                  <div className="se-composer">
                     <textarea value={composer.text} onChange={e => setComposer({ ...composer, text: e.target.value })} rows={2}
                       placeholder={composer.mode === 'dm' ? 'Private message to the commenter…' : 'Reply publicly…'}
-                      style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, resize: 'vertical', outline: 'none' }} />
-                    <div style={{ display: 'flex', gap: 8, marginTop: 8, justifyContent: 'flex-end' }}>
-                      <button onClick={() => setComposer(null)} className="se-btn se-btn-ghost">Cancel</button>
-                      <button onClick={doReply} disabled={composer.busy || !composer.text.trim()} className="se-btn se-btn-primary">{composer.busy ? 'Sending…' : composer.mode === 'dm' ? 'Send DM' : 'Post reply'}</button>
+                      aria-label={composer.mode === 'dm' ? 'Private message' : 'Public reply'} />
+                    <div className="se-composer-acts">
+                      <button onClick={() => setComposer(null)} className="se-btn">Cancel</button>
+                      <button onClick={doReply} disabled={composer.busy || !composer.text.trim()} className="se-btn primary">{composer.busy ? 'Sending…' : composer.mode === 'dm' ? 'Send message' : 'Post reply'}</button>
                     </div>
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 12, flexWrap: 'wrap' }}>
-                    {!c.is_replied && <button className="se-act" style={{ color: '#7c3aed' }} onClick={() => aiDraft(c)} disabled={drafting === c.id}><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ display: 'inline-block', verticalAlign: '-2px', marginRight: 4 }}><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z" /></svg>{drafting === c.id ? 'Drafting…' : 'Generate AI Reply'}</button>}
-                    <button className="se-act" onClick={() => setComposer({ id: c.id, mode: 'reply', text: '' })}>Reply</button>
-                    <button className="se-act" onClick={() => setComposer({ id: c.id, mode: 'dm', text: '' })}>Message</button>
-                    <button className="se-act" onClick={async () => { await act(c, c.is_hidden ? 'unhide' : 'hide'); patch(c.id, { is_hidden: !c.is_hidden }) }}>{c.is_hidden ? 'Unhide' : 'Hide'}</button>
-                    <button className="se-act" onClick={async () => { await act(c, showArchived ? 'unarchive' : 'archive'); patch(c.id, { is_archived: !showArchived }) }}>{showArchived ? 'Unarchive' : 'Archive'}</button>
+                  <div className="se-acts">
+                    {!c.is_replied && (
+                      <button className="se-btn ai" onClick={() => aiDraft(c)} disabled={drafting === c.id}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z" /></svg>
+                        {drafting === c.id ? 'Drafting…' : 'AI reply'}
+                      </button>
+                    )}
+                    <button className="se-btn" onClick={() => setComposer({ id: c.id, mode: 'reply', text: '' })}>Reply</button>
+                    <button className="se-btn" onClick={() => setComposer({ id: c.id, mode: 'dm', text: '' })}>Message</button>
+                    <span style={{ flex: 1 }} />
+                    <button className="se-btn quiet" onClick={async () => { await act(c, c.is_hidden ? 'unhide' : 'hide'); patch(c.id, { is_hidden: !c.is_hidden }) }}>{c.is_hidden ? 'Unhide' : 'Hide'}</button>
+                    <button className="se-btn quiet" onClick={async () => { await act(c, showArchived ? 'unarchive' : 'archive'); patch(c.id, { is_archived: !showArchived }) }}>{showArchived ? 'Unarchive' : 'Archive'}</button>
                   </div>
                 )}
-              </div>
+              </article>
             )})}
             <Pagination {...pg} noun="comments" />
           </div>
 
           {/* Filters */}
-          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: 16, position: 'sticky', top: 16 }}>
-            <p style={{ margin: '0 0 10px', fontWeight: 800, fontSize: 14 }}>Filter</p>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…" style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, outline: 'none', marginBottom: 14 }} />
+          <aside className={'se-card se-filters' + (filtersOpen ? ' open' : '')} aria-label="Filters">
+            <div className="se-f-head">
+              <b>Filters</b>
+              {filtersOn && <button type="button" className="se-clear" onClick={clearAll}>Clear</button>}
+              <button type="button" className="se-f-toggle" aria-expanded={filtersOpen} onClick={() => setFiltersOpen(o => !o)}>
+                {filtersOpen ? 'Hide' : 'More filters'}{!filtersOpen && filterCount > 0 && <span className="se-badge">{filterCount}</span>}
+              </button>
+            </div>
+            <label className="se-search">
+              {I(<><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></>, 15)}
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search comments" aria-label="Search comments" />
+              {search && <button type="button" className="se-x" onClick={() => setSearch('')} aria-label="Clear search">{I(<><path d="M18 6 6 18" /><path d="m6 6 12 12" /></>, 12)}</button>}
+            </label>
 
-            <p style={{ margin: '0 0 6px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', color: 'var(--slate)' }}>Platform</p>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+            <div className="se-f-body">
+            <p className="se-f-label">Platform</p>
+            <div className="se-chips">
               <button className={'se-fchip' + (platform === 'all' ? ' on' : '')} onClick={() => setPlatform('all')}>All</button>
               {(['instagram', 'facebook'] as const).map(v => (
-                <button key={v} className={'se-fchip' + (platform === v ? ' on' : '')} onClick={() => setPlatform(platform === v ? 'all' : v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <PlatformMark platform={v} size={14} />{PLATFORM[v].label}<span style={{ opacity: 0.7 }}>{platformCounts[v]}</span>
+                <button key={v} className={'se-fchip' + (platform === v ? ' on' : '')} onClick={() => setPlatform(platform === v ? 'all' : v)}>
+                  <PlatformMark platform={v} size={15} />{PLATFORM[v].label}<span className="n">{platformCounts[v]}</span>
                 </button>
               ))}
             </div>
 
-            <p style={{ margin: '0 0 6px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', color: 'var(--slate)' }}>Risk level</p>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
-              {(['all', 'safe', 'critical'] as const).map(v => <button key={v} className={'se-fchip' + (risk === v ? ' on' : '')} onClick={() => setRisk(v)}>{v === 'all' ? 'All' : v === 'safe' ? 'Safe' : 'Critical'}</button>)}
+            <p className="se-f-label">Risk</p>
+            <div className="se-seg">
+              {(['all', 'safe', 'critical'] as const).map(v => <button key={v} className={risk === v ? 'on' : ''} onClick={() => setRisk(v)}>{v === 'all' ? 'All' : v === 'safe' ? 'Safe' : 'Critical'}</button>)}
             </div>
 
-            <p style={{ margin: '0 0 6px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', color: 'var(--slate)' }}>Reply status</p>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
-              {(['all', 'unreplied', 'replied'] as const).map(v => <button key={v} className={'se-fchip' + (type === v ? ' on' : '')} onClick={() => setType(v)}>{v[0].toUpperCase() + v.slice(1)}</button>)}
+            <p className="se-f-label">Reply status</p>
+            <div className="se-seg">
+              {(['all', 'unreplied', 'replied'] as const).map(v => <button key={v} className={type === v ? 'on' : ''} onClick={() => setType(v)}>{v === 'all' ? 'All' : v === 'unreplied' ? 'Needs reply' : 'Replied'}</button>)}
             </div>
 
-            <p style={{ margin: '0 0 6px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', color: 'var(--slate)' }}>Category</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 14, maxHeight: 260, overflowY: 'auto' }}>
-              <button className={'se-fchip' + (cat === '' ? ' on' : '')} style={{ textAlign: 'left' }} onClick={() => setCat('')}>All categories</button>
+            <p className="se-f-label">Category</p>
+            <div className="se-cats">
+              <button className={'se-cat' + (cat === '' ? ' on' : '')} onClick={() => setCat('')}><span>All categories</span><span className="n">{active.length}</span></button>
               {Object.entries(catCounts).sort((a, b) => b[1] - a[1]).map(([name, n]) => (
-                <button key={name} className={'se-fchip' + (cat === name ? ' on' : '')} style={{ textAlign: 'left', display: 'flex', justifyContent: 'space-between' }} onClick={() => setCat(cat === name ? '' : name)}>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span><span>{n}</span>
+                <button key={name} className={'se-cat' + (cat === name ? ' on' : '')} onClick={() => setCat(cat === name ? '' : name)}>
+                  <span>{name}</span><span className="n">{n}</span>
                 </button>
               ))}
             </div>
 
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--ink)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} style={{ accentColor: 'var(--coral)' }} />
-              Show archived
+            <label className="se-arch">
+              <span>Show archived</span>
+              <input type="checkbox" role="switch" className="se-switch" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />
             </label>
-          </div>
+            </div>
+          </aside>
         </div>
       )}
 
-      {/* Link-to-customer modal */}
+      {/* Link-to-customer dialog */}
       {linkFor && (
-        <div onClick={() => setLinkFor(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, background: '#fff', borderRadius: 16, border: '1px solid var(--border)', padding: 20, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 4 }}>
-              <p style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>Link to customer</p>
-              <span style={{ fontSize: 11.5, fontWeight: 800, padding: '4px 10px', borderRadius: 999, background: linkFor.contact_id ? 'var(--peach)' : '#f3f4f6', color: linkFor.contact_id ? 'var(--coral)' : 'var(--slate)' }}>
-                {linkFor.contact_id ? 'Matched' : 'Not matched'}
-              </span>
+        <div className="se-overlay" onClick={() => setLinkFor(null)}>
+          <div className="se-modal" role="dialog" aria-modal="true" aria-label="Link to customer" onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+              <p style={{ margin: 0, fontSize: 21, fontWeight: 800, letterSpacing: '-0.02em' }}>Link to customer</p>
+              <button type="button" className="se-round" onClick={() => setLinkFor(null)} aria-label="Close">{I(<><path d="M18 6 6 18" /><path d="m6 6 12 12" /></>, 15)}</button>
             </div>
-            <p style={{ margin: '0 0 12px', fontSize: 12.5, color: 'var(--slate)' }}>Comment by <strong>{linkFor.author_name || 'Unknown'}</strong></p>
-            <input autoFocus value={contactSearch} onChange={e => setContactSearch(e.target.value)} placeholder="Search customers…"
-              style={{ width: '100%', boxSizing: 'border-box', padding: '9px 11px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14 }} />
+            <p style={{ margin: '6px 0 14px', fontSize: 13.5, color: '#71717a', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span className="se-tag dot" style={{ ['--t' as any]: linkFor.contact_id ? '#22c55e' : '#a1a1aa' }}>{linkFor.contact_id ? 'Matched' : 'Not matched'}</span>
+              Comment by <strong style={{ color: 'var(--ink)' }}>{linkFor.author_name || 'Unknown'}</strong>
+            </p>
+            <input autoFocus value={contactSearch} onChange={e => setContactSearch(e.target.value)} placeholder="Search customers…" className="se-field" aria-label="Search customers" />
             {linkFor.contact_id && (
-              <button onClick={() => setLink(linkFor, null)} style={{ alignSelf: 'flex-start', margin: '10px 0 0', fontSize: 12, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Unlink current customer</button>
+              <button onClick={() => setLink(linkFor, null)} className="se-contact" style={{ color: '#e11d48', fontWeight: 600, fontSize: 13.5, marginTop: 8 }}>Unlink the current customer</button>
             )}
-            <div style={{ marginTop: 12, overflowY: 'auto', flex: 1 }}>
+            <div style={{ marginTop: 8, overflowY: 'auto', flex: 1 }}>
               {contactLoading && contactResults.length === 0 ? (
-                <p style={{ padding: 16, color: 'var(--slate)', fontSize: 13 }}>Searching…</p>
+                <p style={{ padding: 16, color: '#8e8e93', fontSize: 13.5 }}>Searching…</p>
               ) : contactResults.length === 0 ? (
-                <p style={{ padding: 16, color: 'var(--slate)', fontSize: 13 }}>No customers found{contactSearch.trim() ? ` for “${contactSearch.trim()}”` : ''}.</p>
+                <p style={{ padding: 16, color: '#8e8e93', fontSize: 13.5 }}>No customers found{contactSearch.trim() ? ` for “${contactSearch.trim()}”` : ''}.</p>
               ) : contactResults.map((c: any) => (
-                <button key={c.id} onClick={() => setLink(linkFor, c)}
-                  style={{ width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, border: 'none', background: linkFor.contact_id === c.id ? 'var(--peach)' : 'transparent', cursor: 'pointer' }}
-                  onMouseEnter={e => { if (linkFor.contact_id !== c.id) (e.currentTarget.style.background = 'var(--canvas)') }}
-                  onMouseLeave={e => { if (linkFor.contact_id !== c.id) (e.currentTarget.style.background = 'transparent') }}>
-                  <span style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, flexShrink: 0 }}>{(c.name || '?').charAt(0).toUpperCase()}</span>
+                <button key={c.id} onClick={() => setLink(linkFor, c)} className={'se-contact' + (linkFor.contact_id === c.id ? ' on' : '')}>
+                  <span style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13.5, flexShrink: 0 }}>{(c.name || '?').charAt(0).toUpperCase()}</span>
                   <span style={{ minWidth: 0 }}>
-                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name || 'Unnamed'}</span>
-                    {c.email && <span style={{ display: 'block', fontSize: 11.5, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.email}</span>}
+                    <span style={{ display: 'block', fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name || 'Unnamed'}</span>
+                    {c.email && <span style={{ display: 'block', fontSize: 12.5, color: '#8e8e93', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.email}</span>}
                   </span>
                 </button>
               ))}
@@ -634,3 +647,135 @@ export default function SocialEngagementPage() {
     </div>
   )
 }
+
+// The Social look: a big bold header, tiles that filter, comment cards with
+// pill actions and a soft filter rail.
+const SE_CSS = `
+.se{padding:24px 28px 48px;max-width:1500px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
+.se button::before,.se-modal button::before{display:none}
+.se-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+.se-head h1{margin:0;font-size:30px;font-weight:800;letter-spacing:-.025em;line-height:1.1}
+.se-head p{margin:6px 0 0;font-size:14px;color:#71717a}
+.se-head-acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.se-note{font-size:13px;color:#71717a;max-width:360px}
+.se-pill{display:inline-flex;align-items:center;height:38px;padding:0 15px;border-radius:999px;background:#f4f4f5;color:#18181b;font-size:13.5px;font-weight:600;text-decoration:none;transition:background-color .15s}
+.se-pill:hover{background-color:#ececef}
+.se-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:18px}
+.se-tile{display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:14px 16px;border:none;border-radius:18px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.07),0 1px 2px rgba(16,24,40,.04);font:inherit;color:inherit;text-align:left;min-width:0;cursor:pointer;transition:box-shadow .15s,transform .2s cubic-bezier(.22,1,.36,1)}
+.se-tile.static{cursor:default}
+button.se-tile:hover{transform:translateY(-1px)}
+.se-tile.on{box-shadow:0 0 0 2px var(--t)}
+.se-tile-top{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%}
+.se-tile-l{font-size:13.5px;font-weight:600;color:#71717a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.se-tile-ic{width:30px;height:30px;border-radius:10px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--t) 11%,#fff);color:var(--t)}
+.se-tile-v{margin-top:2px;font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1.1;font-variant-numeric:tabular-nums}
+.se-tile-s{font-size:12.5px;color:#8e8e93;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.se-card{background:#fff;border-radius:20px;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04);min-width:0}
+.se-connect{padding:24px 12px}
+.se-grid{display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:18px;align-items:start}
+.se-c{padding:18px 20px;margin-bottom:12px;transition:box-shadow .4s}
+.se-c.hot{box-shadow:0 0 0 3px var(--coral)}
+.se-c.hidden{opacity:.6}
+.se-c-head{display:flex;align-items:center;gap:12px;margin-bottom:12px;min-width:0}
+.se-c-who{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.se-c-who b{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.se-c-meta{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:12.5px;color:#8e8e93}
+.se-dot{width:3px;height:3px;border-radius:50%;background:#c4c4c8;flex-shrink:0}
+.se-tags{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.se-tag{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px;border-radius:999px;font-size:12.5px;font-weight:600;white-space:nowrap;background:#f4f4f5;color:#52525b}
+.se-tag.dot{background:color-mix(in srgb,var(--t) 12%,#fff);color:color-mix(in srgb,var(--t) 78%,#000)}
+.se-tag.dot::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--t)}
+.se-c-msg{margin:0 0 10px;font-size:14.5px;color:var(--ink);line-height:1.55;overflow-wrap:anywhere}
+.se-post{display:flex;align-items:center;gap:10px;max-width:100%;box-sizing:border-box;margin:0;padding:6px 6px 6px 6px;border-radius:14px;background:#f4f4f5;color:#52525b;font-size:12.5px;font-weight:500;text-decoration:none}
+.se-post-open{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:999px;color:#71717a;background:#fff}
+.se-post-open:hover{color:#18181b}
+.se-c-labels{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.se-link{display:inline-flex;align-items:center;gap:5px;height:28px;max-width:100%;padding:0 11px;border:none;border-radius:999px;background:#f4f4f5;color:#52525b;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+.se-link span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.se-link:hover{background:#ececef}
+.se-link.on{background:color-mix(in srgb,var(--coral) 10%,#fff);color:color-mix(in srgb,var(--coral) 85%,#000)}
+.se-reply{margin-top:12px;padding:12px 14px;border-radius:16px;background:color-mix(in srgb,var(--coral) 7%,#fff)}
+.se-reply-h{margin:0 0 3px;display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:color-mix(in srgb,var(--coral) 85%,#000)}
+.se-reply-t{margin:0;font-size:14px;line-height:1.55;color:#27272a;overflow-wrap:anywhere}
+.se-agsg .agsg{max-width:none;margin-left:0}
+.se-composer{margin-top:12px}
+.se-composer textarea{width:100%;box-sizing:border-box;padding:12px 14px;border-radius:14px;border:1.5px solid transparent;background-color:#f4f4f5;font:inherit;font-size:14px;resize:vertical;outline:none;color:var(--ink);transition:background-color .15s,border-color .15s,box-shadow .15s}
+.se-composer textarea:focus{background-color:#fff;border-color:#d4d4d8!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 16%,transparent)}
+.se-composer-acts{display:flex;gap:8px;margin-top:10px;justify-content:flex-end}
+.se-acts{display:flex;align-items:center;gap:6px;margin-top:14px;flex-wrap:wrap}
+.se-btn{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;border:none;border-radius:999px;background:#f4f4f5;color:#18181b;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background-color .15s,filter .15s}
+.se-btn:hover:not(:disabled){background-color:#ececef}
+.se-btn:disabled{opacity:.55;cursor:default}
+.se-btn.primary{background:var(--coral);color:#fff}
+.se-btn.primary:hover:not(:disabled){background:var(--coral);filter:brightness(.95)}
+.se-btn.ai{background:color-mix(in srgb,#7c3aed 10%,#fff);color:#6d28d9}
+.se-btn.ai:hover:not(:disabled){background-color:color-mix(in srgb,#7c3aed 16%,#fff)}
+.se-btn.quiet{background:none;color:#71717a;padding:0 10px}
+.se-btn.quiet:hover{background:#f4f4f5;color:#18181b}
+.se-filters{padding:18px;position:sticky;top:16px}
+.se-f-head{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:12px}
+.se-f-head b{margin-right:auto}
+.se-f-toggle{display:none;align-items:center;gap:6px;height:30px;padding:0 12px;border:none;border-radius:999px;background:#f4f4f5;font:inherit;font-size:13px;font-weight:600;color:#18181b;cursor:pointer}
+.se-badge{min-width:18px;height:18px;padding:0 5px;box-sizing:border-box;border-radius:999px;background:var(--coral);color:#fff;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
+.se-f-head b{font-size:16px;font-weight:700}
+.se-clear{height:28px;padding:0 10px;border:none;border-radius:999px;background:none;font:inherit;font-size:13px;font-weight:600;color:var(--coral);cursor:pointer}
+.se-clear:hover{background:#f4f4f5}
+.se-search{display:flex;align-items:center;gap:8px;height:38px;padding:0 10px 0 14px;border-radius:999px;border:1.5px solid transparent;background:#f4f4f5;color:#a1a1aa;box-sizing:border-box;margin-bottom:4px;transition:background-color .15s,border-color .15s,box-shadow .15s}
+.se-search:focus-within{background:#fff;border-color:#d4d4d8;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 16%,transparent)}
+.se-search input{flex:1;min-width:0;border:none;outline:none;background:transparent;font:inherit;font-size:14px;color:var(--ink)}
+.se-search input:focus{box-shadow:none}
+.se-x{width:24px;height:24px;padding:0;border:none;border-radius:999px;background:#e4e4e7;color:#52525b;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.se-f-label{margin:16px 0 8px;font-size:13.5px;font-weight:600;color:#71717a}
+.se-chips{display:flex;gap:6px;flex-wrap:wrap}
+.se-fchip{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:none;border-radius:999px;background:#f4f4f5;color:#3f3f46;font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:background-color .15s,color .15s}
+.se-fchip:hover{background-color:#ececef}
+.se-fchip.on{background:#18181b;color:#fff}
+.se-fchip .n,.se-cat .n{font-size:12px;opacity:.65;font-variant-numeric:tabular-nums}
+.se-seg{display:flex;gap:2px;padding:3px;border-radius:999px;background:#f4f4f5}
+.se-seg button{flex:1;height:30px;padding:0 8px;border:none;border-radius:999px;background:transparent;font:inherit;font-size:13px;font-weight:600;color:#52525b;cursor:pointer;white-space:nowrap;transition:background .15s,color .15s,box-shadow .15s}
+.se-seg button:hover{color:#18181b}
+.se-seg button.on{background:#fff;color:#18181b;box-shadow:0 1px 3px rgba(0,0,0,.1),0 0 0 .5px rgba(0,0,0,.04)}
+.se-cats{display:flex;flex-direction:column;gap:2px;max-height:260px;overflow-y:auto;margin:0 -6px}
+.se-cat{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:none;border-radius:12px;background:none;font:inherit;font-size:13.5px;font-weight:500;color:#27272a;text-align:left;cursor:pointer}
+.se-cat span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.se-cat:hover{background:#f4f4f5}
+.se-cat.on{background:color-mix(in srgb,var(--coral) 10%,#fff);color:color-mix(in srgb,var(--coral) 85%,#000);font-weight:600}
+.se-arch{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:16px;padding-top:14px;border-top:1px solid #f0f0f2;font-size:14px;font-weight:600;cursor:pointer}
+.se-switch{appearance:none;-webkit-appearance:none;flex-shrink:0;width:40px;height:24px;margin:0;border-radius:999px;background:#d4d4d8;position:relative;cursor:pointer;transition:background-color .2s}
+.se-switch::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .2s cubic-bezier(.22,1,.36,1)}
+.se-switch:checked{background:#34c759}
+.se-switch:checked::after{transform:translateX(16px)}
+.se-switch:focus{box-shadow:none}
+@keyframes seFade{from{opacity:0}to{opacity:1}}
+@keyframes seRise{from{transform:translateY(12px) scale(.98);opacity:0}to{transform:none;opacity:1}}
+.se-overlay{position:fixed;inset:0;z-index:5700;background:rgba(15,15,20,.35);display:flex;align-items:center;justify-content:center;padding:16px;animation:seFade .18s ease}
+.se-modal{width:100%;max-width:440px;max-height:85vh;display:flex;flex-direction:column;background:#fff;border-radius:24px;padding:22px;box-sizing:border-box;box-shadow:0 24px 64px rgba(0,0,0,.22);animation:seRise .24s cubic-bezier(.22,1,.36,1);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
+.se-round{width:34px;height:34px;padding:0;border:none;border-radius:999px;background:#f4f4f5;color:#52525b;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
+.se-round:hover{background:#ececef;color:#18181b}
+.se-field{display:block;width:100%;box-sizing:border-box;height:42px;padding:0 14px;border:1.5px solid transparent;border-radius:12px;background:#f4f4f5;font:inherit;font-size:14.5px;color:var(--ink);outline:none}
+.se-field:focus{background:#fff;border-color:#d4d4d8!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 16%,transparent)}
+.se-contact{width:100%;text-align:left;display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:14px;border:none;background:transparent;cursor:pointer;font:inherit;color:var(--ink);transition:background-color .12s}
+.se-contact:hover{background-color:#f4f4f5}
+.se-contact.on{background:color-mix(in srgb,var(--coral) 9%,#fff)}
+.se-tile:focus-visible,.se-btn:focus-visible,.se-fchip:focus-visible,.se-seg button:focus-visible,.se-cat:focus-visible,.se-link:focus-visible,.se-switch:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 28%,transparent)}
+@media(max-width:1023px){.se-grid{grid-template-columns:1fr}.se-filters{position:static;order:-1;padding:14px 16px}.se-f-toggle{display:inline-flex}.se-filters:not(.open) .se-f-body{display:none}.se-f-head{margin-bottom:10px}}
+@media(max-width:700px){
+  .se{padding:16px 14px 40px}
+  .se-head{flex-direction:column;align-items:stretch}
+  .se-head h1{font-size:26px}
+  .se-head-acts{justify-content:stretch}
+  .se-head-acts > *{flex:1;justify-content:center}
+  .se-note{flex-basis:100%;text-align:center}
+  .se-tiles{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .se-tile{padding:12px 14px}
+  .se-tile-v{font-size:21px}
+  .se-c{padding:14px;border-radius:18px;margin-bottom:8px}
+  .se-c-head{align-items:flex-start;flex-wrap:wrap}
+  .se-tags{flex-basis:100%;justify-content:flex-start;padding-left:52px;margin-top:-4px}
+  .se-acts .se-btn.quiet{padding:0 8px}
+  .se-overlay{padding:0;align-items:flex-end}
+  .se-modal{max-width:none;border-radius:24px 24px 0 0;max-height:88dvh}
+  .se-field{font-size:16px}
+}
+@media (prefers-reduced-motion: reduce){.se-overlay,.se-modal{animation:none}button.se-tile:hover{transform:none}}
+`

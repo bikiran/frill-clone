@@ -3,7 +3,6 @@ import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
-import PageHeader from '@/components/PageHeader'
 import { SuggestionCard, type Suggestion } from '@/components/AgentSuggestion'
 import EmptyScroll from '@/components/EmptyScroll'
 
@@ -139,108 +138,163 @@ const Icon = {
 // and "Load more". Phone-only and desktop-only pieces are switched with CSS,
 // so nothing flashes.
 const REVIEWS_CSS = `
-  .rv-btn { display:inline-flex; align-items:center; justify-content:center; gap:7px; border-radius:12px; font-weight:700; font-size:13.5px; padding:10px 18px; cursor:pointer; border:1px solid transparent; transition: background .15s ease, border-color .15s ease, transform .06s ease, box-shadow .15s ease; line-height:1; font-family:inherit; white-space:nowrap; }
-  .rv-btn:active { transform: translateY(1px); }
+  .rv-page { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); }
+  .rv-page button::before, .rv-linkmodal button::before, .rv-sheet button::before { display:none; }
+  .rv-headbar { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:20px; }
+  .rv-headbar h1 { margin:0; font-size:30px; font-weight:800; letter-spacing:-.025em; line-height:1.1; }
+  .rv-headbar > div > p { margin:6px 0 0; font-size:14px; color:#71717a; }
+  .rv-btn { display:inline-flex; align-items:center; justify-content:center; gap:7px; border-radius:999px; font-weight:600; font-size:13.5px; height:38px; padding:0 16px; cursor:pointer; border:none; transition: background-color .15s ease, filter .15s ease, transform .06s ease; line-height:1; font-family:inherit; white-space:nowrap; box-sizing:border-box; }
+  .rv-btn:active { transform: scale(.98); }
   .rv-btn:disabled { opacity:.6; cursor:default; }
-  .rv-btn-primary { background: var(--coral); color:#fff; box-shadow: 0 1px 2px rgba(255,122,107,0.35); }
-  .rv-btn-primary:hover:not(:disabled) { background: var(--coral-hover); box-shadow: 0 4px 12px rgba(255,122,107,0.32); }
-  .rv-btn-ghost { background: var(--card, #fff); color: var(--ink); border-color: var(--border); }
-  .rv-btn-ghost:hover:not(:disabled) { background: var(--canvas); border-color:#e2e2e2; }
-  .rv-btn-ai { background: linear-gradient(135deg,#f6f0ff,#fff1f5); color:#7c3aed; border-color:#efe6ff; }
-  .rv-btn-ai:hover:not(:disabled) { box-shadow: 0 4px 12px rgba(124,58,237,0.16); }
-  .rv-chip { display:inline-flex; align-items:center; gap:6px; border-radius:999px; font-size:12px; font-weight:700; padding:5px 12px; cursor:pointer; border:1px solid var(--border); background: var(--card, #fff); color:var(--slate); transition: all .15s; font-family:inherit; flex-shrink:0; }
-  .rv-chip:hover { border-color: var(--coral); color: var(--coral); background: var(--peach); }
-  .rv-chip.on { border-color: var(--coral); color: var(--coral); background: var(--peach); }
-  .rv-preset { padding:8px 14px; border-radius:999px; border:1px solid var(--border); background: var(--card, #fff); color:var(--slate); font-size:12.5px; font-weight:700; cursor:pointer; transition: all .15s; font-family:inherit; }
-  .rv-preset:hover { border-color: var(--coral); color: var(--coral); }
-  .rv-preset.on { background: var(--peach); border-color: var(--coral); color: var(--coral); }
-  .rv-page-btn { min-width:38px; height:38px; padding:0 10px; border-radius:11px; border:1px solid var(--border); background: var(--card, #fff); color:var(--ink); font-size:13.5px; font-weight:700; cursor:pointer; transition: all .15s; display:inline-flex; align-items:center; justify-content:center; font-family:inherit; }
-  .rv-page-btn:hover:not(:disabled):not(.on) { border-color: var(--coral); color: var(--coral); }
-  .rv-page-btn.on { background: var(--coral); border-color: var(--coral); color:#fff; }
+  .rv-btn-primary { background: var(--coral); color:#fff; }
+  .rv-btn-primary:hover:not(:disabled) { filter: brightness(.95); }
+  .rv-btn-ghost { background:#f4f4f5; color:#18181b; }
+  .rv-btn-ghost:hover:not(:disabled) { background-color:#ececef; }
+  .rv-btn-ai { background: color-mix(in srgb, #7c3aed 10%, #fff); color:#6d28d9; }
+  .rv-btn-ai:hover:not(:disabled) { background-color: color-mix(in srgb, #7c3aed 16%, #fff); }
+  .rv-chip { display:inline-flex; align-items:center; gap:6px; height:32px; border-radius:999px; font-size:13px; font-weight:600; padding:0 13px; cursor:pointer; border:none; background:#f4f4f5; color:#3f3f46; transition: background-color .15s, color .15s; font-family:inherit; flex-shrink:0; white-space:nowrap; }
+  .rv-chip:hover { background-color:#ececef; color:#18181b; }
+  .rv-chip.on { background:#18181b; color:#fff; }
+  .rv-preset { height:32px; padding:0 13px; border-radius:999px; border:none; background:transparent; color:#52525b; font-size:13.5px; font-weight:600; cursor:pointer; transition: background .15s, color .15s, box-shadow .15s; font-family:inherit; white-space:nowrap; }
+  .rv-preset:hover { color:#18181b; }
+  .rv-preset.on { background:#fff; color:#18181b; box-shadow: 0 1px 3px rgba(0,0,0,.1), 0 0 0 .5px rgba(0,0,0,.04); }
+  .rv-seg { display:inline-flex; gap:2px; padding:3px; border-radius:999px; background:#f4f4f5; max-width:100%; overflow-x:auto; scrollbar-width:none; }
+  .rv-seg::-webkit-scrollbar { display:none; }
+  .rv-seg .n { margin-left:6px; min-width:18px; height:18px; padding:0 6px; box-sizing:border-box; border-radius:999px; background:rgba(0,0,0,.06); font-size:11.5px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; }
+  .rv-page-btn { min-width:34px; height:34px; padding:0 10px; border-radius:999px; border:none; background:#f4f4f5; color:#3f3f46; font-size:13.5px; font-weight:600; cursor:pointer; transition: background-color .15s, color .15s; display:inline-flex; align-items:center; justify-content:center; font-family:inherit; }
+  .rv-page-btn:hover:not(:disabled):not(.on) { background-color:#ececef; color:#18181b; }
+  .rv-page-btn.on { background:#18181b; color:#fff; }
   .rv-page-btn:disabled { opacity:.4; cursor:default; }
-  .rv-input { padding:10px 13px; border-radius:11px; border:1px solid var(--border); font-size:13.5px; outline:none; background: var(--card, #fff); color:var(--ink); transition: border-color .15s; font-family:inherit; }
-  .rv-input:focus { border-color: var(--coral); }
+  .rv-input { height:36px; padding:0 14px; border-radius:999px; border:1.5px solid transparent; font-size:13.5px; font-weight:500; outline:none; background-color:#f4f4f5; color:var(--ink); transition: background-color .15s, border-color .15s, box-shadow .15s; font-family:inherit; box-sizing:border-box; }
+  select.rv-input { appearance:none; -webkit-appearance:none; padding-right:34px; font-weight:600; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 12px center; background-size:14px; cursor:pointer; }
+  select.rv-input.set { background-color: color-mix(in srgb, var(--coral) 12%, #fff); color: color-mix(in srgb, var(--coral) 85%, #000); }
+  .rv-input:hover { background-color:#ececef; }
+  .rv-input:focus { background-color:#fff; border-color:#d4d4d8 !important; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 16%, transparent); }
 
   .rv-grid { display:grid; grid-template-columns: minmax(0, 1fr) 320px; gap:20px; align-items:start; }
-  .rv-panel { background: var(--card, #fff); border:1px solid var(--border); border-radius:16px; }
-  .rv-filters { padding:16px 18px; margin-bottom:16px; }
-  .rv-empty { padding:12px; text-align:center; color:var(--slate); }
+  .rv-panel { background:#fff; border-radius:20px; box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 1px 2px rgba(16,24,40,.04); }
+  .rv-filters { margin-bottom:14px; display:flex; flex-direction:column; gap:10px; }
+  .rv-frow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .rv-dsearch { flex:1; min-width:220px; display:flex; align-items:center; gap:8px; height:38px; padding:0 10px 0 14px; border-radius:999px; border:1.5px solid transparent; background:#f4f4f5; color:#a1a1aa; box-sizing:border-box; transition: background-color .15s, border-color .15s, box-shadow .15s; }
+  .rv-dsearch:focus-within { background:#fff; border-color:#d4d4d8; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 16%, transparent); }
+  .rv-dsearch input { flex:1; min-width:0; border:none; outline:none; background:transparent; font:inherit; font-size:14px; color:var(--ink); }
+  .rv-dsearch input:focus { box-shadow:none; }
+  .rv-x { width:24px; height:24px; padding:0; border:none; border-radius:999px; background:#e4e4e7; color:#52525b; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
+  .rv-showing { font-size:13px; color:#8e8e93; margin-left:auto; white-space:nowrap; }
+  .rv-clear { height:32px; padding:0 10px; border:none; border-radius:999px; background:none; font:inherit; font-size:13px; font-weight:600; color:var(--coral); cursor:pointer; }
+  .rv-clear:hover { background:#f4f4f5; }
+  .rv-empty { padding:24px 12px; text-align:center; color:#8e8e93; }
 
-  /* Review card (desktop look). */
-  .rv-card { background: var(--card, #fff); border:1px solid var(--border); border-radius:16px; padding:18px 20px; margin-bottom:14px; transition: box-shadow .4s; min-width:0; }
+  /* Review card. */
+  .rv-card { background:#fff; border-radius:20px; box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 1px 2px rgba(16,24,40,.04); padding:18px 20px; margin-bottom:12px; transition: box-shadow .4s; min-width:0; }
   .rv-card.hot { box-shadow: 0 0 0 3px var(--coral); }
   .rv-head { display:flex; align-items:center; gap:12px; margin-bottom:12px; min-width:0; }
-  .rv-av { width:42px; height:42px; border-radius:50%; flex-shrink:0; object-fit:cover; background: var(--peach); color: var(--coral); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:17px; }
-  .rv-who { min-width:0; }
+  .rv-av { width:42px; height:42px; border-radius:50%; flex-shrink:0; object-fit:cover; background: var(--peach); color: var(--coral); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:16px; }
+  .rv-who { min-width:0; flex:1; }
   .rv-name-row { display:flex; align-items:center; gap:8px; min-width:0; }
-  .rv-name { margin:0; font-weight:800; font-size:15px; color: var(--ink); min-width:0; }
-  .rv-match { margin:2px 0 0; font-size:12px; color: var(--slate); }
-  .rv-match.on { color: var(--coral); font-style: italic; }
-  .rv-g { display:inline-flex; align-items:center; flex-shrink:0; text-decoration:none; }
-  .rv-g-d { margin-left:auto; }
-  .rv-body { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; background: var(--canvas); border-radius:12px; padding:14px 16px; }
-  .rv-text-wrap { flex:1; min-width:0; }
-  .rv-text { margin:0; font-size:13.5px; line-height:1.6; color: var(--ink); overflow-wrap:anywhere; }
-  .rv-text .rv-none { color: var(--slate); font-style: italic; }
-  .rv-rate { text-align:right; flex-shrink:0; }
-  .rv-rate p { margin:6px 0 0; font-size:11.5px; color: var(--slate); font-style: italic; }
-  .rv-reply { margin-top:12px; padding:12px 15px; background: var(--peach); border-radius:12px; border-left:3px solid var(--coral); }
-  .rv-reply-h { margin:0 0 3px; font-size:11px; font-weight:800; color: var(--coral); }
-  .rv-reply-t { margin:0; font-size:13px; color: var(--ink); overflow-wrap:anywhere; }
+  .rv-name { margin:0; font-weight:600; font-size:15px; color: var(--ink); min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .rv-match { margin:3px 0 0; font-size:12.5px; color:#8e8e93; }
+  .rv-match.on { color: color-mix(in srgb, var(--coral) 85%, #000); }
+  .rv-g { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; text-decoration:none; width:32px; height:32px; border-radius:999px; background:#f4f4f5; }
+  .rv-g-d { margin-left:2px; }
+  .rv-body { display:block; }
+  .rv-text-wrap { min-width:0; }
+  .rv-text { margin:0; font-size:14.5px; line-height:1.6; color: var(--ink); overflow-wrap:anywhere; }
+  .rv-text .rv-none { color:#a1a1aa; font-style: italic; }
+  .rv-reply { margin-top:12px; padding:12px 14px; background: color-mix(in srgb, var(--coral) 7%, #fff); border-radius:16px; }
+  .rv-reply-h { margin:0 0 3px; font-size:12.5px; font-weight:700; color: color-mix(in srgb, var(--coral) 85%, #000); display:flex; align-items:center; gap:6px; }
+  .rv-reply-t { margin:0; font-size:14px; line-height:1.55; color: #27272a; overflow-wrap:anywhere; }
   .rv-composer { margin-top:12px; }
-  .rv-composer textarea { width:100%; padding:12px 14px; border-radius:12px; border:1px solid var(--border); font-size:13.5px; resize:vertical; box-sizing:border-box; outline:none; font-family:inherit; background: var(--card, #fff); color: var(--ink); }
-  .rv-composer textarea:focus { border-color: var(--coral); }
+  .rv-composer textarea { width:100%; padding:12px 14px; border-radius:14px; border:1.5px solid transparent; font-size:14px; resize:vertical; box-sizing:border-box; outline:none; font-family:inherit; background-color:#f4f4f5; color: var(--ink); transition: background-color .15s, border-color .15s, box-shadow .15s; }
+  .rv-composer textarea:focus { background-color:#fff; border-color:#d4d4d8 !important; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 16%, transparent); }
   .rv-composer-actions { display:flex; gap:8px; margin-top:10px; justify-content:flex-end; }
-  .rv-foot { display:flex; align-items:center; gap:10px; margin-top:12px; flex-wrap:wrap; min-width:0; }
+  .rv-foot { display:flex; align-items:center; gap:8px; margin-top:14px; flex-wrap:wrap; min-width:0; }
   .rv-agsg { margin-top:12px; }
   .rv-agsg .agsg { max-width:none; margin-left:0; }
   .rv-more { display:none; }
+  .rv-meta { display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-top:3px; font-size:12.5px; color:#8e8e93; }
+  .rv-dot { width:3px; height:3px; border-radius:50%; background:#c4c4c8; flex-shrink:0; }
+  .rv-status { display:inline-flex; align-items:center; gap:5px; height:22px; padding:0 9px; border-radius:999px; font-size:12px; font-weight:600; background: color-mix(in srgb, var(--t) 12%, #fff); color: color-mix(in srgb, var(--t) 78%, #000); }
+  .rv-status::before { content:''; width:6px; height:6px; border-radius:50%; background: var(--t); }
+  .rv-status.todo { --t:#f97316; }
+  .rv-status.done { --t:#22c55e; }
+  .rv-status.draft { --t:#7c3aed; }
 
   /* Phone-only pieces are hidden on desktop. */
-  .rv-m, .rv-strip, .rv-bar, .rv-count-m, .rv-loadmore-wrap, .rv-newer-wrap, .rv-meta, .rv-link-m, .rv-foot.rv-foot-m { display:none; }
+  .rv-m, .rv-bar, .rv-count-m, .rv-loadmore-wrap, .rv-newer-wrap, .rv-link-m, .rv-foot.rv-foot-m { display:none; }
 
   .rv-rail { padding:20px; position:sticky; top:20px; }
-  .rv-pager { display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap; margin-top:18px; }
+  .rv-rail-h { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+  .rv-rail-h b { display:block; font-size:16px; font-weight:700; }
+  .rv-rail-h small { display:block; font-size:12.5px; color:#8e8e93; }
+  .rv-dist { display:flex; flex-direction:column; gap:6px; margin-bottom:16px; }
+  .rv-dist button { display:grid; grid-template-columns: 32px minmax(0,1fr) 34px; align-items:center; gap:8px; padding:3px 6px; margin:0 -6px; border:none; border-radius:10px; background:none; font:inherit; font-size:12.5px; color:#52525b; cursor:pointer; text-align:left; }
+  .rv-dist button:hover { background:#f4f4f5; }
+  .rv-dist button.on { background: color-mix(in srgb, var(--coral) 9%, #fff); }
+  .rv-dist .lab { display:inline-flex; align-items:center; gap:3px; font-weight:600; }
+  .rv-dist .lab svg { color:#f5b301; }
+  .rv-dist .bar { height:8px; border-radius:999px; background:#f4f4f5; overflow:hidden; }
+  .rv-dist .bar i { display:block; height:100%; border-radius:999px; background:#f5b301; }
+  .rv-dist .num { text-align:right; font-variant-numeric: tabular-nums; color:#71717a; }
+  .rv-rail-sect { margin-top:16px; padding-top:16px; border-top:1px solid #f0f0f2; }
+  .rv-rail-sect > b { display:block; margin-bottom:8px; font-size:14px; font-weight:700; }
+  .rv-rail-sect .rv-input { width:100%; border-radius:12px; height:40px; }
+  .rv-rail-sect .rv-fine { margin:8px 0 0; font-size:12.5px; color:#8e8e93; line-height:1.45; }
+  .rv-manage { display:flex; align-items:center; justify-content:center; gap:6px; height:38px; border-radius:999px; background:#f4f4f5; color:#18181b; font-size:13.5px; font-weight:600; text-decoration:none; }
+  .rv-manage:hover { background:#ececef; }
+  .rv-pager { display:flex; align-items:center; justify-content:center; gap:6px; flex-wrap:wrap; margin-top:18px; }
 
   /* Link-to-customer dialog. */
-  .rv-linkmodal { position:fixed; inset:0; background:rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; z-index:100; padding:16px; }
-  .rv-linkmodal-panel { background: var(--card, #fff); border-radius:18px; width:420px; max-width:100%; max-height:80vh; display:flex; flex-direction:column; box-shadow:0 24px 60px rgba(0,0,0,0.25); overflow:hidden; }
+  @keyframes rvRise { from { transform: translateY(12px) scale(.98); opacity:0; } to { transform:none; opacity:1; } }
+  .rv-linkmodal { position:fixed; inset:0; background:rgba(15,15,20,.35); display:flex; align-items:center; justify-content:center; z-index:5700; padding:16px; animation: rvFadeIn .18s ease both; }
+  .rv-linkmodal-panel { background:#fff; border-radius:24px; width:440px; max-width:100%; max-height:80vh; display:flex; flex-direction:column; box-shadow:0 24px 64px rgba(0,0,0,0.22); overflow:hidden; animation: rvRise .24s cubic-bezier(.22,1,.36,1) both; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); }
+  .rv-linkmodal-panel .rv-input { width:100%; height:42px; border-radius:12px; font-size:14.5px; }
+  .rv-contact { width:100%; text-align:left; display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:14px; border:none; background:transparent; cursor:pointer; font-family:inherit; transition: background-color .12s; }
+  .rv-contact:hover { background-color:#f4f4f5; }
+  .rv-contact.on { background: color-mix(in srgb, var(--coral) 9%, #fff); }
 
   /* Filters sheet (opened from the phone toolbar). */
   @keyframes rvSheetIn { from { transform: translateY(100%); } to { transform: none; } }
   @keyframes rvFadeIn { from { opacity: 0; } to { opacity: 1; } }
-  .rv-sheet-backdrop { position:fixed; inset:0; z-index:1000; background:rgba(15,23,42,.42); display:flex; align-items:flex-end; justify-content:center; animation: rvFadeIn .18s ease both; }
-  .rv-sheet { width:100%; max-width:560px; max-height:88dvh; overflow-y:auto; overscroll-behavior:contain; background: var(--card, #fff); border-radius:20px 20px 0 0; padding:0 16px; box-sizing:border-box; animation: rvSheetIn .26s cubic-bezier(.22,1,.36,1) both; box-shadow: 0 -12px 40px rgba(15,23,42,.18); }
+  .rv-sheet-backdrop { position:fixed; inset:0; z-index:5700; background:rgba(15,15,20,.35); display:flex; align-items:flex-end; justify-content:center; animation: rvFadeIn .18s ease both; }
+  .rv-sheet { width:100%; max-width:560px; max-height:88dvh; overflow-y:auto; overscroll-behavior:contain; background:#fff; border-radius:24px 24px 0 0; padding:0 18px; box-sizing:border-box; animation: rvSheetIn .26s cubic-bezier(.22,1,.36,1) both; box-shadow: 0 -12px 40px rgba(15,23,42,.18); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); }
   .rv-sheet-grab { width:40px; height:4px; border-radius:4px; background:#e4e4e7; margin:8px auto 4px; }
   .rv-sheet-head { display:flex; align-items:center; justify-content:space-between; padding:6px 0 10px; }
-  .rv-sheet-head h2 { margin:0; font-size:17px; font-weight:800; color: var(--ink); }
-  .rv-icon-btn { width:36px; height:36px; border-radius:10px; border:1px solid var(--border); background: var(--card, #fff); color: var(--slate); display:inline-flex; align-items:center; justify-content:center; cursor:pointer; padding:0; flex-shrink:0; }
-  .rv-sheet-label { margin:14px 0 8px; font-size:11.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color: var(--slate); }
-  .rv-sheet-presets { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:8px; }
-  .rv-sheet-presets .rv-preset { padding:10px 8px; font-size:13.5px; }
+  .rv-sheet-head h2 { margin:0; font-size:21px; font-weight:800; letter-spacing:-.02em; color: var(--ink); }
+  .rv-icon-btn { width:34px; height:34px; border-radius:999px; border:none; background:#f4f4f5; color:#52525b; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; padding:0; flex-shrink:0; }
+  .rv-icon-btn:hover { background:#ececef; color:#18181b; }
+  .rv-sheet-label { margin:16px 0 8px; font-size:14px; font-weight:700; color: var(--ink); }
+  .rv-sheet-presets { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:6px; }
+  .rv-sheet-presets .rv-preset { height:40px; font-size:14px; background:#f4f4f5; border-radius:12px; }
+  .rv-sheet-presets .rv-preset.on { background:#18181b; color:#fff; box-shadow:none; }
   .rv-sheet-dates { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:10px; margin-top:10px; }
-  .rv-sheet-field { display:flex; flex-direction:column; gap:5px; font-size:12.5px; font-weight:700; color: var(--slate); min-width:0; }
-  .rv-sheet-field .rv-input { width:100%; min-width:0; box-sizing:border-box; font-size:16px; padding:10px 12px; color: var(--ink); }
-  .rv-sheet .modal-sticky-foot .rv-btn { flex:1 1 0; padding:13px 12px; font-size:14.5px; }
+  .rv-sheet-field { display:flex; flex-direction:column; gap:6px; font-size:13px; font-weight:600; color:#52525b; min-width:0; }
+  .rv-sheet-field .rv-input { width:100%; min-width:0; box-sizing:border-box; font-size:16px; height:44px; border-radius:12px; color: var(--ink); }
+  .rv-sheet .modal-sticky-foot .rv-btn { flex:1 1 0; height:46px; font-size:15px; }
 
   @media (min-width: 768px) {
     .rv-sheet-backdrop { align-items:center; }
-    .rv-sheet { border-radius:20px; padding-bottom:0; }
+    .rv-sheet { border-radius:24px; padding-bottom:0; }
   }
 
-  /* Summary strip: average, total (shows everything), to reply (filters). */
-  .rv-tile { display:flex; flex-direction:column; align-items:flex-start; gap:2px; padding:10px 12px; border-radius:14px; border:1px solid var(--border); background: var(--card, #fff); font-family:inherit; text-align:left; min-width:0; color: var(--ink); -webkit-tap-highlight-color: transparent; }
+  /* Summary tiles: average, total (shows everything), to reply and replied (filter). */
+  .rv-strip { display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:10px; margin-bottom:16px; }
+  .rv-tile { display:flex; flex-direction:column; align-items:flex-start; gap:3px; padding:14px 16px; border-radius:18px; border:none; background:#fff; box-shadow: 0 0 0 1px rgba(0,0,0,.07), 0 1px 2px rgba(16,24,40,.04); font-family:inherit; text-align:left; min-width:0; color: var(--ink); -webkit-tap-highlight-color: transparent; transition: box-shadow .15s, transform .2s cubic-bezier(.22,1,.36,1); }
   button.rv-tile { cursor:pointer; }
-  button.rv-tile.on { border-color: var(--coral); background: var(--peach); }
-  .rv-tile-n { display:inline-flex; align-items:center; gap:4px; font-size:19px; font-weight:800; line-height:1.15; }
-  .rv-tile-n svg { color:#f5b301; }
-  .rv-tile-l { font-size:11.5px; font-weight:600; color: var(--slate); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+  button.rv-tile:hover { transform: translateY(-1px); }
+  button.rv-tile.on { box-shadow: 0 0 0 2px var(--t, var(--coral)); }
+  .rv-tile-top { display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; }
+  .rv-tile-l { font-size:13.5px; font-weight:600; color:#71717a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+  .rv-tile-ic { width:30px; height:30px; border-radius:10px; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; background: color-mix(in srgb, var(--t, #f5b301) 12%, #fff); color: var(--t, #f5b301); }
+  .rv-tile-n { display:inline-flex; align-items:center; gap:6px; margin-top:2px; font-size:26px; font-weight:800; letter-spacing:-.02em; line-height:1.1; font-variant-numeric: tabular-nums; }
+  .rv-tile-s { font-size:12.5px; color:#8e8e93; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
 
-  /* Portrait tablets (and phones): one full-width column. The strip stands
+  .rv-page button:focus-visible, .rv-sheet button:focus-visible, .rv-linkmodal button:focus-visible { outline:none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 28%, transparent); }
+
+  /* Portrait tablets (and phones): one full-width column. The tiles stand
      in for the rail's stats; the rail's settings sit below the list. */
   @media (max-width: 1023px) {
     .rv-grid { grid-template-columns: minmax(0, 1fr); }
-    .rv-strip { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:10px; margin-bottom:14px; }
     .rv-rail { position:static; }
     .rv-rail-stats { display:none; }
   }
@@ -251,13 +305,12 @@ const REVIEWS_CSS = `
        so the search bar can stick under the top bar while you scroll. */
     .admin-main:has(.rv-page) { overflow-x: clip !important; overflow-y: visible !important; }
 
-    .rv-page { padding: 0 12px 16px !important; }
-    .rv-page .ph-root { margin: 0 -12px 12px !important; padding: 14px 12px 12px !important; }
-    .rv-page .ph-row { flex-wrap: wrap; }
-    .rv-page .ph-actions { flex: 1 1 100% !important; }
+    .rv-page { padding: 16px 14px 24px !important; }
+    .rv-headbar { flex-direction:column; align-items:stretch; margin-bottom:14px; }
+    .rv-headbar h1 { font-size:26px; }
     .rv-sync-wrap { width:100%; flex-direction: column-reverse !important; align-items: stretch !important; gap:6px !important; }
     .rv-sync-wrap [role="status"] { max-width:none !important; text-align:center; }
-    .rv-sync { width:100%; padding:11px 14px; }
+    .rv-sync { width:100%; height:42px; }
 
     .rv-d { display:none !important; }
     .rv-m { display:inline-flex; }
@@ -267,77 +320,74 @@ const REVIEWS_CSS = `
     .rv-results { overflow-anchor: none; }
     .rv-foot.rv-foot-m { display:flex; }
     .rv-grid { gap:12px; }
-    .rv-strip { gap:8px; margin-bottom:10px; }
+    .rv-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); gap:8px; margin-bottom:10px; }
+    .rv-tile { padding:12px 14px; }
+    .rv-tile-n { font-size:21px; }
+    .rv-tile-ic { display:none; }
 
     /* Sticky search + quick filters. */
-    .rv-bar { display:block; position:sticky; top:56px; z-index:20; margin:0 -12px 8px; padding:8px 12px; background: color-mix(in srgb, var(--canvas) 94%, transparent); backdrop-filter: saturate(180%) blur(10px); -webkit-backdrop-filter: saturate(180%) blur(10px); border-bottom:1px solid var(--border); }
+    .rv-bar { display:block; position:sticky; top:56px; z-index:20; margin:0 -14px 8px; padding:8px 14px; background: color-mix(in srgb, var(--canvas) 94%, transparent); backdrop-filter: saturate(180%) blur(10px); -webkit-backdrop-filter: saturate(180%) blur(10px); border-bottom:1px solid #ececef; }
     .rv-bar-row { display:flex; gap:8px; align-items:center; }
     .rv-search { flex:1; min-width:0; position:relative; display:flex; align-items:center; }
-    .rv-search > svg { position:absolute; left:12px; color: var(--slate); pointer-events:none; }
-    .rv-search input { width:100%; min-width:0; box-sizing:border-box; height:42px; padding:0 38px 0 36px; border-radius:12px; border:1px solid var(--border); background: var(--card, #fff); color: var(--ink); font-size:16px; outline:none; font-family:inherit; -webkit-appearance:none; appearance:none; }
-    .rv-search input:focus { border-color: var(--coral); }
+    .rv-search > svg { position:absolute; left:14px; color:#a1a1aa; pointer-events:none; }
+    .rv-search input { width:100%; min-width:0; box-sizing:border-box; height:42px; padding:0 38px 0 38px; border-radius:999px; border:1.5px solid transparent; background:#f4f4f5; color: var(--ink); font-size:16px; outline:none; font-family:inherit; -webkit-appearance:none; appearance:none; }
+    .rv-search input:focus { background:#fff; border-color:#d4d4d8 !important; box-shadow:none; }
     .rv-search input::-webkit-search-cancel-button { display:none; }
-    .rv-search-clear { position:absolute; right:4px; width:34px; height:34px; border:none; background:none; color: var(--slate); display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0; }
-    .rv-filter-btn { position:relative; height:42px; padding:0 13px; border-radius:12px; border:1px solid var(--border); background: var(--card, #fff); color: var(--ink); display:inline-flex; align-items:center; gap:6px; font-size:13.5px; font-weight:700; cursor:pointer; flex-shrink:0; font-family:inherit; }
-    .rv-filter-btn.on { border-color: var(--coral); color: var(--coral); background: var(--peach); }
+    .rv-search-clear { position:absolute; right:6px; width:30px; height:30px; border:none; border-radius:999px; background:#e4e4e7; color:#52525b; display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0; }
+    .rv-filter-btn { position:relative; height:42px; padding:0 14px; border-radius:999px; border:none; background:#f4f4f5; color: var(--ink); display:inline-flex; align-items:center; gap:6px; font-size:14px; font-weight:600; cursor:pointer; flex-shrink:0; font-family:inherit; }
+    .rv-filter-btn.on { background: color-mix(in srgb, var(--coral) 12%, #fff); color: color-mix(in srgb, var(--coral) 85%, #000); }
     .rv-badge { min-width:18px; height:18px; padding:0 5px; border-radius:9px; background: var(--coral); color:#fff; font-size:11px; font-weight:800; display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; }
-    .rv-chips { display:flex; gap:6px; margin:8px -12px 0; padding:0 12px; overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch; overscroll-behavior-x:contain; }
+    .rv-chips { display:flex; gap:6px; margin:8px -14px 0; padding:0 14px; overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch; overscroll-behavior-x:contain; }
     .rv-chips::-webkit-scrollbar { display:none; }
-    .rv-chips .rv-chip { padding:7px 12px; font-size:12.5px; white-space:nowrap; }
+    .rv-chips .rv-chip { height:34px; font-size:13.5px; }
     .rv-chips .rv-chip svg { color:#f5b301; }
-    .rv-chip-sep { flex:0 0 1px; align-self:stretch; background: var(--border); margin:4px 2px; }
-    .rv-count-m { display:flex; align-items:center; gap:8px; margin:0 2px 8px; font-size:12.5px; color: var(--slate); }
-    .rv-link-btn { border:none; background:none; padding:0; color: var(--coral); font-weight:700; font-size:12.5px; cursor:pointer; font-family:inherit; }
+    .rv-chip-sep { flex:0 0 1px; align-self:stretch; background:#e4e4e7; margin:6px 2px; }
+    .rv-count-m { display:flex; align-items:center; gap:8px; margin:0 2px 8px; font-size:13px; color:#8e8e93; }
+    .rv-link-btn { border:none; background:none; padding:0; color: var(--coral); font-weight:600; font-size:13px; cursor:pointer; font-family:inherit; }
 
     .rv-filters { display:none; }
 
     /* Compact card. */
-    .rv-card { padding:12px; border-radius:14px; margin-bottom:8px; }
+    .rv-card { padding:14px; border-radius:18px; margin-bottom:8px; }
     .rv-head { align-items:flex-start; gap:10px; margin-bottom:8px; }
     .rv-av { width:38px; height:38px; font-size:15px; }
-    .rv-who { flex:1; }
     .rv-name-row { justify-content:space-between; }
-    .rv-name { font-size:14.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .rv-meta { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:3px; font-size:12px; color: var(--slate); }
-    .rv-dot { width:3px; height:3px; border-radius:50%; background:#c4c4c8; flex-shrink:0; }
-    .rv-status { font-weight:700; }
-    .rv-status.todo { color:#c2410c; }
-    .rv-status.done { color:#15803d; }
-    .rv-status.draft { color:#7c3aed; }
-    .rv-body { display:block; background:none; padding:0; border-radius:0; }
-    .rv-text { font-size:14px; line-height:1.5; }
+    .rv-name { font-size:15px; }
+    .rv-g { width:28px; height:28px; }
+    .rv-text { font-size:14.5px; line-height:1.5; }
     .rv-text.clamp { display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; }
-    .rv-more { display:inline-block; border:none; background:none; padding:4px 0 0; color: var(--coral); font-weight:700; font-size:13px; cursor:pointer; font-family:inherit; }
-    .rv-reply { margin-top:10px; padding:9px 12px; border-radius:10px; }
+    .rv-more { display:inline-block; border:none; background:none; padding:4px 0 0; color: var(--coral); font-weight:600; font-size:13.5px; cursor:pointer; font-family:inherit; }
+    .rv-reply { margin-top:10px; padding:10px 12px; border-radius:14px; }
     .rv-reply-t.clamp { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
     .rv-composer textarea { font-size:16px; padding:10px 12px; }
-    .rv-composer-actions .rv-btn { flex:1 1 0; padding:11px 12px; }
+    .rv-composer-actions .rv-btn { flex:1 1 0; height:42px; }
     .rv-agsg { margin-top:10px; }
-    .rv-foot { margin-top:10px; gap:8px; flex-wrap:nowrap; }
-    .rv-foot .rv-btn { padding:9px 12px; font-size:13px; border-radius:10px; flex-shrink:0; }
-    .rv-link-m { display:inline-flex; align-items:center; gap:5px; margin-left:auto; min-width:0; max-width:46%; height:30px; padding:0 10px; border-radius:999px; border:1px solid var(--border); background: var(--card, #fff); color: var(--slate); font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; }
+    .rv-foot { margin-top:12px; gap:6px; flex-wrap:nowrap; }
+    .rv-foot .rv-btn { height:36px; padding:0 13px; font-size:13.5px; flex-shrink:0; }
+    .rv-link-m { display:inline-flex; align-items:center; gap:5px; margin-left:auto; min-width:0; max-width:46%; height:32px; padding:0 11px; border-radius:999px; border:none; background:#f4f4f5; color:#52525b; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit; }
     .rv-link-m svg { flex-shrink:0; }
     .rv-link-m span { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .rv-link-m.on { color: var(--coral); border-color: color-mix(in srgb, var(--coral) 35%, var(--border)); background: var(--peach); }
+    .rv-link-m.on { color: color-mix(in srgb, var(--coral) 85%, #000); background: color-mix(in srgb, var(--coral) 10%, #fff); }
 
     /* Below 390px (SE, mini, small Androids) "Link to customer" no longer fits
        beside the reply buttons, so the chip says just "Link". */
     @media (max-width: 389px) { .rv-link-xs { display:none; } }
 
     .rv-pager { display:none; }
-    .rv-loadmore-wrap, .rv-newer-wrap { display:flex; flex-direction:column; align-items:stretch; gap:6px; margin-top:4px; text-align:center; font-size:12.5px; color: var(--slate); }
+    .rv-loadmore-wrap, .rv-newer-wrap { display:flex; flex-direction:column; align-items:stretch; gap:6px; margin-top:4px; text-align:center; font-size:13px; color:#8e8e93; }
     .rv-newer-wrap { margin:0 0 10px; }
-    .rv-loadmore-wrap .rv-btn, .rv-newer-wrap .rv-btn { width:100%; padding:12px; font-size:14px; }
+    .rv-loadmore-wrap .rv-btn, .rv-newer-wrap .rv-btn { width:100%; height:44px; font-size:14.5px; }
 
     .rv-rail { padding:16px; }
 
     .rv-linkmodal { align-items:flex-end; padding:0; }
-    .rv-linkmodal-panel { width:100%; max-height:85dvh; border-radius:18px 18px 0 0; padding-bottom: env(safe-area-inset-bottom); }
+    .rv-linkmodal-panel { width:100%; max-height:85dvh; border-radius:24px 24px 0 0; padding-bottom: env(safe-area-inset-bottom); }
     .rv-linkmodal-panel input { font-size:16px !important; }
 
     /* While a reply is being written the AI orb steps aside so it can't sit on Post reply. */
     body:has(.rv-composer) .colvy-ai-orb-wrap { opacity:0; pointer-events:none; }
   }
+  @media (prefers-reduced-motion: reduce) { .rv-linkmodal, .rv-linkmodal-panel, .rv-sheet, .rv-sheet-backdrop { animation:none; } button.rv-tile:hover { transform:none; } }
 `
 
 export default function ReviewsPage() {
@@ -667,6 +717,9 @@ export default function ReviewsPage() {
   }, [highlightReviewId, reviews.length])   // eslint-disable-line react-hooks/exhaustive-deps
 
   const avg = reviews.length ? (reviews.reduce((a, r) => a + (r.star_rating || 0), 0) / reviews.length) : 0
+  // How many reviews at each star rating, for the rail's bars.
+  const byStar = [5, 4, 3, 2, 1].map(n => ({ n, count: reviews.filter(r => r.star_rating === n).length }))
+  const maxStar = Math.max(1, ...byStar.map(b => b.count))
   const repliedCount = reviews.filter(r => r.reply_comment).length
   const pendingCount = reviews.length - repliedCount
 
@@ -686,49 +739,56 @@ export default function ReviewsPage() {
     ? <a href={reviewLink} target="_blank" rel="noopener noreferrer" title="Open on Google" aria-label="Open on Google" className={'rv-g ' + cls}><GoogleG size={18} /></a>
     : <span title="Google review" className={'rv-g ' + cls}><GoogleG size={18} /></span>
 
-  if (loading) return <div style={{ padding: 40, color: 'var(--slate)' }}>Loading reviews…</div>
+  if (loading) return <div style={{ padding: 40, color: '#8e8e93' }}>Loading reviews…</div>
 
   return (
-    <div className="rv-page" style={{ padding: '28px 32px' }}>
+    <div className="rv-page" style={{ padding: '24px 28px 48px' }}>
       <style>{REVIEWS_CSS}</style>
 
-      <PageHeader
-        title="Review Dashboard"
-        subtitle="Google reviews, ratings and replies in one place."
-        bleed={32}
-        bleedTop={28}
-        sticky={false}
-        action={
-          <span className="rv-sync-wrap" style={{ display: 'inline-flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            {syncNote && <span role="status" style={{ fontSize: 12.5, fontWeight: 600, color: syncError ? '#dc2626' : 'var(--slate)', maxWidth: 320 }}>{syncNote}</span>}
-            <button onClick={sync} disabled={syncing} className="rv-btn rv-btn-primary rv-sync">
-              <span className="rv-m">{Icon.sync}</span>
-              {syncing ? 'Syncing…' : 'Sync Google reviews'}
-            </button>
-          </span>
-        }
-      />
+      <div className="rv-headbar">
+        <div>
+          <h1>Reviews</h1>
+          <p>Your Google reviews, ratings and replies in one place.</p>
+        </div>
+        <span className="rv-sync-wrap" style={{ display: 'inline-flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {syncNote && <span role="status" style={{ fontSize: 13, fontWeight: 500, color: syncError ? '#dc2626' : '#71717a', maxWidth: 320 }}>{syncNote}</span>}
+          <button onClick={sync} disabled={syncing} className="rv-btn rv-btn-primary rv-sync">
+            {Icon.sync}
+            {syncing ? 'Syncing…' : 'Sync Google reviews'}
+          </button>
+        </span>
+      </div>
+
+      {/* Summary tiles. "Reviews" shows everything; "To reply" and "Replied" filter. */}
+      {reviews.length > 0 && (
+        <div className="rv-strip">
+          <div className="rv-tile" style={{ ['--t' as any]: '#f5b301' }}>
+            <span className="rv-tile-top"><span className="rv-tile-l">Average rating</span><span className="rv-tile-ic">{Icon.star}</span></span>
+            <span className="rv-tile-n">{avg.toFixed(1)}<Stars n={Math.round(avg)} size={15} /></span>
+            <span className="rv-tile-s">From {reviews.length} review{reviews.length === 1 ? '' : 's'}</span>
+          </div>
+          <button type="button" className={'rv-tile' + (!filteredView ? ' on' : '')} style={{ ['--t' as any]: '#52525b' }} aria-pressed={!filteredView} onClick={clearFilters}>
+            <span className="rv-tile-top"><span className="rv-tile-l">Reviews</span><span className="rv-tile-ic"><GoogleG size={15} /></span></span>
+            <span className="rv-tile-n">{reviews.length}</span>
+            <span className="rv-tile-s">On Google</span>
+          </button>
+          <button type="button" className={'rv-tile' + (repliesFilter === 'unreplied' ? ' on' : '')} style={{ ['--t' as any]: '#f97316' }} aria-pressed={repliesFilter === 'unreplied'}
+            onClick={() => setRepliesFilter(f => f === 'unreplied' ? 'all' : 'unreplied')}>
+            <span className="rv-tile-top"><span className="rv-tile-l">To reply</span><span className="rv-tile-ic">{Icon.reply}</span></span>
+            <span className="rv-tile-n" style={{ color: pendingCount ? '#ea580c' : undefined }}>{pendingCount}</span>
+            <span className="rv-tile-s">{pendingCount ? 'Waiting for an answer' : 'All answered'}</span>
+          </button>
+          <button type="button" className={'rv-tile' + (repliesFilter === 'replied' ? ' on' : '')} style={{ ['--t' as any]: '#16a34a' }} aria-pressed={repliesFilter === 'replied'}
+            onClick={() => setRepliesFilter(f => f === 'replied' ? 'all' : 'replied')}>
+            <span className="rv-tile-top"><span className="rv-tile-l">Replied</span><span className="rv-tile-ic">{Icon.check}</span></span>
+            <span className="rv-tile-n">{repliedCount}</span>
+            <span className="rv-tile-s">{reviews.length ? `${Math.round(repliedCount / reviews.length * 100)}% answered` : '—'}</span>
+          </button>
+        </div>
+      )}
 
       <div className="rv-grid">
         <div style={{ minWidth: 0 }}>
-          {/* Phones: summary strip. "Reviews" shows everything; "To reply" filters. */}
-          {reviews.length > 0 && (
-            <div className="rv-strip">
-              <div className="rv-tile">
-                <span className="rv-tile-n">{Icon.star}{avg.toFixed(1)}</span>
-                <span className="rv-tile-l">Average</span>
-              </div>
-              <button type="button" className={'rv-tile' + (!filteredView ? ' on' : '')} aria-pressed={!filteredView} onClick={clearFilters}>
-                <span className="rv-tile-n">{reviews.length}</span>
-                <span className="rv-tile-l">Reviews</span>
-              </button>
-              <button type="button" className={'rv-tile' + (repliesFilter === 'unreplied' ? ' on' : '')} aria-pressed={repliesFilter === 'unreplied'}
-                onClick={() => setRepliesFilter(f => f === 'unreplied' ? 'all' : 'unreplied')}>
-                <span className="rv-tile-n" style={{ color: pendingCount ? '#dc2626' : undefined }}>{pendingCount}</span>
-                <span className="rv-tile-l">To reply</span>
-              </button>
-            </div>
-          )}
 
           {/* Phones: sticky search, Filters sheet button and quick-filter chips. */}
           <div className="rv-bar" ref={barRef}>
@@ -765,33 +825,36 @@ export default function ReviewsPage() {
           )}
 
           {/* Desktop filters */}
-          <div className="rv-panel rv-filters">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-              <span style={{ fontWeight: 800, fontSize: 14 }}>Filters</span>
-              <span style={{ fontSize: 12, color: 'var(--slate)', fontStyle: 'italic' }}>Showing {filtered.length} of {reviews.length}</span>
+          <div className="rv-filters">
+            <div className="rv-frow">
+              <div className="rv-seg" role="tablist" aria-label="Replies">
+                {([['all', 'All', reviews.length], ['unreplied', 'Needs reply', pendingCount], ['replied', 'Replied', repliedCount]] as const).map(([v, label, n]) => (
+                  <button key={v} type="button" role="tab" aria-selected={repliesFilter === v} className={'rv-preset' + (repliesFilter === v ? ' on' : '')} onClick={() => setRepliesFilter(v)}>
+                    {label}<span className="n">{n}</span>
+                  </button>
+                ))}
+              </div>
+              <label className="rv-dsearch">
+                {Icon.search}
+                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search a name or a word from the review" aria-label="Search reviews" />
+                {search && <button type="button" className="rv-x" onClick={() => setSearch('')} aria-label="Clear search">{Icon.x}</button>}
+              </label>
             </div>
-
-            {/* Quick date presets */}
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-              {([['all', 'All time'], ...PRESETS] as const).map(([v, label]) => (
-                <button key={v} className={'rv-preset' + (preset === v ? ' on' : '')} onClick={() => applyPreset(v)}>{label}</button>
-              ))}
-            </div>
-
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-              <select value={ratingFilter} onChange={e => setRatingFilter(Number(e.target.value))} className="rv-input" style={{ minWidth: 130 }} aria-label="Rating">
-                <option value={0}>All ratings</option>
+            <div className="rv-frow">
+              <div className="rv-seg" role="group" aria-label="Date">
+                {([['all', 'All time'], ...PRESETS] as const).map(([v, label]) => (
+                  <button key={v} type="button" className={'rv-preset' + (preset === v ? ' on' : '')} aria-pressed={preset === v} onClick={() => applyPreset(v)}>{label}</button>
+                ))}
+              </div>
+              <select value={ratingFilter} onChange={e => setRatingFilter(Number(e.target.value))} className={'rv-input' + (ratingFilter ? ' set' : '')} aria-label="Rating">
+                <option value={0}>Any rating</option>
                 {[5, 4, 3, 2, 1].map(n => <option key={n} value={n}>{n} star{n === 1 ? '' : 's'}</option>)}
               </select>
-              <select value={repliesFilter} onChange={e => setRepliesFilter(e.target.value as Replies)} className="rv-input" style={{ minWidth: 130 }} aria-label="Replies">
-                <option value="all">All replies</option>
-                <option value="replied">Replied</option>
-                <option value="unreplied">Not replied</option>
-              </select>
               <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPreset(presetFor('custom', e.target.value, dateTo)) }} title="From date" aria-label="From date" className="rv-input" />
-              <span style={{ color: 'var(--slate)', fontSize: 13 }}>to</span>
+              <span style={{ color: '#a1a1aa', fontSize: 13 }}>to</span>
               <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPreset(presetFor('custom', dateFrom, e.target.value)) }} title="To date" aria-label="To date" className="rv-input" />
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search reviews…" aria-label="Search reviews" className="rv-input" style={{ flex: 1, minWidth: 180 }} />
+              {filteredView && <button type="button" className="rv-clear" onClick={clearFilters}>Clear filters</button>}
+              <span className="rv-showing">Showing {filtered.length} of {reviews.length}</span>
             </div>
           </div>
 
@@ -841,13 +904,11 @@ export default function ReviewsPage() {
                       : draftFor ? <span className="rv-status draft">Draft ready</span>
                       : <span className="rv-status todo">Needs reply</span>}
                   </div>
-                  {linked
-                    ? <p className="rv-match on rv-d">Linked with {review.contact_name}</p>
-                    : <p className="rv-match rv-d">Not matched to a customer</p>}
+                  {linked && <p className="rv-match on rv-d">Linked with {review.contact_name}</p>}
                 </div>
                 <button className="rv-chip rv-d" onClick={() => openLink(review)} title="Match this review to a customer">
                   {Icon.link}
-                  {linked ? 'Update link' : 'Link'}
+                  {linked ? 'Change link' : 'Link to customer'}
                 </button>
                 {googleMark('rv-g-d rv-d')}
               </div>
@@ -858,15 +919,11 @@ export default function ReviewsPage() {
                     ? <Fold text={review.comment} className="rv-text" open={textOpen} onToggle={() => toggleExpanded(review.id)} />
                     : <p className="rv-text"><span className="rv-none">No written comment</span></p>}
                 </div>
-                <div className="rv-rate rv-d">
-                  <Stars n={review.star_rating} />
-                  <p>{fullDate(review.review_created_at)}</p>
-                </div>
               </div>
 
               {review.reply_comment ? (
                 <div className="rv-reply">
-                  <p className="rv-reply-h">Your reply</p>
+                  <p className="rv-reply-h">{Icon.reply} Your reply</p>
                   <Fold text={review.reply_comment} className="rv-reply-t" open={replyOpen} onToggle={() => toggleExpanded('r:' + review.id)} />
                 </div>
               ) : composing ? (
@@ -914,10 +971,10 @@ export default function ReviewsPage() {
             <div className="rv-pager">
               <button className="rv-page-btn" aria-label="Previous page" disabled={pageClamped <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}>{Icon.prev}</button>
               {pageList.map((n, i) => n === '…'
-                ? <span key={`e${i}`} style={{ color: 'var(--slate)', padding: '0 4px' }}>…</span>
+                ? <span key={`e${i}`} style={{ color: '#a1a1aa', padding: '0 4px' }}>…</span>
                 : <button key={n} className={'rv-page-btn' + (n === pageClamped ? ' on' : '')} onClick={() => setPage(n)}>{n}</button>)}
               <button className="rv-page-btn" aria-label="Next page" disabled={pageClamped >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))}>{Icon.next}</button>
-              <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} className="rv-input" style={{ marginLeft: 6 }} aria-label="Reviews per page">
+              <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} className="rv-input" style={{ marginLeft: 8 }} aria-label="Reviews per page">
                 {[10, 25, 50, 100].map(s => <option key={s} value={s}>{s} / page</option>)}
               </select>
             </div>
@@ -939,56 +996,46 @@ export default function ReviewsPage() {
           </div>
         </div>
 
-        {/* Right rail — Google summary (desktop); below 1024px only the review-link settings show, below the list. */}
+        {/* Right rail: the Google listing and its ratings (desktop); below 1024px only the settings show, below the list. */}
         <div className="rv-panel rv-rail">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-            <GoogleG size={26} />
-            <span style={{ fontWeight: 800, fontSize: 16 }}>Google Reviews</span>
+          <div className="rv-rail-h">
+            <span className="rv-g" style={{ width: 40, height: 40 }}><GoogleG size={22} /></span>
+            <div style={{ minWidth: 0 }}>
+              <b>{companyName || 'Google reviews'}</b>
+              <small>{reviews.length ? `${avg.toFixed(1)} stars from ${reviews.length} review${reviews.length === 1 ? '' : 's'}` : 'Google Business Profile'}</small>
+            </div>
           </div>
           <div className="rv-rail-stats">
-            <Stars n={Math.round(avg)} size={22} />
             {reviews.length > 0 ? (
-              <>
-                {companyName && <p style={{ margin: '12px 0 4px', fontWeight: 800, fontSize: 15 }}>{companyName}</p>}
-                <p style={{ margin: '0 0 8px', fontSize: 13.5, fontWeight: 800, color: '#16a34a' }}>
-                  {avg.toFixed(1)} Star &nbsp;|&nbsp; {reviews.length} Reviews
-                </p>
-                <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>
-                  Your business has received <strong>{reviews.length}</strong> reviews and on average a <strong>{avg.toFixed(1)} star</strong> rating for the services.
-                </p>
-                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0' }}>
-                    <span style={{ fontSize: 13, color: 'var(--slate)' }}>Replied</span>
-                    <span style={{ fontSize: 15, fontWeight: 800, color: '#16a34a' }}>{repliedCount}</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0' }}>
-                    <span style={{ fontSize: 13, color: 'var(--slate)' }}>Yet to reply</span>
-                    <span style={{ fontSize: 15, fontWeight: 800, color: pendingCount ? '#dc2626' : 'var(--ink)' }}>{pendingCount}</span>
-                  </div>
-                </div>
-              </>
+              <div className="rv-dist" aria-label="Reviews by rating">
+                {byStar.map(b => (
+                  <button key={b.n} type="button" className={ratingFilter === b.n ? 'on' : ''} aria-pressed={ratingFilter === b.n}
+                    title={`Show ${b.n}-star reviews`} onClick={() => setRatingFilter(r => r === b.n ? 0 : b.n)}>
+                    <span className="lab">{b.n}{Icon.star}</span>
+                    <span className="bar"><i style={{ width: `${(b.count / maxStar) * 100}%` }} /></span>
+                    <span className="num">{b.count}</span>
+                  </button>
+                ))}
+              </div>
             ) : (
-              <p style={{ margin: '10px 0 0', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>
+              <p style={{ margin: '0 0 16px', fontSize: 13.5, color: '#71717a', lineHeight: 1.5 }}>
                 Connect Google and sync to see your ratings here.
               </p>
             )}
           </div>
-          <a href="/admin/crm-settings/channels/google-reviews"
-            style={{ display: 'block', textAlign: 'center', marginTop: 16, padding: '11px', borderRadius: 12, border: '1px solid var(--border)', textDecoration: 'none', color: 'var(--ink)', fontWeight: 700, fontSize: 13 }}>
-            Manage Connected Accounts
-          </a>
+          <a href="/admin/crm-settings/channels/google-reviews" className="rv-manage">Manage connected accounts</a>
 
-          {/* Google review link — powers the Google mark on each review card and
+          {/* Google review link: powers the Google mark on each review card and
               is the link customers tap in a review request. */}
-          <div style={{ marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-            <p style={{ margin: '0 0 6px', fontSize: 12, fontWeight: 800, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Google review link</p>
+          <div className="rv-rail-sect">
+            <b>Google review link</b>
             <input value={reviewLink} onChange={e => { setReviewLink(e.target.value); setLinkSaved(false) }}
-              placeholder="https://g.page/r/…" aria-label="Google review link" className="rv-input" style={{ width: '100%', boxSizing: 'border-box' }} />
+              placeholder="https://g.page/r/…" aria-label="Google review link" className="rv-input" />
             <button onClick={saveReviewLink} disabled={savingLink} className="rv-btn rv-btn-ghost" style={{ width: '100%', marginTop: 8 }}>
               {savingLink ? 'Saving…' : linkSaved ? <>{Icon.check} Saved</> : 'Save link'}
             </button>
-            <p style={{ margin: '8px 0 0', fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.45 }}>
-              Opens your listing from each review's Google mark. Find it in your Business Profile → “Ask for reviews”.
+            <p className="rv-fine">
+              Opens your listing from each review's Google mark. Find it in your Business Profile under “Ask for reviews”.
             </p>
           </div>
         </div>
@@ -1053,45 +1100,38 @@ export default function ReviewsPage() {
       {linkFor && (
         <div className="rv-linkmodal" onClick={() => setLinkFor(null)}>
           <div className="rv-linkmodal-panel" role="dialog" aria-modal="true" aria-label="Match to a customer" onClick={e => e.stopPropagation()}>
-            <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ padding: '22px 22px 12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>Match to a customer</h3>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 11.5, fontWeight: 800, padding: '4px 10px', borderRadius: 999, background: linkFor.contact_id ? 'var(--peach)' : '#f3f4f6', color: linkFor.contact_id ? 'var(--coral)' : 'var(--slate)' }}>
-                    {linkFor.contact_id ? 'Matched' : 'Not matched'}
-                  </span>
-                  <button type="button" className="rv-icon-btn" style={{ width: 32, height: 32 }} aria-label="Close" onClick={() => setLinkFor(null)}>{Icon.x}</button>
-                </span>
+                <h3 style={{ margin: 0, fontSize: 21, fontWeight: 800, letterSpacing: '-0.02em' }}>Match to a customer</h3>
+                <button type="button" className="rv-icon-btn" aria-label="Close" onClick={() => setLinkFor(null)}>{Icon.x}</button>
               </div>
-              <p style={{ margin: '6px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>
+              <p style={{ margin: '6px 0 0', fontSize: 13.5, color: '#71717a', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span className="rv-status" style={{ ['--t' as any]: linkFor.contact_id ? '#22c55e' : '#a1a1aa' }}>{linkFor.contact_id ? 'Matched' : 'Not matched'}</span>
                 Review by <strong>{linkFor.reviewer_name}</strong>
                 {linkFor.match_checked_at ? ` · last checked ${fullDate(linkFor.match_checked_at)}` : ''}
               </p>
             </div>
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ padding: '4px 22px 12px', borderBottom: '1px solid #f0f0f2' }}>
               <input autoFocus value={contactSearch} onChange={e => setContactSearch(e.target.value)} placeholder="Search customers…" aria-label="Search customers" className="rv-input" style={{ width: '100%', boxSizing: 'border-box' }} />
             </div>
             <div style={{ overflowY: 'auto', padding: 8, flex: 1 }}>
               {linkFor.contact_id && (
                 <button onClick={() => setLink(linkFor, null)}
-                  style={{ width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 10, border: 'none', background: 'transparent', color: '#dc2626', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  className="rv-contact" style={{ color: '#e11d48', fontWeight: 600, fontSize: 13.5 }}>
                   {Icon.x} Remove current link
                 </button>
               )}
               {contactLoading && contactResults.length === 0 ? (
-                <p style={{ padding: 16, color: 'var(--slate)', fontSize: 13 }}>Searching customers…</p>
+                <p style={{ padding: 16, color: '#8e8e93', fontSize: 13.5 }}>Searching customers…</p>
               ) : (() => {
                 const list = contactResults
-                if (list.length === 0) return <p style={{ padding: 16, color: 'var(--slate)', fontSize: 13 }}>No customers found{contactSearch.trim() ? ` for “${contactSearch.trim()}”` : ''}.</p>
+                if (list.length === 0) return <p style={{ padding: 16, color: '#8e8e93', fontSize: 13.5 }}>No customers found{contactSearch.trim() ? ` for “${contactSearch.trim()}”` : ''}.</p>
                 return list.map(c => (
-                  <button key={c.id} onClick={() => setLink(linkFor, c)}
-                    style={{ width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, border: 'none', background: linkFor.contact_id === c.id ? 'var(--peach)' : 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}
-                    onMouseEnter={e => { if (linkFor.contact_id !== c.id) (e.currentTarget.style.background = 'var(--canvas)') }}
-                    onMouseLeave={e => { if (linkFor.contact_id !== c.id) (e.currentTarget.style.background = 'transparent') }}>
-                    <span style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, flexShrink: 0 }}>{(c.name || '?').charAt(0).toUpperCase()}</span>
+                  <button key={c.id} onClick={() => setLink(linkFor, c)} className={'rv-contact' + (linkFor.contact_id === c.id ? ' on' : '')}>
+                    <span style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13.5, flexShrink: 0 }}>{(c.name || '?').charAt(0).toUpperCase()}</span>
                     <span style={{ minWidth: 0 }}>
-                      <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name || 'Unnamed'}</span>
-                      {c.email && <span style={{ display: 'block', fontSize: 11.5, color: 'var(--slate)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.email}</span>}
+                      <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name || 'Unnamed'}</span>
+                      {c.email && <span style={{ display: 'block', fontSize: 12.5, color: '#8e8e93', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.email}</span>}
                     </span>
                   </button>
                 ))
