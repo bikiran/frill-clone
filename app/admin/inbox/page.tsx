@@ -7555,6 +7555,11 @@ export default function InboxPage() {
         .cp-hint { margin-top: 8px; width: 100%; display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: none; border-radius: 12px; background: #f6f6f7; font: inherit; font-size: 13px; color: #52525b; text-align: left; cursor: pointer; transition: background .15s ease; }
         .cp-hint:hover { background: #efeff1; }
         .cp-hint-ic { display: inline-flex; color: var(--coral); flex-shrink: 0; }
+        /* Conversation tags, like Sellio's: a dot and the label in its colour,
+           on a soft tint of it. */
+        .cv-tag { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--tag) 9%, #fff); color: color-mix(in srgb, var(--tag) 88%, #000); font-size: 12px; font-weight: 600; line-height: 1; white-space: nowrap; }
+        .cv-tag-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--tag); flex-shrink: 0; }
+        .cv-tag-dot.live { animation: livePulse 1.6s ease-in-out infinite; }
         @media (prefers-reduced-motion: reduce) { .th-menu { animation: none; } }
         /* Desktop / tablet: the tools sit inline on the right as before */
         @media (min-width: 768px) {
@@ -8988,7 +8993,8 @@ export default function InboxPage() {
             // Where is this conversation happening NOW?
             const subj = (c.subject || '').toLowerCase()
             const ch = String(c.channel || '').toLowerCase()
-            let source: { label: string; bg: string; fg: string }
+            // Each tag is its colour: a dot and the label on a soft tint of it.
+            let source: { label: string; fg: string }
             // Set when the top tag is the source (Website) and the cart state
             // needs to show alongside it.
             let cartSecond: any = null
@@ -8996,19 +9002,19 @@ export default function InboxPage() {
             // who began as an order/cart but is now texting should read "SMS",
             // not keep an "Order Placed" badge forever.
             const CHANNEL_BADGE: Record<string, any> = {
-              sms:       { label: 'SMS', bg: '#fef3c7', fg: '#b45309' },
-              email:     { label: 'Email', bg: '#e0e7ff', fg: '#4338ca' },
-              instagram: { label: 'Instagram', bg: '#fce7f3', fg: '#be185d' },
-              facebook:  { label: 'Messenger', bg: '#dbeafe', fg: '#1d4ed8' },
-              messenger: { label: 'Messenger', bg: '#dbeafe', fg: '#1d4ed8' },
-              whatsapp:  { label: 'WhatsApp', bg: '#dcfce7', fg: '#15803d' },
+              sms:       { label: 'SMS', fg: '#0d9488' },
+              email:     { label: 'Email', fg: '#4f46e5' },
+              instagram: { label: 'Instagram', fg: '#db2777' },
+              facebook:  { label: 'Messenger', fg: '#2563eb' },
+              messenger: { label: 'Messenger', fg: '#2563eb' },
+              whatsapp:  { label: 'WhatsApp', fg: '#16a34a' },
               // A phone call is NOT a live-chat enquiry — without this it fell
               // through to the "Live Chat Enquiry" default below.
-              phone:     { label: 'Phone', bg: '#e0f2fe', fg: '#0369a1' },
-              call:      { label: 'Phone', bg: '#e0f2fe', fg: '#0369a1' },
-              voice:     { label: 'Phone', bg: '#e0f2fe', fg: '#0369a1' },
+              phone:     { label: 'Phone', fg: '#0284c7' },
+              call:      { label: 'Phone', fg: '#0284c7' },
+              voice:     { label: 'Phone', fg: '#0284c7' },
               // Someone's private Colvy chat (Colvy's own inbox only).
-              colvy:     { label: 'Colvy app', bg: '#fff1ee', fg: '#e2553f' },
+              colvy:     { label: 'Colvy app', fg: '#e2553f' },
             }
             if (CHANNEL_BADGE[ch]) {
               source = CHANNEL_BADGE[ch]
@@ -9019,25 +9025,25 @@ export default function InboxPage() {
               // wrongly stayed "Abandoned Cart" forever after the sale.
               // The top tag is the SOURCE the enquiry came from (the website),
               // with the cart state shown as the second badge.
-              source = { label: 'Website', bg: '#e0e7ff', fg: '#4338ca' }
-              cartSecond = { label: 'Abandoned Cart', bg: '#fee2e2', fg: '#dc2626' }
+              source = { label: 'Website', fg: '#7c3aed' }
+              cartSecond = { label: 'Abandoned cart', fg: '#e11d48' }
             } else if (subj.startsWith('order #') || (c as any).order_status) {
               // Read the ACTUAL order status. This used to say "Order Placed" for
               // every order conversation — including failed payments, which is
               // exactly backwards: those are the ones needing attention.
               const os = String((c as any).order_status || '').toLowerCase()
               const ORDER_BADGE: Record<string, any> = {
-                failed:     { label: 'Payment Failed', bg: '#fee2e2', fg: '#dc2626' },
-                cancelled:  { label: 'Order Cancelled', bg: '#fee2e2', fg: '#dc2626' },
-                refunded:   { label: 'Order Refunded', bg: '#fef3c7', fg: '#b45309' },
-                'on-hold':  { label: 'Order On Hold', bg: '#fef3c7', fg: '#b45309' },
-                pending:    { label: 'Payment Pending', bg: '#fef3c7', fg: '#b45309' },
-                completed:  { label: 'Order Completed', bg: '#dcfce7', fg: '#15803d' },
-                processing: { label: 'Order Placed', bg: '#dcfce7', fg: '#15803d' },
+                failed:     { label: 'Payment failed', fg: '#dc2626' },
+                cancelled:  { label: 'Order cancelled', fg: '#dc2626' },
+                refunded:   { label: 'Order refunded', fg: '#d97706' },
+                'on-hold':  { label: 'Order on hold', fg: '#d97706' },
+                pending:    { label: 'Payment pending', fg: '#ea580c' },
+                completed:  { label: 'Order completed', fg: '#16a34a' },
+                processing: { label: 'Order placed', fg: '#16a34a' },
               }
-              source = ORDER_BADGE[os] || { label: 'Order Placed', bg: '#dcfce7', fg: '#15803d' }
+              source = ORDER_BADGE[os] || { label: 'Order placed', fg: '#16a34a' }
             } else {
-              source = { label: 'Live Chat Enquiry', bg: '#dcfce7', fg: '#15803d' }
+              source = { label: 'Live Chat Enquiry', fg: '#7c3aed' }
             }
             const isLiveChat = source.label === 'Live Chat Enquiry'
             // Only PULSE as "live" when the visitor is genuinely on the widget
@@ -9054,16 +9060,16 @@ export default function InboxPage() {
             if (CHANNEL_BADGE[ch]) {
               const os2 = String((c as any).order_status || '').toLowerCase()
               const ORDER_BADGE2: Record<string, any> = {
-                failed:     { label: 'Payment Failed', bg: '#fee2e2', fg: '#dc2626' },
-                cancelled:  { label: 'Order Cancelled', bg: '#fee2e2', fg: '#dc2626' },
-                refunded:   { label: 'Order Refunded', bg: '#fef3c7', fg: '#b45309' },
-                'on-hold':  { label: 'Order On Hold', bg: '#fef3c7', fg: '#b45309' },
-                pending:    { label: 'Payment Pending', bg: '#fef3c7', fg: '#b45309' },
-                completed:  { label: 'Order Completed', bg: '#dcfce7', fg: '#15803d' },
-                processing: { label: 'Order Placed', bg: '#dcfce7', fg: '#15803d' },
+                failed:     { label: 'Payment failed', fg: '#dc2626' },
+                cancelled:  { label: 'Order cancelled', fg: '#dc2626' },
+                refunded:   { label: 'Order refunded', fg: '#d97706' },
+                'on-hold':  { label: 'Order on hold', fg: '#d97706' },
+                pending:    { label: 'Payment pending', fg: '#ea580c' },
+                completed:  { label: 'Order completed', fg: '#16a34a' },
+                processing: { label: 'Order placed', fg: '#16a34a' },
               }
               if (os2 && ORDER_BADGE2[os2]) secondBadge = ORDER_BADGE2[os2]
-              else if (subj.startsWith('abandoned cart') && (c as any).cart_status !== 'recovered' && !os2) secondBadge = { label: 'Abandoned Cart', bg: '#fee2e2', fg: '#dc2626' }
+              else if (subj.startsWith('abandoned cart') && (c as any).cart_status !== 'recovered' && !os2) secondBadge = { label: 'Abandoned cart', fg: '#e11d48' }
             }
 
             const accent = companyInfo?.accent_color || 'var(--coral)'
@@ -9144,15 +9150,14 @@ export default function InboxPage() {
               </div>
 
               {/* Source tag(s) — channel plus order status when both apply */}
-              <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 4, marginBottom: 5 }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 9.5, fontWeight: 800, letterSpacing: '0.03em', textTransform: 'uppercase', padding: '2px 7px', borderRadius: 5, background: source.bg, color: source.fg }}>
-                  {isLiveChat && isLiveNow && (
-                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#22c55e', animation: 'livePulse 1.6s ease-in-out infinite', flexShrink: 0 }} />
-                  )}
-                  {isLiveChat ? (isLiveNow ? source.label : 'Web Enquiry') : source.label}
+              <span style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 5 }}>
+                <span className="cv-tag" style={{ ['--tag' as any]: isLiveChat && isLiveNow ? '#16a34a' : source.fg }}>
+                  <span className={`cv-tag-dot${isLiveChat && isLiveNow ? ' live' : ''}`} />
+                  {isLiveChat ? (isLiveNow ? 'Live chat' : 'Web enquiry') : source.label}
                 </span>
                 {secondBadge && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 9.5, fontWeight: 800, letterSpacing: '0.03em', textTransform: 'uppercase', padding: '2px 7px', borderRadius: 5, background: secondBadge.bg, color: secondBadge.fg }}>
+                  <span className="cv-tag" style={{ ['--tag' as any]: secondBadge.fg }}>
+                    <span className="cv-tag-dot" />
                     {secondBadge.label}
                   </span>
                 )}
