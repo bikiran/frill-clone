@@ -203,7 +203,7 @@ export default function AdminRail({ workspace, sections, settings, search, ring,
   return (
     <aside className={`admin-rail${open ? ' dim' : ''}`} aria-label="Main menu">
       <style>{`
-        .admin-rail { position: fixed; top: 56px; left: 0; bottom: 0; width: ${RAIL_W}px; z-index: 30; display: flex; flex-direction: column; align-items: center; background: #f4f4f6; border-right: 1px solid #ececf0; transition: z-index 0s linear .34s; }
+        .admin-rail { position: fixed; top: 56px; left: 0; bottom: var(--sab-h, 0px); width: ${RAIL_W}px; z-index: 30; display: flex; flex-direction: column; align-items: center; background: #f4f4f6; border-right: 1px solid #ececf0; transition: z-index 0s linear .34s; }
         /* While a panel is open: a soft grey veil over everything but the
            panel and its tile. The rail lifts above the top bar for it, and
            settles back once the veil has faded. */

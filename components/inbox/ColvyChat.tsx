@@ -323,10 +323,25 @@ export function ColvyChatInfo() {
     text: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
     email: 'M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm18 2-10 7L2 6',
   }
+  // Calling and texting Colvy happen here, not in the device's phone or
+  // Messages app: Call opens Colvy's own dialer with Colvy's number, and Text
+  // is this chat (it reaches the same team), so it goes to the reply box.
+  // Email still opens their email app.
+  const call = (e: React.MouseEvent) => {
+    e.preventDefault()
+    window.dispatchEvent(new CustomEvent('colvy:dial', { detail: { number: COLVY_CONTACT.phoneE164, name: 'Colvy' } }))
+  }
+  const write = (e: React.MouseEvent) => {
+    e.preventDefault()
+    const box = document.querySelector<HTMLTextAreaElement>('.colvy-chat textarea.cmp-input')
+    if (!box) return
+    box.focus()
+    box.closest('.inbox-composer')?.animate?.([{ boxShadow: '0 0 0 0 rgba(37,99,235,.35)' }, { boxShadow: '0 0 0 6px rgba(37,99,235,0)' }], { duration: 700, easing: 'ease-out' })
+  }
   const ways = [
-    { k: 'call', h: COLVY_CONTACT.telHref, t: 'Call', bg: '#ecfdf3', c: '#059669' },
-    { k: 'text', h: COLVY_CONTACT.smsHref, t: 'Text', bg: '#eff6ff', c: '#2563eb' },
-    { k: 'email', h: COLVY_CONTACT.mailHref, t: 'Email', bg: '#fff1ee', c: 'var(--coral)' },
+    { k: 'call', h: COLVY_CONTACT.telHref, t: 'Call', bg: '#ecfdf3', c: '#059669', go: call },
+    { k: 'text', h: '#', t: 'Message', bg: '#eff6ff', c: '#2563eb', go: write },
+    { k: 'email', h: COLVY_CONTACT.mailHref, t: 'Email', bg: '#fff1ee', c: 'var(--coral)', go: undefined },
   ]
   const links = [
     { l: 'What’s new in Colvy', h: '/changelog' },
@@ -347,7 +362,7 @@ export function ColvyChatInfo() {
         <p style={{ margin: '3px 0 14px', fontSize: 12.5, color: 'var(--slate)' }}>Official account · updates and help</p>
         <div style={{ display: 'flex', justifyContent: 'center', gap: 8 }}>
           {ways.map(w => (
-            <a key={w.k} href={w.h} title={w.t} aria-label={`${w.t} Colvy`}
+            <a key={w.k} href={w.h} title={w.t} aria-label={`${w.t} Colvy`} onClick={w.go}
               style={{ width: 44, height: 44, borderRadius: 12, background: w.bg, color: w.c, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={ICON[w.k]} /></svg>
             </a>
@@ -357,7 +372,7 @@ export function ColvyChatInfo() {
 
       <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 12 }}>
         <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>Contact</p>
-        <div><p style={label}>Phone and text</p><a href={COLVY_CONTACT.telHref} style={{ fontSize: 13.5, color: 'var(--ink)', textDecoration: 'none' }}>{COLVY_CONTACT.phoneDisplay}</a></div>
+        <div><p style={label}>Phone and text</p><a href={COLVY_CONTACT.telHref} onClick={call} style={{ fontSize: 13.5, color: 'var(--ink)', textDecoration: 'none' }}>{COLVY_CONTACT.phoneDisplay}</a></div>
         <div><p style={label}>Email</p><a href={COLVY_CONTACT.mailHref} style={{ fontSize: 13.5, color: 'var(--ink)', textDecoration: 'none' }}>{COLVY_CONTACT.email}</a></div>
         <p style={{ margin: 0, fontSize: 12, color: 'var(--slate)', lineHeight: 1.5 }}>Or just write here: it reaches the same team.</p>
       </div>

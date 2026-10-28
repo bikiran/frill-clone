@@ -6322,7 +6322,9 @@ export default function InboxPage() {
       attachments: [],
       metadata: {},
       reply_to: replyTo?.id || null,
-      delivery_channel: 'chat',
+      // A reply in someone's Colvy chat goes back to the app: say so (it read
+      // "Live Chat" under the reply).
+      delivery_channel: String((selected as any).channel || '') === 'colvy' ? 'colvy' : 'chat',
     }
     const { data: sentMsg } = await (supabase as any).from('messages').insert(msg).select().maybeSingle()
     // Push it straight to the visitor's widget. They no longer watch the
