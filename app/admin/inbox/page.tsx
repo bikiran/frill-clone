@@ -10860,7 +10860,7 @@ export default function InboxPage() {
               ) : showEmailComposer && !internalMode ? (
                 <EmailComposer
                   header={renderModeHead()}
-                  bodyHeight={isMobile ? undefined : composerH + 44}
+                  bodyHeight={isMobile ? undefined : composerH}
                   compact={isMobile}
                   onBodyText={setEmailDraftText}
                   conversationId={selected.id}

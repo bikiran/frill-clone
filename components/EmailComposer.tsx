@@ -45,6 +45,7 @@ export default function EmailComposer({
   conversationId, companyId, toEmail, defaultSubject, fromLabel, replyTo, signature, agentName, onSent, onAiAssist, keyterms, extraTools, header, bodyHeight, templateVars, compact, onBodyText,
 }: Props) {
   const [showDetails, setShowDetails] = useState(false)
+  const [showFmt, setShowFmt] = useState(false)
   const [to, setTo] = useState(toEmail)
   const [cc, setCc] = useState('')
   const [showCc, setShowCc] = useState(false)
@@ -337,10 +338,89 @@ export default function EmailComposer({
   ) : null
 
 
+  // Bold, italic, underline, strikethrough and lists. Phones keep them in the
+  // toolbar; wider screens tuck them behind "Aa" (a row above the body).
+  const fmtButtons = (
+    <>
+      {([
+        ['bold', 'B', { fontWeight: 800 }, 'Bold'],
+        ['italic', 'i', { fontStyle: 'italic', fontFamily: 'Georgia, serif' }, 'Italic'],
+        ['underline', 'U', { textDecoration: 'underline' }, 'Underline'],
+        ['strikeThrough', 'S', { textDecoration: 'line-through' }, 'Strikethrough'],
+      ] as const).map(([cmd, label, st, tip]) => (
+        <button key={cmd} type="button" title={tip} aria-label={tip} onMouseDown={e => { e.preventDefault(); exec(cmd) }}
+          style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)', fontSize: 14, ...st }}>{label}</button>
+      ))}
+      <span style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
+      <button type="button" title="Bullet list" aria-label="Bullet list" onMouseDown={e => { e.preventDefault(); exec('insertUnorderedList') }}
+        style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+      </button>
+      <button type="button" title="Numbered list" aria-label="Numbered list" onMouseDown={e => { e.preventDefault(); exec('insertOrderedList') }}
+        style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
+      </button>
+    </>
+  )
+
+  const toolbarEl = (
+    <>
+    <style>{`.email-rte[data-empty="true"]:before{content:attr(data-ph);color:#9ca3af;pointer-events:none;}
+      .email-extra-tools .cmp-tool { width: 28px !important; height: 28px !important; border-radius: 6px !important; background: transparent !important; }
+      .email-extra-tools .cmp-tool:hover { background: var(--canvas, #f5f6f8) !important; }
+      .ecmp-toolbar.compact::-webkit-scrollbar { display: none; }
+      .ecmp-toolbar.compact > * { flex-shrink: 0; }
+      /* Wide screens: when the conversation column is narrow, shorter labels keep the tools and buttons on one line. */
+      .ecmp { container-type: inline-size; }
+      .ecmp .ecmp-short { display: none; }
+      .ecmp .ecmp-long { display: contents; }
+      @container (max-width: 780px) { .ecmp .ecmp-long { display: none; } .ecmp .ecmp-short { display: contents; } }`}</style>
+    <div className={compact ? 'ecmp-toolbar compact' : 'ecmp-toolbar'} style={compact ? { display: 'flex', alignItems: 'center', gap: 2, padding: '6px 8px', borderBottom: '1px solid var(--border)', flexWrap: 'nowrap', position: 'relative', overflowX: 'auto', overflowY: 'hidden', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' } as React.CSSProperties : { display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', position: 'relative', flex: '1 1 0', minWidth: 0 }}>
+      {/* Colvy Voice — dictate the email (same as the chat reply box). */}
+      <VoiceDictationButton size={28} soft title="Voice type" keyterms={keyterms} onText={insertDictation} />
+      <span style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
+      {compact ? <>{fmtButtons}<span style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} /></> : (
+        <button type="button" title={showFmt ? 'Hide formatting' : 'Formatting: bold, italic, lists'} aria-label="Formatting" aria-pressed={showFmt} onMouseDown={e => e.preventDefault()} onClick={() => setShowFmt(v => !v)}
+          style={{ width: 30, height: 28, borderRadius: 6, border: 'none', background: showFmt ? 'var(--canvas, #f5f6f8)' : 'transparent', cursor: 'pointer', color: showFmt ? 'var(--ink)' : 'var(--slate)', fontSize: 13.5, fontWeight: 700, fontFamily: 'Georgia, serif', textDecoration: showFmt ? 'underline' : 'none', textUnderlineOffset: 3 }}>Aa</button>
+      )}
+      <button type="button" ref={emojiPop.anchorRef} title="Emoji" aria-label="Emoji" aria-haspopup="dialog" aria-expanded={emojiPop.open} onMouseDown={e => e.preventDefault()} onClick={emojiPop.toggle}
+        style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: emojiPop.open ? 'var(--peach)' : 'transparent', cursor: 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+      </button>
+      <button type="button" title="Insert image" aria-label="Insert image" disabled={imgBusy} onMouseDown={e => { e.preventDefault(); imgInputRef.current?.click() }}
+        style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', cursor: imgBusy ? 'wait' : 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+      </button>
+      <input ref={imgInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => onPickImage(e.target.files?.[0] || null)} />
+      <button type="button" title="Attach file" aria-label="Attach file" disabled={attBusy} onMouseDown={e => { e.preventDefault(); attInputRef.current?.click() }}
+        style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', cursor: attBusy ? 'wait' : 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+      </button>
+      <input ref={attInputRef} type="file" multiple style={{ display: 'none' }} onChange={e => onPickFiles(e.target.files)} />
+      {extraTools && (
+        <>
+          <span style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
+          <div className="email-extra-tools" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>{extraTools(insertDictation)}</div>
+        </>
+      )}
+      <TemplatesButton companyId={companyId} vars={tplVars} onInsert={insertTemplate}
+        buttonStyle={open => ({ width: 28, height: 28, borderRadius: 6, border: 'none', background: open ? 'var(--peach)' : 'transparent', cursor: 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' })} />
+      <Popover open={emojiPop.open} onClose={emojiPop.close} anchorRef={emojiPop.anchorRef} width={232} label="Emoji" padding={8}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 2 }}>
+          {EMOJIS.map(em => (
+            <button key={em} type="button" data-pop-item className="cpop-item" aria-label={`Insert ${em}`} onMouseDown={e => e.preventDefault()} onClick={() => { emojiPop.close(); insertAtCursor(em) }}
+              style={{ width: 34, height: 34, padding: 0, justifyContent: 'center', fontSize: 18, borderRadius: 6 }}>{em}</button>
+          ))}
+        </div>
+      </Popover>
+    </div>
+    </>
+  )
+
   return (
     <div className={header ? 'cmp-card ecmp' : 'ecmp'} style={header ? { overflow: 'hidden' } : { border: '1px solid var(--border)', borderRadius: 12, background: '#fff', overflow: 'hidden' }}>
       {header}
-      {(!compact || showDetails) && (
+      {showDetails && (
       <div style={{ ...row, flexWrap: 'wrap', rowGap: 2, background: header ? 'transparent' : 'var(--canvas)' }}>
         <span style={rowLabel}>From</span>
         <span style={{ ...field, minWidth: 180, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fromLabel || 'Your mailbox'}</span>
@@ -355,7 +435,7 @@ export default function EmailComposer({
       <div className="ecmp-to" style={row}>
         <span style={rowLabel}>To</span>
         <input value={to} onChange={e => setTo(e.target.value)} style={field} placeholder="customer@example.com" />
-        {(!showCc || !showBcc) && (!compact || showDetails) && (
+        {(!showCc || !showBcc) && showDetails && (
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
             {!showCc && (
               <button type="button" onClick={() => setShowCc(true)}
@@ -370,6 +450,14 @@ export default function EmailComposer({
               </button>
             )}
           </div>
+        )}
+        {!compact && (
+          <button type="button" className="ecmp-details" onClick={() => setShowDetails(v => !v)} aria-expanded={showDetails}
+            title={showDetails ? 'Hide From, Cc, Bcc and Subject' : 'Show From, Cc, Bcc and Subject'}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 1, minWidth: 0, maxWidth: '55%', border: 'none', background: showDetails ? 'var(--canvas)' : 'transparent', color: 'var(--slate)', borderRadius: 8, padding: '4px 8px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{showDetails ? 'Hide details' : (subject || defaultSubject || 'Subject')}</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0, transform: showDetails ? 'rotate(180deg)' : 'none', transition: 'transform .15s ease' }}><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
         )}
         {compact && (
           <button type="button" className="ecmp-details" onClick={() => setShowDetails(v => !v)} aria-expanded={showDetails}
@@ -392,7 +480,7 @@ export default function EmailComposer({
           <input value={bcc} onChange={e => setBcc(e.target.value)} style={field} placeholder="bcc@example.com" />
         </div>
       )}
-      {(!compact || showDetails) && (<>
+      {showDetails && (<>
       <div style={row}>
         <span style={rowLabel}>Subject</span>
         <input value={subject} onChange={e => { subjectEdited.current = true; setSubject(e.target.value) }} style={field} placeholder="Subject" />
@@ -418,70 +506,15 @@ export default function EmailComposer({
       {compact && addSigPanel}
       </>)}
 
-      {/* Rich-text formatting toolbar */}
-      <style>{`.email-rte[data-empty="true"]:before{content:attr(data-ph);color:#9ca3af;pointer-events:none;}
-        .email-extra-tools .cmp-tool { width: 28px !important; height: 28px !important; border-radius: 6px !important; background: transparent !important; }
-        .email-extra-tools .cmp-tool:hover { background: var(--canvas, #f5f6f8) !important; }
-        .ecmp-toolbar.compact::-webkit-scrollbar { display: none; }
-        .ecmp-toolbar.compact > * { flex-shrink: 0; }`}</style>
-      <div className={compact ? 'ecmp-toolbar compact' : 'ecmp-toolbar'} style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '6px 8px', borderBottom: '1px solid var(--border)', flexWrap: compact ? 'nowrap' : 'wrap', position: 'relative', ...(compact ? { overflowX: 'auto', overflowY: 'hidden', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' } as React.CSSProperties : {}) }}>
-        {/* Colvy Voice — dictate the email (same as the chat reply box). */}
-        <VoiceDictationButton size={28} soft title="Voice type" keyterms={keyterms} onText={insertDictation} />
-        <span style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
-        {([
-          ['bold', 'B', { fontWeight: 800 }, 'Bold'],
-          ['italic', 'i', { fontStyle: 'italic', fontFamily: 'Georgia, serif' }, 'Italic'],
-          ['underline', 'U', { textDecoration: 'underline' }, 'Underline'],
-          ['strikeThrough', 'S', { textDecoration: 'line-through' }, 'Strikethrough'],
-        ] as const).map(([cmd, label, st, tip]) => (
-          <button key={cmd} type="button" title={tip} aria-label={tip} onMouseDown={e => { e.preventDefault(); exec(cmd) }}
-            style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--ink)', fontSize: 14, ...st }}>{label}</button>
-        ))}
-        <span style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
-        <button type="button" title="Bullet list" aria-label="Bullet list" onMouseDown={e => { e.preventDefault(); exec('insertUnorderedList') }}
-          style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-        </button>
-        <button type="button" title="Numbered list" aria-label="Numbered list" onMouseDown={e => { e.preventDefault(); exec('insertOrderedList') }}
-          style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
-        </button>
-        <span style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
-        <button type="button" ref={emojiPop.anchorRef} title="Emoji" aria-label="Emoji" aria-haspopup="dialog" aria-expanded={emojiPop.open} onMouseDown={e => e.preventDefault()} onClick={emojiPop.toggle}
-          style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: emojiPop.open ? 'var(--peach)' : 'transparent', cursor: 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
-        </button>
-        <button type="button" title="Insert image" aria-label="Insert image" disabled={imgBusy} onMouseDown={e => { e.preventDefault(); imgInputRef.current?.click() }}
-          style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', cursor: imgBusy ? 'wait' : 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
-        </button>
-        <input ref={imgInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => onPickImage(e.target.files?.[0] || null)} />
-        <button type="button" title="Attach file" aria-label="Attach file" disabled={attBusy} onMouseDown={e => { e.preventDefault(); attInputRef.current?.click() }}
-          style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', cursor: attBusy ? 'wait' : 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-        </button>
-        <input ref={attInputRef} type="file" multiple style={{ display: 'none' }} onChange={e => onPickFiles(e.target.files)} />
-        {extraTools && (
-          <>
-            <span style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
-            <div className="email-extra-tools" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>{extraTools(insertDictation)}</div>
-          </>
-        )}
-        <TemplatesButton companyId={companyId} vars={tplVars} onInsert={insertTemplate}
-          buttonStyle={open => ({ width: 28, height: 28, borderRadius: 6, border: 'none', background: open ? 'var(--peach)' : 'transparent', cursor: 'pointer', color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' })} />
-        <Popover open={emojiPop.open} onClose={emojiPop.close} anchorRef={emojiPop.anchorRef} width={232} label="Emoji" padding={8}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 2 }}>
-            {EMOJIS.map(em => (
-              <button key={em} type="button" data-pop-item className="cpop-item" aria-label={`Insert ${em}`} onMouseDown={e => e.preventDefault()} onClick={() => { emojiPop.close(); insertAtCursor(em) }}
-                style={{ width: 34, height: 34, padding: 0, justifyContent: 'center', fontSize: 18, borderRadius: 6 }}>{em}</button>
-            ))}
-          </div>
-        </Popover>
-      </div>
+      {/* Rich-text formatting toolbar: above the body on phones, in the bottom bar on wider screens. */}
+      {compact && toolbarEl}
+      {!compact && showFmt && (
+        <div className="ecmp-fmt" style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '4px 8px', borderBottom: '1px solid var(--border)' }}>{fmtButtons}</div>
+      )}
       <div ref={editorRef} contentEditable suppressContentEditableWarning onInput={() => { syncBody(); rememberCaret() }}
         onKeyUp={rememberCaret} onMouseUp={rememberCaret} onBlur={rememberCaret}
         className="email-rte" data-ph="Write your reply…" data-empty={(!bodyHtml || bodyHtml === '<br>') ? 'true' : 'false'}
-        style={{ ...(compact ? { minHeight: 110, maxHeight: '34dvh' } : bodyHeight ? { height: bodyHeight } : { minHeight: 130, maxHeight: 300 }), overflowY: 'auto', outline: 'none', padding: '12px', fontSize: 13.5, lineHeight: 1.55, color: 'var(--ink)', background: '#fff' }} />
+        style={{ ...(compact ? { minHeight: 110, maxHeight: '34dvh' } : bodyHeight ? { height: bodyHeight } : { minHeight: 76, maxHeight: 280 }), overflowY: 'auto', outline: 'none', padding: '12px', fontSize: 13.5, lineHeight: 1.55, color: 'var(--ink)', background: '#fff' }} />
 
       {(attachments.length > 0 || attBusy) && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '0 12px 8px' }}>
@@ -500,7 +533,7 @@ export default function EmailComposer({
       )}
 
       {/* The signature that will be added, on one quiet line; tap to see it all. */}
-      {sigPreview && (!compact || showDetails) && (
+      {sigPreview && compact && showDetails && (
         <div style={{ padding: '0 12px 8px' }}>
           <button type="button" onClick={() => setShowSig(v => !v)} aria-expanded={showSig}
             title={showSig ? 'Hide the signature' : 'Show the whole signature'}
@@ -513,6 +546,31 @@ export default function EmailComposer({
         </div>
       )}
 
+      {/* Wide screens: which signature, and a one-line look at it (tap for all of it). */}
+      {!compact && (
+        <div className="ecmp-sig" style={{ display: 'flex', alignItems: showSig ? 'flex-start' : 'center', gap: 6, padding: '5px 12px', borderTop: '1px dashed var(--border)', fontSize: 11.5, color: 'var(--slate)', minWidth: 0 }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0, marginTop: showSig ? 4 : 0 }}><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+          <select value={sigId} onChange={e => setSigId(e.target.value)} aria-label="Signature" title="Signature added to this email"
+            style={{ border: 'none', background: 'transparent', color: sigId ? 'var(--ink)' : 'var(--slate)', fontSize: 12, fontWeight: 600, cursor: 'pointer', maxWidth: 160, outline: 'none', padding: '1px 0', fontFamily: 'inherit', flexShrink: 0 }}>
+            <option value="">No signature</option>
+            {signature && <option value="mailbox">Mailbox default</option>}
+            {sigs.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <button type="button" onClick={() => { setAddingSig(v => !v); setErr('') }} title="Add a signature"
+            style={{ border: 'none', background: 'none', color: 'var(--coral)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', padding: 0, whiteSpace: 'nowrap', flexShrink: 0 }}>
+            + New
+          </button>
+          {sigPreview && (
+            <button type="button" onClick={() => setShowSig(v => !v)} aria-expanded={showSig} title={showSig ? 'Hide the signature' : 'Show the whole signature'}
+              style={{ flex: 1, minWidth: 0, display: 'flex', gap: 6, margin: 0, padding: 0, border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left', fontSize: 11.5, lineHeight: 1.5, color: 'var(--slate)', fontFamily: 'inherit' }}>
+              <span aria-hidden style={{ color: 'var(--border)' }}>·</span>
+              <span style={showSig ? { whiteSpace: 'pre-wrap', minWidth: 0 } : { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+                {showSig ? sigPreview : sigPreview.split('\n').map(l => l.trim()).filter(Boolean).join(' · ').replace(/([,;:]) · /g, '$1 ')}
+              </span>
+            </button>
+          )}
+        </div>
+      )}
       {/* New signature, opened from the footer's “+ New”. */}
       {!compact && addSigPanel && <div style={{ borderTop: '1px solid var(--border)' }}>{addSigPanel}</div>}
       {(aiDraft.info || aiDraft.error) && (
@@ -520,34 +578,22 @@ export default function EmailComposer({
           <AiDraftInfo info={aiDraft.info} error={aiDraft.error} busy={aiDraft.busy} onRedo={i => aiDraft.run(i)} onClose={aiDraft.clear} />
         </div>
       )}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: compact ? '8px 10px' : '10px 12px', borderTop: '1px solid var(--border)', background: 'var(--canvas)', ...(compact ? { flexWrap: 'wrap', rowGap: 6 } : {}) }}>
-        {err ? (
-          <span style={{ fontSize: 12, color: '#dc2626' }}>{err}</span>
-        ) : !compact ? (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--slate)', minWidth: 0 }}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0 }}><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
-            <select value={sigId} onChange={e => setSigId(e.target.value)} aria-label="Signature" title="Signature added to this email"
-              style={{ border: 'none', background: 'transparent', color: sigId ? 'var(--ink)' : 'var(--slate)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', maxWidth: 180, outline: 'none', padding: '2px 0', fontFamily: 'inherit' }}>
-              <option value="">No signature</option>
-              {signature && <option value="mailbox">Mailbox default</option>}
-              {sigs.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-            <button type="button" onClick={() => { setAddingSig(v => !v); setErr('') }} title="Add a signature"
-              style={{ border: 'none', background: 'none', color: 'var(--coral)', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0, whiteSpace: 'nowrap' }}>
-              + New
-            </button>
-          </span>
-        ) : null}
-        <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 6 : 8, ...(compact ? { marginLeft: 'auto' } : {}) }}>
-          <AiDraftButton busy={aiDraft.busy} onClick={() => aiDraft.run()} height={34} />
-          <button type="button" onClick={improveWithAI} disabled={aiBusy} title="Improve this draft with AI"
+      {!compact && err && <div style={{ padding: '6px 12px 0', fontSize: 12, color: '#dc2626' }}>{err}</div>}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: compact ? '8px 10px' : '6px 8px 6px 6px', borderTop: '1px solid var(--border)', background: compact ? 'var(--canvas)' : '#fff', flexWrap: compact ? 'wrap' : 'nowrap', rowGap: 6 }}>
+        {compact ? (err ? <span style={{ fontSize: 12, color: '#dc2626' }}>{err}</span> : null) : toolbarEl}
+        <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 6 : 8, marginLeft: 'auto', flexShrink: 0 }}>
+          {compact ? <AiDraftButton busy={aiDraft.busy} onClick={() => aiDraft.run()} height={34} /> : (<>
+            <span className="ecmp-long"><AiDraftButton busy={aiDraft.busy} onClick={() => aiDraft.run()} height={34} /></span>
+            <span className="ecmp-short"><AiDraftButton busy={aiDraft.busy} onClick={() => aiDraft.run()} height={34} orb /></span>
+          </>)}
+          <button type="button" onClick={improveWithAI} disabled={aiBusy} title="Improve this draft with AI" aria-label="Improve this draft with AI"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '8px 12px', borderRadius: 9, border: '1px solid #e9d5ff', background: '#faf5ff', color: '#7c3aed', fontSize: 12.5, fontWeight: 700, cursor: aiBusy ? 'wait' : 'pointer' }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>
-            {aiBusy ? 'Improving…' : compact ? 'Improve' : 'AI improve'}
+            {aiBusy ? 'Improving…' : compact ? 'Improve' : <span className="ecmp-long">AI improve</span>}
           </button>
           <button type="button" onClick={send} disabled={sending}
           style={{ padding: '9px 20px', borderRadius: 9, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: sending ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 7 }}>
-          {sending ? 'Sending…' : 'Send email'}
+          {sending ? 'Sending…' : compact ? 'Send email' : <><span className="ecmp-long">Send email</span><span className="ecmp-short">Send</span></>}
           {!sending && (
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
           )}
