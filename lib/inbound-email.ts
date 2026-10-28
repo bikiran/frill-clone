@@ -179,7 +179,7 @@ export function safeAttachmentType(type: string | null | undefined): { type: str
  * Attachments API and keep it on our own R2 → [{url,name,type,size}].
  * At most 10 files and 25MB in all; unsafe types are stored as downloads.
  */
-export async function hostResendAttachments(emailId: string | null | undefined, companyId: string, meta?: any[] | null, fetchImpl: typeof fetch = fetch): Promise<{ url: string; name: string; type: string; size?: number }[]> {
+export async function hostResendAttachments(emailId: string | null | undefined, companyId: string, meta?: any[] | null, fetchImpl: typeof fetch = fetch): Promise<{ url: string; name: string; type: string; size?: number; cid?: string }[]> {
   try {
     const key = resendReceivingKey()
     if (!key || !r2Configured() || !emailId) return []
@@ -191,7 +191,7 @@ export async function hostResendAttachments(emailId: string | null | undefined, 
     if (!res.ok) return []
     const j: any = await res.json().catch(() => ({}))
     const list = (j.data || j.attachments || []) as any[]
-    const out: { url: string; name: string; type: string; size?: number }[] = []
+    const out: { url: string; name: string; type: string; size?: number; cid?: string }[] = []
     let total = 0
     for (let i = 0; i < list.length && out.length < MAX_EMAIL_FILES; i++) {
       const a = list[i]
@@ -209,7 +209,9 @@ export async function hostResendAttachments(emailId: string | null | undefined, 
         const uniq = String(a.id || i).replace(/[^\w-]/g, '').slice(0, 40) || String(i)
         const key = `ticket-attachments/${companyId}/${emailId}-${uniq}-${safe}`
         const url = await uploadToR2(key, bytes, type, inline ? {} : { contentDisposition: `attachment; filename="${safe}"` })
-        out.push({ url, name, type, size: bytes.length })
+        // An inline image's Content-ID, so the email's <img src="cid:…"> can point at the stored copy.
+        const cid = String(a.content_id || a.contentId || a.cid || '').replace(/^<|>$/g, '').trim()
+        out.push({ url, name, type, size: bytes.length, ...(cid ? { cid } : {}) })
       } catch { /* skip one bad attachment */ }
     }
     return out
@@ -234,4 +236,19 @@ export function readReceived(e: ReceivedEmail | null | undefined) {
     from: String(e.from || ''),
     to: ([] as string[]).concat(e.to || [], e.cc || [], (e as any).received_for || []).map(String),
   }
+}
+
+/**
+ * Point an email's inline images (<img src="cid:…">) at their stored copies,
+ * before the HTML is sanitised (which drops cid: references it can't load).
+ */
+export function resolveCidImages(html: string, files: { url: string; cid?: string }[]): string {
+  if (!html || !/cid:/i.test(html)) return html
+  let out = html
+  for (const f of files) {
+    if (!f.cid || !f.url) continue
+    const re = new RegExp('cid:' + f.cid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+    out = out.replace(re, f.url)
+  }
+  return out
 }

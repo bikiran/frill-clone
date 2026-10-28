@@ -121,6 +121,15 @@ export function emailFrameDoc(html: string | null | undefined): string {
     + `</head><body>${clean}</body></html>`
 }
 
+/** Is there anything to see in this email's formatted copy (text, or an image that can load)? */
+export function emailHtmlHasContent(html: string | null | undefined): boolean {
+  const h = String(html || '')
+  if (!h) return false
+  if (/<img\b[^>]*\bsrc\s*=\s*["']?(https?:|data:image)/i.test(h)) return true
+  const text = h.replace(/<(style|script|head)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;|&#160;|&zwnj;|&#8203;/gi, ' ')
+  return /\S/.test(text)
+}
+
 /**
  * A starting height for the frame. The sandboxed frame can't be measured from
  * outside (that would need same-origin or scripts in it), so this estimates
