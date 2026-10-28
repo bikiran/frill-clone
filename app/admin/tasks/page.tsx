@@ -22,6 +22,7 @@ import { foldRepeats } from '@/lib/task-fold'
 import { beginWrite, endWrite, overlayPending, inOrder, type PendingWrites, type WriteChains } from '@/lib/task-pending'
 import { checklistActivity } from '@/lib/task-checklist'
 import ChecklistItemText from '@/components/ChecklistItemText'
+import EmptyScroll from '@/components/EmptyScroll'
 
 function parseTs(d: string | null | undefined): Date | null {
   if (!d) return null
@@ -197,7 +198,7 @@ export default function TasksPage() {
   const [defaultAssignee, setDefaultAssignee] = useState<string | null>(seedPrefs?.assignee ?? null)
   const [assigneeMenu, setAssigneeMenu] = useState<{ x: number; y: number; value: string } | null>(null)
   const labelOf = (v: ViewMode) => viewNames[v] || VIEW_LABELS[v]
-  const dfltDot: React.CSSProperties = { display: 'inline-block', width: 5, height: 5, borderRadius: '50%', background: 'var(--coral)', marginLeft: 5, verticalAlign: 'middle' }
+  const dfltDot: React.CSSProperties = { display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--coral)', marginLeft: -1, verticalAlign: 'middle', flexShrink: 0 }
   const viewMenuItem: React.CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 7, border: 'none', background: 'transparent', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
 
   const setDefaultOutletPref = (id: string | null) => {
@@ -1119,26 +1120,37 @@ export default function TasksPage() {
     <div className="tasks-root">
       <style>{`
         .tasks-root { height: calc(100vh - 56px); display: flex; flex-direction: column; }
-        .day-head { display: flex; align-items: center; gap: 8px; margin: 14px 2px 7px; font-size: 11.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--slate); }
-        .day-head .n { font-size: 10.5px; font-weight: 800; padding: 0 6px; border-radius: 10px; background: rgba(0,0,0,0.06); letter-spacing: 0; }
-        .day-head::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+        .day-head { display: flex; align-items: center; gap: 8px; margin: 18px 2px 9px; font-size: 14px; font-weight: 700; color: var(--ink); }
+        .day-head .n { min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 999px; background: #f4f4f5; color: #52525b; font-size: 11.5px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+        .day-head::after { content: ''; flex: 1; height: 1px; background: #ececef; }
         .day-head.overdue { color: #b91c1c; } .day-head.overdue .n { background: #fee2e2; }
         .day-head.today { color: var(--coral); } .day-head.today .n { background: var(--peach); }
         .day-head.done { color: #15803d; } .day-head.done .n { background: #dcfce7; }
-        .repeat-note { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 9px 12px; margin-bottom: 10px; border-radius: 10px; background: #ecfeff; border: 1px solid #cffafe; color: #0e7490; font-size: 12.5px; }
-        .repeat-note button { border: 1px solid #a5f3fc; background: #fff; color: #0e7490; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 7px; cursor: pointer; }
-        .repeat-note button.danger { border-color: #fecaca; color: #b91c1c; }
-        .list-more { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; margin: 14px 0 6px; padding: 12px; border: 1px dashed var(--border); border-radius: 12px; font-size: 12.5px; color: var(--slate); }
-        .list-more button { border: 1px solid var(--border); background: #fff; color: var(--ink); font-size: 12.5px; font-weight: 700; padding: 6px 12px; border-radius: 8px; cursor: pointer; }
-        .tasks-top { padding: 16px 20px 10px; border-bottom: 1px solid var(--border); }
-        .tasks-title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+        .repeat-note { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 14px; margin-bottom: 12px; border-radius: 16px; background: #ecfeff; border: none; color: #0e7490; font-size: 12.5px; }
+        .repeat-note button { border: none; background: #fff; color: #0e7490; font: inherit; font-size: 12.5px; font-weight: 600; height: 30px; padding: 0 12px; border-radius: 999px; cursor: pointer; }
+        .repeat-note button.danger { color: #b91c1c; }
+        .list-more { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; margin: 14px 0 6px; padding: 12px; border: none; background: #fafafa; border-radius: 16px; font-size: 12.5px; color: var(--slate); }
+        .list-more button { border: none; background: #f4f4f5; color: var(--ink); font: inherit; font-size: 13px; font-weight: 600; height: 32px; padding: 0 14px; border-radius: 999px; cursor: pointer; }
+        .list-more button:hover { background: #ececef; }
+        .tasks-top { padding: 22px 24px 14px; border-bottom: 1px solid #ececef; }
+        .tasks-title-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; margin-bottom: 16px; }
+        .tasks-title-row h1 { font-size: 30px !important; letter-spacing: -0.025em; line-height: 1.1; }
         .tasks-buckets { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
         .tasks-buckets::-webkit-scrollbar { display: none; }
-        .bucket-chip { flex-shrink: 0; padding: 7px 14px; border-radius: 20px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; border: 1px solid var(--border); background: #fff; color: var(--slate); display: inline-flex; align-items: center; gap: 6px; }
-        .bucket-chip.on { border-color: var(--coral); background: var(--peach); color: var(--coral); }
-        .bucket-n { font-size: 11px; font-weight: 800; padding: 0 6px; border-radius: 10px; background: rgba(0,0,0,0.06); }
-        .bucket-chip.on .bucket-n { background: rgba(255,122,107,0.2); }
-        .tasks-controls { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+        .bucket-chip { flex-shrink: 0; height: 32px; padding: 0 12px; border-radius: 999px; font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; white-space: nowrap; border: none; background: #f4f4f5; color: #52525b; display: inline-flex; align-items: center; gap: 7px; transition: background .15s ease, color .15s ease; }
+        .bucket-chip::before { display: none; }
+        .bucket-chip:hover { background: #ececef; color: #18181b; }
+        .bucket-chip.on { background: #18181b; color: #fff; }
+        .bucket-n { min-width: 18px; height: 18px; padding: 0 6px; box-sizing: border-box; border-radius: 999px; background: #fff; color: #52525b; font-size: 11.5px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+        .bucket-chip.on .bucket-n { background: rgba(255,255,255,0.18); color: #fff; }
+        .tasks-search { width: 100%; height: 38px; padding: 0 14px 0 38px; border-radius: 999px; border: 1.5px solid transparent; background: #f4f4f5; font: inherit; font-size: 14px; color: var(--ink); box-sizing: border-box; outline: none; transition: background .15s ease, border-color .15s ease, box-shadow .15s ease; }
+        .tasks-search::placeholder { color: #a1a1aa; }
+        .tasks-search:focus { background: #fff; border-color: #d4d4d8; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 16%, transparent); }
+        .tl-pill { height: 34px; min-width: 34px; padding: 0 12px; border-radius: 999px; border: none; background: #f4f4f5; color: #18181b; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex-shrink: 0; transition: background .15s ease; }
+        .tl-pill::before { display: none; }
+        .tl-pill:hover { background: #ececef; }
+        .tl-pill.icon { padding: 0; width: 34px; }
+        .tasks-controls { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
         .tasks-body { flex: 1; display: flex; min-height: 0; }
         .tasks-filters { width: 210px; flex-shrink: 0; border-right: 1px solid var(--border); padding: 16px; overflow-y: auto; }
         .tasks-main { flex: 1; overflow-y: auto; min-width: 0; }
@@ -1155,22 +1167,34 @@ export default function TasksPage() {
         .tasks-detail.open { transform: translateX(0); }
         .tasks-detail-overlay { position: fixed; inset: 56px 0 0 0; background: rgba(0,0,0,0.22); z-index: 55; opacity: 0; pointer-events: none; transition: opacity 0.32s ease; }
         .tasks-detail-overlay.open { opacity: 1; pointer-events: auto; }
-        .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
-        .seg button { padding: 7px 12px; border: none; background: #fff; font-size: 12.5px; font-weight: 700; cursor: pointer; color: var(--slate); }
-        .seg button.on { background: var(--peach); color: var(--coral); }
-        .ctl { padding: 8px 11px; border-radius: 9px; border: 1px solid var(--border); font-size: 12.5px; background: #fff; color: var(--ink); }
-        .task-card { border: 1px solid var(--border); border-radius: 11px; background: #fff; padding: 13px; margin-bottom: 8px; cursor: pointer; }
-        .task-card:hover { border-color: var(--coral); }
+                /* Segmented tabs: a soft grey track with the current one raised in white. */
+        .seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: #f4f4f5; }
+        .seg button { height: 32px; padding: 0 14px; border: none; border-radius: 999px; background: transparent; font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; color: #52525b; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; transition: background .15s ease, color .15s ease, box-shadow .15s ease; }
+        .seg button::before { display: none; }
+        .seg button:hover { color: #18181b; }
+        .seg button.on { background: #fff; color: #18181b; box-shadow: 0 1px 3px rgba(0,0,0,.1), 0 0 0 .5px rgba(0,0,0,.04); }
+        .seg button:focus-visible, .ctl:focus-visible, .bucket-chip:focus-visible, .tl-pill:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 28%, transparent); }
+        .ctl { height: 38px; padding: 0 14px; border-radius: 999px; border: none; font: inherit; font-size: 13.5px; font-weight: 600; background: #f4f4f5; color: var(--ink); box-sizing: border-box; }
+        .ctl::before { display: none; }
+        button.ctl:hover { background: #ececef; }
+        .ctl.on { background: #18181b; color: #fff; }
+        .ctl.set { background: color-mix(in srgb, var(--coral) 12%, #fff); color: color-mix(in srgb, var(--coral) 85%, #000); }
+        .tasks-filter-pop .ctl, .tasks-filter-pop .seg { width: 100%; }
+        .task-card { border: none; border-radius: 16px; background: #fff; padding: 14px; margin-bottom: 8px; cursor: pointer; box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 1px 2px rgba(16,24,40,.04); transition: box-shadow .15s ease, transform .1s ease; }
+        .task-card:hover { box-shadow: 0 0 0 1px rgba(0,0,0,.08), 0 6px 18px rgba(16,24,40,.08); }
+        .task-card input[type=checkbox] { accent-color: #18181b; }
+        .tk-tag { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; line-height: 1; white-space: nowrap; background: #f4f4f5; color: #52525b; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+        .tk-tag.dot::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
         .cal-pill .cal-tick { opacity: 0; transition: opacity 0.12s ease; }
         .cal-pill:hover .cal-tick, .cal-tick.done { opacity: 1; }
         .cal-cell { cursor: pointer; }
-        .task-card.sel { border-color: var(--coral); box-shadow: 0 0 0 2px var(--peach); }
+        .task-card.sel { box-shadow: 0 0 0 2px var(--coral), 0 6px 18px rgba(16,24,40,.08); }
         /* Timeline per-day "add task" — subtle until you hover the column. */
         .tl-add { opacity: 0.45; transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease, border-color 0.12s ease; }
         .tl-col:hover .tl-add { opacity: 1; }
-        .tl-add:hover { background: var(--peach); color: var(--coral); border-color: var(--coral); }
+        .tl-add:hover { background: #fff; color: var(--coral); border-color: transparent; box-shadow: 0 0 0 1px rgba(0,0,0,.06); }
         .board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 16px; height: 100%; box-sizing: border-box; }
-        .board-col { background: var(--canvas); border-radius: 12px; padding: 10px; overflow-y: auto; }
+        .board-col { background: #f4f4f5; border-radius: 20px; padding: 10px; overflow-y: auto; }
         .filters-mobile { display: none; }
         @media (max-width: 1100px) {
           .tasks-root { height: auto; min-height: calc(100dvh - 56px); }
@@ -1199,8 +1223,10 @@ export default function TasksPage() {
               style={{ marginTop: 3 }}
             />
           </div>
-          <button className="press" onClick={() => { setShowNew(true); setSelectedId(null) }}
-            style={{ padding: '9px 16px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>+ New task</button>
+          <button className="cv-btn cv-btn-primary" onClick={() => { setShowNew(true); setSelectedId(null) }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            New task
+          </button>
         </div>
         {/* The Timeline is its own continuous day axis — the date buckets don't
             apply there, so hide them and let the timeline scroll through dates. */}
@@ -1213,18 +1239,17 @@ export default function TasksPage() {
           ))}
           {/* The "Date" bucket reveals an inline picker to jump to a specific day. */}
           {bucket === 'date' && (
-            <input type="date" value={bucketDate} onChange={e => setBucketDate(e.target.value)}
-              style={{ flexShrink: 0, padding: '6px 10px', borderRadius: 20, border: '1px solid var(--coral)', fontSize: 12.5, fontWeight: 700, color: 'var(--coral)', background: 'var(--peach)' }} />
+            <input type="date" value={bucketDate} onChange={e => setBucketDate(e.target.value)} className="ctl set"
+              style={{ flexShrink: 0, height: 32, padding: '0 12px' }} />
           )}
         </div>
         )}
         <div className="tasks-controls">
           <div style={{ position: 'relative', flex: '1 1 200px', minWidth: 160 }}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
-              style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--slate)', pointerEvents: 'none' }}>
+              style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#a1a1aa', pointerEvents: 'none' }}>
               <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search tasks…"
-              style={{ width: '100%', padding: '8px 11px 8px 31px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box' }} />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search tasks…" className="tasks-search" aria-label="Search tasks" />
           </div>
           {/* Right-click any view tab for: Open, Rename, Make/Remove default.
               A dot marks the view saved as your default. */}
@@ -1232,21 +1257,19 @@ export default function TasksPage() {
             <button className={view === 'list' ? 'on' : ''} onClick={() => setView('list')} onContextMenu={e => openViewMenu(e, 'list')}>{labelOf('list')}{defaultView === 'list' && <span style={dfltDot} />}</button>
             <button className={view === 'board' ? 'on' : ''} onClick={() => setView('board')} onContextMenu={e => openViewMenu(e, 'board')}>{labelOf('board')}{defaultView === 'board' && <span style={dfltDot} />}</button>
             <button className={view === 'timeline' ? 'on' : ''} onClick={() => setView('timeline')} onContextMenu={e => openViewMenu(e, 'timeline')}>{labelOf('timeline')}{defaultView === 'timeline' && <span style={dfltDot} />}</button>
+            {/* Calendar is an in-page view of the tasks (by due date). */}
+            <button className={view === 'calendar' ? 'on' : ''} onClick={() => setView('calendar')} onContextMenu={e => openViewMenu(e, 'calendar')}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              {labelOf('calendar')}{defaultView === 'calendar' && <span style={dfltDot} />}
+            </button>
           </div>
-          {/* Calendar is now an in-page view of the tasks (by due date) rather
-              than a jump to the separate Calendar page. */}
-          <button className="ctl" onClick={() => setView(view === 'calendar' ? 'list' : 'calendar')} onContextMenu={e => openViewMenu(e, 'calendar')}
-            style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, border: '1px solid ' + (view === 'calendar' ? 'var(--coral)' : 'var(--border)'), background: view === 'calendar' ? 'var(--peach)' : '#fff', color: view === 'calendar' ? 'var(--coral)' : 'var(--ink)' }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-            {labelOf('calendar')}{defaultView === 'calendar' && <span style={dfltDot} />}
-          </button>
 
           {/* Right-click menu for a view tab */}
           {viewMenu && (
             <>
               <div onClick={() => setViewMenu(null)} onContextMenu={e => { e.preventDefault(); setViewMenu(null) }} style={{ position: 'fixed', inset: 0, zIndex: 400 }} />
-              <div style={{ position: 'fixed', top: viewMenu.y, left: viewMenu.x, zIndex: 401, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.18)', padding: 6, minWidth: 196 }}>
-                <p style={{ margin: '2px 8px 6px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>{labelOf(viewMenu.view)} view</p>
+              <div style={{ position: 'fixed', top: viewMenu.y, left: viewMenu.x, zIndex: 401, background: '#fff', borderRadius: 16, boxShadow: '0 16px 44px rgba(0,0,0,.14), 0 0 0 1px rgba(0,0,0,.05)', padding: 6, minWidth: 196 }}>
+                <p style={{ margin: '4px 10px 6px', fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>{labelOf(viewMenu.view)} view</p>
                 <button style={viewMenuItem} onClick={() => { setView(viewMenu.view); setViewMenu(null) }}>Open view</button>
                 <button style={viewMenuItem} onClick={() => renameView(viewMenu.view)}>Rename view</button>
                 {defaultView === viewMenu.view ? (
@@ -1261,8 +1284,8 @@ export default function TasksPage() {
           {outletMenu && (
             <>
               <div onClick={() => setOutletMenu(null)} onContextMenu={e => { e.preventDefault(); setOutletMenu(null) }} style={{ position: 'fixed', inset: 0, zIndex: 400 }} />
-              <div style={{ position: 'fixed', top: outletMenu.y, left: outletMenu.x, zIndex: 401, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.18)', padding: 6, minWidth: 200 }}>
-                <p style={{ margin: '2px 8px 6px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 220 }}>{outlets.find((o: any) => o.id === outletMenu.value)?.label || outlets.find((o: any) => o.id === outletMenu.value)?.suburb || 'Outlet'}</p>
+              <div style={{ position: 'fixed', top: outletMenu.y, left: outletMenu.x, zIndex: 401, background: '#fff', borderRadius: 16, boxShadow: '0 16px 44px rgba(0,0,0,.14), 0 0 0 1px rgba(0,0,0,.05)', padding: 6, minWidth: 200 }}>
+                <p style={{ margin: '4px 10px 6px', fontSize: 12.5, fontWeight: 500, color: '#8e8e93', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 220 }}>{outlets.find((o: any) => o.id === outletMenu.value)?.label || outlets.find((o: any) => o.id === outletMenu.value)?.suburb || 'Outlet'}</p>
                 {defaultOutlet === outletMenu.value
                   ? <button style={viewMenuItem} onClick={() => setDefaultOutletPref(null)}>Remove as default</button>
                   : <button style={viewMenuItem} onClick={() => setDefaultOutletPref(outletMenu.value)}>Make this my default outlet</button>}
@@ -1273,8 +1296,8 @@ export default function TasksPage() {
           {assigneeMenu && (
             <>
               <div onClick={() => setAssigneeMenu(null)} onContextMenu={e => { e.preventDefault(); setAssigneeMenu(null) }} style={{ position: 'fixed', inset: 0, zIndex: 400 }} />
-              <div style={{ position: 'fixed', top: assigneeMenu.y, left: assigneeMenu.x, zIndex: 401, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.18)', padding: 6, minWidth: 200 }}>
-                <p style={{ margin: '2px 8px 6px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 220 }}>
+              <div style={{ position: 'fixed', top: assigneeMenu.y, left: assigneeMenu.x, zIndex: 401, background: '#fff', borderRadius: 16, boxShadow: '0 16px 44px rgba(0,0,0,.14), 0 0 0 1px rgba(0,0,0,.05)', padding: 6, minWidth: 200 }}>
+                <p style={{ margin: '4px 10px 6px', fontSize: 12.5, fontWeight: 500, color: '#8e8e93', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 220 }}>
                   {assigneeMenu.value === ANYONE ? 'Anyone' : assigneeMenu.value === 'me' ? 'Assigned to me' : (team.find((m: any) => m.user_id === assigneeMenu.value)?.name || 'Team member')}
                 </p>
                 {defaultAssignee === assigneeMenu.value
@@ -1285,8 +1308,8 @@ export default function TasksPage() {
           )}
           {/* Bulk select — multi-select the list for delete / status / priority. */}
           {view === 'list' && (
-            <button className="ctl" onClick={() => selectMode ? exitSelect() : setSelectMode(true)}
-              style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, border: '1px solid ' + (selectMode ? 'var(--coral)' : 'var(--border)'), background: selectMode ? 'var(--peach)' : '#fff', color: selectMode ? 'var(--coral)' : 'var(--ink)' }}>
+            <button className={'ctl' + (selectMode ? ' on' : '')} onClick={() => selectMode ? exitSelect() : setSelectMode(true)}
+              style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
               {selectMode ? 'Done' : 'Select'}
             </button>
@@ -1296,34 +1319,34 @@ export default function TasksPage() {
             const activeN = (dateFilter ? 1 : 0) + [assigneeFilter, priorityFilter, colorFilter, outletFilter].filter(a => a.length).length
             return (
               <div style={{ position: 'relative' }}>
-                <button className="ctl" onClick={() => setShowFilters(v => !v)}
-                  style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, border: '1px solid ' + (activeN > 0 ? 'var(--coral)' : 'var(--border)'), background: activeN > 0 ? 'var(--peach)' : '#fff', color: activeN > 0 ? 'var(--coral)' : 'var(--ink)' }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-                  Filters{activeN > 0 ? <span style={{ minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8, background: 'var(--coral)', color: '#fff', fontSize: 10, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{activeN}</span> : null}
+                <button className={'ctl' + (activeN > 0 ? ' set' : '')} onClick={() => setShowFilters(v => !v)} aria-expanded={showFilters}
+                  style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="10" y1="17" x2="14" y2="17"/></svg>
+                  Filters{activeN > 0 ? <span style={{ minWidth: 18, height: 18, padding: '0 5px', boxSizing: 'border-box', borderRadius: 999, background: 'var(--coral)', color: '#fff', fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{activeN}</span> : null}
                 </button>
                 {showFilters && (
                   <>
                     <div onClick={() => setShowFilters(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
-                    <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: 264, maxWidth: '86vw', background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 14px 44px rgba(0,0,0,0.14)', zIndex: 50, padding: 14 }}>
+                    <div className="tasks-filter-pop" style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: 280, maxWidth: '86vw', background: '#fff', borderRadius: 18, boxShadow: '0 16px 44px rgba(0,0,0,.14), 0 0 0 1px rgba(0,0,0,.05)', zIndex: 50, padding: 16 }}>
                       <FilterField label="Outlets" hidden={outlets.length === 0}>
                         <MultiSelect allLabel="All outlets" value={outletFilter} onChange={setOutletFilter}
                           options={outlets.map(o => ({ value: o.id, label: o.label || o.suburb || 'Outlet' }))}
                           defaultValue={defaultOutlet}
                           onItemContext={(v, e) => { e.preventDefault(); setOutletMenu({ x: Math.min(e.clientX, window.innerWidth - 220), y: e.clientY, value: v }) }} />
-                        {outlets.length > 0 && <p style={{ margin: '5px 2px 0', fontSize: 10.5, color: 'var(--slate)' }}>Right-click an outlet to set it as your default.</p>}
+                        {outlets.length > 0 && <p style={{ margin: '6px 2px 0', fontSize: 12, color: '#8e8e93', lineHeight: 1.4 }}>Right-click an outlet to set it as your default.</p>}
                       </FilterField>
                       <FilterField label="Assignee">
                         <MultiSelect allLabel="Anyone" value={assigneeFilter} onChange={setAssigneeFilter}
                           options={[{ value: 'me', label: 'Assigned to me' }, ...team.map((m: any) => ({ value: m.user_id, label: m.name }))]}
                           defaultValue={defaultAssignee} allValue={ANYONE}
                           onItemContext={(v, e) => { e.preventDefault(); setAssigneeMenu({ x: Math.min(e.clientX, window.innerWidth - 220), y: e.clientY, value: v }) }} />
-                        <p style={{ margin: '5px 2px 0', fontSize: 10.5, color: 'var(--slate)' }}>Right-click a person, “Assigned to me” or “Anyone” to set it as your default.</p>
+                        <p style={{ margin: '6px 2px 0', fontSize: 12, color: '#8e8e93', lineHeight: 1.4 }}>Right-click a person, “Assigned to me” or “Anyone” to set it as your default.</p>
                       </FilterField>
                       <FilterField label="Due in">
-                        <div className="seg" style={{ display: 'flex', width: '100%', marginBottom: 6 }}>
+                        <div className="seg" style={{ display: 'flex', width: '100%', marginBottom: 8, boxSizing: 'border-box' }}>
                           {(['day', 'week', 'month'] as const).map(p => (
                             <button key={p} className={datePeriod === p ? 'on' : ''} onClick={() => setDatePeriod(p)}
-                              style={{ flex: 1, padding: '6px 0', border: 'none', background: datePeriod === p ? 'var(--peach)' : '#fff', color: datePeriod === p ? 'var(--coral)' : 'var(--slate)', fontSize: 12, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize' }}>{p}</button>
+                              style={{ flex: 1, justifyContent: 'center', height: 30, textTransform: 'capitalize' }}>{p}</button>
                           ))}
                         </div>
                         <div style={{ display: 'flex', gap: 6 }}>
@@ -1345,8 +1368,8 @@ export default function TasksPage() {
                         </select>
                       </FilterField>
                       {activeN > 0 && (
-                        <button onClick={() => { setAssigneeFilter([]); setPriorityFilter([]); setColorFilter([]); setOutletFilter([]); setDateFilter('') }}
-                          style={{ width: '100%', marginTop: 6, padding: '8px 0', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>Clear all filters</button>
+                        <button className="ctl" onClick={() => { setAssigneeFilter([]); setPriorityFilter([]); setColorFilter([]); setOutletFilter([]); setDateFilter('') }}
+                          style={{ width: '100%', marginTop: 6, cursor: 'pointer', color: 'var(--coral)' }}>Clear all filters</button>
                       )}
                     </div>
                   </>
@@ -1363,9 +1386,9 @@ export default function TasksPage() {
             <div className="board">
               {COLUMNS.map(col => (
                 <div key={col.key} className="board-col">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 6px 10px', fontSize: 12.5, fontWeight: 800, color: 'var(--slate)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px 12px', fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>
                     {col.label}
-                    <span style={{ fontSize: 11, fontWeight: 800, padding: '0 6px', borderRadius: 10, background: 'rgba(0,0,0,0.06)' }}>{visible.filter(t => statusOf(t) === col.key).length}</span>
+                    <span style={{ minWidth: 20, height: 20, padding: '0 6px', boxSizing: 'border-box', borderRadius: 999, background: '#fff', color: '#52525b', fontSize: 11.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{visible.filter(t => statusOf(t) === col.key).length}</span>
                   </div>
                   {visible.filter(t => statusOf(t) === col.key).map(t => (
                     <TaskCard key={t.id} t={t} conv={convs[t.conversation_id]} selected={selectedId === t.id}
@@ -1373,7 +1396,7 @@ export default function TasksPage() {
                       missed={showAllRepeats ? 0 : (fold.missedOf.get(t.id)?.length || 0)} onClearMissed={() => clearMissed(t)}
                       later={showAllRepeats || !['upcoming', 'all'].includes(bucket) ? 0 : (fold.laterOf.get(t.id) || 0)} />
                   ))}
-                  {visible.filter(t => statusOf(t) === col.key).length === 0 && <p style={{ fontSize: 12, color: '#9ca3af', textAlign: 'center', padding: 16 }}>Nothing here</p>}
+                  {visible.filter(t => statusOf(t) === col.key).length === 0 && <p style={{ fontSize: 13, color: '#a1a1aa', textAlign: 'center', padding: 16 }}>Nothing here</p>}
                 </div>
               ))}
             </div>
@@ -1389,13 +1412,13 @@ export default function TasksPage() {
             <div style={{ padding: 16 }}>
               {/* Bulk selection toolbar */}
               {selectMode && (
-                <div style={{ position: 'sticky', top: 0, zIndex: 5, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '10px 12px', marginBottom: 12, borderRadius: 12, background: 'var(--peach)', border: '1px solid var(--coral)' }}>
-                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 700, color: 'var(--coral)', cursor: 'pointer' }}>
+                <div style={{ position: 'sticky', top: 0, zIndex: 5, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '10px 12px 10px 16px', marginBottom: 12, borderRadius: 18, background: '#fff', boxShadow: '0 0 0 1px rgba(0,0,0,.06), 0 6px 18px rgba(16,24,40,.08)' }}>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 700, color: 'var(--ink)', cursor: 'pointer' }}>
                     <input type="checkbox"
                       checked={visible.length > 0 && visible.every(t => selectedIds.has(t.id))}
                       ref={el => { if (el) el.indeterminate = selectedIds.size > 0 && !visible.every(t => selectedIds.has(t.id)) }}
                       onChange={e => setSelectedIds(e.target.checked ? new Set(visible.map(t => t.id)) : new Set())}
-                      style={{ width: 16, height: 16, cursor: 'pointer' }} />
+                      style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#18181b' }} />
                     {selectedIds.size > 0 ? `${selectedIds.size} selected` : 'Select all'}
                   </label>
                   <span style={{ flex: 1 }} />
@@ -1406,7 +1429,7 @@ export default function TasksPage() {
                       <option value="" disabled>Priority…</option>
                       <option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option>
                     </select>
-                    <button onClick={bulkDelete} style={{ ...bulkBtn, borderColor: '#dc2626', color: '#dc2626' }}>Delete</button>
+                    <button onClick={bulkDelete} style={{ ...bulkBtn, background: '#fef2f2', color: '#dc2626' }}>Delete</button>
                   </>)}
                 </div>
               )}
@@ -1421,7 +1444,25 @@ export default function TasksPage() {
                   {!showAllRepeats && <button className="danger" onClick={clearAllMissed}>Clear all missed</button>}
                 </div>
               )}
-              {visible.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: 'var(--slate)', fontSize: 13.5 }}>No tasks in “{BUCKETS.find(b => b.key === bucket)?.label}”{bucket === 'upcoming' && listing.more > 0 ? ' in the next ' + upcomingDays + ' days' : ''}.</div>}
+              {visible.length === 0 && (() => {
+                // The same drifting cards as an empty inbox, worded for what's being looked at.
+                const anyFilter = !!search.trim() || !!dateFilter || [assigneeFilter, priorityFilter, colorFilter, outletFilter].some(a => a.length)
+                const label = BUCKETS.find(b => b.key === bucket)?.label
+                const [title, line] = search.trim() ? ['No matches', `Nothing matches “${search.trim()}”. Try another word from the task.`]
+                  : anyFilter ? ['No tasks match these filters', 'Try clearing a filter to see more.']
+                  : bucket === 'overdue' ? ['Nothing overdue', 'Tasks past their due date show up here.']
+                  : bucket === 'today' ? ['Nothing due today', 'Tasks due today show up here.']
+                  : bucket === 'completed' ? ['Nothing finished yet', 'Tasks you tick off show up here.']
+                  : [`No tasks in “${label}”${bucket === 'upcoming' && listing.more > 0 ? ` in the next ${upcomingDays} days` : ''}`, 'New tasks show up here.']
+                return (
+                  <div style={{ paddingTop: 32 }}>
+                    <EmptyScroll kinds={['task']} title={title} line={line}
+                      action={anyFilter
+                        ? <button className="cv-btn" onClick={() => { setSearch(''); setAssigneeFilter([]); setPriorityFilter([]); setColorFilter([]); setOutletFilter([]); setDateFilter('') }}>Clear filters</button>
+                        : <button className="cv-btn" onClick={() => { setShowNew(true); setSelectedId(null) }}>New task</button>} />
+                  </div>
+                )
+              })()}
               {(() => {
                 // Date headings between days (due-date order only — by priority or
                 // newest, days are interleaved so headings would repeat).
@@ -1502,12 +1543,12 @@ export default function TasksPage() {
 }
 
 const selectStyle: React.CSSProperties = { width: '100%', boxSizing: 'border-box', cursor: 'pointer' }
-const bulkBtn: React.CSSProperties = { padding: '7px 12px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }
+const bulkBtn: React.CSSProperties = { height: 34, padding: '0 14px', borderRadius: 999, border: 'none', background: '#f4f4f5', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }
 function FilterField({ label, hidden, children }: { label: string; hidden?: boolean; children: React.ReactNode }) {
   if (hidden) return null
   return (
-    <div style={{ marginBottom: 10 }}>
-      <p style={{ margin: '0 0 5px', fontSize: 10.5, fontWeight: 800, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
+    <div style={{ marginBottom: 12 }}>
+      <p style={{ margin: '0 0 6px', fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>{label}</p>
       {children}
     </div>
   )
@@ -1530,22 +1571,22 @@ function MultiSelect({ options, value, onChange, allLabel = 'All', onItemContext
     : value.length === 1 ? (options.find(o => o.value === value[0])?.label || '1 selected')
       : `${value.length} selected`
   const toggle = (v: string) => onChange(value.includes(v) ? value.filter(x => x !== v) : [...value, v])
-  const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: '#fff', color: 'var(--ink)', fontSize: 12.5, cursor: 'pointer' }
+  const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', minHeight: 34, padding: '0 10px', marginBottom: 2, border: 'none', borderRadius: 10, background: '#fff', color: 'var(--ink)', fontSize: 13.5, cursor: 'pointer', fontFamily: 'inherit' }
   return (
     <div style={{ position: 'relative' }}>
       <button type="button" className="ctl" onClick={() => setOpen(o => !o)}
         style={{ ...selectStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, textAlign: 'left' }}>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: value.length ? 'var(--ink)' : 'var(--slate)', fontWeight: value.length ? 700 : 400 }}>{label}</span>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--ink)', fontWeight: 600 }}>{label}</span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--slate)', flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}><polyline points="6 9 12 15 18 9" /></svg>
       </button>
       {open && (
-        <div style={{ marginTop: 6, border: '1px solid var(--border)', borderRadius: 9, overflow: 'hidden', maxHeight: 210, overflowY: 'auto' }}>
+        <div style={{ marginTop: 6, padding: 4, borderRadius: 14, background: '#fff', boxShadow: '0 0 0 1px rgba(0,0,0,.07)', maxHeight: 220, overflowY: 'auto' }}>
           <button type="button" onClick={() => onChange([])}
             onContextMenu={onItemContext && allValue ? (e => onItemContext(allValue, e)) : undefined}
             title={onItemContext && allValue ? 'Right-click to set as your default' : undefined}
-            style={{ ...row, borderBottom: '1px solid var(--border)', background: value.length === 0 ? 'var(--peach)' : '#fff', color: value.length === 0 ? 'var(--coral)' : 'var(--ink)', fontWeight: 700 }}>
+            style={{ ...row, background: value.length === 0 ? '#efeff1' : '#fff', fontWeight: 600 }}>
             <span style={{ flex: 1 }}>{allLabel}</span>
-            {allValue && defaultValue === allValue && <span title="Your default" style={{ fontSize: 10, fontWeight: 800, color: 'var(--coral)', background: '#fff', padding: '1px 6px', borderRadius: 20, flexShrink: 0 }}>DEFAULT</span>}
+            {allValue && defaultValue === allValue && <span title="Your default" style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--coral)', background: '#fff', padding: '2px 8px', borderRadius: 999, flexShrink: 0 }}>Default</span>}
           </button>
           {options.map(o => {
             const on = value.includes(o.value)
@@ -1553,13 +1594,13 @@ function MultiSelect({ options, value, onChange, allLabel = 'All', onItemContext
               <button key={o.value} type="button" onClick={() => toggle(o.value)}
                 onContextMenu={onItemContext ? (e => onItemContext(o.value, e)) : undefined}
                 title={onItemContext ? 'Right-click to set as your default' : undefined}
-                style={{ ...row, background: on ? 'var(--peach)' : '#fff', fontWeight: on ? 700 : 500 }}>
-                <span style={{ width: 15, height: 15, borderRadius: 4, border: '1.5px solid ' + (on ? 'var(--coral)' : 'var(--border)'), background: on ? 'var(--coral)' : '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                style={{ ...row, background: on ? '#efeff1' : '#fff', fontWeight: on ? 600 : 400 }}>
+                <span style={{ width: 16, height: 16, borderRadius: 5, border: '1.5px solid ' + (on ? '#18181b' : '#d4d4d8'), background: on ? '#18181b' : '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
                   {on && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
                 </span>
                 {o.color !== undefined && <span style={{ width: 12, height: 12, borderRadius: '50%', background: o.color || '#fff', border: o.color ? 'none' : '1px solid var(--border)', flexShrink: 0 }} />}
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{o.label}</span>
-                {defaultValue === o.value && <span title="Your default" style={{ fontSize: 10, fontWeight: 800, color: 'var(--coral)', background: 'var(--peach)', padding: '1px 6px', borderRadius: 20, flexShrink: 0 }}>DEFAULT</span>}
+                {defaultValue === o.value && <span title="Your default" style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--coral)', background: 'var(--peach)', padding: '2px 8px', borderRadius: 999, flexShrink: 0 }}>Default</span>}
               </button>
             )
           })}
@@ -1570,7 +1611,7 @@ function MultiSelect({ options, value, onChange, allLabel = 'All', onItemContext
 }
 
 function FilterRail({ team, assigneeFilter, setAssigneeFilter, priorityFilter, setPriorityFilter, sortBy, setSortBy }: any) {
-  const H = { fontSize: 11, fontWeight: 800, color: 'var(--slate)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', margin: '0 0 8px' }
+  const H = { fontSize: 12.5, fontWeight: 500, color: '#8e8e93', margin: '0 0 8px' }
   const opt = (active: boolean): React.CSSProperties => ({ display: 'block', width: '100%', textAlign: 'left', padding: '7px 10px', borderRadius: 8, border: 'none', background: active ? 'var(--peach)' : 'transparent', color: active ? 'var(--coral)' : 'var(--ink)', fontSize: 13, fontWeight: active ? 700 : 500, cursor: 'pointer', marginBottom: 2 })
   return (
     <>
@@ -1616,14 +1657,19 @@ function TaskCard({ t, conv, selected, onClick, onToggle, onStatus, showStatusBu
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.4, textDecoration: statusOf(t) === 'done' ? 'line-through' : 'none', opacity: statusOf(t) === 'done' ? 0.55 : 1 }}>{t.title || t.text}</p>
           <div style={{ display: 'flex', gap: 7, alignItems: 'center', marginTop: 7, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 10.5, fontWeight: 800, padding: '2px 7px', borderRadius: 5, color: pr.color, background: pr.bg }}>{pr.label}</span>
-            {due && <span style={{ fontSize: 11, fontWeight: 700, color: overdue ? '#dc2626' : 'var(--slate)' }}>{fmtRel(t.due_date)}</span>}
-            {assignees.map((a: any, i: number) => <span key={i} style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)' }}>{a.name}</span>)}
-            {t.order_number && <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 5, background: '#eef2ff', color: '#4338ca' }}>#{t.order_number}</span>}
+            <span className="tk-tag dot" style={{ color: pr.color, background: `color-mix(in srgb, ${pr.color} 10%, #fff)` }}>{pr.label}</span>
+            {due && <span style={{ fontSize: 12, fontWeight: 600, color: overdue ? '#dc2626' : '#71717a' }}>{fmtRel(t.due_date)}</span>}
+            {assignees.map((a: any, i: number) => (
+              <span key={i} className="tk-tag" title={a.name} style={{ color: '#3f3f46' }}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+                {a.name}
+              </span>
+            ))}
+            {t.order_number && <span className="tk-tag" style={{ background: '#eef2ff', color: '#4338ca' }}>#{t.order_number}</span>}
             {Array.isArray(t.attachments) && t.attachments.length > 0 && (() => {
               const img = t.attachments.find((a: any) => a.kind === 'image' || (a.type || '').startsWith('image/'))
               return (
-                <span title={`${t.attachments.length} attachment${t.attachments.length === 1 ? '' : 's'}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, padding: '2px 6px', borderRadius: 5, background: '#f4f4f5', color: 'var(--slate)' }}>
+                <span className="tk-tag" title={`${t.attachments.length} attachment${t.attachments.length === 1 ? '' : 's'}`}>
                   {img ? <img src={img.url} alt="" style={{ width: 14, height: 14, borderRadius: 3, objectFit: 'cover' }} /> : <span>📎</span>}
                   {t.attachments.length}
                 </span>
@@ -1633,38 +1679,38 @@ function TaskCard({ t, conv, selected, onClick, onToggle, onStatus, showStatusBu
               const done = t.checklist.filter((i: any) => i.done).length
               const all = t.checklist.length
               return (
-                <span title="Checklist" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 5, background: done === all ? '#dcfce7' : '#f4f4f5', color: done === all ? '#15803d' : 'var(--slate)' }}>
+                <span className="tk-tag" title="Checklist" style={done === all ? { background: '#f0fdf4', color: '#15803d' } : undefined}>
                   <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
                   {done}/{all}
                 </span>
               )
             })()}
             {t.recurrence && (
-              <span title="Repeating task" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 5, background: '#ecfeff', color: '#0e7490' }}>
+              <span className="tk-tag" title="Repeating task" style={{ background: '#ecfeff', color: '#0e7490' }}>
                 <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
                 {t.recurrence.freq}
               </span>
             )}
             {missed > 0 && (
               <span title={`${missed} earlier ${missed === 1 ? 'copy was' : 'copies were'} never ticked off`}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 700, padding: '2px 4px 2px 7px', borderRadius: 5, background: '#fef2f2', color: '#b91c1c' }}>
+                className="tk-tag" style={{ background: '#fef2f2', color: '#b91c1c', paddingRight: 3 }}>
                 Missed {missed}
                 {onClearMissed && (
                   <button type="button" onClick={e => { e.stopPropagation(); onClearMissed() }} title="Remove the missed copies"
-                    style={{ border: 'none', background: 'rgba(185,28,28,0.10)', color: '#b91c1c', fontSize: 10, fontWeight: 800, padding: '1px 6px', borderRadius: 4, cursor: 'pointer' }}>Clear</button>
+                    style={{ border: 'none', background: 'rgba(185,28,28,0.10)', color: '#b91c1c', fontSize: 11, fontWeight: 700, height: 16, padding: '0 6px', borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit' }}>Clear</button>
                 )}
               </span>
             )}
             {later > 0 && (
               <span title="More copies of this repeating task are scheduled after this one"
-                style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 5, background: '#f4f4f5', color: 'var(--slate)' }}>
+                className="tk-tag">
                 +{later} scheduled
               </span>
             )}
             {t._source === 'calendar' && (() => {
               const et = EVENT_TYPE_META[t.event_type || 'task'] || EVENT_TYPE_META.task
               return (
-                <span title={`${et.label} scheduled on the calendar`} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 5, background: et.bg, color: et.color }}>
+                <span className="tk-tag" title={`${et.label} scheduled on the calendar`} style={{ background: et.bg, color: et.color }}>
                   <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                   {et.label}
                 </span>
@@ -1674,7 +1720,7 @@ function TaskCard({ t, conv, selected, onClick, onToggle, onStatus, showStatusBu
               const ids = (Array.isArray(t.location_ids) && t.location_ids.length) ? t.location_ids : (t.location_id ? [t.location_id] : [])
               const names = ids.map((id: string) => outlets.find((o: any) => o.id === id)).filter(Boolean).map((o: any) => o.label || o.suburb || 'Outlet')
               return names.map((n: string, i: number) => (
-                <span key={i} title={n} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 5, background: '#f0fdf4', color: '#15803d' }}>
+                <span key={i} className="tk-tag" title={n}>
                   <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
                   {n}
                 </span>
@@ -1684,9 +1730,9 @@ function TaskCard({ t, conv, selected, onClick, onToggle, onStatus, showStatusBu
         </div>
       </div>
       {showStatusButtons && (
-        <div style={{ display: 'flex', gap: 5, marginTop: 9 }} onClick={e => e.stopPropagation()}>
+        <div className="seg" style={{ display: 'flex', marginTop: 10 }} onClick={e => e.stopPropagation()}>
           {COLUMNS.map(c => (
-            <button key={c.key} onClick={() => onStatus(c.key)} style={{ flex: 1, padding: '5px 0', borderRadius: 6, fontSize: 10.5, fontWeight: 700, cursor: 'pointer', border: '1px solid ' + (statusOf(t) === c.key ? 'var(--coral)' : 'var(--border)'), background: statusOf(t) === c.key ? 'var(--peach)' : '#fff', color: statusOf(t) === c.key ? 'var(--coral)' : 'var(--slate)' }}>{c.label}</button>
+            <button key={c.key} className={statusOf(t) === c.key ? 'on' : ''} onClick={() => onStatus(c.key)} style={{ flex: 1, justifyContent: 'center', height: 26, padding: 0, fontSize: 12 }}>{c.label}</button>
           ))}
         </div>
       )}
@@ -1751,7 +1797,7 @@ function TaskCalendar({ tasks, statusOf, onSelect, onToggle, selectedId }: any) 
   while (cells.length % 7 !== 0) cells.push(null)
 
   const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-  const navBtn: React.CSSProperties = { width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', fontSize: 16, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
+  const navBtn: React.CSSProperties = { width: 34, height: 34, borderRadius: 999, border: 'none', background: '#f4f4f5', cursor: 'pointer', color: '#18181b', fontSize: 16, fontWeight: 600, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: 'inherit' }
 
   // One task pill, shared by every scope's cells.
   const renderPill = (t: any) => {
@@ -1792,7 +1838,7 @@ function TaskCalendar({ tasks, statusOf, onSelect, onToggle, selectedId }: any) 
 
       {scope === 'month' ? (<>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 6, marginBottom: 6 }}>
-        {WD.map(w => <div key={w} style={{ fontSize: 10.5, fontWeight: 800, color: 'var(--slate)', textAlign: 'center', textTransform: 'uppercase' }}>{w}</div>)}
+        {WD.map(w => <div key={w} style={{ fontSize: 12.5, fontWeight: 500, color: '#8e8e93', textAlign: 'center' }}>{w}</div>)}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gridAutoRows: 'minmax(90px, auto)', gap: 6 }}>
@@ -1826,7 +1872,7 @@ function TaskCalendar({ tasks, statusOf, onSelect, onToggle, selectedId }: any) 
             <div key={key} className="cal-cell" onClick={() => setDayPopup({ date: dd, tasks: dayTasks })}
               style={{ border: `1px solid ${isToday ? 'var(--coral)' : 'var(--border)'}`, borderRadius: 10, padding: 8, background: isToday ? 'var(--peach)' : '#fff', minHeight: 360, display: 'flex', flexDirection: 'column', gap: 4 }}>
               <div style={{ marginBottom: 4 }}>
-                <div style={{ fontSize: 10.5, fontWeight: 800, color: isToday ? 'var(--coral)' : 'var(--slate)', textTransform: 'uppercase' }}>{dd.toLocaleDateString(undefined, { weekday: 'short' })}</div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: isToday ? 'var(--coral)' : '#8e8e93' }}>{dd.toLocaleDateString(undefined, { weekday: 'short' })}</div>
                 <div style={{ fontSize: 16, fontWeight: 800, color: isToday ? 'var(--coral)' : 'var(--ink)' }}>{dd.getDate()}</div>
               </div>
               {dayTasks.map((t: any) => renderPill(t))}
@@ -1839,7 +1885,7 @@ function TaskCalendar({ tasks, statusOf, onSelect, onToggle, selectedId }: any) 
 
       {byDay.noDate.some((t: any) => statusOf(t) !== 'done') && (
         <div style={{ marginTop: 14 }}>
-          <p style={{ fontSize: 11, fontWeight: 800, color: 'var(--slate)', textTransform: 'uppercase', margin: '0 0 8px' }}>No due date ({byDay.noDate.length})</p>
+          <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)', margin: '0 0 8px' }}>No due date ({byDay.noDate.length})</p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {byDay.noDate.map((t: any) => {
               const pr = PRIORITY[(t.priority || 'normal') as keyof typeof PRIORITY]
@@ -2001,7 +2047,7 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
   const goToday = () => { if (scrollRef.current) scrollRef.current.scrollTo({ left: Math.max(0, todayIdx * COL_W - lead + (showNoDate ? COL_W : 0)), behavior: 'smooth' }) }
   const goNoDate = () => { if (scrollRef.current) scrollRef.current.scrollTo({ left: 0, behavior: 'smooth' }) }
 
-  if (tasks.length === 0) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--slate)', fontSize: 13.5 }}>No tasks to show on the timeline.</div>
+  if (tasks.length === 0) return <div style={{ paddingTop: 48 }}><EmptyScroll kinds={['task']} title="Nothing on the timeline" line="Tasks with a due date show up here, day by day." /></div>
 
   const todayKey = dayKey(startOfDay(new Date()))
   // The window of day columns to draw: what's visible plus a week either side.
@@ -2009,7 +2055,7 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
   const firstVisible = Math.floor(Math.max(0, (scrollX ?? Math.max(0, todayIdx * COL_W - COL_W)) - (showNoDate ? COL_W : 0)) / COL_W)
   const winStart = Math.max(0, firstVisible - BUFFER)
   const winEnd = Math.min(days.length, firstVisible + daysShown + 1 + BUFFER)
-  const navBtn: React.CSSProperties = { width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', fontSize: 16, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
+  const navBtn: React.CSSProperties = { width: 34, height: 34, borderRadius: 999, border: 'none', background: '#f4f4f5', cursor: 'pointer', color: '#18181b', fontSize: 16, fontWeight: 600, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: 'inherit' }
 
   const targetYmd = (dateObj: Date | null) => dateObj ? localYmd(dateObj) : ''
   const doDrop = (dateObj: Date | null, list: any[], index: number) => {
@@ -2033,10 +2079,10 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
       onDragOver={(e) => { if (dragId) { e.preventDefault(); setDrop(key, list.length) } }}
       onDrop={(e) => { e.preventDefault(); doDrop(dateObj, list, overCol ? dropTarget!.index : list.length) }}
       style={{ width: COL_W, boxSizing: 'border-box', flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%', borderLeft: '1px solid var(--border)', background: isToday ? 'var(--peach)' : (weekend ? 'var(--canvas)' : '#fff'), outline: overCol ? '2px dashed var(--coral)' : 'none', outlineOffset: -2, ...(sticky ? { background: 'var(--canvas)', ...(narrow ? {} : { position: 'sticky' as const, left: 0, zIndex: 3, boxShadow: '4px 0 10px rgba(0,0,0,0.06)' }) } : {}) }}>
-      <div style={{ position: 'sticky', top: 0, zIndex: 1, padding: '8px 10px', borderBottom: `2px solid ${isToday ? 'var(--coral)' : 'var(--border)'}`, background: 'inherit', display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
-        <span style={{ fontSize: 13, fontWeight: 800, color: isToday ? 'var(--coral)' : 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{header}</span>
+      <div style={{ position: 'sticky', top: 0, zIndex: 1, padding: '10px 12px', borderBottom: `2px solid ${isToday ? 'var(--coral)' : '#ececef'}`, background: 'inherit', display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
+        <span style={{ fontSize: 14, fontWeight: 700, color: isToday ? 'var(--coral)' : 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{header}</span>
         {sub && <span style={{ fontSize: 11.5, color: 'var(--slate)', whiteSpace: 'nowrap', flexShrink: 0 }}>{sub}</span>}
-        {list.length > 0 && <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 800, color: 'var(--slate)', background: 'rgba(0,0,0,0.06)', borderRadius: 10, padding: '0 6px' }}>{list.length}</span>}
+        {list.length > 0 && <span style={{ marginLeft: 'auto', alignSelf: 'center', minWidth: 20, height: 20, padding: '0 6px', boxSizing: 'border-box', borderRadius: 999, background: isToday ? '#fff' : '#f4f4f5', color: '#52525b', fontSize: 11.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{list.length}</span>}
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '10px 8px' }}>
         {list.map((t: any, i: number) => (
@@ -2062,7 +2108,7 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
           // Add a task straight onto this day. Always present at the foot of the
           // column, and a hover "+" (see .tl-col:hover .tl-add) makes it obvious.
           <button className="tl-add" onClick={(e) => { e.stopPropagation(); onAdd?.(dateObj) }}
-            style={{ width: '100%', marginTop: list.length ? 8 : 0, padding: '8px 0', borderRadius: 8, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--slate)', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+            style={{ width: '100%', marginTop: list.length ? 8 : 0, height: 36, borderRadius: 12, border: '1.5px dashed #e4e4e7', background: 'transparent', color: '#71717a', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: 'inherit' }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Add task
           </button>
@@ -2075,17 +2121,17 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px 10px', flexWrap: 'wrap' }}>
-        <button aria-label="Scroll back" onClick={() => scrollBy(-daysShown)} style={navBtn}>‹</button>
-        <button onClick={goToday} style={{ ...navBtn, width: 'auto', padding: '0 12px', fontSize: 12 }}>Today</button>
-        <button aria-label="Scroll forward" onClick={() => scrollBy(daysShown)} style={navBtn}>›</button>
+        <button aria-label="Scroll back" className="tl-pill icon" onClick={() => scrollBy(-daysShown)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+        <button className="tl-pill" onClick={goToday}>Today</button>
+        <button aria-label="Scroll forward" className="tl-pill icon" onClick={() => scrollBy(daysShown)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>
         {narrow && showNoDate && (
-          <button onClick={goNoDate} style={{ ...navBtn, width: 'auto', padding: '0 12px', fontSize: 12 }}>No due date · {byDay.noDate.filter((t: any) => statusOf(t) !== 'done').length}</button>
+          <button className="tl-pill" onClick={goNoDate}>No due date · {byDay.noDate.filter((t: any) => statusOf(t) !== 'done').length}</button>
         )}
-        <span style={{ fontSize: 12.5, color: 'var(--slate)', marginLeft: 4 }}>{narrow ? 'Swipe for more days →' : 'Scroll right for upcoming days →'}</span>
+        <span style={{ fontSize: 13, color: '#8e8e93', marginLeft: 4 }}>{narrow ? 'Swipe for more days →' : 'Scroll right for upcoming days →'}</span>
         <span style={{ flex: 1 }} />
         {/* How many days fill the screen at once (a phone always shows about two). */}
         {!narrow && <>
-          <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--slate)' }}>Show</span>
+          <span style={{ fontSize: 13, fontWeight: 500, color: '#8e8e93' }}>Show</span>
           <div className="seg">
             {[3, 5, 7].map(n => (
               <button key={n} className={daysShown === n ? 'on' : ''} onClick={() => setDaysShown(n)}>{n}</button>
@@ -2093,8 +2139,8 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
           </div>
           <input type="number" min={1} max={7} value={daysShown}
             onChange={e => setDaysShown(Math.max(1, Math.min(7, parseInt(e.target.value) || 1)))}
-            style={{ width: 48, padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12.5, boxSizing: 'border-box' }} />
-          <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>days</span>
+            className="ctl" style={{ width: 58, height: 34, padding: '0 10px' }} aria-label="Days shown" />
+          <span style={{ fontSize: 13, color: '#8e8e93' }}>days</span>
         </>}
       </div>
       <div ref={scrollRef} onScroll={onScroll} style={{ flex: 1, overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', borderTop: '1px solid var(--border)' }}>
@@ -2226,14 +2272,14 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
     }
     setComment('')
   }
-  const L: React.CSSProperties = { fontSize: 11, fontWeight: 800, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.04em', margin: '16px 0 7px' }
+  const L: React.CSSProperties = { fontSize: 12.5, fontWeight: 500, color: '#8e8e93', margin: '16px 0 7px' }
   const curStatus = task.status || (task.done ? 'done' : 'todo')
   return (
     <div style={{ padding: 18 }}>
       {task._source === 'calendar' && (() => {
         const et = EVENT_TYPE_META[task.event_type || 'task'] || EVENT_TYPE_META.task
         return (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '3px 8px', borderRadius: 6, background: et.bg, color: et.color, marginBottom: 8 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 600, padding: '3px 9px', borderRadius: 999, background: et.bg, color: et.color, marginBottom: 8 }}>
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
             {et.label}
           </span>
@@ -2247,7 +2293,7 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
           every change below (description, checklist, status…) will apply to. */}
       {isSeries && (
         <div style={{ marginTop: 12, padding: 10, borderRadius: 10, background: '#ecfeff', border: '1px solid #a5f3fc' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 800, color: '#0e7490', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 7 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600, color: '#0e7490', marginBottom: 7 }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
             Repeating task — apply changes to
           </div>
