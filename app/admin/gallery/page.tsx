@@ -761,7 +761,11 @@ export default function GalleryPage() {
         .gal-toolbar-btns .cv-btn { display: inline-flex; align-items: center; gap: 7px; }
         .gal-note { margin-bottom: 16px; padding: 11px 16px; border-radius: 16px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.06); font-size: 13.5px; color: #3f3f46; }
         .gal-layout { display: flex; gap: 20px; align-items: flex-start; }
-        .gal-sidebar { width: 224px; flex-shrink: 0; position: sticky; top: 16px; padding: 10px; border-radius: 20px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 1px 2px rgba(16,24,40,.04); box-sizing: border-box; }
+        /* The admin's content column is a scroll container that never scrolls
+           (the page does), which stops anything sticking. Clip it sideways
+           instead, so the categories stay in view under the top bar. */
+        .admin-main:has(.gal-root) { overflow-x: clip !important; overflow-y: visible !important; min-width: 0; }
+        .gal-sidebar { width: 224px; flex-shrink: 0; position: sticky; top: 72px; max-height: calc(100vh - 88px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 10px; border-radius: 20px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 1px 2px rgba(16,24,40,.04); box-sizing: border-box; }
         .gal-sidebar > button:hover, .gal-folder-row > button:hover { background: #f4f4f5 !important; }
         .gal-round { width: 28px; height: 28px; padding: 0; border: none; border-radius: 50%; background: #f4f4f5; color: #3f3f46; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
         .gal-round:hover { background: #ececef; color: #18181b; }
