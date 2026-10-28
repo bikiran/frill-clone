@@ -1,9 +1,9 @@
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { requireCompanyAccess } from '@/lib/company-access'
-import { buildAuthorizeUrl, normalizeShop, shopifyAppConfigured } from '@/lib/shopify-auth'
-import { INTENT_COOKIE, INTENT_TTL_MS, appListingUrl, connectedElsewhere, setInstallCookie } from '@/lib/shopify-install'
+import { SUPER_ADMIN, callerUser, requireCompanyAccess } from '@/lib/company-access'
+import { appClientId, appFor, buildAuthorizeUrl, normalizeShop, privateInstallUrl, shopifyAppConfigured } from '@/lib/shopify-auth'
+import { INTENT_COOKIE, INTENT_TTL_MS, appListingUrl, connectedElsewhere, setInstallCookie, writeWithApp } from '@/lib/shopify-install'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,41 +34,52 @@ function safeReturn(raw: any): string {
 // permission screen for a store this workspace already has (reconnect,
 // reinstall, approve new permissions, or switch a token store to the app).
 // A one-time state row ties the callback back to this workspace and person.
+//
+// POST { companyId, via: 'private', returnTo } → { url }: like the first, but
+// to the privately shared app's install link (lib/shopify-auth), for the one
+// store it was made for. Colvy's super admin only.
 export async function POST(req: NextRequest) {
   try {
     if (!shopifyAppConfigured()) return NextResponse.json({ error: 'The Colvy Shopify app is not set up yet (SHOPIFY_API_KEY / SHOPIFY_API_SECRET).' }, { status: 503 })
-    const { companyId, shop: rawShop, returnTo } = await req.json().catch(() => ({}))
+    const { companyId, shop: rawShop, returnTo, via } = await req.json().catch(() => ({}))
     const db = admin()
     const access = await requireCompanyAccess(req, db, companyId)
     if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const nonce = crypto.randomBytes(24).toString('hex')
 
     if (!rawShop) {
+      const privateUrl = via === 'private' ? privateInstallUrl() : null
+      if (via === 'private') {
+        if ((await callerUser(req, db))?.email !== SUPER_ADMIN) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+        if (!privateUrl) return NextResponse.json({ error: 'The private Shopify app isn’t set up (SHOPIFY_CUSTOM_API_KEY / SHOPIFY_CUSTOM_API_SECRET / SHOPIFY_CUSTOM_INSTALL_URL).' }, { status: 503 })
+      }
       const { error } = await db.from('shopify_oauth_states').insert({
         nonce, kind: 'intent', company_id: companyId, user_id: access.userId || null, shop: null,
         return_to: safeReturn(returnTo),
         expires_at: new Date(Date.now() + INTENT_TTL_MS).toISOString(),
       })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-      const res = NextResponse.json({ url: appListingUrl() })
+      const res = NextResponse.json({ url: privateUrl || appListingUrl() })
       setInstallCookie(res, req, INTENT_COOKIE, nonce, INTENT_TTL_MS)
       return res
     }
 
     const shop = normalizeShop(rawShop)
     const { data: mine } = shop
-      ? await db.from('shopify_integrations').select('id').eq('company_id', companyId).eq('store_domain', shop).limit(1)
+      ? await db.from('shopify_integrations').select('*').eq('company_id', companyId).eq('store_domain', shop).limit(1)
       : { data: [] as any[] }
     if (!shop || !mine?.length) return NextResponse.json({ error: 'Install Colvy from the Shopify App Store to connect a new store.' }, { status: 400 })
     if (await connectedElsewhere(db, shop, companyId)) return NextResponse.json({ error: 'This store is already connected to another Colvy workspace. Disconnect it there first.' }, { status: 409 })
 
-    const { error } = await db.from('shopify_oauth_states').insert({
+    // Back through the app the store is connected with (public or private).
+    const app = appFor(mine[0].auth_type === 'oauth' ? mine[0].app_client_id : null)
+    const { error } = await writeWithApp({
       nonce, kind: 'oauth', company_id: companyId, user_id: access.userId || null, shop,
-      return_to: safeReturn(returnTo),
+      return_to: safeReturn(returnTo), app_client_id: appClientId(app),
       expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-    })
+    }, row => db.from('shopify_oauth_states').insert(row))
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ url: buildAuthorizeUrl(shop, nonce) })
+    return NextResponse.json({ url: buildAuthorizeUrl(shop, nonce, app) })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })
   }

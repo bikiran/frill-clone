@@ -4428,7 +4428,7 @@ function SettingsPage() {
         </div>
         <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 22 }}>
           <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 6 }}>Integrations status</p>
-          <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', lineHeight: 1.6 }}>Platform keys (Stripe, Telnyx, Resend and the Colvy Shopify app's SHOPIFY_API_KEY / SHOPIFY_API_SECRET) are configured via Vercel environment variables; each workspace's own store connections live with that workspace. This panel doesn't expose secrets. Use the Subscriptions page's "Sync from Stripe" to verify Stripe connectivity.</p>
+          <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', lineHeight: 1.6 }}>Platform keys (Stripe, Telnyx, Resend, the Colvy Shopify app's SHOPIFY_API_KEY / SHOPIFY_API_SECRET, and the optional private Shopify app's SHOPIFY_CUSTOM_API_KEY / SHOPIFY_CUSTOM_API_SECRET / SHOPIFY_CUSTOM_INSTALL_URL, see shopify/README.md) are configured via Vercel environment variables; each workspace's own store connections live with that workspace. This panel doesn't expose secrets. Use the Subscriptions page's "Sync from Stripe" to verify Stripe connectivity.</p>
         </div>
         <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 22 }}>
           <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 10 }}>Quick links</p>

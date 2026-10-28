@@ -143,7 +143,8 @@ export async function adoptShopifyBilling(db: any, companyId: string, integratio
 
 /**
  * The Shopify store a workspace uses Colvy through, if any: the one it's
- * billed through, else any store connected through the app and still active.
+ * billed through, else any store connected through the public app and still
+ * active.
  * Workspaces connected before the rule above are adopted here on first look.
  */
 export async function shopifyBillingStore(db: any, companyId: string | null | undefined): Promise<{ id: string; store_domain: string; store_name?: string | null } | null> {
@@ -154,8 +155,12 @@ export async function shopifyBillingStore(db: any, companyId: string | null | un
       const { data: integ } = await db.from('shopify_integrations').select('id, store_domain, store_name, is_active').eq('id', co.billing_integration_id).maybeSingle()
       if (integ?.is_active) return integ
     }
-    const { data: rows } = await db.from('shopify_integrations').select('id, store_domain, store_name, is_active').eq('company_id', companyId).eq('is_active', true).limit(1)
-    const integ = rows?.[0]
+    // Stores on the privately shared app (app_client_id set) can't be billed
+    // through Shopify — custom apps have no Shopify billing — so they don't
+    // count. '*' because app_client_id may not exist before migration V422.
+    const { data: rows } = await db.from('shopify_integrations').select('*').eq('company_id', companyId).eq('is_active', true)
+    const row = (rows || []).find((r: any) => !r.app_client_id)
+    const integ = row ? { id: row.id, store_domain: row.store_domain, store_name: row.store_name, is_active: row.is_active } : null
     if (!integ) return co?.billing_provider === 'shopify' ? { id: co.billing_integration_id, store_domain: '' } : null
     if (co?.billing_provider !== 'shopify' || co?.billing_integration_id !== integ.id) await adoptShopifyBilling(db, companyId, integ.id).catch(() => {})
     return integ

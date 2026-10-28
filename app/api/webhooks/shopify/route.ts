@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { ShopifyAuthError, verifyWebhookHmac } from '@/lib/shopify-auth'
+import { ShopifyAuthError, appClientId, appForWebhook } from '@/lib/shopify-auth'
 import { saveShopifyCustomers } from '@/lib/shopify-customers'
 import { saveShopifyProducts } from '@/lib/shopify-products'
 import { upsertShopifyOrder } from '@/lib/shopify-orders'
@@ -22,7 +22,8 @@ const admin = () => createClient(
  * POST /api/webhooks/shopify — every Shopify webhook for every store.
  *
  * Signed with the app secret over the RAW body (X-Shopify-Hmac-Sha256); an
- * unsigned or mis-signed request gets 401 and does nothing. The store comes from
+ * unsigned or mis-signed request gets 401 and does nothing. Either app (public
+ * or privately shared, lib/shopify-auth) may have signed it. The store comes from
  * X-Shopify-Shop-Domain, the event from X-Shopify-Topic.
  *
  * Store topics (subscribed per store at install): customers/create|update|delete,
@@ -36,7 +37,8 @@ const admin = () => createClient(
  */
 export async function POST(req: NextRequest) {
   const raw = await req.text()
-  if (!verifyWebhookHmac(raw, req.headers.get('x-shopify-hmac-sha256'))) {
+  const app = appForWebhook(raw, req.headers.get('x-shopify-hmac-sha256'))
+  if (!app) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
   const topic = (req.headers.get('x-shopify-topic') || '').toLowerCase()
@@ -121,6 +123,9 @@ export async function POST(req: NextRequest) {
           break
         }
         case 'app/uninstalled': {
+          // The other app being removed (a store that moved from the private
+          // app to the public one, or back) leaves this connection alone.
+          if (integ.auth_type === 'oauth' && (integ.app_client_id || null) !== appClientId(app)) break
           await db.from('shopify_integrations').update({
             is_active: false, uninstalled_at: new Date().toISOString(),
             access_token: null, refresh_token: null, token_expires_at: null, refresh_expires_at: null,
