@@ -45,7 +45,7 @@ export function EmailDesignStep({ companyId, campaignId, info, campaignName, onS
   return (
     <div className="camp-email-step" style={{ display: 'grid', gap: 12, minWidth: 0 }}>
       {!info.dbReady && (
-        <div style={{ padding: '10px 13px', borderRadius: 10, border: '1px solid #fedf89', background: '#fffaeb', color: '#93370d', fontSize: 13 }}>
+        <div style={{ padding: '12px 16px', borderRadius: 16, border: '1px solid #fedf89', background: '#fffaeb', color: '#93370d', fontSize: 13 }}>
           Saving emails is waiting on a database update (V396). You can design and send yourself a test in the meantime.
         </div>
       )}
@@ -82,7 +82,7 @@ export function EmailTestCard({ companyId, info, card, label }: { companyId: str
         It never touches the campaign audience.
       </p>
       <button type="button" onClick={send} disabled={busy || !ready}
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 16px', borderRadius: 9, background: 'var(--ink)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: busy || !ready ? 'default' : 'pointer', opacity: busy || !ready ? 0.5 : 1 }}>
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 16px', borderRadius: 999, background: 'var(--ink)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: busy || !ready ? 'default' : 'pointer', opacity: busy || !ready ? 0.5 : 1 }}>
         <SendIcon />{busy ? 'Sending…' : 'Send a test to yourself'}
       </button>
       {!ready && <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--slate)' }}>Design and save the email first.</p>}
@@ -98,7 +98,7 @@ export function EmailReviewCard({ info, card, label, onEdit }: { info: EmailInfo
   const d = info?.design
   const sender = info?.sender
   const row = (k: string, v: React.ReactNode) => (
-    <tr style={{ borderTop: '1px solid var(--border)' }}>
+    <tr style={{ borderTop: '1px solid #f0f0f2' }}>
       <td style={{ padding: '9px 0', color: 'var(--slate)', width: 150, verticalAlign: 'top' }}>{k}</td>
       <td style={{ padding: '9px 0', color: 'var(--ink)', fontWeight: 600, wordBreak: 'break-word' }}>{v}</td>
     </tr>
@@ -108,7 +108,7 @@ export function EmailReviewCard({ info, card, label, onEdit }: { info: EmailInfo
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
         <label style={{ ...label, marginBottom: 0 }}>The email</label>
         <button type="button" onClick={onEdit}
-          style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+          style={{ padding: '0 14px', height: 32, borderRadius: 999, border: 'none', background: '#f4f4f5', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
           Edit email
         </button>
       </div>

@@ -34,25 +34,26 @@ export default function EmailReport({ campaign, companyId, onBack }: { campaign:
       .catch(e => setError(e.message))
   }, [companyId, campaign.id])
 
-  const card: React.CSSProperties = { border: '1px solid var(--border)', borderRadius: 14, background: '#fff', padding: 16 }
-  const statNum: React.CSSProperties = { fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: '4px 0 0' }
-  const statLbl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.04em' }
-  const sub: React.CSSProperties = { margin: '2px 0 0', fontSize: 11.5, color: 'var(--slate)' }
+  const card: React.CSSProperties = { border: '1px solid transparent', borderRadius: 20, background: '#fff', padding: 18, boxShadow: '0 0 0 1px rgba(0,0,0,.06), 0 1px 2px rgba(16,24,40,.04)', minWidth: 0 }
+  const statNum: React.CSSProperties = { fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--ink)', margin: '6px 0 0', fontVariantNumeric: 'tabular-nums' }
+  const statLbl: React.CSSProperties = { fontSize: 13.5, fontWeight: 600, color: '#71717a' }
+  const sub: React.CSSProperties = { margin: '2px 0 0', fontSize: 12.5, color: '#8e8e93' }
   const notSentYet = !['sent', 'sending', 'cancelled'].includes(campaign.status)
   const stopped = campaign.status === 'cancelled'
   const breakdown: Record<string, number> = campaign.excluded_breakdown || {}
   const skips = Object.entries(breakdown).filter(([, n]) => Number(n) > 0)
 
   return (
-    <div className="erep" style={{ padding: '24px 24px 40px', boxSizing: 'border-box', width: '100%' }}>
-      <button onClick={onBack}
-        style={{ border: 'none', background: 'none', color: 'var(--slate)', fontSize: 13, cursor: 'pointer', padding: 0, marginBottom: 12 }}>
-        ← Back to campaigns
+    <div className="erep" style={{ padding: '24px 28px 48px', boxSizing: 'border-box', width: '100%', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+      <style>{`.erep button::before{display:none}.erep-back{display:inline-flex;align-items:center;gap:4px;height:32px;padding:0 14px 0 10px;margin-bottom:14px;border:none;border-radius:999px;background:#f4f4f5;color:#3f3f46;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer}.erep-back:hover{background:#ececef;color:#18181b}`}</style>
+      <button onClick={onBack} className="erep-back">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+        Campaigns
       </button>
-      <div style={{ marginBottom: 18 }}>
-        <h1 style={{ fontSize: 23, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>{campaign.name}</h1>
-        <p style={{ color: 'var(--slate)', fontSize: 13, margin: '5px 0 0' }}>
-          {campaign.status === 'sent' ? `Sent ${fmt(campaign.completed_at || campaign.sent_at)}` : stopped ? `Stopped part-way ${fmt(campaign.completed_at)}` : `Status: ${campaign.status}`} · EMAIL
+      <div style={{ marginBottom: 20 }}>
+        <h1 style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.025em', lineHeight: 1.15, color: 'var(--ink)', margin: 0 }}>{campaign.name}</h1>
+        <p style={{ color: '#71717a', fontSize: 14, margin: '6px 0 0' }}>
+          {campaign.status === 'sent' ? `Sent ${fmt(campaign.completed_at || campaign.sent_at)}` : stopped ? `Stopped part-way ${fmt(campaign.completed_at)}` : `Status: ${campaign.status}`} · Email
         </p>
       </div>
 
@@ -99,7 +100,7 @@ export default function EmailReport({ campaign, companyId, onBack }: { campaign:
 
         <div className="erep-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: 12 }}>
           <div style={card}>
-            <div style={{ ...statLbl, marginBottom: 10 }}>Links clicked</div>
+            <div style={{ ...statLbl, fontSize: 15, fontWeight: 700, color: 'var(--ink)', marginBottom: 12 }}>Links clicked</div>
             {report.topLinks.length === 0 ? (
               <p style={{ margin: 0, fontSize: 13, color: 'var(--slate)' }}>No clicks yet.</p>
             ) : (
@@ -111,7 +112,7 @@ export default function EmailReport({ campaign, companyId, onBack }: { campaign:
                 </tr></thead>
                 <tbody>
                   {report.topLinks.map(l => (
-                    <tr key={l.url} style={{ borderTop: '1px solid var(--border)' }}>
+                    <tr key={l.url} style={{ borderTop: '1px solid #f0f0f2' }}>
                       <td style={{ padding: '8px 0', color: 'var(--ink)', wordBreak: 'break-all' }}>{l.url}</td>
                       <td style={{ padding: '8px 0', textAlign: 'right', fontWeight: 700 }}>{l.uniqueClicks.toLocaleString()}</td>
                       <td style={{ padding: '8px 0 8px 12px', textAlign: 'right', color: 'var(--slate)' }}>{l.clicks.toLocaleString()}</td>
@@ -122,7 +123,7 @@ export default function EmailReport({ campaign, companyId, onBack }: { campaign:
             )}
           </div>
           <div style={card}>
-            <div style={{ ...statLbl, marginBottom: 10 }}>Not emailed</div>
+            <div style={{ ...statLbl, fontSize: 15, fontWeight: 700, color: 'var(--ink)', marginBottom: 12 }}>Not emailed</div>
             {skips.length === 0 && report.skipped === 0 ? (
               <p style={{ margin: 0, fontSize: 13, color: 'var(--slate)' }}>Everyone in the audience could be emailed.</p>
             ) : (
