@@ -51,6 +51,10 @@ function SignInForm() {
   const [oauthLoading, setOAuthLoading] = useState('')
   const [slide, setSlide] = useState(0)
   const [companyContext, setCompanyContext] = useState<any>(null)
+  // How this workspace lets people sign in (Settings → Sign-in & security).
+  const [methods, setMethods] = useState({ google: true, github: true, magicLink: false })
+  const [linkSending, setLinkSending] = useState(false)
+  const [linkSent, setLinkSent] = useState('')
   // Back from installing Colvy in Shopify (see lib/shopify-install): the store waits for a workspace.
   const [shopifyStore, setShopifyStore] = useState<string | null>(null)
   useEffect(() => {
@@ -74,9 +78,13 @@ function SignInForm() {
       
       if (isSubdomain) {
         const slug = hostname.split('.')[0]
-        supabase.from('companies').select('id, name, slug').eq('slug', slug).single().then(({ data }) => {
+        supabase.from('companies').select('id, name, slug').eq('slug', slug).single().then(async ({ data }) => {
           if (data) {
             setCompanyContext(data)
+            const { data: rows } = await (supabase as any).from('site_settings').select('value').eq('key', 'general').eq('company_id', data.id)
+              .order('updated_at', { ascending: false }).limit(1)
+            const m = rows?.[0]?.value?.signIn
+            if (m && typeof m === 'object') setMethods(v => ({ ...v, ...m }))
           }
         })
       }
@@ -163,6 +171,28 @@ function SignInForm() {
     return '/admin'
   }
 
+  // Magic link: email a one-time sign-in link. Only for existing accounts —
+  // joining a board still goes through sign-up. Where to go afterwards is kept
+  // on this device for the confirm page (the link may open elsewhere, then it
+  // lands people by who they are).
+  const sendMagicLink = async () => {
+    setError('')
+    const addr = email.trim()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) { setError('Enter your email above first, then we can send you a link.'); return }
+    setLinkSending(true)
+    try { localStorage.setItem('colvy_signin_next', JSON.stringify({ next: safeRedirect(params.get('redirect')), at: Date.now() })) } catch {}
+    const { error: err } = await supabase.auth.signInWithOtp({ email: addr, options: { emailRedirectTo: `${window.location.origin}/auth/confirm`, shouldCreateUser: false } })
+    setLinkSending(false)
+    if (err) {
+      const msg = err.message || ''
+      setError(/signups? not allowed|not found|no user/i.test(msg) ? 'There’s no account with that email yet. Check the address, or sign up first.'
+        : /rate|too many|seconds|security purposes/i.test(msg) ? 'A link was sent a moment ago. Give it a minute before asking for another.'
+        : msg)
+      return
+    }
+    setLinkSent(addr)
+  }
+
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -221,15 +251,16 @@ function SignInForm() {
             </div>
           )}
 
+          {linkSent ? null : (methods.google || methods.github) && <>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
-            <button onClick={handleGoogle} disabled={!!oauthLoading}
+            {methods.google && <button onClick={handleGoogle} disabled={!!oauthLoading}
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '11px', borderRadius: 12, border: '1px solid #e5e5e5', background: '#fff', fontSize: 14, fontWeight: 600, color: '#0d0d0d', cursor: 'pointer' }}>
               <GoogleIcon /> {oauthLoading === 'google' ? 'Connecting...' : 'Continue with Google'}
-            </button>
-            <button onClick={handleGitHub} disabled={!!oauthLoading}
+            </button>}
+            {methods.github && <button onClick={handleGitHub} disabled={!!oauthLoading}
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '11px', borderRadius: 12, border: '1px solid #e5e5e5', background: '#fff', fontSize: 14, fontWeight: 600, color: '#0d0d0d', cursor: 'pointer' }}>
               <GithubIcon /> {oauthLoading === 'github' ? 'Connecting...' : 'Continue with GitHub'}
-            </button>
+            </button>}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '20px 0' }}>
@@ -237,7 +268,18 @@ function SignInForm() {
             <span style={{ fontSize: 12, color: '#9ca3af' }}>or</span>
             <div style={{ flex: 1, height: 1, background: '#e5e5e5' }} />
           </div>
+          </>}
 
+          {linkSent ? (
+            <div style={{ textAlign: 'center', padding: '28px 8px 8px' }}>
+              <div style={{ width: 60, height: 60, margin: '0 auto 16px', borderRadius: '50%', background: '#fff1ee', color: '#ff7a6b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="m3.5 7 8.5 6 8.5-6" /></svg>
+              </div>
+              <p style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 800, color: '#0d0d0d' }}>Check your email</p>
+              <p style={{ margin: 0, fontSize: 14, color: '#6b6b70', lineHeight: 1.55 }}>We sent a sign-in link to <b style={{ color: '#0d0d0d' }}>{linkSent}</b>. Open it on this device to come straight back here. It works once and expires soon.</p>
+              <button type="button" onClick={() => { setLinkSent(''); setError('') }} style={{ marginTop: 18, padding: '9px 16px', borderRadius: 999, border: '1.5px solid #e5e5e5', background: '#fff', fontSize: 13.5, fontWeight: 600, color: '#0d0d0d', cursor: 'pointer' }}>Use a different email</button>
+            </div>
+          ) : (
           <form onSubmit={handleSignIn}>
             <div style={{ marginBottom: 16 }}>
               <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#0d0d0d', marginBottom: 6 }}>Email</label>
@@ -270,7 +312,15 @@ function SignInForm() {
               style={{ width: '100%', padding: '12px', borderRadius: 12, background: '#ff7a6b', color: '#fff', fontWeight: 700, fontSize: 15, border: 'none', cursor: loading ? 'wait' : 'pointer', opacity: loading ? 0.7 : 1 }}>
               {loading ? 'Signing in…' : 'Sign in'}
             </button>
+            {methods.magicLink && (
+              <button type="button" onClick={sendMagicLink} disabled={linkSending}
+                style={{ width: '100%', marginTop: 10, padding: '11px', borderRadius: 12, background: '#fff', color: '#0d0d0d', fontWeight: 600, fontSize: 14.5, border: '1px solid #e5e5e5', cursor: linkSending ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="m3.5 7 8.5 6 8.5-6" /></svg>
+                {linkSending ? 'Sending…' : 'Email me a sign-in link instead'}
+              </button>
+            )}
           </form>
+          )}
 
           <p style={{ textAlign: 'center', fontSize: 13, color: '#6b6b70', marginTop: 24 }}>
             Don't have an account? <a href="/signup" style={{ color: '#ff7a6b', fontWeight: 600, textDecoration: 'none' }}>Sign up free</a>
