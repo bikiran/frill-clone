@@ -307,7 +307,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     const el = bannersEl
     if (!el || typeof ResizeObserver === 'undefined') return
     const root = document.documentElement
-    const set = () => root.style.setProperty('--admin-banners-h', `${Math.round(el.getBoundingClientRect().height)}px`)
+    // Plus the super admin bar at the foot while it's open (--sab-h, set by
+    // components/SuperAdminBar), so full-height screens stop above it too.
+    const set = () => root.style.setProperty('--admin-banners-h', `calc(${Math.round(el.getBoundingClientRect().height)}px + var(--sab-h, 0px))`)
     const ro = new ResizeObserver(set)
     ro.observe(el); set()
     return () => { ro.disconnect(); root.style.removeProperty('--admin-banners-h') }
@@ -1322,7 +1324,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       )}
 
       {/* Main content — offset by sidebar width on desktop, full width on mobile */}
-      <div className="admin-main" style={{ marginLeft: desktop ? RAIL_W : 0, flex: 1, overflowY: 'auto', minHeight: 'calc(100vh - 56px)' }}>
+      <div className="admin-main" style={{ marginLeft: desktop ? RAIL_W : 0, flex: 1, overflowY: 'auto', minHeight: 'calc(100vh - 56px)', paddingBottom: 'var(--sab-h, 0px)' }}>
         {/* The banners' total height is published as --admin-banners-h so
             full-height screens (the inbox) can fit below them instead of
             running under the phone's bottom nav. */}

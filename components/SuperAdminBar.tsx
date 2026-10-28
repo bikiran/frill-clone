@@ -53,6 +53,19 @@ export default function SuperAdminBar({ companyId }: { companyId: string | null 
     load(companyId)
   }, [companyId])
 
+  // While the bar is open it covers the bottom of the page: publish its
+  // height (--sab-h), which the admin layout adds to the space full-height
+  // screens (the inbox) leave free, and pads the page's foot with.
+  const [barEl, setBarEl] = useState<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const root = document.documentElement
+    if (!barEl || typeof ResizeObserver === 'undefined') { root.style.removeProperty('--sab-h'); return }
+    const set = () => root.style.setProperty('--sab-h', `${Math.round(barEl.getBoundingClientRect().height)}px`)
+    const ro = new ResizeObserver(set)
+    ro.observe(barEl); set()
+    return () => { ro.disconnect(); root.style.removeProperty('--sab-h') }
+  }, [barEl])
+
   if (!allowed || !data?.company) return null
   const co = data.company
   const u = data.usage || {}
@@ -125,7 +138,7 @@ export default function SuperAdminBar({ companyId }: { companyId: string | null 
   }
 
   return (
-    <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 4000, background: '#0d0d0d', color: '#fff', borderTop: '1px solid rgba(255,255,255,0.12)', boxShadow: '0 -8px 30px rgba(0,0,0,0.35)' }}>
+    <div ref={setBarEl} style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 4000, background: '#0d0d0d', color: '#fff', borderTop: '1px solid rgba(255,255,255,0.12)', boxShadow: '0 -8px 30px rgba(0,0,0,0.35)' }}>
       <div style={{ maxWidth: 1400, margin: '0 auto', padding: '9px 16px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12, fontWeight: 800, letterSpacing: '0.04em', color: '#ff6a4d', whiteSpace: 'nowrap' }}>🛡 SUPER ADMIN</span>
         <span style={{ fontSize: 13, fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>{co.name}</span>
