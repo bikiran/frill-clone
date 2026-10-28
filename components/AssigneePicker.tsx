@@ -76,15 +76,15 @@ export default function AssigneePicker({
           onChange={e => { setQuery(e.target.value); setOpen(true) }}
           onFocus={() => setOpen(true)}
           placeholder={value.length ? 'Add another…' : placeholder}
-          style={{ width: '100%', padding: '9px 12px 9px 33px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box' }}
+          style={{ width: '100%', height: 40, padding: '0 14px 0 36px', borderRadius: 12, border: '1.5px solid transparent', background: '#f4f4f5', fontSize: 14, color: 'var(--ink)', boxSizing: 'border-box', outline: 'none', fontFamily: 'inherit' }}
         />
       </div>
 
       {open && matches.length > 0 && (
         <div style={{
           position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, zIndex: 50,
-          background: '#fff', border: '1px solid var(--border)', borderRadius: 10,
-          boxShadow: '0 10px 28px rgba(0,0,0,0.14)', maxHeight: 240, overflowY: 'auto',
+          background: '#fff', border: 'none', boxShadow: '0 16px 44px rgba(0,0,0,.14), 0 0 0 1px rgba(0,0,0,.05)', borderRadius: 16,
+          maxHeight: 240, overflowY: 'auto', padding: 4,
         }}>
           {matches.map(m => (
             <button key={m.id} type="button" onClick={() => add(m)}
@@ -99,7 +99,7 @@ export default function AssigneePicker({
       )}
 
       {open && matches.length === 0 && query && (
-        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, zIndex: 50, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', fontSize: 12.5, color: 'var(--slate)' }}>
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, zIndex: 50, background: '#fff', border: 'none', boxShadow: '0 16px 44px rgba(0,0,0,.14), 0 0 0 1px rgba(0,0,0,.05)', borderRadius: 16, padding: '10px 12px', fontSize: 12.5, color: 'var(--slate)' }}>
           No matches
         </div>
       )}

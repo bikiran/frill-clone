@@ -65,9 +65,9 @@ const CONTACTS_CSS = `
   .ct-pill, .ct-select { flex-shrink: 0; height: 38px; display: inline-flex; align-items: center; gap: 7px; padding: 0 14px; border: none; border-radius: 999px; background: #f4f4f5; color: #18181b; font: inherit; font-size: 13.5px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background .15s ease, color .15s ease; }
   .ct-pill::before { display: none; }
   .ct-pill > svg { color: #71717a; flex-shrink: 0; }
-  .ct-pill:hover, .ct-select:hover, .ct-pill[aria-expanded="true"] { background: #ececef; }
+  .ct-pill:hover, .ct-select:hover, .ct-pill[aria-expanded="true"] { background-color: #ececef; }
   .ct-pill:disabled { opacity: .45; cursor: default; background: #f4f4f5; }
-  .ct-pill.set, .ct-select.set { background: color-mix(in srgb, var(--coral) 12%, #fff); color: color-mix(in srgb, var(--coral) 85%, #000); }
+  .ct-pill.set, .ct-select.set { background-color: color-mix(in srgb, var(--coral) 12%, #fff); color: color-mix(in srgb, var(--coral) 85%, #000); }
   .ct-pill.set > svg { color: currentColor; }
   .ct-select { appearance: none; -webkit-appearance: none; padding-right: 34px; outline: none; max-width: 240px; text-overflow: ellipsis;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");

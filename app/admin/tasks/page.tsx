@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth-fetch'
 import { SkeletonList } from '@/components/Skeleton'
 import AssigneePicker from '@/components/AssigneePicker'
-import AttachmentUploader from '@/components/AttachmentUploader'
+import AttachmentUploader, { isMediaAttachment } from '@/components/AttachmentUploader'
 import TaskEditor from '@/components/TaskEditor'
 import RichTextEditor from '@/components/RichTextEditor'
 import MentionInput, { resolveMentions } from '@/components/MentionInput'
@@ -1158,8 +1158,8 @@ export default function TasksPage() {
         .tasks-detail {
           position: fixed; top: 56px; right: 0; height: calc(100vh - 56px);
           width: 48vw; max-width: 640px; min-width: 380px;
-          background: #fff; border-left: 1px solid var(--border);
-          box-shadow: -14px 0 44px rgba(0,0,0,0.14);
+          background: #fff; border-left: none; border-radius: 22px 0 0 22px;
+          box-shadow: -18px 0 50px rgba(0,0,0,0.14), 0 0 0 1px rgba(0,0,0,.04);
           overflow-y: auto; z-index: 60;
           transform: translateX(100%);
           transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
@@ -1511,10 +1511,10 @@ export default function TasksPage() {
           onClick={() => { setSelectedId(null); setShowNew(false); setNewTaskSeed(null) }} />
         <div className={'tasks-detail' + ((selected || showNew) && !isNarrow ? ' open' : '')}>
           {(selected || showNew) && (
-            <div style={{ position: 'sticky', top: 0, zIndex: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid var(--border)', background: '#fff' }}>
-              <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--ink)' }}>{showNew ? (newTaskSeed ? 'Continue repeat' : 'New task') : 'Task details'}</span>
-              <button onClick={() => { setSelectedId(null); setShowNew(false); setNewTaskSeed(null) }} title="Close"
-                style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--slate)', display: 'flex', padding: 4, borderRadius: 8 }}>
+            <div style={{ position: 'sticky', top: 0, zIndex: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 12px 12px 22px', borderBottom: '1px solid #f0f0f2', background: 'rgba(255,255,255,.92)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#71717a' }}>{showNew ? (newTaskSeed ? 'Continue repeat' : 'New task') : 'Task details'}</span>
+              <button className="tl-pill icon" onClick={() => { setSelectedId(null); setShowNew(false); setNewTaskSeed(null) }} title="Close" aria-label="Close"
+                style={{ background: 'transparent', width: 36, height: 36 }}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </div>
@@ -1670,7 +1670,7 @@ function TaskCard({ t, conv, selected, onClick, onToggle, onStatus, showStatusBu
               const img = t.attachments.find((a: any) => a.kind === 'image' || (a.type || '').startsWith('image/'))
               return (
                 <span className="tk-tag" title={`${t.attachments.length} attachment${t.attachments.length === 1 ? '' : 's'}`}>
-                  {img ? <img src={img.url} alt="" style={{ width: 14, height: 14, borderRadius: 3, objectFit: 'cover' }} /> : <span>📎</span>}
+                  {img ? <img src={img.url} alt="" style={{ width: 14, height: 14, borderRadius: 4, objectFit: 'cover' }} /> : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>}
                   {t.attachments.length}
                 </span>
               )
@@ -2272,10 +2272,16 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
     }
     setComment('')
   }
-  const L: React.CSSProperties = { fontSize: 12.5, fontWeight: 500, color: '#8e8e93', margin: '16px 0 7px' }
+  // Section headings, and the soft grey field every input uses.
+  const L: React.CSSProperties = { fontSize: 14, fontWeight: 700, color: 'var(--ink)', margin: '24px 0 10px', display: 'flex', alignItems: 'center', gap: 8 }
+  const field: React.CSSProperties = { width: '100%', height: 40, padding: '0 14px', borderRadius: 12, border: '1.5px solid transparent', background: '#f4f4f5', fontSize: 14, color: 'var(--ink)', boxSizing: 'border-box', outline: 'none', fontFamily: 'inherit' }
+  const count = (n: number) => n > 0 ? <span style={{ minWidth: 20, height: 20, padding: '0 6px', boxSizing: 'border-box', borderRadius: 999, background: '#f4f4f5', color: '#52525b', fontSize: 11.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{n}</span> : null
+  const allAtts: any[] = Array.isArray(task.attachments) ? task.attachments : []
+  const mediaAtts = allAtts.filter(isMediaAttachment)
+  const fileAtts = allAtts.filter((a: any) => !isMediaAttachment(a))
   const curStatus = task.status || (task.done ? 'done' : 'todo')
   return (
-    <div style={{ padding: 18 }}>
+    <div style={{ padding: '18px 22px 24px' }}>
       {task._source === 'calendar' && (() => {
         const et = EVENT_TYPE_META[task.event_type || 'task'] || EVENT_TYPE_META.task
         return (
@@ -2285,21 +2291,21 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
           </span>
         )
       })()}
-      <textarea value={task.title || task.text || ''} onChange={e => patch({ title: e.target.value })} rows={2}
-        style={{ width: '100%', border: 'none', fontSize: 16.5, fontWeight: 700, color: 'var(--ink)', resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', lineHeight: 1.35 }} />
-      {task.text && task.title && <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>{task.text}</p>}
+      <textarea value={task.title || task.text || ''} onChange={e => patch({ title: e.target.value })} rows={2} aria-label="Task title"
+        style={{ width: '100%', border: 'none', padding: 0, fontSize: 23, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--ink)', resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', lineHeight: 1.25, background: 'transparent' }} />
+      {task.text && task.title && task.text !== task.title && <p style={{ margin: '4px 0 0', fontSize: 14, color: '#71717a', lineHeight: 1.5 }}>{task.text}</p>}
 
       {/* Edit scope for a repeating task — sits up top so it's clear which cards
           every change below (description, checklist, status…) will apply to. */}
       {isSeries && (
-        <div style={{ marginTop: 12, padding: 10, borderRadius: 10, background: '#ecfeff', border: '1px solid #a5f3fc' }}>
+        <div style={{ marginTop: 14, padding: 12, borderRadius: 18, background: '#ecfeff' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600, color: '#0e7490', marginBottom: 7 }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
             Repeating task — apply changes to
           </div>
-          <div style={{ display: 'flex', gap: 5 }}>
+          <div className="seg" style={{ display: 'flex', background: 'rgba(14,116,144,.1)' }}>
             {([['this', 'This card'], ['following', 'This & following'], ['all', 'All cards']] as const).map(([k, l]) => (
-              <button key={k} onClick={() => setScope(k)} style={{ flex: 1, padding: '7px 4px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: '1px solid ' + (scope === k ? '#0e7490' : 'var(--border)'), background: scope === k ? '#0e7490' : '#fff', color: scope === k ? '#fff' : 'var(--slate)' }}>{l}</button>
+              <button key={k} className={scope === k ? 'on' : ''} onClick={() => setScope(k)} style={{ flex: 1, justifyContent: 'center', height: 30, padding: '0 6px', fontSize: 12.5, color: scope === k ? '#0e7490' : '#0e7490cc' }}>{l}</button>
             ))}
           </div>
         </div>
@@ -2308,8 +2314,12 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
       <p style={L}>Description</p>
       <RichTextEditor key={task.id} value={task.description || ''} onChange={(html) => patch({ description: html })} />
 
-      <p style={L}>Photos &amp; videos</p>
-      <AttachmentUploader companyId={companyId} value={task.attachments || []} onChange={(a) => patch({ attachments: a })} folder="task" compact />
+      {/* Photos & videos and Files share the task's one attachments list. */}
+      <p style={L}>Photos &amp; videos {count(mediaAtts.length)}</p>
+      <AttachmentUploader companyId={companyId} value={mediaAtts} onChange={(m) => patch({ attachments: [...m, ...fileAtts] })} folder="task" compact />
+
+      <p style={L}>Files {count(fileAtts.length)}</p>
+      <AttachmentUploader mode="files" companyId={companyId} value={fileAtts} onChange={(f) => patch({ attachments: [...mediaAtts, ...f] })} folder="task" />
 
       {/* Cover photo — pick one image to sit across the top of the card. */}
       {(() => {
@@ -2322,15 +2332,15 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
           : (imgs[0]?.url || '')
         return (
           <>
-            <p style={L}>Cover photo <span style={{ textTransform: 'none', fontWeight: 400, color: 'var(--slate)' }}>— first photo by default; pick another or none</span></p>
+            <p style={{ ...L, flexWrap: 'wrap' }}>Cover photo <span style={{ fontSize: 12.5, fontWeight: 400, color: '#8e8e93' }}>First photo by default. Pick another or none.</span></p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               <button onClick={() => patch({ cover_image: '' })}
-                style={{ width: 56, height: 56, borderRadius: 9, cursor: 'pointer', fontSize: 11, fontWeight: 700, border: '1px solid ' + (task.cover_image === '' ? 'var(--coral)' : 'var(--border)'), background: task.cover_image === '' ? 'var(--peach)' : '#fff', color: task.cover_image === '' ? 'var(--coral)' : 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>None</button>
+                style={{ width: 56, height: 56, borderRadius: 14, cursor: 'pointer', fontSize: 12, fontWeight: 600, border: 'none', boxShadow: task.cover_image === '' ? '0 0 0 2px var(--coral)' : 'none', background: '#f4f4f5', color: task.cover_image === '' ? 'var(--coral)' : '#52525b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }}>None</button>
               {imgs.map((a: any, i: number) => {
                 const on = a.url === effective
                 return (
                   <button key={i} onClick={() => patch({ cover_image: a.url })} title="Use as cover"
-                    style={{ position: 'relative', width: 56, height: 56, borderRadius: 9, overflow: 'hidden', cursor: 'pointer', padding: 0, border: on ? '2px solid var(--coral)' : '1px solid var(--border)', background: '#f4f4f5' }}>
+                    style={{ position: 'relative', width: 56, height: 56, borderRadius: 14, overflow: 'hidden', cursor: 'pointer', padding: 0, border: 'none', boxShadow: on ? '0 0 0 2px var(--coral)' : '0 0 0 1px rgba(0,0,0,.05)', background: '#f4f4f5' }}>
                     <img src={a.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                     {on && (
                       <span style={{ position: 'absolute', top: 2, right: 2, width: 16, height: 16, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -2361,9 +2371,9 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
         }
         return (
           <>
-            <p style={L}>Checklist{items.length > 0 ? ` — ${doneN}/${items.length}` : ''}</p>
+            <p style={L}>Checklist {items.length > 0 && <span style={{ fontSize: 12.5, fontWeight: 600, color: doneN === items.length ? '#16a34a' : '#8e8e93' }}>{doneN}/{items.length}</span>}</p>
             {items.length > 0 && (
-              <div style={{ height: 5, borderRadius: 3, background: 'var(--border)', overflow: 'hidden', marginBottom: 8 }}>
+              <div style={{ height: 6, borderRadius: 999, background: '#f0f0f2', overflow: 'hidden', marginBottom: 10 }}>
                 <div style={{ height: '100%', width: `${Math.round((doneN / items.length) * 100)}%`, background: '#22c55e', transition: 'width 0.2s' }} />
               </div>
             )}
@@ -2372,7 +2382,7 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
                 <div key={it.id || idx} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 2px' }}>
                   <input type="checkbox" checked={!!it.done}
                     onChange={() => updateItem(it, idx, { done: !it.done })}
-                    style={{ width: 16, height: 16, flexShrink: 0, cursor: 'pointer', accentColor: 'var(--coral)' }} />
+                    style={{ width: 17, height: 17, flexShrink: 0, cursor: 'pointer', accentColor: '#18181b' }} />
                   <ChecklistItemText value={it.text || ''} done={!!it.done} onCommit={text => updateItem(it, idx, { text })} />
                   <button onClick={() => setItems(items.filter((x, j) => it.id ? x.id !== it.id : j !== idx))} title="Remove"
                     style={{ border: 'none', background: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: 15, lineHeight: 1, padding: 2, flexShrink: 0 }}>×</button>
@@ -2388,40 +2398,42 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
                   e.preventDefault(); addItem()
                 }}
                 placeholder="Add a checklist item…"
-                style={{ flex: 1, padding: '8px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box' }} />
+                style={{ ...field, flex: 1 }} />
               <button onClick={addItem} disabled={!checkText.trim()}
-                style={{ padding: '8px 14px', borderRadius: 9, border: 'none', background: checkText.trim() ? 'var(--coral)' : '#eef0f2', color: checkText.trim() ? '#fff' : '#9aa1ab', fontSize: 13, fontWeight: 700, cursor: checkText.trim() ? 'pointer' : 'default' }}>Add</button>
+                style={{ height: 40, padding: '0 16px', borderRadius: 999, border: 'none', background: checkText.trim() ? 'var(--coral)' : '#f4f4f5', color: checkText.trim() ? '#fff' : '#a1a1aa', fontSize: 13.5, fontWeight: 600, cursor: checkText.trim() ? 'pointer' : 'default', fontFamily: 'inherit' }}>Add</button>
             </div>
           </>
         )
       })()}
 
       <p style={L}>Status</p>
-      <div style={{ display: 'flex', gap: 5 }}>
+      <div className="seg" style={{ display: 'flex' }}>
         {COLUMNS.map(c => { const on = curStatus === c.key; return (
-          <button key={c.key} onClick={() => patch({ status: c.key, done: c.key === 'done', completed_at: c.key === 'done' ? new Date().toISOString() : null })}
-            style={{ flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: '1px solid ' + (on ? 'var(--coral)' : 'var(--border)'), background: on ? 'var(--peach)' : '#fff', color: on ? 'var(--coral)' : 'var(--slate)' }}>{c.label}</button>
+          <button key={c.key} className={on ? 'on' : ''} onClick={() => patch({ status: c.key, done: c.key === 'done', completed_at: c.key === 'done' ? new Date().toISOString() : null })}
+            style={{ flex: 1, justifyContent: 'center', height: 34 }}>{c.label}</button>
         )})}
       </div>
       <p style={L}>Priority</p>
-      <div style={{ display: 'flex', gap: 5 }}>
+      <div className="seg" style={{ display: 'flex' }}>
         {(['high', 'normal', 'low'] as const).map(p => { const on = (task.priority || 'normal') === p; return (
-          <button key={p} onClick={() => patch({ priority: p })} style={{ flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: '1px solid ' + (on ? PRIORITY[p].color : 'var(--border)'), background: on ? PRIORITY[p].bg : '#fff', color: on ? PRIORITY[p].color : 'var(--slate)' }}>{PRIORITY[p].label}</button>
+          <button key={p} className={on ? 'on' : ''} onClick={() => patch({ priority: p })} style={{ flex: 1, justifyContent: 'center', height: 34, color: on ? PRIORITY[p].color : undefined }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: PRIORITY[p].color, flexShrink: 0 }} />{PRIORITY[p].label}
+          </button>
         )})}
       </div>
       <p style={L}>Due date</p>
-      <input type="date" value={task.due_date ? localYmd(parseTs(task.due_date) || new Date(task.due_date)) : ''} onChange={e => patch({ due_date: dueFromInput(e.target.value) })}
-        style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box' }} />
+      <input type="date" aria-label="Due date" value={task.due_date ? localYmd(parseTs(task.due_date) || new Date(task.due_date)) : ''} onChange={e => patch({ due_date: dueFromInput(e.target.value) })}
+        style={field} />
 
       <p style={L}>Colour</p>
       <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
         <button onClick={() => patch({ color: null })} title="No colour"
-          style={{ width: 26, height: 26, borderRadius: '50%', cursor: 'pointer', border: '1px solid var(--border)', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+          style={{ width: 28, height: 28, borderRadius: '50%', cursor: 'pointer', border: 'none', background: '#f4f4f5', boxShadow: !task.color ? '0 0 0 2px #fff, 0 0 0 4px #18181b' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
           {!task.color && <span style={{ width: 12, height: 2, background: 'var(--slate)', transform: 'rotate(-45deg)', position: 'absolute' }} />}
         </button>
         {TASK_COLORS.map(c => (
           <button key={c} onClick={() => patch({ color: c })} title={c}
-            style={{ width: 26, height: 26, borderRadius: '50%', cursor: 'pointer', background: c, border: task.color === c ? '2px solid var(--ink)' : '2px solid transparent', boxShadow: task.color === c ? `0 0 0 2px ${tint(c, 0.4)}` : 'none' }} />
+            style={{ width: 28, height: 28, borderRadius: '50%', cursor: 'pointer', background: c, border: 'none', boxShadow: task.color === c ? `0 0 0 2px #fff, 0 0 0 4px ${c}` : 'none' }} />
         ))}
       </div>
 
@@ -2436,8 +2448,9 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
                 return (
                   <button key={o.id} type="button"
                     onClick={() => { const next = on ? selIds.filter(x => x !== o.id) : [...selIds, o.id]; patch({ location_ids: next, location_id: next[0] || null }) }}
-                    style={{ padding: '7px 12px', borderRadius: 9, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: '1px solid ' + (on ? 'var(--coral)' : 'var(--border)'), background: on ? 'var(--peach)' : '#fff', color: on ? 'var(--coral)' : 'var(--slate)' }}>
-                    {on ? '✓ ' : ''}{o.label || o.suburb || 'Outlet'}
+                    className={'bucket-chip' + (on ? ' on' : '')} style={{ height: 34 }}>
+                    {on && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                    {o.label || o.suburb || 'Outlet'}
                   </button>
                 )
               })}
@@ -2473,29 +2486,38 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
         }} />
       <p style={L}>Linked order</p>
       {task.order_number ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', background: '#f8f9ff' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 12px 12px 14px', borderRadius: 16, background: '#fafafa', boxShadow: '0 0 0 1px rgba(0,0,0,.05)' }}>
+          <span style={{ width: 36, height: 36, borderRadius: 12, background: '#eef2ff', color: '#4338ca', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+          </span>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>#{task.order_number}</div>
-            <div style={{ fontSize: 11.5, color: 'var(--slate)' }}>{task.order_customer}{task.order_total ? ` · $${Number(task.order_total).toFixed(2)}` : ''}</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>Order #{task.order_number}</div>
+            <div style={{ fontSize: 12.5, color: '#8e8e93', marginTop: 1 }}>{task.order_customer}{task.order_total ? ` · $${Number(task.order_total).toFixed(2)}` : ''}</div>
           </div>
-          <button onClick={() => patch({ order_id: null, order_number: null, order_customer: null, order_total: null })} style={{ border: 'none', background: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>Remove</button>
+          <button className="tl-pill" onClick={() => patch({ order_id: null, order_number: null, order_customer: null, order_total: null })} style={{ height: 30, fontSize: 12.5, color: '#dc2626' }}>Remove</button>
         </div>
       ) : (
-        <button onClick={() => setShowOrderSearch(true)} style={{ width: '100%', padding: '10px', borderRadius: 9, border: '1px dashed var(--border)', background: 'var(--canvas)', color: 'var(--slate)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>+ Link to order</button>
+        <button className="tl-pill" onClick={() => setShowOrderSearch(true)} style={{ height: 36 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Link to an order
+        </button>
       )}
       {conv && (
         <>
           <p style={L}>Conversation</p>
-          <button onClick={() => router.push(`/admin/inbox?conversation=${task.conversation_id}`)} style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', background: '#fff', color: 'var(--coral)', fontSize: 13, fontWeight: 700, cursor: 'pointer', textAlign: 'left' }}>{conv.contact_name || conv.subject || 'Open conversation'} →</button>
+          <button className="tl-pill" onClick={() => router.push(`/admin/inbox?conversation=${task.conversation_id}`)} style={{ height: 36, color: 'var(--coral)' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            {conv.contact_name || conv.subject || 'Open conversation'}
+          </button>
         </>
       )}
       {task._source === 'calendar' ? (
-        <div style={{ marginTop: 18, padding: '10px 12px', borderRadius: 10, background: 'var(--canvas)', fontSize: 12, color: 'var(--slate)', lineHeight: 1.45 }}>
+        <div style={{ marginTop: 20, padding: '12px 14px', borderRadius: 16, background: '#fafafa', fontSize: 13, color: '#71717a', lineHeight: 1.5 }}>
           This {(EVENT_TYPE_META[task.event_type || 'task'] || EVENT_TYPE_META.task).label.toLowerCase()} is scheduled on the calendar. Comments are available on tasks created here in the Tasks page.
         </div>
       ) : (
       <>
-      <p style={L}>Comments{comments.length > 0 ? ` (${comments.length})` : ''}</p>
+      <p style={L}>Comments {count(comments.length)}</p>
       {(() => {
         // Newest first, and collapse to a few until "See more" is clicked.
         const ordered = [...comments].reverse()
@@ -2503,13 +2525,13 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
         const shown = showAllComments ? ordered : ordered.slice(0, PREVIEW)
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 10 }}>
-            {ordered.length === 0 && <p style={{ fontSize: 12.5, color: '#9ca3af', margin: 0 }}>No comments yet.</p>}
+            {ordered.length === 0 && <p style={{ fontSize: 13, color: '#a1a1aa', margin: 0 }}>No comments yet.</p>}
             {shown.map(c => (
               <div key={c.id} style={{ display: 'flex', gap: 9 }}>
-                <span style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{(c.author_name || '?').charAt(0).toUpperCase()}</span>
+                <span style={(() => { const h = Array.from(String(c.author_name || '?')).reduce((a: number, ch: string) => a + ch.charCodeAt(0), 0) % 360; return { width: 30, height: 30, borderRadius: '50%', background: `hsl(${h} 60% 92%)`, color: `hsl(${h} 45% 36%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 } as React.CSSProperties })()}>{(c.author_name || '?').charAt(0).toUpperCase()}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)' }}>{c.author_name} <span title={fmtExact(c.created_at)} style={{ fontWeight: 400, color: '#9ca3af' }}>· {fmtAgo(c.created_at)}</span></div>
-                  <div style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{c.body}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{c.author_name} <span title={fmtExact(c.created_at)} style={{ fontWeight: 400, color: '#a1a1aa' }}>· {fmtAgo(c.created_at)}</span></div>
+                  <div style={{ marginTop: 3, padding: '9px 12px', borderRadius: '4px 14px 14px 14px', background: '#f4f4f5', fontSize: 14, color: 'var(--ink)', lineHeight: 1.45, whiteSpace: 'pre-wrap', width: 'fit-content', maxWidth: '100%', boxSizing: 'border-box' }}>{c.body}</div>
                 </div>
               </div>
             ))}
@@ -2525,9 +2547,9 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
       {/* Coax-style composer: rounded input with the submit tucked into the
           corner, matching the Inbox notes/tasks composer. */}
       <div style={{ position: 'relative' }}>
-        <MentionInput value={comment} onChange={(v) => setComment(v)} team={team as any} placeholder="Add a comment… @ to mention" onSubmit={addComment} style={{ fontSize: 13, padding: '11px 46px 11px 13px', borderRadius: 12, lineHeight: 1.5 }} />
+        <MentionInput value={comment} onChange={(v) => setComment(v)} team={team as any} placeholder="Add a comment… @ to mention" onSubmit={addComment} style={{ fontSize: 14, padding: '11px 48px 11px 14px', borderRadius: 16, lineHeight: 1.5, background: '#f4f4f5', border: '1.5px solid transparent' }} />
         <button type="button" onClick={addComment} title="Comment" disabled={!comment.trim()}
-          style={{ position: 'absolute', right: 8, bottom: 8, width: 30, height: 30, borderRadius: '50%', border: 'none', background: comment.trim() ? 'var(--coral)' : '#eef0f2', color: comment.trim() ? '#fff' : '#9aa1ab', cursor: comment.trim() ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, transition: 'all 0.14s', boxShadow: comment.trim() ? '0 1px 4px rgba(255,122,107,0.4)' : 'none' }}>
+          style={{ position: 'absolute', right: 8, bottom: 8, width: 32, height: 32, borderRadius: '50%', border: 'none', background: comment.trim() ? 'var(--coral)' : '#e4e4e7', color: comment.trim() ? '#fff' : '#a1a1aa', cursor: comment.trim() ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, transition: 'all 0.14s' }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></svg>
         </button>
       </div>
@@ -2535,28 +2557,29 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
       )}
 
       {/* Linked notes — attach one or more Notes to this task. */}
-      <p style={{ ...L, marginTop: 18 }}>Linked notes</p>
+      <p style={L}>Linked notes {count(linkedNotes.length)}</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginBottom: 8 }}>
-        {linkedNotes.length === 0 && <p style={{ fontSize: 12.5, color: '#9ca3af', margin: 0 }}>No notes linked.</p>}
+
         {linkedNotes.map(n => (
-          <div key={n.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px', borderRadius: 9, border: '1px solid var(--border)', background: '#fff' }}>
+          <div key={n.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 8px 9px 12px', borderRadius: 14, background: '#fafafa', boxShadow: '0 0 0 1px rgba(0,0,0,.05)' }}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
             <button onClick={() => router.push(`/admin/notes?open=${n.id}`)} title="Open note"
               style={{ flex: 1, minWidth: 0, textAlign: 'left', border: 'none', background: 'none', color: 'var(--ink)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', padding: 0 }}>{n.title || 'Untitled note'}</button>
-            <button onClick={() => unlinkNote(n.id)} title="Unlink" style={{ background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', fontSize: 16, lineHeight: 1, flexShrink: 0 }}>×</button>
+            <button className="tl-pill icon" onClick={() => unlinkNote(n.id)} title="Unlink" aria-label="Unlink note" style={{ width: 28, height: 28, minWidth: 28, background: 'transparent', color: '#71717a' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
           </div>
         ))}
       </div>
       <div style={{ position: 'relative' }} ref={notePickerRef}>
-        <button onClick={() => setNotePicker(v => !v)}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px dashed var(--border)', background: 'var(--canvas)', color: 'var(--coral)', fontSize: 13, fontWeight: 700, cursor: 'pointer', padding: '8px 12px', borderRadius: 9 }}>
+        <button className="tl-pill" onClick={() => setNotePicker(v => !v)} aria-expanded={notePicker} style={{ height: 36 }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Link a note
         </button>
         {notePicker && (
-          <div style={{ position: 'absolute', top: '110%', left: 0, zIndex: 41, width: 300, maxWidth: '90vw', background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 14px 34px rgba(0,0,0,0.18)', padding: 8 }}>
+          <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 41, width: 300, maxWidth: '90vw', background: '#fff', borderRadius: 16, boxShadow: '0 16px 44px rgba(0,0,0,.14), 0 0 0 1px rgba(0,0,0,.05)', padding: 6 }}>
             <input autoFocus value={noteQuery} onChange={e => setNoteQuery(e.target.value)} placeholder="Search notes…"
-              style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none', marginBottom: 6 }} />
+              style={{ ...field, height: 36, borderRadius: 999, marginBottom: 6 }} />
             <div style={{ maxHeight: 240, overflowY: 'auto' }}>
               {(() => {
                 const q = noteQuery.trim().toLowerCase()
@@ -2577,7 +2600,7 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
       </div>
 
       {/* Card history — status moves, assignments, edits, and when it was created. */}
-      <p style={{ ...L, marginTop: 18 }}>Activity</p>
+      <p style={L}>Activity</p>
       {(() => {
         const dot: Record<string, string> = { status: '#2563eb', assignee: '#7c3aed', priority: '#ea580c', due: '#0891b2', checklist: '#16a34a', edit: '#6b7280' }
         const created = task.created_at
@@ -2620,12 +2643,12 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
         )
       })()}
 
-      <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start' }}>
+      <div style={{ marginTop: 22, paddingTop: 18, borderTop: '1px solid #f0f0f2', display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
         {isSeries && onEndRepeatNew && (
           <button onClick={async () => {
             if (!await confirmDialog('End the repeat at this card (this and all following cards are removed) and start a new repeat from here?')) return
             await onEndRepeatNew()
-          }} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #0e7490', background: '#ecfeff', color: '#0e7490', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: '8px 12px', borderRadius: 9 }}>
+          }} className="tl-pill" style={{ height: 36, background: '#ecfeff', color: '#0e7490' }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
             End repeat here &amp; create new…
           </button>
@@ -2635,7 +2658,8 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
           if (!await confirmDialog(`Delete ${label}?`)) return
           await onDeleteScoped(isSeries ? scope : 'this')
           onDeleted()
-        }} style={{ border: 'none', background: 'none', color: '#dc2626', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: 0 }}>
+        }} className="tl-pill" style={{ height: 36, background: '#fef2f2', color: '#dc2626' }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
           {isSeries ? (scope === 'all' ? 'Delete all in series' : scope === 'following' ? 'Delete this & following' : 'Delete this card') : 'Delete task'}
         </button>
       </div>

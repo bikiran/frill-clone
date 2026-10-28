@@ -914,8 +914,8 @@ export default function OrdersPage() {
         .ord-pill, .ord-select { flex-shrink: 0; height: 38px; display: inline-flex; align-items: center; gap: 7px; padding: 0 14px; border: none; border-radius: 999px; background: #f4f4f5; color: #18181b; font: inherit; font-size: 13.5px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background .15s ease, color .15s ease; }
         .ord-pill::before { display: none; }
         .ord-pill > svg { color: #71717a; flex-shrink: 0; }
-        .ord-pill:hover, .ord-select:hover, .ord-pill[aria-expanded="true"] { background: #ececef; }
-        .ord-pill.set, .ord-select.set { background: color-mix(in srgb, var(--ord-accent) 12%, #fff); color: color-mix(in srgb, var(--ord-accent) 85%, #000); }
+        .ord-pill:hover, .ord-select:hover, .ord-pill[aria-expanded="true"] { background-color: #ececef; }
+        .ord-pill.set, .ord-select.set { background-color: color-mix(in srgb, var(--ord-accent) 12%, #fff); color: color-mix(in srgb, var(--ord-accent) 85%, #000); }
         .ord-pill.set > svg { color: currentColor; }
         .ord-pill .cv-chev { margin-right: -3px; }
         .ord-pill.danger { background: #fef2f2; color: #dc2626; }
