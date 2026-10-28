@@ -51,64 +51,75 @@ export default function SocialCategoriesPage() {
     } catch {} finally { setSavingId(s => s === cat.id ? null : s) }
   }
 
-  if (loading || loadingData) return <div style={{ padding: 40, color: 'var(--slate)' }}>Loading categories…</div>
+  if (loading || loadingData) return <div style={{ padding: 40, color: '#8e8e93' }}>Loading categories…</div>
+
+  const toggle = (on: boolean, onClick: () => void, label: string) => (
+    <button type="button" role="switch" aria-checked={on} aria-label={label} className={'sc-switch' + (on ? ' on' : '')} onClick={onClick}><span /></button>
+  )
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 1200, margin: '0 auto' }}>
+    <div className="sc">
       <style>{`
-        .sc-toggle { position: relative; width: 40px; height: 23px; border-radius: 999px; border: none; cursor: pointer; transition: background .18s; flex-shrink: 0; }
-        .sc-toggle .knob { position: absolute; top: 2.5px; left: 2.5px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .18s; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
-        .sc-ta { width: 100%; box-sizing: border-box; margin-top: 8px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); font-size: 12.5px; line-height: 1.5; resize: vertical; outline: none; font-family: inherit; color: var(--ink); }
-        .sc-ta:focus { border-color: var(--coral); }
-        .sc-card { transition: box-shadow .16s ease, transform .16s ease; }
-        .sc-card:hover { box-shadow: 0 8px 24px rgba(0,0,0,0.07); }
+        .sc { padding: 24px 28px 48px; max-width: 1200px; margin: 0 auto; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); }
+        .sc button::before { display: none; }
+        .sc-back { display: inline-flex; align-items: center; gap: 4px; height: 32px; padding: 0 14px 0 10px; margin-bottom: 14px; border-radius: 999px; background: #f4f4f5; color: #3f3f46; font-size: 13.5px; font-weight: 600; text-decoration: none; }
+        .sc-back:hover { background: #ececef; color: #18181b; }
+        .sc h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -.025em; line-height: 1.15; }
+        .sc-lead { margin: 6px 0 22px; font-size: 14px; color: #71717a; line-height: 1.55; max-width: 720px; }
+        .sc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+        .sc-card { background: #fff; border-radius: 20px; padding: 18px 20px; box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 1px 2px rgba(16,24,40,.04); transition: box-shadow .16s ease; }
+        .sc-card:hover { box-shadow: 0 0 0 1px rgba(0,0,0,.07), 0 10px 24px -14px rgba(0,0,0,.3); }
+        .sc-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .sc-top b { font-size: 16px; font-weight: 700; }
+        .sc-count { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; padding: 0 9px; border-radius: 999px; background: #f4f4f5; color: #52525b; font-size: 12.5px; font-weight: 700; }
+        .sc-count.on { background: color-mix(in srgb, var(--coral) 12%, #fff); color: color-mix(in srgb, var(--coral) 85%, #000); }
+        .sc-state { margin: 3px 0 14px; font-size: 12.5px; color: #8e8e93; }
+        .sc-opt { padding: 14px 0 0; border-top: 1px solid #f0f0f2; }
+        .sc-opt + .sc-opt { margin-top: 14px; }
+        .sc-opt-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+        .sc-opt-row b { display: block; margin-bottom: 3px; font-size: 14px; font-weight: 600; }
+        .sc-opt-row small { display: block; font-size: 12.5px; color: #71717a; line-height: 1.45; }
+        .sc-switch { position: relative; width: 44px; height: 26px; flex-shrink: 0; border: none; border-radius: 999px; background: #d4d4d8; cursor: pointer; padding: 0; transition: background-color .2s; }
+        .sc-switch span { position: absolute; top: 2px; left: 2px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .2s cubic-bezier(.22,1,.36,1); }
+        .sc-switch.on { background: #34c759; }
+        .sc-switch.on span { transform: translateX(18px); }
+        .sc-switch:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 28%, transparent); }
+        .sc-ta { width: 100%; box-sizing: border-box; margin-top: 10px; padding: 11px 14px; border-radius: 14px; border: 1.5px solid transparent; background-color: #f4f4f5; font-size: 13.5px; line-height: 1.5; resize: vertical; outline: none; font-family: inherit; color: var(--ink); transition: background-color .15s, border-color .15s, box-shadow .15s; }
+        .sc-ta:focus { background-color: #fff; border-color: #d4d4d8 !important; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 16%, transparent); }
+        @media (max-width: 560px) { .sc { padding: 16px 14px 36px; } .sc h1 { font-size: 25px; } .sc-grid { grid-template-columns: 1fr; } }
       `}</style>
 
-      {/* Breadcrumb */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--slate)', marginBottom: 10 }}>
-        <Link href="/admin/social" style={{ color: 'var(--coral)', textDecoration: 'none', fontWeight: 600 }}>Social Engagement Manager</Link>
-        <span>/</span>
-        <span>Categories</span>
-      </div>
-
-      <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: '0 0 6px' }}>Social Comments Category</h1>
-      <p style={{ margin: '0 0 18px', fontSize: 13.5, color: 'var(--slate)', lineHeight: 1.55, maxWidth: 760 }}>
-        Manage and organize categories for your social comments to streamline your engagement workflow. Easily filter,
-        group, and analyze comments by category to enhance your social media management experience.
+      <Link href="/admin/social" className="sc-back">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+        Social engagement
+      </Link>
+      <h1>Comment categories</h1>
+      <p className="sc-lead">
+        Colvy sorts each comment into a category. For each one, choose whether AI replies publicly or messages the person privately, and tell it how.
       </p>
 
-      <Link href="/admin/social" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: 'var(--ink)', textDecoration: 'none', border: '1px solid var(--border)', borderRadius: 10, padding: '8px 14px', marginBottom: 22 }}>
-        ← Back to Social Engagement Manager
-      </Link>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16 }}>
+      <div className="sc-grid">
         {cats.map(cat => (
-          <div key={cat.id} className="sc-card" style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '16px 18px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 4 }}>
-              <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--ink)' }}>{cat.name}</span>
-              <span style={{ fontSize: 12, fontWeight: 800, padding: '2px 10px', borderRadius: 999, background: cat.count ? 'var(--peach)' : '#f3f4f6', color: cat.count ? 'var(--coral)' : 'var(--slate)' }}>{cat.count}</span>
+          <div key={cat.id} className="sc-card">
+            <div className="sc-top">
+              <b>{cat.name}</b>
+              <span className={'sc-count' + (cat.count ? ' on' : '')}>{cat.count}</span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--slate)', marginBottom: 12 }}>
-              {savingId === cat.id ? 'Saving…' : savedId === cat.id ? <span style={{ color: '#16a34a', fontWeight: 700 }}>Saved ✓</span> : `${cat.count} comment${cat.count === 1 ? '' : 's'}`}
-            </div>
+            <p className="sc-state">
+              {savingId === cat.id ? 'Saving…' : savedId === cat.id ? <span style={{ color: '#16a34a', fontWeight: 600 }}>Saved</span> : `${cat.count} comment${cat.count === 1 ? '' : 's'}`}
+            </p>
 
             {/* Reply to comments */}
-            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+            <div className="sc-opt">
+              <div className="sc-opt-row">
                 <div>
-                  <p style={{ margin: '0 0 3px', fontSize: 13, fontWeight: 800, color: 'var(--ink)' }}>Reply to comments</p>
-                  <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.45 }}>
-                    Use AI-powered responses to engage with customers, address concerns, and foster positive interactions.
-                  </p>
+                  <b>Reply to comments</b>
+                  <small>AI replies publicly to answer questions, handle concerns and keep things positive.</small>
                 </div>
-                <button className="sc-toggle" style={{ background: cat.reply_ai_enabled ? 'var(--coral)' : '#d1d5db' }}
-                  onClick={() => save(cat, { reply_ai_enabled: !cat.reply_ai_enabled })}
-                  aria-label="Toggle AI replies">
-                  <span className="knob" style={{ transform: cat.reply_ai_enabled ? 'translateX(17px)' : 'none' }} />
-                </button>
+                {toggle(cat.reply_ai_enabled, () => save(cat, { reply_ai_enabled: !cat.reply_ai_enabled }), 'AI replies')}
               </div>
               {cat.reply_ai_enabled && (
-                <textarea className="sc-ta" rows={3} placeholder="How should AI reply to these comments? (tone, key info, do's & don'ts)"
+                <textarea className="sc-ta" rows={3} placeholder="How should AI reply to these comments? Tone, key info, things to avoid."
                   value={cat.reply_guidelines || ''}
                   onChange={e => patch(cat.id, { reply_guidelines: e.target.value })}
                   onBlur={e => save(cat, { reply_guidelines: e.target.value })} />
@@ -116,22 +127,16 @@ export default function SocialCategoriesPage() {
             </div>
 
             {/* DM Users */}
-            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+            <div className="sc-opt">
+              <div className="sc-opt-row">
                 <div>
-                  <p style={{ margin: '0 0 3px', fontSize: 13, fontWeight: 800, color: 'var(--ink)' }}>DM Users</p>
-                  <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.45 }}>
-                    Empower AI to DM users by providing detailed response guidelines — enhance engagement with intelligent, automated interactions.
-                  </p>
+                  <b>Message the commenter</b>
+                  <small>AI sends the person a private message, following the guidelines you give it.</small>
                 </div>
-                <button className="sc-toggle" style={{ background: cat.dm_enabled ? 'var(--coral)' : '#d1d5db' }}
-                  onClick={() => save(cat, { dm_enabled: !cat.dm_enabled })}
-                  aria-label="Toggle AI DMs">
-                  <span className="knob" style={{ transform: cat.dm_enabled ? 'translateX(17px)' : 'none' }} />
-                </button>
+                {toggle(cat.dm_enabled, () => save(cat, { dm_enabled: !cat.dm_enabled }), 'AI private messages')}
               </div>
               {cat.dm_enabled && (
-                <textarea className="sc-ta" rows={3} placeholder="How should AI DM these users? (what to offer, tone, when to escalate)"
+                <textarea className="sc-ta" rows={3} placeholder="How should AI message these people? What to offer, tone, when to hand over to you."
                   value={cat.dm_guidelines || ''}
                   onChange={e => patch(cat.id, { dm_guidelines: e.target.value })}
                   onBlur={e => save(cat, { dm_guidelines: e.target.value })} />
