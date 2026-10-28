@@ -10,6 +10,7 @@ import ColvyAppDemo from '@/components/ColvyAppDemo'
 import TeamInboxDemo from '@/components/marketing/TeamInboxDemo'
 import ChannelFlow from '@/components/marketing/ChannelFlow'
 import IndustryCarousel from '@/components/marketing/IndustryCarousel'
+import HowItWorks from '@/components/marketing/HowItWorks'
 import ScrollStory from '@/components/ScrollStory'
 import MarketingFooter from '@/components/MarketingFooter'
 import MarketingNav from '@/components/MarketingNav'
@@ -386,7 +387,6 @@ export default function LandingPage() {
         @keyframes popIn { 0%{opacity:0;transform:scale(0.9) translateY(10px)} 100%{opacity:1;transform:scale(1) translateY(0)} }
         @keyframes blink { 0%,100%{opacity:0.25} 50%{opacity:1} }
         @keyframes wordIn { from{opacity:0;transform:translateY(0.4em)} to{opacity:1;transform:translateY(0)} }
-        @keyframes hiwFill { from{width:0%} to{width:100%} }
         @keyframes livePing { 0%{transform:scale(1);opacity:.55} 80%,100%{transform:scale(2.6);opacity:0} }
         .cv-btn-primary:hover { transform:translateY(-2px); box-shadow:0 16px 42px ${CORAL}66; }
         .cv-btn-primary,.cv-btn-ghost,.cv-card,.cv-navlink { transition:all 0.22s cubic-bezier(0.16,1,0.3,1); }
@@ -398,7 +398,7 @@ export default function LandingPage() {
         .cv-suite-card:hover { transform:translateY(-6px) !important; box-shadow:0 40px 90px rgba(15,17,25,0.42) !important; }
         .cv-sm{ display:none; }
         @media (max-width:900px){ .cv-prof-head{ grid-template-columns:1fr !important; align-items:start !important; } .cv-hero{ flex-direction:column !important; align-items:stretch !important; } .cv-big-row{ grid-template-columns:1fr !important; } .cv-hero-grid{ grid-template-columns:1fr !important; } .cv-desktop{ display:none !important; } .cv-mobile-toggle{ display:flex !important; } .cv-bubbles{ display:none !important; } .cv-brand-huge{ font-size:64px !important; } .cv-trust{ position:static !important; margin-top:32px; bottom:auto !important; width:100% !important; } .cv-lg{ display:none !important; } .cv-sm{ display:inline !important; } .cv-hero-cta{ flex-wrap:nowrap !important; } .cv-hero-cta > *{ flex:1 1 0 !important; min-width:0 !important; justify-content:center !important; padding-left:14px !important; padding-right:14px !important; white-space:nowrap !important; } }
-        @media (prefers-reduced-motion: reduce){ .cv-marquee-track{ animation:none } [class*="cv-float"]{ animation:none !important } .cv-live-ring{ animation:none !important } .cv-hiw-bar{ animation:none !important; width:100% !important } }
+        @media (prefers-reduced-motion: reduce){ .cv-marquee-track{ animation:none } [class*="cv-float"]{ animation:none !important } .cv-live-ring{ animation:none !important } }
         /* Below the fold: let the browser skip layout/paint (and pause the CSS
            animations) of sections until they're near the viewport. */
         .cv-root > section:nth-of-type(n+3), .cv-root > #features > section, .cv-root > footer { content-visibility:auto; contain-intrinsic-size:auto 760px; }
@@ -601,7 +601,7 @@ export default function LandingPage() {
       <FeatureSuite dark={dark} text={text} muted={muted} cardBorder={cardBorder} canvas={canvas} />
 
       {/* SEE HOW IT WORKS — interactive, clickable, animated (full-bleed) */}
-      <HowItWorks dark={dark} cardBorder={cardBorder} />
+      <HowItWorks />
 
 
       {/* STATS — full-bleed bold band, auto-sliding through real metrics */}
@@ -673,97 +673,6 @@ function BookingMock({ color, text, muted, cardBg, border }: { color: string; te
     </div>
   )
 }
-// ── See how it works: clickable step list drives an animated phone ───────────
-type Step = { title: string; desc: string; href: string; channel: string; who: string; color: string; bubbles: { side: 'them' | 'me' | 'system'; text: string; kind?: 'text' | 'image' | 'pill' | 'system' }[] }
-const HIW_STEPS: Step[] = [
-  { title: 'Every channel in one inbox', desc: 'Instagram, Messenger, email & SMS — one thread.', href: '/inbox-crm', channel: 'Instagram', who: 'Sam Rivera', color: '#E1306C',
-    bubbles: [{ side: 'them', text: 'Hi! Do you still have the 4ft reef tank in stock? 🐠' }, { side: 'me', text: 'Hey Sam! Yes — 2 left.' }] },
-  { title: 'Reply with media from your gallery', desc: 'Send saved photos & videos in a tap — mark up a photo or trim a video first.', href: '/inbox-crm#gallery', channel: 'Instagram', who: 'Sam Rivera', color: '#E1306C',
-    bubbles: [{ side: 'them', text: 'Can you show me one?' }, { side: 'me', text: '', kind: 'image' }, { side: 'me', text: 'Here it is 📸' }] },
-  { title: 'Take the payment in chat', desc: 'Send a payment link or record any method — right here.', href: '/inbox-crm#woo', channel: 'Instagram', who: 'Sam Rivera', color: '#E1306C',
-    bubbles: [{ side: 'me', text: 'Sent you a payment link 💳' }, { side: 'them', text: "I've sent the payment 🙌" }, { side: 'me', text: 'Order #123466 · Paid ✅', kind: 'pill' }] },
-  { title: 'Record the sale', desc: 'Log the revenue Colvy helped you make — even off-Stripe.', href: '/inbox-crm#woo', channel: 'Instagram', who: 'Sam Rivera', color: '#E1306C',
-    bubbles: [{ side: 'me', text: 'Sale recorded · $385 · Bank transfer', kind: 'pill' }, { side: 'system', text: 'Credited to you · added to Revenue via Colvy', kind: 'system' }] },
-  { title: 'Automate the follow-up', desc: 'Auto-reply, assign a task and schedule the next nudge.', href: '/inbox-crm#tasks', channel: 'Instagram', who: 'Sam Rivera', color: '#E1306C',
-    bubbles: [{ side: 'system', text: 'Task created · Ship 4ft reef tank', kind: 'system' }, { side: 'system', text: 'Follow-up scheduled in 3 days', kind: 'system' }, { side: 'me', text: "Thanks Sam! We'll have this on its way today 🚚" }] },
-]
-
-function HowItWorks({ dark, cardBorder }: { dark: boolean; cardBorder: string }) {
-  const [active, setActive] = useState(0)
-  // Auto-advance continuously. Keying the timer on `active` means a click simply
-  // jumps to that step and the cycle carries on from there (full dwell time),
-  // rather than pausing.
-  useEffect(() => {
-    const t = setTimeout(() => setActive(a => (a + 1) % HIW_STEPS.length), 4200)
-    return () => clearTimeout(t)
-  }, [active])
-  const pick = (i: number) => setActive(i)
-  const step = HIW_STEPS[active]
-
-  return (
-    <section style={{ position: 'relative', background: '#0a0b10', padding: 'clamp(64px, 9vw, 120px) 24px', overflow: 'hidden' }}>
-      {/* A faint dot grid and one warm light behind the phone: depth without decoration. */}
-      <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(rgba(255,255,255,0.075) 1px, transparent 1px)', backgroundSize: '22px 22px', WebkitMaskImage: 'radial-gradient(ellipse 75% 65% at 50% 45%, #000 25%, transparent 75%)', maskImage: 'radial-gradient(ellipse 75% 65% at 50% 45%, #000 25%, transparent 75%)' }} />
-      <div aria-hidden className="cv-hiw-glow" style={{ position: 'absolute', right: '6%', top: '24%', width: 460, height: 460, borderRadius: '50%', background: `radial-gradient(circle, ${CORAL}2e, transparent 65%)` }} />
-      <div style={{ position: 'relative', maxWidth: 1200, margin: '0 auto' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap', marginBottom: 'clamp(28px, 4vw, 52px)' }}>
-          <div>
-            <p style={{ margin: '0 0 14px', fontFamily: MONO, fontSize: 12, letterSpacing: '0.16em', textTransform: 'uppercase', color: CORAL }}>How it works</p>
-            <h2 style={{ margin: 0, color: '#fff', fontSize: 'clamp(32px, 4.8vw, 56px)', fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 1.02 }}>One conversation,<br />start to finish.</h2>
-          </div>
-          <p aria-live="polite" style={{ margin: 0, fontFamily: MONO, fontSize: 12, letterSpacing: '0.06em', color: 'rgba(255,255,255,0.45)', fontVariantNumeric: 'tabular-nums' }}>
-            {String(active + 1).padStart(2, '0')} / {String(HIW_STEPS.length).padStart(2, '0')}
-          </p>
-        </div>
-
-        <div className="cv-hiw" style={{ display: 'grid', gridTemplateColumns: '1.05fr 0.95fr', gap: 'clamp(32px, 5vw, 80px)', alignItems: 'center' }}>
-          {/* Left: the steps as an index — number, title, and the open one's detail */}
-          <div>
-            <ol style={{ listStyle: 'none', margin: 0, padding: 0, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-              {HIW_STEPS.map((s, i) => {
-                const on = i === active
-                return (
-                  <li key={s.title} style={{ position: 'relative', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                    <button onClick={() => pick(i)} aria-expanded={on}
-                      style={{ display: 'grid', gridTemplateColumns: '46px 1fr auto', alignItems: 'baseline', width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: '19px 0', color: '#fff', font: 'inherit' }}>
-                      <span style={{ fontFamily: MONO, fontSize: 12.5, color: on ? CORAL : 'rgba(255,255,255,0.32)', fontVariantNumeric: 'tabular-nums', transition: 'color 0.25s' }}>{String(i + 1).padStart(2, '0')}</span>
-                      <span style={{ fontSize: 'clamp(17px, 1.9vw, 21px)', fontWeight: 800, letterSpacing: '-0.015em', lineHeight: 1.25, color: on ? '#fff' : 'rgba(255,255,255,0.5)', transition: 'color 0.25s' }}>{s.title}</span>
-                      <span aria-hidden style={{ fontFamily: MONO, fontSize: 18, lineHeight: 1, marginLeft: 12, color: on ? CORAL : 'rgba(255,255,255,0.25)', transform: on ? 'rotate(45deg)' : 'none', transition: 'transform 0.3s, color 0.25s' }}>+</span>
-                    </button>
-                    <div style={{ display: 'grid', gridTemplateRows: on ? '1fr' : '0fr', transition: 'grid-template-rows 0.35s ease' }}>
-                      <div style={{ overflow: 'hidden' }}>
-                        <div style={{ padding: '0 0 20px 46px' }}>
-                          <p style={{ margin: '0 0 12px', fontSize: 15, lineHeight: 1.55, color: 'rgba(255,255,255,0.66)', maxWidth: 440 }}>{s.desc}</p>
-                          <a href={s.href} tabIndex={on ? 0 : -1} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontFamily: MONO, fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#fff', textDecoration: 'none', paddingBottom: 3, borderBottom: `1px solid ${CORAL}` }}>
-                            Check it out
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
-                          </a>
-                        </div>
-                      </div>
-                    </div>
-                    {/* This step's time on screen, drawn along its own rule. */}
-                    {on && <span key={`run-${active}`} aria-hidden className="cv-hiw-bar" style={{ position: 'absolute', left: 0, bottom: -1, height: 2, width: 0, background: CORAL, boxShadow: `0 0 12px ${CORAL}`, animation: 'hiwFill 4.2s linear forwards' }} />}
-                  </li>
-                )
-              })}
-            </ol>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 18, marginTop: 30, flexWrap: 'wrap' }}>
-              <InviteCta cta={{ id: 'home_agents_start_free', location: 'home' }} href="/signup" style={{ display: 'inline-flex', alignItems: 'center', gap: 10, padding: '14px 24px', borderRadius: 12, background: CORAL, color: '#fff', fontWeight: 800, fontSize: 15, textDecoration: 'none', boxShadow: `0 12px 32px ${CORAL}40` }}>Get started free</InviteCta>
-              <span style={{ fontFamily: MONO, fontSize: 12, letterSpacing: '0.04em', color: 'rgba(255,255,255,0.45)' }}>Free to start · no card</span>
-            </div>
-          </div>
-
-          {/* Right: the conversation itself */}
-          <div style={{ position: 'relative' }}>
-            <PhoneMock step={step} activeKey={active} border={cardBorder} />
-          </div>
-        </div>
-      </div>
-      <style>{`@media (max-width:900px){ .cv-hiw{ grid-template-columns:1fr !important; } .cv-hiw-glow{ right:-20% !important; top:auto !important; bottom:4% } }`}</style>
-    </section>
-  )
-}
-
 // Hero social proof: real numbers only, set like an instrument read-out.
 const CHANNEL_GLYPHS: { name: string; path: React.ReactNode }[] = [
   { name: 'Instagram', path: <><rect x="3" y="3" width="18" height="18" rx="5" /><circle cx="12" cy="12" r="4" /><circle cx="17.5" cy="6.5" r="0.8" fill="currentColor" /></> },
@@ -806,58 +715,6 @@ function ProofStrip({ dark, teams, messages, text, muted, border }: { dark: bool
         <span style={label}>One inbox</span>
       </div>
       <style>{`@media (max-width:420px){ .cv-proof > div{ padding:10px 11px !important } }`}</style>
-    </div>
-  )
-}
-
-function PhoneMock({ step, activeKey, border }: { step: Step; activeKey: number; border: string }) {
-  return (
-    <div style={{ alignSelf: 'center', position: 'relative', width: 'min(300px, 100%)' }}>
-      {/* side buttons */}
-      <span aria-hidden style={{ position: 'absolute', left: -3, top: 132, width: 3, height: 30, borderRadius: 2, background: '#05060a' }} />
-      <span aria-hidden style={{ position: 'absolute', left: -3, top: 176, width: 3, height: 54, borderRadius: 2, background: '#05060a' }} />
-      <span aria-hidden style={{ position: 'absolute', left: -3, top: 240, width: 3, height: 54, borderRadius: 2, background: '#05060a' }} />
-      <span aria-hidden style={{ position: 'absolute', right: -3, top: 200, width: 3, height: 78, borderRadius: 2, background: '#05060a' }} />
-      {/* titanium frame */}
-      <div style={{ position: 'relative', background: 'linear-gradient(145deg, #2a2c35, #0b0c12 60%)', borderRadius: 48, padding: 5, boxShadow: '0 50px 110px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06) inset' }}>
-        <div style={{ background: '#05060a', borderRadius: 44, padding: 8 }}>
-          <div style={{ position: 'relative', background: '#f6f7fb', borderRadius: 38, overflow: 'hidden', aspectRatio: '295 / 620', display: 'flex', flexDirection: 'column' }}>
-            {/* dynamic island */}
-            <div aria-hidden style={{ position: 'absolute', top: 9, left: '50%', transform: 'translateX(-50%)', width: 86, height: 26, borderRadius: 999, background: '#05060a', zIndex: 3 }} />
-            {/* Colvy app bar (branding) */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '40px 15px 10px', background: '#fff' }}>
-              <img src="/icon-192.png" alt="" width={24} height={24} style={{ borderRadius: 7, display: 'block', flexShrink: 0 }} />
-              <span style={{ fontSize: 14.5, fontWeight: 900, color: INK, letterSpacing: '-0.02em' }}>Colvy</span>
-              <span style={{ fontSize: 11, color: 'rgba(15,17,25,0.62)', fontWeight: 600 }}>Inbox</span>
-              <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10.5, fontWeight: 800, color: '#166534', background: '#dcfce7', padding: '3px 9px', borderRadius: 999 }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a' }} />Live</span>
-            </div>
-            {/* contact row */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 15px', background: '#fff', borderBottom: `1px solid ${border}` }}>
-              <span style={{ width: 32, height: 32, borderRadius: '50%', background: `linear-gradient(135deg, ${CORAL}, ${PURPLE})`, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12 }}>SR</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: 0, fontSize: 13.5, fontWeight: 800, color: INK }}>{step.who}</p>
-                <p style={{ margin: 0, fontSize: 11, color: 'rgba(15,17,25,0.64)', display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: '50%', background: step.color }} />via {step.channel}</p>
-              </div>
-            </div>
-            {/* bubbles (re-mount on step change for the entry animation) */}
-            <div key={activeKey} style={{ flex: 1, padding: '14px 13px', display: 'flex', flexDirection: 'column', gap: 9, overflow: 'hidden' }}>
-              {step.bubbles.map((b, i) => {
-                const anim = { animation: `popIn 0.45s cubic-bezier(0.16,1,0.3,1) ${i * 0.18}s both` }
-                if (b.kind === 'system') return (<div key={i} style={{ ...anim, alignSelf: 'center', maxWidth: '92%', textAlign: 'center', fontSize: 11.5, fontWeight: 700, color: 'rgba(15,17,25,0.55)', background: '#eef1f6', padding: '7px 12px', borderRadius: 12 }}>{b.text}</div>)
-                if (b.kind === 'pill') return (<div key={i} style={{ ...anim, alignSelf: 'flex-end', display: 'inline-flex', alignItems: 'center', gap: 7, background: GREEN, color: '#fff', fontSize: 12, fontWeight: 800, padding: '9px 13px', borderRadius: 999 }}>{b.text}</div>)
-                if (b.kind === 'image') return (<div key={i} style={{ ...anim, alignSelf: 'flex-end', width: 140, height: 98, borderRadius: '14px 14px 4px 14px', overflow: 'hidden', border: `1px solid ${border}` }}><img src="https://images.unsplash.com/photo-1520302630591-fd1c66edc19d?w=300&q=75&auto=format&fit=crop" alt="Reef tank" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /></div>)
-                const me = b.side === 'me'
-                return (<div key={i} style={{ ...anim, alignSelf: me ? 'flex-end' : 'flex-start', maxWidth: '82%', padding: '10px 13px', borderRadius: me ? '15px 15px 4px 15px' : '15px 15px 15px 4px', background: me ? CORAL : '#fff', color: me ? '#fff' : INK, border: me ? 'none' : `1px solid ${border}`, fontSize: 13, fontWeight: 600, lineHeight: 1.45, boxShadow: me ? 'none' : '0 4px 14px rgba(15,17,25,0.05)' }}>{b.text}</div>)
-              })}
-            </div>
-            {/* composer */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 13px 14px', background: '#fff', borderTop: `1px solid ${border}` }}>
-              <span style={{ flex: 1, fontSize: 12, color: 'rgba(15,17,25,0.6)', background: '#f1f3f8', padding: '9px 12px', borderRadius: 999 }}>Reply to Sam…</span>
-              <span style={{ width: 30, height: 30, borderRadius: '50%', background: CORAL, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg></span>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   )
 }
