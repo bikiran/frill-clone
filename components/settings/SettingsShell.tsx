@@ -81,12 +81,12 @@ export default function SettingsShell({ children, top }: { children: ReactNode; 
         .st-search { width: 100%; box-sizing: border-box; height: 38px; margin: 0 0 8px; padding: 0 12px; border-radius: 11px; border: none; background: #f4f4f5; font: inherit; font-size: 14px; color: #111; outline: none; }
         .st-search:focus { box-shadow: 0 0 0 2px color-mix(in srgb, var(--coral) 35%, transparent); }
         .st-group { margin: 14px 0 4px; padding: 0 10px; font-size: 13px; font-weight: 500; color: #8e8e93; }
-        .st-item { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 11px; color: #27272a; text-decoration: none; font-size: 15px; font-weight: 500; transition: background .12s; }
-        .st-item:hover { background: #f4f4f5; }
+        .st-item { display: flex; align-items: center; gap: 12px; margin-bottom: 2px; padding: 8px 10px; border-radius: 11px; color: #27272a; text-decoration: none; font-size: 15px; font-weight: 500; transition: background .12s; }
+        .st-item:hover { background: #f7f7f8; }
         .st-item .st-ic { color: #52525b; display: flex; }
-        .st-item.on { background: #f4f4f5; color: #111; font-weight: 650; }
+        .st-item.on { background: #efeff1; color: #111; font-weight: 650; }
         .st-item.on .st-ic { color: var(--coral); }
-        .st-item:focus-visible { outline: 2px solid var(--coral); outline-offset: -2px; }
+        .st-item:focus-visible { outline: none; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--coral) 40%, transparent); }
         /* The page brings its own padding (pages also used on their own do). */
         .st-main { flex: 1; min-width: 0; border-radius: 18px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.04), 0 1px 2px rgba(0,0,0,.03); }
         .st-fold { display: none; }

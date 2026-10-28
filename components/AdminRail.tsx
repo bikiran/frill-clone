@@ -246,10 +246,10 @@ export default function AdminRail({ workspace, sections, settings, search, ring,
         .rail-fly-card { min-width: 232px; max-width: 280px; max-height: calc(100vh - 80px); overflow-y: auto; padding: 8px; border-radius: 18px; background: #fff; box-shadow: 0 16px 44px rgba(0,0,0,.14), 0 0 0 1px rgba(0,0,0,.05); }
         .rail-fly-title { margin: 0; padding: 8px 10px 6px; font-size: 15px; font-weight: 700; color: #111; letter-spacing: -0.01em; }
         .rail-fly-group { margin: 6px 0 0; padding: 10px 10px 4px; border-top: 1px solid #f0f0f2; font-size: 12.5px; font-weight: 500; color: #8e8e93; }
-        .rail-fly-row { display: flex; align-items: center; gap: 11px; padding: 8px 10px; border-radius: 10px; color: #3f3f46; text-decoration: none; font-size: 14.5px; font-weight: 500; transition: background .12s; }
-        .rail-fly-row:hover { background: #f4f4f5; color: #111; }
-        .rail-fly-row.on { background: #f4f4f5; color: #111; font-weight: 650; }
-        .rail-fly-row:focus-visible { outline: 2px solid var(--coral); outline-offset: -2px; }
+        .rail-fly-row { display: flex; align-items: center; gap: 11px; margin-bottom: 2px; padding: 8px 10px; border-radius: 10px; color: #3f3f46; text-decoration: none; font-size: 14.5px; font-weight: 500; transition: background .12s; }
+        .rail-fly-row:hover { background: #f7f7f8; color: #111; }
+        .rail-fly-row.on { background: #efeff1; color: #111; font-weight: 650; }
+        .rail-fly-row:focus-visible { outline: none; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--coral) 40%, transparent); }
         .rail-fly-ic { display: flex; color: #71717a; flex-shrink: 0; }
         .rail-fly-ic svg { width: 17px; height: 17px; }
         .rail-fly-row.on .rail-fly-ic { color: var(--coral); }

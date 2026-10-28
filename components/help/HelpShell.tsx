@@ -39,12 +39,14 @@ export default function HelpShell({ children, nav }: { children: ReactNode; nav?
         .hc-new { width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: #111; color: #fff; text-decoration: none; transition: background .15s, transform .1s; }
         .hc-new:hover { background: #262626; }
         .hc-new:active { transform: scale(.94); }
-        .hc-item { display: flex; align-items: center; gap: 12px; width: 100%; box-sizing: border-box; padding: 8px 10px; border: none; border-radius: 11px; background: none; color: #27272a; text-decoration: none; font: inherit; font-size: 15px; font-weight: 500; text-align: left; cursor: pointer; transition: background .12s; }
-        .hc-item:hover { background: #f4f4f5; }
+        .hc-item { display: flex; align-items: center; gap: 12px; width: 100%; box-sizing: border-box; margin-bottom: 2px; padding: 8px 10px; border: none; border-radius: 11px; background: none; color: #27272a; text-decoration: none; font: inherit; font-size: 15px; font-weight: 500; text-align: left; cursor: pointer; transition: background .12s; }
+        .hc-item:hover { background: #f7f7f8; }
+        .hc-item::before, .hc-menu-row::before { display: none; }
         .hc-item .hc-ic { color: #52525b; display: flex; }
-        .hc-item.on { background: #f4f4f5; color: #111; font-weight: 650; }
+        .hc-item.on { background: #efeff1; color: #111; font-weight: 650; }
         .hc-item.on .hc-ic { color: var(--coral); }
-        .hc-item:focus-visible, .hc-new:focus-visible { outline: 2px solid var(--coral); outline-offset: -2px; }
+        .hc-item:focus-visible { outline: none; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--coral) 40%, transparent); }
+        .hc-new:focus-visible { outline: 2px solid var(--coral); outline-offset: 2px; }
         .hc-sub { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; padding: 6px 10px 14px; border-top: 1px solid #f0f0f2; }
         .hc-group { margin: 10px 0 4px; padding: 0 10px; font-size: 13px; font-weight: 500; color: #8e8e93; }
         .hc-main { flex: 1; min-width: 0; overflow-y: auto; border-radius: 18px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.04), 0 1px 2px rgba(0,0,0,.03); }
