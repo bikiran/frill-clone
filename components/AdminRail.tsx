@@ -269,6 +269,13 @@ export default function AdminRail({ workspace, sections, settings, search, ring,
         /* The phone's status pill: in the middle of the top bar, clear of the
            rail and the Settings menu. */
         .cv-phone-pill { top: 15px; bottom: auto !important; left: 50% !important; transform: translateX(-50%); z-index: 70 !important; }
+        /* The rail runs the full height with the workspace logo at the very top,
+           and the top bar starts beside it. */
+        @media (min-width: 861px) {
+          .admin-rail { top: 0; z-index: 45; }
+          .rail-top { padding-top: 6px; }
+          body:has(.admin-rail) .cv-app-header { padding-left: ${RAIL_W}px; }
+        }
         @media (max-width: 860px) { .admin-rail { display: none; } }
         @media (prefers-reduced-motion: reduce) { .rail-fly, .rail-ic, .rail-scrim { transition: none !important; } }
       `}</style>
