@@ -8,7 +8,7 @@ import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
 import AddContactModal from '@/components/AddContactModal'
 import MatchingContactsModal from '@/components/MatchingContactsModal'
-import PageHeader from '@/components/PageHeader'
+import EmptyScroll from '@/components/EmptyScroll'
 import { findMatchingContacts, applyRelationship } from '@/lib/contact-matching'
 import { SegmentationService } from '@/lib/segmentation-service'
 import AddressAutocomplete from '@/components/AddressAutocomplete'
@@ -18,7 +18,20 @@ import CustomerTimeline from '@/components/CustomerTimeline'
 
 type Contact = { id: string; name: string | null; email: string | null; phone: string | null; address: string | null; city: string | null; country: string | null; source: string; tags: string[]; subscribed_to_marketing: boolean; created_at: string; total_spend?: number; total_orders?: number; last_order_date?: string | null; rfm_category?: string; __aov?: number; relationship_type?: string; company_name?: string | null; notes?: string | null }
 
-const SOURCE_COLORS: Record<string, string> = { widget: '#dbeafe', woocommerce: '#ede9fe', import: '#dcfce7', manual: '#fef9c3', email: '#ffedd5' }
+// Where a contact came from: a label and the colour of its tag.
+const SOURCES: Record<string, { label: string; color: string }> = {
+  widget: { label: 'Live chat', color: '#2563eb' }, woocommerce: { label: 'WooCommerce', color: '#7c3aed' }, shopify: { label: 'Shopify', color: '#16a34a' },
+  import: { label: 'Import', color: '#0d9488' }, manual: { label: 'Manual', color: '#ca8a04' }, email: { label: 'Email', color: '#ea580c' },
+  phone: { label: 'Phone', color: '#0891b2' }, sms: { label: 'SMS', color: '#0d9488' },
+}
+const sourceMeta = (src?: string | null) => SOURCES[String(src || '')] || { label: src ? String(src).charAt(0).toUpperCase() + String(src).slice(1) : 'Unknown', color: '#71717a' }
+// A soft colour per person, so the list isn't a column of identical circles.
+const avatarStyle = (c: { name: string | null; email: string | null }): React.CSSProperties => {
+  const hue = Array.from(c.name || c.email || '?').reduce((a, ch) => a + ch.charCodeAt(0), 0) % 360
+  return { background: `hsl(${hue} 60% 92%)`, color: `hsl(${hue} 45% 36%)` }
+}
+// "28 Oct", with the year only when it isn't this year.
+const fmtAdded = (d: string) => { const t = new Date(d); return isNaN(t.getTime()) ? '—' : t.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', ...(t.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}) }) }
 const RELATIONSHIP_LABELS: Record<string, string> = { customer: 'Customer', supplier: 'Supplier', wholesaler: 'Wholesaler', business: 'Business contact' }
 const PHONE_PATH = 'M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.81.36 1.6.7 2.34a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.74-1.27a2 2 0 0 1 2.11-.45c.74.34 1.53.57 2.34.7A2 2 0 0 1 22 16.92z'
 
@@ -29,56 +42,135 @@ function initialsOf(c: { name: string | null; email: string | null }): string {
   return ((c.email || '?')[0] || '?').toUpperCase()
 }
 
-// Phones (same breakpoint as the Team page cards): the table becomes cards, the
-// toolbar wraps instead of cutting a chip off at the edge, the filters scroll
-// inside their own panel and the contact opens as a full-screen sheet. Desktop
-// never sees any of this — the cards are hidden above 767px.
+// The page: a big title, then one white card holding the search, filters and
+// the list. Phones (same breakpoint as the Team page cards): the table becomes
+// cards, the filters scroll inside their own panel and the contact opens as a
+// full-screen sheet. Desktop never sees the cards — they're hidden above 767px.
 const CONTACTS_CSS = `
+  .ct-page { display: flex; height: calc(100vh - 56px); overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .ct-main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; padding: 26px 28px 20px; }
+  .ct-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; flex-shrink: 0; }
+  .ct-head h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.025em; line-height: 1.1; color: var(--ink); }
+  .ct-head p { margin: 6px 0 0; font-size: 14px; color: #71717a; }
+  .ct-head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .ct-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; border-radius: 22px; background: var(--card, #fff); box-shadow: 0 0 0 1px rgba(0,0,0,.05), 0 1px 2px rgba(16,24,40,.04); overflow: hidden; }
+  .ct-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 16px 18px 14px; border-bottom: 1px solid #f0f0f2; flex-shrink: 0; }
+  .ct-search { position: relative; flex: 0 1 380px; min-width: 200px; }
+  .ct-search > svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: #a1a1aa; pointer-events: none; }
+  .ct-search input { width: 100%; box-sizing: border-box; height: 38px; padding: 0 34px 0 38px; border: 1.5px solid transparent; border-radius: 999px; background: #f4f4f5; font: inherit; font-size: 14px; color: var(--ink); outline: none; transition: background .15s ease, border-color .15s ease, box-shadow .15s ease; }
+  .ct-search input::placeholder { color: #a1a1aa; }
+  .ct-search input:focus { background: #fff; border-color: #d4d4d8; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 16%, transparent); }
+  .ct-search button { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); width: 24px; height: 24px; border: none; border-radius: 999px; background: #e4e4e7; color: #52525b; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+  .ct-search button::before { display: none; }
+  .ct-pill, .ct-select { flex-shrink: 0; height: 38px; display: inline-flex; align-items: center; gap: 7px; padding: 0 14px; border: none; border-radius: 999px; background: #f4f4f5; color: #18181b; font: inherit; font-size: 13.5px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background .15s ease, color .15s ease; }
+  .ct-pill::before { display: none; }
+  .ct-pill > svg { color: #71717a; flex-shrink: 0; }
+  .ct-pill:hover, .ct-select:hover, .ct-pill[aria-expanded="true"] { background: #ececef; }
+  .ct-pill:disabled { opacity: .45; cursor: default; background: #f4f4f5; }
+  .ct-pill.set, .ct-select.set { background: color-mix(in srgb, var(--coral) 12%, #fff); color: color-mix(in srgb, var(--coral) 85%, #000); }
+  .ct-pill.set > svg { color: currentColor; }
+  .ct-select { appearance: none; -webkit-appearance: none; padding-right: 34px; outline: none; max-width: 240px; text-overflow: ellipsis;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center; background-size: 14px; }
+  .ct-pill:focus-visible, .ct-select:focus-visible, .ct-icon:focus-visible, .ct-link:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 28%, transparent); }
+  .ct-count { min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 999px; background: var(--coral); color: #fff; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+  .ct-link { background: none; border: none; padding: 0 6px; font: inherit; font-size: 13.5px; font-weight: 600; color: var(--coral); cursor: pointer; white-space: nowrap; border-radius: 8px; }
+  .ct-link::before { display: none; }
+  .ct-filters { padding: 16px 18px; border-bottom: 1px solid #f0f0f2; background: #fafafa; flex-shrink: 0; }
+  .ct-filters-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+  .ct-filters-grid label { font-size: 12.5px; font-weight: 500; color: #8e8e93; }
+  .ct-list { flex: 1; overflow: auto; }
+  .ct-empty { padding: 36px 12px; }
+  .ct-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .ct-table th { position: sticky; top: 0; z-index: 1; background: var(--card, #fff); text-align: left; padding: 11px 14px; font-size: 12.5px; font-weight: 500; color: #8e8e93; border-bottom: 1px solid #f0f0f2; white-space: nowrap; }
+  .ct-table td { padding: 10px 14px; border-bottom: 1px solid #f4f4f5; color: var(--ink); white-space: nowrap; }
+  .ct-table th:first-child, .ct-table td:first-child { padding-left: 20px; }
+  .ct-table th:last-child, .ct-table td:last-child { padding-right: 14px; }
+  .ct-table tbody tr:last-child td { border-bottom: none; }
+  .ct-row { cursor: pointer; transition: background .12s ease; }
+  .ct-row:hover { background: #fafafa; }
+  .ct-row.sel { background: color-mix(in srgb, var(--coral) 8%, transparent); }
+  .ct-av { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 700; flex-shrink: 0; letter-spacing: .02em; }
+  .ct-name-link { font-weight: 600; color: var(--ink); text-decoration: none; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+  .ct-name-link:hover { text-decoration: underline; }
+  .ct-muted { color: #71717a; }
+  .ct-email { max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+  .ct-tag { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px 0 9px; border-radius: 999px; background: color-mix(in srgb, var(--tag) 10%, #fff); color: color-mix(in srgb, var(--tag) 85%, #000); font-size: 12.5px; font-weight: 600; line-height: 1; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; }
+  .ct-tag::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--tag); flex-shrink: 0; }
+  .ct-tag.plain { background: #f4f4f5; color: #52525b; }
+  .ct-tag.plain::before { display: none; }
+  .ct-row-acts { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
+  .ct-icon { width: 32px; height: 32px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: none; border-radius: 999px; background: transparent; color: #71717a; cursor: pointer; transition: background .15s ease, color .15s ease; }
+  .ct-icon::before { display: none; }
+  .ct-icon:hover { background: #f4f4f5; color: #18181b; }
+  .ct-icon:disabled { opacity: .35; cursor: default; background: transparent; }
+  .ct-gap { width: 32px; height: 32px; flex-shrink: 0; }
+  .ct-foot-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 18px; border-top: 1px solid #f0f0f2; font-size: 13.5px; color: #71717a; flex-shrink: 0; }
+  .ct-pg { font-size: 13.5px; font-weight: 600; color: var(--ink); padding: 0 6px; font-variant-numeric: tabular-nums; }
   .ct-cards { display: none; }
-  @media (max-width: 767px) {
-    .ct-page .ph-toolbar { flex-wrap: wrap !important; overflow: visible !important; }
-    .ct-page .ph-toolbar > * { flex: 1 1 auto !important; justify-content: center; min-width: 0; padding-left: 10px !important; padding-right: 10px !important; }
-    .ct-page .ph-toolbar > .ct-search { flex: 1 1 100% !important; width: auto !important; max-width: none !important; padding: 0 !important; }
-    .ct-page .ph-toolbar > select { max-width: 100%; }
-    .ct-search input { font-size: 16px !important; }
 
-    .ct-filters { margin: 0 !important; border-radius: 0 !important; border-width: 0 0 1px !important; padding: 12px 16px !important; max-height: 48%; overflow-y: auto; flex-shrink: 0; overscroll-behavior: contain; }
-    .ct-filters-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 10px !important; }
-    .ct-filters-grid input, .ct-filters-grid select { font-size: 16px !important; padding: 7px 9px !important; }
+  /* The contact panel floats beside the list. */
+  .ct-detail { width: 340px; flex-shrink: 0; margin: 16px 16px 16px 0; border-radius: 22px; background: var(--card, #fff); box-shadow: 0 0 0 1px rgba(0,0,0,.05), 0 8px 28px rgba(16,24,40,.08); display: flex; flex-direction: column; overflow: hidden; animation: ctIn .26s cubic-bezier(.22,1,.36,1); }
+  @keyframes ctIn { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+  .ct-detail-head { padding: 16px 14px 14px 20px; border-bottom: 1px solid #f0f0f2; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .ct-detail-head h3 { margin: 0; font-size: 17px; font-weight: 800; letter-spacing: -0.01em; color: var(--ink); }
+  .ct-small { height: 32px; display: inline-flex; align-items: center; gap: 6px; padding: 0 13px; border: none; border-radius: 999px; background: #f4f4f5; color: #18181b; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .ct-small::before { display: none; }
+  .ct-small:hover { background: #ececef; }
+  .ct-field { width: 100%; box-sizing: border-box; padding: 10px 14px; border: 1.5px solid transparent; border-radius: 12px; background: #f4f4f5; font: inherit; font-size: 14px; color: var(--ink); outline: none; transition: background .15s ease, border-color .15s ease, box-shadow .15s ease; }
+  .ct-field:focus { background: #fff; border-color: #d4d4d8; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 16%, transparent); }
+
+  @media (prefers-reduced-motion: reduce) { .ct-detail { animation: none; } }
+  @media (max-width: 1100px) {
+    .ct-hbtn span { display: none; }
+    .ct-hbtn { width: 38px; padding: 0; }
+  }
+  @media (max-width: 767px) {
+    .ct-main { padding: 18px 16px 0; }
+    .ct-head { align-items: flex-start; margin-bottom: 14px; }
+    .ct-head h1 { font-size: 26px; }
+    .ct-panel { border-radius: 20px 20px 0 0; }
+    .ct-tools { padding: 14px; }
+    .ct-search { flex: 1 1 100%; }
+    .ct-search input { font-size: 16px; }
+    .ct-select { max-width: 100%; flex: 1 1 auto; }
+
+    .ct-filters { padding: 12px 14px; max-height: 48%; overflow-y: auto; overscroll-behavior: contain; }
+    .ct-filters-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .ct-filters-grid input, .ct-filters-grid select { font-size: 16px !important; }
 
     /* The bottom padding lets the last card and the pager scroll clear of the AI orb. */
-    .ct-list { background: var(--canvas) !important; overflow-x: hidden !important; overscroll-behavior: contain; padding-bottom: 76px; }
+    .ct-list { background: #fafafa; overflow-x: hidden; overscroll-behavior: contain; padding-bottom: 76px; }
     .ct-table { display: none !important; }
-    .ct-cards { display: flex; flex-direction: column; gap: 8px; list-style: none; margin: 0; padding: 12px 16px; }
-    .ct-card { position: relative; display: flex; gap: 12px; padding: 12px; background: #fff; border: 1px solid var(--border); border-radius: 14px; min-width: 0; -webkit-tap-highlight-color: transparent; transition: background .1s, border-color .1s; }
-    .ct-card:active { background: var(--canvas); }
-    .ct-card[data-selected] { background: var(--peach); border-color: var(--coral); }
+    .ct-cards { display: flex; flex-direction: column; gap: 8px; list-style: none; margin: 0; padding: 12px; }
+    .ct-card { position: relative; display: flex; gap: 12px; padding: 14px; background: #fff; border-radius: 18px; box-shadow: 0 0 0 1px rgba(0,0,0,.06); min-width: 0; -webkit-tap-highlight-color: transparent; transition: background .1s, box-shadow .1s; }
+    .ct-card:active { background: #fafafa; }
+    .ct-card[data-selected] { box-shadow: 0 0 0 2px var(--coral); }
     .ct-card:has(.ct-open:focus-visible) { outline: 2px solid var(--coral); outline-offset: 2px; }
-    .ct-avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--peach); color: var(--coral); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; flex-shrink: 0; letter-spacing: .02em; }
-    .ct-card[data-selected] .ct-avatar { background: #fff; }
+    .ct-avatar { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; flex-shrink: 0; letter-spacing: .02em; }
     .ct-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
     .ct-top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
     .ct-open { position: static !important; flex: 1; min-width: 0; display: flex; padding: 0; border: none; background: none; text-align: left; font: inherit; font-size: 15px; font-weight: 700; color: var(--ink); cursor: pointer; outline: none; }
+    .ct-open::before { display: none; }
     .ct-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .ct-open::after { content: ''; position: absolute; inset: 0; border-radius: 14px; }
-    .ct-date { min-width: 0; font-size: 11.5px; color: #9ca3af; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .ct-line { display: flex; align-items: center; gap: 6px; margin: 0; min-width: 0; font-size: 13px; color: var(--slate); }
+    .ct-open::after { content: ''; position: absolute; inset: 0; border-radius: 18px; }
+    .ct-date { min-width: 0; font-size: 12px; color: #a1a1aa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ct-line { display: flex; align-items: center; gap: 6px; margin: 0; min-width: 0; font-size: 13px; color: #71717a; }
     .ct-line svg { flex-shrink: 0; opacity: .7; }
     .ct-line span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .ct-line .ct-none { color: #9ca3af; font-style: italic; }
-    .ct-badges { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; margin-top: 5px; }
+    .ct-line .ct-none { color: #a1a1aa; font-style: italic; }
+    .ct-badges { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; margin-top: 6px; }
+    .ct-badges .ct-tag { height: 22px; font-size: 11.5px; padding: 0 8px; }
     .ct-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; min-width: 0; }
-    .ct-badge { font-size: 10.5px; font-weight: 700; line-height: 1.3; padding: 2px 7px; border-radius: 6px; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-    .ct-tag { background: var(--canvas); color: var(--slate); border: 1px solid var(--border); padding: 1px 6px; font-weight: 600; }
-    .ct-actions { position: relative; z-index: 1; display: flex; align-items: center; gap: 6px; flex-shrink: 0; pointer-events: none; }
+    .ct-actions { position: relative; z-index: 1; display: flex; align-items: center; gap: 4px; flex-shrink: 0; pointer-events: none; }
     .ct-actions > * { pointer-events: auto; }
-    .ct-act { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--border); background: #fff; color: var(--slate); display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
-    .ct-act:active { color: var(--coral); border-color: var(--coral); }
-    .ct-edit { height: 34px; padding: 0 6px; border: none; background: none; color: var(--coral); font-size: 13px; font-weight: 700; cursor: pointer; }
+    .ct-act { width: 34px; height: 34px; border-radius: 999px; border: none; background: #f4f4f5; color: #52525b; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+    .ct-act::before { display: none; }
+    .ct-act:active { background: #ececef; color: var(--coral); }
+    .ct-foot-bar { padding: 12px 14px; }
 
-    .ct-detail { position: fixed !important; inset: 0; z-index: 950; width: auto !important; border-left: none !important; }
+    .ct-detail { position: fixed !important; inset: 0; z-index: 950; width: auto !important; margin: 0; border-radius: 0; animation: none; }
     .ct-detail-body { padding-bottom: calc(18px + env(safe-area-inset-bottom)) !important; }
-    .ct-close { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; margin-right: -8px; }
   }
 `
 
@@ -107,8 +199,9 @@ export default function ContactsPage() {
   const [fState, setFState] = useState('')
   const [fPostcode, setFPostcode] = useState('')
   const [fProduct, setFProduct] = useState('')
-  const filterInput: React.CSSProperties = { display: 'block', width: '100%', marginTop: 5, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, background: '#fff', fontWeight: 500, color: 'var(--ink)' }
+  const filterInput: React.CSSProperties = { display: 'block', width: '100%', marginTop: 6, padding: '9px 12px', borderRadius: 12, border: '1.5px solid transparent', fontSize: 14, fontWeight: 500, color: 'var(--ink)', fontFamily: 'inherit', background: '#fff', boxSizing: 'border-box', boxShadow: '0 0 0 1px rgba(0,0,0,.06)' }
   const filtersActive = !!(fChannel || fRelationship || fLoyalty || fMinSpend || fMinOrders || fState || fPostcode || fProduct || sortBy !== 'recent_added')
+  const filterCount = [fChannel, fRelationship, fLoyalty, fMinSpend, fMinOrders, fState, fPostcode, fProduct].filter(Boolean).length + (sortBy !== 'recent_added' ? 1 : 0)
 
   // Shared with the inbox — the same outlet stays selected across the CRM.
   useEffect(() => {
@@ -399,8 +492,10 @@ export default function ContactsPage() {
     setSaving(false)
   }
 
-  const inp: React.CSSProperties = { width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }
-  const labelStyle: React.CSSProperties = { fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 4 }
+  const inp: React.CSSProperties = { width: '100%', padding: '10px 14px', borderRadius: 12, border: '1.5px solid transparent', background: '#f4f4f5', fontSize: 14, color: 'var(--ink)', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }
+  const labelStyle: React.CSSProperties = { fontSize: 12.5, fontWeight: 500, color: '#8e8e93', display: 'block', marginBottom: 6 }
+  // Everything back to the full list: search, location and the filters.
+  const clearAll = () => { setSearch(''); setLocationFilter('all'); setSortBy('recent_added'); setFRelationship(''); setFChannel(''); setFLoyalty(''); setFMinSpend(''); setFMinOrders(''); setFState(''); setFPostcode(''); setFProduct('') }
 
   // Row and card actions — the desktop table and the phone cards share these,
   // so tapping a card does exactly what clicking a row does.
@@ -412,303 +507,282 @@ export default function ContactsPage() {
   const emailContact = (c: Contact) => router.push(`/admin/inbox?contact=${c.id}&channel=email`)
 
   return (
-    <div className="colvy-fullh ct-page" style={{ display: 'flex', height: 'calc(100vh - 56px)', overflow: 'hidden', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
+    <div className="colvy-fullh ct-page">
       <style>{CONTACTS_CSS}</style>
       {/* List */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <PageHeader
-          title="Contacts"
-          subtitle={`${totalCount.toLocaleString()} contacts`}
-          action={
-            <button type="button" className="press" onClick={() => setShowAddContact(true)}
-              style={{ padding: '9px 15px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-              + New contact
+      <div className="ct-main">
+        <div className="ct-head">
+          <div style={{ minWidth: 0 }}>
+            <h1>Contacts</h1>
+            <p>{totalCount.toLocaleString()} contact{totalCount === 1 ? '' : 's'}</p>
+          </div>
+          <div className="ct-head-actions">
+            <button type="button" className="cv-btn ct-hbtn" onClick={findDuplicates} disabled={dupBusy} title="Find contacts that are the same person">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg>
+              <span>{dupBusy ? 'Checking…' : 'Find duplicates'}</span>
             </button>
-          }>
-          <div className="ct-search" style={{ position: 'relative', width: 220, maxWidth: '60vw' }}>
-            <input placeholder="Search contacts…" value={search} onChange={e => setSearch(e.target.value)}
-              style={{ ...inp, width: '100%', background: 'var(--canvas)', paddingRight: search ? 32 : undefined }} />
-            {search && (
-              <button type="button" onClick={() => setSearch('')} title="Clear search" aria-label="Clear search"
-                style={{ position: 'absolute', top: '50%', right: 8, transform: 'translateY(-50%)', width: 20, height: 20, borderRadius: '50%', border: 'none', background: 'var(--border)', color: 'var(--slate)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
+            <button type="button" className="cv-btn ct-hbtn" onClick={linkChannels} disabled={linkBusy}
+              title="Link the same person across live chat, SMS, Messenger, Instagram and WooCommerce by shared email/phone">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+              <span>{linkBusy ? 'Linking…' : 'Link channels'}</span>
+            </button>
+            <button type="button" className="cv-btn cv-btn-primary" onClick={() => setShowAddContact(true)}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              New contact
+            </button>
+          </div>
+        </div>
+
+        <div className="ct-panel">
+          <div className="ct-tools">
+            <div className="ct-search">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input placeholder="Search by name, phone or email…" value={search} onChange={e => setSearch(e.target.value)} aria-label="Search contacts" />
+              {search && (
+                <button type="button" onClick={() => setSearch('')} title="Clear search" aria-label="Clear search">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              )}
+            </div>
+            {outlets.length > 1 && (
+              <select className={`ct-select${locationFilter !== 'all' ? ' set' : ''}`} value={locationFilter} onChange={e => setLocationFilter(e.target.value)} aria-label="Location">
+                <option value="all">All locations</option>
+                {outlets.map(o => <option key={o.id} value={o.id}>{o.label || o.suburb || 'Outlet'}</option>)}
+              </select>
+            )}
+            <button type="button" className={`ct-pill${filtersActive ? ' set' : ''}`} aria-expanded={showFilters} onClick={() => setShowFilters(v => !v)}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="10" y1="17" x2="14" y2="17"/></svg>
+              Filters
+              {filterCount > 0 && <span className="ct-count">{filterCount}</span>}
+            </button>
+            {(filtersActive || search || locationFilter !== 'all') && (
+              <button type="button" className="ct-link" onClick={clearAll}>Clear filters</button>
             )}
           </div>
-          {outlets.length > 1 && (
-            <select value={locationFilter} onChange={e => setLocationFilter(e.target.value)}
-              title="Filter by location"
-              style={{ padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', background: locationFilter !== 'all' ? 'var(--peach)' : '#fff', fontSize: 13, fontWeight: 700, color: locationFilter !== 'all' ? 'var(--coral)' : 'var(--ink)', cursor: 'pointer' }}>
-              <option value="all">All locations</option>
-              {outlets.map(o => <option key={o.id} value={o.id}>{o.label || o.suburb || 'Outlet'}</option>)}
-            </select>
-          )}
-          <button type="button" onClick={() => setShowFilters(v => !v)}
-            style={{ padding: '9px 15px', borderRadius: 10, background: filtersActive ? 'var(--peach)' : '#fff', color: filtersActive ? 'var(--coral)' : 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-            Filters{filtersActive ? ' •' : ''}
-          </button>
-          <button type="button" onClick={findDuplicates} disabled={dupBusy}
-            title="Find contacts that are the same person"
-            style={{ padding: '9px 15px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            {dupBusy ? 'Checking…' : 'Find duplicates'}
-          </button>
-          <button type="button" onClick={linkChannels} disabled={linkBusy}
-            title="Link the same person across live chat, SMS, Messenger, Instagram and WooCommerce by shared email/phone"
-            style={{ padding: '9px 15px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            {linkBusy ? 'Linking…' : 'Link channels'}
-          </button>
-        </PageHeader>
 
-        {showFilters && (
-          <div className="ct-filters" style={{ marginTop: 14, padding: 16, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--canvas)' }}>
-            <div className="ct-filters-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Sort by
-                <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} style={filterInput}>
-                  <option value="recent_added">Recently added</option>
-                  <option value="recent_order">Most recent order</option>
-                  <option value="highest_order">Highest order value</option>
-                  <option value="num_orders">Number of orders</option>
-                  <option value="spend">Total spend</option>
-                  <option value="loyalty">Loyalty (RFM)</option>
-                </select>
-              </label>
-              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Relationship
-                <select value={fRelationship} onChange={e => setFRelationship(e.target.value)} style={filterInput}>
-                  <option value="">All types</option>
-                  <option value="customer">Customer</option>
-                  <option value="supplier">Supplier</option>
-                  <option value="wholesaler">Wholesaler</option>
-                  <option value="business">Business contact</option>
-                </select>
-              </label>
-              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Channel
-                <select value={fChannel} onChange={e => setFChannel(e.target.value)} style={filterInput}>
-                  <option value="">All channels</option>
-                  <option value="widget">Live chat</option>
-                  <option value="woocommerce">WooCommerce</option>
-                  <option value="import">Import</option>
-                  <option value="manual">Manual</option>
-                  <option value="email">Email</option>
-                </select>
-              </label>
-              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Loyalty segment
-                <select value={fLoyalty} onChange={e => setFLoyalty(e.target.value)} style={filterInput}>
-                  <option value="">Any</option>
-                  <option value="Champions">Champions</option>
-                  <option value="Loyal Customers">Loyal Customers</option>
-                  <option value="Potential Loyalists">Potential Loyalists</option>
-                  <option value="At Risk">At Risk</option>
-                  <option value="Lost">Lost</option>
-                </select>
-              </label>
-              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Min spend ($)
-                <input type="number" value={fMinSpend} onChange={e => setFMinSpend(e.target.value)} placeholder="e.g. 500" style={filterInput} />
-              </label>
-              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Min orders
-                <input type="number" value={fMinOrders} onChange={e => setFMinOrders(e.target.value)} placeholder="e.g. 3" style={filterInput} />
-              </label>
-              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>State
-                <input type="text" value={fState} onChange={e => setFState(e.target.value)} placeholder="e.g. VIC" style={filterInput} />
-              </label>
-              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Postcode
-                <input type="text" value={fPostcode} onChange={e => setFPostcode(e.target.value)} placeholder="e.g. 3000" style={filterInput} />
-              </label>
-              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)' }}>Purchased (SKU or title)
-                <input type="text" value={fProduct} onChange={e => setFProduct(e.target.value)} placeholder="e.g. 1132 or Pleco" style={filterInput} />
-              </label>
+          {showFilters && (
+            <div className="ct-filters">
+              <div className="ct-filters-grid">
+                <label>Sort by
+                  <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} style={filterInput}>
+                    <option value="recent_added">Recently added</option>
+                    <option value="recent_order">Most recent order</option>
+                    <option value="highest_order">Highest order value</option>
+                    <option value="num_orders">Number of orders</option>
+                    <option value="spend">Total spend</option>
+                    <option value="loyalty">Loyalty (RFM)</option>
+                  </select>
+                </label>
+                <label>Relationship
+                  <select value={fRelationship} onChange={e => setFRelationship(e.target.value)} style={filterInput}>
+                    <option value="">All types</option>
+                    <option value="customer">Customer</option>
+                    <option value="supplier">Supplier</option>
+                    <option value="wholesaler">Wholesaler</option>
+                    <option value="business">Business contact</option>
+                  </select>
+                </label>
+                <label>Channel
+                  <select value={fChannel} onChange={e => setFChannel(e.target.value)} style={filterInput}>
+                    <option value="">All channels</option>
+                    <option value="widget">Live chat</option>
+                    <option value="woocommerce">WooCommerce</option>
+                    <option value="import">Import</option>
+                    <option value="manual">Manual</option>
+                    <option value="email">Email</option>
+                  </select>
+                </label>
+                <label>Loyalty segment
+                  <select value={fLoyalty} onChange={e => setFLoyalty(e.target.value)} style={filterInput}>
+                    <option value="">Any</option>
+                    <option value="Champions">Champions</option>
+                    <option value="Loyal Customers">Loyal Customers</option>
+                    <option value="Potential Loyalists">Potential Loyalists</option>
+                    <option value="At Risk">At Risk</option>
+                    <option value="Lost">Lost</option>
+                  </select>
+                </label>
+                <label>Min spend ($)
+                  <input type="number" value={fMinSpend} onChange={e => setFMinSpend(e.target.value)} placeholder="e.g. 500" style={filterInput} />
+                </label>
+                <label>Min orders
+                  <input type="number" value={fMinOrders} onChange={e => setFMinOrders(e.target.value)} placeholder="e.g. 3" style={filterInput} />
+                </label>
+                <label>State
+                  <input type="text" value={fState} onChange={e => setFState(e.target.value)} placeholder="e.g. VIC" style={filterInput} />
+                </label>
+                <label>Postcode
+                  <input type="text" value={fPostcode} onChange={e => setFPostcode(e.target.value)} placeholder="e.g. 3000" style={filterInput} />
+                </label>
+                <label>Purchased (SKU or title)
+                  <input type="text" value={fProduct} onChange={e => setFProduct(e.target.value)} placeholder="e.g. 1132 or Pleco" style={filterInput} />
+                </label>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 14 }}>
+                <button type="button" className="ct-pill" style={{ height: 34 }}
+                  onClick={() => { setSortBy('recent_added'); setFRelationship(''); setFChannel(''); setFLoyalty(''); setFMinSpend(''); setFMinOrders(''); setFState(''); setFPostcode(''); setFProduct('') }}>
+                  Reset filters
+                </button>
+                <span style={{ fontSize: 13, color: '#8e8e93' }}>
+                  {filtersActive ? `${contacts.length.toLocaleString()} contact${contacts.length === 1 ? '' : 's'} shown` : ''}
+                </span>
+              </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
-              <button onClick={() => { setSortBy('recent_added'); setFChannel(''); setFLoyalty(''); setFMinSpend(''); setFMinOrders(''); setFState(''); setFPostcode(''); setFProduct('') }}
-                style={{ padding: '7px 14px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--slate)' }}>
-                Clear all
-              </button>
-              <span style={{ fontSize: 12, color: 'var(--slate)' }}>
-                {filtersActive ? `${contacts.length.toLocaleString()} contact${contacts.length === 1 ? '' : 's'} shown` : ''}
-              </span>
-            </div>
-          </div>
-        )}
-        <div className="ct-list" style={{ flex: 1, overflowY: 'auto', background: '#fff' }}>
-          {loading ? (
-            <SkeletonList rows={6} />
-          ) : contacts.length === 0 ? (
-            <div style={{ padding: 60, textAlign: 'center', color: '#9ca3af' }}>
-              <p style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>No contacts yet</p>
-              <p style={{ fontSize: 13 }}>Contacts are created automatically when users chat, or you can import/add them manually.</p>
-            </div>
-          ) : (
-            <>
-            <table className="ct-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead style={{ position: 'sticky', top: 0, background: '#fff', zIndex: 1 }}>
-                <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                  {['Name', 'Phone', 'Email', 'Marketing', 'Source', 'Created', 'Actions'].map(h => (
-                    <th key={h} style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {contacts.map(c => (
-                  <tr key={c.id} onClick={() => openContact(c)}
-                    style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer', background: selected?.id === c.id ? 'var(--peach)' : '#fff', transition: 'background 0.1s' }}>
-                    <td style={{ padding: '11px 16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                        <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--peach)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'var(--coral)', flexShrink: 0 }}>
-                          {((c.name || c.email || '?')[0] || '?').toUpperCase()}
-                        </div>
-                        <a
-                          href={`/admin/customers/profile?id=${c.id}`}
-                          onClick={e => e.stopPropagation()}
-                          title="Open the full customer profile"
-                          style={{ fontWeight: 600, color: 'var(--ink)', textDecoration: 'none', borderBottom: '1px solid transparent' }}
-                          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--coral)'; (e.currentTarget as HTMLElement).style.borderBottomColor = 'var(--coral)' }}
-                          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--ink)'; (e.currentTarget as HTMLElement).style.borderBottomColor = 'transparent' }}>
-                          {c.name || <span style={{ color: '#9ca3af', fontStyle: 'italic' }}>No name</span>}
-                        </a>
-                      </div>
-                    </td>
-                    <td style={{ padding: '11px 16px', color: 'var(--slate)' }}>{c.phone || '—'}</td>
-                    <td style={{ padding: '11px 16px', color: 'var(--slate)' }}>{c.email || '—'}</td>
-                    <td style={{ padding: '11px 16px' }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 20, background: c.subscribed_to_marketing ? '#dcfce7' : '#f3f4f6', color: c.subscribed_to_marketing ? '#059669' : '#6b7280' }}>
-                        {c.subscribed_to_marketing ? 'Subscribed' : 'Not subscribed'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '11px 16px' }}>
-                      <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: SOURCE_COLORS[c.source] || '#f3f4f6', color: '#374151', textTransform: 'capitalize' }}>
-                        {c.source}
-                      </span>
-                    </td>
-                    <td style={{ padding: '11px 16px', color: 'var(--slate)' }}>{new Date(c.created_at).toLocaleDateString()}</td>
-                    <td style={{ padding: '11px 16px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }} onClick={e => e.stopPropagation()}>
-                        {c.phone && (
-                          <button type="button" title={`Call ${c.phone}`} aria-label="Call"
-                            onClick={() => callContact(c)}
-                            style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--coral)' }}
-                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--slate)' }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.81.36 1.6.7 2.34a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.74-1.27a2 2 0 0 1 2.11-.45c.74.34 1.53.57 2.34.7A2 2 0 0 1 22 16.92z"/></svg>
-                          </button>
-                        )}
-                        {c.phone && (
-                          <button type="button" title={`Message ${c.phone} in Colvy`} aria-label="Message"
-                            onClick={() => messageContact(c)}
-                            style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--coral)' }}
-                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--slate)' }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                          </button>
-                        )}
-                        {c.email && (
-                          <button type="button" title={`Email ${c.email} in Colvy`} aria-label="Email"
-                            onClick={() => emailContact(c)}
-                            style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--coral)' }}
-                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--slate)' }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 6L2 7"/></svg>
-                          </button>
-                        )}
-                        <button onClick={e => { e.stopPropagation(); editContact(c) }}
-                          style={{ fontSize: 12, color: 'var(--coral)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, marginLeft: 2 }}>Edit</button>
-                      </div>
-                    </td>
+          )}
+
+          <div className="ct-list">
+            {loading ? (
+              <SkeletonList rows={6} />
+            ) : contacts.length === 0 ? (
+              <div className="ct-empty">
+                {/* The same drifting cards as an empty inbox, worded for what's being looked at. */}
+                <EmptyScroll kinds={['contact']}
+                  title={search.trim() ? 'No matches' : (filtersActive || locationFilter !== 'all') ? 'No contacts match these filters' : 'No contacts yet'}
+                  line={search.trim() ? `Nothing matches “${search.trim()}”. Try a name, phone number or email.`
+                    : (filtersActive || locationFilter !== 'all') ? 'Try clearing a filter to see more.'
+                    : 'Contacts are added when people chat, order or are imported. You can add them by hand too.'}
+                  action={(search.trim() || filtersActive || locationFilter !== 'all')
+                    ? <button type="button" className="cv-btn" onClick={clearAll}>Clear filters</button>
+                    : <button type="button" className="cv-btn" onClick={() => setShowAddContact(true)}>New contact</button>} />
+              </div>
+            ) : (
+              <>
+              <table className="ct-table">
+                <thead>
+                  <tr>
+                    {['Name', 'Phone', 'Email', 'Marketing', 'Source', 'Added', ''].map((h, i) => <th key={i}>{h}</th>)}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {contacts.map(c => {
+                    const src = sourceMeta(c.source)
+                    return (
+                      <tr key={c.id} onClick={() => openContact(c)} className={`ct-row${selected?.id === c.id ? ' sel' : ''}`}>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
+                            <span className="ct-av" style={avatarStyle(c)}>{initialsOf(c)}</span>
+                            <a href={`/admin/customers/profile?id=${c.id}`} onClick={e => e.stopPropagation()} title="Open the full customer profile" className="ct-name-link">
+                              {c.name || <span style={{ color: '#a1a1aa', fontStyle: 'italic', fontWeight: 500 }}>No name</span>}
+                            </a>
+                            {c.relationship_type && c.relationship_type !== 'customer' && (
+                              <span className="ct-tag" style={{ ['--tag' as any]: '#4f46e5' }}>{RELATIONSHIP_LABELS[c.relationship_type] || c.relationship_type}</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="ct-muted">{c.phone || '—'}</td>
+                        <td className="ct-muted ct-email">{c.email || '—'}</td>
+                        <td><span className="ct-tag" style={{ ['--tag' as any]: c.subscribed_to_marketing ? '#16a34a' : '#a1a1aa' }}>{c.subscribed_to_marketing ? 'Subscribed' : 'Not subscribed'}</span></td>
+                        <td><span className="ct-tag" style={{ ['--tag' as any]: src.color }}>{src.label}</span></td>
+                        <td className="ct-muted">{fmtAdded(c.created_at)}</td>
+                        <td>
+                          <div className="ct-row-acts" onClick={e => e.stopPropagation()}>
+                            {c.phone ? (
+                              <button type="button" className="ct-icon" title={`Call ${c.phone}`} aria-label="Call" onClick={() => callContact(c)}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={PHONE_PATH}/></svg>
+                              </button>
+                            ) : <span className="ct-gap" />}
+                            {c.phone ? (
+                              <button type="button" className="ct-icon" title={`Message ${c.phone} in Colvy`} aria-label="Message" onClick={() => messageContact(c)}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                              </button>
+                            ) : <span className="ct-gap" />}
+                            {c.email ? (
+                              <button type="button" className="ct-icon" title={`Email ${c.email} in Colvy`} aria-label="Email" onClick={() => emailContact(c)}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 6L2 7"/></svg>
+                              </button>
+                            ) : <span className="ct-gap" />}
+                            <button type="button" className="ct-icon" title="Edit contact" aria-label={`Edit ${c.name || c.email || 'contact'}`} onClick={() => editContact(c)}>
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
 
-            {/* Phones: one card per contact instead of the 7-column table. */}
-            <ul className="ct-cards" aria-label="Contacts">
-              {contacts.map(c => (
-                <li key={c.id} className="ct-card" data-selected={selected?.id === c.id ? '' : undefined}>
-                  <div className="ct-avatar" aria-hidden="true">{initialsOf(c)}</div>
-                  <div className="ct-body">
-                    <div className="ct-top">
-                      {/* The name is the card's button; its ::after covers the
-                          whole card, so a tap anywhere opens the contact. */}
-                      <button type="button" className="ct-open" onClick={() => openContact(c)}>
-                        <span className="ct-name">{c.name || <span style={{ color: '#9ca3af', fontStyle: 'italic', fontWeight: 600 }}>No name</span>}</span>
-                      </button>
-                    </div>
-                    <p className="ct-line">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={PHONE_PATH}/></svg>
-                      <span className={c.phone ? undefined : 'ct-none'}>{c.phone || 'No phone'}</span>
-                    </p>
-                    <p className="ct-line">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 6L2 7"/></svg>
-                      <span className={c.email ? undefined : 'ct-none'}>{c.email || 'No email'}</span>
-                    </p>
-                    <div className="ct-badges">
-                        <span className="ct-badge" style={{ background: SOURCE_COLORS[c.source] || '#f3f4f6', color: '#374151', textTransform: 'capitalize' }}>{c.source}</span>
-                        <span className="ct-badge" style={{ borderRadius: 20, background: c.subscribed_to_marketing ? '#dcfce7' : '#f3f4f6', color: c.subscribed_to_marketing ? '#059669' : '#6b7280' }}>
-                          {c.subscribed_to_marketing ? 'Subscribed' : 'Not subscribed'}
-                        </span>
-                        {c.relationship_type && c.relationship_type !== 'customer' && (
-                          <span className="ct-badge" style={{ background: '#eef2ff', color: '#4338ca' }}>{RELATIONSHIP_LABELS[c.relationship_type] || c.relationship_type}</span>
-                        )}
-                        {(c.tags || []).slice(0, 2).map(t => <span key={t} className="ct-badge ct-tag">{t}</span>)}
-                        {(c.tags || []).length > 2 && <span className="ct-badge ct-tag" title={(c.tags || []).slice(2).join(', ')}>+{(c.tags || []).length - 2}</span>}
-                    </div>
-                    <div className="ct-foot">
-                      <span className="ct-date">Added {new Date(c.created_at).toLocaleDateString()}</span>
-                      <div className="ct-actions">
-                        {c.phone && (
-                          <button type="button" className="ct-act" title={`Call ${c.phone}`} aria-label={`Call ${c.name || c.phone}`} onClick={() => callContact(c)}>
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={PHONE_PATH}/></svg>
+              {/* Phones: one card per contact instead of the 7-column table. */}
+              <ul className="ct-cards" aria-label="Contacts">
+                {contacts.map(c => {
+                  const src = sourceMeta(c.source)
+                  return (
+                    <li key={c.id} className="ct-card" data-selected={selected?.id === c.id ? '' : undefined}>
+                      <div className="ct-avatar" aria-hidden="true" style={avatarStyle(c)}>{initialsOf(c)}</div>
+                      <div className="ct-body">
+                        <div className="ct-top">
+                          {/* The name is the card's button; its ::after covers the
+                              whole card, so a tap anywhere opens the contact. */}
+                          <button type="button" className="ct-open" onClick={() => openContact(c)}>
+                            <span className="ct-name">{c.name || <span style={{ color: '#a1a1aa', fontStyle: 'italic', fontWeight: 600 }}>No name</span>}</span>
                           </button>
-                        )}
-                        {c.phone && (
-                          <button type="button" className="ct-act" title={`Message ${c.phone} in Colvy`} aria-label={`Message ${c.name || c.phone}`} onClick={() => messageContact(c)}>
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                          </button>
-                        )}
-                        {c.email && (
-                          <button type="button" className="ct-act" title={`Email ${c.email} in Colvy`} aria-label={`Email ${c.name || c.email}`} onClick={() => emailContact(c)}>
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 6L2 7"/></svg>
-                          </button>
-                        )}
-                        <button type="button" className="ct-edit" aria-label={`Edit ${c.name || c.email || 'contact'}`} onClick={() => editContact(c)}>Edit</button>
+                        </div>
+                        <p className="ct-line">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={PHONE_PATH}/></svg>
+                          <span className={c.phone ? undefined : 'ct-none'}>{c.phone || 'No phone'}</span>
+                        </p>
+                        <p className="ct-line">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 6L2 7"/></svg>
+                          <span className={c.email ? undefined : 'ct-none'}>{c.email || 'No email'}</span>
+                        </p>
+                        <div className="ct-badges">
+                          <span className="ct-tag" style={{ ['--tag' as any]: src.color }}>{src.label}</span>
+                          <span className="ct-tag" style={{ ['--tag' as any]: c.subscribed_to_marketing ? '#16a34a' : '#a1a1aa' }}>{c.subscribed_to_marketing ? 'Subscribed' : 'Not subscribed'}</span>
+                          {c.relationship_type && c.relationship_type !== 'customer' && (
+                            <span className="ct-tag" style={{ ['--tag' as any]: '#4f46e5' }}>{RELATIONSHIP_LABELS[c.relationship_type] || c.relationship_type}</span>
+                          )}
+                          {(c.tags || []).slice(0, 2).map(t => <span key={t} className="ct-tag plain">{t}</span>)}
+                          {(c.tags || []).length > 2 && <span className="ct-tag plain" title={(c.tags || []).slice(2).join(', ')}>+{(c.tags || []).length - 2}</span>}
+                        </div>
+                        <div className="ct-foot">
+                          <span className="ct-date">Added {fmtAdded(c.created_at)}</span>
+                          <div className="ct-actions">
+                            {c.phone && (
+                              <button type="button" className="ct-act" title={`Call ${c.phone}`} aria-label={`Call ${c.name || c.phone}`} onClick={() => callContact(c)}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={PHONE_PATH}/></svg>
+                              </button>
+                            )}
+                            {c.phone && (
+                              <button type="button" className="ct-act" title={`Message ${c.phone} in Colvy`} aria-label={`Message ${c.name || c.phone}`} onClick={() => messageContact(c)}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                              </button>
+                            )}
+                            {c.email && (
+                              <button type="button" className="ct-act" title={`Email ${c.email} in Colvy`} aria-label={`Email ${c.name || c.email}`} onClick={() => emailContact(c)}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 6L2 7"/></svg>
+                              </button>
+                            )}
+                            <button type="button" className="ct-act" aria-label={`Edit ${c.name || c.email || 'contact'}`} onClick={() => editContact(c)}>
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            </>
-          )}
+                    </li>
+                  )
+                })}
+              </ul>
+              </>
+            )}
+          </div>
 
           {/* Pagination — the header shows the true total, so the table needs a
               way to reach beyond the first page of it. */}
           {totalCount > PAGE_SIZE && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 14px', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>
+            <div className="ct-foot-bar">
+              <span>
                 Showing {(page * PAGE_SIZE + 1).toLocaleString()}–{Math.min((page + 1) * PAGE_SIZE, totalCount).toLocaleString()} of {totalCount.toLocaleString()}
               </span>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                <button type="button" onClick={() => setPage(0)} disabled={page === 0}
-                  style={{ padding: '6px 11px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', fontSize: 12.5, fontWeight: 600, color: page === 0 ? '#d1d5db' : 'var(--slate)', cursor: page === 0 ? 'default' : 'pointer' }}>
-                  First
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                <button type="button" className="ct-pill" style={{ height: 34 }} onClick={() => setPage(0)} disabled={page === 0}>First</button>
+                <button type="button" className="ct-icon" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} aria-label="Previous page">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
                 </button>
-                <button type="button" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
-                  style={{ padding: '6px 11px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', fontSize: 12.5, fontWeight: 600, color: page === 0 ? '#d1d5db' : 'var(--slate)', cursor: page === 0 ? 'default' : 'pointer' }}>
-                  Previous
+                <span className="ct-pg">Page {page + 1} of {Math.max(1, Math.ceil(totalCount / PAGE_SIZE)).toLocaleString()}</span>
+                <button type="button" className="ct-icon" onClick={() => setPage(p => p + 1)} disabled={(page + 1) * PAGE_SIZE >= totalCount} aria-label="Next page">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
                 </button>
-                <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', padding: '0 6px' }}>
-                  Page {page + 1} of {Math.max(1, Math.ceil(totalCount / PAGE_SIZE)).toLocaleString()}
-                </span>
-                <button type="button"
-                  onClick={() => setPage(p => p + 1)}
-                  disabled={(page + 1) * PAGE_SIZE >= totalCount}
-                  style={{ padding: '6px 11px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', fontSize: 12.5, fontWeight: 600, color: (page + 1) * PAGE_SIZE >= totalCount ? '#d1d5db' : 'var(--coral)', cursor: (page + 1) * PAGE_SIZE >= totalCount ? 'default' : 'pointer' }}>
-                  Next
-                </button>
-                <button type="button"
-                  onClick={() => setPage(Math.max(0, Math.ceil(totalCount / PAGE_SIZE) - 1))}
-                  disabled={(page + 1) * PAGE_SIZE >= totalCount}
-                  style={{ padding: '6px 11px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', fontSize: 12.5, fontWeight: 600, color: (page + 1) * PAGE_SIZE >= totalCount ? '#d1d5db' : 'var(--slate)', cursor: (page + 1) * PAGE_SIZE >= totalCount ? 'default' : 'pointer' }}>
-                  Last
-                </button>
+                <button type="button" className="ct-pill" style={{ height: 34 }} onClick={() => setPage(Math.max(0, Math.ceil(totalCount / PAGE_SIZE) - 1))} disabled={(page + 1) * PAGE_SIZE >= totalCount}>Last</button>
               </div>
             </div>
           )}
@@ -717,15 +791,22 @@ export default function ContactsPage() {
 
       {/* Contact detail panel */}
       {(selected || (editMode && !selected)) && (
-        <div className="ct-detail ct-sheet" role="region" aria-label="Contact details" style={{ width: 320, borderLeft: '1px solid var(--border)', background: 'var(--card, #fff)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>{!selected ? 'New Contact' : editMode ? 'Edit Contact' : 'Contact'}</h3>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {selected && !editMode && <button type="button" onClick={() => setEditMode(true)} style={{ fontSize: 12, color: 'var(--coral)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Edit</button>}
-              <button type="button" className="ct-close" aria-label="Close" onClick={() => { setSelected(null); setEditMode(false) }} style={{ fontSize: 16, color: '#9ca3af', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
+        <div className="ct-detail ct-sheet" role="region" aria-label="Contact details">
+          <div className="ct-detail-head">
+            <h3>{!selected ? 'New contact' : editMode ? 'Edit contact' : 'Contact'}</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              {selected && !editMode && (
+                <button type="button" className="ct-small" onClick={() => setEditMode(true)}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                  Edit
+                </button>
+              )}
+              <button type="button" className="ct-icon ct-close" aria-label="Close" title="Close" onClick={() => { setSelected(null); setEditMode(false) }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
             </div>
           </div>
-          <div className="ct-detail-body" style={{ flex: 1, overflowY: 'auto', padding: '18px' }}>
+          <div className="ct-detail-body" style={{ flex: 1, overflowY: 'auto', padding: '18px 20px 20px' }}>
             {editMode ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {(() => {
@@ -746,16 +827,16 @@ export default function ContactsPage() {
                       country: d.country || b.country || d.country,
                       company_name: d.company_name || b.company || d.company_name,
                     }))}
-                      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 9, border: '1px dashed var(--coral)', background: 'var(--peach)', color: 'var(--coral)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, height: 38, padding: '0 14px', borderRadius: 999, border: 'none', background: 'color-mix(in srgb, var(--coral) 11%, #fff)', color: 'var(--coral)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                       Fill from order
                     </button>
                   )
                 })()}
-                {[['name', 'Full Name', 'text'], ['email', 'Email', 'email'], ['phone', 'Phone', 'tel']].map(([field, label, type]) => (
+                {[['name', 'Full name', 'text'], ['email', 'Email', 'email'], ['phone', 'Phone', 'tel']].map(([field, label, type]) => (
                   <div key={field}>
                     <label style={labelStyle}>{label}</label>
-                    <input type={type} value={(editData as any)[field] || ''} onChange={e => setEditData(d => ({ ...d, [field]: e.target.value }))} style={inp} />
+                    <input type={type} className="ct-field" value={(editData as any)[field] || ''} onChange={e => setEditData(d => ({ ...d, [field]: e.target.value }))} style={inp} />
                   </div>
                 ))}
                 {/* One smart address field — mirrors the inbox contact editor.
@@ -788,35 +869,34 @@ export default function ContactsPage() {
                       // from marketing by default — mirror the detail panel.
                       setEditData(d => ({ ...d, relationship_type: rt, ...(rt === 'customer' ? {} : { subscribed_to_marketing: false }) }))
                     }}
-                    style={{ ...inp, cursor: 'pointer' }}>
+                    className="ct-select" style={{ width: '100%', maxWidth: 'none' }}>
                     <option value="customer">Customer</option>
                     <option value="supplier">Supplier</option>
                     <option value="wholesaler">Wholesaler</option>
                     <option value="business">Business contact</option>
                   </select>
                   {(editData as any).relationship_type && (editData as any).relationship_type !== 'customer' && (
-                    <p style={{ margin: '5px 0 0', fontSize: 11, color: 'var(--slate)' }}>Excluded from marketing by default.</p>
+                    <p style={{ margin: '6px 0 0', fontSize: 12.5, color: '#8e8e93' }}>Excluded from marketing by default.</p>
                   )}
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input type="checkbox" id="mkt" checked={!!(editData as any).subscribed_to_marketing} onChange={e => setEditData(d => ({ ...d, subscribed_to_marketing: e.target.checked }))} />
-                  <label htmlFor="mkt" style={{ fontSize: 13 }}>Subscribed to marketing</label>
-                </div>
-                <textarea placeholder="Notes…" value={(editData as any).notes || ''} onChange={e => setEditData(d => ({ ...d, notes: e.target.value }))} rows={3} style={{ ...inp, resize: 'vertical' }} />
-                <button type="button" onClick={saveContact} disabled={saving}
-                  style={{ padding: '10px 0', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontWeight: 700, fontSize: 14, cursor: 'pointer', marginTop: 4 }}>
-                  {saving ? 'Saving…' : 'Save Contact'}
+                <label htmlFor="mkt" style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 14, color: 'var(--ink)', cursor: 'pointer' }}>
+                  <input type="checkbox" id="mkt" checked={!!(editData as any).subscribed_to_marketing} onChange={e => setEditData(d => ({ ...d, subscribed_to_marketing: e.target.checked }))} style={{ width: 16, height: 16, accentColor: '#18181b' }} />
+                  Subscribed to marketing
+                </label>
+                <textarea placeholder="Notes…" className="ct-field" value={(editData as any).notes || ''} onChange={e => setEditData(d => ({ ...d, notes: e.target.value }))} rows={3} style={{ ...inp, resize: 'vertical' }} />
+                <button type="button" className="cv-btn cv-btn-primary" onClick={saveContact} disabled={saving} style={{ width: '100%', marginTop: 4 }}>
+                  {saving ? 'Saving…' : 'Save contact'}
                 </button>
               </div>
             ) : selected && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 0', borderBottom: '1px solid var(--border)' }}>
-                  <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'var(--peach)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 700, color: 'var(--coral)' }}>
-                    {((selected.name || selected.email || '?')[0] || '?').toUpperCase()}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 13, paddingBottom: 16, borderBottom: '1px solid #f0f0f2' }}>
+                  <div style={{ ...avatarStyle(selected), width: 52, height: 52, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 700, flexShrink: 0 }}>
+                    {initialsOf(selected)}
                   </div>
-                  <div>
-                    <p style={{ margin: 0, fontWeight: 700, fontSize: 15, color: 'var(--ink)' }}>{selected.name || 'No name'}</p>
-                    <p style={{ margin: 0, fontSize: 12, color: '#9ca3af' }}>Since {new Date(selected.created_at).toLocaleDateString()}</p>
+                  <div style={{ minWidth: 0 }}>
+                    <p style={{ margin: 0, fontWeight: 700, fontSize: 17, letterSpacing: '-0.01em', color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{selected.name || 'No name'}</p>
+                    <p style={{ margin: '3px 0 0', fontSize: 13, color: '#8e8e93' }}>Added {fmtAdded(selected.created_at)}</p>
                   </div>
                 </div>
                 {[['Email', selected.email], ['Phone', selected.phone], ['Address', [selected.address, selected.city, selected.country].filter(Boolean).join(', ') || null]]
@@ -824,19 +904,19 @@ export default function ContactsPage() {
                   .map(([label, value]) => (
                     <div key={label as string}>
                       <p style={{ ...labelStyle, marginBottom: 2 }}>{label as string}</p>
-                      <p style={{ margin: 0, fontSize: 14, color: 'var(--ink)' }}>{value as string}</p>
+                      <p style={{ margin: 0, fontSize: 14, color: 'var(--ink)', overflowWrap: 'anywhere' }}>{value as string}</p>
                     </div>
                   ))
                 }
                 <div>
                   <p style={labelStyle}>Marketing</p>
-                  <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: selected.subscribed_to_marketing ? '#dcfce7' : '#f3f4f6', color: selected.subscribed_to_marketing ? '#059669' : '#6b7280' }}>
+                  <span className="ct-tag" style={{ ['--tag' as any]: selected.subscribed_to_marketing ? '#16a34a' : '#a1a1aa' }}>
                     {selected.subscribed_to_marketing ? 'Subscribed' : 'Not subscribed'}
                   </span>
                 </div>
                 <div>
                   <p style={labelStyle}>Source</p>
-                  <span style={{ fontSize: 12, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: SOURCE_COLORS[selected.source] || '#f3f4f6', color: '#374151', textTransform: 'capitalize' }}>{selected.source || 'unknown'}</span>
+                  <span className="ct-tag" style={{ ['--tag' as any]: sourceMeta(selected.source).color }}>{sourceMeta(selected.source).label}</span>
                 </div>
                 <div>
                   <p style={labelStyle}>Relationship</p>
@@ -862,24 +942,23 @@ export default function ContactsPage() {
                         }
                       } catch {}
                     }}
-                    style={{ fontSize: 12, fontWeight: 700, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', cursor: 'pointer', textTransform: 'capitalize' }}>
+                    className="ct-select" style={{ width: '100%', maxWidth: 'none' }}>
                     <option value="customer">Customer</option>
                     <option value="supplier">Supplier</option>
                     <option value="wholesaler">Wholesaler</option>
                     <option value="business">Business contact</option>
                   </select>
                   {(selected.relationship_type && selected.relationship_type !== 'customer') && (
-                    <p style={{ margin: '5px 0 0', fontSize: 11, color: 'var(--slate)' }}>Excluded from marketing by default.</p>
+                    <p style={{ margin: '6px 0 0', fontSize: 12.5, color: '#8e8e93' }}>Excluded from marketing by default.</p>
                   )}
                 </div>
 
                 {/* History — everything that's happened with this person,
                     on every channel, without leaving the list. */}
-                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+                <div style={{ borderTop: '1px solid #f0f0f2', paddingTop: 16 }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
-                    <p style={{ ...labelStyle, margin: 0 }}>History</p>
-                    <button type="button" onClick={() => router.push(`/admin/customers/profile?id=${selected.id}`)}
-                      style={{ padding: 0, border: 'none', background: 'none', fontSize: 12, fontWeight: 700, color: 'var(--coral)', cursor: 'pointer' }}>
+                    <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>History</p>
+                    <button type="button" className="ct-link" onClick={() => router.push(`/admin/customers/profile?id=${selected.id}`)}>
                       Full profile →
                     </button>
                   </div>
@@ -896,8 +975,8 @@ export default function ContactsPage() {
         <div onClick={() => setDupGroups(null)}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 20 }}>
           <div onClick={e => e.stopPropagation()}
-            style={{ width: 620, maxWidth: '95vw', maxHeight: '85vh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: 24 }}>
-            <h2 style={{ margin: '0 0 4px', fontSize: 19, fontWeight: 800, color: 'var(--ink)' }}>Duplicate contacts</h2>
+            style={{ width: 620, maxWidth: '95vw', maxHeight: '85vh', overflowY: 'auto', background: '#fff', borderRadius: 24, padding: 26, boxShadow: '0 24px 60px rgba(0,0,0,.22)' }}>
+            <h2 style={{ margin: '0 0 6px', fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--ink)' }}>Duplicate contacts</h2>
             <p style={{ margin: '0 0 18px', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>
               Matched on email or phone only. Two people with the same name are <strong>not</strong> merged — silently combining two real customers would be far worse than leaving a duplicate.
             </p>
@@ -909,13 +988,13 @@ export default function ContactsPage() {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 {dupGroups.map((g: any[], i: number) => (
-                  <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
-                    <p style={{ margin: '0 0 10px', fontSize: 11.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>
+                  <div key={i} style={{ borderRadius: 18, padding: 14, background: '#fafafa' }}>
+                    <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 600, color: '#71717a' }}>
                       Same {g[0].matched_on}: {g[0].matched_value}
                     </p>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                       {g.map((c: any) => (
-                        <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 11px', borderRadius: 9, background: 'var(--canvas)' }}>
+                        <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 12px', borderRadius: 14, background: '#fff', boxShadow: '0 0 0 1px rgba(0,0,0,.05)' }}>
                           <div style={{ minWidth: 0 }}>
                             <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{c.name || 'No name'}</p>
                             <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--slate)' }}>
@@ -923,7 +1002,7 @@ export default function ContactsPage() {
                             </p>
                           </div>
                           <button onClick={() => mergeGroup(g, c.id)} disabled={dupBusy}
-                            style={{ padding: '6px 12px', borderRadius: 8, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                            className="cv-btn cv-btn-primary" style={{ height: 34, padding: '0 14px', fontSize: 13, flexShrink: 0 }}>
                             Keep this one
                           </button>
                         </div>
@@ -934,8 +1013,7 @@ export default function ContactsPage() {
               </div>
             )}
 
-            <button onClick={() => setDupGroups(null)}
-              style={{ width: '100%', marginTop: 18, padding: '11px 0', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Close</button>
+            <button className="cv-btn" onClick={() => setDupGroups(null)} style={{ width: '100%', marginTop: 18 }}>Close</button>
           </div>
         </div>
       )}
