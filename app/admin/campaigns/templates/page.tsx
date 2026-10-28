@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { SkeletonList } from '@/components/Skeleton'
+import EmptyScroll from '@/components/EmptyScroll'
 import { confirmDialog } from '@/components/ConfirmDialog'
 
 const TYPES = [
@@ -83,75 +84,69 @@ export default function CampaignTemplatesPage() {
     setTemplates(t => t.filter(x => x.id !== id))
   }
 
-  const card: React.CSSProperties = { border: '1px solid var(--border)', borderRadius: 14, background: '#fff', padding: 16 }
+  const card: React.CSSProperties = { borderRadius: 20, background: '#fff', padding: 18, boxShadow: '0 0 0 1px rgba(0,0,0,.06), 0 1px 2px rgba(16,24,40,.04)' }
   // GSM-7 messages are 160 chars for one segment, then 153 per segment.
   const segments = message.length === 0 ? 0 : message.length <= 160 ? 1 : Math.ceil(message.length / 153)
 
-  if (loading) return <SkeletonList rows={5} />
+  if (loading) return <div style={{ padding: '24px 28px' }}><SkeletonList rows={5} /></div>
 
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto', padding: 24 }}>
-      <button onClick={() => router.push('/admin/campaigns')}
-        style={{ border: 'none', background: 'none', color: 'var(--slate)', fontSize: 13, cursor: 'pointer', padding: 0, marginBottom: 12 }}>
-        ← Back to campaigns
+    <div className="ct">
+      <style>{CT_CSS}</style>
+      <button onClick={() => router.push('/admin/campaigns')} className="ct-back">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+        Campaigns
       </button>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
+      <div className="ct-head">
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>Campaign templates</h1>
-          <p style={{ color: 'var(--slate)', fontSize: 13, margin: '5px 0 0' }}>
-            Reusable message bodies you can start a campaign from.
-          </p>
+          <h1>Campaign templates</h1>
+          <p>Reusable messages you can start a campaign from.</p>
         </div>
-        <button onClick={() => setShowNew(v => !v)}
-          style={{ padding: '9px 16px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-          + New template
-        </button>
+        {!showNew && (
+          <button type="button" className="cv-btn cv-btn-primary" onClick={() => setShowNew(true)}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+            New template
+          </button>
+        )}
       </div>
 
       {tableMissing && (
-        <div style={{ ...card, borderColor: '#fecaca', background: '#fef2f2', marginBottom: 16 }}>
-          <strong style={{ color: '#dc2626', fontSize: 13.5 }}>Template table not found</strong>
-          <p style={{ margin: '6px 0 0', fontSize: 13, color: '#7f1d1d' }}>
-            Run <code>migrations/COLVY_V194_CAMPAIGNS.sql</code> in Supabase, then reload.
-          </p>
+        <div className="ct-note err">
+          <b>Template table not found</b>
+          <span>Run <code>migrations/COLVY_V194_CAMPAIGNS.sql</code> in Supabase, then reload.</span>
         </div>
       )}
 
       {showNew && (
         <div style={{ ...card, marginBottom: 16 }}>
-          <input value={name} onChange={e => setName(e.target.value)} placeholder="Template name"
-            style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, marginBottom: 10, boxSizing: 'border-box' }} />
-          <select value={type} onChange={e => setType(e.target.value)}
-            style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, marginBottom: 10, background: '#fff' }}>
-            {TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
-          <textarea value={message} onChange={e => setMessage(e.target.value)} rows={4}
-            placeholder="Hi {{first_name}}, new arrivals at {{store_name}}! {{short_link}} Reply STOP to unsubscribe."
-            style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }} />
-          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', margin: '8px 0' }}>
+          <p className="ct-title">New template</p>
+          <div className="ct-row">
+            <label className="ct-field"><span>Name</span>
+              <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. New arrivals" autoFocus />
+            </label>
+            <label className="ct-field"><span>Type</span>
+              <select value={type} onChange={e => setType(e.target.value)}>
+                {TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </label>
+          </div>
+          <label className="ct-field"><span>Message</span>
+            <textarea value={message} onChange={e => setMessage(e.target.value)} rows={4}
+              placeholder="Hi {{first_name}}, new arrivals at {{store_name}}! {{short_link}} Reply STOP to unsubscribe." />
+          </label>
+          <div className="ct-vars">
             {VARIABLES.map(v => (
-              <button key={v} type="button" onClick={() => setMessage(m => m + v)}
-                style={{ padding: '4px 9px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--canvas)', fontSize: 11.5, fontWeight: 600, color: 'var(--slate)', cursor: 'pointer' }}>
-                {v}
-              </button>
+              <button key={v} type="button" onClick={() => setMessage(m => m + v)}>{v}</button>
             ))}
           </div>
-          <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--slate)' }}>
-            {message.length} characters · {segments} SMS segment{segments === 1 ? '' : 's'}
-          </p>
+          <p className="ct-count">{message.length} characters · {segments} SMS segment{segments === 1 ? '' : 's'}</p>
           {message && !/stop/i.test(message) && (
-            <p style={{ margin: '0 0 10px', fontSize: 12, color: '#b45309', background: '#fffbeb', border: '1px dashed #f59e0b', borderRadius: 8, padding: '8px 10px' }}>
-              Marketing SMS needs unsubscribe wording. Consider adding “Reply STOP to unsubscribe.”
-            </p>
+            <p className="ct-note warn">Marketing SMS needs unsubscribe wording. Consider adding “Reply STOP to unsubscribe.”</p>
           )}
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={save} disabled={saving || !name.trim() || !message.trim()}
-              style={{ padding: '8px 16px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: saving || !name.trim() || !message.trim() ? 0.5 : 1 }}>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button type="button" className="cv-btn" onClick={() => setShowNew(false)}>Cancel</button>
+            <button type="button" className="cv-btn cv-btn-primary" onClick={save} disabled={saving || !name.trim() || !message.trim()}>
               {saving ? 'Saving…' : 'Save template'}
-            </button>
-            <button onClick={() => setShowNew(false)}
-              style={{ padding: '8px 16px', borderRadius: 9, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-              Cancel
             </button>
           </div>
         </div>
@@ -159,28 +154,55 @@ export default function CampaignTemplatesPage() {
 
       <div style={{ display: 'grid', gap: 10 }}>
         {templates.length === 0 && !tableMissing && (
-          <div style={{ ...card, textAlign: 'center', color: 'var(--slate)', fontSize: 13.5, padding: 30 }}>
-            No templates yet.
+          <div style={{ ...card, padding: '18px 12px' }}>
+            <EmptyScroll kinds={['sms', 'campaign']} compact title="No templates yet" line="Save a message you send often, then start campaigns from it."
+              action={!showNew ? <button type="button" className="cv-btn" onClick={() => setShowNew(true)}>New template</button> : undefined} />
           </div>
         )}
         {templates.map(t => (
           <div key={t.id} style={card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
-              <div>
-                <strong style={{ fontSize: 14, color: 'var(--ink)' }}>{t.name}</strong>
-                <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'capitalize', marginTop: 2 }}>
-                  {String(t.campaign_type || '').replace(/_/g, ' ')}
-                </div>
+              <div style={{ minWidth: 0 }}>
+                <strong style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>{t.name}</strong>
+                {t.campaign_type && <div><span className="ct-tag">{String(t.campaign_type).replace(/_/g, ' ')}</span></div>}
               </div>
-              <button onClick={() => remove(t.id)} title="Delete"
-                style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#dc2626', padding: 4, display: 'inline-flex' }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              <button type="button" className="ct-del" onClick={() => remove(t.id)} title="Delete" aria-label={`Delete template ${t.name}`}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
               </button>
             </div>
-            <p style={{ margin: '10px 0 0', fontSize: 13, color: 'var(--slate)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{t.message}</p>
+            <p className="ct-msg">{t.message}</p>
           </div>
         ))}
       </div>
     </div>
   )
 }
+
+const CT_CSS = `
+.ct{max-width:900px;margin:0 auto;padding:24px 28px 48px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
+.ct button::before{display:none}
+.ct-back{display:inline-flex;align-items:center;gap:4px;height:32px;padding:0 14px 0 10px;margin-bottom:14px;border:none;border-radius:999px;background:#f4f4f5;color:#3f3f46;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer}
+.ct-back:hover{background:#ececef;color:#18181b}
+.ct-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+.ct-head h1{margin:0;font-size:30px;font-weight:800;letter-spacing:-.025em;line-height:1.15}
+.ct-head p{margin:6px 0 0;font-size:14px;color:#71717a}
+.ct-title{margin:0 0 14px;font-size:16px;font-weight:700}
+.ct-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ct-field{display:block;margin-bottom:12px}
+.ct-field > span{display:block;margin-bottom:6px;font-size:13.5px;font-weight:600}
+.ct-field :is(input,select,textarea){display:block;width:100%;box-sizing:border-box;min-height:42px;padding:10px 14px;border:1.5px solid transparent;border-radius:12px;background-color:#f4f4f5;font:inherit;font-size:14px;color:var(--ink);outline:none;resize:vertical}
+.ct-field select{padding-right:36px}
+.ct-field :is(input,select,textarea):focus{background-color:#fff;border-color:#d4d4d8!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 16%,transparent)}
+.ct-vars{display:flex;gap:5px;flex-wrap:wrap;margin:-2px 0 8px}
+.ct-vars button{height:28px;padding:0 11px;border:none;border-radius:999px;background:#f4f4f5;font:inherit;font-size:12.5px;font-weight:600;color:#3f3f46;cursor:pointer}
+.ct-vars button:hover{background:#ececef}
+.ct-count{margin:0 0 10px;font-size:12.5px;color:#8e8e93}
+.ct-note{display:flex;flex-direction:column;gap:2px;margin:0 0 12px;padding:11px 14px;border-radius:14px;font-size:13px;line-height:1.5}
+.ct-note.warn{background:#fffbeb;color:#92400e;box-shadow:0 0 0 1px #fde68a}
+.ct-note.err{background:#fef2f2;color:#7f1d1d;box-shadow:0 0 0 1px #fecaca;margin-bottom:16px}
+.ct-tag{display:inline-flex;align-items:center;height:22px;margin-top:6px;padding:0 9px;border-radius:999px;background:#f4f4f5;color:#52525b;font-size:12px;font-weight:600;text-transform:capitalize}
+.ct-del{width:32px;height:32px;flex-shrink:0;border:none;border-radius:999px;background:#f4f4f5;color:#71717a;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.ct-del:hover{background:#fff1f2;color:#e11d48}
+.ct-msg{margin:12px 0 0;padding:12px 14px;border-radius:16px;background:#f4f4f5;font-size:13.5px;color:#27272a;white-space:pre-wrap;line-height:1.5}
+@media(max-width:560px){.ct{padding:16px 14px 36px}.ct-head h1{font-size:25px}.ct-row{grid-template-columns:1fr}}
+`

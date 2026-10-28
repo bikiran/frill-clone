@@ -759,10 +759,12 @@ export default function CampaignEditorPage() {
     finally { setSending(false) }
   }
 
-  const card: React.CSSProperties = { border: '1px solid var(--border)', borderRadius: 14, background: '#fff', padding: 18 }
-  const stopBtn: React.CSSProperties = { padding: '10px 16px', borderRadius: 10, background: '#fff', color: '#b91c1c', border: '1px solid #fecaca', fontSize: 13, fontWeight: 700, cursor: 'pointer' }
-  const input: React.CSSProperties = { width: '100%', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box', background: '#fff' }
-  const label: React.CSSProperties = { fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block', marginBottom: 6 }
+  // White rounded cards, grey pill fields and bold normal-case titles. A
+  // card that sets borderColor shows it (tinted notes); the rest show a ring.
+  const card: React.CSSProperties = { border: '1px solid transparent', borderRadius: 20, background: '#fff', padding: 20, boxShadow: '0 0 0 1px rgba(0,0,0,.06), 0 1px 2px rgba(16,24,40,.04)' }
+  const stopBtn: React.CSSProperties = { padding: '10px 16px', borderRadius: 999, background: '#fff1f2', color: '#be123c', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }
+  const input: React.CSSProperties = { width: '100%', minHeight: 42, padding: '10px 14px', borderRadius: 12, border: '1.5px solid transparent', fontSize: 14, boxSizing: 'border-box', backgroundColor: '#f4f4f5', color: 'var(--ink)' }
+  const label: React.CSSProperties = { fontSize: 14.5, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.01em', display: 'block', marginBottom: 10 }
 
   if (loading) return <SkeletonList rows={6} />
   if (!campaign) return (
@@ -772,15 +774,18 @@ export default function CampaignEditorPage() {
   )
 
   return (
-    <div style={{ padding: '24px 24px 40px', boxSizing: 'border-box', width: '100%' }} className="campaign-editor">
-      <button onClick={() => router.push('/admin/campaigns')}
-        style={{ border: 'none', background: 'none', color: 'var(--slate)', fontSize: 13, cursor: 'pointer', padding: 0, marginBottom: 12 }}>
-        ← Back to campaigns
+    <div style={{ padding: '24px 28px 48px', boxSizing: 'border-box', width: '100%', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }} className="campaign-editor">
+      <button onClick={() => router.push('/admin/campaigns')} className="ce-back">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+        Campaigns
       </button>
 
       <div style={{ marginBottom: 18 }}>
-        <h1 style={{ fontSize: 23, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>{campaign.name}</h1>
-        <p style={{ color: 'var(--slate)', fontSize: 13, margin: '5px 0 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <h1 style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.025em', lineHeight: 1.15, color: 'var(--ink)', margin: 0 }}>{campaign.name}</h1>
+          <span className="ce-tag">{isEmail ? 'Email' : 'SMS'}</span>
+        </div>
+        <p style={{ color: '#71717a', fontSize: 14, margin: '6px 0 0' }}>
           {isEmail ? (step === 2 ? 'Step 2 of 5 — choose who this email goes to.' : step === 5 ? 'Step 4 of 5 — choose when it sends.' : step === 6 ? 'Step 5 of 5 — review and confirm.' : 'Step 3 of 5 — design the email.')
             : step === 2 ? 'Step 2 of 6 — choose who this campaign goes to.'
             : step === 3 ? (isEmail ? 'Step 3 of 5 — design the email.' : 'Step 3 of 6 — write the message.')
@@ -791,7 +796,7 @@ export default function CampaignEditorPage() {
       </div>
 
       {/* Step rail */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 18, overflowX: 'auto', paddingBottom: 2 }}>
+      <div className="ce-steps" style={{ display: 'flex', gap: 2, marginBottom: 20, overflowX: 'auto', padding: 3, borderRadius: 999, background: '#f4f4f5', width: 'fit-content', maxWidth: '100%', boxSizing: 'border-box', scrollbarWidth: 'none' }}>
         {['Details', 'Audience', isEmail ? 'Email' : 'Message', 'Links & offers', 'Schedule', 'Review'].map((s, i) => {
           const n = i + 1
           // Email: links and offers are blocks in the designer, so no step 4.
@@ -801,26 +806,28 @@ export default function CampaignEditorPage() {
           const active = step === n
           return (
             <button key={s} type="button" disabled={!done || saving} onClick={() => done && goToStep(n)}
+              aria-current={active ? 'step' : undefined}
               style={{
-                flexShrink: 0, padding: '6px 13px', borderRadius: 20, fontSize: 12, fontWeight: 700,
-                background: active ? 'var(--peach)' : '#fff',
-                color: active ? 'var(--coral)' : done ? 'var(--slate)' : '#d1d5db',
-                border: '1px solid ' + (active ? 'var(--coral)' : 'var(--border)'),
+                flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 7, height: 34, padding: '0 14px 0 6px', borderRadius: 999, fontSize: 13.5, fontWeight: 600,
+                background: active ? '#fff' : 'transparent',
+                color: active ? '#18181b' : done ? '#52525b' : '#a1a1aa',
+                border: 'none', boxShadow: active ? '0 1px 3px rgba(0,0,0,.1), 0 0 0 .5px rgba(0,0,0,.04)' : 'none',
                 cursor: done ? 'pointer' : 'default',
               }}>
-              {shown}. {s}
+              <span style={{ width: 22, height: 22, borderRadius: 999, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, background: active ? '#18181b' : n < step ? 'color-mix(in srgb, var(--coral) 14%, #fff)' : 'rgba(0,0,0,.06)', color: active ? '#fff' : n < step ? 'var(--coral)' : 'inherit' }}>{shown}</span>
+              {s}
             </button>
           )
         })}
       </div>
 
       {stepError && (
-        <div role="alert" style={{ marginBottom: 14, padding: '10px 13px', borderRadius: 10, border: '1px solid #fecaca', background: '#fef2f2', color: '#7f1d1d', fontSize: 13 }}>
+        <div role="alert" style={{ marginBottom: 14, padding: '12px 16px', borderRadius: 16, border: '1px solid #fecaca', background: '#fef2f2', color: '#7f1d1d', fontSize: 13 }}>
           {stepError}
         </div>
       )}
       {campaign.status === 'paused' && (
-        <div style={{ marginBottom: 14, padding: '12px 14px', borderRadius: 12, border: '1px solid #fde68a', background: '#fffbeb', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        <div style={{ marginBottom: 14, padding: '12px 16px', borderRadius: 16, border: '1px solid #fde68a', background: '#fffbeb', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#b45309" strokeWidth="2.2" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 1 }}><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
           <div style={{ fontSize: 13, color: '#78350f', lineHeight: 1.5 }}>
             <strong>This campaign is paused.</strong>{' '}
@@ -837,7 +844,7 @@ export default function CampaignEditorPage() {
           onSaved={row => setEmailInfo(i => i ? { ...i, design: row } : i)} />
       )}
 
-      <div style={{ display: isEmail && step === 3 ? 'none' : 'grid', gridTemplateColumns: 'minmax(0, 1fr) 320px', gap: 16, alignItems: 'start' }}
+      <div style={{ display: isEmail && step === 3 ? 'none' : 'grid', gridTemplateColumns: 'minmax(0, 1fr) 340px', gap: 18, alignItems: 'start' }}
         className="campaign-grid">
         {/* ── Left: audience selection (step 2) ────────────────────────────── */}
         {step === 2 && (
@@ -847,12 +854,12 @@ export default function CampaignEditorPage() {
             {AUDIENCE_TYPES.map(([val, title, desc]) => (
               <button key={val} type="button" onClick={() => setAudType(val)}
                 style={{
-                  textAlign: 'left', padding: '11px 13px', borderRadius: 10, cursor: 'pointer',
-                  border: '1px solid ' + (audType === val ? 'var(--coral)' : 'var(--border)'),
-                  background: audType === val ? 'var(--peach)' : '#fff',
+                  textAlign: 'left', padding: '12px 14px', borderRadius: 14, cursor: 'pointer', border: 'none',
+                    boxShadow: audType === val ? '0 0 0 1.5px var(--coral)' : 'none',
+                    background: audType === val ? 'color-mix(in srgb, var(--coral) 8%, #fff)' : '#f4f4f5',
                 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 700, color: audType === val ? 'var(--coral)' : 'var(--ink)' }}>{title}</div>
-                <div style={{ fontSize: 11.5, color: 'var(--slate)', marginTop: 2 }}>{desc}</div>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{title}</div>
+                <div style={{ fontSize: 12.5, color: '#71717a', marginTop: 2 }}>{desc}</div>
               </button>
             ))}
           </div>
@@ -901,10 +908,8 @@ export default function CampaignEditorPage() {
                       <button key={t} type="button"
                         onClick={() => setTags(cur => cur.includes(t) ? cur.filter(x => x !== t) : [...cur, t])}
                         style={{
-                          padding: '5px 11px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                          border: '1px solid ' + (tags.includes(t) ? 'var(--coral)' : 'var(--border)'),
-                          background: tags.includes(t) ? 'var(--peach)' : '#fff',
-                          color: tags.includes(t) ? 'var(--coral)' : 'var(--slate)',
+                          padding: '0 13px', height: 32, borderRadius: 999, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                          border: 'none', background: tags.includes(t) ? '#18181b' : '#f4f4f5', color: tags.includes(t) ? '#fff' : '#3f3f46',
                         }}>
                         {t}
                       </button>
@@ -930,18 +935,18 @@ export default function CampaignEditorPage() {
                   onKeyDown={e => e.key === 'Enter' && searchContacts()}
                   placeholder="Search by name, email or phone" style={input} />
                 <button type="button" onClick={searchContacts} disabled={pickBusy}
-                  style={{ padding: '9px 16px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  style={{ padding: '9px 16px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                   {pickBusy ? 'Searching…' : 'Search'}
                 </button>
               </div>
 
               {pickResults.length > 0 && (
-                <div style={{ marginTop: 10, maxHeight: 260, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
+                <div style={{ marginTop: 10, maxHeight: 260, overflowY: 'auto', borderRadius: 14, background: '#fafafa', boxShadow: '0 0 0 1px #ececef' }}>
                   {pickResults.map(r => {
                     const already = manualIds.includes(r.id)
                     return (
                       <div key={r.id}
-                        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', borderBottom: '1px solid var(--border)' }}>
+                        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', borderBottom: '1px solid #ececef' }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{r.name || 'Unnamed'}</div>
                           <div style={{ fontSize: 11.5, color: 'var(--slate)' }}>
@@ -953,9 +958,8 @@ export default function CampaignEditorPage() {
                           onClick={() => { setPicked(cur => [...cur, r]); setManualIds(ids => ids.includes(r.id) ? ids : [...ids, r.id]) }}
                           title={r.issue || undefined}
                           style={{
-                            padding: '5px 11px', borderRadius: 7, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
-                            border: '1px solid ' + (already ? 'var(--border)' : 'var(--coral)'),
-                            background: already ? 'var(--canvas)' : '#fff',
+                            padding: '0 12px', height: 30, borderRadius: 999, fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', border: 'none',
+                            background: already ? '#f4f4f5' : 'color-mix(in srgb, var(--coral) 12%, #fff)',
                             color: already ? 'var(--slate)' : r.messageable ? 'var(--coral)' : '#d1d5db',
                             cursor: already || !r.messageable ? 'default' : 'pointer',
                           }}>
@@ -981,10 +985,10 @@ export default function CampaignEditorPage() {
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                     {picked.map(pc => (
                       <span key={pc.id}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)', fontSize: 12, fontWeight: 600 }}>
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 28, padding: '0 8px 0 12px', borderRadius: 999, background: '#f4f4f5', color: '#18181b', fontSize: 12.5, fontWeight: 600 }}>
                         {pc.name || pc.phone || pc.email || 'Contact'}
                         <button type="button" onClick={() => { setPicked(cur => cur.filter(x => x.id !== pc.id)); setManualIds(ids => ids.filter(x => x !== pc.id)) }}
-                          style={{ border: 'none', background: 'none', padding: 0, color: 'var(--coral)', cursor: 'pointer', display: 'flex' }}>
+                          style={{ border: 'none', background: '#e4e4e7', borderRadius: 999, width: 18, height: 18, padding: 0, color: '#52525b', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                         </button>
                       </span>
@@ -1002,7 +1006,7 @@ export default function CampaignEditorPage() {
 
           {/* Extra narrowing that applies to most types */}
           {audType !== 'manual' && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, paddingTop: 14, borderTop: '1px solid #f0f0f2' }}>
               <div>
                 <label style={label}>Min. total spend</label>
                 <input value={minSpend} onChange={e => setMinSpend(e.target.value)} type="number" placeholder="Any" style={input} />
@@ -1060,7 +1064,7 @@ export default function CampaignEditorPage() {
           )}
 
           {sms.encoding === 'UCS-2' && (
-            <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 9, background: '#fffbeb', border: '1px dashed #f59e0b', fontSize: 12.5, color: '#78350f' }}>
+            <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 14, background: '#fffbeb', border: '1px solid #fde68a', fontSize: 12.5, color: '#78350f' }}>
               <strong>This message uses special characters</strong> ({sms.nonGsmChars.join(' ')}), so it is sent as
               Unicode — only {sms.perSegment} characters per segment instead of 160. Removing them would
               cut the segment count and the cost.
@@ -1070,7 +1074,7 @@ export default function CampaignEditorPage() {
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12, alignItems: 'center' }}>
             <div style={{ position: 'relative' }}>
               <button type="button" onClick={() => setShowEmoji(v => !v)}
-                style={{ padding: '7px 12px', borderRadius: 9, border: '1px solid var(--border)', background: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', color: 'var(--slate)' }}>
+                style={{ padding: '0 14px', height: 34, borderRadius: 999, border: 'none', background: '#f4f4f5', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--ink)' }}>
                 Emoji
               </button>
               {showEmoji && (
@@ -1078,28 +1082,28 @@ export default function CampaignEditorPage() {
               )}
             </div>
             <button type="button" onClick={() => insertAtCursor('{{short_link}}')}
-              style={{ padding: '7px 12px', borderRadius: 9, border: '1px solid var(--border)', background: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', color: 'var(--slate)' }}>
+              style={{ padding: '0 14px', height: 34, borderRadius: 999, border: 'none', background: '#f4f4f5', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--ink)' }}>
               Insert tracked link
             </button>
             <button type="button" onClick={aiImprove} disabled={aiBusy || !message.trim()}
-              style={{ padding: '7px 12px', borderRadius: 9, border: '1px solid var(--border)', background: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', color: 'var(--slate)', opacity: aiBusy || !message.trim() ? 0.5 : 1 }}>
+              style={{ padding: '0 14px', height: 34, borderRadius: 999, border: 'none', background: '#f4f4f5', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--ink)', opacity: aiBusy || !message.trim() ? 0.5 : 1 }}>
               {aiBusy ? 'Rewriting…' : 'Improve with AI'}
             </button>
             {!hasOptOut && (
               <button type="button" onClick={() => setMessage(m => (m.trimEnd() + ' Reply STOP to unsubscribe.').trim())}
-                style={{ padding: '7px 12px', borderRadius: 9, border: '1px solid #f59e0b', background: '#fffbeb', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', color: '#b45309' }}>
+                style={{ padding: '0 14px', height: 34, borderRadius: 999, border: 'none', background: '#fef3c7', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#b45309' }}>
                 + Add opt-out wording
               </button>
             )}
           </div>
 
-          <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+          <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #f0f0f2' }}>
             <label style={label}>Personalisation</label>
             <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
               {SMS_VARIABLES.map(v => (
                 <button key={v.token} type="button" onClick={() => insertAtCursor('{{' + v.token + '}}')}
                   title={'Example: ' + v.sample}
-                  style={{ padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--canvas)', fontSize: 11.5, fontWeight: 600, color: 'var(--slate)', cursor: 'pointer' }}>
+                  style={{ padding: '0 11px', height: 28, borderRadius: 999, border: 'none', background: '#f4f4f5', fontSize: 12.5, fontWeight: 600, color: '#3f3f46', cursor: 'pointer' }}>
                   {v.label}
                 </button>
               ))}
@@ -1130,10 +1134,8 @@ export default function CampaignEditorPage() {
                 <button key={k} type="button"
                   onClick={() => { setAttachKind(k); if (k === 'help') loadArticles() }}
                   style={{
-                    padding: '6px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                    border: '1px solid ' + (attachKind === k ? 'var(--coral)' : 'var(--border)'),
-                    background: attachKind === k ? 'var(--peach)' : '#fff',
-                    color: attachKind === k ? 'var(--coral)' : 'var(--slate)',
+                    padding: '0 13px', height: 32, borderRadius: 999, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                    border: 'none', background: attachKind === k ? '#18181b' : '#f4f4f5', color: attachKind === k ? '#fff' : '#3f3f46',
                   }}>
                   {l}
                 </button>
@@ -1147,7 +1149,7 @@ export default function CampaignEditorPage() {
                     onKeyDown={e => e.key === 'Enter' && searchProducts()}
                     placeholder="Search products by name or SKU" style={input} />
                   <button type="button" onClick={searchProducts} disabled={prodBusy}
-                    style={{ padding: '9px 16px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    style={{ padding: '9px 16px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                     {prodBusy ? 'Searching…' : 'Search'}
                   </button>
                 </div>
@@ -1155,7 +1157,7 @@ export default function CampaignEditorPage() {
                   {prodResults.map((p: any) => (
                     <button key={p.id} type="button"
                       onClick={() => attachAndInsert({ kind: 'product', id: p.id, label: p.name, url: p.permalink, price: p.price })}
-                      style={{ display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', padding: 10, borderRadius: 10, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer' }}>
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', padding: 10, borderRadius: 14, border: 'none', background: '#f4f4f5', cursor: 'pointer' }}>
                       {p.image && <img src={p.image} alt="" style={{ width: 34, height: 34, borderRadius: 7, objectFit: 'cover' }} />}
                       <span style={{ flex: 1 }}>
                         <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{p.name}</span>
@@ -1175,7 +1177,7 @@ export default function CampaignEditorPage() {
                 {articles.map((a: any) => (
                   <button key={a.id} type="button"
                     onClick={() => attachAndInsert({ kind: 'help', id: a.id, label: a.title, url: `/help/${a.id}` })}
-                    style={{ textAlign: 'left', padding: 10, borderRadius: 10, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
+                    style={{ textAlign: 'left', padding: 10, borderRadius: 14, border: 'none', background: '#f4f4f5', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
                     {a.title}
                   </button>
                 ))}
@@ -1190,7 +1192,7 @@ export default function CampaignEditorPage() {
                   placeholder="https://roxyaquarium.com.au/..." style={input} />
                 <button type="button" disabled={!linkUrl.trim()}
                   onClick={() => attachAndInsert({ kind: attachKind, label: linkLabel || linkUrl, url: linkUrl.trim() })}
-                  style={{ padding: '9px 16px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: linkUrl.trim() ? 1 : 0.5, justifySelf: 'start' }}>
+                  style={{ padding: '9px 16px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', opacity: linkUrl.trim() ? 1 : 0.5, justifySelf: 'start' }}>
                   Attach link
                 </button>
               </div>
@@ -1201,7 +1203,7 @@ export default function CampaignEditorPage() {
           <div style={card}>
             <label style={label}>Offer a coupon</label>
             {coupon ? (
-              <div style={{ padding: 14, borderRadius: 10, background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+              <div style={{ padding: 14, borderRadius: 14, background: '#f0fdf4' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
                   <div>
                     <code style={{ fontSize: 15, fontWeight: 800, color: '#15803d' }}>{coupon.code.toUpperCase()}</code>
@@ -1246,7 +1248,7 @@ export default function CampaignEditorPage() {
                     placeholder="Usage limit" style={input} />
                 </div>
                 <button type="button" onClick={createCoupon} disabled={couponBusy || !cCode.trim() || !cAmount}
-                  style={{ padding: '9px 16px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: couponBusy || !cCode.trim() || !cAmount ? 0.5 : 1, justifySelf: 'start' }}>
+                  style={{ padding: '9px 16px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', opacity: couponBusy || !cCode.trim() || !cAmount ? 0.5 : 1, justifySelf: 'start' }}>
                   {couponBusy ? 'Creating…' : 'Create coupon in WooCommerce'}
                 </button>
                 <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)' }}>
@@ -1270,12 +1272,12 @@ export default function CampaignEditorPage() {
               ].map(([v, t, d]) => (
                 <button key={v} type="button" onClick={() => setSendMode(v as any)}
                   style={{
-                    textAlign: 'left', padding: '11px 13px', borderRadius: 10, cursor: 'pointer',
-                    border: '1px solid ' + (sendMode === v ? 'var(--coral)' : 'var(--border)'),
-                    background: sendMode === v ? 'var(--peach)' : '#fff',
+                    textAlign: 'left', padding: '12px 14px', borderRadius: 14, cursor: 'pointer', border: 'none',
+                    boxShadow: sendMode === v ? '0 0 0 1.5px var(--coral)' : 'none',
+                    background: sendMode === v ? 'color-mix(in srgb, var(--coral) 8%, #fff)' : '#f4f4f5',
                   }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 700, color: sendMode === v ? 'var(--coral)' : 'var(--ink)' }}>{t}</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--slate)', marginTop: 2 }}>{d}</div>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{t}</div>
+                  <div style={{ fontSize: 12.5, color: '#71717a', marginTop: 2 }}>{d}</div>
                 </button>
               ))}
             </div>
@@ -1299,7 +1301,7 @@ export default function CampaignEditorPage() {
               </p>
             )}
             {sendMode === 'later' && !schedInPast && inQuietHours && (
-              <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 9, background: '#fffbeb', border: '1px dashed #f59e0b', fontSize: 12.5, color: '#78350f' }}>
+              <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 14, background: '#fffbeb', border: '1px solid #fde68a', fontSize: 12.5, color: '#78350f' }}>
                 <strong>That's outside normal contact hours.</strong> Marketing messages should land between
                 9am and 8pm. With quiet-hour protection on, this will be held until 9am.
               </div>
@@ -1362,7 +1364,7 @@ export default function CampaignEditorPage() {
               <input value={testNumber} onChange={e => setTestNumber(e.target.value)}
                 placeholder="04XX XXX XXX" style={{ ...input, flex: 1, minWidth: 180 }} />
               <button type="button" onClick={sendTest} disabled={testBusy || !testNumber.trim() || !message.trim()}
-                style={{ padding: '9px 18px', borderRadius: 9, background: 'var(--ink)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: testBusy || !testNumber.trim() || !message.trim() ? 0.5 : 1, whiteSpace: 'nowrap' }}>
+                style={{ padding: '9px 18px', borderRadius: 999, background: 'var(--ink)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', opacity: testBusy || !testNumber.trim() || !message.trim() ? 0.5 : 1, whiteSpace: 'nowrap' }}>
                 {testBusy ? 'Sending…' : 'Send test'}
               </button>
             </div>
@@ -1416,7 +1418,7 @@ export default function CampaignEditorPage() {
                       ? new Date(scheduledIso()!).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
                       : 'Not scheduled'],
                 ]).map(([k, v]) => (
-                  <tr key={String(k)} style={{ borderTop: '1px solid var(--border)' }}>
+                  <tr key={String(k)} style={{ borderTop: '1px solid #f0f0f2' }}>
                     <td style={{ padding: '9px 0', color: 'var(--slate)', width: 150 }}>{k}</td>
                     <td style={{ padding: '9px 0', color: 'var(--ink)', fontWeight: 600 }}>{v}</td>
                   </tr>
@@ -1427,11 +1429,11 @@ export default function CampaignEditorPage() {
 
           {/* How it's paid for: the allowance first, then prepaid credit */}
           {walletOn && savedReady && !savedLoading && credit.entitled && (
-            <div style={{ ...card, borderColor: credit.affordable ? 'var(--border)' : '#fecaca', background: credit.affordable ? '#fff' : '#fef2f2' }}>
+            <div style={{ ...card, borderColor: credit.affordable ? 'transparent' : '#fecaca', background: credit.affordable ? '#fff' : '#fef2f2' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                 <label style={{ ...label, marginBottom: 0 }}>How it’s paid for</label>
                 {!credit.unlimited && canTopUp && (
-                  <a href="/admin/billing#sms-credits" style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--coral)', color: 'var(--coral)', background: '#fff', fontSize: 12.5, fontWeight: 700, textDecoration: 'none' }}>
+                  <a href="/admin/billing#sms-credits" style={{ padding: '0 13px', height: 30, display: 'inline-flex', alignItems: 'center', borderRadius: 999, border: 'none', color: 'color-mix(in srgb, var(--coral) 85%, #000)', background: 'color-mix(in srgb, var(--coral) 12%, #fff)', fontSize: 12.5, fontWeight: 600, textDecoration: 'none' }}>
                     Top up
                   </a>
                 )}
@@ -1522,7 +1524,7 @@ export default function CampaignEditorPage() {
           {step === 6 && (
             <>
               <div style={{ ...card, borderColor: 'var(--coral)' }}>
-                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}>
                   {pausedMidSend ? 'Paused part-way' : campaign.status === 'cancelled' ? 'Stopped part-way' : campaign.status === 'sending' ? 'Sending' : campaign.status === 'sent' ? 'Sent' : blockers.length ? 'Not ready yet' : 'Ready to send'}
                 </div>
                 <p style={{ fontSize: 30, fontWeight: 800, color: 'var(--ink)', margin: '6px 0 0', lineHeight: 1 }}>
@@ -1539,7 +1541,7 @@ export default function CampaignEditorPage() {
               {pausedMidSend ? (
                 <>
                   <button onClick={resumeSend} disabled={sending}
-                    style={{ padding: '12px 16px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', opacity: sending ? 0.5 : 1 }}>
+                    style={{ padding: '12px 16px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', opacity: sending ? 0.5 : 1 }}>
                     {sending ? 'Resuming\u2026' : 'Resume sending'}
                   </button>
                   {controls.stop && (
@@ -1548,7 +1550,7 @@ export default function CampaignEditorPage() {
                     </button>
                   )}
                   <button onClick={() => router.push(`/admin/campaigns/${campaignId}/report`)}
-                    style={{ padding: '10px 16px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                    style={{ padding: '10px 16px', borderRadius: 999, background: '#f4f4f5', color: 'var(--ink)', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>
                     View report
                   </button>
                 </>
@@ -1558,7 +1560,7 @@ export default function CampaignEditorPage() {
                     This campaign was stopped part-way{Number(campaign.sent_count) > 0 ? ` after ${Number(campaign.sent_count).toLocaleString()} ${isEmail ? 'emails' : 'texts'} went` : ''}. It can't be sent again.
                   </p>
                   <button onClick={() => router.push(`/admin/campaigns/${campaignId}/report`)}
-                    style={{ marginTop: 10, padding: '9px 16px', borderRadius: 9, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                    style={{ marginTop: 10, padding: '9px 16px', borderRadius: 999, background: '#f4f4f5', color: 'var(--ink)', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>
                     View report
                   </button>
                 </div>
@@ -1569,11 +1571,11 @@ export default function CampaignEditorPage() {
                   </p>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
                     <button onClick={() => router.push(`/admin/campaigns/${campaignId}/report`)}
-                      style={{ padding: '9px 16px', borderRadius: 9, background: '#15803d', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                      style={{ padding: '9px 16px', borderRadius: 999, background: '#15803d', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>
                       View report
                     </button>
                     {controls.stop && (
-                      <button onClick={stopSending} disabled={sending} style={{ ...stopBtn, padding: '9px 16px', borderRadius: 9 }}>
+                      <button onClick={stopSending} disabled={sending} style={{ ...stopBtn, padding: '9px 16px' }}>
                         Stop sending
                       </button>
                     )}
@@ -1583,12 +1585,12 @@ export default function CampaignEditorPage() {
                 <>
                   {sendMode === 'later' ? (
                     <button onClick={scheduleCampaign} disabled={sending || cannotSendYet}
-                      style={{ padding: '12px 16px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: cannotSendYet ? 'not-allowed' : 'pointer', opacity: sending || cannotSendYet ? 0.5 : 1 }}>
+                      style={{ padding: '12px 16px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: cannotSendYet ? 'not-allowed' : 'pointer', opacity: sending || cannotSendYet ? 0.5 : 1 }}>
                       {sending ? 'Scheduling…' : 'Schedule campaign'}
                     </button>
                   ) : (
                     <button onClick={sendNow} disabled={sending || cannotSendYet}
-                      style={{ padding: '12px 16px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: cannotSendYet ? 'not-allowed' : 'pointer', opacity: sending || cannotSendYet ? 0.5 : 1 }}>
+                      style={{ padding: '12px 16px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: cannotSendYet ? 'not-allowed' : 'pointer', opacity: sending || cannotSendYet ? 0.5 : 1 }}>
                       {sending ? 'Starting…' : savedReady ? `Send to ${recipients.toLocaleString()} now` : 'Send now'}
                     </button>
                   )}
@@ -1599,22 +1601,22 @@ export default function CampaignEditorPage() {
                       </p>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                         <button onClick={reschedule} disabled={sending}
-                          style={{ padding: '10px 12px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                          style={{ padding: '10px 12px', borderRadius: 999, background: '#f4f4f5', color: 'var(--ink)', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>
                           Reschedule
                         </button>
                         <button onClick={unschedule} disabled={sending}
-                          style={{ padding: '10px 12px', borderRadius: 10, background: '#fff', color: '#b91c1c', border: '1px solid #fecaca', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                          style={{ padding: '10px 12px', borderRadius: 999, background: '#fff1f2', color: '#be123c', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>
                           Unschedule
                         </button>
                       </div>
                     </div>
                   )}
                   <button onClick={() => goToStep(5)}
-                    style={{ padding: '10px 16px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                    style={{ padding: '10px 16px', borderRadius: 999, background: '#f4f4f5', color: 'var(--ink)', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>
                     Back
                   </button>
                   <button onClick={saveLinks} disabled={saving}
-                    style={{ padding: '10px 16px', borderRadius: 10, background: '#fff', color: 'var(--slate)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                    style={{ padding: '10px 16px', borderRadius: 999, background: '#f4f4f5', color: 'var(--slate)', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>
                     {saving ? 'Saving…' : 'Save draft'}
                   </button>
                 </>
@@ -1639,7 +1641,7 @@ export default function CampaignEditorPage() {
           {step === 5 && (
             <>
               <div style={card}>
-                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 10 }}>
+                <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 10 }}>
                   Send summary
                 </div>
                 <p style={{ margin: '0 0 5px', fontSize: 12.5, color: 'var(--slate)' }}>
@@ -1676,7 +1678,7 @@ export default function CampaignEditorPage() {
               </div>
 
               <button onClick={saveSchedule} disabled={saving}
-                style={{ padding: '11px 16px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+                style={{ padding: '11px 16px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
                 {saving ? 'Saving…' : 'Save schedule'}
               </button>
               {savedAt && <p style={{ margin: 0, fontSize: 12, color: '#15803d', textAlign: 'center' }}>Saved at {savedAt}</p>}
@@ -1690,7 +1692,7 @@ export default function CampaignEditorPage() {
           {step === 4 && (
             <>
               <div style={card}>
-                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 10 }}>
+                <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 10 }}>
                   Attached
                 </div>
                 {!attachment && !coupon && (
@@ -1699,8 +1701,8 @@ export default function CampaignEditorPage() {
                   </p>
                 )}
                 {attachment && (
-                  <div style={{ padding: 11, borderRadius: 10, border: '1px solid var(--border)', marginBottom: 8 }}>
-                    <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--coral)', textTransform: 'uppercase' }}>{attachment.kind}</div>
+                  <div style={{ padding: 12, borderRadius: 14, background: '#f4f4f5', marginBottom: 8 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--coral)', textTransform: 'capitalize' }}>{attachment.kind}</div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginTop: 2 }}>{attachment.label}</div>
                     <div style={{ fontSize: 11, color: '#9ca3af', wordBreak: 'break-all', marginTop: 2 }}>{attachment.url}</div>
                     <button type="button" onClick={() => setAttachment(null)}
@@ -1710,8 +1712,8 @@ export default function CampaignEditorPage() {
                   </div>
                 )}
                 {coupon && (
-                  <div style={{ padding: 11, borderRadius: 10, border: '1px solid #bbf7d0', background: '#f0fdf4' }}>
-                    <div style={{ fontSize: 10.5, fontWeight: 700, color: '#15803d', textTransform: 'uppercase' }}>Coupon</div>
+                  <div style={{ padding: 12, borderRadius: 14, background: '#f0fdf4' }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#15803d', textTransform: 'capitalize' }}>Coupon</div>
                     <code style={{ fontSize: 13.5, fontWeight: 800, color: '#15803d' }}>{coupon.code.toUpperCase()}</code>
                   </div>
                 )}
@@ -1724,7 +1726,7 @@ export default function CampaignEditorPage() {
                     Your message has no <code>{'{{short_link}}'}</code>, so the attached link won't appear.
                   </p>
                   <button type="button" onClick={() => setMessage(m => (m.trimEnd() + ' {{short_link}}').trim())}
-                    style={{ marginTop: 8, padding: '6px 12px', borderRadius: 8, border: '1px solid #f59e0b', background: '#fff', color: '#b45309', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                    style={{ marginTop: 8, padding: '0 13px', height: 30, borderRadius: 999, border: 'none', background: '#fff', color: '#b45309', fontSize: 12.5, fontWeight: 600, boxShadow: '0 0 0 1px #fde68a', cursor: 'pointer' }}>
                     Add it to the message
                   </button>
                 </div>
@@ -1737,17 +1739,17 @@ export default function CampaignEditorPage() {
                 </div>
               )}
 
-              <div style={{ ...card, padding: 14, background: 'var(--canvas)' }}>
-                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 10 }}>
+              <div style={{ ...card, padding: 16, background: '#f4f4f5', boxShadow: 'none' }}>
+                <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 10 }}>
                   Preview
                 </div>
-                <div style={{ background: '#fff', borderRadius: 16, border: '1px solid var(--border)', padding: 13, fontSize: 13, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--ink)' }}>
+                <div style={{ background: '#fff', borderRadius: 18, border: 'none', boxShadow: '0 1px 2px rgba(0,0,0,.05)', padding: 13, fontSize: 13, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--ink)' }}>
                   {previewText || 'Your message will appear here.'}
                 </div>
               </div>
 
               <button onClick={saveLinks} disabled={saving}
-                style={{ padding: '11px 16px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+                style={{ padding: '11px 16px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
                 {saving ? 'Saving…' : 'Save links & offers'}
               </button>
               {savedAt && <p style={{ margin: 0, fontSize: 12, color: '#15803d', textAlign: 'center' }}>Saved at {savedAt}</p>}
@@ -1757,11 +1759,11 @@ export default function CampaignEditorPage() {
           {step === 3 && (
             <>
               {/* Phone preview — updates as you type */}
-              <div style={{ ...card, padding: 14, background: 'var(--canvas)' }}>
-                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 10 }}>
+              <div style={{ ...card, padding: 16, background: '#f4f4f5', boxShadow: 'none' }}>
+                <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 10 }}>
                   Preview
                 </div>
-                <div style={{ background: '#fff', borderRadius: 18, border: '1px solid var(--border)', padding: 14, minHeight: 130 }}>
+                <div style={{ background: '#fff', borderRadius: 18, border: 'none', boxShadow: '0 1px 2px rgba(0,0,0,.05)', padding: 14, minHeight: 130 }}>
                   <div style={{ fontSize: 11, color: '#9ca3af', textAlign: 'center', marginBottom: 10 }}>
                     {campaign.sender_name || 'Roxy Aquarium'}
                   </div>
@@ -1782,7 +1784,7 @@ export default function CampaignEditorPage() {
 
               {/* Compliance */}
               <div style={{ ...card, borderColor: hasOptOut && hasSender ? '#bbf7d0' : '#fde68a', background: hasOptOut && hasSender ? '#f0fdf4' : '#fffbeb' }}>
-                <div style={{ fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 8, color: hasOptOut && hasSender ? '#15803d' : '#b45309' }}>
+                <div style={{ fontSize: 14.5, fontWeight: 700, marginBottom: 8, color: hasOptOut && hasSender ? '#15803d' : '#b45309' }}>
                   Compliance
                 </div>
                 <p style={{ margin: '0 0 5px', fontSize: 12.5, color: hasOptOut ? '#166534' : '#78350f' }}>
@@ -1794,7 +1796,7 @@ export default function CampaignEditorPage() {
               </div>
 
               <button onClick={saveMessage} disabled={saving}
-                style={{ padding: '11px 16px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+                style={{ padding: '11px 16px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
                 {saving ? 'Saving…' : 'Save message'}
               </button>
               {savedAt && <p style={{ margin: 0, fontSize: 12, color: '#15803d', textAlign: 'center' }}>Saved at {savedAt}</p>}
@@ -1804,7 +1806,7 @@ export default function CampaignEditorPage() {
           {step === 2 && (
           <>
           <div style={card}>
-            <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'flex', alignItems: 'center' }}>
+            <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)', display: 'flex', alignItems: 'center' }}>
               Estimated recipients{previewing && !filterProblem && <Calculating />}
             </div>
             {filterProblem ? (
@@ -1830,7 +1832,7 @@ export default function CampaignEditorPage() {
           {/* Exclusions — the compliance-relevant part */}
           {!filterProblem && preview && !preview.incomplete && preview.excludedTotal > 0 && (
             <div style={{ ...card, borderColor: '#fde68a', background: '#fffbeb', opacity: previewing ? 0.55 : 1, transition: 'opacity .15s' }}>
-              <div style={{ fontSize: 11.5, fontWeight: 700, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 8 }}>
+              <div style={{ fontSize: 14.5, fontWeight: 700, color: '#b45309', marginBottom: 8 }}>
                 Excluded contacts
               </div>
               {Object.entries(preview.excluded as Record<string, number>)
@@ -1849,7 +1851,7 @@ export default function CampaignEditorPage() {
           {/* Sample so staff can sanity-check the targeting */}
           {!filterProblem && preview?.sample?.length > 0 && (
             <div style={{ ...card, opacity: previewing ? 0.55 : 1, transition: 'opacity .15s' }}>
-              <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 8 }}>
+              <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 8 }}>
                 Sample recipients
               </div>
               {preview.sample.map((s: any, i: number) => (
@@ -1863,17 +1865,17 @@ export default function CampaignEditorPage() {
           {audienceDirty || saving ? (
             <button onClick={saveAudience} disabled={saving || !!filterProblem}
               title={filterProblem || undefined}
-              style={{ padding: '11px 16px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: filterProblem ? 'not-allowed' : 'pointer', opacity: saving || filterProblem ? 0.5 : 1 }}>
+              style={{ padding: '11px 16px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: filterProblem ? 'not-allowed' : 'pointer', opacity: saving || filterProblem ? 0.5 : 1 }}>
               {saving ? 'Saving…' : 'Save audience'}
             </button>
           ) : (
-            <div style={{ padding: '10px 16px', borderRadius: 10, border: '1px solid #bbf7d0', background: '#f0fdf4', color: '#15803d', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+            <div style={{ padding: '11px 16px', borderRadius: 999, border: 'none', background: '#dcfce7', color: '#15803d', fontSize: 13.5, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
               Audience saved
             </div>
           )}
           <button onClick={() => goToStep(3)} disabled={saving || !!filterProblem}
-            style={{ padding: '10px 16px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 13, fontWeight: 700, cursor: filterProblem ? 'not-allowed' : 'pointer', opacity: saving || filterProblem ? 0.5 : 1 }}>
+            style={{ padding: '10px 16px', borderRadius: 999, background: '#f4f4f5', color: 'var(--ink)', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: filterProblem ? 'not-allowed' : 'pointer', opacity: saving || filterProblem ? 0.5 : 1 }}>
             {audienceDirty ? 'Save and write the message' : 'Next: write the message'}
           </button>
           {savedAt && !audienceDirty && (
@@ -1888,12 +1890,20 @@ export default function CampaignEditorPage() {
         </div>
       </div>
 
-      <style jsx>{`
+      <style jsx global>{`
+        .campaign-editor button::before { display: none; }
+        .campaign-editor .ce-back { display: inline-flex; align-items: center; gap: 4px; height: 32px; padding: 0 14px 0 10px; margin-bottom: 14px; border: none; border-radius: 999px; background: #f4f4f5; color: #3f3f46; font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+        .campaign-editor .ce-back:hover { background: #ececef; color: #18181b; }
+        .campaign-editor .ce-tag { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 999px; background: #f4f4f5; color: #52525b; font-size: 12.5px; font-weight: 600; }
+        .campaign-editor .ce-steps::-webkit-scrollbar { display: none; }
+        .campaign-editor :is(input:not([type=checkbox]):not([type=radio]), select, textarea):focus { background-color: #fff !important; border-color: #d4d4d8 !important; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 16%, transparent) !important; outline: none; }
+        .campaign-editor input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--coral); }
         @media (max-width: 900px) {
           .campaign-grid { grid-template-columns: 1fr !important; }
         }
         @media (max-width: 560px) {
-          .campaign-editor { padding: 16px 16px 32px !important; }
+          .campaign-editor { padding: 16px 14px 36px !important; }
+          .campaign-editor h1 { font-size: 25px !important; }
         }
       `}</style>
     </div>

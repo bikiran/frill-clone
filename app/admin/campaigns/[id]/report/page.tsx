@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, resolveCompanyUser } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
 import EmailReport from './EmailReport'
+import EmptyScroll from '@/components/EmptyScroll'
 import { aud } from '@/lib/sms-pricing'
 import { isBookingPayment, linkFunnel } from '@/lib/link-channels'
 
@@ -251,11 +252,12 @@ export default function CampaignReportPage() {
     finally { setCreatingSegment(false) }
   }
 
-  const card: React.CSSProperties = { border: '1px solid var(--border)', borderRadius: 14, background: '#fff', padding: 16 }
-  const statNum: React.CSSProperties = { fontSize: 23, fontWeight: 800, color: 'var(--ink)', margin: '4px 0 0' }
-  const statLbl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.04em' }
-  const th: React.CSSProperties = { padding: '9px 11px', fontWeight: 700, color: 'var(--ink)', textAlign: 'left', whiteSpace: 'nowrap' }
-  const td: React.CSSProperties = { padding: '9px 11px', color: 'var(--slate)' }
+  // White rounded cards with a soft ring; normal-case labels over big numbers.
+  const card: React.CSSProperties = { border: '1px solid transparent', borderRadius: 20, background: '#fff', padding: 18, boxShadow: '0 0 0 1px rgba(0,0,0,.06), 0 1px 2px rgba(16,24,40,.04)', minWidth: 0 }
+  const statNum: React.CSSProperties = { fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--ink)', margin: '6px 0 0', fontVariantNumeric: 'tabular-nums' }
+  const statLbl: React.CSSProperties = { fontSize: 13.5, fontWeight: 600, color: '#71717a' }
+  const th: React.CSSProperties = { padding: '10px 11px', fontSize: 12.5, fontWeight: 600, color: '#8e8e93', textAlign: 'left', whiteSpace: 'nowrap' }
+  const td: React.CSSProperties = { padding: '10px 11px', color: '#52525b' }
 
   if (loading) return <SkeletonList rows={6} />
   if (!campaign) return (
@@ -272,14 +274,15 @@ export default function CampaignReportPage() {
   const notSentYet = !['sent', 'sending', 'cancelled'].includes(campaign.status)
 
   return (
-    <div style={{ padding: 24, boxSizing: 'border-box', width: '100%' }}>
-      <button onClick={() => router.push('/admin/campaigns')}
-        style={{ border: 'none', background: 'none', color: 'var(--slate)', fontSize: 13, cursor: 'pointer', padding: 0, marginBottom: 12 }}>
-        ← Back to campaigns
+    <div className="cr-page" style={{ padding: '24px 28px 48px', boxSizing: 'border-box', width: '100%', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+      <style>{`.cr-page button::before{display:none}.cr-back{display:inline-flex;align-items:center;gap:4px;height:32px;padding:0 14px 0 10px;margin-bottom:14px;border:none;border-radius:999px;background:#f4f4f5;color:#3f3f46;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer}.cr-back:hover{background:#ececef;color:#18181b}@media(max-width:560px){.cr-page{padding:16px 14px 36px!important}}`}</style>
+      <button onClick={() => router.push('/admin/campaigns')} className="cr-back">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+        Campaigns
       </button>
-      <div style={{ marginBottom: 18 }}>
-        <h1 style={{ fontSize: 23, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>{campaign.name}</h1>
-        <p style={{ color: 'var(--slate)', fontSize: 13, margin: '5px 0 0' }}>
+      <div style={{ marginBottom: 20 }}>
+        <h1 style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.025em', lineHeight: 1.15, color: 'var(--ink)', margin: 0 }}>{campaign.name}</h1>
+        <p style={{ color: '#71717a', fontSize: 14, margin: '6px 0 0' }}>
           {campaign.status === 'sent' ? `Sent ${fmt(campaign.sent_at)}` : campaign.status === 'cancelled' ? `Stopped part-way ${fmt(campaign.completed_at)}` : `Status: ${campaign.status}`}
           {(campaign.status === 'paused' || campaign.status === 'cancelled') && campaign.status_reason ? ` \u00b7 ${campaign.status_reason}` : ''}
           {' · '}{String(campaign.channel || 'sms').toUpperCase()}
@@ -298,12 +301,12 @@ export default function CampaignReportPage() {
       {/* Headline metrics */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 12 }}>
         <div style={card}><div style={statLbl}>Sent</div><p style={statNum}>{sent.toLocaleString()}</p>
-          {cancelledCount > 0 && <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--slate)' }}>{cancelledCount.toLocaleString()} not sent (stopped)</p>}</div>
+          {cancelledCount > 0 && <p style={{ margin: '2px 0 0', fontSize: 12.5, color: '#8e8e93' }}>{cancelledCount.toLocaleString()} not sent (stopped)</p>}</div>
         <div style={card}><div style={statLbl}>Delivered</div><p style={statNum}>{delivered.toLocaleString()}</p></div>
         <div style={card}><div style={statLbl}>Failed</div>
           <p style={{ ...statNum, color: failed ? '#dc2626' : 'var(--ink)' }}>{failed.toLocaleString()}</p></div>
         <div style={card}><div style={statLbl}>Clicked</div><p style={statNum}>{uniqueClicks.toLocaleString()}</p>
-          <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--slate)' }}>{clickRate.toFixed(1)}% of delivered</p></div>
+          <p style={{ margin: '2px 0 0', fontSize: 12.5, color: '#8e8e93' }}>{clickRate.toFixed(1)}% of delivered</p></div>
         <div style={card}><div style={statLbl}>Unsubscribed</div>
           <p style={{ ...statNum, color: unsubscribed ? '#b45309' : 'var(--ink)' }}>{unsubscribed.toLocaleString()}</p></div>
       </div>
@@ -313,9 +316,9 @@ export default function CampaignReportPage() {
         {bookings > 0 && <div style={card}><div style={statLbl}>Bookings</div><p style={statNum}>{bookings.toLocaleString()}</p></div>}
         <div style={card}><div style={statLbl}>Revenue</div>
           <p style={{ ...statNum, color: revenue > 0 ? '#15803d' : 'var(--ink)' }}>{aud(revenue)}</p>
-          <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--slate)' }}>influenced</p></div>
+          <p style={{ margin: '2px 0 0', fontSize: 12.5, color: '#8e8e93' }}>influenced</p></div>
         <div style={card}><div style={statLbl}>Conversion rate</div><p style={statNum}>{conversionRate.toFixed(1)}%</p>
-          <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--slate)' }}>{bookings > 0 ? 'ordered or booked, of those who clicked' : 'of those who clicked'}</p></div>
+          <p style={{ margin: '2px 0 0', fontSize: 12.5, color: '#8e8e93' }}>{bookings > 0 ? 'ordered or booked, of those who clicked' : 'of those who clicked'}</p></div>
         <div style={card}><div style={statLbl}>Cost</div><p style={statNum}>{aud(cost)}</p></div>
         <div style={card}><div style={statLbl}>Return on spend</div>
           <p style={{ ...statNum, color: roi > 0 ? '#15803d' : roi < 0 ? '#dc2626' : 'var(--ink)' }}>
@@ -325,7 +328,7 @@ export default function CampaignReportPage() {
 
       {/* Follow-up action */}
       {clickedNotPurchased.length > 0 && (
-        <div style={{ ...card, borderColor: 'var(--coral)', background: 'var(--peach)', marginBottom: 16 }}>
+        <div style={{ ...card, background: 'color-mix(in srgb, var(--coral) 7%, #fff)', boxShadow: '0 0 0 1px color-mix(in srgb, var(--coral) 22%, transparent)', marginBottom: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <div>
               <strong style={{ fontSize: 14, color: 'var(--ink)' }}>
@@ -336,7 +339,7 @@ export default function CampaignReportPage() {
               </p>
             </div>
             <button onClick={createFollowUpSegment} disabled={creatingSegment}
-              style={{ padding: '10px 16px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', opacity: creatingSegment ? 0.6 : 1 }}>
+              style={{ padding: '10px 18px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', opacity: creatingSegment ? 0.6 : 1 }}>
               {creatingSegment ? 'Creating…' : 'Create follow-up campaign'}
             </button>
           </div>
@@ -347,7 +350,7 @@ export default function CampaignReportPage() {
         {/* Excluded */}
         {skipReasons.length > 0 && (
           <div style={card}>
-            <h3 style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Excluded before sending</h3>
+            <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Excluded before sending</h3>
             {skipReasons.map(([r, n]) => (
               <div key={r} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '4px 0', color: 'var(--slate)' }}>
                 <span>{SKIP_LABEL[r] || r}</span><strong style={{ color: 'var(--ink)' }}>{n}</strong>
@@ -359,7 +362,7 @@ export default function CampaignReportPage() {
         {/* Failures */}
         {failureReasons.length > 0 && (
           <div style={card}>
-            <h3 style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Delivery failures</h3>
+            <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Delivery failures</h3>
             {failureReasons.map(([r, n]) => (
               <div key={r} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5, padding: '4px 0', color: 'var(--slate)' }}>
                 <span style={{ flex: 1 }}>{r}</span><strong style={{ color: '#dc2626' }}>{n}</strong>
@@ -371,14 +374,14 @@ export default function CampaignReportPage() {
         {/* Outlets */}
         {byOutlet.length > 0 && (
           <div style={{ ...card, gridColumn: byOutlet.length > 2 ? 'span 2' : 'auto' }}>
-            <h3 style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>By outlet</h3>
+            <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>By outlet</h3>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
               <thead><tr style={{ color: 'var(--slate)', textAlign: 'left' }}>
                 <th style={th}>Outlet</th><th style={th}>Sent</th><th style={th}>Clicks</th><th style={th}>Revenue</th>
               </tr></thead>
               <tbody>
                 {byOutlet.map(([name, v]) => (
-                  <tr key={name} style={{ borderTop: '1px solid var(--border)' }}>
+                  <tr key={name} style={{ borderTop: '1px solid #f0f0f2' }}>
                     <td style={{ ...td, color: 'var(--ink)', fontWeight: 600 }}>{name}</td>
                     <td style={td}>{v.sent}</td>
                     <td style={td}>{v.clicks}</td>
@@ -395,9 +398,9 @@ export default function CampaignReportPage() {
         {/* Top links */}
         {topLinks.length > 0 && (
           <div style={card}>
-            <h3 style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Top clicked links</h3>
+            <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Top clicked links</h3>
             {topLinks.map(l => (
-              <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5, padding: '5px 0', borderTop: '1px solid var(--border)' }}>
+              <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5, padding: '5px 0', borderTop: '1px solid #f0f0f2' }}>
                 <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--ink)' }}>
                   {l.label || l.target_url}
                 </span>
@@ -410,14 +413,14 @@ export default function CampaignReportPage() {
         {/* Clicks over time */}
         {clicksOverTime.length > 0 && (
           <div style={card}>
-            <h3 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Clicks over time</h3>
+            <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Clicks over time</h3>
             {(() => {
               const max = Math.max(...clicksOverTime.map(e => e[1]), 1)
               return (
                 <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 90 }}>
                   {clicksOverTime.map(([d, n]) => (
                     <div key={d} title={`${d} — ${n}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%' }}>
-                      <div style={{ height: `${(n / max) * 100}%`, minHeight: 3, background: 'var(--coral)', opacity: 0.8, borderRadius: '3px 3px 0 0' }} />
+                      <div style={{ height: `${(n / max) * 100}%`, minHeight: 3, background: 'var(--coral)', opacity: 0.85, borderRadius: 5 }} />
                     </div>
                   ))}
                 </div>
@@ -428,8 +431,8 @@ export default function CampaignReportPage() {
       </div>
 
       {recipients.length === 0 && (
-        <div style={{ ...card, textAlign: 'center', color: 'var(--slate)', fontSize: 13.5, padding: 30, marginTop: 12 }}>
-          No recipient records yet.
+        <div style={{ ...card, padding: '18px 12px', marginTop: 12 }}>
+          <EmptyScroll kinds={['campaign', 'sms']} compact title="No recipient records yet" line="Once the campaign sends, each text shows up here." />
         </div>
       )}
     </div>
