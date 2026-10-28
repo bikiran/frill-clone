@@ -3,8 +3,20 @@ import { createClient } from '@supabase/supabase-js'
 import { provisionSubdomain } from '@/lib/provision-domain'
 import { boardSlugAllowed } from '@/lib/reserved-subdomains'
 import { publicUrlProblem } from '@/lib/site-crawl'
+import { checkBurst } from '@/lib/rate-limit'
 
 const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
+
+// How many workspaces one person can create: a few an hour and a handful a day
+// (a business with a few brands fits; a script making hundreds doesn't).
+const PER_HOUR = 3
+const PER_DAY = 10
+const HOUR = 3600_000
+const DAY = 24 * HOUR
+const tooMany = (at: number) => NextResponse.json(
+  { error: 'Too many workspace creation attempts. Please wait before trying again.', code: 'rate_limited', retryAt: new Date(at).toISOString() },
+  { status: 429, headers: { 'Retry-After': String(Math.max(1, Math.ceil((at - Date.now()) / 1000))) } },
+)
 
 export async function POST(req: NextRequest) {
   try {
@@ -47,6 +59,19 @@ export async function POST(req: NextRequest) {
     const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
       auth: { autoRefreshToken: false, persistSession: false }
     }) as any
+
+    // The limit: attempts in a burst (in memory), then the workspaces they've
+    // actually made in the last hour and day. The answer says when they can
+    // try again. The platform admin isn't limited.
+    if (!platformAdmin) {
+      if (!checkBurst(`ws-create:${caller.id}`, 4)) return tooMany(Date.now() + 60_000)
+      const { data: recent } = await admin.from('companies').select('created_at').eq('owner_id', userId)
+        .gte('created_at', new Date(Date.now() - DAY).toISOString()).order('created_at', { ascending: true })
+      const made = ((recent || []) as { created_at: string }[]).map(r => Date.parse(r.created_at)).filter(Number.isFinite)
+      const lastHour = made.filter(t => t > Date.now() - HOUR)
+      if (lastHour.length >= PER_HOUR) return tooMany(lastHour[0] + HOUR)
+      if (made.length >= PER_DAY) return tooMany(made[0] + DAY)
+    }
 
     // Small wait for auth.users to commit
     await new Promise(r => setTimeout(r, 800))
@@ -108,7 +133,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// ── Logo and website from the new-workspace flow ───────────────────────────────
+// ── Logo, website and teams from the new-workspace flow ───────────────────────────────
 
 const IMAGE_TYPES: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/svg+xml': 'svg', 'image/gif': 'gif', 'image/x-icon': 'ico', 'image/vnd.microsoft.icon': 'ico' }
 
@@ -154,5 +179,11 @@ async function applyBrand(admin: any, company: any, body: any) {
     if (/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(site) && site.length <= 120) {
       await admin.from('companies').update({ website: `https://${site}` }).eq('id', company.id)
     }
+    // The teams they picked, as the workspace's departments (the Team page
+    // offers these when grouping people).
+    const teams = Array.isArray(body?.teams)
+      ? [...new Set((body.teams as unknown[]).map(t => String(t ?? '').replace(/\s+/g, ' ').trim().slice(0, 40)).filter(Boolean))].slice(0, 12)
+      : []
+    if (teams.length) await admin.from('companies').update({ inbox_settings: { ...(company.inbox_settings || {}), teams } }).eq('id', company.id)
   } catch (e: any) { console.warn('[companies] branding not saved:', e?.message || e) }
 }

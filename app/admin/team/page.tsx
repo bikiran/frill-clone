@@ -89,8 +89,10 @@ export default function TeamPage() {
   const [editDept, setEditDept] = useState<string>('')
   const [editUploading, setEditUploading] = useState(false)
   // Department is organisational only (grouping/reporting/routing), separate from
-  // role + permissions which control access.
-  const DEPARTMENTS = ['Sales', 'Support', 'Fulfillment', 'Front Desk', 'Marketing', 'Management']
+  // role + permissions which control access. The workspace's own teams (picked
+  // when it was created, companies.inbox_settings.teams) when it has them.
+  const [teams, setTeams] = useState<string[]>([])
+  const DEPARTMENTS = teams.length ? teams : ['Sales', 'Support', 'Fulfillment', 'Front Desk', 'Marketing', 'Management']
 
   const uploadMemberPhoto = async (file: File) => {
     setEditUploading(true)
@@ -197,6 +199,8 @@ export default function TeamPage() {
       }
       setCompanyId(cid)
       if (!cid) { setMembers([]); setLoading(false); return }
+      ;(supabase as any).from('companies').select('inbox_settings').eq('id', cid).maybeSingle()
+        .then(({ data }: any) => { const t = data?.inbox_settings?.teams; if (Array.isArray(t)) setTeams(t.filter((x: unknown) => typeof x === 'string' && x)) }, () => {})
 
       // Whether this person may change the team (owner/admin), alongside.
       authFetch(`/api/team/members?companyId=${encodeURIComponent(cid)}`)
