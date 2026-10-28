@@ -28,6 +28,7 @@ import { ResponsesTable } from '@/components/form-results/ResponsesTable'
 import { ResponseDrawer } from '@/components/form-results/ResponseDrawer'
 import { PathsPanel } from '@/components/form-results/PathsPanel'
 import { Icon } from '@/components/form-results/icons'
+import EmptyScroll from '@/components/EmptyScroll'
 
 type LoadState = { state: 'loading' | 'more' | 'done' | 'error'; capped: boolean; total: number | null; error?: string; gen: number }
 
@@ -314,10 +315,9 @@ export default function FormResults() {
       )}
 
       {firstPageLoading ? <BodySkeleton /> : noResponsesAtAll ? (
-        <div className="fr-card" style={{ padding: '56px 24px', textAlign: 'center' }}>
-          <Icon name="users" size={40} stroke="var(--slate)" strokeWidth={1.5} style={{ marginBottom: 12 }} />
-          <h2 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 6px' }}>No responses yet</h2>
-          <p className="fr-muted" style={{ margin: 0 }}>{form?.is_published ? 'Share your form to start collecting responses.' : 'Publish your form in the builder, then share it to start collecting responses.'}</p>
+        <div className="fr-card" style={{ padding: '32px 24px' }}>
+          <EmptyScroll kinds={['form']} title="No responses yet"
+            line={form?.is_published ? 'Share your form to start collecting responses.' : 'Publish your form in the builder, then share it to start collecting responses.'} />
         </div>
       ) : (
         <>

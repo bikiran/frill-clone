@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { Icon, Star } from '@/components/integrations/ui'
+import EmptyScroll from '@/components/EmptyScroll'
 
 export default function GoogleReviewsPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
@@ -419,7 +420,9 @@ export default function GoogleReviewsPage() {
                 </div>
               ))}
               {filteredReviews.length === 0 && (
-                <p style={{ fontSize: 13.5, color: 'var(--slate)', textAlign: 'center', padding: 24 }}>No reviews match these filters.</p>
+                <EmptyScroll compact kinds={['review']} title={reviews.length === 0 ? 'No reviews yet' : 'No reviews match these filters'}
+                  line={reviews.length === 0 ? 'Reviews from your Google profile show up here once they sync.' : 'Try another rating or reply filter.'}
+                  action={reviews.length > 0 ? <button type="button" className="cv-btn" onClick={() => { setRatingFilter(''); setReplyFilter('all') }}>Clear filters</button> : undefined} />
               )}
             </div>
           </div>

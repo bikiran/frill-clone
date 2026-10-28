@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { api, card, btn, btnGhost, input, label, hint } from './shared'
 import { ClockIcon, ChatIcon, WarnIcon, GearIcon, CalendarIcon, CheckIcon } from '@/components/booking/icons'
+import EmptyScroll from '@/components/EmptyScroll'
 
 // Bookings → Waitlist: who's waiting for which service and days, what they've
 // been offered, and offering a free time by hand. lib/booking-waitlist.ts.
@@ -100,9 +101,9 @@ export default function WaitlistTab({ companyId, services, timezone, enabled, on
       {entries === null ? <div style={{ color: 'var(--slate,#6b7280)', fontSize: 13.5 }}>Loading…</div>
         : !groups.length ? (
           <div className="wl-empty">
-            <span className="wl-empty-ic"><ClockIcon size={24} /></span>
-            <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--ink,#111)', marginBottom: 4 }}>{status === 'live' ? 'Nobody’s waiting' : 'Nothing here'}</div>
-            <div style={{ fontSize: 13.5, color: 'var(--slate,#6b7280)' }}>{day ? 'Nobody is waiting for that day.' : status === 'live' ? 'People who join the waitlist from your booking page show here.' : ''}</div>
+            <EmptyScroll compact kinds={['calendar', 'contact']} title={status === 'live' ? 'Nobody’s waiting' : 'Nothing here'}
+              line={day ? 'Nobody is waiting for that day.' : status === 'live' ? 'People who join the waitlist from your booking page show here.' : 'Past waitlist entries show up here.'}
+              action={day ? <button type="button" className="cv-btn" onClick={() => setDay('')}>Any day</button> : undefined} />
           </div>
         ) : groups.map(([sid, list]) => (
           <section key={sid}>
@@ -230,8 +231,7 @@ const CSS = `
 .wl-offers{margin-top:10px;border-top:1px solid #f3f4f6;padding-top:8px;display:grid;gap:4px}
 .wl-offer{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12.5px;color:var(--slate,#6b7280)}
 .wl-offer .ok{color:#047857;font-weight:700;display:inline-flex;align-items:center;gap:3px}
-.wl-empty{text-align:center;padding:40px 16px;border:1px dashed var(--border,#e5e7eb);border-radius:16px;background:#fff}
-.wl-empty-ic{width:52px;height:52px;border-radius:16px;background:#f3f4f6;color:#9ca3af;display:inline-flex;align-items:center;justify-content:center;margin-bottom:10px}
+.wl-empty{text-align:center;padding:12px;border:1px solid var(--border,#e5e7eb);border-radius:16px;background:#fff}
 .wl-offer-form{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) auto;gap:10px;margin-top:12px}
 @media(max-width:600px){.wl-offer-form{grid-template-columns:1fr}.wl-offer-form button{width:100%;justify-content:center}}
 .wl-slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:12px}

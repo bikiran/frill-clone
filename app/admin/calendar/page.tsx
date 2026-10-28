@@ -12,6 +12,7 @@ import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth-fetch'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import EmptyScroll from '@/components/EmptyScroll'
 
 // Default event types. Colours are fixed; the label and whether a type is shown
 // are per-company overrides (companies.calendar_settings.event_types), editable
@@ -621,7 +622,8 @@ export default function CalendarPage() {
             {searchResults.length} result{searchResults.length === 1 ? '' : 's'} for “{search}”
           </div>
           {searchResults.length === 0 && (
-            <div style={{ padding: 30, textAlign: 'center', color: 'var(--slate)', fontSize: 13.5 }}>No events match your search.</div>
+            <EmptyScroll kinds={['calendar']} title="No matches" line={`Nothing on the calendar matches “${search.trim()}”. Try a name, a phone number or a word from the note.`}
+              action={<button type="button" className="cv-btn" onClick={() => setSearch('')}>Clear search</button>} />
           )}
           {searchResults.map(e => {
             const m = typeMeta[e.event_type] || typeMeta.appointment

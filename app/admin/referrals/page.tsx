@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import EmptyScroll from '@/components/EmptyScroll'
 
 type Ref = { id: string; referred_name?: string; referred_email?: string; status: string; credit_cents: number; currency: string; created_at: string; qualified_at?: string }
 
@@ -157,9 +158,8 @@ export default function ReferralsPage() {
           <h2 style={{ margin: '36px 0 14px', fontSize: 18, fontWeight: 700, color: '#111' }}>Your referrals</h2>
           <div style={{ borderRadius: 16, boxShadow: '0 0 0 1px #ececf0', overflow: 'hidden' }}>
             {(!data?.referrals || data.referrals.length === 0) ? (
-              <div style={{ padding: '36px 20px', textAlign: 'center' }}>
-                <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: '#111' }}>No referrals yet</p>
-                <p style={{ margin: '4px 0 0', fontSize: 13.5, color: '#71717a' }}>When someone signs up with your link, they’ll show here.</p>
+              <div style={{ padding: '12px 20px' }}>
+                <EmptyScroll compact kinds={['contact', 'link']} title="No referrals yet" line="When someone signs up with your link, they’ll show here." />
               </div>
             ) : (
               data.referrals.map((r: Ref, i: number) => (

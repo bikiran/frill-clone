@@ -13,6 +13,7 @@ import {
   isEmptyDraft, questionCount, relativeTime, sortForms, statusCounts, textOn, themeColorOf, updatedAt,
   type FormFilter, type FormListItem, type FormSort, type FormsView,
 } from '@/lib/forms-list'
+import EmptyScroll from '@/components/EmptyScroll'
 
 export type FormAction = 'share' | 'copy' | 'duplicate' | 'rename' | 'delete'
 
@@ -229,28 +230,23 @@ export default function FormsListView(p: FormsListViewProps) {
     )
   } else if (p.forms.length === 0) {
     body = (
-      <div className="fl-empty">
-        <span className="fl-empty-art" aria-hidden="true"><Icon name="form" size={30} stroke={1.6} /></span>
-        <h2 className="fl-empty-title">Make your first form</h2>
-        <p className="fl-empty-text">Collect feedback, sign-ups, bookings and payments with a form that asks one question at a time.</p>
-        <div className="fl-empty-actions">
-          <button type="button" className="fl-btn fl-btn-primary" onClick={() => p.onCreate(false)} disabled={p.creating}><Icon name="plus" size={16} stroke={2.4} />New form</button>
-          <button type="button" className="fl-btn" onClick={() => p.onCreate(true)} disabled={p.creating}><Icon name="spark" size={16} stroke={1.9} />Build with Colvy AI</button>
-        </div>
+      <div className="fl-empty" style={{ padding: '24px 12px' }}>
+        <EmptyScroll kinds={['form']} title="Make your first form"
+          line="Collect feedback, sign-ups, bookings and payments with a form that asks one question at a time."
+          action={<div className="fl-empty-actions" style={{ marginTop: 0 }}>
+            <button type="button" className="fl-btn fl-btn-primary" onClick={() => p.onCreate(false)} disabled={p.creating}><Icon name="plus" size={16} stroke={2.4} />New form</button>
+            <button type="button" className="fl-btn" onClick={() => p.onCreate(true)} disabled={p.creating}><Icon name="spark" size={16} stroke={1.9} />Build with Colvy AI</button>
+          </div>} />
       </div>
     )
   } else if (shown.length === 0) {
     body = (
-      <div className="fl-empty is-small">
-        <h2 className="fl-empty-title">No forms match</h2>
-        <p className="fl-empty-text">
-          {p.query.trim()
+      <div className="fl-empty is-small" style={{ padding: '24px 12px' }}>
+        <EmptyScroll kinds={['form']} title="No forms match"
+          line={p.query.trim()
             ? `Nothing called “${p.query.trim()}”${p.status !== 'all' ? ` in ${p.status === 'live' ? 'Live' : 'Draft'}` : ''}.`
             : `No ${p.status === 'live' ? 'live forms' : 'drafts'} right now.`}
-        </p>
-        <div className="fl-empty-actions">
-          <button type="button" className="fl-btn" onClick={() => { p.onQuery(''); p.onStatus('all') }}>Show all forms</button>
-        </div>
+          action={<button type="button" className="fl-btn" onClick={() => { p.onQuery(''); p.onStatus('all') }}>Show all forms</button>} />
       </div>
     )
   } else if (p.view === 'grid') {

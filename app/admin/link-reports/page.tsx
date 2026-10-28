@@ -7,6 +7,7 @@ import { SkeletonList } from '@/components/Skeleton'
 import {
   PUBLIC_LINK_CHANNELS, PUBLIC_CHANNEL_LABEL, LINK_OUTCOMES, isPublicChannel, linkFunnel, linkOutcome, clickSource, isBookingPayment, type Funnel,
 } from '@/lib/link-channels'
+import EmptyScroll from '@/components/EmptyScroll'
 
 type Link = {
   id: string; code: string; target_url: string; label: string | null
@@ -494,7 +495,6 @@ export default function LinkReportsPage() {
               <th style={{ ...th, textAlign: 'right' }}>Clicks</th><th style={{ ...th, textAlign: 'right' }}>Revenue</th>
             </tr></thead>
             <tbody>
-              {visible.length === 0 && <tr><td colSpan={10} style={{ ...td, textAlign: 'center', padding: 28 }}>No links match these filters.</td></tr>}
               {visible.map(l => {
                 const cv = l.conversation_id ? convs[l.conversation_id] : null
                 // Fall back to the conversation's contact when the link itself
@@ -536,6 +536,11 @@ export default function LinkReportsPage() {
               })}
             </tbody>
           </table>
+          {visible.length === 0 && <div style={{ padding: '8px 0' }}>
+            <EmptyScroll kinds={['link']} compact title={links.length === 0 ? 'No links in this period' : search.trim() ? 'No matches' : 'No links match these filters'}
+              line={links.length === 0 ? 'Links sent from chats and campaigns show up here with their clicks.' : search.trim() ? `Nothing matches “${search.trim()}”.` : 'Try clearing a filter to see more.'}
+              action={links.length > 0 ? <button type="button" className="cv-btn" onClick={() => { setSearch(''); setFChannel(''); setFType(''); setFAgent(''); setFOutlet(''); setFOutcome('') }}>Clear filters</button> : undefined} />
+          </div>}
         </div>
       )}
 

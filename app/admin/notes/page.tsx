@@ -19,6 +19,7 @@ import { notebookOf, visibleTags, withNotebook, listNotebooks } from '@/lib/note
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { renderNotePrintHtml, noteBodyForPrint } from '@/lib/note-print'
 import { loadStaffRows } from '@/lib/team-list'
+import EmptyScroll from '@/components/EmptyScroll'
 
 type Note = {
   id: string; title: string; body: string; checklist: ChecklistItem[]; attachments: any[]
@@ -655,7 +656,8 @@ export default function NotesPage() {
                   </p>
                 </div>
               ) : (
-                <div style={{ padding: 30, textAlign: 'center', color: 'var(--slate)', fontSize: 13.5 }}>{tab === 'trash' ? 'Trash is empty.' : 'No reminders yet.'}</div>
+                <EmptyScroll compact kinds={['note']} title={tab === 'trash' ? 'Trash is empty' : 'No reminders yet'}
+                  line={tab === 'trash' ? 'Notes you delete stay here for a while, so you can bring them back.' : 'Add a reminder to a note and it shows up here.'} />
               )
             ) : visibleRows.map(n => {
               const on = n.id === activeId && tab !== 'trash'

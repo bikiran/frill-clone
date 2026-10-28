@@ -9,6 +9,7 @@ import { SkeletonList } from '@/components/Skeleton'
 import CreatePaymentLinkModal from '@/components/CreatePaymentLinkModal'
 import PageHeader from '@/components/PageHeader'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import EmptyScroll from '@/components/EmptyScroll'
 
 // Payments — transactions taken through Colvy payment links (Stripe). Refund
 // (full or partial), resend receipts, remind on pending, and create new links.
@@ -522,9 +523,17 @@ export default function PaymentsPage() {
         {loading ? (
           <div style={{ padding: 16 }}><SkeletonList rows={7} /></div>
         ) : filtered.length === 0 ? (
-          <div style={{ padding: '60px 24px', textAlign: 'center', color: 'var(--slate)' }}>
-            <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>No payments yet</p>
-            <p style={{ margin: '6px 0 0', fontSize: 13 }}>Create a payment link or take a payment from the inbox to see it here.</p>
+          <div style={{ padding: '24px 12px' }}>
+            {payments.length > 0
+              ? <EmptyScroll kinds={['payment']} title={search.trim() ? 'No matches' : 'No payments match these filters'}
+                  line={search.trim() ? `Nothing matches “${search.trim()}”. Try a name, email or amount.` : 'Try another status or method.'}
+                  action={<button type="button" className="cv-btn" onClick={() => { setSearch(''); setStatusFilter('all'); setMethodFilter('all') }}>Clear filters</button>} />
+              : range !== 'all'
+              ? <EmptyScroll kinds={['payment']} title="No payments in this period"
+                  line="Nothing was paid in these dates. Try a longer range."
+                  action={<button type="button" className="cv-btn" onClick={() => setRange('all')}>Show all time</button>} />
+              : <EmptyScroll kinds={['payment']} title="No payments yet"
+                  line="Create a payment link or take a payment from the inbox to see it here." />}
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>

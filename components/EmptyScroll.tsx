@@ -8,12 +8,18 @@
 
 import type { ReactNode } from 'react'
 
-type Kind = 'chat' | 'sms' | 'email' | 'task' | 'contact' | 'order' | 'ticket'
+export type EmptyKind = 'chat' | 'sms' | 'email' | 'task' | 'contact' | 'order' | 'ticket'
+  | 'review' | 'link' | 'campaign' | 'calendar' | 'form' | 'payment' | 'photo' | 'call' | 'note' | 'article' | 'place' | 'idea'
+type Kind = EmptyKind
 
 // Drawn as a coloured outline on its own, without the tile behind it.
 const OUTLINE: Kind[] = ['ticket']
 
-const TINT: Record<Kind, string> = { chat: '#ff7a6b', sms: '#34c759', email: '#007aff', task: '#af52de', contact: '#ff9f0a', order: '#5ac8fa', ticket: '#f2551d' }
+const TINT: Record<Kind, string> = {
+  chat: '#ff7a6b', sms: '#34c759', email: '#007aff', task: '#af52de', contact: '#ff9f0a', order: '#5ac8fa', ticket: '#f2551d',
+  review: '#ffb800', link: '#5856d6', campaign: '#ff375f', calendar: '#ff453a', form: '#30b0c7', payment: '#00b894',
+  photo: '#ff9500', call: '#32c766', note: '#c69c6d', article: '#5e5ce6', place: '#ff2d55', idea: '#f5b400',
+}
 
 const Glyph = ({ kind }: { kind: Kind }) => {
   const p = { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: '#fff', strokeWidth: 2.4, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
@@ -24,6 +30,18 @@ const Glyph = ({ kind }: { kind: Kind }) => {
     case 'task': return <svg {...p}><path d="m5 12 4.5 4.5L19 7" /></svg>
     case 'contact': return <svg {...p}><circle cx="12" cy="8.5" r="3.5" /><path d="M5 20a7 7 0 0 1 14 0" /></svg>
     case 'order': return <svg {...p}><path d="M6 7h12l-1 13H7z" /><path d="M9 7a3 3 0 0 1 6 0" /></svg>
+    case 'review': return <svg {...p}><path d="m12 4 2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 16.3l-4.8 2.6.9-5.4-3.9-3.8 5.4-.8z" /></svg>
+    case 'link': return <svg {...p}><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" /><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" /></svg>
+    case 'campaign': return <svg {...p}><path d="M4 10v4h3l6 4V6L7 10z" /><path d="M17 9a4 4 0 0 1 0 6" /></svg>
+    case 'calendar': return <svg {...p}><rect x="4" y="5.5" width="16" height="14" rx="2.5" /><path d="M4 10h16M9 3.5v4M15 3.5v4" /></svg>
+    case 'form': return <svg {...p}><rect x="5" y="3.5" width="14" height="17" rx="2.5" /><path d="M9 9h6M9 13h6M9 17h3" /></svg>
+    case 'payment': return <svg {...p}><rect x="3" y="6" width="18" height="12" rx="2.5" /><path d="M3 10.5h18M7 15h3" /></svg>
+    case 'photo': return <svg {...p}><rect x="3.5" y="5" width="17" height="14" rx="2.5" /><circle cx="9" cy="10" r="1.6" /><path d="m20 16-4.5-4.5L7 19" /></svg>
+    case 'call': return <svg {...p}><path d="M6.5 4h3l1.5 4-2 1.3a10 10 0 0 0 5.7 5.7l1.3-2 4 1.5v3a2 2 0 0 1-2 2A15 15 0 0 1 4.5 6a2 2 0 0 1 2-2z" /></svg>
+    case 'note': return <svg {...p}><path d="M5 4.5h10l4 4v11H5z" /><path d="M15 4.5v4h4M8.5 13h7M8.5 16.5h4" /></svg>
+    case 'article': return <svg {...p}><path d="M4 6a2 2 0 0 1 2-2h5v16H6a2 2 0 0 0-2 2zM20 6a2 2 0 0 0-2-2h-5v16h5a2 2 0 0 1 2 2z" /></svg>
+    case 'place': return <svg {...p}><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z" /><circle cx="12" cy="10" r="2.2" /></svg>
+    case 'idea': return <svg {...p}><path d="M9 18h6M10 21h4" /><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z" /></svg>
     default: return <svg {...p}><path d="M20 14.5a2 2 0 0 1-2 2H8.5L4 20V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z" /></svg>
   }
 }

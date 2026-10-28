@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
 import PageHeader from '@/components/PageHeader'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import EmptyScroll from '@/components/EmptyScroll'
 
 const AU_STATES = ['ACT', 'NSW', 'NT', 'QLD', 'SA', 'TAS', 'VIC', 'WA']
 
@@ -198,9 +199,8 @@ export default function LocationsPage() {
           </div>
         </div>
       ) : locations.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '44px 24px', borderRadius: 16, boxShadow: '0 0 0 1px #ececf0' }}>
-          <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: '#111' }}>No locations yet</p>
-          <p style={{ margin: '4px 0 0', fontSize: 13.5, color: '#71717a' }}>Add your first business address.</p>
+        <div style={{ padding: '16px 12px', borderRadius: 16, boxShadow: '0 0 0 1px #ececf0' }}>
+          <EmptyScroll kinds={['place']} title="No locations yet" line="Add your first business address. Orders, calls and tasks can then be tied to a store." />
         </div>
       ) : (
         // One soft list, a row per location (like Sellio's lists).

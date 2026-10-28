@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useCompanyUser, S, ToggleRow } from '../_shared'
+import EmptyScroll from '@/components/EmptyScroll'
 
 export default function ArchivedSpamSettings() {
   const { companyId, loading } = useCompanyUser()
@@ -73,7 +74,10 @@ export default function ArchivedSpamSettings() {
       </div>
 
       {items.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 48, color: 'var(--slate)', border: '1px dashed var(--border)', borderRadius: 14 }}>Nothing here.</div>
+        <div style={{ padding: '16px 12px', border: '1px solid var(--border)', borderRadius: 14 }}>
+          <EmptyScroll kinds={['chat', 'email']} title={tab === 'spam' ? 'No spam' : 'Nothing archived'}
+            line={tab === 'spam' ? 'Conversations marked as spam land here.' : 'Conversations you archive land here, so you can bring them back.'} />
+        </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {items.map(c => (

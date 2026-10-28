@@ -8,6 +8,7 @@ import Link from 'next/link'
 import ConfirmModal from '@/components/ConfirmModal'
 import { TrashIcon, PlusIcon, SearchIcon } from '@/components/Icons'
 import { SkeletonList } from '@/components/Skeleton'
+import EmptyScroll from '@/components/EmptyScroll'
 
 
 type Segment = { id: string; name: string; conditions: any[]; match_type: string; created_at: string }
@@ -244,7 +245,7 @@ export default function SegmentsPage() {
                     </div>
                   </button>
                 )})}
-                {segmentUsers.length === 0 && <p className="text-center py-8" style={{ color: 'var(--slate)' }}>No customers found</p>}
+                {segmentUsers.length === 0 && <EmptyScroll compact kinds={['contact']} title="No customers in this segment" line="Customers who fit this segment show up here." />}
                 {visibleCount < segmentUsers.length && (
                   <button onClick={() => setVisibleCount(c => c + 50)} className="w-full py-2.5 mt-2 rounded-lg border text-sm font-medium" style={{ borderColor: 'var(--border)', color: 'var(--coral)' }}>
                     Load more ({segmentUsers.length - visibleCount} remaining)

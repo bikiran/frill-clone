@@ -9,6 +9,7 @@ import { SkeletonList } from '@/components/Skeleton'
 import PageHeader from '@/components/PageHeader'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { campaignControls, unscheduleFlow, rescheduleFlow, stopSendingFlow, type ActionOutcome } from '@/components/campaigns/CampaignActions'
+import EmptyScroll from '@/components/EmptyScroll'
 
 type Campaign = {
   id: string; name: string; channel: string; campaign_type: string | null
@@ -368,13 +369,6 @@ export default function CampaignsPage() {
             <th style={th}></th>
           </tr></thead>
           <tbody>
-            {visible.length === 0 && (
-              <tr><td colSpan={10} style={{ ...td, textAlign: 'center', padding: 34 }}>
-                {campaigns.length === 0
-                  ? 'No campaigns yet. Create one to get started.'
-                  : 'No campaigns match these filters.'}
-              </td></tr>
-            )}
             {visible.map(c => {
               const st = STATUS_STYLE[c.status] || STATUS_STYLE.draft
               const clk = clicksByCampaign[c.id] || 0
@@ -449,6 +443,15 @@ export default function CampaignsPage() {
             })}
           </tbody>
         </table>
+        {visible.length === 0 && <div style={{ padding: '8px 0' }}>
+          {campaigns.length === 0
+            ? <EmptyScroll kinds={['campaign', 'sms', 'email']} title="No campaigns yet"
+                line="Send a text or a designed email to your customers. Results show up here."
+                action={<button type="button" className="cv-btn" onClick={() => setShowNew(true)}>Create campaign</button>} />
+            : <EmptyScroll kinds={['campaign', 'sms', 'email']} title={search.trim() ? 'No matches' : 'No campaigns match these filters'}
+                line={search.trim() ? `Nothing matches “${search.trim()}”.` : 'Try another status to see more.'}
+                action={<button type="button" className="cv-btn" onClick={() => { setSearch(''); setStatusFilter('all') }}>Clear filters</button>} />}
+        </div>}
       </div>
 
       <p style={{ marginTop: 14, fontSize: 12.5, color: 'var(--slate)' }}>

@@ -13,6 +13,7 @@ import {
   type CcCall, type RangeKey, type AgentOption, type RecoveryItem, type CallStats,
 } from '@/lib/command-centre'
 import { Icon, Chip, Kpi, Trend, WhyInline, Segmented, Spinner, LiveTimer, Clock, C, card, kicker, ctrl, tint, btn, iconBtn, useNarrow, OUTCOME_COLOR, Skel, SkelRows } from './ui'
+import EmptyScroll from '@/components/EmptyScroll'
 
 // Only needed after a click (a call, Text back) or on the Insights tab, so
 // they load on their own and stay out of the board's first download.
@@ -1181,7 +1182,11 @@ export default function CommandCentrePage() {
             {narrow ? (
               <div>
                 {loading && <div style={{ padding: '4px 14px' }}><SkelRows n={6} /></div>}
-                {!loading && tableRows.length === 0 && <p style={{ padding: 24, margin: 0, textAlign: 'center', color: 'var(--slate)', fontSize: 13 }}>{callsLoading ? 'Loading…' : 'No calls match.'}</p>}
+                {!loading && tableRows.length === 0 && (callsLoading
+                  ? <p style={{ padding: 24, margin: 0, textAlign: 'center', color: 'var(--slate)', fontSize: 13 }}>Loading…</p>
+                  : <EmptyScroll kinds={['call']} compact={narrow} title={logRows.length === 0 ? 'No calls in this view' : 'No calls match'}
+                  line={logRows.length === 0 ? 'Calls in these dates show up here as they come in.' : 'Try another outcome to see more.'}
+                  action={outcomeFilter !== 'all' ? <button type="button" className="cv-btn" onClick={() => setOutcomeFilter('all')}>Show all calls</button> : undefined} />)}
                 {tableRows.slice(0, shown).map(c => (
                   <div key={c.id} className="cc-row" onClick={() => setDrawer(c)} style={{ padding: '11px 14px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, alignItems: 'center' }}>
                     <span style={{ color: c.direction === 'inbound' ? C.green : C.blue }}>{c.direction === 'inbound' ? Icon.phoneIn(15) : Icon.phoneOut(15)}</span>
@@ -1203,7 +1208,9 @@ export default function CommandCentrePage() {
                         {[90, 160, 44, 40, 70, 90, 70, 60].map((w, j) => <td key={j} style={td}><Skel w={w} h={11} /></td>)}
                       </tr>
                     ))}
-                    {!loading && tableRows.length === 0 && <tr><td colSpan={8} style={{ padding: 28, textAlign: 'center', color: 'var(--slate)' }}>{callsLoading ? 'Loading…' : 'No calls match.'}</td></tr>}
+                    {!loading && tableRows.length === 0 && <tr><td colSpan={8} style={{ padding: callsLoading ? 28 : '8px 0', textAlign: 'center', color: 'var(--slate)', whiteSpace: 'normal' }}>{callsLoading ? 'Loading…' : <EmptyScroll kinds={['call']} compact={narrow} title={logRows.length === 0 ? 'No calls in this view' : 'No calls match'}
+                  line={logRows.length === 0 ? 'Calls in these dates show up here as they come in.' : 'Try another outcome to see more.'}
+                  action={outcomeFilter !== 'all' ? <button type="button" className="cv-btn" onClick={() => setOutcomeFilter('all')}>Show all calls</button> : undefined} />}</td></tr>}
                     {tableRows.slice(0, shown).map(c => (
                       <tr key={c.id} className="cc-row" onClick={() => setDrawer(c)} style={{ borderTop: '1px solid var(--border)' }}>
                         <td style={{ ...td, whiteSpace: 'nowrap', color: 'var(--slate)' }}>{dateTime(c.created_at)}</td>

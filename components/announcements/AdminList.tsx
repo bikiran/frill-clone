@@ -15,6 +15,7 @@ import { excerpt } from '@/lib/safe-html'
 import { parseDbTime } from '@/lib/db-time'
 import { AnnIcon } from './icons'
 import { ADMIN_CSS } from './styles'
+import EmptyScroll from '@/components/EmptyScroll'
 
 export type RowAction = 'edit' | 'view' | 'publish' | 'unpublish' | 'pin' | 'duplicate' | 'copy' | 'notify' | 'sms' | 'delete'
 
@@ -202,10 +203,9 @@ export default function AdminList({ items, loading, error, onRetry, now, schemaR
     )
   } else if (!shown.length) {
     body = (
-      <div className="an-empty">
-        <p className="an-empty-title">Nothing matches</p>
-        <p className="an-empty-text">Try another word, status or category.</p>
-        <div className="an-empty-actions"><button type="button" className="an-btn" onClick={() => { setQuery(''); setStatus('all'); setCategory('all') }}>Show everything</button></div>
+      <div className="an-empty" style={{ padding: '24px 12px' }}>
+        <EmptyScroll kinds={['campaign']} title="Nothing matches" line="Try another word, status or category."
+          action={<button type="button" className="an-btn" onClick={() => { setQuery(''); setStatus('all'); setCategory('all') }}>Show everything</button>} />
       </div>
     )
   } else if (view === 'grid') {

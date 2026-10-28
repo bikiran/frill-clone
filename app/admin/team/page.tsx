@@ -10,6 +10,7 @@ import { SkeletonList } from '@/components/Skeleton'
 import PageHeader from '@/components/PageHeader'
 import { PERMISSION_SUITES, ALL_FEATURE_KEYS, restrictedDefault } from '@/lib/permissions'
 import { loadTeamList, loadMoreViewers, mergeTeam, isViewerRow, VIEWER_PAGE } from '@/lib/team-list'
+import EmptyScroll from '@/components/EmptyScroll'
 
 
 // Create User's throwaway password. Math.random isn't a secure source; the
@@ -742,16 +743,12 @@ export default function TeamPage() {
         {loading ? (
           <SkeletonList rows={5} />
         ) : visibleMembers.length === 0 ? (
-          <div className="px-6 py-10 flex flex-col items-center text-center">
-            <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-            </div>
-            <p className="text-sm mb-1 font-semibold" style={{ color: 'var(--ink)' }}>No team members yet</p>
-            <p className="text-xs mb-4 max-w-xs" style={{ color: 'var(--slate)' }}>Invite colleagues by email, or create a login for them yourself.</p>
-            {!viewOnly && <div className="flex flex-wrap gap-2 justify-center">
-              <button onClick={() => setShowInvite(true)} className="cv-btn cv-btn-primary">Invite member</button>
-              <button onClick={() => setShowCreate(true)} className="cv-btn">Create user</button>
-            </div>}
+          <div className="px-6 py-4">
+            <EmptyScroll kinds={['contact']} title="No team members yet" line="Invite colleagues by email, or create a login for them yourself."
+              action={!viewOnly ? <div className="flex flex-wrap gap-2 justify-center">
+                <button onClick={() => setShowInvite(true)} className="cv-btn cv-btn-primary">Invite member</button>
+                <button onClick={() => setShowCreate(true)} className="cv-btn">Create user</button>
+              </div> : undefined} />
           </div>
         ) : (
           <>

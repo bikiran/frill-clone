@@ -16,6 +16,7 @@ import PageHeader from '@/components/PageHeader'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { authFetch } from '@/lib/auth-fetch'
 import { loadStaffRows } from '@/lib/team-list'
+import EmptyScroll from '@/components/EmptyScroll'
 
 export default function GalleryPage() {
   const { companyId, user, loading } = useCompanyUser()
@@ -1001,22 +1002,24 @@ export default function GalleryPage() {
               </div>
             </div>
           ) : activeFolder === '__fav' && visibleItems.length === 0 && pending.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '54px 24px', borderRadius: 20, border: '2px dashed var(--border)', background: 'linear-gradient(160deg, #fffdfc 0%, #fff4f1 100%)' }}>
-              <div style={{ width: 64, height: 64, margin: '0 auto 18px', borderRadius: 18, background: '#fff', boxShadow: '0 8px 24px rgba(255,122,107,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-              </div>
-              <p style={{ fontSize: 17, fontWeight: 800, color: 'var(--ink)', margin: '0 0 6px' }}>No favourites yet</p>
-              <p style={{ fontSize: 13.5, color: 'var(--slate)', margin: '0 0 20px' }}>Hover any photo or video and tap the ♥ to keep your own collection here.</p>
-              <button onClick={() => setActiveFolder(null)} style={{ padding: '10px 20px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Browse all media</button>
+            <div style={{ padding: '24px 12px', borderRadius: 20, background: '#fafafa' }}>
+              <EmptyScroll kinds={['photo']} title={search.trim() ? 'No matches' : 'No favourites yet'}
+                line={search.trim() ? `None of your favourites match “${search.trim()}”.` : 'Hover any photo or video and tap the ♥ to keep your own collection here.'}
+                action={<button type="button" className="cv-btn" onClick={() => { setActiveFolder(null); setSearch('') }}>Browse all media</button>} />
             </div>
           ) : activeFolder === '__trash' && visibleItems.length === 0 && pending.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '54px 24px', borderRadius: 20, border: '2px dashed var(--border)', background: 'linear-gradient(160deg, #fffdfc 0%, #fff4f1 100%)' }}>
-              <div style={{ width: 64, height: 64, margin: '0 auto 18px', borderRadius: 18, background: '#fff', boxShadow: '0 8px 24px rgba(0,0,0,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-              </div>
-              <p style={{ fontSize: 17, fontWeight: 800, color: 'var(--ink)', margin: '0 0 6px' }}>Trash is empty</p>
-              <p style={{ fontSize: 13.5, color: 'var(--slate)', margin: '0 0 20px' }}>Deleted media lands here and is removed automatically after 30 days — restore anything before then.</p>
-              <button onClick={() => setActiveFolder(null)} style={{ padding: '10px 20px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Browse all media</button>
+            <div style={{ padding: '24px 12px', borderRadius: 20, background: '#fafafa' }}>
+              <EmptyScroll kinds={['photo']} title={search.trim() ? 'No matches' : 'Trash is empty'}
+                line={search.trim() ? `Nothing in the trash matches “${search.trim()}”.` : 'Deleted media lands here and is removed automatically after 30 days. Restore anything before then.'}
+                action={<button type="button" className="cv-btn" onClick={() => { setActiveFolder(null); setSearch('') }}>Browse all media</button>} />
+            </div>
+          ) : visibleItems.length === 0 && pending.length === 0 ? (
+            <div style={{ padding: '24px 12px', borderRadius: 20, background: '#fafafa' }}>
+              <EmptyScroll kinds={['photo']} title={search.trim() ? 'No matches' : 'Nothing in this folder yet'}
+                line={search.trim() ? `Nothing matches “${search.trim()}”. Try a title, SKU or a word from the description.` : 'Upload photos or videos while this folder is open to add them here.'}
+                action={search.trim()
+                  ? <button type="button" className="cv-btn" onClick={() => setSearch('')}>Clear search</button>
+                  : <button type="button" className="cv-btn" onClick={() => fileRef.current?.click()}>Upload media</button>} />
             </div>
           ) : (
             <div className={`gal-grid ${viewMode}`}>
