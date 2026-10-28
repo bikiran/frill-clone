@@ -416,122 +416,114 @@ export default function TelnyxIntegration() {
           )}
         </div>
       ) : (
-        <div style={{ border: '2px solid var(--coral)', borderRadius: 16, padding: 24, background: 'linear-gradient(135deg, #fff9f8, #fff)' }}>
-          {addingNumber && (
-            <button onClick={() => setAddingNumber(false)} style={{ background: 'none', border: 'none', color: 'var(--slate)', fontSize: 13, cursor: 'pointer', marginBottom: 12, padding: 0 }}>Back to my numbers</button>
-          )}
-          <h2 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>{addingNumber ? 'Add another number' : 'Get a business number'}</h2>
-          <p style={{ margin: '0 0 20px', fontSize: 14, color: 'var(--slate)', lineHeight: 1.5 }}>
-            Colvy sets up an Australian phone number for you instantly — no separate accounts, no setup. Call and text your customers right from the inbox.
-          </p>
+        <div className="bn">
+          <style>{BN_CSS}</style>
+          <div className="bn-main">
+            {addingNumber && (
+              <button type="button" className="bn-back" onClick={() => setAddingNumber(false)}>‹ Back to my numbers</button>
+            )}
+            <h2>{addingNumber ? 'Add another number' : 'Get a business number'}</h2>
+            <p className="bn-sub">Colvy sets up an Australian number for you, with no separate accounts. Call and text customers right from the inbox.</p>
 
-          {/* If the company has locations, let them assign the new number to one */}
-          {locations.length > 0 && (
-            <div style={{ marginBottom: 18 }}>
-              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>Assign to location (optional)</label>
-              <select value={assignLocationId} onChange={e => setAssignLocationId(e.target.value)}
-                style={{ width: '100%', padding: '10px 13px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, background: '#fff' }}>
-                <option value="">Company-wide (no specific location)</option>
-                {locations.map((loc: any) => (
-                  <option key={loc.id} value={loc.id}>{loc.label || loc.suburb || 'Location'}{loc.state ? ` — ${loc.state}` : ''}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          <div style={{ display: 'flex', gap: 10, marginBottom: numProvider === 'twilio' ? 8 : 18, flexWrap: 'wrap' }}>
-            {([['local', 'Landline', 'Local area code'], ['mobile', 'Mobile', 'e.g. 04XX'], ...(tollfree?.available ? [['tollfree', '1800', 'Callers ring free']] : [])] as [NumberKind, string, string][]).map(([t, name, eg]) => (
-              <button key={t} onClick={() => { setNumberType(t); setAvailable([]); setError('') }}
-                style={{ flex: '1 1 96px', minWidth: 0, padding: '12px 14px', borderRadius: 12, border: numberType === t ? '2px solid var(--coral)' : '1px solid var(--border)', background: numberType === t ? 'var(--peach)' : '#fff', cursor: 'pointer', textAlign: 'left' }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{name}</div>
-                <div style={{ fontSize: 11.5, color: 'var(--slate)' }}>{eg}</div>
-              </button>
-            ))}
-          </div>
-          {numProvider === 'twilio' && (
-            <p style={{ margin: '0 0 18px', fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.5 }}>
-              {tollfree && !tollfree.available ? `${NO_TOLLFREE.split('.')[0]}. ` : ''}{LOCAL_RATE_SOON}
-            </p>
-          )}
-
-          {numberType === 'tollfree' && (
-            <div style={{ marginBottom: 18, padding: '12px 14px', borderRadius: 12, background: '#ecfeff', border: '1px solid #a5f3fc', fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.5 }}>
-              <strong>{TOLLFREE_NOTE}</strong> {TOLLFREE_VOLUME_NOTE}{' '}
-              <a href="mailto:support@colvy.com?subject=1800%20call%20volumes" style={{ color: 'var(--coral)', fontWeight: 600 }}>Talk to us</a>
-            </div>
-          )}
-
-          {/* Landline is region-specific — let the user pick a city so a Melbourne
-              business gets an 03 number, not a Gold Coast 07 one. */}
-          {numberType === 'local' && (
-            <div style={{ marginBottom: 18 }}>
-              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>
-                Number location
+            {/* If the company has locations, let them assign the new number to one */}
+            {locations.length > 0 && (
+              <label className="bn-f">
+                <span>Assign to a location (optional)</span>
+                <select value={assignLocationId} onChange={e => setAssignLocationId(e.target.value)}>
+                  <option value="">Company-wide (no specific location)</option>
+                  {locations.map((loc: any) => (
+                    <option key={loc.id} value={loc.id}>{loc.label || loc.suburb || 'Location'}{loc.state ? ` — ${loc.state}` : ''}</option>
+                  ))}
+                </select>
               </label>
-              <select value={numberCity} onChange={e => { setNumberCity(e.target.value); setAvailable([]) }}
-                style={{ width: '100%', padding: '10px 13px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, background: '#fff' }}>
-                <option value="Melbourne">Melbourne (03)</option>
-                <option value="Sydney">Sydney (02)</option>
-                <option value="Brisbane">Brisbane (07)</option>
-                <option value="Gold Coast">Gold Coast (07)</option>
-                <option value="Perth">Perth (08)</option>
-                <option value="Adelaide">Adelaide (08)</option>
-                <option value="Canberra">Canberra (02)</option>
-                <option value="Hobart">Hobart (03)</option>
-                <option value="Darwin">Darwin (08)</option>
-              </select>
-              <p style={{ margin: '5px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>
-                Customers see a local number for your area. Landline numbers are for calls; choose a mobile (04) number to text customers.
-              </p>
-            </div>
-          )}
+            )}
 
-          {available.length === 0 ? (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px', borderRadius: 12, background: '#fff', border: '1px solid var(--border)', flexWrap: 'wrap', gap: 12 }}>
-              <div>
-                {freeCredits > 0 ? (
-                  <>
-                    <div style={{ fontSize: 22, fontWeight: 800, color: '#059669' }}>Free<span style={{ fontSize: 14, fontWeight: 500, color: 'var(--slate)' }}> · included on your plan</span></div>
-                    <div style={{ fontSize: 12.5, color: 'var(--slate)' }}>Australian {KIND_LABEL[numberType]} number · no card required</div>
-                  </>
-                ) : (
-                  <>
-                    <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)' }}>${available[0]?.monthly || (numberType === 'tollfree' ? tollfree?.monthly || 25 : 15)}<span style={{ fontSize: 14, fontWeight: 500, color: 'var(--slate)' }}>/month</span></div>
-                    <div style={{ fontSize: 12.5, color: 'var(--slate)' }}>Australian {KIND_LABEL[numberType]} number · cancel anytime</div>
-                  </>
-                )}
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={searchNumbers} disabled={searching}
-                  style={{ padding: '11px 18px', borderRadius: 999, border: '1.5px solid #e4e4e7', background: '#fff', color: 'var(--ink)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>
-                  {searching ? 'Searching…' : 'Choose a number'}
-                </button>
-                <button onClick={() => buyNumber()} disabled={buying}
-                  style={{ padding: '11px 22px', borderRadius: 999, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>
-                  {buying ? 'Setting up…' : freeCredits > 0 ? 'Get your free number' : 'Buy Australian Number'}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div>
-              <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Pick your number:</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {available.map(n => (
-                  <div key={n.phone_number} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff' }}>
-                    <div>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>{fmtNumber(n.phone_number)}</div>
-                      <div style={{ fontSize: 11.5, color: 'var(--slate)' }}>{n.region} · {freeCredits > 0 ? <span style={{ color: '#059669', fontWeight: 700 }}>Free</span> : `$${n.monthly}/month`}</div>
-                    </div>
-                    <button onClick={() => buyNumber(n.phone_number)} disabled={buying}
-                      style={{ padding: '8px 16px', borderRadius: 999, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                      {buying ? '…' : freeCredits > 0 ? 'Get free' : 'Buy'}
-                    </button>
-                  </div>
+            <div className="bn-f">
+              <span>Type of number</span>
+              <div className="bn-types" role="radiogroup" aria-label="Type of number">
+                {([['mobile', 'Mobile', 'Calls and texts', 'M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z M11 18h2'], ['local', 'Landline', 'Local area code', 'M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z'], ...(tollfree?.available ? [['tollfree', '1800', 'Callers ring free', 'm12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z']] : [])] as [NumberKind, string, string, string][]).map(([t, name, eg, d]) => (
+                  <button key={t} type="button" role="radio" aria-checked={numberType === t} className={`bn-type${numberType === t ? ' on' : ''}`} onClick={() => { setNumberType(t); setAvailable([]); setError('') }}>
+                    <span className="bn-type-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d} /></svg></span>
+                    <b>{name}</b>
+                    <small>{eg}</small>
+                    {numberType === t && <i className="bn-check" aria-hidden="true">✓</i>}
+                  </button>
                 ))}
               </div>
-              <button onClick={() => setAvailable([])} style={{ marginTop: 10, fontSize: 12.5, color: 'var(--slate)', background: 'none', border: 'none', cursor: 'pointer' }}>Back</button>
+              {numProvider === 'twilio' && <p className="bn-hint">{tollfree && !tollfree.available ? `${NO_TOLLFREE.split('.')[0]}. ` : ''}{LOCAL_RATE_SOON}</p>}
             </div>
-          )}
+
+            {numberType === 'tollfree' && (
+              <div className="bn-note">
+                <strong>{TOLLFREE_NOTE}</strong> {TOLLFREE_VOLUME_NOTE}{' '}
+                <a href="mailto:support@colvy.com?subject=1800%20call%20volumes">Talk to us</a>
+              </div>
+            )}
+
+            {/* Landline is region-specific — let the user pick a city so a Melbourne
+                business gets an 03 number, not a Gold Coast 07 one. */}
+            {numberType === 'local' && (
+              <label className="bn-f">
+                <span>Number location</span>
+                <select value={numberCity} onChange={e => { setNumberCity(e.target.value); setAvailable([]) }}>
+                  <option value="Melbourne">Melbourne (03)</option>
+                  <option value="Sydney">Sydney (02)</option>
+                  <option value="Brisbane">Brisbane (07)</option>
+                  <option value="Gold Coast">Gold Coast (07)</option>
+                  <option value="Perth">Perth (08)</option>
+                  <option value="Adelaide">Adelaide (08)</option>
+                  <option value="Canberra">Canberra (02)</option>
+                  <option value="Hobart">Hobart (03)</option>
+                  <option value="Darwin">Darwin (08)</option>
+                </select>
+                <small className="bn-hint">Customers see a local number for your area. Landlines are for calls; choose a mobile (04) number to text customers.</small>
+              </label>
+            )}
+
+            {available.length === 0 ? (
+              <div className="bn-buy">
+                <div className="bn-price">
+                  {freeCredits > 0 ? (
+                    <><b className="free">Free</b><span>Included on your plan · no card needed</span></>
+                  ) : (
+                    <><b>${available[0]?.monthly || (numberType === 'tollfree' ? tollfree?.monthly || 25 : 15)}<em>/month</em></b><span>Cancel anytime</span></>
+                  )}
+                </div>
+                <div className="bn-actions">
+                  <button type="button" className="bn-btn ghost" onClick={searchNumbers} disabled={searching}>{searching ? 'Searching…' : 'Choose a number'}</button>
+                  <button type="button" className="bn-btn" onClick={() => buyNumber()} disabled={buying}>{buying ? 'Setting up…' : freeCredits > 0 ? 'Get your free number' : 'Buy a number'}</button>
+                </div>
+              </div>
+            ) : (
+              <div className="bn-f">
+                <span>Pick your number</span>
+                <div className="bn-list">
+                  {available.map(n => (
+                    <div key={n.phone_number} className="bn-num">
+                      <div><b>{fmtNumber(n.phone_number)}</b><small>{n.region} · {freeCredits > 0 ? <em>Free</em> : `$${n.monthly}/month`}</small></div>
+                      <button type="button" className="bn-btn sm" onClick={() => buyNumber(n.phone_number)} disabled={buying}>{buying ? '…' : freeCredits > 0 ? 'Get free' : 'Buy'}</button>
+                    </div>
+                  ))}
+                </div>
+                <button type="button" className="bn-back" onClick={() => setAvailable([])}>‹ Back</button>
+              </div>
+            )}
+          </div>
+
+          {/* What you'll get, as you choose. */}
+          <aside className="bn-preview" aria-label="Your new number">
+            <div className="bn-phone">
+              <span className="bn-chip">{numberType === 'mobile' ? 'Australian mobile' : numberType === 'tollfree' ? 'Toll-free' : `${numberCity} landline`}</span>
+              <p className="bn-digits" key={`${numberType}-${numberCity}`}>{numberType === 'mobile' ? '04XX XXX XXX' : numberType === 'tollfree' ? '1800 XXX XXX' : `(${({ Melbourne: '03', Sydney: '02', Brisbane: '07', 'Gold Coast': '07', Perth: '08', Adelaide: '08', Canberra: '02', Hobart: '03', Darwin: '08' } as Record<string, string>)[numberCity] || '0X'}) XXXX XXXX`}</p>
+              <ul>
+                <li className="ok"><i>✓</i>Calls in your browser and the app</li>
+                <li className={numberType === 'mobile' ? 'ok' : ''}><i>{numberType === 'mobile' ? '✓' : '–'}</i>{numberType === 'mobile' ? 'Two-way SMS from the inbox' : 'SMS needs a mobile number'}</li>
+                <li className="ok"><i>✓</i>Missed calls land in the inbox</li>
+                {numberType === 'tollfree' && <li className="ok"><i>✓</i>Free for your callers</li>}
+              </ul>
+              <span className="bn-foot">{freeCredits > 0 ? 'Free on your plan' : `$${numberType === 'tollfree' ? tollfree?.monthly || 25 : 15}/month`}{numberType === 'mobile' ? ' · ID check required' : ''}</span>
+            </div>
+          </aside>
         </div>
       )}
 
@@ -565,3 +557,59 @@ export default function TelnyxIntegration() {
     </div>
   )
 }
+
+const BN_CSS = `
+.bn{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:20px;padding:22px;border-radius:22px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04);container-type:inline-size}
+.bn button::before{display:none!important}
+.bn-main{display:flex;flex-direction:column;gap:16px;min-width:0}
+.bn h2{margin:0;font-size:19px;font-weight:800;letter-spacing:-.02em;color:#111}
+.bn-sub{margin:-10px 0 0;font-size:14px;line-height:1.5;color:#71717a}
+.bn-back{align-self:flex-start;padding:0;border:0;background:none;font:inherit;font-size:13px;font-weight:600;color:#71717a;cursor:pointer}
+.bn-f{display:flex;flex-direction:column;gap:8px}
+.bn-f>span{font-size:13px;font-weight:600;color:#18181b}
+.bn-f select{height:46px;padding:0 14px;border:0;border-radius:12px;background:#f4f4f5;font:inherit;font-size:14.5px;color:#111;outline:none}
+.bn-f select:focus{background:#fff;box-shadow:0 0 0 2px color-mix(in srgb,var(--coral) 55%,transparent)}
+.bn-hint{margin:0;font-size:12px;line-height:1.5;color:#8e8e93}
+.bn-types{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.bn-type{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px 14px;border:0;border-radius:16px;background:#f7f7f8;font:inherit;text-align:left;cursor:pointer;transition:background .2s,box-shadow .2s}
+.bn-type:hover{background:#f1f1f3}
+.bn-type.on{background:#fff;box-shadow:0 0 0 1.5px var(--coral),0 6px 18px -10px color-mix(in srgb,var(--coral) 60%,transparent)}
+.bn-type-ic{width:32px;height:32px;margin-bottom:6px;border-radius:10px;background:#fff;color:#52525b;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 0 0 1px rgba(0,0,0,.06)}
+.bn-type.on .bn-type-ic{background:color-mix(in srgb,var(--coral) 12%,#fff);color:var(--coral);box-shadow:none}
+.bn-type b{font-size:14.5px;color:#111}
+.bn-type small{font-size:12px;color:#8e8e93}
+.bn-check{position:absolute;top:10px;right:10px;width:18px;height:18px;border-radius:50%;background:var(--coral);color:#fff;font-style:normal;font-size:10px;font-weight:800;display:inline-flex;align-items:center;justify-content:center}
+.bn-note{padding:12px 14px;border-radius:14px;background:#f0f9ff;font-size:13px;line-height:1.5;color:#0f172a}
+.bn-note a{color:var(--coral);font-weight:600}
+.bn-buy{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 14px 14px 18px;border-radius:18px;background:#f7f7f8}
+.bn-price{display:flex;flex-direction:column;gap:1px;min-width:0}
+.bn-price b{font-size:24px;font-weight:800;letter-spacing:-.02em;color:#111;line-height:1.1}
+.bn-price b.free{color:#059669}
+.bn-price b em{font-style:normal;font-size:14px;font-weight:500;color:#71717a}
+.bn-price span{font-size:12.5px;color:#71717a}
+.bn-actions{display:flex;gap:8px;flex-wrap:wrap}
+.bn-btn{height:44px;padding:0 20px;border:0;border-radius:999px;background:var(--coral);color:#fff;font:inherit;font-size:14px;font-weight:700;white-space:nowrap;cursor:pointer;box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 1px 2px rgba(16,24,40,.12)}
+.bn-btn.ghost{background:#fff;color:#18181b;box-shadow:0 0 0 1.5px #e4e4e7}
+.bn-btn.sm{height:36px;padding:0 16px;font-size:13px}
+.bn-btn:disabled{opacity:.6;cursor:default}
+.bn-btn:focus-visible,.bn-type:focus-visible{outline:2px solid var(--coral);outline-offset:2px}
+.bn-list{display:flex;flex-direction:column;gap:8px}
+.bn-num{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-radius:14px;background:#f7f7f8}
+.bn-num b{display:block;font-size:15.5px;color:#111;font-variant-numeric:tabular-nums}
+.bn-num small{font-size:12px;color:#8e8e93}
+.bn-num em{font-style:normal;font-weight:700;color:#059669}
+.bn-preview{position:relative}
+.bn-phone{position:sticky;top:80px;display:flex;flex-direction:column;gap:12px;padding:18px;border-radius:22px;background:linear-gradient(160deg,#18181b,#27272a);color:#fff;box-shadow:0 20px 40px -18px rgba(0,0,0,.45)}
+.bn-chip{align-self:flex-start;padding:4px 10px;border-radius:999px;background:rgba(255,255,255,.12);font-size:11.5px;font-weight:600}
+.bn-digits{margin:0;font-size:24px;font-weight:700;letter-spacing:.02em;font-variant-numeric:tabular-nums;animation:bnIn .4s cubic-bezier(.22,1,.36,1) both}
+.bn-phone ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px}
+.bn-phone li{display:flex;align-items:center;gap:8px;font-size:12.5px;color:rgba(255,255,255,.55)}
+.bn-phone li.ok{color:rgba(255,255,255,.9)}
+.bn-phone li i{width:18px;height:18px;border-radius:50%;background:rgba(255,255,255,.1);font-style:normal;font-size:10px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.bn-phone li.ok i{background:#22c55e;color:#fff}
+.bn-foot{padding-top:10px;border-top:1px solid rgba(255,255,255,.12);font-size:12px;color:rgba(255,255,255,.65)}
+@keyframes bnIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@container (max-width:640px){.bn-actions{width:100%}.bn-actions .bn-btn{flex:1}}
+@media (max-width:900px){.bn{grid-template-columns:minmax(0,1fr)}.bn-preview{order:-1}.bn-phone{position:static}}
+@media (prefers-reduced-motion:reduce){.bn-digits{animation:none}}
+`
