@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { resolveCompanyUser } from '@/lib/client-cache'
 import { readLocal, writeLocal } from '@/lib/local-cache'
-import PageHeader from '@/components/PageHeader'
 import { SkeletonList } from '@/components/Skeleton'
 import WaitlistAddModal from '@/components/WaitlistAddModal'
 import Pagination, { usePagination } from '@/components/Pagination'
@@ -24,14 +23,20 @@ import EmptyScroll from '@/components/EmptyScroll'
 const DEFAULT_TEMPLATE = 'Hi {name}, good news — {item} is back in stock at {business}! {link} Reply STOP to opt out.'
 const OPEN = ['waiting', 'queued', 'sending', 'failed']
 
-const STATUS_PILL: Record<string, { label: string; bg: string; c: string }> = {
-  waiting: { label: 'Waiting', bg: '#eff6ff', c: '#2563eb' },
-  queued: { label: 'Sends at 9am', bg: '#fffbeb', c: '#b45309' },
-  sending: { label: 'Sending…', bg: '#f5f3ff', c: '#7c3aed' },
-  notified: { label: 'Notified', bg: '#f0fdf4', c: '#059669' },
-  failed: { label: 'Failed', bg: '#fef2f2', c: '#dc2626' },
-  cancelled: { label: 'Removed', bg: '#f3f4f6', c: '#6b7280' },
+const STATUS_PILL: Record<string, { label: string; c: string }> = {
+  waiting: { label: 'Waiting', c: '#3b82f6' },
+  queued: { label: 'Sends at 9am', c: '#f59e0b' },
+  sending: { label: 'Sending…', c: '#8b5cf6' },
+  notified: { label: 'Notified', c: '#22c55e' },
+  failed: { label: 'Failed', c: '#ef4444' },
+  cancelled: { label: 'Removed', c: '#a1a1aa' },
 }
+
+// A dot tag or tile tinted from one colour.
+const tint = (c: string) => ({ ['--t' as any]: c }) as React.CSSProperties
+const HUES = ['#f97316', '#8b5cf6', '#06b6d4', '#ec4899', '#22c55e', '#3b82f6', '#eab308', '#ef4444']
+const hueOf = (s: string) => { let h = 0; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return HUES[h % HUES.length] }
+const initialsOf = (s: string) => s.trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase() || '?'
 
 async function authHeaders(): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession()
@@ -288,158 +293,143 @@ export default function WaitlistsPage() {
   }
 
   const stockBadge = (g: any) => {
-    if (!g.productId) return { label: 'Not listed online', bg: '#f3f4f6', c: '#6b7280' }
+    if (!g.productId) return { label: 'Not listed online', c: '#a1a1aa' }
     const s = stock[String(g.productId)]
-    if (!s || !s.stock_status) return { label: 'Linked product', bg: '#f3f4f6', c: '#6b7280' }
-    if (s.stock_status === 'instock') return { label: `In stock${s.stock_quantity != null ? ` · ${s.stock_quantity}` : ''}`, bg: '#f0fdf4', c: '#059669' }
-    if (s.stock_status === 'onbackorder') return { label: 'On backorder', bg: '#fffbeb', c: '#b45309' }
-    return { label: 'Out of stock', bg: '#fef2f2', c: '#dc2626' }
+    if (!s || !s.stock_status) return { label: 'Linked product', c: '#a1a1aa' }
+    if (s.stock_status === 'instock') return { label: `In stock${s.stock_quantity != null ? ` · ${s.stock_quantity}` : ''}`, c: '#22c55e' }
+    if (s.stock_status === 'onbackorder') return { label: 'On backorder', c: '#f59e0b' }
+    return { label: 'Out of stock', c: '#ef4444' }
   }
 
-  if (loading) return <div style={{ padding: 24, maxWidth: 1280, margin: '0 auto' }}><SkeletonList /></div>
+  if (loading) return <div style={{ padding: '24px 28px', maxWidth: 1280, margin: '0 auto' }}><SkeletonList /></div>
+
+  const I = (d: React.ReactNode) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>
+  const tiles: any[] = [
+    { label: 'Customers waiting', value: String(stats.waiting), c: '#3b82f6',
+      icon: I(<><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></>),
+      ...(stats.newWaiting ? { sub: `+${stats.newWaiting} new ${firstVisit ? 'in the last 2 days' : 'since your last visit'}`, hot: true } : { sub: 'Across every item' }) },
+    { label: 'Items with a waitlist', value: String(stats.items), c: '#8b5cf6', sub: 'Out of stock or not yet in',
+      icon: I(<><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></>) },
+    { label: 'Potential revenue', value: money(stats.potential), c: '#22c55e',
+      sub: stats.unpriced ? `${stats.unpriced} without a price` : 'If everyone waiting buys one',
+      title: 'Current store price × each customer waiting. Items not listed online have no price, so they aren’t counted.',
+      icon: I(<><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></>) },
+    ...(stats.queued ? [{ label: 'Texts queued for 9am', value: String(stats.queued), c: '#f59e0b', sub: 'Back in stock overnight',
+      title: 'Texts only go out 9am–8pm. Anything back in stock overnight is sent at 9am.',
+      icon: I(<><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></>) }] : []),
+    { label: 'Notified (30 days)', value: String(stats.notified30), c: '#06b6d4', sub: 'Told it’s back in stock',
+      icon: I(<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />) },
+  ]
 
   return (
-    <div style={{ padding: 24, maxWidth: 1280, margin: '0 auto' }}>
-      <style>{`
-        @media (max-width: 560px) { .wl-hide-sm { display: none } }
-        /* Open/close: the panel's height eases between 0 and its content, and
-           each customer row slides up in turn as it opens. */
-        .wl-panel { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .38s cubic-bezier(.16,1,.3,1) }
-        .wl-panel.open { grid-template-rows: 1fr }
-        .wl-panel > div { overflow: hidden; min-height: 0 }
-        .wl-row { opacity: 0; transform: translateY(-6px); transition: opacity .22s ease, transform .3s cubic-bezier(.16,1,.3,1) }
-        .wl-panel.open .wl-row { opacity: 1; transform: none; transition-delay: calc(var(--i, 0) * 35ms + 60ms) }
-        @media (max-width: 640px) {
-          .wl-acts { width: 100%; margin-left: 0 !important }
-          .wl-when { flex: 1 1 auto; white-space: normal !important; line-height: 1.35 }
-        }
-        .wl-chev { margin-left: auto; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface, #fff); color: var(--slate, #6b7280); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; transition: background .2s ease, color .2s ease, border-color .2s ease }
-        .wl-chev:hover { background: var(--peach, #fff1ee); color: var(--coral, #ff7a6b); border-color: transparent }
-        .wl-chev svg { transition: transform .38s cubic-bezier(.16,1,.3,1) }
-        .wl-chev.open svg { transform: rotate(180deg) }
-        @media (prefers-reduced-motion: reduce) {
-          .wl-panel, .wl-row, .wl-chev svg { transition: none !important }
-          .wl-panel.open .wl-row { transition-delay: 0s !important }
-        }
-        @media (max-width: 640px) {
-          .wl-stats { display: flex !important; overflow-x: auto; scroll-snap-type: x mandatory; margin-left: -24px; margin-right: -24px; padding: 0 24px 4px; scroll-padding-left: 24px; scrollbar-width: none; -webkit-overflow-scrolling: touch }
-          .wl-stats::-webkit-scrollbar { display: none }
-          .wl-stats > div { flex: 0 0 72%; scroll-snap-align: start }
-          .wl-title { white-space: normal !important; line-height: 1.3 }
-        }
-      `}</style>
-      <PageHeader
-        title="Back-in-stock waitlists"
-        subtitle="Customers waiting for an item. When it's back, they get one SMS."
-        bleed={24}
-        action={
-          <>
-            <button onClick={() => setShowSettings(s => !s)} style={{ ...btnGhost, display: 'inline-flex', alignItems: 'center', gap: 6 }}><GearIcon size={15} /> Settings</button>
-            <button onClick={() => setShowAdd(true)} disabled={!!setupMsg} style={{ ...btnPrimary, display: 'inline-flex', alignItems: 'center', gap: 6 }}><PlusIcon size={15} strokeWidth={2.4} /> Add to waitlist</button>
-          </>
-        }
-      />
+    <div className="wl">
+      <style>{WL_CSS}</style>
+      <div className="wl-head">
+        <div>
+          <h1>Back-in-stock waitlists</h1>
+          <p>Customers waiting for an item. When it&apos;s back, they get one SMS.</p>
+        </div>
+        <div className="wl-head-acts">
+          <button type="button" className={`cv-btn${showSettings ? ' wl-on' : ''}`} onClick={() => setShowSettings(s => !s)} aria-expanded={showSettings}><GearIcon size={15} /> Settings</button>
+          <button type="button" className="cv-btn cv-btn-primary" onClick={() => setShowAdd(true)} disabled={!!setupMsg}><PlusIcon size={15} strokeWidth={2.4} /> Add to waitlist</button>
+        </div>
+      </div>
 
-      {setupMsg && <div style={{ ...card, background: '#fffbeb', borderColor: '#fde68a', color: '#92400e', fontSize: 13.5, marginBottom: 16 }}>{setupMsg}</div>}
-      {toast && <div style={{ ...card, background: '#f0fdf4', borderColor: '#bbf7d0', color: '#065f46', fontSize: 13.5, marginBottom: 16, padding: '10px 14px' }}>{toast}</div>}
+      {setupMsg && <div className="wl-note" role="alert">{setupMsg}</div>}
 
       {showSettings && <SettingsPanel companyId={companyId} businessName={businessName} settings={settings} onSaved={s => { setSettings(s); flash('Settings saved.') }} />}
 
-      {/* Stat tiles — a swipeable row on phones */}
-      <div className="wl-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12, marginBottom: 18 }}>
-        {[
-          { label: 'Customers waiting', value: String(stats.waiting), c: '#2563eb', bg: '#eff6ff',
-            ...(stats.newWaiting ? { sub: `+${stats.newWaiting} new ${firstVisit ? 'in the last 2 days' : 'since your last visit'}`, subC: NEW_PILL.c } : {}) },
-          { label: 'Items with a waitlist', value: String(stats.items), c: '#7c3aed', bg: '#f5f3ff' },
-          { label: 'Potential revenue', value: money(stats.potential), c: '#059669', bg: '#f0fdf4',
-            sub: stats.unpriced ? `${stats.unpriced} without a price` : 'If everyone waiting buys one',
-            title: 'Current store price × each customer waiting. Items not listed online have no price, so they aren’t counted.' },
-          ...(stats.queued ? [{ label: 'Texts queued for 9am', value: String(stats.queued), c: '#b45309', bg: '#fffbeb',
-            sub: 'Back in stock overnight', title: 'Texts only go out 9am–8pm. Anything back in stock overnight is sent at 9am.' }] : []),
-          { label: 'Notified (30 days)', value: String(stats.notified30), c: '#0891b2', bg: '#ecfeff' },
-        ].map((s: any) => (
-          <div key={s.label} title={s.title} style={{ ...card, display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px' }}>
-            <div style={{ minWidth: 38, height: 38, padding: s.value.length > 3 ? '0 10px' : 0, borderRadius: 10, background: s.bg, color: s.c, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15, flexShrink: 0, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{s.value}</div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 13, color: 'var(--slate)', fontWeight: 600 }}>{s.label}</div>
-              {s.sub && <div style={{ fontSize: 11.5, color: s.subC || 'var(--slate)', fontWeight: s.subC ? 700 : undefined, marginTop: 1, opacity: s.subC ? 1 : 0.85 }}>{s.sub}</div>}
-            </div>
+      <div className="wl-tiles">
+        {tiles.map(t => (
+          <div key={t.label} className="wl-tile" title={t.title} style={tint(t.c)}>
+            <span className="wl-tile-top"><span className="wl-tile-l">{t.label}</span><span className="wl-tile-ic">{t.icon}</span></span>
+            <span className="wl-tile-v">{t.value}</span>
+            {t.sub && <span className={`wl-tile-s${t.hot ? ' hot' : ''}`}>{t.sub}</span>}
           </div>
         ))}
       </div>
 
       {/* Tabs + search */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
-        <div style={{ display: 'inline-flex', background: 'var(--canvas)', border: '1px solid var(--border)', borderRadius: 10, padding: 3 }}>
+      <div className="wl-bar">
+        <div className="wl-seg" role="tablist" aria-label="Show">
           {(['waiting', 'notified', 'all', ...(stats.newTotal ? ['new' as const] : [])] as const).map(t => (
-            <button key={t} onClick={() => setTab(t)} style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: tab === t ? '#fff' : 'transparent', boxShadow: tab === t ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', color: tab === t ? 'var(--ink)' : t === 'new' ? NEW_PILL.c : 'var(--slate)', fontSize: 13, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize' }}>{t === 'new' ? `New (${stats.newTotal})` : t}</button>
+            <button key={t} type="button" role="tab" aria-selected={tab === t} className={`${tab === t ? 'on' : ''}${t === 'new' ? ' new' : ''}`} onClick={() => setTab(t)}>
+              {t === 'new' ? <>New <span className="wl-seg-n">{stats.newTotal}</span></> : t[0].toUpperCase() + t.slice(1)}
+            </button>
           ))}
         </div>
         {(stats.aiTotal > 0 || aiOnly) && (
-          <button type="button" onClick={() => setAiOnly(v => !v)} aria-pressed={aiOnly} title="Only customers an AI agent or Colvy AI added"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 10, border: `1px solid ${aiOnly ? AI_VIOLET.c : AI_VIOLET.border}`, background: aiOnly ? AI_VIOLET.c : AI_VIOLET.bg, color: aiOnly ? '#fff' : AI_VIOLET.c, fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            <AiSpark size={12} /> Added by AI ({stats.aiTotal})
+          <button type="button" className={`wl-ai${aiOnly ? ' on' : ''}`} onClick={() => setAiOnly(v => !v)} aria-pressed={aiOnly} title="Only customers an AI agent or Colvy AI added"
+            style={{ ['--ai' as any]: AI_VIOLET.c }}>
+            <AiSpark size={12} /> Added by AI <span className="wl-seg-n">{stats.aiTotal}</span>
           </button>
         )}
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search item or customer…" style={{ ...inp, maxWidth: 300 }} />
+        <label className="wl-search">
+          {I(<><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></>)}
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search item or customer" aria-label="Search item or customer" />
+          {search && <button type="button" className="wl-x" onClick={() => setSearch('')} aria-label="Clear search"><XIcon size={11} /></button>}
+        </label>
       </div>
 
       {groups.length === 0 ? (
-        <div style={{ ...card, padding: '24px 12px' }}>
+        <div className="wl-card" style={{ padding: '24px 12px' }}>
           {search.trim()
             ? <EmptyScroll kinds={['order', 'sms']} title="No matches" line={`Nobody here matches “${search.trim()}”. Try an item or a customer’s name.`}
                 action={<button type="button" className="cv-btn" onClick={() => setSearch('')}>Clear search</button>} />
             : <EmptyScroll kinds={['order', 'sms']} title={aiOnly ? 'No one added by AI here' : tab === 'waiting' ? 'Nobody is waiting right now' : 'Nothing here yet'}
                 line={<>When a customer asks for something that's out of stock, add them here (or with <b>Waitlist</b> on their conversation). The moment it's back, they get a text.</>}
-                action={!setupMsg ? <button onClick={() => setShowAdd(true)} style={{ ...btnPrimary, display: 'inline-flex', alignItems: 'center', gap: 6 }}><PlusIcon size={15} strokeWidth={2.4} /> Add to waitlist</button> : undefined} />}
+                action={!setupMsg ? <button type="button" className="cv-btn cv-btn-primary" onClick={() => setShowAdd(true)}><PlusIcon size={15} strokeWidth={2.4} /> Add to waitlist</button> : undefined} />}
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="wl-groups">
           {pg.items.map(g => {
             const badge = stockBadge(g)
             const isOpen = open[g.key] ?? groups.length <= 3
             return (
-              <div key={g.key} style={{ ...card, padding: 0, overflow: 'hidden' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', flexWrap: 'wrap' }}>
-                  <button onClick={() => setOpen(o => ({ ...o, [g.key]: !isOpen }))} style={{ display: 'flex', alignItems: 'center', gap: 14, flex: '1 1 260px', minWidth: 0, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}>
+              <div key={g.key} className="wl-card">
+                <div className="wl-g">
+                  <button type="button" className="wl-g-main" onClick={() => setOpen(o => ({ ...o, [g.key]: !isOpen }))}>
                     {g.image
-                      ? <img src={g.image} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: 'cover', border: '1px solid var(--border)', flexShrink: 0 }} />
-                      : <div style={{ width: 48, height: 48, borderRadius: 10, background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}><TagIcon size={22} /></div>}
-                    <div style={{ minWidth: 0 }}>
-                      <div className="wl-title" style={{ fontSize: 15, fontWeight: 800, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      ? <img src={g.image} alt="" className="wl-g-img" />
+                      : <span className="wl-g-img wl-g-ph"><TagIcon size={22} /></span>}
+                    <span className="wl-g-txt">
+                      <span className="wl-title">
                         {g.name}
                         {g.price != null && (
-                          <span style={{ fontWeight: 700, color: 'var(--ink)' }} title={g.approx ? 'Couldn’t reach your store for this size, so this is the product’s starting price' : undefined}> – {g.approx ? 'from ' : ''}{money(g.price)}
-                            {g.regular != null && <span style={{ fontWeight: 500, fontSize: 13, color: 'var(--slate)', textDecoration: 'line-through', marginLeft: 6 }}>{money(g.regular)}</span>}
+                          <span className="wl-price" title={g.approx ? 'Couldn’t reach your store for this size, so this is the product’s starting price' : undefined}> · {g.approx ? 'from ' : ''}{money(g.price)}
+                            {g.regular != null && <s>{money(g.regular)}</s>}
                           </span>
                         )}
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: badge.bg, color: badge.c }}>{badge.label}</span>
-                        <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>
-                          {g.waiting} waiting{g.newCount > 0 && <> · <span style={{ color: NEW_PILL.c, fontWeight: 700 }}>{g.newCount} new</span></>}{g.aiCount > 0 && <> · <span className="wl-ai-count" title={`${g.aiCount} added by an AI agent or Colvy AI`} style={{ color: AI_VIOLET.c, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}><AiSpark /> {g.aiCount} by AI</span></>} · {g.entries.length} total
-                          {g.potential != null && g.waiting > 0 && <> · <span style={{ color: '#059669', fontWeight: 700 }}>{money(g.potential)} potential</span></>}
+                      </span>
+                      <span className="wl-g-meta">
+                        <span className="wl-tag" style={tint(badge.c)}>{badge.label}</span>
+                        <span>
+                          <b>{g.waiting} waiting</b>{g.newCount > 0 && <> · <span className="wl-hot">{g.newCount} new</span></>}{g.aiCount > 0 && <> · <span className="wl-ai-count" title={`${g.aiCount} added by an AI agent or Colvy AI`} style={{ color: AI_VIOLET.c, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 3 }}><AiSpark /> {g.aiCount} by AI</span></>} · {g.entries.length} total
+                          {g.potential != null && g.waiting > 0 && <> · <span className="wl-money">{money(g.potential)} potential</span></>}
                         </span>
-                      </div>
-                    </div>
+                      </span>
+                    </span>
                   </button>
-                  {g.url && (
-                    <a href={g.url} target="_blank" rel="noopener noreferrer" title="View product on your website" aria-label={`View ${g.name} on your website`}
-                      style={{ ...btnGhost, textDecoration: 'none', padding: '9px 12px' }}><ExternalIcon size={15} /> <span className="wl-hide-sm">View product</span></a>
-                  )}
-                  {g.waiting > 0 && (
-                    <button onClick={() => notifyGroup(g)} disabled={busy === g.key} style={{ ...btnPrimary, opacity: busy === g.key ? 0.6 : 1 }}>
-                      {busy === g.key ? 'Sending…' : `Notify ${g.waiting} now`}
+                  <div className="wl-g-acts">
+                    {g.url && (
+                      <a href={g.url} target="_blank" rel="noopener noreferrer" className="wl-pill" title="View product on your website" aria-label={`View ${g.name} on your website`}>
+                        <ExternalIcon size={14} /> <span className="wl-hide-sm">View product</span>
+                      </a>
+                    )}
+                    {g.waiting > 0 && (
+                      <button type="button" className="cv-btn cv-btn-primary wl-notify" onClick={() => notifyGroup(g)} disabled={busy === g.key}>
+                        {busy === g.key ? 'Sending…' : `Notify ${g.waiting} now`}
+                      </button>
+                    )}
+                    <button type="button" className={`wl-chev${isOpen ? ' open' : ''}`} onClick={() => setOpen(o => ({ ...o, [g.key]: !isOpen }))}
+                      aria-expanded={isOpen} aria-label={isOpen ? `Hide customers waiting for ${g.name}` : `Show customers waiting for ${g.name}`}>
+                      <ChevronDownIcon size={18} strokeWidth={2.4} />
                     </button>
-                  )}
-                  <button className={`wl-chev${isOpen ? ' open' : ''}`} onClick={() => setOpen(o => ({ ...o, [g.key]: !isOpen }))}
-                    aria-expanded={isOpen} aria-label={isOpen ? `Hide customers waiting for ${g.name}` : `Show customers waiting for ${g.name}`}>
-                    <ChevronDownIcon size={20} strokeWidth={2.4} />
-                  </button>
+                  </div>
                 </div>
                 <div className={`wl-panel${isOpen ? ' open' : ''}`} aria-hidden={!isOpen}>
                   <div inert={!isOpen}>
-                  <div style={{ borderTop: '1px solid var(--border)' }}>
+                  <div className="wl-rows">
                     {g.entries.map((e: any, i: number) => {
                       const pill = STATUS_PILL[e.status] || STATUS_PILL.waiting
                       if (editing === e.id) return (
@@ -447,48 +437,51 @@ export default function WaitlistsPage() {
                           onCancel={() => setEditing(null)}
                           onSaved={async () => { setEditing(null); flash('Customer details saved.'); await load(companyId) }} />
                       )
+                      const who = e.customer_name || e.phone || e.email || 'Customer'
+                      const live = ['waiting', 'queued', 'failed'].includes(e.status)
                       return (
-                        <div key={e.id} id={`wl-e-${e.id}`} className="wl-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', ['--i' as any]: Math.min(i, 12), ...(focusId === String(e.id) ? (isAiAdded(e) ? { background: AI_VIOLET.bg, boxShadow: `inset 3px 0 0 ${AI_VIOLET.c}` } : { background: 'var(--peach, #fff1ee)', boxShadow: 'inset 3px 0 0 var(--coral, #ff7a6b)' }) : {}) }}>
-                          <div style={{ flex: '1 1 200px', minWidth: 0 }}>
-                            <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <div key={e.id} id={`wl-e-${e.id}`} className="wl-row" style={{ ['--i' as any]: Math.min(i, 12), ...(focusId === String(e.id) ? (isAiAdded(e) ? { background: AI_VIOLET.bg, boxShadow: `inset 3px 0 0 ${AI_VIOLET.c}` } : { background: 'var(--peach, #fff1ee)', boxShadow: 'inset 3px 0 0 var(--coral, #ff7a6b)' }) : {}) }}>
+                          <span className="wl-av" style={tint(hueOf(String(who)))}>{initialsOf(String(e.customer_name || who))}</span>
+                          <div className="wl-who">
+                            <div className="wl-name">
                               {e.customer_name || 'Customer'}
                               {isTaggedNew(e, newIds) && <NewPill since={newSince} firstVisit={firstVisit} />}
                               {isAiAdded(e) && <AiAddedPill entry={e} companyId={companyId} />}
                             </div>
-                            <div style={{ fontSize: 12, color: 'var(--slate)' }}>{[e.phone, e.email].filter(Boolean).join(' · ')}</div>
-                            {e.note && <div style={{ fontSize: 12, color: 'var(--slate)', marginTop: 2, fontStyle: 'italic' }}>“{e.note}”</div>}
-                            {e.status === 'failed' && e.error && <div style={{ fontSize: 12, color: '#dc2626', marginTop: 2 }}>{e.error}</div>}
+                            <div className="wl-contact">{[e.phone, e.email].filter(Boolean).join(' · ')}</div>
+                            {e.note && <div className="wl-contact" style={{ fontStyle: 'italic', marginTop: 2 }}>“{e.note}”</div>}
+                            {e.status === 'failed' && e.error && <div className="wl-contact" style={{ color: '#dc2626', marginTop: 2 }}>{e.error}</div>}
                           </div>
                           {/* Date, status and actions stay together on one line — on a phone
                               the remove button used to wrap onto a line of its own. */}
-                          <div className="wl-acts" style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', minWidth: 0 }}>
-                          <span className="wl-when" style={{ fontSize: 12, color: 'var(--slate)', whiteSpace: 'nowrap', minWidth: 0 }}>
-                            {e.status === 'notified' && e.notified_at ? `${e.notified_via === 'email' ? 'Emailed' : 'Texted'} ${fmtDate(e.notified_at)}` : `Added ${fmtDate(e.created_at)}`}{e.source === 'inbox' ? ' · from inbox' : e.source === 'website' ? ' · from website' : e.source === 'ai_agent' ? ' · from AI agent' : e.source === 'colvy_ai' ? ' · via Colvy AI' : ''}
-                          </span>
-                          <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: pill.bg, color: pill.c, whiteSpace: 'nowrap', flexShrink: 0 }}>{pill.label}</span>
-                          {e.conversation_id
-                            ? <a href={`/admin/inbox?conversation=${e.conversation_id}`} title="Open conversation" aria-label="Open conversation" style={{ ...iconBtn, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate, #6b7280)' }}><ChatIcon size={15} /></a>
-                            : (e.phone || e.email || e.contact_id) && (
-                              <button onClick={() => openChat(e)} disabled={busy === `chat:${e.id}`} title="Chat with this customer" aria-label="Chat with this customer" style={{ ...iconBtn, opacity: busy === `chat:${e.id}` ? 0.5 : 1 }}><ChatIcon size={15} /></button>
+                          <div className="wl-acts">
+                            <span className="wl-when">
+                              {e.status === 'notified' && e.notified_at ? `${e.notified_via === 'email' ? 'Emailed' : 'Texted'} ${fmtDate(e.notified_at)}` : `Added ${fmtDate(e.created_at)}`}{e.source === 'inbox' ? ' · from inbox' : e.source === 'website' ? ' · from website' : e.source === 'ai_agent' ? ' · from AI agent' : e.source === 'colvy_ai' ? ' · via Colvy AI' : ''}
+                            </span>
+                            <span className="wl-tag" style={tint(pill.c)}>{pill.label}</span>
+                            {e.conversation_id
+                              ? <a href={`/admin/inbox?conversation=${e.conversation_id}`} className="wl-ib" title="Open conversation" aria-label="Open conversation"><ChatIcon size={15} /></a>
+                              : (e.phone || e.email || e.contact_id) && (
+                                <button type="button" className="wl-ib" onClick={() => openChat(e)} disabled={busy === `chat:${e.id}`} title="Chat with this customer" aria-label="Chat with this customer"><ChatIcon size={15} /></button>
+                              )}
+                            {live && (
+                              <button type="button" className="wl-ib" onClick={() => setEditing(e.id)} title="Edit customer details" aria-label="Edit customer details"><EditIcon size={14} /></button>
                             )}
-                          {['waiting', 'queued', 'failed'].includes(e.status) && (
-                            <button onClick={() => setEditing(e.id)} title="Edit customer details" aria-label="Edit customer details" style={iconBtn}><EditIcon size={14} /></button>
-                          )}
-                          {['waiting', 'queued', 'failed'].includes(e.status) && (
-                            <button onClick={() => removeEntry(e)} disabled={busy === e.id} title="Remove from waitlist" style={{ ...iconBtn, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><XIcon size={13} /></button>
-                          )}
+                            {live && (
+                              <button type="button" className="wl-ib danger" onClick={() => removeEntry(e)} disabled={busy === e.id} title="Remove from waitlist" aria-label="Remove from waitlist"><XIcon size={13} /></button>
+                            )}
                           </div>
                         </div>
                       )
                     })}
                     {g.waiting > 0 && (
-                      <div className="wl-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 16px', background: 'var(--canvas, #fafafa)', flexWrap: 'wrap', ['--i' as any]: Math.min(g.entries.length, 13) }}>
-                        <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>
+                      <div className="wl-row wl-foot" style={{ ['--i' as any]: Math.min(g.entries.length, 13) }}>
+                        <span>
                           {g.price != null
-                            ? <>Potential revenue · {g.waiting} waiting × {money(g.price)} each{g.approx ? ' (starting price — estimate)' : ''}</>
+                            ? <>Potential revenue · {g.waiting} waiting × {money(g.price)} each{g.approx ? ' (starting price, an estimate)' : ''}</>
                             : g.productId ? 'No price on this product in your store yet' : 'Not listed online, so there’s no price to estimate from'}
                         </span>
-                        {g.potential != null && <span style={{ fontSize: 14, fontWeight: 800, color: '#059669', fontVariantNumeric: 'tabular-nums' }}>{money(g.potential)}</span>}
+                        {g.potential != null && <b>{money(g.potential)}</b>}
                       </div>
                     )}
                   </div>
@@ -498,6 +491,13 @@ export default function WaitlistsPage() {
             )
           })}
           <Pagination {...pg} noun="items" />
+        </div>
+      )}
+
+      {toast && (
+        <div className="wl-toast" role="status">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg>
+          {toast}
         </div>
       )}
 
@@ -511,7 +511,7 @@ const NEW_PILL = { bg: '#fff1ee', c: '#d6402c' }
 function NewPill({ since, firstVisit }: { since: string | null; firstVisit: boolean }) {
   const title = firstVisit || !since ? 'Joined in the last 2 days' : `Joined since your last visit (${new Date(since).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })})`
   return (
-    <span title={title} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: NEW_PILL.bg, color: NEW_PILL.c, whiteSpace: 'nowrap', flexShrink: 0 }}>
+    <span title={title} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 20, fontSize: 11.5, fontWeight: 600, padding: '0 8px', borderRadius: 999, background: NEW_PILL.bg, color: NEW_PILL.c, whiteSpace: 'nowrap', flexShrink: 0 }}>
       <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4z" /></svg>
       New
     </span>
@@ -541,25 +541,25 @@ function EditEntry({ entry, companyId, onCancel, onSaved }: { entry: any; compan
 
   const field = (label: string, el: React.ReactNode) => (
     <label style={{ display: 'block', flex: '1 1 180px', minWidth: 0 }}>
-      <span style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', marginBottom: 4 }}>{label}</span>
+      <span style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: '#71717a', marginBottom: 5 }}>{label}</span>
       {el}
     </label>
   )
   return (
-    <form onSubmit={save} style={{ padding: '12px 16px 14px', borderBottom: '1px solid var(--border)', background: 'var(--canvas, #fafafa)' }}>
+    <form onSubmit={save} className="wl-edit">
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        {field('Name', <input value={name} onChange={e => setName(e.target.value)} placeholder="Customer name" autoFocus style={{ ...inp, fontSize: 16 }} />)}
-        {field('Mobile', <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="0412 345 678" inputMode="tel" autoComplete="off" style={{ ...inp, fontSize: 16 }} />)}
-        {field('Email', <input value={email} onChange={e => setEmail(e.target.value)} placeholder="name@example.com" type="email" inputMode="email" autoComplete="off" style={{ ...inp, fontSize: 16 }} />)}
+        {field('Name', <input value={name} onChange={e => setName(e.target.value)} placeholder="Customer name" autoFocus className="wl-inp" />)}
+        {field('Mobile', <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="0412 345 678" inputMode="tel" autoComplete="off" className="wl-inp" />)}
+        {field('Email', <input value={email} onChange={e => setEmail(e.target.value)} placeholder="name@example.com" type="email" inputMode="email" autoComplete="off" className="wl-inp" />)}
       </div>
       <div style={{ marginTop: 10 }}>
-        {field('Note (staff only)', <input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. wants 2, happy to pick up" style={{ ...inp, fontSize: 16 }} />)}
+        {field('Note (staff only)', <input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. wants 2, happy to pick up" className="wl-inp" />)}
       </div>
-      <p style={{ fontSize: 12, color: 'var(--slate)', margin: '8px 0 0' }}>They’re texted when it’s back, or emailed if there’s no mobile.</p>
+      <p style={{ fontSize: 12.5, color: '#8e8e93', margin: '8px 0 0' }}>They’re texted when it’s back, or emailed if there’s no mobile.</p>
       {err && <p role="alert" style={{ fontSize: 12.5, color: '#dc2626', margin: '6px 0 0' }}>{err}</p>}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
-        <button type="button" onClick={onCancel} style={btnGhost}>Cancel</button>
-        <button type="submit" disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save'}</button>
+        <button type="button" className="cv-btn" onClick={onCancel}>Cancel</button>
+        <button type="submit" className="cv-btn cv-btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
       </div>
     </form>
   )
@@ -586,41 +586,171 @@ function SettingsPanel({ companyId, businessName, settings, onSaved }: { company
   }
 
   return (
-    <div style={{ ...card, marginBottom: 18 }}>
-      <p style={{ margin: '0 0 12px', fontWeight: 800, fontSize: 15, color: 'var(--ink)' }}>Waitlist settings</p>
-      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 16, cursor: 'pointer' }}>
-        <input type="checkbox" checked={auto} onChange={e => setAuto(e.target.checked)} style={{ marginTop: 3 }} />
-        <span>
-          <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>Text customers automatically when a linked product is back in stock</span>
-          <span style={{ display: 'block', fontSize: 12.5, color: 'var(--slate)', marginTop: 2, lineHeight: 1.5 }}>
+    <div className="wl-card wl-settings">
+      <p className="wl-settings-h">Waitlist settings</p>
+      <label className="wl-auto">
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>Text customers automatically when a linked product is back in stock</span>
+          <span style={{ display: 'block', fontSize: 13, color: '#71717a', marginTop: 3, lineHeight: 1.55 }}>
             Triggered by WooCommerce or Shopify stock updates. Texts only go out 9am–8pm; anything that arrives overnight is sent at 9am.
             Items not listed online are sent with <b>Notify now</b>. If stock changes don't come through, re-register webhooks under Integrations → WooCommerce, or sync the store under Integrations → Shopify.
           </span>
         </span>
+        <input type="checkbox" role="switch" className="wl-switch" checked={auto} onChange={e => setAuto(e.target.checked)} />
       </label>
-      <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 6 }}>SMS message</label>
-      <textarea value={tpl} onChange={e => setTpl(e.target.value)} rows={3} style={{ ...inp, resize: 'vertical', fontFamily: 'inherit' }} />
+      <label htmlFor="wl-tpl" style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>SMS message</label>
+      <textarea id="wl-tpl" className="wl-inp" value={tpl} onChange={e => setTpl(e.target.value)} rows={3} style={{ resize: 'vertical' }} />
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '8px 0' }}>
         {['{name}', '{item}', '{business}', '{link}'].map(t => (
-          <button key={t} type="button" onClick={() => setTpl(v => `${v} ${t}`.trim())} style={{ padding: '3px 9px', borderRadius: 999, border: '1px solid var(--border)', background: 'var(--canvas)', fontSize: 12, fontWeight: 700, color: 'var(--ink)', cursor: 'pointer' }}>{t}</button>
+          <button key={t} type="button" className="wl-token" onClick={() => setTpl(v => `${v} ${t}`.trim())}>{t}</button>
         ))}
       </div>
-      <div style={{ background: 'var(--canvas)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: 'var(--ink)', lineHeight: 1.5 }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--slate)', display: 'block', marginBottom: 4 }}>PREVIEW · {preview.length} chars · {segments} SMS</span>
+      <div className="wl-preview">
+        <span className="wl-preview-h">Preview · {preview.length} characters · {segments} SMS</span>
         {preview}
       </div>
-      {!/stop/i.test(tpl) && <p style={{ fontSize: 12, color: '#b45309', margin: '8px 0 0' }}>Tip: keep "Reply STOP to opt out" — it's the required unsubscribe option for marketing texts in Australia.</p>}
+      {!/stop/i.test(tpl) && <p style={{ fontSize: 12.5, color: '#b45309', margin: '8px 0 0' }}>Tip: keep "Reply STOP to opt out" — it's the required unsubscribe option for marketing texts in Australia.</p>}
       {err && <p style={{ fontSize: 12.5, color: '#dc2626', margin: '8px 0 0' }}>{err}</p>}
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 14, gap: 8, flexWrap: 'wrap' }}>
-        <button type="button" onClick={() => setTpl(DEFAULT_TEMPLATE)} style={btnGhost}>Reset to default</button>
-        <button type="button" onClick={save} disabled={saving} style={btnPrimary}>{saving ? 'Saving…' : 'Save settings'}</button>
+        <button type="button" className="cv-btn" onClick={() => setTpl(DEFAULT_TEMPLATE)}>Reset to default</button>
+        <button type="button" className="cv-btn cv-btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save settings'}</button>
       </div>
     </div>
   )
 }
 
-const card: React.CSSProperties = { background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: 18 }
-const inp: React.CSSProperties = { width: '100%', padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13.5, outline: 'none', boxSizing: 'border-box', background: '#fff', color: 'var(--ink)' }
-const btnPrimary: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }
-const btnGhost: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }
-const iconBtn: React.CSSProperties = { width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: 'var(--slate)', flexShrink: 0 }
+// The Waitlists look: a big bold header, soft tiles, a pill toolbar and one
+// white card per item that opens to the customers waiting for it.
+const WL_CSS = `
+.wl{padding:24px 28px 48px;max-width:1280px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
+.wl button::before{display:none}
+.wl-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:22px}
+.wl-head h1{margin:0;font-size:30px;font-weight:800;letter-spacing:-.025em;line-height:1.1}
+.wl-head p{margin:6px 0 0;font-size:14.5px;color:#71717a}
+.wl-head-acts{display:flex;gap:8px;flex-wrap:wrap}
+.wl-head-acts .cv-btn{display:inline-flex;align-items:center;gap:7px}
+.cv-btn.wl-on{background:#18181b!important;color:#fff!important}
+.wl-note{margin-bottom:16px;padding:12px 16px;border-radius:16px;background:#fffbeb;box-shadow:0 0 0 1px #fde68a;color:#92400e;font-size:13.5px;line-height:1.5}
+.wl-card{background:#fff;border-radius:20px;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04);overflow:hidden}
+.wl-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-bottom:18px}
+.wl-tile{display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:14px 16px;border-radius:18px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.07),0 1px 2px rgba(16,24,40,.04);min-width:0}
+.wl-tile-top{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%}
+.wl-tile-l{font-size:13.5px;font-weight:600;color:#71717a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wl-tile-ic{width:30px;height:30px;border-radius:10px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--t) 11%,#fff);color:var(--t)}
+.wl-tile-ic svg{width:15px;height:15px}
+.wl-tile-v{margin-top:2px;font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1.1;font-variant-numeric:tabular-nums;white-space:nowrap}
+.wl-tile-s{font-size:12.5px;color:#8e8e93;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.wl-tile-s.hot{color:#d6402c;font-weight:600}
+.wl-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.wl-seg{display:inline-flex;gap:2px;padding:3px;border-radius:999px;background:#f4f4f5}
+.wl-seg button{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 14px;border:none;border-radius:999px;background:transparent;color:#71717a;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background-color .15s,color .15s}
+.wl-seg button:hover{color:#18181b}
+.wl-seg button.on{background:#fff;color:#18181b;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.wl-seg button.new{color:#d6402c}
+.wl-seg-n{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:color-mix(in srgb,currentColor 14%,#fff);font-size:11px;font-weight:700}
+.wl-ai{display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 14px;border:none;border-radius:999px;background:color-mix(in srgb,var(--ai) 10%,#fff);color:var(--ai);font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;white-space:nowrap}
+.wl-ai.on{background:var(--ai);color:#fff}
+.wl-ai.on .wl-seg-n{background:rgba(255,255,255,.22)}
+.wl-search{flex:1;min-width:0;max-width:340px;margin-left:auto;display:flex;align-items:center;gap:8px;height:38px;padding:0 10px 0 14px;border-radius:999px;border:1.5px solid transparent;background:#f4f4f5;color:#a1a1aa;box-sizing:border-box;transition:background-color .15s,border-color .15s,box-shadow .15s}
+.wl-search svg{width:15px;height:15px;flex-shrink:0}
+.wl-search:focus-within{background:#fff;border-color:#d4d4d8;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 16%,transparent)}
+.wl-search input{flex:1;min-width:0;border:none;outline:none;background:transparent;font:inherit;font-size:14px;color:var(--ink)}
+.wl-search input:focus{box-shadow:none}
+.wl-x{width:22px;height:22px;padding:0;border:none;border-radius:999px;background:#e4e4e7;color:#52525b;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
+.wl-groups{display:flex;flex-direction:column;gap:12px}
+.wl-g{display:flex;align-items:center;gap:12px 14px;padding:16px 18px;flex-wrap:wrap}
+.wl-g-main{display:flex;align-items:center;gap:14px;flex:1 1 300px;min-width:0;padding:0;border:none;background:none;font:inherit;color:inherit;text-align:left;cursor:pointer}
+.wl-g-img{width:52px;height:52px;border-radius:14px;object-fit:cover;flex-shrink:0;box-shadow:0 0 0 1px rgba(0,0,0,.06)}
+.wl-g-ph{display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--coral) 10%,#fff);color:var(--coral);box-shadow:none}
+.wl-g-txt{display:block;min-width:0}
+.wl-title{display:block;font-size:15.5px;font-weight:700;color:var(--ink);letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wl-price{font-weight:600;color:#52525b}
+.wl-price s{margin-left:6px;font-size:13px;font-weight:500;color:#a1a1aa}
+.wl-g-meta{display:flex;align-items:center;gap:8px;margin-top:5px;flex-wrap:wrap;font-size:13px;color:#8e8e93}
+.wl-g-meta b{font-weight:600;color:#3f3f46}
+.wl-hot{color:#d6402c;font-weight:600}
+.wl-money{color:#15803d;font-weight:600}
+.wl-tag{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 9px;border-radius:999px;background:color-mix(in srgb,var(--t) 12%,#fff);color:color-mix(in srgb,var(--t) 78%,#000);font-size:12px;font-weight:600;white-space:nowrap;flex-shrink:0}
+.wl-tag::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--t)}
+.wl-g-acts{display:flex;align-items:center;gap:8px;margin-left:auto}
+.wl-pill{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 14px;border-radius:999px;background:#f4f4f5;color:#18181b;font-size:13.5px;font-weight:600;white-space:nowrap;transition:background-color .15s}
+.wl-pill:hover{background:#ececef}
+.wl-notify{white-space:nowrap}
+.wl-chev{width:36px;height:36px;padding:0;border:none;border-radius:50%;background:#f4f4f5;color:#52525b;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;transition:background-color .2s,color .2s}
+.wl-chev:hover{background:#ececef;color:#18181b}
+.wl-chev svg{transition:transform .38s cubic-bezier(.16,1,.3,1)}
+.wl-chev.open svg{transform:rotate(180deg)}
+/* Open/close: the panel's height eases between 0 and its content, and
+   each customer row slides up in turn as it opens. */
+.wl-panel{display:grid;grid-template-rows:0fr;transition:grid-template-rows .38s cubic-bezier(.16,1,.3,1)}
+.wl-panel.open{grid-template-rows:1fr}
+.wl-panel > div{overflow:hidden;min-height:0}
+.wl-rows{margin:0 10px 10px;border-radius:16px;background:#fafafa;overflow:hidden}
+.wl-row{display:flex;align-items:center;gap:12px;padding:12px 14px;flex-wrap:wrap;opacity:0;transform:translateY(-6px);transition:opacity .22s ease,transform .3s cubic-bezier(.16,1,.3,1)}
+.wl-row + .wl-row,.wl-edit + .wl-row,.wl-row + .wl-edit{border-top:1px solid #efeff1}
+.wl-panel.open .wl-row{opacity:1;transform:none;transition-delay:calc(var(--i,0) * 35ms + 60ms)}
+.wl-av{width:34px;height:34px;border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--t) 16%,#fff);color:color-mix(in srgb,var(--t) 80%,#000);font-size:12.5px;font-weight:700}
+.wl-who{flex:1 1 200px;min-width:0}
+.wl-name{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:14px;font-weight:600;color:var(--ink)}
+.wl-contact{font-size:12.5px;color:#8e8e93;margin-top:1px;overflow-wrap:anywhere}
+.wl-acts{display:flex;align-items:center;gap:6px;margin-left:auto;min-width:0}
+.wl-when{font-size:12.5px;color:#8e8e93;white-space:nowrap;min-width:0;margin-right:2px}
+.wl-ib{width:32px;height:32px;padding:0;border:none;border-radius:50%;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.07);color:#52525b;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;transition:background-color .15s,color .15s}
+.wl-ib:hover{background:#f4f4f5;color:#18181b}
+.wl-ib.danger:hover{background:#fef2f2;color:#dc2626}
+.wl-ib:disabled{opacity:.5;cursor:default}
+.wl-foot{justify-content:space-between;font-size:13px;color:#71717a}
+.wl-foot b{font-size:15px;font-weight:800;color:#15803d;font-variant-numeric:tabular-nums}
+.wl-edit{padding:14px;background:#fff}
+.wl-inp{display:block;width:100%;box-sizing:border-box;padding:10px 14px;border:1.5px solid transparent;border-radius:12px;background:#f4f4f5;font:inherit;font-size:14px;color:var(--ink);outline:none;transition:background-color .15s,border-color .15s,box-shadow .15s}
+.wl-inp:focus{background:#fff;border-color:#d4d4d8!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 16%,transparent)}
+.wl-settings{padding:20px;margin-bottom:18px;overflow:visible}
+.wl-settings-h{margin:0 0 14px;font-size:17px;font-weight:700;letter-spacing:-.01em}
+.wl-auto{display:flex;align-items:flex-start;gap:16px;margin-bottom:18px;padding:14px 16px;border-radius:16px;background:#fafafa;cursor:pointer}
+.wl-switch{appearance:none;-webkit-appearance:none;position:relative;width:42px;height:24px;margin:2px 0 0;border-radius:999px;background:#d4d4d8;cursor:pointer;flex-shrink:0;transition:background-color .2s}
+.wl-switch::after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:transform .2s cubic-bezier(.22,1,.36,1)}
+.wl-switch:checked{background:#22c55e}
+.wl-switch:checked::after{transform:translateX(18px)}
+.wl-switch:focus{box-shadow:none}
+.wl-switch:focus-visible{box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 28%,transparent)}
+.wl-token{height:28px;padding:0 11px;border:none;border-radius:999px;background:#f4f4f5;color:#3f3f46;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+.wl-token:hover{background:#ececef;color:#18181b}
+.wl-preview{padding:12px 14px;border-radius:14px;background:#fafafa;box-shadow:0 0 0 1px rgba(0,0,0,.05);font-size:13.5px;color:var(--ink);line-height:1.55;overflow-wrap:anywhere}
+.wl-preview-h{display:block;margin-bottom:4px;font-size:12.5px;font-weight:600;color:#71717a}
+.wl-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:5800;display:flex;align-items:flex-start;gap:8px;padding:12px 18px;border-radius:18px;background:#18181b;color:#fff;font-size:13.5px;font-weight:500;line-height:1.45;box-shadow:0 12px 30px rgba(0,0,0,.25);width:max-content;max-width:min(560px,calc(100vw - 32px))}
+.wl-toast svg{flex-shrink:0;margin-top:1px;color:#4ade80}
+.wl-seg button:focus-visible,.wl-ai:focus-visible,.wl-chev:focus-visible,.wl-ib:focus-visible,.wl-pill:focus-visible,.wl-token:focus-visible,.wl-g-main:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 28%,transparent)}
+@media (prefers-reduced-motion: reduce){
+  .wl-panel,.wl-row,.wl-chev svg{transition:none!important}
+  .wl-panel.open .wl-row{transition-delay:0s!important}
+}
+@media (max-width:640px){
+  .wl{padding:16px 14px 40px}
+  .wl-head{align-items:flex-start}
+  .wl-head h1{font-size:26px}
+  .wl-head-acts{width:100%}
+  .wl-head-acts .cv-btn{flex:1;justify-content:center}
+  .wl-tiles{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .wl-tiles > :first-child:nth-last-child(2n+1){grid-column:1 / -1}
+  .wl-tile{padding:12px 14px}
+  .wl-tile-l{white-space:normal;line-height:1.3}
+  .wl-tile-top{align-items:flex-start}
+  .wl-tile-v{font-size:22px}
+  .wl-seg{flex:1}
+  .wl-seg button{flex:1;justify-content:center;padding:0 8px}
+  .wl-search{max-width:none;flex-basis:100%;margin-left:0}
+  .wl-search input,.wl-inp{font-size:16px}
+  .wl-g{padding:14px}
+  .wl-g-main{flex-basis:100%}
+  .wl-g-acts{width:100%}
+  .wl-g-acts .wl-notify{flex:1;justify-content:center}
+  .wl-chev{margin-left:auto}
+  .wl-title{white-space:normal;line-height:1.3}
+  .wl-hide-sm{display:none}
+  .wl-rows{margin:0 8px 8px}
+  .wl-acts{width:100%;padding-left:46px;box-sizing:border-box;flex-wrap:wrap;row-gap:8px}
+  .wl-when{flex:1 1 100%;margin:0}
+  .wl-acts .wl-tag{margin-right:auto}
+  .wl-settings{padding:16px}
+}
+`
