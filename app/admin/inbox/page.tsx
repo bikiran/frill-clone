@@ -7560,6 +7560,13 @@ export default function InboxPage() {
         .cv-tag { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--tag) 9%, #fff); color: color-mix(in srgb, var(--tag) 88%, #000); font-size: 12px; font-weight: 600; line-height: 1; white-space: nowrap; }
         .cv-tag-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--tag); flex-shrink: 0; }
         .cv-tag-dot.live { animation: livePulse 1.6s ease-in-out infinite; }
+        /* A row's outlet and who has it: quiet grey, under the tags' colour. */
+        .il-where { display: flex; align-items: center; gap: 5px; margin-bottom: 4px; min-width: 0; font-size: 12px; font-weight: 500; color: #8e8e93; }
+        .il-where svg { flex-shrink: 0; }
+        .il-where span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .il-who { display: flex; align-items: center; gap: 6px; margin-top: 6px; min-width: 0; font-size: 12px; font-weight: 500; color: #71717a; }
+        .il-who-av { width: 18px; height: 18px; flex-shrink: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--coral) 14%, #fff); color: var(--coral); font-size: 10px; font-weight: 700; }
+        .il-who-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         @media (prefers-reduced-motion: reduce) { .th-menu { animation: none; } }
         /* Desktop / tablet: the tools sit inline on the right as before */
         @media (min-width: 768px) {
@@ -9114,9 +9121,9 @@ export default function InboxPage() {
                   : null
                 if (!label) return null
                 return (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4, fontSize: 11, fontWeight: 700, color: '#2563eb' }}>
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                    {label}
+                  <div className="il-where">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                    <span>{label}</span>
                   </div>
                 )
               })()}
@@ -9199,7 +9206,7 @@ export default function InboxPage() {
                 if ((conv.last_message || '').toLowerCase().includes(ql)) return null
                 return (
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginTop: 3, fontSize: 11, color: '#6b7280', overflow: 'hidden' }}>
-                    <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em', color: '#7c3aed' }}>{hit.field}</span>
+                    <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 600, color: '#7c3aed' }}>{hit.field}</span>
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
                       <Highlight text={hit.snippet} q={searchTerm} accent={accent} />
                     </span>
@@ -9207,7 +9214,10 @@ export default function InboxPage() {
                 )
               })()}
               {conv.assigned_name && (
-                <span style={{ fontSize: 10, color: '#2563eb', marginTop: 3, display: 'block' }}>Assigned: {conv.assigned_name}</span>
+                <span className="il-who" title={`Assigned to ${conv.assigned_name}`}>
+                  <span className="il-who-av" aria-hidden>{conv.assigned_name.charAt(0).toUpperCase()}</span>
+                  <span className="il-who-name">{conv.assigned_name}</span>
+                </span>
               )}
             </button>
             </Fragment>
