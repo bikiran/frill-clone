@@ -11,6 +11,7 @@ import { termFor } from '@/lib/terminology'
 import { ToastProvider } from '@/components/ToastProvider'
 import LiveChat from '@/components/LiveChat'
 import UpdateNotification from '@/components/UpdateNotification'
+import NotificationsPanel, { notificationSoundOn } from '@/components/NotificationsPanel'
 import Analytics from '@/components/Analytics'
 import { NEUTRAL_ICON } from '@/lib/tenant-meta'
 
@@ -157,9 +158,6 @@ export default function AppChrome({
   const notifMenuRef = useRef<HTMLDivElement>(null)
   useClickOutside(showUserMenu, () => setShowUserMenu(false), [userMenuRef])
   useClickOutside(showNotifications, () => setShowNotifications(false), [notifMenuRef])
-  const [notifications, setNotifications] = useState<any[]>([])
-  const [notificationFilter, setNotificationFilter] = useState<'unread' | 'all'>('unread')
-  const [loadingNotifications, setLoadingNotifications] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [freshContent] = useState({ ideas: false, roadmap: false, updates: false, help: false })
   const pathname = usePathname()
@@ -573,6 +571,8 @@ export default function AppChrome({
         try {
           if (payload.eventType === 'INSERT' && payload.new) {
             const n = payload.new
+            // An open notifications panel adds it to its list straight away.
+            try { window.dispatchEvent(new CustomEvent('colvy:notification', { detail: n })) } catch {}
 
             // Only alert for the company this tab is viewing. The same user can
             // belong to several companies (several Colvy subdomains open at once);
@@ -586,7 +586,8 @@ export default function AppChrome({
             // A soft two-note chime — pleasant, quiet, and short. Synthesised so
             // there's no audio file to load, and it fails silently if the browser
             // blocks audio (which it does until the user has interacted).
-            try {
+            // The panel's Sound switch turns it off.
+            if (notificationSoundOn()) try {
               const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext
               if (Ctx) {
                 const ctx = new Ctx()
@@ -646,11 +647,6 @@ export default function AppChrome({
   }, [user])
 
 
-  // Fetch notifications when dropdown opens. Also declared before any early
-  // return to keep the hook order stable (see #300 note above).
-  useEffect(() => {
-    if (showNotifications) fetchNotifications()
-  }, [showNotifications])
 
   // Same source as the profile page: their display name first, then the email.
   const userInitial = (String(user?.user_metadata?.display_name || user?.user_metadata?.full_name || user?.email || 'A').trim()[0] || 'A').toUpperCase()
@@ -708,28 +704,6 @@ export default function AppChrome({
     )
   }
 
-  // Fetch notifications when user opens notification panel
-  const fetchNotifications = async () => {
-    try {
-      setLoadingNotifications(true)
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.user.id) {
-        setNotifications([])
-        setLoadingNotifications(false)
-        return
-      }
-
-      let q = supabase.from('notifications').select('*').eq('user_id', session.user.id).order('created_at', { ascending: false }).limit(50)
-      const { data } = await q
-      setNotifications(data || [])
-    } catch (err) {
-      console.error('Error fetching notifications:', err)
-      setNotifications([])
-    } finally {
-      setLoadingNotifications(false)
-    }
-  }
-
   // Unread count for the bell dot — fetched on load and kept fresh via realtime
   const fetchUnreadCount = async () => {
     try {
@@ -744,25 +718,6 @@ export default function AppChrome({
     } catch { setUnreadCount(0) }
   }
 
-  const markAllAsRead = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.user.id) return
-      
-      await supabase
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('user_id', session.user.id)
-        .eq('is_read', false)
-      
-      // Refetch notifications
-      await fetchNotifications()
-      setUnreadCount(0)
-    } catch (err) {
-      console.error('Error marking as read:', err)
-    }
-  }
-
   const markNotificationAsRead = async (notificationId: string) => {
     try {
       await supabase
@@ -770,10 +725,6 @@ export default function AppChrome({
         .update({ is_read: true })
         .eq('id', notificationId)
       
-      // Update local state
-      setNotifications(notifications.map(n => 
-        n.id === notificationId ? { ...n, is_read: true } : n
-      ))
       setUnreadCount(c => Math.max(0, c - 1))
     } catch (err) {
       console.error('Error marking notification as read:', err)
@@ -960,7 +911,7 @@ export default function AppChrome({
                       <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
                     </svg>
                     {unreadCount > 0 && (
-                      <div className="absolute top-1 right-1 w-2 h-2 rounded-full" style={{ background: 'var(--coral)' }}></div>
+                      <span aria-label={`${unreadCount} unread`} style={{ position: 'absolute', top: 1, right: 0, minWidth: 17, height: 17, padding: '0 4px', boxSizing: 'border-box', borderRadius: 999, border: '2px solid #fff', background: 'var(--coral)', color: '#fff', fontSize: 9.5, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>{unreadCount > 99 ? '99+' : unreadCount}</span>
                     )}
                   </button>
                   
@@ -969,90 +920,17 @@ export default function AppChrome({
                       <div className="fixed inset-0 z-30" onClick={() => setShowNotifications(false)} />
                       {/* Phones: a sheet pinned 8px inside the screen edges
                           (anchored to the bell it ran off the left edge). */}
-                      <style>{`@media (max-width: 640px) { .notif-panel { position: fixed !important; top: 64px !important; left: 8px !important; right: 8px !important; width: auto !important; margin-top: 0 !important; max-height: calc(100dvh - 64px - 16px) !important; z-index: 1000 !important; } }`}</style>
-                      <div className="notif-panel absolute top-full right-0 mt-2 max-h-[600px] bg-white rounded-xl shadow-2xl border z-40 flex flex-col overflow-hidden" role="dialog" aria-label="Notifications" style={{ borderColor: 'var(--border)', width: 'min(384px, calc(100vw - 24px))' }}>
-                        {/* Header with filters */}
-                        <div className="p-4 border-b flex items-center justify-between gap-2 shrink-0" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
-                          <h3 className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Notifications</h3>
-                          <div className="flex items-center gap-2 min-w-0">
-                            <button
-                              onClick={() => setNotificationFilter(notificationFilter === 'unread' ? 'all' : 'unread')}
-                              className="px-3 py-1 rounded-full text-xs font-medium transition-smooth cursor-pointer"
-                              style={{
-                                background: notificationFilter === 'unread' ? 'var(--coral)' : 'transparent',
-                                color: notificationFilter === 'unread' ? 'white' : 'var(--slate)',
-                                border: notificationFilter === 'unread' ? 'none' : `1px solid var(--border)`
-                              }}>
-                              {notificationFilter === 'unread' ? 'Unread' : 'Show all'}
-                            </button>
-                            {notifications.some(n => !n.is_read) && (
-                              <button
-                                onClick={markAllAsRead}
-                                className="px-3 py-1 rounded-full text-xs font-medium transition-smooth cursor-pointer border"
-                                style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
-                                Mark all as read
-                              </button>
-                            )}
-                            <button type="button" onClick={() => setShowNotifications(false)} aria-label="Close notifications" title="Close"
-                              className="w-7 h-7 rounded-full flex items-center justify-center cursor-pointer hover:bg-gray-100" style={{ color: 'var(--slate)' }}>
-                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                            </button>
-                          </div>
-                        </div>
-                        
-                        {/* Notifications list */}
-                        <div className="overflow-y-auto flex-1">
-                          {loadingNotifications ? (
-                            <div className="p-8 text-center" style={{ color: 'var(--slate)' }}>
-                              <p className="text-sm">Loading...</p>
-                            </div>
-                          ) : notifications.length === 0 ? (
-                            <div className="p-8 text-center" style={{ color: 'var(--slate)' }}>
-                              <p className="text-sm">No {notificationFilter === 'unread' ? 'unread ' : ''}notifications</p>
-                            </div>
-                          ) : (
-                            notifications
-                              .filter(n => notificationFilter === 'all' || !n.is_read)
-                              .map(notification => (
-                                <button
-                                  key={notification.id}
-                                  onClick={() => handleNotificationClick(notification)}
-                                  className="w-full px-4 py-3 border-b text-left transition-smooth hover:bg-gray-50 cursor-pointer"
-                                  style={{
-                                    borderColor: 'var(--border)',
-                                    background: !notification.is_read ? 'var(--peach)' : 'transparent'
-                                  }}>
-                                  <div className="flex items-start gap-3">
-                                    <div className="w-2 h-2 rounded-full mt-2 shrink-0" style={{
-                                      background: !notification.is_read ? 'var(--coral)' : 'transparent'
-                                    }} />
-                                    <div className="flex-1 min-w-0">
-                                      <p className="text-sm font-medium" style={{ color: 'var(--ink)' }}>
-                                        {notification.title || ({
-                                          vote: 'New vote on your idea',
-                                          comment: 'New comment on your idea',
-                                          reply: 'New reply to your comment',
-                                          status_change: 'Idea status updated',
-                                          mention: 'You were mentioned',
-                                          assignment: 'You were assigned',
-                                        } as Record<string, string>)[notification.type] || 'Notification'}
-                                      </p>
-                                      <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--slate)' }}>
-                                        {notification.message}
-                                      </p>
-                                      <p className="text-xs mt-1.5" style={{ color: 'var(--slate)' }}>
-                                        {new Date(notification.created_at).toLocaleDateString()} {new Date(notification.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                      </p>
-                                    </div>
-                                  </div>
-                                </button>
-                              ))
-                          )}
-                        </div>
+                      <style>{`@media (max-width: 640px) { .notif-panel { position: fixed !important; top: 64px !important; left: 8px !important; right: 8px !important; margin-top: 0 !important; z-index: 1000 !important; } }`}</style>
+                      <div className="notif-panel absolute top-full right-0 mt-2 z-40">
+                        <NotificationsPanel userId={user.id} unreadCount={unreadCount}
+                          onUnread={d => setUnreadCount(c => d === 'zero' ? 0 : Math.max(0, c + d))}
+                          onOpen={handleNotificationClick}
+                          onClose={() => setShowNotifications(false)}
+                          settingsHref={pathname?.startsWith('/admin') ? '/admin/crm-settings/profile#notifications' : null} />
                       </div>
                     </>
                   )}
-                  
+
                   </div>
 
                   {(() => {
