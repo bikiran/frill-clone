@@ -7520,11 +7520,14 @@ export default function InboxPage() {
         .cp-tab:hover { background: transparent; }
         .cp-tab.on, .cp-tab.on:hover { background: #fff; color: #111; box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 0 0 1px rgba(0,0,0,.04); }
         .cp-tab:focus-visible { outline: 2px solid var(--coral); outline-offset: 1px; }
-        .cp-action { width: 100%; height: 40px; display: flex; align-items: center; justify-content: center; gap: 6px; border: none; border-radius: 999px; background: color-mix(in srgb, var(--coral) 12%, #fff); color: var(--coral); font: inherit; font-size: 14px; font-weight: 650; cursor: pointer; transition: background .15s ease, transform .1s ease; }
-        .cp-action:hover, .cp-action.on { background: color-mix(in srgb, var(--coral) 18%, #fff); }
+        .cp-action { width: 100%; height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 14px; border: 1.5px solid #e4e4e7; border-radius: 999px; background: #fff; color: #18181b; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; box-shadow: 0 1px 1px rgba(16,24,40,.03); transition: background .15s ease, border-color .15s ease, transform .1s ease; }
+        .cp-action > svg:first-child { color: var(--coral); }
+        .cp-action-chev { color: #71717a; transition: transform .2s ease; }
+        .cp-action.on .cp-action-chev { transform: rotate(180deg); }
+        .cp-action:hover, .cp-action.on { background: #fafafa; border-color: #d4d4d8; }
         .cp-action:active { transform: scale(.98); }
         .cp-action:focus-visible { outline: 2px solid var(--coral); outline-offset: 2px; }
-        .cp-act-row > span:first-child { color: var(--coral); display: inline-flex; }
+        .cp-act-row > span:first-child { color: #52525b; display: inline-flex; }
         .cp-mini { height: 28px; padding: 0 12px; display: inline-flex; align-items: center; gap: 5px; border: none; border-radius: 999px; background: #f4f4f5; color: #3f3f46; font: inherit; font-size: 12.5px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background .15s ease; }
         .cp-mini:hover { background: #ececef; }
         .cp-mini.accent { background: color-mix(in srgb, var(--coral) 12%, #fff); color: var(--coral); }
@@ -11465,28 +11468,29 @@ export default function InboxPage() {
           {(() => {
             const enabledActions = Object.entries(convActions).filter(([, v]: any) => v?.enabled)
             const ACTION_META: Record<string, { label: string; icon: (s?: number) => React.ReactNode }> = {
-              doa: { label: 'DOA Claim', icon: Icon.box },
-              warranty: { label: 'Warranty Claim', icon: Icon.shield },
-              return_refund: { label: 'Return / Refund', icon: Icon.refund },
-              create_order: { label: 'Create Order', icon: Icon.cart },
-              send_coupon: { label: 'Send Coupon', icon: Icon.coupon },
+              doa: { label: 'DOA claim', icon: Icon.box },
+              warranty: { label: 'Warranty claim', icon: Icon.shield },
+              return_refund: { label: 'Return or refund', icon: Icon.refund },
+              create_order: { label: 'Create order', icon: Icon.cart },
+              send_coupon: { label: 'Send coupon', icon: Icon.coupon },
               booking: { label: 'Booking', icon: Icon.calendar },
-              support_ticket: { label: 'Support Ticket', icon: Icon.ticket },
-              proof_of_delivery: { label: 'Proof of Delivery', icon: Icon.box },
-              custom_form: { label: 'Custom Form', icon: Icon.form },
+              support_ticket: { label: 'Support ticket', icon: Icon.ticket },
+              proof_of_delivery: { label: 'Proof of delivery', icon: Icon.box },
+              custom_form: { label: 'Custom form', icon: Icon.form },
             }
             return (
               <div style={{ padding: '12px 14px 4px', position: 'relative' }}>
-                <button type="button" onClick={() => setShowActionMenu(v => !v)} aria-expanded={showActionMenu} className={`cp-action${showActionMenu ? ' on' : ''}`}>
+                <button type="button" onClick={() => setShowActionMenu(v => !v)} aria-haspopup="menu" aria-expanded={showActionMenu} className={`cp-action${showActionMenu ? ' on' : ''}`}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                  Action
+                  <span style={{ flex: 1, textAlign: 'left' }}>Action</span>
+                  <svg className="cp-action-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="6 9 12 15 18 9"/></svg>
                 </button>
                 {showActionMenu && (
                   <div className="th-menu" style={{ position: 'absolute', top: '100%', left: 14, right: 14, zIndex: 20, marginTop: 2 }}>
                     {/* Record sale — always available, and can be used multiple times. */}
                     <button type="button" onClick={() => { setShowActionMenu(false); setShowRecordSale(true) }}
                       className="th-menu-row cp-act-row">
-                      <span style={{ color: 'var(--coral)', display: 'inline-flex' }}>
+                      <span>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
                       </span> Record sale
                     </button>
@@ -11509,7 +11513,7 @@ export default function InboxPage() {
                             else showToast(`"${meta.label}" isn't configured yet — set it up in Settings → Conversation Actions.`)
                           }}
                           className="th-menu-row cp-act-row">
-                          <span style={{ color: 'var(--coral)', display: 'inline-flex' }}>{meta.icon(16)}</span> {meta.label}
+                          <span>{meta.icon(16)}</span> {meta.label}
                         </button>
                       )
                     })}
@@ -11518,8 +11522,9 @@ export default function InboxPage() {
                 {doaMatch && convActions.doa?.enabled && (
                   <button type="button" onClick={() => setShowDoa(true)} className="cp-hint" title="Start a DOA claim for this customer's order">
                     <span className="cp-hint-ic">{Icon.box(15)}</span>
-                    <span style={{ flex: 1, minWidth: 0 }}><b style={{ fontWeight: 650, color: '#18181b' }}>Matches an order</b> · DOA claim</span>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ color: '#a1a1aa' }}><polyline points="9 18 15 12 9 6"/></svg>
+                    <span style={{ flex: 1, minWidth: 0, fontWeight: 600, color: '#18181b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Matches an order</span>
+                    <span style={{ flexShrink: 0, fontSize: 12.5, fontWeight: 600, color: 'var(--coral)', whiteSpace: 'nowrap' }}>DOA claim</span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ color: '#a1a1aa', flexShrink: 0, marginLeft: -4 }}><polyline points="9 18 15 12 9 6"/></svg>
                   </button>
                 )}
               </div>
