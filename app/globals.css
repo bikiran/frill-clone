@@ -987,7 +987,7 @@ button:hover .action-tooltip,
   transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease, filter 0.15s ease;
 }
 .cv-btn svg { flex-shrink: 0; color: #52525b; }
-.cv-btn:hover, .cv-select:hover { background: #fafafa; border-color: #d4d4d8; }
+.cv-btn:hover, .cv-select:hover { background-color: #fafafa; border-color: #d4d4d8; }
 .cv-btn:active { transform: scale(0.98); }
 .cv-btn:focus-visible, .cv-select:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 28%, transparent); }
 .cv-btn[aria-expanded="true"] { background: #f4f4f5; border-color: #d4d4d8; }

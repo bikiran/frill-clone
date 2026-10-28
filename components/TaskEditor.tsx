@@ -9,7 +9,7 @@ import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import AssigneePicker from '@/components/AssigneePicker'
-import AttachmentUploader from '@/components/AttachmentUploader'
+import AttachmentUploader, { isMediaAttachment } from '@/components/AttachmentUploader'
 import MentionInput, { resolveMentions } from '@/components/MentionInput'
 import { useDraft } from '@/lib/drafts'
 import { notifyIntegrations } from '@/lib/integrations-notify'
@@ -105,6 +105,22 @@ function OrderSearchModal({ companyId, onClose, onPick }: any) {
     </div>
   )
 }
+
+const TE_CSS = `
+  .te-seg { display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: #f4f4f5; }
+  .te-seg button { flex: 1; height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: none; border-radius: 999px; background: transparent; color: #52525b; font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; transition: background .15s ease, color .15s ease, box-shadow .15s ease; }
+  .te-seg button::before { display: none; }
+  .te-seg button:hover { color: #18181b; }
+  .te-seg button.on { background: #fff; color: #18181b; box-shadow: 0 1px 3px rgba(0,0,0,.1), 0 0 0 .5px rgba(0,0,0,.04); }
+  .te-chip { height: 34px; display: inline-flex; align-items: center; gap: 6px; padding: 0 13px; border: none; border-radius: 999px; background: #f4f4f5; color: #52525b; font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+  .te-chip::before { display: none; }
+  .te-chip:hover { background: #ececef; color: #18181b; }
+  .te-chip.on { background: #18181b; color: #fff; }
+  .te-pill { height: 36px; display: inline-flex; align-items: center; gap: 6px; padding: 0 14px; border: none; border-radius: 999px; background: #f4f4f5; color: #18181b; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .te-pill::before { display: none; }
+  .te-pill:hover { background: #ececef; }
+  .te-seg button:focus-visible, .te-chip:focus-visible, .te-pill:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 28%, transparent); }
+`
 
 export default function TaskEditor({ companyId, team, outlets = [], me, userId, initial, onClose, onSaved }: any) {
   // `initial` seeds the form (used by "end repeat & create new").
@@ -233,11 +249,16 @@ export default function TaskEditor({ companyId, team, outlets = [], me, userId, 
       onSaved()
     } catch (e: any) { console.error('[task create] payload was', row); alert('Could not create task: ' + e.message); setSaving(false) }
   }
-  const L: React.CSSProperties = { fontSize: 11, fontWeight: 800, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.04em', margin: '16px 0 7px' }
+  // Section headings and the soft grey field every input uses.
+  const L: React.CSSProperties = { fontSize: 14, fontWeight: 700, color: 'var(--ink)', margin: '22px 0 10px' }
+  const field: React.CSSProperties = { width: '100%', height: 40, padding: '0 14px', borderRadius: 12, border: '1.5px solid transparent', background: '#f4f4f5', fontSize: 14, color: 'var(--ink)', boxSizing: 'border-box', outline: 'none', fontFamily: 'inherit' }
+  const media = attachments.filter(isMediaAttachment)
+  const files = attachments.filter((a: any) => !isMediaAttachment(a))
   return (
-    <div style={{ padding: 18 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '0 0 12px' }}>
-        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>{initial ? 'Continue repeat as new' : 'New task'}</h3>
+    <div style={{ padding: '18px 22px 24px' }}>
+      <style>{TE_CSS}</style>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '0 0 14px' }}>
+        <h3 style={{ margin: 0, fontSize: 23, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--ink)' }}>{initial ? 'Continue repeat as new' : 'New task'}</h3>
         {draft.saved && title.trim() && (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--slate)' }}>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -245,21 +266,23 @@ export default function TaskEditor({ companyId, team, outlets = [], me, userId, 
           </span>
         )}
       </div>
-      <MentionInput value={title} onChange={(v) => setTitle(v)} team={team as any} multiline rows={2} placeholder="What needs doing? @ to mention" style={{ fontSize: 14 }} />
+      <MentionInput value={title} onChange={(v) => setTitle(v)} team={team as any} multiline rows={2} placeholder="What needs doing? @ to mention" style={{ fontSize: 15, padding: '12px 14px', borderRadius: 16, background: '#f4f4f5', border: '1.5px solid transparent' }} />
       <p style={L}>Priority</p>
-      <div style={{ display: 'flex', gap: 5 }}>
+      <div className="te-seg">
         {(['high', 'normal', 'low'] as const).map(p => (
-          <button key={p} onClick={() => setPriority(p)} style={{ flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: '1px solid ' + (priority === p ? PRIORITY[p].color : 'var(--border)'), background: priority === p ? PRIORITY[p].bg : '#fff', color: priority === p ? PRIORITY[p].color : 'var(--slate)' }}>{PRIORITY[p].label}</button>
+          <button key={p} type="button" className={priority === p ? 'on' : ''} onClick={() => setPriority(p)} style={priority === p ? { color: PRIORITY[p].color } : undefined}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: PRIORITY[p].color, flexShrink: 0 }} />{PRIORITY[p].label}
+          </button>
         ))}
       </div>
       <p style={L}>Due date</p>
-      <input type="date" value={due} onChange={e => setDue(e.target.value)} style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box' }} />
+      <input type="date" aria-label="Due date" value={due} onChange={e => setDue(e.target.value)} style={field} />
 
       {/* Repeat — pre-generates a series of dated occurrences on save. */}
       <p style={L}>Repeat</p>
-      <div style={{ display: 'flex', gap: 5 }}>
+      <div className="te-seg">
         {(['none', 'daily', 'weekly', 'monthly'] as const).map(r => (
-          <button key={r} onClick={() => setRepeat(r)} style={{ flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize', border: '1px solid ' + (repeat === r ? 'var(--coral)' : 'var(--border)'), background: repeat === r ? 'var(--peach)' : '#fff', color: repeat === r ? 'var(--coral)' : 'var(--slate)' }}>{r === 'none' ? 'None' : r}</button>
+          <button key={r} type="button" className={repeat === r ? 'on' : ''} onClick={() => setRepeat(r)} style={{ textTransform: 'capitalize' }}>{r === 'none' ? 'None' : r}</button>
         ))}
       </div>
       {repeat === 'weekly' && (
@@ -269,18 +292,18 @@ export default function TaskEditor({ companyId, team, outlets = [], me, userId, 
             return (
               <button key={i} onClick={() => setRepeatDays(prev => on ? prev.filter(x => x !== i) : [...prev, i])}
                 title={`Repeat on ${w}`}
-                style={{ flex: 1, padding: '7px 0', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: '1px solid ' + (on ? 'var(--coral)' : 'var(--border)'), background: on ? 'var(--coral)' : '#fff', color: on ? '#fff' : 'var(--slate)' }}>{w[0]}</button>
+                style={{ flex: 1, height: 34, borderRadius: 999, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', border: 'none', background: on ? '#18181b' : '#f4f4f5', color: on ? '#fff' : '#52525b', fontFamily: 'inherit' }}>{w[0]}</button>
             )
           })}
         </div>
       )}
       {repeat !== 'none' && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
-          <span style={{ fontSize: 12.5, color: 'var(--slate)', fontWeight: 600 }}>Create</span>
-          <input type="number" min={1} max={60} value={repeatCount}
+          <span style={{ fontSize: 13.5, color: '#71717a' }}>Create</span>
+          <input type="number" min={1} max={60} value={repeatCount} aria-label="Occurrences"
             onChange={e => setRepeatCount(Math.max(1, Math.min(60, parseInt(e.target.value) || 1)))}
-            style={{ width: 64, padding: '7px 9px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box' }} />
-          <span style={{ fontSize: 12.5, color: 'var(--slate)', fontWeight: 600 }}>occurrences</span>
+            style={{ ...field, width: 72, height: 36 }} />
+          <span style={{ fontSize: 13.5, color: '#71717a' }}>occurrences</span>
         </div>
       )}
 
@@ -288,52 +311,59 @@ export default function TaskEditor({ companyId, team, outlets = [], me, userId, 
       <p style={L}>Colour</p>
       <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
         <button onClick={() => setColor('')} title="No colour"
-          style={{ width: 26, height: 26, borderRadius: '50%', cursor: 'pointer', border: '1px solid var(--border)', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', position: 'relative' }}>
+          style={{ width: 28, height: 28, borderRadius: '50%', cursor: 'pointer', border: 'none', background: '#f4f4f5', boxShadow: color === '' ? '0 0 0 2px #fff, 0 0 0 4px #18181b' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', position: 'relative' }}>
           {color === '' && <span style={{ width: 12, height: 2, background: 'var(--slate)', transform: 'rotate(-45deg)', position: 'absolute' }} />}
         </button>
         {TASK_COLORS.map(c => (
           <button key={c} onClick={() => setColor(c)} title={c}
-            style={{ width: 26, height: 26, borderRadius: '50%', cursor: 'pointer', background: c, border: color === c ? '2px solid var(--ink)' : '2px solid transparent', boxShadow: color === c ? `0 0 0 2px ${tint(c, 0.4)}` : 'none' }} />
+            style={{ width: 28, height: 28, borderRadius: '50%', cursor: 'pointer', background: c, border: 'none', boxShadow: color === c ? `0 0 0 2px #fff, 0 0 0 4px ${c}` : 'none' }} />
         ))}
       </div>
 
       {outlets.length > 0 && (<>
-        <p style={L}>Outlets <span style={{ textTransform: 'none', fontWeight: 400, color: 'var(--slate)' }}>— select one or more</span></p>
+        <p style={L}>Outlets <span style={{ fontSize: 12.5, fontWeight: 400, color: '#8e8e93' }}>Pick one or more</span></p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {outlets.map((o: any) => {
             const on = locationIds.includes(o.id)
             return (
               <button key={o.id} type="button"
                 onClick={() => setLocationIds(prev => on ? prev.filter(x => x !== o.id) : [...prev, o.id])}
-                style={{ padding: '8px 13px', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer', border: '1px solid ' + (on ? 'var(--coral)' : 'var(--border)'), background: on ? 'var(--peach)' : '#fff', color: on ? 'var(--coral)' : 'var(--slate)' }}>
-                {on ? '✓ ' : ''}{o.label || o.suburb || 'Outlet'}
+                className={'te-chip' + (on ? ' on' : '')}>
+                {on && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                {o.label || o.suburb || 'Outlet'}
               </button>
             )
           })}
         </div>
-        {locationIds.length === 0 && <p style={{ fontSize: 11.5, color: 'var(--slate)', margin: '6px 0 0' }}>Not tied to an outlet.</p>}
+        {locationIds.length === 0 && <p style={{ fontSize: 12.5, color: '#8e8e93', margin: '8px 0 0' }}>Not tied to an outlet.</p>}
       </>)}
 
+      {/* Photos & videos and Files share the task's one attachments list. */}
       <p style={L}>Photos &amp; videos</p>
-      <AttachmentUploader companyId={companyId} value={attachments} onChange={setAttachments} folder="task" compact />
+      <AttachmentUploader companyId={companyId} value={media} onChange={m => setAttachments([...m, ...files])} folder="task" compact />
+      <p style={L}>Files</p>
+      <AttachmentUploader mode="files" companyId={companyId} value={files} onChange={f => setAttachments([...media, ...f])} folder="task" />
 
       <p style={L}>Assignees</p>
       <AssigneePicker members={team} value={assignees} onChange={setAssignees} />
       <p style={L}>Linked order</p>
       {order ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', background: '#f8f9ff' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 12px 12px 14px', borderRadius: 16, background: '#fafafa', boxShadow: '0 0 0 1px rgba(0,0,0,.05)' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>#{order.order_number}</div>
-            <div style={{ fontSize: 11.5, color: 'var(--slate)' }}>{order.customer} · ${order.total.toFixed(2)}</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>Order #{order.order_number}</div>
+            <div style={{ fontSize: 12.5, color: '#8e8e93', marginTop: 1 }}>{order.customer} · ${order.total.toFixed(2)}</div>
           </div>
-          <button onClick={() => setOrder(null)} style={{ border: 'none', background: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>Remove</button>
+          <button type="button" className="te-pill" onClick={() => setOrder(null)} style={{ color: '#dc2626', height: 30 }}>Remove</button>
         </div>
       ) : (
-        <button onClick={() => setShowOrderSearch(true)} style={{ width: '100%', padding: '10px', borderRadius: 9, border: '1px dashed var(--border)', background: 'var(--canvas)', color: 'var(--slate)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>+ Link to order</button>
+        <button type="button" className="te-pill" onClick={() => setShowOrderSearch(true)}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Link to an order
+        </button>
       )}
-      <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
-        <button onClick={onClose} style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
-        <button onClick={save} disabled={!title.trim() || saving} style={{ flex: 2, padding: '11px 0', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: title.trim() ? 'pointer' : 'default', opacity: title.trim() && !saving ? 1 : 0.6 }}>{saving ? 'Creating…' : repeat !== 'none' ? `Create ${repeatCount} tasks` : 'Create task'}</button>
+      <div style={{ display: 'flex', gap: 8, marginTop: 24 }}>
+        <button type="button" className="cv-btn" onClick={onClose} style={{ flex: 1 }}>Cancel</button>
+        <button type="button" className="cv-btn cv-btn-primary" onClick={save} disabled={!title.trim() || saving} style={{ flex: 2, opacity: title.trim() && !saving ? 1 : 0.6, cursor: title.trim() ? 'pointer' : 'default' }}>{saving ? 'Creating…' : repeat !== 'none' ? `Create ${repeatCount} tasks` : 'Create task'}</button>
       </div>
       {showOrderSearch && <OrderSearchModal companyId={companyId} onClose={() => setShowOrderSearch(false)} onPick={(o: any) => { setOrder(o); setShowOrderSearch(false) }} />}
     </div>
