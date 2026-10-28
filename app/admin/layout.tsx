@@ -1108,7 +1108,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 {showWorkspaces && (
                   <>
                     <div onClick={() => setShowWorkspaces(false)} style={{ position: 'fixed', inset: 0, zIndex: 89 }} />
-                    <div style={{ position: 'fixed', top: 64, left: RAIL_W + 6, width: 280, background: '#fff', borderRadius: 16, boxShadow: '0 16px 44px rgba(0,0,0,.14), 0 0 0 1px rgba(0,0,0,.05)', zIndex: 90, overflow: 'hidden' }}>
+                    <div style={{ position: 'fixed', top: 'calc(64px + var(--imp-h, 0px))', left: RAIL_W + 6, width: 280, background: '#fff', borderRadius: 16, boxShadow: '0 16px 44px rgba(0,0,0,.14), 0 0 0 1px rgba(0,0,0,.05)', zIndex: 90, overflow: 'hidden' }}>
                       <div style={{ padding: '14px 16px 10px', borderBottom: '1px solid #f0f0f2' }}>
                         <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{company?.name || 'Workspace'}</p>
                         <p style={{ margin: '2px 0 0', fontSize: 12.5, color: '#8e8e93' }}>{company ? `${company.slug}.colvy.com` : ''}</p>
@@ -1135,16 +1135,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <div
         className={`admin-mobile-overlay ${mobileSidebarOpen ? 'open' : ''}`}
         onClick={() => setMobileSidebarOpen(false)}
-        style={{ display: mobileSidebarOpen ? 'block' : 'none', position: 'fixed', inset: 0, top: 56, background: 'rgba(0,0,0,0.3)', zIndex: 29 }}
+        style={{ display: mobileSidebarOpen ? 'block' : 'none', position: 'fixed', inset: 0, top: 'calc(56px + var(--imp-h, 0px))', background: 'rgba(0,0,0,0.3)', zIndex: 29 }}
       />
 
       {/* Sidebar — fixed, responsive drawer on mobile */}
       <aside className={`admin-sidebar ${mobileSidebarOpen ? 'open' : ''}`} style={{
         position: 'fixed',
-        top: 56,
+        top: 'calc(56px + var(--imp-h, 0px))',
         left: 0,
         width: 220,
-        height: 'calc(100vh - 56px)',
+        height: 'calc(100vh - 56px - var(--imp-h, 0px))',
         background: '#fff',
         borderRight: '1px solid var(--border)',
         overflowY: 'auto',

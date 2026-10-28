@@ -40,9 +40,11 @@ export default function ImpersonationBanner() {
   // Push the page down so the fixed bar never covers the workspace chrome.
   useEffect(() => {
     if (!sess) return
+    // Fixed chrome (the admin rail, its menus) reads --imp-h to start below it.
     const prev = document.body.style.paddingTop
     document.body.style.paddingTop = '40px'
-    return () => { document.body.style.paddingTop = prev }
+    document.documentElement.style.setProperty('--imp-h', '40px')
+    return () => { document.body.style.paddingTop = prev; document.documentElement.style.removeProperty('--imp-h') }
   }, [!!sess])
 
   const exit = async () => {
