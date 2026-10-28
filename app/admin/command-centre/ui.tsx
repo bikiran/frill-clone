@@ -3,15 +3,18 @@
 // Small shared pieces for the Command Centre: icons (SVG only), cards, chips,
 // KPI tiles and the inline "Why?" explainer.
 
-import { useEffect, useState } from 'react'
+import { Children, useEffect, useState } from 'react'
 
 export const C = {
   green: '#16a34a', red: '#dc2626', amber: '#d97706', blue: '#2563eb', violet: '#7c3aed', cyan: '#0891b2',
 }
 
-export const card: React.CSSProperties = { borderRadius: 14, border: '1px solid var(--border)', background: 'var(--card, #fff)', padding: 16, minWidth: 0 }
-export const kicker: React.CSSProperties = { margin: 0, fontSize: 10.5, color: 'var(--slate)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }
-export const ctrl: React.CSSProperties = { padding: '7px 12px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card, #fff)', fontSize: 13, fontWeight: 600, color: 'var(--ink)', cursor: 'pointer', outline: 'none', maxWidth: '100%' }
+export const card: React.CSSProperties = { borderRadius: 20, border: 'none', background: '#fff', boxShadow: '0 0 0 1px rgba(0,0,0,.06), 0 1px 2px rgba(16,24,40,.04)', padding: 18, minWidth: 0 }
+// A card's title: normal case, bold and black.
+export const kicker: React.CSSProperties = { margin: 0, fontSize: 15, color: 'var(--ink)', fontWeight: 700, letterSpacing: '-0.01em' }
+// A small grey label: chart keys, fact boxes, column heads.
+export const label: React.CSSProperties = { margin: 0, fontSize: 12.5, color: '#71717a', fontWeight: 600 }
+export const ctrl: React.CSSProperties = { height: 36, padding: '0 14px', borderRadius: 999, border: 'none', backgroundColor: '#f4f4f5', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', cursor: 'pointer', outline: 'none', maxWidth: '100%' }
 export const tint = (col: string, pct = 14) => `color-mix(in srgb, ${col} ${pct}%, transparent)`
 
 const P = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
@@ -48,24 +51,30 @@ export const Icon = {
   spark: (s = 13) => <svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ flexShrink: 0 }}><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z" /><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" opacity=".7" /></svg>,
 }
 
+// A soft tinted tag. Plain text gets a coloured dot in front; a tag that
+// starts with an icon doesn't need one.
 export function Chip({ color, children, title, solid }: { color: string; children: React.ReactNode; title?: string; solid?: boolean }) {
+  const plain = Children.toArray(children).every(x => typeof x === 'string' || typeof x === 'number')
   return (
-    <span title={title} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 20, fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap', background: solid ? color : tint(color, 14), color: solid ? '#fff' : color }}>{children}</span>
+    <span title={title} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 22, padding: '0 9px', borderRadius: 999, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', boxSizing: 'border-box', background: solid ? color : `color-mix(in srgb, ${color} 12%, #fff)`, color: solid ? '#fff' : `color-mix(in srgb, ${color} 80%, #000)` }}>
+      {plain && !solid && <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }} />}
+      {children}
+    </span>
   )
 }
 
 export function Kpi({ label, value, color, icon, sub, foot, onClick, active }: { label: string; value: React.ReactNode; color: string; icon: React.ReactNode; sub?: React.ReactNode; foot?: React.ReactNode; onClick?: () => void; active?: boolean }) {
   const Tag: any = onClick ? 'button' : 'div'
   return (
-    <Tag type={onClick ? 'button' : undefined} onClick={onClick}
-      style={{ ...card, display: 'flex', alignItems: 'flex-start', gap: 12, textAlign: 'left', font: 'inherit', cursor: onClick ? 'pointer' : 'default', borderColor: active ? color : 'var(--border)', boxShadow: active ? `0 0 0 1px ${color}` : 'none' }}>
-      <span style={{ width: 38, height: 38, borderRadius: 11, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: tint(color), color }}>{icon}</span>
-      <span style={{ minWidth: 0, display: 'block' }}>
-        <span style={{ display: 'block', fontSize: 23, fontWeight: 800, color: 'var(--ink)', letterSpacing: '-0.02em', lineHeight: 1 }}>{value}</span>
-        <span style={{ ...kicker, display: 'block', marginTop: 5 }}>{label}</span>
-        {sub && <span style={{ display: 'block', marginTop: 3, fontSize: 11, color: 'var(--slate)', fontWeight: 600, lineHeight: 1.35 }}>{sub}</span>}
-        {foot && <span style={{ display: 'block', marginTop: 4 }}>{foot}</span>}
+    <Tag type={onClick ? 'button' : undefined} onClick={onClick} aria-pressed={onClick && active !== undefined ? !!active : undefined} className="cc-kpi"
+      style={{ ...card, padding: '16px 18px', display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 4, textAlign: 'left', font: 'inherit', color: 'inherit', cursor: onClick ? 'pointer' : 'default', boxShadow: active ? `0 0 0 2px ${color}` : card.boxShadow }}>
+      <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <span style={{ fontSize: 13.5, fontWeight: 600, color: '#71717a', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+        <span className="cc-kpi-ic" style={{ width: 32, height: 32, borderRadius: 10, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: `color-mix(in srgb, ${color} 12%, #fff)`, color }}>{icon}</span>
       </span>
+      <span style={{ display: 'block', marginTop: 2, fontSize: 26, fontWeight: 800, color: 'var(--ink)', letterSpacing: '-0.02em', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
+      {sub && <span style={{ display: 'block', fontSize: 12.5, color: '#8e8e93', lineHeight: 1.35 }}>{sub}</span>}
+      {foot && <span style={{ display: 'block', marginTop: 2 }}>{foot}</span>}
     </Tag>
   )
 }
@@ -78,7 +87,7 @@ export function Trend({ cur, prev, invert = false, unit = '%' }: { cur: number; 
   const good = invert ? !up : up
   const color = pct === 0 ? 'var(--slate)' : good ? C.green : C.red
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color, fontWeight: 700, fontSize: 11 }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color, fontWeight: 700, fontSize: 12 }}>
       {pct !== 0 && <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><path d={up ? 'M5 1 9 8H1z' : 'M5 9 1 2h8z'} fill="currentColor" /></svg>}
       {pct === 0 ? 'no change' : `${Math.abs(pct)}${unit === 'pts' ? ' pts' : '%'}`}
       <span style={{ color: 'var(--slate)', fontWeight: 600 }}>vs prev</span>
@@ -92,15 +101,15 @@ export function WhyInline({ why, label = 'Why?', align = 'left' }: { why: React.
   return (
     <span style={{ position: 'relative', display: 'inline-block' }}>
       <button type="button" onClick={e => { e.stopPropagation(); setOpen(o => !o) }} aria-expanded={open}
-        style={{ border: 'none', background: 'none', padding: 0, font: 'inherit', fontSize: 11.5, fontWeight: 700, color: 'var(--coral)', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 2 }}>
+        style={{ border: 'none', background: 'none', padding: 0, font: 'inherit', fontSize: 12.5, fontWeight: 600, color: 'var(--coral)', cursor: 'pointer' }}>
         {label}
       </button>
       {open && (
         <>
           <span onClick={e => { e.stopPropagation(); setOpen(false) }} style={{ position: 'fixed', inset: 0, zIndex: 60 }} />
           <span role="dialog" onClick={e => e.stopPropagation()}
-            style={{ position: 'absolute', top: '100%', [align]: 0, marginTop: 6, zIndex: 61, width: 'min(300px, 80vw)', display: 'block', padding: '10px 12px', borderRadius: 11, border: '1px solid var(--border)', background: 'var(--card, #fff)', boxShadow: '0 14px 36px rgba(0,0,0,0.16)', fontSize: 12, lineHeight: 1.5, color: 'var(--ink)', fontWeight: 500, textAlign: 'left', whiteSpace: 'normal' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, color: 'var(--coral)', fontWeight: 800, fontSize: 11 }}>{Icon.spark(12)} Why this shows</span>
+            style={{ position: 'absolute', top: '100%', [align]: 0, marginTop: 8, zIndex: 61, width: 'min(300px, 80vw)', display: 'block', padding: '12px 14px', borderRadius: 16, border: 'none', background: '#fff', boxShadow: '0 16px 40px rgba(0,0,0,0.16), 0 0 0 1px rgba(0,0,0,0.05)', fontSize: 12.5, lineHeight: 1.5, color: '#3f3f46', fontWeight: 500, textAlign: 'left', whiteSpace: 'normal' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5, color: 'var(--ink)', fontWeight: 700, fontSize: 13 }}><span style={{ color: 'var(--coral)', display: 'inline-flex' }}>{Icon.spark(13)}</span> Why this shows</span>
             {why}
           </span>
         </>
@@ -111,10 +120,10 @@ export function WhyInline({ why, label = 'Why?', align = 'left' }: { why: React.
 
 export function Segmented<T extends string>({ value, options, onChange, size = 'md' }: { value: T; options: [T, React.ReactNode][]; onChange: (v: T) => void; size?: 'sm' | 'md' }) {
   return (
-    <div style={{ display: 'inline-flex', background: 'var(--canvas)', border: '1px solid var(--border)', borderRadius: 10, padding: 3, maxWidth: '100%', overflowX: 'auto' }}>
+    <div className="cc-seg" style={{ display: 'inline-flex', gap: 2, background: '#f4f4f5', borderRadius: 999, padding: 3, maxWidth: '100%', overflowX: 'auto', scrollbarWidth: 'none', boxSizing: 'border-box' }}>
       {options.map(([k, label]) => (
         <button key={k} type="button" onClick={() => onChange(k)} aria-pressed={value === k}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: size === 'sm' ? '5px 10px' : '6px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, whiteSpace: 'nowrap', background: value === k ? 'var(--card, #fff)' : 'transparent', color: value === k ? 'var(--ink)' : 'var(--slate)', boxShadow: value === k ? '0 1px 3px rgba(0,0,0,0.08)' : 'none' }}>
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0, height: size === 'sm' ? 30 : 32, padding: '0 13px', borderRadius: 999, border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', background: value === k ? '#fff' : 'transparent', color: value === k ? '#18181b' : '#52525b', boxShadow: value === k ? '0 1px 3px rgba(0,0,0,0.1), 0 0 0 .5px rgba(0,0,0,0.04)' : 'none', transition: 'background-color .15s, color .15s' }}>
           {label}
         </button>
       ))}
@@ -173,14 +182,15 @@ export function Clock({ tz, hour12 }: { tz: string; hour12: boolean }) {
   return <span style={{ fontVariantNumeric: 'tabular-nums' }}>{now.toLocaleTimeString('en-AU', { timeZone: tz, hour12 })}</span>
 }
 
+// Pill buttons: coral for the main action, a coral tint for AI ones, grey otherwise.
 export const btn = (tone: 'primary' | 'ghost' | 'soft' = 'ghost'): React.CSSProperties => ({
-  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '7px 12px', borderRadius: 9, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', textDecoration: 'none',
-  ...(tone === 'primary' ? { border: '1px solid var(--coral)', background: 'var(--coral)', color: '#fff' }
-    : tone === 'soft' ? { border: '1px solid transparent', background: tint('#ff7a6b', 12), color: 'var(--coral)' }
-      : { border: '1px solid var(--border)', background: 'var(--card, #fff)', color: 'var(--ink)' }),
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 34, padding: '0 14px', borderRadius: 999, border: 'none', boxSizing: 'border-box', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', textDecoration: 'none',
+  ...(tone === 'primary' ? { background: 'var(--coral)', color: '#fff' }
+    : tone === 'soft' ? { background: 'color-mix(in srgb, var(--coral) 12%, #fff)', color: 'color-mix(in srgb, var(--coral) 85%, #000)' }
+      : { background: '#f4f4f5', color: '#18181b' }),
 })
 
-export const iconBtn: React.CSSProperties = { width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card, #fff)', color: 'var(--ink)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, padding: 0 }
+export const iconBtn: React.CSSProperties = { width: 32, height: 32, borderRadius: 999, border: 'none', background: '#f4f4f5', color: '#3f3f46', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, padding: 0 }
 
 /** Width-based switch for small screens (no horizontal page scroll on phones). */
 export function useNarrow(px = 760): boolean {

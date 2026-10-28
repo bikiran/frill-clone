@@ -12,7 +12,7 @@ import {
   fmtDur, fmtTalk, timeAgo, hourLabel, startOfDayTz, zonedParts, RANGES, isRangeKey, DEFAULT_TZ, prevToFor, outcomeOf as rankOutcome,
   type CcCall, type RangeKey, type AgentOption, type RecoveryItem, type CallStats,
 } from '@/lib/command-centre'
-import { Icon, Chip, Kpi, Trend, WhyInline, Segmented, Spinner, LiveTimer, Clock, C, card, kicker, ctrl, tint, btn, iconBtn, useNarrow, OUTCOME_COLOR, Skel, SkelRows } from './ui'
+import { Icon, Chip, Kpi, Trend, WhyInline, Segmented, Spinner, LiveTimer, Clock, C, card, kicker, label as smallLabel, ctrl, tint, btn, iconBtn, useNarrow, OUTCOME_COLOR, Skel, SkelRows } from './ui'
 import EmptyScroll from '@/components/EmptyScroll'
 
 // Only needed after a click (a call, Text back) or on the Insights tab, so
@@ -634,8 +634,8 @@ export default function CommandCentrePage() {
     const d = callerDisplay(c, locName(c.location_id))
     return (
       <span style={{ display: 'block', minWidth: 0 }}>
-        <span style={{ display: 'block', fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.title}</span>
-        <span style={{ display: 'block', fontSize: 11.5, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.subtitle}</span>
+        <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.title}</span>
+        <span style={{ display: 'block', fontSize: 12.5, color: '#8e8e93', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.subtitle}</span>
       </span>
     )
   }
@@ -668,8 +668,7 @@ export default function CommandCentrePage() {
   }
 
   const tabBtn = (key: Tab, label: string) => (
-    <button type="button" onClick={() => setTab(key)}
-      style={{ padding: '8px 2px', background: 'none', border: 'none', borderBottom: `2px solid ${tab === key ? 'var(--coral)' : 'transparent'}`, color: tab === key ? 'var(--ink)' : 'var(--slate)', fontSize: 14, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+    <button type="button" onClick={() => setTab(key)} aria-pressed={tab === key} className={`cc-tab${tab === key ? ' on' : ''}`}>
       {label}
     </button>
   )
@@ -681,10 +680,10 @@ export default function CommandCentrePage() {
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 64 }}>
           {arr.map((n, h) => (
             <div key={h} title={`${hourLabel(h, hour12)}: ${n} ${label}${n === 1 ? '' : 's'}`}
-              style={{ flex: 1, height: `${Math.max(3, n / max * 100)}%`, borderRadius: 3, background: n === 0 ? 'var(--canvas)' : tint(color, 70) }} />
+              style={{ flex: 1, height: `${Math.max(3, n / max * 100)}%`, borderRadius: 4, background: n === 0 ? '#f4f4f5' : tint(color, 75) }} />
           ))}
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: 9.5, color: 'var(--slate)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 11, color: '#a1a1aa' }}>
           {[0, 6, 12, 18, 23].map(h => <span key={h}>{hourLabel(h, hour12)}</span>)}
         </div>
       </div>
@@ -694,19 +693,19 @@ export default function CommandCentrePage() {
   const donut = (s: CallStats) => {
     const total = s.answered + s.missed + s.voicemail || 1
     const a = s.answered / total * 100, m = s.missed / total * 100, v = s.voicemail / total * 100
-    const bg = s.inboundDone ? `conic-gradient(${C.green} 0 ${a}%, ${C.red} ${a}% ${a + m}%, ${C.amber} ${a + m}% ${a + m + v}%, var(--canvas) ${a + m + v}% 100%)` : 'var(--canvas)'
+    const bg = s.inboundDone ? `conic-gradient(${C.green} 0 ${a}%, ${C.red} ${a}% ${a + m}%, ${C.amber} ${a + m}% ${a + m + v}%, #f4f4f5 ${a + m + v}% 100%)` : '#f4f4f5'
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', width: 104, height: 104, borderRadius: '50%', background: bg, flexShrink: 0 }}>
           <div style={{ position: 'absolute', inset: 12, borderRadius: '50%', background: 'var(--card,#fff)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-            <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--ink)', lineHeight: 1 }}>{s.inboundDone}</span>
-            <span style={{ ...kicker, marginTop: 2 }}>Incoming</span>
+            <span style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)', lineHeight: 1 }}>{s.inboundDone}</span>
+            <span style={{ ...smallLabel, fontSize: 11.5, marginTop: 3 }}>Incoming</span>
           </div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7, fontSize: 12.5 }}>
           {([['Answered', s.answered, C.green], ['Missed', s.missed, C.red], ['Voicemail', s.voicemail, C.amber]] as [string, number, string][]).map(([l, v2, col]) => (
             <span key={l} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, color: 'var(--slate)' }}>
-              <span style={{ width: 9, height: 9, borderRadius: 3, background: col }} />
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: col }} />
               <strong style={{ color: 'var(--ink)' }}>{v2}</strong> {l}
               <span>· {Math.round(v2 / total * 100)}%</span>
             </span>
@@ -718,30 +717,30 @@ export default function CommandCentrePage() {
 
   const tableHead = (cols: string[]) => (
     <thead>
-      <tr style={{ background: 'var(--canvas)', textAlign: 'left' }}>
-        {cols.map(h => <th key={h} style={{ padding: '9px 14px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)', whiteSpace: 'nowrap' }}>{h}</th>)}
+      <tr style={{ textAlign: 'left' }}>
+        {cols.map(h => <th key={h} style={{ padding: '14px 14px 10px', fontSize: 12.5, fontWeight: 600, color: '#8e8e93', whiteSpace: 'nowrap', borderBottom: '1px solid #f0f0f2' }}>{h}</th>)}
       </tr>
     </thead>
   )
-  const td: React.CSSProperties = { padding: '10px 14px', verticalAlign: 'middle' }
+  const td: React.CSSProperties = { padding: '12px 14px', verticalAlign: 'middle' }
 
   // ── Panels ───────────────────────────────────────────────────────────────
   const recoveryPanel = (
     <div ref={recoveryRef} style={{ ...card, padding: 0, overflow: 'hidden' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px 10px', flexWrap: 'wrap' }}>
-        <p style={{ ...kicker, flex: 1, minWidth: 160 }}>Missed call recovery {recovery.length > 0 && <span style={{ color: C.red }}>· {recovery.length} to return</span>}</p>
-        {recoveryState === 'stored' && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--slate)', fontWeight: 600 }}><Spinner size={11} /> Updating</span>}
-        {recoveryState === 'stale' && <span style={{ fontSize: 11.5, color: C.amber, fontWeight: 600 }}>From your last visit; couldn’t refresh just now</span>}
-        {recoveryState === 'live' && ov && ov.recovery.missed > 0 && <span style={{ fontSize: 11.5, color: 'var(--slate)', fontWeight: 600 }}>{ov.recovery.recovered} of {ov.recovery.missed} returned this week ({Math.round(ov.recovery.recovered / ov.recovery.missed * 100)}%)</span>}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px 12px', flexWrap: 'wrap' }}>
+        <p style={{ ...kicker, flex: 1, minWidth: 160, display: 'flex', alignItems: 'center', gap: 8 }}>Missed call recovery {recovery.length > 0 && <Chip color={C.red}>{recovery.length} to return</Chip>}</p>
+        {recoveryState === 'stored' && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#8e8e93', fontWeight: 500 }}><Spinner size={11} /> Updating</span>}
+        {recoveryState === 'stale' && <span style={{ fontSize: 12.5, color: '#b45309', fontWeight: 500 }}>From your last visit; couldn’t refresh just now</span>}
+        {recoveryState === 'live' && ov && ov.recovery.missed > 0 && <span style={{ fontSize: 12.5, color: '#8e8e93', fontWeight: 500 }}>{ov.recovery.recovered} of {ov.recovery.missed} returned this week ({Math.round(ov.recovery.recovered / ov.recovery.missed * 100)}%)</span>}
         <WhyInline align="right" why={<>Callers from the last 7 days whose call was missed or went to voicemail, and that nobody has rung back, been answered on a later call, or replied to in their conversation since. Automatic missed-call texts don’t count as a reply. Hidden numbers and your own team’s numbers aren’t listed.{ov?.missedCallText.enabled ? ` Your automatic missed-call text is on (${ov.missedCallText.when === 'after_hours' ? 'outside opening hours' : 'for every missed call'}).` : ' Your automatic missed-call text is off (Settings, Calls & SMS).'}</>} />
       </div>
       {recoveryState === 'loading' ? (
-        <div style={{ padding: '0 16px 8px', borderTop: '1px solid var(--border)' }}><SkelRows n={3} /></div>
+        <div style={{ padding: '0 18px 8px', borderTop: '1px solid #f4f4f5' }}><SkelRows n={3} /></div>
       ) : recoveryState === 'failed' ? (
-        <div style={{ padding: '18px 16px 22px', color: 'var(--slate)', fontSize: 13 }}>Couldn’t load the missed callers just now. Colvy will try again shortly.</div>
+        <div style={{ padding: '4px 18px 20px', color: '#71717a', fontSize: 13.5 }}>Couldn’t load the missed callers just now. Colvy will try again shortly.</div>
       ) : recovery.length === 0 ? (
-        <div style={{ padding: '18px 16px 22px', display: 'flex', gap: 10, alignItems: 'center', color: 'var(--slate)', fontSize: 13 }}>
-          <span style={{ color: C.green }}>{Icon.check(18)}</span> Everyone who called this week has been called or texted back.
+        <div style={{ padding: '4px 18px 20px', display: 'flex', gap: 12, alignItems: 'center', color: '#52525b', fontSize: 13.5 }}>
+          <span style={{ width: 34, height: 34, borderRadius: 999, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: tint(C.green, 12), color: C.green }}>{Icon.check(17)}</span> Everyone who called this week has been called or texted back.
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -750,11 +749,11 @@ export default function CommandCentrePage() {
             const d = callerDisplay(c, locName(c.location_id))
             return (
               <div key={r.callId} role="button" tabIndex={0} onClick={() => setDrawer(c)} onKeyDown={e => { if (e.key === 'Enter') setDrawer(c) }}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderTop: '1px solid var(--border)', cursor: 'pointer', flexWrap: narrow ? 'wrap' : 'nowrap' }}>
-                <span style={{ width: 30, height: 30, borderRadius: 9, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: tint(r.voicemail ? C.amber : C.red), color: r.voicemail ? C.amber : C.red }}>{r.voicemail ? Icon.vm(15) : Icon.phoneMissed(15)}</span>
+                className="cc-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', borderTop: '1px solid #f4f4f5', cursor: 'pointer', flexWrap: narrow ? 'wrap' : 'nowrap' }}>
+                <span style={{ width: 34, height: 34, borderRadius: 999, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: tint(r.voicemail ? C.amber : C.red), color: r.voicemail ? C.amber : C.red }}>{r.voicemail ? Icon.vm(15) : Icon.phoneMissed(15)}</span>
                 <span style={{ flex: 1, minWidth: 140 }}>
-                  <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.title}</span>
-                  <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', fontSize: 11.5, color: 'var(--slate)', marginTop: 2 }}>
+                  <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.title}</span>
+                  <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', fontSize: 12.5, color: '#8e8e93', marginTop: 3 }}>
                     {d.known ? d.subtitle : 'Unknown caller'} · {timeAgo(r.at, nowTick)}
                     {r.attempts > 1 && <Chip color={C.red}>Called {r.attempts} times</Chip>}
                     {r.voicemail && <Chip color={C.amber}>Voicemail</Chip>}
@@ -762,7 +761,7 @@ export default function CommandCentrePage() {
                     {r.textedBack && <Chip color={C.blue}>Auto-texted</Chip>}
                   </span>
                 </span>
-                <span style={{ display: 'inline-flex', gap: 6, marginLeft: narrow ? 40 : 0 }} onClick={e => e.stopPropagation()}>
+                <span style={{ display: 'inline-flex', gap: 6, marginLeft: narrow ? 46 : 0 }} onClick={e => e.stopPropagation()}>
                   <button type="button" onClick={() => callBack({ number: r.number, name: r.name, contactId: r.contactId, conversationId: r.conversationId })} style={{ ...btn('primary'), padding: '6px 10px' }}>{Icon.phone(13)} Call back</button>
                   {r.textable && <button type="button" onClick={() => openTextBack(c)} style={{ ...btn('soft'), padding: '6px 10px' }} title="AI drafts a text from their voicemail or call; you check it and send">{Icon.spark(12)} Text</button>}
                 </span>
@@ -770,7 +769,7 @@ export default function CommandCentrePage() {
             )
           })}
           {recovery.length > 8 && (
-            <button type="button" onClick={() => goLogs('unanswered', 'inbound')} style={{ border: 'none', borderTop: '1px solid var(--border)', background: 'var(--canvas)', padding: '9px 16px', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', cursor: 'pointer', textAlign: 'left' }}>
+            <button type="button" className="cc-more" onClick={() => goLogs('unanswered', 'inbound')} style={{ border: 'none', borderTop: '1px solid #f4f4f5', background: '#fafafa', padding: '12px 18px', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', cursor: 'pointer', textAlign: 'left' }}>
               {recovery.length - 8} more to return
             </button>
           )}
@@ -785,7 +784,7 @@ export default function CommandCentrePage() {
       return (
         <div style={card}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <span style={{ color: C.violet }}>{Icon.spark(14)}</span>
+            <span style={{ width: 30, height: 30, borderRadius: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: tint(C.violet, 12), color: C.violet }}>{Icon.spark(15)}</span>
             <p style={{ ...kicker, flex: 1 }}>AI receptionist</p>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))', gap: 8, marginBottom: 6 }}>
@@ -797,39 +796,39 @@ export default function CommandCentrePage() {
     }
     const show = ov?.phoneAgent.enabled || s.calls > 0
     return (
-      <div style={{ ...card, borderColor: show ? tint(C.violet, 26) : 'var(--border)' }}>
+      <div style={card}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <span style={{ color: C.violet }}>{Icon.spark(14)}</span>
+          <span style={{ width: 30, height: 30, borderRadius: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: tint(C.violet, 12), color: C.violet }}>{Icon.spark(15)}</span>
           <p style={{ ...kicker, flex: 1 }}>AI receptionist</p>
           {show && <WhyInline align="right" why={<>Incoming calls the AI receptionist answered in this period{ov?.phoneAgent.enabled ? `. It answers ${MODE_TEXT[ov.phoneAgent.mode || ''] || 'as set in Settings'}` : ''}. Handled: it dealt with the call itself. Message: it took a message and made a call-back task. Hung up: the caller left without saying anything, so it also counts as a missed call. Booking links are texted for the caller to book themselves; it never books on its own.</>} />}
         </div>
         {!show ? (
-          <div style={{ fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>
+          <div style={{ fontSize: 13.5, color: '#52525b', lineHeight: 1.55 }}>
             Let the AI receptionist pick up when nobody can: it answers questions, takes messages as call-back tasks and texts booking links.
             <div style={{ marginTop: 10 }}><a href="/admin/crm-settings/channels/calls" style={btn('soft')}>{Icon.spark(12)} Set it up</a></div>
           </div>
         ) : (
           <>
-            {ov?.aiPaused && <p style={{ margin: '0 0 10px', padding: '7px 10px', borderRadius: 9, background: tint(C.amber, 12), color: '#b45309', fontSize: 12, fontWeight: 600 }}>AI agents are paused, so the AI receptionist isn’t answering.</p>}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))', gap: 8, marginBottom: 12 }}>
+            {ov?.aiPaused && <p style={{ margin: '0 0 10px', padding: '9px 12px', borderRadius: 12, background: tint(C.amber, 12), color: '#b45309', fontSize: 12, fontWeight: 600 }}>AI agents are paused, so the AI receptionist isn’t answering.</p>}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(74px, 1fr))', gap: 6, marginBottom: 12 }}>
               {([['Handled', s.handled, C.green, 'ai'], ['Messages', s.messages, C.violet, 'ai'], ['Booking links', s.bookingLinks, C.blue, 'ai'], ['To voicemail', s.voicemail, C.amber, 'ai'], ['Hung up', s.missed, C.red, 'ai']] as [string, number, string, OutcomeFilter][]).map(([l, v, col]) => (
-                <button key={l} type="button" onClick={() => { setAgentFilter('ai'); goLogs('all') }} style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--canvas)', textAlign: 'left', cursor: 'pointer', font: 'inherit' }}>
-                  <span style={{ display: 'block', fontSize: 18, fontWeight: 800, color: col, lineHeight: 1.1 }}>{v}</span>
-                  <span style={{ display: 'block', fontSize: 10.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', marginTop: 2 }}>{l}</span>
+                <button key={l} type="button" className="cc-box" onClick={() => { setAgentFilter('ai'); goLogs('all') }} style={{ padding: '10px', borderRadius: 14, border: 'none', background: '#f4f4f5', textAlign: 'left', cursor: 'pointer', font: 'inherit', minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: 20, fontWeight: 800, color: v ? col : 'var(--ink)', lineHeight: 1.1 }}>{v}</span>
+                  <span style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#71717a', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l}</span>
                 </button>
               ))}
             </div>
             {aiCalls.length === 0 ? (
-              <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>No calls for the AI receptionist {isToday ? 'today' : 'in this period'}.{ov?.phoneAgent.enabled ? ` It answers ${MODE_TEXT[ov.phoneAgent.mode || ''] || 'as set in Settings'}.` : ''}</p>
+              <p style={{ margin: 0, fontSize: 13, color: '#8e8e93' }}>No calls for the AI receptionist {isToday ? 'today' : 'in this period'}.{ov?.phoneAgent.enabled ? ` It answers ${MODE_TEXT[ov.phoneAgent.mode || ''] || 'as set in Settings'}.` : ''}</p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {aiCalls.slice(0, 5).map(c => {
                   const ao = aiOutcomeOf(c, nowTick)
                   return (
-                    <button key={c.id} type="button" onClick={() => setDrawer(c)} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '7px 8px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card,#fff)', cursor: 'pointer', textAlign: 'left', font: 'inherit', minWidth: 0 }}>
+                    <button key={c.id} type="button" className="cc-box" onClick={() => setDrawer(c)} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '9px 12px', borderRadius: 14, border: 'none', background: '#fafafa', cursor: 'pointer', textAlign: 'left', font: 'inherit', minWidth: 0 }}>
                       <span style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{callerDisplay(c).title}</span>
-                        <span style={{ display: 'block', fontSize: 11.5, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.ai?.about || c.ai_summary || me12(c.created_at)}</span>
+                        <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{callerDisplay(c).title}</span>
+                        <span style={{ display: 'block', fontSize: 12.5, color: '#8e8e93', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.ai?.about || c.ai_summary || me12(c.created_at)}</span>
                       </span>
                       {ao && <Chip color={ao === 'ai_missed' ? C.red : ao === 'ai_voicemail' ? C.amber : C.violet}>{AI_OUTCOME_LABEL[ao]}</Chip>}
                     </button>
@@ -846,16 +845,16 @@ export default function CommandCentrePage() {
   const leaderPanel = (limit: number) => (
     <div style={card}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-        <p style={{ ...kicker, flex: 1 }}>Team leaderboard · {rangeLabel.toLowerCase()}</p>
+        <p style={{ ...kicker, flex: 1 }}>Team leaderboard <span style={{ fontWeight: 500, color: '#8e8e93' }}>· {rangeLabel.toLowerCase()}</span></p>
         <WhyInline align="right" why={<>Ranked by calls each person handled: incoming calls they answered plus outgoing calls that got through. Call-backs are outgoing calls to someone whose call was missed earlier in the period. Missed calls ring the whole team, so they aren’t put against anyone. The AI receptionist has its own panel.</>} />
       </div>
       {loading ? (
         <SkelRows n={Math.min(limit, 4)} icon={false} pad="7px 0" />
       ) : leaders.length === 0 ? (
-        <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>No calls handled by the team in this period.</p>
+        <p style={{ margin: 0, fontSize: 13, color: '#8e8e93' }}>No calls handled by the team in this period.</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '22px minmax(0,1fr) 54px 54px 60px', gap: 6, fontSize: 10, fontWeight: 800, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', padding: '0 4px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '22px minmax(0,1fr) 54px 54px 66px', gap: 6, fontSize: 12, fontWeight: 600, color: '#8e8e93', padding: '0 8px 4px' }}>
             <span /><span>Team member</span><span style={{ textAlign: 'right' }}>Ans</span><span style={{ textAlign: 'right' }}>Out</span><span style={{ textAlign: 'right' }}>Returned</span>
           </div>
           {leaders.slice(0, limit).map((r, i) => {
@@ -863,15 +862,15 @@ export default function CommandCentrePage() {
             const on = agentFilter === key
             return (
               <button key={r.key} type="button" onClick={() => setAgentFilter(on ? 'all' : key)} title={on ? 'Show everyone' : `Show ${r.name}’s calls`}
-                style={{ display: 'grid', gridTemplateColumns: '22px minmax(0,1fr) 54px 54px 60px', gap: 6, alignItems: 'center', padding: '7px 4px', borderRadius: 8, border: 'none', background: on ? tint('#ff7a6b', 10) : 'transparent', cursor: 'pointer', textAlign: 'left', font: 'inherit' }}>
-                <span style={{ fontSize: 12, fontWeight: 800, color: i === 0 ? 'var(--coral)' : 'var(--slate)' }}>{i + 1}</span>
+                className={on ? undefined : 'cc-hov'} style={{ display: 'grid', gridTemplateColumns: '22px minmax(0,1fr) 54px 54px 66px', gap: 6, alignItems: 'center', padding: '8px 8px', borderRadius: 12, border: 'none', background: on ? tint('#ff7a6b', 10) : 'transparent', cursor: 'pointer', textAlign: 'left', font: 'inherit' }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: i === 0 ? 'var(--coral)' : '#a1a1aa' }}>{i + 1}</span>
                 <span style={{ minWidth: 0 }}>
-                  <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
-                  <span style={{ display: 'block', fontSize: 10.5, color: 'var(--slate)' }}>{fmtTalk(r.talkSecs)} talk · avg {fmtDur(r.avgTalk)}</span>
+                  <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
+                  <span style={{ display: 'block', fontSize: 12, color: '#8e8e93' }}>{fmtTalk(r.talkSecs)} talk · avg {fmtDur(r.avgTalk)}</span>
                 </span>
-                <span style={{ textAlign: 'right', fontSize: 12.5, fontWeight: 700, color: C.green }}>{r.answered}</span>
-                <span style={{ textAlign: 'right', fontSize: 12.5, fontWeight: 700, color: C.blue }}>{r.made}</span>
-                <span style={{ textAlign: 'right', fontSize: 12.5, fontWeight: 700, color: r.callBacks ? 'var(--coral)' : 'var(--slate)' }}>{r.callBacks}</span>
+                <span style={{ textAlign: 'right', fontSize: 13.5, fontWeight: 700, color: C.green, fontVariantNumeric: 'tabular-nums' }}>{r.answered}</span>
+                <span style={{ textAlign: 'right', fontSize: 13.5, fontWeight: 700, color: C.blue, fontVariantNumeric: 'tabular-nums' }}>{r.made}</span>
+                <span style={{ textAlign: 'right', fontSize: 13.5, fontWeight: 700, color: r.callBacks ? 'var(--coral)' : '#a1a1aa', fontVariantNumeric: 'tabular-nums' }}>{r.callBacks}</span>
               </button>
             )
           })}
@@ -882,7 +881,7 @@ export default function CommandCentrePage() {
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="cc-page" aria-busy={loading} style={{ padding: narrow ? '14px 12px 28px' : '20px 24px 32px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box' }}>
+    <div className="cc-page" aria-busy={loading} style={{ padding: narrow ? '16px 14px 40px' : '24px 28px 48px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box' }}>
       <style>{`@keyframes ccpulse{0%,100%{opacity:1}50%{opacity:0.35}}@keyframes ccspin{to{transform:rotate(360deg)}}
         @keyframes ccshimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
         .cc-skel{background:linear-gradient(90deg,var(--canvas) 25%,var(--border) 50%,var(--canvas) 75%);background-size:200% 100%;animation:ccshimmer 1.3s ease-in-out infinite}
@@ -890,7 +889,27 @@ export default function CommandCentrePage() {
         .cc-kpis{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}
         @media (min-width: 1700px){ .cc-kpis{ grid-template-columns: repeat(8,minmax(0,1fr)); } }
         @media (max-width: 900px){ .cc-kpis{ grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; } }
-        .cc-row{cursor:pointer;transition:background .12s ease}.cc-row:hover{background:var(--canvas)}
+        .cc-row{cursor:pointer;transition:background-color .12s ease}.cc-row:hover{background-color:#fafafa}
+        .cc-page button::before,.cc-drawer button::before,.cc-tb button::before{display:none}
+        .cc-tab{height:36px;padding:0 15px;border:none;border-radius:999px;background:transparent;color:#52525b;font:inherit;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;transition:background-color .15s,color .15s}
+        .cc-tab:hover{background-color:#f4f4f5;color:#18181b}
+        .cc-tab.on,.cc-tab.on:hover{background-color:#18181b;color:#fff}
+        .cc-sel{appearance:none;-webkit-appearance:none;padding-right:34px!important;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;background-size:14px}
+        .cc-sel:hover,.cc-range:hover{background-color:#ececef!important}
+        .cc-sel.set{background-color:color-mix(in srgb,var(--coral) 12%,#fff)!important;color:color-mix(in srgb,var(--coral) 85%,#000)!important}
+        .cc-search{transition:background-color .15s,border-color .15s,box-shadow .15s}
+        .cc-search:focus-within{background:#fff!important;border-color:#d4d4d8!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 16%,transparent)}
+        .cc-search input:focus{box-shadow:none}
+        .cc-hov{transition:background-color .12s}.cc-hov:hover{background-color:#f4f4f5!important}
+        .cc-box{transition:background-color .12s}.cc-box:hover{background-color:#ececef!important}
+        .cc-more:hover{background-color:#f4f4f5!important}
+        .cc-kpi-ic svg{width:16px;height:16px}
+        button.cc-kpi{transition:transform .2s cubic-bezier(.22,1,.36,1)}button.cc-kpi:hover{transform:translateY(-1px)}
+        .cc-mi{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;padding:9px 12px;border-radius:10px;border:none;background:transparent;font:inherit;font-size:13.5px;font-weight:500;color:var(--ink);cursor:pointer}
+        .cc-mi:hover{background-color:#f4f4f5}.cc-mi.on{font-weight:700}
+        .cc-date{height:36px;padding:0 10px;border-radius:10px;border:1.5px solid transparent;background:#f4f4f5;font:inherit;font-size:13px;color:var(--ink);outline:none}
+        .cc-date:focus{background:#fff;border-color:#d4d4d8}
+        @media (prefers-reduced-motion: reduce){ button.cc-kpi:hover{ transform:none } }
         @media (max-width: 1180px){ .cc-live-grid{ grid-template-columns: 1fr 1fr !important; } .cc-live-grid > .cc-wide{ grid-column: 1 / -1; } }
         @media (max-width: 1080px){ .cc-two{ grid-template-columns: 1fr !important; } }
         @media (max-width: 760px){ .cc-live-grid{ grid-template-columns: 1fr !important; } .cc-perf-inner{ grid-template-columns: 1fr !important; } }`}</style>
@@ -898,33 +917,33 @@ export default function CommandCentrePage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
         <div style={{ minWidth: 0 }}>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: 'var(--ink)', letterSpacing: '-0.02em' }}>Command Centre</h1>
-          <p style={{ margin: '3px 0 0', fontSize: 13, color: 'var(--slate)' }}>
+          <h1 style={{ margin: 0, fontSize: narrow ? 26 : 30, fontWeight: 800, color: 'var(--ink)', letterSpacing: '-0.025em', lineHeight: 1.1 }}>Command Centre</h1>
+          <p style={{ margin: '6px 0 0', fontSize: 14, color: '#71717a' }}>
             Live phone activity across your team
             {ov && ov.openNow !== null && <> · <span style={{ color: ov.openNow ? C.green : 'var(--slate)', fontWeight: 700 }}>{ov.openNow ? 'Open now' : 'Closed now'}</span></>}
             {ov?.hoursToday && !narrow && <span> · today {ov.hoursToday}</span>}
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 20, background: tint(C.green, 16), color: '#15803d', fontSize: 11.5, fontWeight: 800 }}>
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#22c55e', animation: 'ccpulse 1.4s ease-in-out infinite' }} /> LIVE
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 28, padding: '0 12px', borderRadius: 999, background: 'color-mix(in srgb, #22c55e 12%, #fff)', color: '#15803d', fontSize: 13, fontWeight: 600 }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#22c55e', animation: 'ccpulse 1.4s ease-in-out infinite' }} /> Live
           </span>
           <div style={{ position: 'relative', textAlign: 'right' }}
             onMouseEnter={() => { if (clockMenuTimer.current) clearTimeout(clockMenuTimer.current); setShowClockMenu(true) }}
             onMouseLeave={() => { clockMenuTimer.current = setTimeout(() => setShowClockMenu(false), 220) }}>
             <button type="button" onClick={() => setShowClockMenu(v => !v)} style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer', textAlign: 'right', font: 'inherit' }} aria-label="Time format and default view">
-              <span style={{ display: 'block', fontSize: 20, fontWeight: 800, color: 'var(--ink)' }}><Clock tz={tz} hour12={hour12} /></span>
-              <span style={{ display: 'block', fontSize: 11.5, color: 'var(--slate)' }}>{new Date(nowTick).toLocaleDateString('en-AU', { timeZone: tz, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
+              <span style={{ display: 'block', fontSize: 22, fontWeight: 800, color: 'var(--ink)', letterSpacing: '-0.01em' }}><Clock tz={tz} hour12={hour12} /></span>
+              <span style={{ display: 'block', fontSize: 12.5, color: '#8e8e93' }}>{new Date(nowTick).toLocaleDateString('en-AU', { timeZone: tz, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
             </button>
             {showClockMenu && (
-              <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 8, zIndex: 40, background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 16px 40px rgba(0,0,0,0.16)', padding: 10, width: 210, textAlign: 'left' }}>
-                <p style={{ ...kicker, marginBottom: 7 }}>Time format</p>
+              <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 8, zIndex: 40, background: '#fff', border: 'none', borderRadius: 18, boxShadow: '0 16px 40px rgba(0,0,0,0.16), 0 0 0 1px rgba(0,0,0,0.05)', padding: 14, width: 236, textAlign: 'left' }}>
+                <p style={{ ...smallLabel, marginBottom: 8 }}>Time format</p>
                 <Segmented value={hour12 ? '12' : '24'} options={[['24', '24-hour'], ['12', '12-hour']]} onChange={v => setHour12(v === '12')} size="sm" />
                 <button type="button" onClick={saveDefaultView}
-                  style={{ width: '100%', marginTop: 10, padding: '7px 10px', borderRadius: 9, border: '1px solid var(--border)', background: savedFlash ? tint(C.green, 14) : 'var(--card,#fff)', color: savedFlash ? '#15803d' : 'var(--ink)', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                  style={{ ...btn('ghost'), width: '100%', marginTop: 12, background: savedFlash ? tint(C.green, 14) : '#f4f4f5', color: savedFlash ? '#15803d' : '#18181b' }}>
                   {savedFlash ? <>{Icon.check(12)} Saved as default</> : 'Save as default view'}
                 </button>
-                <p style={{ margin: '7px 0 0', fontSize: 10.5, color: 'var(--slate)', lineHeight: 1.4 }}>Saves the current tab, filters and time format for next visit. Times are shown in {tz.replace(/_/g, ' ')} time.</p>
+                <p style={{ margin: '8px 0 0', fontSize: 12, color: '#8e8e93', lineHeight: 1.45 }}>Saves the current tab, filters and time format for next visit. Times are shown in {tz.replace(/_/g, ' ')} time.</p>
               </div>
             )}
           </div>
@@ -932,36 +951,37 @@ export default function CommandCentrePage() {
       </div>
 
       {/* Tabs + filters */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, borderBottom: '1px solid var(--border)', marginBottom: 16, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 18, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', minWidth: 0, maxWidth: '100%' }}>
           <Segmented<'calls' | 'sms'> value={commsMode} options={[['calls', 'Calls'], ['sms', 'SMS']]} onChange={setCommsMode} size="sm" />
           {commsMode === 'calls' && (
-            <div style={{ display: 'flex', gap: 16 }}>
-              {tabBtn('live', 'Live Board')}
-              {tabBtn('logs', 'Call Logs')}
+            <div style={{ display: 'flex', gap: 2, overflowX: 'auto', scrollbarWidth: 'none', maxWidth: '100%' }}>
+              {tabBtn('live', 'Live board')}
+              {tabBtn('logs', 'Call logs')}
               {tabBtn('insights', 'Insights')}
             </div>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', minWidth: 0, maxWidth: '100%' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', minWidth: 0, maxWidth: '100%' }}>
           <div style={{ position: 'relative' }}>
-            <button type="button" onClick={e => { const r = e.currentTarget.getBoundingClientRect(); setRangeAlignRight(r.left + 200 > document.documentElement.clientWidth - 8); setRangeMenu(m => !m) }} style={{ ...ctrl, display: 'inline-flex', alignItems: 'center', gap: 6 }} title="Date range">
+            <button type="button" onClick={e => { const r = e.currentTarget.getBoundingClientRect(); setRangeAlignRight(r.left + 200 > document.documentElement.clientWidth - 8); setRangeMenu(m => !m) }} className="cc-range" aria-expanded={rangeMenu} style={{ ...ctrl, display: 'inline-flex', alignItems: 'center', gap: 7, background: range !== 'today' ? 'color-mix(in srgb, var(--coral) 12%, #fff)' : '#f4f4f5', color: range !== 'today' ? 'color-mix(in srgb, var(--coral) 85%, #000)' : 'var(--ink)' }} title="Date range">
               {Icon.calendar()} {rangeLabel} {Icon.chevron()}
             </button>
             {rangeMenu && (
               <>
                 <div onClick={() => setRangeMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 30 }} />
-                <div style={{ position: 'absolute', top: '100%', ...(rangeAlignRight ? { right: 0 } : { left: 0 }), marginTop: 6, zIndex: 31, background: 'var(--card,#fff)', border: '1px solid var(--border)', borderRadius: 11, boxShadow: '0 16px 40px rgba(0,0,0,0.16)', padding: 5, width: 190, maxWidth: 'calc(100vw - 24px)' }}>
+                <div style={{ position: 'absolute', top: '100%', ...(rangeAlignRight ? { right: 0 } : { left: 0 }), marginTop: 8, zIndex: 31, background: '#fff', border: 'none', borderRadius: 16, boxShadow: '0 16px 40px rgba(0,0,0,0.16), 0 0 0 1px rgba(0,0,0,0.05)', padding: 6, width: 220, maxWidth: 'calc(100vw - 24px)' }}>
                   {RANGES.map(([k, label]) => (
-                    <button key={k} type="button" onClick={() => { if (k !== 'custom') { setRange(k); setRangeMenu(false) } else setRange('custom') }}
-                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: range === k ? 800 : 600, background: range === k ? 'var(--coral)' : 'transparent', color: range === k ? '#fff' : 'var(--ink)' }}>{label}</button>
+                    <button key={k} type="button" className={`cc-mi${range === k ? ' on' : ''}`} onClick={() => { if (k !== 'custom') { setRange(k); setRangeMenu(false) } else setRange('custom') }}>
+                      {label}{range === k && <span style={{ color: 'var(--coral)', display: 'inline-flex' }}>{Icon.check(15)}</span>}
+                    </button>
                   ))}
                   {range === 'custom' && (
-                    <div style={{ padding: '6px 8px 2px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} aria-label="From" style={{ padding: '5px 7px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12, background: 'var(--card,#fff)', color: 'var(--ink)' }} />
-                      <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} aria-label="To" style={{ padding: '5px 7px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12, background: 'var(--card,#fff)', color: 'var(--ink)' }} />
+                    <div style={{ padding: '8px 6px 4px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <input type="date" className="cc-date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} aria-label="From" />
+                      <input type="date" className="cc-date" value={customTo} onChange={e => setCustomTo(e.target.value)} aria-label="To" />
                       <button type="button" onClick={() => setRangeMenu(false)} disabled={!customFrom || !customTo}
-                        style={{ padding: '6px 0', borderRadius: 7, border: 'none', background: (customFrom && customTo) ? 'var(--coral)' : 'var(--border)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: (customFrom && customTo) ? 'pointer' : 'default' }}>Apply</button>
+                        style={{ ...btn('primary'), marginTop: 2, opacity: (customFrom && customTo) ? 1 : 0.5, cursor: (customFrom && customTo) ? 'pointer' : 'default' }}>Apply</button>
                     </div>
                   )}
                 </div>
@@ -969,14 +989,14 @@ export default function CommandCentrePage() {
             )}
           </div>
           {commsMode === 'calls' && (
-            <select value={selectedAgent && selectedAgent !== 'ai' ? selectedAgent.key : agentFilter} onChange={e => setAgentFilter(e.target.value)} style={ctrl} title="Filter by team member">
+            <select className={`cc-sel${agentFilter !== 'all' ? ' set' : ''}`} value={selectedAgent && selectedAgent !== 'ai' ? selectedAgent.key : agentFilter} onChange={e => setAgentFilter(e.target.value)} style={ctrl} title="Filter by team member">
               <option value="all">All team members</option>
               <option value="ai">AI receptionist</option>
               {agentOptions.map(o => <option key={o.key} value={o.key}>{o.name}</option>)}
             </select>
           )}
           {commsMode === 'calls' && (
-            <select value={locFilter} onChange={e => setLocFilter(e.target.value)} style={ctrl} title="Filter by location">
+            <select className={`cc-sel${locFilter !== 'all' ? ' set' : ''}`} value={locFilter} onChange={e => setLocFilter(e.target.value)} style={ctrl} title="Filter by location">
               <option value="all">All locations</option>
               {(ov?.locations || []).map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
               <option value="none">No location</option>
@@ -985,9 +1005,9 @@ export default function CommandCentrePage() {
         </div>
       </div>
 
-      {callsError && <p style={{ margin: '0 0 12px', padding: '9px 12px', borderRadius: 10, background: tint(C.red, 9), color: C.red, fontSize: 13, fontWeight: 600 }}>{callsError}</p>}
-      {truncated && <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--slate)' }}>This period has {truncated.total ? `${truncated.total.toLocaleString('en-AU')} calls` : 'more calls than the board can show at once'}, so the numbers here cover the most recent 20,000. Pick a shorter range for exact totals.</p>}
-      {commsMode === 'calls' && selectedAgent && <p style={{ margin: '-6px 0 12px', fontSize: 12, color: 'var(--slate)' }}>Showing calls {selectedAgent === 'ai' ? 'the AI receptionist answered' : `${selectedAgent.name} answered or made`}. Missed calls ring everyone, so they only show for “All team members”. <button type="button" onClick={() => setAgentFilter('all')} style={{ border: 'none', background: 'none', padding: 0, color: 'var(--coral)', fontWeight: 700, cursor: 'pointer', fontSize: 12 }}>Show everyone</button></p>}
+      {callsError && <p style={{ margin: '0 0 12px', padding: '11px 14px', borderRadius: 14, background: tint(C.red, 9), color: C.red, fontSize: 13, fontWeight: 600 }}>{callsError}</p>}
+      {truncated && <p style={{ margin: '0 0 12px', fontSize: 13, color: '#71717a' }}>This period has {truncated.total ? `${truncated.total.toLocaleString('en-AU')} calls` : 'more calls than the board can show at once'}, so the numbers here cover the most recent 20,000. Pick a shorter range for exact totals.</p>}
+      {commsMode === 'calls' && selectedAgent && <p style={{ margin: '-6px 0 14px', fontSize: 13, color: '#71717a' }}>Showing calls {selectedAgent === 'ai' ? 'the AI receptionist answered' : `${selectedAgent.name} answered or made`}. Missed calls ring everyone, so they only show for “All team members”. <button type="button" onClick={() => setAgentFilter('all')} style={{ border: 'none', background: 'none', padding: 0, color: 'var(--coral)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>Show everyone</button></p>}
 
       {/* ── LIVE BOARD ──────────────────────────────────────────────────────── */}
       {commsMode === 'calls' && tab === 'live' && (
@@ -1008,14 +1028,14 @@ export default function CommandCentrePage() {
               {alerts.map(al => {
                 const col = al.tone === 'red' ? C.red : C.amber
                 return (
-                  <div key={al.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '11px 13px', borderRadius: 12, background: tint(col, 8), border: `1px solid ${tint(col, 30)}` }}>
-                    <span style={{ color: col, marginTop: 1 }}>{Icon.alert()}</span>
+                  <div key={al.id} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '14px 16px', borderRadius: 18, background: `color-mix(in srgb, ${col} 6%, #fff)`, boxShadow: `0 0 0 1px color-mix(in srgb, ${col} 18%, transparent)` }}>
+                    <span style={{ width: 32, height: 32, borderRadius: 999, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: tint(col, 14), color: col }}>{Icon.alert()}</span>
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: al.tone === 'red' ? '#b91c1c' : '#b45309' }}>{al.title}</p>
-                      <p style={{ margin: '2px 0 6px', fontSize: 12, color: 'var(--slate)' }}>{al.body}</p>
+                      <p style={{ margin: '1px 0 0', fontSize: 14, fontWeight: 700, color: al.tone === 'red' ? '#b91c1c' : '#b45309' }}>{al.title}</p>
+                      <p style={{ margin: '2px 0 8px', fontSize: 13, color: '#52525b' }}>{al.body}</p>
                       <span style={{ display: 'inline-flex', gap: 12, alignItems: 'center' }}>
-                        {al.action === 'recovery' && <button type="button" onClick={() => recoveryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })} style={{ border: 'none', background: 'none', padding: 0, fontSize: 12, fontWeight: 700, color: 'var(--ink)', cursor: 'pointer' }}>Show callers</button>}
-                        {al.action === 'logs_unanswered' && <button type="button" onClick={() => goLogs('unanswered', 'inbound')} style={{ border: 'none', background: 'none', padding: 0, fontSize: 12, fontWeight: 700, color: 'var(--ink)', cursor: 'pointer' }}>See the calls</button>}
+                        {al.action === 'recovery' && <button type="button" onClick={() => recoveryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })} style={{ ...btn('ghost'), minHeight: 30, background: '#fff', boxShadow: '0 0 0 1px rgba(0,0,0,.08)' }}>Show callers</button>}
+                        {al.action === 'logs_unanswered' && <button type="button" onClick={() => goLogs('unanswered', 'inbound')} style={{ ...btn('ghost'), minHeight: 30, background: '#fff', boxShadow: '0 0 0 1px rgba(0,0,0,.08)' }}>See the calls</button>}
                         <WhyInline why={al.why} />
                       </span>
                     </div>
@@ -1030,29 +1050,29 @@ export default function CommandCentrePage() {
             <div style={card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                 <p style={kicker}>Team presence</p>
-                {rosterLoaded && <span style={{ fontSize: 11, color: 'var(--slate)', fontWeight: 600 }}>{available.length} available</span>}
+                {rosterLoaded && <Chip color="#22c55e">{available.length} available</Chip>}
               </div>
               {!rosterLoaded ? (
                 <SkelRows n={4} pad="8px 0" />
               ) : roster.length === 0 ? (
-                <p style={{ margin: 0, fontSize: 13, color: 'var(--slate)' }}>No team members found.</p>
+                <p style={{ margin: 0, fontSize: 13, color: '#8e8e93' }}>No team members found.</p>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 340, overflowY: 'auto' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 340, overflowY: 'auto', margin: '0 -8px' }}>
                   {roster.map(a => {
                     const key = `u:${a.id}`
                     const on = agentFilter === key
                     return (
                       <button key={a.id} type="button" onClick={() => setAgentFilter(on ? 'all' : key)} title={on ? 'Show everyone' : `Show ${a.name}’s calls`}
-                        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 11, border: '1px solid var(--border)', borderLeft: `3px solid ${statusDot(a.status)}`, background: on ? tint('#ff7a6b', 8) : 'var(--card,#fff)', cursor: 'pointer', textAlign: 'left', font: 'inherit' }}>
+                        className={on ? undefined : 'cc-hov'} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px', borderRadius: 14, border: 'none', background: on ? tint('#ff7a6b', 10) : 'transparent', cursor: 'pointer', textAlign: 'left', font: 'inherit' }}>
                         <span style={{ position: 'relative', flexShrink: 0 }}>
                           {a.avatar
-                            ? <img src={a.avatar} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', display: 'block' }} />
-                            : <span style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', fontSize: 12, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{initialsOf(a.name)}</span>}
-                          <span style={{ position: 'absolute', bottom: -1, right: -1, width: 11, height: 11, borderRadius: '50%', background: statusDot(a.status), border: '2px solid var(--card,#fff)' }} />
+                            ? <img src={a.avatar} alt="" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', display: 'block' }} />
+                            : <span style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', fontSize: 12.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{initialsOf(a.name)}</span>}
+                          <span style={{ position: 'absolute', bottom: -1, right: -1, width: 12, height: 12, borderRadius: '50%', background: statusDot(a.status), border: '2px solid #fff' }} />
                         </span>
                         <span style={{ minWidth: 0, flex: 1 }}>
-                          <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
-                          <span style={{ display: 'block', fontSize: 11, color: 'var(--slate)', fontWeight: 600 }}>{statusLabel(a.status)}{a.role ? ` · ${a.role}` : ''}</span>
+                          <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
+                          <span style={{ display: 'block', fontSize: 12.5, color: '#8e8e93' }}>{statusLabel(a.status)}{a.role ? ` · ${a.role}` : ''}</span>
                         </span>
                       </button>
                     )
@@ -1063,20 +1083,19 @@ export default function CommandCentrePage() {
 
             {/* Live calls */}
             <div className="cc-wide" style={{ ...card, padding: 0, overflow: 'hidden' }}>
-              <div style={{ padding: '14px 16px 10px' }}>
-                <p style={kicker}>Live calls {liveCalls.length > 0 && <span style={{ color: 'var(--coral)' }}>· {liveCalls.length} active</span>}</p>
+              <div style={{ padding: '18px 18px 12px' }}>
+                <p style={{ ...kicker, display: 'flex', alignItems: 'center', gap: 8 }}>Live calls {liveCalls.length > 0 && <Chip color="#22c55e">{liveCalls.length} active</Chip>}</p>
               </div>
               {loading ? (
-                <div style={{ padding: '0 16px 8px', borderTop: '1px solid var(--border)' }}><SkelRows n={2} /></div>
+                <div style={{ padding: '0 18px 8px', borderTop: '1px solid #f4f4f5' }}><SkelRows n={2} /></div>
               ) : liveCalls.length === 0 ? (
-                <div style={{ padding: '34px 20px 40px', textAlign: 'center', color: 'var(--slate)' }}>
-                  <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>No calls in progress</p>
-                  <p style={{ margin: '5px 0 0', fontSize: 12 }}>Active calls appear here as they ring.</p>
+                <div style={{ padding: '0 12px 18px' }}>
+                  <EmptyScroll kinds={['call']} compact title="No calls in progress" line="Active calls show up here as they ring." />
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                   {liveCalls.map(c => (
-                    <div key={c.id} className="cc-row" onClick={() => setDrawer(c)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderTop: '1px solid var(--border)' }}>
+                    <div key={c.id} className="cc-row" onClick={() => setDrawer(c)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', borderTop: '1px solid #f4f4f5' }}>
                       <span style={{ flex: 1, minWidth: 0 }}>{callerCell(c)}</span>
                       <span style={{ fontSize: 12.5, color: 'var(--ink)', whiteSpace: 'nowrap', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{agentLabel(c.agent_name) || (c.status.includes('voicemail') ? 'Voicemail' : 'Ringing')}</span>
                       <Chip color={c.direction === 'inbound' ? C.green : C.blue}>{c.direction === 'inbound' ? 'In' : 'Out'}</Chip>
@@ -1096,9 +1115,9 @@ export default function CommandCentrePage() {
               {loading ? (
                 <SkelRows n={5} pad="6px 0" />
               ) : feed.length === 0 ? (
-                <p style={{ margin: 0, fontSize: 13, color: 'var(--slate)' }}>No recent calls.</p>
+                <p style={{ margin: 0, fontSize: 13, color: '#8e8e93' }}>No recent calls.</p>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 340, overflowY: 'auto' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 340, overflowY: 'auto', margin: '0 -8px' }}>
                   {feed.map(c => {
                     const o = outcomeLabel(c, nowTick)
                     const col = OUTCOME_COLOR[o.key] || C.blue
@@ -1106,13 +1125,13 @@ export default function CommandCentrePage() {
                       ? (o.key === 'connected' ? `called by ${agentLabel(c.agent_name) || 'the team'}` : o.key === 'live' ? 'being called' : 'called, no answer')
                       : o.key === 'voicemail' ? 'left a voicemail' : o.key === 'answered' ? `answered by ${agentLabel(c.agent_name) || 'the team'}` : o.key === 'live' ? 'calling now' : 'missed'
                     return (
-                      <button key={c.id} type="button" onClick={() => setDrawer(c)} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '6px 4px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', font: 'inherit', borderRadius: 8 }}>
-                        <span style={{ width: 26, height: 26, borderRadius: 8, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: tint(col), color: col }}>
+                      <button key={c.id} type="button" className="cc-hov" onClick={() => setDrawer(c)} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '7px 8px', border: 'none', background: 'transparent', textAlign: 'left', cursor: 'pointer', font: 'inherit', borderRadius: 12 }}>
+                        <span style={{ width: 30, height: 30, borderRadius: 999, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: tint(col), color: col }}>
                           {o.key === 'voicemail' ? Icon.vm(14) : o.key === 'missed' ? Icon.phoneMissed(14) : c.direction === 'outbound' ? Icon.phoneOut(14) : Icon.phoneIn(14)}
                         </span>
                         <span style={{ flex: 1, minWidth: 0 }}>
-                          <span style={{ display: 'block', fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.4 }}><strong>{callerDisplay(c).title}</strong> <span style={{ color: 'var(--slate)' }}>{verb}</span></span>
-                          <span style={{ display: 'block', fontSize: 10.5, color: 'var(--slate)', marginTop: 1 }}>{me12(c.created_at)} · {timeAgo(c.created_at, nowTick)}</span>
+                          <span style={{ display: 'block', fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.4 }}><strong style={{ fontWeight: 600 }}>{callerDisplay(c).title}</strong> <span style={{ color: '#71717a' }}>{verb}</span></span>
+                          <span style={{ display: 'block', fontSize: 12, color: '#a1a1aa', marginTop: 1 }}>{me12(c.created_at)} · {timeAgo(c.created_at, nowTick)}</span>
                         </span>
                       </button>
                     )
@@ -1129,14 +1148,14 @@ export default function CommandCentrePage() {
 
           <div className="cc-two" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.5fr) minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
             <div style={card}>
-              <p style={{ ...kicker, marginBottom: 14 }}>{isToday ? 'Performance today' : `Performance · ${rangeLabel.toLowerCase()}`}</p>
+              <p style={{ ...kicker, marginBottom: 16 }}>{isToday ? 'Performance today' : <>Performance <span style={{ fontWeight: 500, color: '#8e8e93' }}>· {rangeLabel.toLowerCase()}</span></>}</p>
               <div className="cc-perf-inner" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, alignItems: 'center' }}>
                 <div style={{ minWidth: 0 }}>
-                  <p style={{ ...kicker, marginBottom: 8 }}>{range === 'today' || range === 'yesterday' ? 'Calls by hour' : 'Calls by hour of day'}</p>
+                  <p style={{ ...smallLabel, marginBottom: 10 }}>{range === 'today' || range === 'yesterday' ? 'Calls by hour' : 'Calls by hour of day'}</p>
                   {loading ? <Skel h={64} r={8} /> : hourly(byHour(cur, tz), '#ff7a6b', 'call')}
                 </div>
                 <div style={{ minWidth: 0 }}>
-                  <p style={{ ...kicker, marginBottom: 8 }}>Incoming calls</p>
+                  <p style={{ ...smallLabel, marginBottom: 10 }}>Incoming calls</p>
                   {loading ? <span style={{ display: 'flex', alignItems: 'center', gap: 16 }}><Skel w={104} h={104} r={52} style={{ flexShrink: 0 }} /><span style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}><Skel w="70%" h={10} /><Skel w="60%" h={10} /><Skel w="65%" h={10} /></span></span> : donut(stats)}
                 </div>
               </div>
@@ -1159,22 +1178,23 @@ export default function CommandCentrePage() {
             <Kpi label="Outgoing" value={kv(logStats.outbound)} color={C.cyan} icon={Icon.phoneOut()} sub={ks(`${logStats.outboundConnected} got through`)} onClick={() => setDirFilter(dirFilter === 'outbound' ? 'all' : 'outbound')} active={dirFilter === 'outbound'} />
             <Kpi label="AI receptionist" value={kv(logStats.ai.calls)} color={C.violet} icon={Icon.spark(17)} sub={ks(`${logStats.ai.messages} message${logStats.ai.messages === 1 ? '' : 's'} · ${logStats.ai.bookingLinks} booking link${logStats.ai.bookingLinks === 1 ? '' : 's'}`)} onClick={() => setOutcomeFilter(outcomeFilter === 'ai' ? 'all' : 'ai')} active={outcomeFilter === 'ai'} />
           </div>
-          {callsLoading && booted && <p style={{ margin: '-4px 0 0', fontSize: 12, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 7 }}><Spinner size={12} /> Loading the full period…</p>}
+          {callsLoading && booted && <p style={{ margin: '-4px 0 0', fontSize: 13, color: '#71717a', display: 'flex', alignItems: 'center', gap: 7 }}><Spinner size={12} /> Loading the full period…</p>}
 
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-            <label style={{ flex: '1 1 240px', minWidth: 0, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--slate)' }}>
+            <label className="cc-search" style={{ flex: '1 1 260px', minWidth: 0, display: 'flex', alignItems: 'center', gap: 8, height: 38, padding: '0 10px 0 14px', boxSizing: 'border-box', borderRadius: 999, border: '1.5px solid transparent', background: '#f4f4f5', color: '#a1a1aa' }}>
               {Icon.search()}
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, number, team member, store or what it was about"
-                style={{ flex: 1, minWidth: 0, padding: '9px 0', border: 'none', fontSize: 13, outline: 'none', background: 'transparent', color: 'var(--ink)' }} />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, number, team member, store or what it was about" aria-label="Search calls"
+                style={{ flex: 1, minWidth: 0, padding: 0, border: 'none', fontFamily: 'inherit', fontSize: 14, outline: 'none', background: 'transparent', color: 'var(--ink)' }} />
+              {search && <button type="button" onClick={() => setSearch('')} aria-label="Clear search" style={{ ...iconBtn, width: 24, height: 24, background: '#e4e4e7', color: '#52525b' }}>{Icon.x(12)}</button>}
             </label>
             <Segmented<'all' | 'inbound' | 'outbound'> value={dirFilter} options={[['all', 'All'], ['inbound', 'Incoming'], ['outbound', 'Outgoing']]} onChange={setDirFilter} />
             <Segmented<OutcomeFilter> value={outcomeFilter} onChange={setOutcomeFilter} options={outcomeOptions} />
           </div>
           {topic && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--ink)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--ink)', flexWrap: 'wrap' }}>
               <Chip color={C.violet}>{Icon.spark(11)} {topic.name}</Chip>
-              <span style={{ color: 'var(--slate)' }}>{topic.callIds.length} calls from the AI summary</span>
-              <button type="button" onClick={() => setTopic(null)} style={{ border: 'none', background: 'none', color: 'var(--coral)', fontWeight: 700, cursor: 'pointer', fontSize: 12.5 }}>Clear</button>
+              <span style={{ color: '#71717a' }}>{topic.callIds.length} calls from the AI summary</span>
+              <button type="button" onClick={() => setTopic(null)} style={{ border: 'none', background: 'none', color: 'var(--coral)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>Clear</button>
             </div>
           )}
 
@@ -1183,16 +1203,16 @@ export default function CommandCentrePage() {
               <div>
                 {loading && <div style={{ padding: '4px 14px' }}><SkelRows n={6} /></div>}
                 {!loading && tableRows.length === 0 && (callsLoading
-                  ? <p style={{ padding: 24, margin: 0, textAlign: 'center', color: 'var(--slate)', fontSize: 13 }}>Loading…</p>
+                  ? <p style={{ padding: 24, margin: 0, textAlign: 'center', color: '#8e8e93', fontSize: 13 }}>Loading…</p>
                   : <EmptyScroll kinds={['call']} compact={narrow} title={logRows.length === 0 ? 'No calls in this view' : 'No calls match'}
                   line={logRows.length === 0 ? 'Calls in these dates show up here as they come in.' : 'Try another outcome to see more.'}
                   action={outcomeFilter !== 'all' ? <button type="button" className="cv-btn" onClick={() => setOutcomeFilter('all')}>Show all calls</button> : undefined} />)}
                 {tableRows.slice(0, shown).map(c => (
-                  <div key={c.id} className="cc-row" onClick={() => setDrawer(c)} style={{ padding: '11px 14px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, alignItems: 'center' }}>
-                    <span style={{ color: c.direction === 'inbound' ? C.green : C.blue }}>{c.direction === 'inbound' ? Icon.phoneIn(15) : Icon.phoneOut(15)}</span>
+                  <div key={c.id} className="cc-row" onClick={() => setDrawer(c)} style={{ padding: '12px 14px', borderTop: '1px solid #f4f4f5', display: 'flex', gap: 12, alignItems: 'center' }}>
+                    <span style={{ width: 34, height: 34, borderRadius: 999, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: tint(c.direction === 'inbound' ? C.green : C.blue, 12), color: c.direction === 'inbound' ? C.green : C.blue }}>{c.direction === 'inbound' ? Icon.phoneIn(15) : Icon.phoneOut(15)}</span>
                     <span style={{ flex: 1, minWidth: 0 }}>
                       {callerCell(c)}
-                      <span style={{ display: 'block', fontSize: 11, color: 'var(--slate)', marginTop: 3 }}>{dateTime(c.created_at)} · {c.duration_seconds ? fmtDur(c.duration_seconds) : '0s'} · {agentCell(c)}</span>
+                      <span style={{ display: 'block', fontSize: 12, color: '#a1a1aa', marginTop: 3 }}>{dateTime(c.created_at)} · {c.duration_seconds ? fmtDur(c.duration_seconds) : '0s'} · {agentCell(c)}</span>
                     </span>
                     {outcomeChip(c)}
                   </div>
@@ -1204,7 +1224,7 @@ export default function CommandCentrePage() {
                   {tableHead(['Date/time', 'Caller', 'Direction', 'Duration', 'Outcome', 'Answered by', 'Location', ''])}
                   <tbody>
                     {loading && Array.from({ length: 8 }, (_, i) => (
-                      <tr key={`sk${i}`} style={{ borderTop: '1px solid var(--border)' }}>
+                      <tr key={`sk${i}`} style={{ borderTop: '1px solid #f4f4f5' }}>
                         {[90, 160, 44, 40, 70, 90, 70, 60].map((w, j) => <td key={j} style={td}><Skel w={w} h={11} /></td>)}
                       </tr>
                     ))}
@@ -1212,14 +1232,14 @@ export default function CommandCentrePage() {
                   line={logRows.length === 0 ? 'Calls in these dates show up here as they come in.' : 'Try another outcome to see more.'}
                   action={outcomeFilter !== 'all' ? <button type="button" className="cv-btn" onClick={() => setOutcomeFilter('all')}>Show all calls</button> : undefined} />}</td></tr>}
                     {tableRows.slice(0, shown).map(c => (
-                      <tr key={c.id} className="cc-row" onClick={() => setDrawer(c)} style={{ borderTop: '1px solid var(--border)' }}>
-                        <td style={{ ...td, whiteSpace: 'nowrap', color: 'var(--slate)' }}>{dateTime(c.created_at)}</td>
+                      <tr key={c.id} className="cc-row" onClick={() => setDrawer(c)} style={{ borderTop: '1px solid #f4f4f5' }}>
+                        <td style={{ ...td, whiteSpace: 'nowrap', color: '#71717a' }}>{dateTime(c.created_at)}</td>
                         <td style={{ ...td, maxWidth: 260 }}>{callerCell(c)}</td>
                         <td style={td}><Chip color={c.direction === 'inbound' ? C.green : C.blue}>{c.direction === 'inbound' ? Icon.arrowIn(11) : Icon.send(10)} {c.direction === 'inbound' ? 'In' : 'Out'}</Chip></td>
                         <td style={{ ...td, color: 'var(--ink)', whiteSpace: 'nowrap' }}>{c.duration_seconds ? fmtDur(c.duration_seconds) : <span style={{ color: 'var(--slate)' }}>0s</span>}</td>
                         <td style={td}>{outcomeChip(c)}</td>
                         <td style={{ ...td, color: 'var(--ink)', whiteSpace: 'nowrap' }}>{agentCell(c)}</td>
-                        <td style={{ ...td, color: 'var(--slate)', whiteSpace: 'nowrap' }}>{locName(c.location_id) || '—'}</td>
+                        <td style={{ ...td, color: '#71717a', whiteSpace: 'nowrap' }}>{locName(c.location_id) || '—'}</td>
                         <td style={{ ...td, textAlign: 'right' }}>{rowActions(c)}</td>
                       </tr>
                     ))}
@@ -1230,7 +1250,7 @@ export default function CommandCentrePage() {
           </div>
           {tableRows.length > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 12, color: 'var(--slate)' }}>Showing {Math.min(shown, tableRows.length)} of {tableRows.length} call{tableRows.length === 1 ? '' : 's'}</span>
+              <span style={{ fontSize: 13, color: '#8e8e93' }}>Showing {Math.min(shown, tableRows.length)} of {tableRows.length} call{tableRows.length === 1 ? '' : 's'}</span>
               {tableRows.length > shown && <button type="button" onClick={() => setShown(s => s + PAGE)} style={btn('ghost')}>Show {Math.min(PAGE, tableRows.length - shown)} more</button>}
             </div>
           )}
@@ -1271,34 +1291,34 @@ export default function CommandCentrePage() {
               <>
 
                 {hasPrev && pstats.inboundDone > 0 && stats.missRate > pstats.missRate && (
-                  <div style={{ ...card, background: tint(C.red, 7), borderColor: tint(C.red, 25), display: 'flex', alignItems: 'center', gap: 8, color: '#b91c1c', fontSize: 13, fontWeight: 600 }}>
+                  <div style={{ ...card, padding: '14px 16px', background: 'color-mix(in srgb, #dc2626 6%, #fff)', boxShadow: '0 0 0 1px color-mix(in srgb, #dc2626 18%, transparent)', display: 'flex', alignItems: 'center', gap: 10, color: '#b91c1c', fontSize: 13.5, fontWeight: 600 }}>
                     {Icon.alert()} Miss rate is up {stats.missRate - pstats.missRate} points on the period before ({pstats.missRate}% to {stats.missRate}%).
                   </div>
                 )}
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 150px), 1fr))', gap: 12 }}>
                   {cmp.map(([l, v, a, b, col, inv, unit]) => (
-                    <div key={l} style={card}>
-                      <p style={kicker}>{l}</p>
-                      <p style={{ margin: '6px 0 4px', fontSize: 26, fontWeight: 800, color: col, letterSpacing: '-0.02em' }}>{v}</p>
-                      {hasPrev ? <Trend cur={a} prev={b} invert={inv} unit={unit} /> : <span style={{ fontSize: 11, color: 'var(--slate)' }}>All time</span>}
+                    <div key={l} style={{ ...card, padding: '16px 18px' }}>
+                      <p style={{ ...smallLabel, fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 7 }}><span style={{ width: 7, height: 7, borderRadius: '50%', background: col }} />{l}</p>
+                      <p style={{ margin: '8px 0 4px', fontSize: 26, fontWeight: 800, color: l === 'Miss rate' ? col : 'var(--ink)', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>{v}</p>
+                      {hasPrev ? <Trend cur={a} prev={b} invert={inv} unit={unit} /> : <span style={{ fontSize: 12, color: '#8e8e93' }}>All time</span>}
                     </div>
                   ))}
                 </div>
 
                 <div className="cc-two" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.5fr) minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
                   <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '16px 16px 0' }}>
-                      <p style={{ ...kicker, flex: 1 }}>By team member · {rangeLabel.toLowerCase()}</p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '18px 18px 0' }}>
+                      <p style={{ ...kicker, flex: 1 }}>By team member <span style={{ fontWeight: 500, color: '#8e8e93' }}>· {rangeLabel.toLowerCase()}</span></p>
                     </div>
                     <div style={{ overflowX: 'auto', marginTop: 12 }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 600 }}>
                         {tableHead(['Team member', 'Answered', 'Calls made', 'Got through', 'Call-backs', 'Talk time', 'Avg talk'])}
                         <tbody>
-                          {leaders.length === 0 && <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', color: 'var(--slate)' }}>No calls handled by the team in this period.</td></tr>}
+                          {leaders.length === 0 && <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', color: '#8e8e93' }}>No calls handled by the team in this period.</td></tr>}
                           {leaders.map(r => (
-                            <tr key={r.key} className="cc-row" style={{ borderTop: '1px solid var(--border)' }} onClick={() => { setAgentFilter(r.id ? `u:${r.id}` : `n:${normName(r.name)}`); setTab('logs') }}>
-                              <td style={{ ...td, fontWeight: 700, color: 'var(--ink)' }}>{r.name}</td>
+                            <tr key={r.key} className="cc-row" style={{ borderTop: '1px solid #f4f4f5' }} onClick={() => { setAgentFilter(r.id ? `u:${r.id}` : `n:${normName(r.name)}`); setTab('logs') }}>
+                              <td style={{ ...td, fontWeight: 600, color: 'var(--ink)' }}>{r.name}</td>
                               <td style={{ ...td, color: C.green, fontWeight: 600 }}>{r.answered}</td>
                               <td style={td}>{r.made}</td>
                               <td style={td}>{r.connected}</td>
@@ -1317,23 +1337,23 @@ export default function CommandCentrePage() {
                 <div style={card}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
                     <p style={kicker}>Volume by day and hour</p>
-                    <p style={{ margin: 0, fontSize: 10.5, color: 'var(--slate)' }}>darker = more calls · red corner = most incoming calls unanswered</p>
+                    <p style={{ margin: 0, fontSize: 12, color: '#8e8e93' }}>Darker means more calls. A red corner means most incoming calls went unanswered.</p>
                   </div>
                   <div style={{ overflowX: 'auto' }}>
                     <div style={{ minWidth: 560 }}>
                       <div style={{ display: 'grid', gridTemplateColumns: '34px repeat(24, 1fr)', gap: 2, marginBottom: 2 }}>
                         <span />
-                        {Array.from({ length: 24 }, (_, h) => <span key={h} style={{ fontSize: 8.5, color: 'var(--slate)', textAlign: 'center' }}>{hour12 ? hourLabel(h, true).replace(/(am|pm)$/, '') : h}</span>)}
+                        {Array.from({ length: 24 }, (_, h) => <span key={h} style={{ fontSize: 10, color: '#a1a1aa', textAlign: 'center' }}>{hour12 ? hourLabel(h, true).replace(/(am|pm)$/, '') : h}</span>)}
                       </div>
                       {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, di) => (
                         <div key={day} style={{ display: 'grid', gridTemplateColumns: '34px repeat(24, 1fr)', gap: 2, marginBottom: 2 }}>
-                          <span style={{ fontSize: 10, color: 'var(--slate)', fontWeight: 600, display: 'flex', alignItems: 'center' }}>{day}</span>
+                          <span style={{ fontSize: 11.5, color: '#71717a', fontWeight: 600, display: 'flex', alignItems: 'center' }}>{day}</span>
                           {grid[di].map((cell, hi) => {
-                            const bg = cell.n === 0 ? 'var(--canvas)' : tint('#ff7a6b', Math.round(20 + cell.n / maxCell * 70))
+                            const bg = cell.n === 0 ? '#f4f4f5' : tint('#ff7a6b', Math.round(20 + cell.n / maxCell * 70))
                             const highMiss = cell.n >= 2 && cell.miss / cell.n > 0.4
                             return (
                               <div key={hi} title={`${day} ${hourLabel(hi, hour12)}: ${cell.n} call${cell.n === 1 ? '' : 's'}${cell.miss ? `, ${cell.miss} not answered` : ''}`}
-                                style={{ position: 'relative', height: 22, borderRadius: 3, background: bg, border: '1px solid var(--border)' }}>
+                                style={{ position: 'relative', height: 22, borderRadius: 5, background: bg, overflow: 'hidden' }}>
                                 {highMiss && <span style={{ position: 'absolute', top: 0, right: 0, width: 0, height: 0, borderTop: `5px solid ${C.red}`, borderLeft: '5px solid transparent' }} />}
                               </div>
                             )
@@ -1346,7 +1366,7 @@ export default function CommandCentrePage() {
 
                 {locRows.length > 0 && (
                   <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '16px 16px 0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '18px 18px 0' }}>
                       <p style={{ ...kicker, flex: 1 }}>Locations</p>
                       <WhyInline align="right" why={<>A call belongs to the store whose number was rung (or that rang out). If that isn’t known, the store the conversation is assigned to, then the customer’s store.</>} />
                     </div>
@@ -1355,8 +1375,8 @@ export default function CommandCentrePage() {
                         {tableHead(['Location', 'Calls', 'Answered', 'Missed', 'Voicemail', 'Miss rate', 'Avg talk'])}
                         <tbody>
                           {locRows.map(r => (
-                            <tr key={r.name} style={{ borderTop: '1px solid var(--border)' }}>
-                              <td style={{ ...td, fontWeight: 700, color: 'var(--ink)' }}>{r.name}</td>
+                            <tr key={r.name} style={{ borderTop: '1px solid #f4f4f5' }}>
+                              <td style={{ ...td, fontWeight: 600, color: 'var(--ink)' }}>{r.name}</td>
                               <td style={td}>{r.total}</td>
                               <td style={{ ...td, color: C.green, fontWeight: 600 }}>{r.answered}</td>
                               <td style={{ ...td, color: C.red, fontWeight: 600 }}>{r.missed}</td>
@@ -1387,7 +1407,7 @@ export default function CommandCentrePage() {
         const t = agg(curS), y = agg(prevTo > win.prevFrom ? sms.filter(m => inW(m, win.prevFrom, prevTo)) : [])
         const total = t.total || 1
         const rPct = t.received / total * 100, sPct = t.sent / total * 100
-        const smsDonutBg = t.total ? `conic-gradient(${C.green} 0 ${rPct}%, ${C.blue} ${rPct}% ${rPct + sPct}%, var(--canvas) ${rPct + sPct}% 100%)` : 'var(--canvas)'
+        const smsDonutBg = t.total ? `conic-gradient(${C.green} 0 ${rPct}%, ${C.blue} ${rPct}% ${rPct + sPct}%, #f4f4f5 ${rPct + sPct}% 100%)` : '#f4f4f5'
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 158px), 1fr))', gap: 12 }}>
@@ -1398,23 +1418,23 @@ export default function CommandCentrePage() {
             </div>
             <div className="cc-two" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.4fr)', gap: 16, alignItems: 'start' }}>
               <div style={card}>
-                <p style={{ ...kicker, marginBottom: 12 }}>{isToday ? 'SMS today' : `SMS · ${rangeLabel.toLowerCase()}`}</p>
+                <p style={{ ...kicker, marginBottom: 14 }}>{isToday ? 'SMS today' : <>SMS <span style={{ fontWeight: 500, color: '#8e8e93' }}>· {rangeLabel.toLowerCase()}</span></>}</p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
                   <div style={{ position: 'relative', width: 104, height: 104, borderRadius: '50%', background: smsDonutBg, flexShrink: 0 }}>
                     <div style={{ position: 'absolute', inset: 12, borderRadius: '50%', background: 'var(--card,#fff)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                      <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--ink)', lineHeight: 1 }}>{sv(t.total)}</span>
-                      <span style={{ ...kicker, marginTop: 2 }}>Total</span>
+                      <span style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)', lineHeight: 1 }}>{sv(t.total)}</span>
+                      <span style={{ ...smallLabel, fontSize: 11.5, marginTop: 3 }}>Total</span>
                     </div>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 7, fontSize: 12.5 }}>
                     {([['Received', t.received, C.green], ['Sent', t.sent, C.blue]] as [string, number, string][]).map(([l, v, col]) => (
                       <span key={l} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, color: 'var(--slate)' }}>
-                        <span style={{ width: 9, height: 9, borderRadius: 3, background: col }} /><strong style={{ color: 'var(--ink)' }}>{smsLoaded ? v : <Skel w={18} h={11} />}</strong> {l}
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: col }} /><strong style={{ color: 'var(--ink)' }}>{smsLoaded ? v : <Skel w={18} h={11} />}</strong> {l}
                       </span>
                     ))}
                   </div>
                 </div>
-                <p style={{ ...kicker, margin: '16px 0 8px' }}>Messages by hour</p>
+                <p style={{ ...smallLabel, margin: '18px 0 10px' }}>Messages by hour</p>
                 {smsLoaded ? hourly(byHour(curS, tz), '#3b82f6', 'message') : <Skel h={64} r={8} />}
               </div>
               <div style={card}>
@@ -1422,19 +1442,19 @@ export default function CommandCentrePage() {
                 {!smsLoaded ? (
                   <SkelRows n={5} pad="6px 0" />
                 ) : recentS.length === 0 ? (
-                  <p style={{ margin: 0, fontSize: 13, color: 'var(--slate)' }}>No texts in this period.</p>
+                  <EmptyScroll kinds={['sms']} compact title="No texts in this period" line="Texts sent and received show up here." />
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 420, overflowY: 'auto' }}>
                     {recentS.map(m => {
                       const inb = smsInbound(m)
                       return (
                         <a key={m.id} href={m.conversation_id ? `/admin/inbox?conversation=${m.conversation_id}` : undefined} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', textDecoration: 'none' }}>
-                          <span style={{ width: 26, height: 26, borderRadius: 8, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: tint(inb ? C.green : C.blue), color: inb ? C.green : C.blue }}>{inb ? Icon.arrowIn(14) : Icon.send(13)}</span>
+                          <span style={{ width: 30, height: 30, borderRadius: 999, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: tint(inb ? C.green : C.blue), color: inb ? C.green : C.blue }}>{inb ? Icon.arrowIn(14) : Icon.send(13)}</span>
                           <span style={{ flex: 1, minWidth: 0 }}>
-                            <span style={{ display: 'block', fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              <strong>{m.sender_name && !/^\+?\d[\d\s]+$/.test(m.sender_name) ? m.sender_name : inb ? 'Customer' : 'You'}</strong> <span style={{ color: 'var(--slate)' }}>{inb ? 'received' : 'sent'}: {String(m.content || '').replace(/\s+/g, ' ').trim().slice(0, 90)}</span>
+                            <span style={{ display: 'block', fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              <strong style={{ fontWeight: 600 }}>{m.sender_name && !/^\+?\d[\d\s]+$/.test(m.sender_name) ? m.sender_name : inb ? 'Customer' : 'You'}</strong> <span style={{ color: '#71717a' }}>{inb ? 'received' : 'sent'}: {String(m.content || '').replace(/\s+/g, ' ').trim().slice(0, 90)}</span>
                             </span>
-                            <span style={{ display: 'block', fontSize: 10.5, color: 'var(--slate)', marginTop: 2 }}>{me12(m.created_at)} · {timeAgo(m.created_at, nowTick)}</span>
+                            <span style={{ display: 'block', fontSize: 12, color: '#a1a1aa', marginTop: 2 }}>{me12(m.created_at)} · {timeAgo(m.created_at, nowTick)}</span>
                           </span>
                         </a>
                       )
@@ -1457,7 +1477,7 @@ export default function CommandCentrePage() {
           onSent={() => { setTextBack(null); flash('Text sent'); loadOverview(companyId, true) }} />
       )}
       {toast && (
-        <div role="status" style={{ position: 'fixed', bottom: 22, left: '50%', transform: 'translateX(-50%)', zIndex: 1100, padding: '10px 16px', borderRadius: 12, background: '#111827', color: '#fff', fontSize: 13, fontWeight: 600, boxShadow: '0 10px 30px rgba(0,0,0,0.3)', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+        <div role="status" style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 1100, padding: '11px 18px', borderRadius: 999, background: '#18181b', color: '#fff', fontSize: 13.5, fontWeight: 500, boxShadow: '0 12px 30px rgba(0,0,0,0.25)', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
           {Icon.check(14)} {toast}
         </div>
       )}
