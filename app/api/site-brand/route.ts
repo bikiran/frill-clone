@@ -2,15 +2,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { safeFetch, decodeEntities } from '@/lib/site-crawl'
 import { attr, pickIcon, pickColors, pickSheets } from '@/lib/site-brand'
+import { checkBurst } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
 // GET /api/site-brand?domain=roxyaquarium.com.au
 //
-// For the new-workspace flow: a website's icon, its main colours and its name,
-// read from its home page and (up to) two of its stylesheets. Signed-in users
-// only, and every request goes through safeFetch (public addresses only, with
-// a timeout and a size cap). Answers are kept for an hour per domain.
+// For the new-workspace flow and sign-up: a website's icon, its main colours
+// and its name, read from its home page and (up to) two of its stylesheets.
+// Every request goes through safeFetch (public addresses only, with a timeout
+// and a size cap) and only those three things come back, never the page.
+// Someone signing up isn't signed in yet, so without a session it's limited
+// per network (a few a minute). Answers are kept for an hour per domain.
 //
 // → { domain, icon: string | null, colors: string[], name: string | null }
 
@@ -29,7 +32,10 @@ async function signedIn(req: NextRequest): Promise<boolean> {
 }
 
 export async function GET(req: NextRequest) {
-  if (!(await signedIn(req))) return NextResponse.json({ error: 'Please sign in again.' }, { status: 401 })
+  if (!(await signedIn(req))) {
+    const ip = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim() || req.headers.get('x-real-ip') || 'unknown'
+    if (!checkBurst(`site-brand:${ip}`, 8)) return NextResponse.json({ error: 'Too many lookups. Please wait a minute.' }, { status: 429 })
+  }
   const raw = String(req.nextUrl.searchParams.get('domain') || '').trim().toLowerCase()
   const host = raw.replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '')
   if (!/^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/.test(host) || host.length > 120) return NextResponse.json({ error: 'That doesn’t look like a website address.' }, { status: 400 })

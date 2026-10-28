@@ -4,6 +4,7 @@ import { provisionSubdomain } from '@/lib/provision-domain'
 import { boardSlugAllowed } from '@/lib/reserved-subdomains'
 import { recordSignupLater, cleanProfile } from '@/lib/signup-attempts'
 import { captureServer } from '@/lib/analytics-server'
+import { applyBrand } from '@/lib/workspace-brand'
 
 export const dynamic = 'force-dynamic'
 
@@ -102,7 +103,8 @@ export async function POST(req: NextRequest) {
       owner_id: user.id,
       slug, name,
       industry: biz.industry || '',
-      accent_color: '#ff7a6b',
+      // The colour they picked (sign-up offers their website's), else Colvy's coral.
+      accent_color: /^#[0-9a-f]{6}$/i.test(String(biz.accentColor || '')) ? String(biz.accentColor).toLowerCase() : '#ff7a6b',
       plan: 'trial',
       trial_ends_at: new Date(Date.now() + TRIAL_DAYS * 86400000).toISOString(),
       website: biz.website || null,
@@ -129,6 +131,9 @@ export async function POST(req: NextRequest) {
     }
 
     await captureServer('business_created', user.id, { company_id: company.id, via: 'signup', $groups: { company: company.id } }, `business_created:${company.id}`)
+
+    // Their website's icon as the workspace logo (copied into storage).
+    if (biz.logoUrl) await applyBrand(db, company, { logoUrl: biz.logoUrl })
 
     // 4. Owner membership with the person's name (so it shows across the app).
     try {
