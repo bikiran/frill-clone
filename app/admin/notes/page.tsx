@@ -468,7 +468,7 @@ export default function NotesPage() {
 
   const rootStyle: React.CSSProperties = fullscreen
     ? { position: 'fixed', inset: 0, zIndex: 200, background: '#fff', display: 'flex', flexDirection: 'column' }
-    : { height: 'calc(100dvh - 4px)', display: 'flex', flexDirection: 'column' }
+    : { height: 'calc(100dvh - 4px)', display: 'flex', flexDirection: 'column', background: 'var(--canvas, #fafafa)' }
   const reminders = list.filter(n => n.reminder_at).sort((a, b) => new Date(a.reminder_at!).getTime() - new Date(b.reminder_at!).getTime())
   const shown = tab === 'trash' ? trashList : tab === 'reminders' ? reminders : list
   // Search + filter over the current tab's rows.
@@ -491,22 +491,32 @@ export default function NotesPage() {
   const setAllAttachments = (next: any[]) => note && queueSave({ ...note, attachments: next })
 
   return (
-    <div style={rootStyle}>
+    <div className="notes-root" style={rootStyle}>
       <style>{`
-        .notes-layout { display: flex; flex: 1; min-height: 0; }
-        .notes-list { width: 310px; flex-shrink: 0; border-right: 1px solid var(--border); background: #fff; display: flex; flex-direction: column; transition: width .18s ease; }
+        .notes-root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); }
+        .notes-root button::before { display: none; }
+        .notes-head { padding: 20px 24px 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+        .notes-head h1 { font-size: 30px; font-weight: 800; letter-spacing: -.025em; line-height: 1.1; color: var(--ink); margin: 0; }
+        .notes-head .cv-btn { display: inline-flex; align-items: center; gap: 7px; }
+        .notes-layout { display: flex; flex: 1; min-height: 0; margin: 0 16px 16px; border-radius: 20px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 1px 2px rgba(16,24,40,.04); overflow: hidden; }
+        .notes-list { width: 320px; flex-shrink: 0; border-right: 1px solid #f0f0f2; background: #fafafa; display: flex; flex-direction: column; transition: width .18s ease; }
         .notes-list.closed { width: 0; border-right: none; overflow: hidden; }
-        .notes-rows { flex: 1; overflow-y: auto; }
-        .note-row { padding: 12px 16px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .12s; }
-        .note-row:hover { background: var(--canvas); }
-        .note-row.on { background: var(--peach); }
-        .notes-editor { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
-        .ne-top { border-bottom: 1px solid var(--border); background: #fff; flex-shrink: 0; }
-        .ne-meta { display: flex; align-items: center; gap: 10px; padding: 10px 24px 4px; color: var(--slate); font-size: 12.5px; flex-wrap: wrap; }
+        .notes-rows { flex: 1; overflow-y: auto; padding: 2px 8px 8px; }
+        .note-row { padding: 11px 12px; margin-bottom: 2px; border-radius: 14px; cursor: pointer; transition: background .12s, box-shadow .12s; }
+        .note-row:hover { background: #f1f1f3; }
+        .note-row.on { background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 2px 8px -4px rgba(0,0,0,.12); }
+        .notes-seg { display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: #ececef; }
+        .notes-search { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 8px 0 13px; border-radius: 999px; border: 1.5px solid transparent; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.06); color: #a1a1aa; box-sizing: border-box; transition: border-color .15s, box-shadow .15s; }
+        .notes-search:focus-within { border-color: #d4d4d8; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 16%, transparent); }
+        .notes-search input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font: inherit; font-size: 14px; color: var(--ink); }
+        .notes-search input:focus { box-shadow: none; }
+        .notes-editor { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; background: #fff; }
+        .ne-top { border-bottom: 1px solid #f0f0f2; background: #fff; flex-shrink: 0; }
+        .ne-meta { display: flex; align-items: center; gap: 8px; padding: 12px 24px 6px; color: #8e8e93; font-size: 13px; flex-wrap: wrap; }
         .ne-toolbar { padding: 2px 18px 9px; }
         .ne-scroll { flex: 1; overflow-y: auto; }
         .ne-inner { max-width: 1280px; margin: 0 auto; padding: 30px 76px 60px; }
-        .ne-footer { border-top: 1px solid var(--border); background: #fff; padding: 12px 76px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
+        .ne-footer { border-top: 1px solid #f0f0f2; background: #fff; padding: 12px 76px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
         .nchk-row { display: flex; align-items: center; gap: 11px; padding: 7px 8px; border-radius: 11px; transition: background .12s, box-shadow .12s, opacity .12s; }
         .nchk-row:hover { background: var(--canvas); }
         .nchk-grip { cursor: grab; color: var(--slate); display: flex; padding: 3px 2px; opacity: 0.3; touch-action: none; transition: opacity .12s, color .12s; }
@@ -534,18 +544,24 @@ export default function NotesPage() {
           .ne-toolbar { padding: 2px 10px 9px; }
           .ne-footer { padding: 10px 14px; }
         }
-        .icon-btn { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: #fff; color: var(--slate); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .12s, color .12s; }
-        .icon-btn:hover { background: var(--peach); color: var(--coral); }
-        .seg-tab { flex: 1; padding: 8px 0; border-radius: 9px; border: none; background: transparent; color: var(--slate); font-size: 13px; font-weight: 700; cursor: pointer; transition: background .12s, color .12s; }
-        .seg-tab.on { background: #fff; color: var(--coral); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
-        .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; }
-        .footer-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 20px; border: 1px solid var(--border); background: #fff; color: var(--slate); font-size: 12.5px; font-weight: 700; cursor: pointer; transition: background .12s, color .12s, border-color .12s; }
-        .footer-btn:hover { border-color: var(--coral); color: var(--coral); }
-        .footer-btn.on { background: var(--peach); border-color: var(--coral); color: var(--coral); }
-        .trash-bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); background: #fff; color: var(--slate); font-size: 13px; font-weight: 700; cursor: pointer; }
-        .trash-bar:hover { background: var(--canvas); }
-        .trash-bar.on { color: var(--coral); background: var(--peach); }
+        .icon-btn { width: 36px; height: 36px; border-radius: 50%; border: none; background: #f4f4f5; color: #3f3f46; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .12s, color .12s; font: inherit; }
+        .icon-btn:hover { background: #ececef; color: #18181b; }
+        .seg-tab { flex: 1; height: 32px; padding: 0; border-radius: 999px; border: none; background: transparent; color: #71717a; font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; transition: background .12s, color .12s; }
+        .seg-tab:hover { color: #18181b; }
+        .seg-tab.on { background: #fff; color: #18181b; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .chip { display: inline-flex; align-items: center; gap: 4px; height: 20px; font-size: 11.5px; font-weight: 600; padding: 0 8px; border-radius: 999px; }
+        .footer-btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: 999px; border: none; background: #f4f4f5; color: #3f3f46; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .12s, color .12s; }
+        .footer-btn:hover { background: #ececef; color: #18181b; }
+        .footer-btn.on { background: #18181b; color: #fff; }
+        .trash-bar { display: flex; align-items: center; gap: 8px; margin: 0 8px 8px; padding: 10px 12px; border-radius: 14px; color: #52525b; font-size: 13.5px; font-weight: 600; cursor: pointer; transition: background .12s; }
+        .trash-bar:hover { background: #f1f1f3; }
+        .trash-bar.on { color: #18181b; background: #ececef; }
+        .notes-root .nchk-box { border-radius: 8px; border-color: #d4d4d8; }
         @media (max-width: 860px) {
+          .notes-head { padding: 14px 14px 12px; }
+          .notes-head h1 { font-size: 26px; }
+          .notes-layout { margin: 0 8px 8px; }
+          .notes-search input { font-size: 16px; }
           .notes-list { width: 100%; display: ${activeId ? 'none' : 'flex'}; border-right: none; }
           .notes-list.closed { display: none; }
           .notes-editor { display: ${activeId ? 'flex' : 'none'}; }
@@ -553,18 +569,18 @@ export default function NotesPage() {
         }
       `}</style>
 
-      <div style={{ padding: '16px 24px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', borderBottom: '1px solid var(--border)' }}>
+      <div className="notes-head">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <button className="icon-btn" title={listOpen ? 'Collapse list' : 'Show list'} onClick={() => setListOpen(v => !v)}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{listOpen ? <><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></> : <><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></>}</svg>
           </button>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>Notes</h1>
+          <h1>Notes</h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <button className="icon-btn" title={fullscreen ? 'Exit full screen' : 'Full screen'} onClick={() => setFullscreen(v => !v)}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{fullscreen ? <path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/> : <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>}</svg>
           </button>
-          <button onClick={createNote} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 18px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>
+          <button type="button" className="cv-btn cv-btn-primary" onClick={createNote}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             New note
           </button>
@@ -572,7 +588,7 @@ export default function NotesPage() {
       </div>
 
       {needsMigration && (
-        <div style={{ margin: '10px 24px 0', background: 'var(--peach)', border: '1px solid var(--coral)', borderRadius: 9, padding: '9px 12px', fontSize: 12.5, color: 'var(--ink)' }}>
+        <div style={{ margin: '0 16px 12px', background: '#fffbeb', boxShadow: '0 0 0 1px #fde68a', borderRadius: 16, padding: '11px 16px', fontSize: 13.5, color: '#92400e' }}>
           Notes needs a quick database update — run <b>COLVY_V233</b>, <b>V234</b> and <b>V235</b> in Supabase, then reload.
         </div>
       )}
@@ -580,7 +596,7 @@ export default function NotesPage() {
       <div className="notes-layout">
         <div className={'notes-list' + (listOpen ? '' : ' closed')}>
           {/* Notes | Reminders segmented tabs */}
-          <div style={{ display: 'flex', gap: 4, padding: '10px 12px', background: 'var(--canvas)', borderBottom: '1px solid var(--border)' }}>
+          <div className="notes-seg" style={{ margin: '12px 12px 0' }}>
             <button className={'seg-tab' + (tab === 'notes' ? ' on' : '')} onClick={() => setTab('notes')}>Notes {list.length > 0 && <span style={{ opacity: 0.7 }}>{list.length}</span>}</button>
             <button className={'seg-tab' + (tab === 'reminders' ? ' on' : '')} onClick={() => setTab('reminders')}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
@@ -591,38 +607,37 @@ export default function NotesPage() {
           </div>
 
           {/* Search + filter */}
-          <div style={{ display: 'flex', gap: 8, padding: '10px 12px', borderBottom: '1px solid var(--border)', alignItems: 'center' }}>
-            <div style={{ position: 'relative', flex: 1 }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search notes…"
-                style={{ width: '100%', boxSizing: 'border-box', padding: '8px 28px 8px 32px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, outline: 'none', background: '#fff' }} />
-              {search && <button onClick={() => setSearch('')} title="Clear" style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: 2 }}>×</button>}
-            </div>
+          <div style={{ display: 'flex', gap: 8, padding: '10px 12px', alignItems: 'center' }}>
+            <label className="notes-search">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search notes" aria-label="Search notes" />
+              {search && <button type="button" onClick={() => setSearch('')} title="Clear" aria-label="Clear search" style={{ width: 22, height: 22, borderRadius: 999, border: 'none', background: '#e4e4e7', color: '#52525b', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>}
+            </label>
             {tab !== 'trash' && (
               <div style={{ position: 'relative' }}>
                 <button className="icon-btn" onClick={() => setFilterOpen(v => !v)} title="Filter"
-                  style={{ width: 'auto', padding: '0 10px', gap: 5, fontSize: 12.5, fontWeight: 700, ...(filter.kind !== 'all' ? { borderColor: 'var(--coral)', color: 'var(--coral)', background: 'var(--peach)' } : {}) }}>
+                  style={{ width: filter.kind !== 'all' ? 'auto' : 38, height: 38, padding: filter.kind !== 'all' ? '0 12px' : 0, borderRadius: 999, gap: 5, fontSize: 13, fontWeight: 600, background: '#fff', boxShadow: '0 0 0 1px rgba(0,0,0,.06)', ...(filter.kind !== 'all' ? { color: '#fff', background: '#18181b', boxShadow: 'none' } : {}) }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
                   {filter.kind !== 'all' && <span style={{ maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{filterLabel}</span>}
                 </button>
                 {filterOpen && (<>
                   <div onClick={() => setFilterOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
-                  <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 41, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.18)', padding: 6, minWidth: 190, maxHeight: 320, overflowY: 'auto' }}>
+                  <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 41, background: '#fff', borderRadius: 16, boxShadow: '0 0 0 1px rgba(0,0,0,.06), 0 16px 40px -8px rgba(0,0,0,.22)', padding: 6, minWidth: 190, maxHeight: 320, overflowY: 'auto' }}>
                     {([['all', 'All notes'], ['pinned', 'Pinned'], ['shared', 'Shared with team'], ['reminder', 'Has reminder']] as const).map(([k, label]) => (
-                      <button key={k} style={{ ...menuItem, ...(filter.kind === k ? { color: 'var(--coral)', fontWeight: 700 } : {}) }} onClick={() => { setFilter({ kind: k }); setFilterOpen(false) }}>{label}</button>
+                      <button key={k} style={{ ...menuItem, ...(filter.kind === k ? { background: '#f4f4f5', fontWeight: 600 } : {}) }} onClick={() => { setFilter({ kind: k }); setFilterOpen(false) }}>{label}</button>
                     ))}
-                    {allNotebooks.length > 0 && <div style={{ borderTop: '1px solid var(--border)', margin: '5px 0' }} />}
-                    {allNotebooks.length > 0 && <p style={{ margin: '4px 10px 4px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Notebooks</p>}
+                    {allNotebooks.length > 0 && <div style={{ borderTop: '1px solid #f0f0f2', margin: '5px 4px' }} />}
+                    {allNotebooks.length > 0 && <p style={{ margin: '4px 10px 4px', fontSize: 12.5, fontWeight: 600, color: '#71717a' }}>Notebooks</p>}
                     {allNotebooks.map(nb => (
-                      <button key={nb} style={{ ...menuItem, display: 'flex', alignItems: 'center', gap: 7, ...(filter.kind === 'notebook' && filter.notebook === nb ? { color: 'var(--coral)', fontWeight: 700 } : {}) }} onClick={() => { setFilter({ kind: 'notebook', notebook: nb }); setFilterOpen(false) }}>
+                      <button key={nb} style={{ ...menuItem, display: 'flex', alignItems: 'center', gap: 7, ...(filter.kind === 'notebook' && filter.notebook === nb ? { background: '#f4f4f5', fontWeight: 600 } : {}) }} onClick={() => { setFilter({ kind: 'notebook', notebook: nb }); setFilterOpen(false) }}>
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nb}</span>
                       </button>
                     ))}
-                    {allTags.length > 0 && <div style={{ borderTop: '1px solid var(--border)', margin: '5px 0' }} />}
-                    {allTags.length > 0 && <p style={{ margin: '4px 10px 4px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Tags</p>}
+                    {allTags.length > 0 && <div style={{ borderTop: '1px solid #f0f0f2', margin: '5px 4px' }} />}
+                    {allTags.length > 0 && <p style={{ margin: '4px 10px 4px', fontSize: 12.5, fontWeight: 600, color: '#71717a' }}>Tags</p>}
                     {allTags.map(t => (
-                      <button key={t} style={{ ...menuItem, ...(filter.kind === 'tag' && filter.tag === t ? { color: 'var(--coral)', fontWeight: 700 } : {}) }} onClick={() => { setFilter({ kind: 'tag', tag: t }); setFilterOpen(false) }}>#{t}</button>
+                      <button key={t} style={{ ...menuItem, ...(filter.kind === 'tag' && filter.tag === t ? { background: '#f4f4f5', fontWeight: 600 } : {}) }} onClick={() => { setFilter({ kind: 'tag', tag: t }); setFilterOpen(false) }}>#{t}</button>
                     ))}
                   </div>
                 </>)}
@@ -650,7 +665,7 @@ export default function NotesPage() {
                     <line x1="48" y1="68" x2="66" y2="68" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" />
                     <path d="M92 30 q7 5 6 15" fill="none" stroke="#d1d5db" strokeWidth="3" strokeLinecap="round" />
                   </svg>
-                  <p style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>Create your first note</p>
+                  <p style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 800, letterSpacing: '-.01em', color: 'var(--ink)' }}>Create your first note</p>
                   <p style={{ margin: 0, fontSize: 13.5, color: 'var(--slate)', lineHeight: 1.55 }}>
                     Click the <button onClick={createNote} style={{ background: 'none', border: 'none', color: 'var(--coral)', fontWeight: 700, cursor: 'pointer', padding: 0, fontSize: 13.5 }}>New note</button> button above to get started.
                   </p>
@@ -668,10 +683,10 @@ export default function NotesPage() {
                 <div key={n.id} className={'note-row' + (on ? ' on' : '')} onClick={() => tab !== 'trash' && setActiveId(n.id)} style={tab === 'trash' ? { cursor: 'default' } : {}}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     {n.pinned && tab === 'notes' && <svg width="12" height="12" viewBox="0 0 24 24" fill="var(--coral)" stroke="none"><path d="M12 2l2.4 7.4H22l-6 4.4 2.3 7.2L12 16.8 5.7 21l2.3-7.2-6-4.4h7.6z"/></svg>}
-                    <p style={{ margin: 0, flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.title?.trim() || 'Untitled'}</p>
+                    <p style={{ margin: 0, flex: 1, fontSize: 14.5, fontWeight: 600, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.title?.trim() || 'Untitled'}</p>
                     {n.is_public && tab !== 'trash' && <span title="Shared" style={{ color: 'var(--coral)', display: 'flex' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></span>}
                   </div>
-                  <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--slate)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{plain || 'No text'}</p>
+                  <p style={{ margin: '3px 0 0', fontSize: 13, color: '#8e8e93', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{plain || 'No text'}</p>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 7, flexWrap: 'wrap' }}>
                     {n.reminder_at && <span className="chip" style={{ background: '#eef2ff', color: '#4f46e5' }}>
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
@@ -690,12 +705,12 @@ export default function NotesPage() {
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                       {n.created_by && n.created_by !== uid ? (n.created_by_name || 'Team') : 'Team'}
                     </span>}
-                    <span style={{ fontSize: 11, color: 'var(--slate)', marginLeft: 'auto' }}>{fmtAgo(tab === 'trash' ? n.trashed_at || n.updated_at : n.updated_at)}</span>
+                    <span style={{ fontSize: 12, color: '#a1a1aa', marginLeft: 'auto' }}>{fmtAgo(tab === 'trash' ? n.trashed_at || n.updated_at : n.updated_at)}</span>
                   </div>
                   {tab === 'trash' && (
-                    <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-                      <button onClick={e => { e.stopPropagation(); restoreNote(n.id) }} style={{ fontSize: 12, fontWeight: 700, color: 'var(--coral)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Restore</button>
-                      <button onClick={e => { e.stopPropagation(); deleteForever(n.id) }} style={{ fontSize: 12, fontWeight: 700, color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Delete forever</button>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                      <button onClick={e => { e.stopPropagation(); restoreNote(n.id) }} style={{ height: 28, padding: '0 12px', fontSize: 12.5, fontWeight: 600, color: '#18181b', background: '#ececef', border: 'none', borderRadius: 999, cursor: 'pointer' }}>Restore</button>
+                      <button onClick={e => { e.stopPropagation(); deleteForever(n.id) }} style={{ height: 28, padding: '0 12px', fontSize: 12.5, fontWeight: 600, color: '#dc2626', background: '#fef2f2', border: 'none', borderRadius: 999, cursor: 'pointer' }}>Delete forever</button>
                     </div>
                   )}
                 </div>
@@ -706,42 +721,42 @@ export default function NotesPage() {
           {/* Trash pinned at the bottom */}
           <div className={'trash-bar' + (tab === 'trash' ? ' on' : '')} onClick={() => setTab(tab === 'trash' ? 'notes' : 'trash')}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-            {tab === 'trash' ? '‹ Back to Notes' : 'Trash'}
-            {trashList.length > 0 && tab !== 'trash' && <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--slate)' }}>{trashList.length}</span>}
+            {tab === 'trash' ? 'Back to notes' : 'Trash'}
+            {trashList.length > 0 && tab !== 'trash' && <span style={{ marginLeft: 'auto', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 999, background: '#ececef', fontSize: 11.5, fontWeight: 700, color: '#52525b', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>{trashList.length}</span>}
           </div>
         </div>
 
         <div className="notes-editor">
           {!note ? (
-            <div style={{ padding: 60, textAlign: 'center', color: 'var(--slate)', fontSize: 14, margin: 'auto' }}>{tab === 'trash' ? 'Restore a note to edit it.' : 'Select a note, or create one.'}</div>
+            <div style={{ padding: 60, textAlign: 'center', color: '#8e8e93', fontSize: 14.5, margin: 'auto' }}>{tab === 'trash' ? 'Restore a note to edit it.' : 'Select a note, or create one.'}</div>
           ) : (
             <>
               {/* Fixed top: meta actions + the editor toolbar (portaled here) */}
               <div className="ne-top">
                 <div className="ne-meta">
-                  <button onClick={() => setActiveId(null)} className="notes-back" style={{ display: 'none', alignItems: 'center', background: 'none', border: 'none', color: 'var(--coral)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>‹ Notes</button>
+                  <button onClick={() => setActiveId(null)} className="notes-back" style={{ ...metaBtn, display: 'none', alignItems: 'center', gap: 4 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>Notes</button>
                   <span>{saving ? 'Saving…' : 'Saved'} · {fmtAgo(note.updated_at)}</span>
                   <span style={{ flex: 1 }} />
                   {!note.cover_image && <>
-                    <button onClick={() => coverInput.current?.click()} style={metaBtn}>＋ Cover</button>
+                    <button onClick={() => coverInput.current?.click()} style={metaBtn}>Add cover</button>
                     <button onClick={() => setCoverGallery(true)} style={metaBtn}>Gallery</button>
                   </>}
                   <button onClick={previewNote} style={{ ...metaBtn, display: 'inline-flex', alignItems: 'center', gap: 5 }} title="Open the shared view in a new tab">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
                     Preview
                   </button>
-                  <button onClick={shareNote} style={{ ...metaBtn, color: 'var(--coral)', borderColor: 'var(--coral)', fontWeight: 700 }}>{note.is_public ? 'Sharing' : 'Share'}</button>
+                  <button onClick={shareNote} style={{ ...metaBtn, ...(note.is_public ? { background: 'color-mix(in srgb, #22c55e 12%, #fff)', color: '#15803d' } : { background: '#18181b', color: '#fff' }) }}>{note.is_public ? 'Sharing' : 'Share'}</button>
                   <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
                     <input type="checkbox" checked={!!note.allow_public_edit} onChange={e => queueSave({ ...note, allow_public_edit: e.target.checked })} style={{ width: 14, height: 14, accentColor: 'var(--coral)' }} />
                     Viewers can edit
                   </label>
                   <div style={{ position: 'relative' }}>
-                    <button className="icon-btn" onClick={() => setMoreOpen(v => !v)} title="More" style={{ width: 30, height: 30 }}>
+                    <button className="icon-btn" onClick={() => setMoreOpen(v => !v)} title="More" aria-label="More" style={{ width: 32, height: 32 }}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
                     </button>
                     {moreOpen && (<>
                       <div onClick={() => setMoreOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
-                      <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 41, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.18)', padding: 6, minWidth: 190 }}>
+                      <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 41, background: '#fff', borderRadius: 16, boxShadow: '0 0 0 1px rgba(0,0,0,.06), 0 16px 40px -8px rgba(0,0,0,.22)', padding: 6, minWidth: 190 }}>
                         <button style={menuItem} onClick={() => { setMoreOpen(false); setTeamShareOpen(true) }}>
                           Share with team…
                         </button>
@@ -749,20 +764,20 @@ export default function NotesPage() {
                         <button style={menuItem} onClick={() => { queueSave({ ...note, pinned: !note.pinned }); setMoreOpen(false) }}>{note.pinned ? 'Unpin' : 'Pin to top'}</button>
                         <button style={menuItem} onClick={copyLink}>Copy link</button>
                         <button style={menuItem} onClick={printNote}>Print</button>
-                        <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
+                        <div style={{ borderTop: '1px solid #f0f0f2', margin: '4px 4px' }} />
                         <button style={{ ...menuItem, color: '#dc2626' }} onClick={() => trashNote(note.id)}>Move to Trash</button>
                       </div>
                     </>)}
                     {teamShareOpen && (<>
                       <div onClick={() => setTeamShareOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
-                      <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 41, background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 14px 34px rgba(0,0,0,0.18)', padding: 8, minWidth: 240, maxHeight: 340, overflowY: 'auto' }}>
-                        <p style={{ margin: '2px 8px 8px', fontSize: 12.5, fontWeight: 800, color: 'var(--ink)' }}>Share this note</p>
+                      <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 41, background: '#fff', borderRadius: 16, boxShadow: '0 0 0 1px rgba(0,0,0,.06), 0 16px 40px -8px rgba(0,0,0,.22)', padding: 8, minWidth: 240, maxHeight: 340, overflowY: 'auto' }}>
+                        <p style={{ margin: '4px 8px 8px', fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>Share this note</p>
                         <label style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 9px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}
                           onMouseEnter={e => (e.currentTarget.style.background = 'var(--canvas)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                           <input type="checkbox" checked={!!note.shared_with_team} onChange={e => queueSave({ ...note, shared_with_team: e.target.checked })} style={{ width: 16, height: 16, accentColor: 'var(--coral)' }} />
                           Everyone on the team
                         </label>
-                        {team.filter(m => m.id && m.id !== uid).length > 0 && <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0' }} />}
+                        {team.filter(m => m.id && m.id !== uid).length > 0 && <div style={{ borderTop: '1px solid #f0f0f2', margin: '6px 4px' }} />}
                         {team.filter(m => m.id && m.id !== uid).map(m => {
                           const on = (note.shared_members || []).some(x => x.id === m.id)
                           return (
@@ -771,7 +786,7 @@ export default function NotesPage() {
                               <input type="checkbox" checked={on || !!note.shared_with_team} disabled={!!note.shared_with_team}
                                 onChange={e => { const cur = note.shared_members || []; const next = e.target.checked ? [...cur, { id: m.id, name: m.name }] : cur.filter(x => x.id !== m.id); queueSave({ ...note, shared_members: next }) }}
                                 style={{ width: 16, height: 16, accentColor: 'var(--coral)' }} />
-                              <span style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, flexShrink: 0 }}>{m.name.charAt(0).toUpperCase()}</span>
+                              <span style={{ width: 24, height: 24, borderRadius: '50%', background: '#f4f4f5', color: '#3f3f46', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, flexShrink: 0 }}>{m.name.charAt(0).toUpperCase()}</span>
                               {m.name}
                             </label>
                           )
@@ -793,7 +808,7 @@ export default function NotesPage() {
               <div style={{ position: 'relative', marginBottom: 10 }}>
                 {(() => { const curNb = notebookOf(note); return (
                 <button type="button" onClick={() => setNbMenu(v => !v)}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '5px 10px', borderRadius: 9, border: '1px solid var(--border)', background: curNb ? 'var(--peach)' : '#fff', color: curNb ? 'var(--coral)' : 'var(--slate)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 32, padding: '0 12px', borderRadius: 999, border: 'none', background: curNb ? 'color-mix(in srgb, #8b5cf6 12%, #fff)' : '#f4f4f5', color: curNb ? '#6d28d9' : '#52525b', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
                   {curNb || 'Add to a notebook'}
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
@@ -819,7 +834,7 @@ export default function NotesPage() {
                         ))}
                         <div style={{ display: 'flex', gap: 6, padding: 6, borderTop: '1px solid var(--border)', marginTop: 4 }}>
                           <input value={nbNew} onChange={e => setNbNew(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && nbNew.trim()) setNb(nbNew.trim()) }}
-                            placeholder="New notebook…" style={{ flex: 1, minWidth: 0, border: '1px solid var(--border)', borderRadius: 8, padding: '7px 9px', fontSize: 13, outline: 'none' }} />
+                            placeholder="New notebook…" style={{ flex: 1, minWidth: 0, border: '1.5px solid transparent', background: '#f4f4f5', borderRadius: 10, padding: '7px 10px', fontSize: 13, outline: 'none' }} />
                           <button type="button" disabled={!nbNew.trim()} onClick={() => nbNew.trim() && setNb(nbNew.trim())}
                             style={{ border: 'none', borderRadius: 8, padding: '0 12px', background: nbNew.trim() ? 'var(--coral)' : 'var(--border)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: nbNew.trim() ? 'pointer' : 'default' }}>Add</button>
                         </div>
@@ -853,7 +868,7 @@ export default function NotesPage() {
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                     {NOTE_TEMPLATES.map(t => (
                       <button key={t.label} onClick={() => queueSave({ ...note, title: note.title || t.title || '', body: t.body || note.body, checklist: t.checklist ? t.checklist.map(text => ({ id: rid(), text, done: false })) : note.checklist })}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 14px', borderRadius: 20, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 36, padding: '0 14px', borderRadius: 999, border: 'none', background: '#f4f4f5', color: 'var(--ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
                         <span style={{ fontSize: 15 }}>{t.icon}</span>{t.label}
                       </button>
                     ))}
@@ -929,7 +944,7 @@ export default function NotesPage() {
                             {chkDateFor === c.id && (
                               <>
                                 <input type="date" autoFocus value={dueInputValue(c.due)} onChange={e => patchCheck(c.id, { due: dueFromInput(e.target.value) })}
-                                  style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '5px 8px', fontSize: 13, outline: 'none' }} />
+                                  style={{ border: '1.5px solid transparent', background: '#f4f4f5', borderRadius: 10, padding: '5px 9px', fontSize: 13, outline: 'none' }} />
                                 {c.due && <button onClick={() => { patchCheck(c.id, { due: null }); setChkDateFor(null) }} style={{ border: 'none', background: 'none', color: 'var(--slate)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700 }}>Clear</button>}
                                 <button onClick={() => setChkDateFor(null)} style={{ border: 'none', background: 'none', color: 'var(--coral)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700 }}>Done</button>
                               </>
@@ -977,7 +992,7 @@ export default function NotesPage() {
                   const gi = (note.attachments || []).indexOf(a)
                   const nm = a.name || 'Voice note'
                   return (
-                    <div key={gi} style={{ border: '1px solid var(--border)', borderRadius: 12, marginBottom: 8, background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.03)', padding: '8px 10px 10px' }}>
+                    <div key={gi} style={{ borderRadius: 16, marginBottom: 8, background: '#fff', boxShadow: '0 0 0 1px rgba(0,0,0,.06), 0 1px 2px rgba(16,24,40,.04)', padding: '8px 10px 10px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
                         <input value={nm} onChange={e => setAllAttachments((note.attachments || []).map((x, j) => j === gi ? { ...x, name: e.target.value } : x))}
@@ -1007,7 +1022,7 @@ export default function NotesPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                   {(note.linked_tasks || []).length === 0 && <p style={{ margin: 0, fontSize: 13, color: 'var(--slate)' }}>No tasks linked.</p>}
                   {(note.linked_tasks || []).map(t => (
-                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px', borderRadius: 9, border: '1px solid var(--border)', background: '#fff' }}>
+                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 12px', borderRadius: 14, background: '#fff', boxShadow: '0 0 0 1px rgba(0,0,0,.06)' }}>
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={t.done ? '#16a34a' : 'var(--coral)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>{t.done ? <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></> : <><circle cx="12" cy="12" r="9"/></>}</svg>
                       <button onClick={() => router.push(`/admin/tasks?task=${t.id}`)} title="Open task"
                         style={{ flex: 1, minWidth: 0, textAlign: 'left', border: 'none', background: 'none', color: 'var(--ink)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', padding: 0, textDecoration: t.done ? 'line-through' : 'none' }}>{t.title || 'Untitled task'}</button>
@@ -1023,9 +1038,9 @@ export default function NotesPage() {
                   </button>
                   {taskPicker && (<>
                     <div onClick={() => setTaskPicker(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
-                    <div style={{ position: 'absolute', top: '110%', left: 0, zIndex: 41, width: 320, maxWidth: '90vw', background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 14px 34px rgba(0,0,0,0.18)', padding: 8 }}>
+                    <div style={{ position: 'absolute', top: '110%', left: 0, zIndex: 41, width: 320, maxWidth: '90vw', background: '#fff', borderRadius: 16, boxShadow: '0 0 0 1px rgba(0,0,0,.06), 0 16px 40px -8px rgba(0,0,0,.22)', padding: 8 }}>
                       <input autoFocus value={taskQuery} onChange={e => setTaskQuery(e.target.value)} placeholder="Search tasks…"
-                        style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, outline: 'none', marginBottom: 6 }} />
+                        style={{ width: '100%', boxSizing: 'border-box', padding: '8px 12px', borderRadius: 10, border: '1.5px solid transparent', background: '#f4f4f5', fontSize: 13, outline: 'none', marginBottom: 6 }} />
                       <div style={{ maxHeight: 260, overflowY: 'auto' }}>
                         {(() => {
                           const q = taskQuery.trim().toLowerCase()
@@ -1048,7 +1063,7 @@ export default function NotesPage() {
               </div>
 
               {(note.edit_log || []).length > 0 && (
-                <div style={{ marginTop: 22, padding: '12px 14px', borderRadius: 12, background: 'var(--canvas)', border: '1px solid var(--border)' }}>
+                <div style={{ marginTop: 22, padding: '12px 14px', borderRadius: 16, background: '#fafafa', boxShadow: '0 0 0 1px rgba(0,0,0,.05)' }}>
                   <p style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Contributions from viewers</p>
                   {(note.edit_log || []).slice().reverse().slice(0, 8).map((e, i) => (
                     <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--ink)', padding: '3px 0' }}>
@@ -1076,14 +1091,14 @@ export default function NotesPage() {
                   </button>
                   {remOpen && (<>
                     <div onClick={() => setRemOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
-                    <div style={{ position: 'absolute', bottom: '120%', left: 0, zIndex: 41, background: '#fff', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,0.18)', padding: 8, minWidth: 220 }}>
+                    <div style={{ position: 'absolute', bottom: '120%', left: 0, zIndex: 41, background: '#fff', borderRadius: 16, boxShadow: '0 0 0 1px rgba(0,0,0,.06), 0 16px 40px -8px rgba(0,0,0,.22)', padding: 8, minWidth: 220 }}>
                       <button style={remItem} onClick={() => setReminder(presetIso(1))}>Tomorrow, 9:00 AM</button>
                       <button style={remItem} onClick={() => setReminder(presetIso(2))}>In 2 days, 9:00 AM</button>
                       <button style={remItem} onClick={() => setReminder(presetIso(7))}>In 1 week, 9:00 AM</button>
                       <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0', paddingTop: 8 }}>
                         <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--slate)', display: 'block', margin: '0 6px 5px' }}>Pick date &amp; time</label>
                         <input type="datetime-local" value={toLocalInput(note.reminder_at)} onChange={e => setReminder(fromLocalInput(e.target.value))}
-                          style={{ width: '100%', boxSizing: 'border-box', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 9px', fontSize: 12.5 }} />
+                          style={{ width: '100%', boxSizing: 'border-box', border: '1.5px solid transparent', background: '#f4f4f5', borderRadius: 10, padding: '7px 10px', fontSize: 12.5 }} />
                       </div>
                       {note.reminder_at && <button style={{ ...remItem, color: '#dc2626' }} onClick={() => setReminder(null)}>Remove reminder</button>}
                     </div>
@@ -1121,9 +1136,9 @@ export default function NotesPage() {
           <div onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: '92vw', background: '#fff', borderRadius: 16, padding: 22 }}>
             <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>Share note</h3>
             <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>Anyone with this link can open the note{note?.allow_public_edit ? ' and help edit it' : ''}. {note?.allow_public_edit ? '' : 'Turn on “Viewers can edit” to allow contributions.'}</p>
-            <input readOnly value={shareOpen.url} onFocus={e => e.currentTarget.select()} style={{ width: '100%', boxSizing: 'border-box', padding: '11px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, marginBottom: 14 }} />
+            <input readOnly value={shareOpen.url} onFocus={e => e.currentTarget.select()} style={{ width: '100%', boxSizing: 'border-box', padding: '11px 14px', borderRadius: 12, border: '1.5px solid transparent', background: '#f4f4f5', fontSize: 13, marginBottom: 14 }} />
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <a href={shareOpen.url} target="_blank" rel="noreferrer" style={{ padding: '10px 16px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 13.5, fontWeight: 700, textDecoration: 'none' }}>Open</a>
+              <a href={shareOpen.url} target="_blank" rel="noreferrer" style={{ padding: '10px 16px', borderRadius: 999, border: 'none', background: '#f4f4f5', color: 'var(--ink)', fontSize: 13.5, fontWeight: 700, textDecoration: 'none' }}>Open</a>
               <button onClick={async () => { try { await navigator.clipboard.writeText(shareOpen.url) } catch {}; showToast('Copied') }} style={{ padding: '10px 18px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Copy link</button>
             </div>
           </div>
@@ -1138,10 +1153,10 @@ export default function NotesPage() {
   )
 }
 
-const coverBtn: React.CSSProperties = { padding: '5px 11px', borderRadius: 8, border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', backdropFilter: 'blur(4px)' }
-const metaBtn: React.CSSProperties = { padding: '4px 10px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }
-const menuItem: React.CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 7, border: 'none', background: 'transparent', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
-const remItem: React.CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 7, border: 'none', background: 'transparent', color: 'var(--ink)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }
+const coverBtn: React.CSSProperties = { padding: '6px 12px', borderRadius: 999, border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', backdropFilter: 'blur(4px)' }
+const metaBtn: React.CSSProperties = { height: 30, padding: '0 12px', borderRadius: 999, border: 'none', background: '#f4f4f5', color: '#3f3f46', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }
+const menuItem: React.CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', borderRadius: 10, border: 'none', background: 'transparent', color: 'var(--ink)', fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }
+const remItem: React.CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', borderRadius: 10, border: 'none', background: 'transparent', color: 'var(--ink)', fontSize: 13.5, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }
 
 // Quick-start templates shown on an empty note.
 const NOTE_TEMPLATES: { label: string; icon: string; title?: string; body?: string; checklist?: string[] }[] = [

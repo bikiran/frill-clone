@@ -119,8 +119,8 @@ export default function BusinessMemoryPage() {
       <div className="bm-page">
         <nav className="bm-crumbs" aria-label="Breadcrumb"><Link href="/admin/agents">AI Agents</Link><span aria-hidden="true">/</span><span>Business memory</span></nav>
         <div style={{ margin: '8px 0 20px' }}>
-          <h1 style={{ margin: 0, fontSize: 'clamp(22px, 3.4vw, 30px)', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--ink)' }}>Business memory</h1>
-          <p style={{ margin: '4px 0 0', fontSize: 14, color: 'var(--slate)', maxWidth: 680, lineHeight: 1.55 }}>How your AI sounds and the rules it always follows. It’s part of every AI reply and draft in Colvy — agents, auto-replies, inbox drafts, review and comment replies — and changes apply from the next message.</p>
+          <h1 style={{ margin: 0, fontSize: 'clamp(26px, 3.4vw, 30px)', fontWeight: 800, letterSpacing: '-0.025em', lineHeight: 1.1, color: 'var(--ink)' }}>Business memory</h1>
+          <p style={{ margin: '8px 0 0', fontSize: 14.5, color: '#71717a', maxWidth: 680, lineHeight: 1.55 }}>How your AI sounds and the rules it always follows. It’s part of every AI reply and draft in Colvy — agents, auto-replies, inbox drafts, review and comment replies — and changes apply from the next message.</p>
         </div>
         {loaded && <KnowledgeNote coverage={coverage} />}
 
@@ -600,4 +600,30 @@ textarea.bm-input{min-height:44px}
 .bm-note svg{flex-shrink:0;margin-top:2px}
 .bm-note.warn{background:#fffaeb;color:#93370d;border:1px solid #fedf89}
 .bm-note.err{background:#fef3f2;color:#b42318;border:1px solid #fecdca}
+/* The soft card-and-pill look shared with the rest of the admin. */
+.bm-page{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.bm-page button::before{display:none}
+.bm-card,.bm-know{border-color:transparent;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04)}
+.bm-learn{border-color:color-mix(in srgb,var(--coral) 30%,transparent)}
+.bm-h{font-size:16px}
+.bm-p{color:#71717a}
+.bm-label{font-size:12.5px;font-weight:600;letter-spacing:0;text-transform:none;color:#71717a}
+.bm-input,.bm-num{border:1.5px solid transparent;background:#f4f4f5}
+.bm-input:focus,.bm-num:focus{background:#fff;border-color:#d4d4d8!important}
+.bm-primary{border-radius:999px;box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 1px 2px rgba(16,24,40,.12)}
+.bm-ghost{border:none;border-radius:999px;background:#f4f4f5;font-weight:600}
+.bm-ghost:hover:not(:disabled){background:#ececef}
+.bm-icon{border-radius:50%}
+.bm-item,.bm-prop{border-color:transparent;box-shadow:0 0 0 1px rgba(0,0,0,.07)}
+.bm-tone{border-color:transparent;background:#f4f4f5}
+.bm-tone.on{border-color:var(--coral);background:color-mix(in srgb,var(--coral) 6%,#fff)}
+.bm-row{border:none;background:#fafafa}
+.bm-chip{border-style:solid;border-color:transparent;background:#f4f4f5}
+.bm-chip:hover{border-color:transparent;background:#ececef}
+.bm-chip.covered{background:#fafafa}
+.bm-switch.on{background:#34c759}
+.bm-know-link{border-radius:999px;border:none}
+.bm-stat-ic{border:none;box-shadow:0 0 0 1px rgba(0,0,0,.07)}
+.bm-note.warn{border:none;box-shadow:0 0 0 1px #fde68a}
+.bm-note.err{border:none;box-shadow:0 0 0 1px #fecdca}
 `

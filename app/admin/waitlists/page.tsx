@@ -709,7 +709,7 @@ const WL_CSS = `
 .wl-auto{display:flex;align-items:flex-start;gap:16px;margin-bottom:18px;padding:14px 16px;border-radius:16px;background:#fafafa;cursor:pointer}
 .wl-switch{appearance:none;-webkit-appearance:none;position:relative;width:42px;height:24px;margin:2px 0 0;border-radius:999px;background:#d4d4d8;cursor:pointer;flex-shrink:0;transition:background-color .2s}
 .wl-switch::after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:transform .2s cubic-bezier(.22,1,.36,1)}
-.wl-switch:checked{background:#22c55e}
+.wl-switch:checked{background:#34c759}
 .wl-switch:checked::after{transform:translateX(18px)}
 .wl-switch:focus{box-shadow:none}
 .wl-switch:focus-visible{box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 28%,transparent)}
