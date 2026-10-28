@@ -15,10 +15,14 @@
 //       signs in (or signs up) to Colvy, where the Shopify page offers to
 //       connect the store to their workspace. The claim token lives only in an
 //       httpOnly cookie on the browser that did the install.
+//
+// The same flow serves the privately shared app (lib/shopify-auth): the app
+// that signed the request is carried through the state, the pending install
+// and the store row (app_client_id), and is used for every token exchange.
 
 import crypto from 'crypto'
 import type { NextRequest, NextResponse } from 'next/server'
-import { SHOPIFY_SCOPES, tokenColumns, type ShopifyTokenSet } from '@/lib/shopify-auth'
+import { SHOPIFY_SCOPES, appClientId, tokenColumns, type ShopifyApp, type ShopifyTokenSet } from '@/lib/shopify-auth'
 import { ensureAppMetafields, ensureStoreWebhooks } from '@/lib/shopify-sync'
 import { ShopifyService } from '@/lib/shopify-service'
 import { adoptShopifyBilling } from '@/lib/shopify-billing'
@@ -73,6 +77,18 @@ export async function workspacePage(db: any, companyId: string | null | undefine
   return co?.slug ? `https://${co.slug}.colvy.com/admin/integrations/shopify` : FALLBACK_PAGE
 }
 
+// app_client_id arrived with migration V422. Until it has been run, writes for
+// the public app (where it's null anyway) go through without it, so installs
+// keep working; the private app needs the migration.
+export async function writeWithApp(row: Record<string, any>, write: (row: Record<string, any>) => PromiseLike<any>): Promise<any> {
+  const r = await write(row)
+  if (r.error && row.app_client_id == null && /app_client_id/.test(String(r.error.message || ''))) {
+    const rest = { ...row }; delete rest.app_client_id
+    return write(rest)
+  }
+  return r
+}
+
 // Take (once) the "Install from Shopify" intent behind a cookie value.
 export async function takeIntent(db: any, nonce: string | undefined | null) {
   if (!nonce) return null
@@ -86,12 +102,12 @@ export async function takeIntent(db: any, nonce: string | undefined | null) {
 // Save a store against a workspace: tokens, live updates (webhooks), and the
 // theme extension's settings. Webhook/metafield failures don't undo the
 // connection — they're recorded and the store page (or the cron) retries.
-export async function connectStore(db: any, a: { companyId: string; userId?: string | null; shop: string; tokens: ShopifyTokenSet; storeName?: string | null }): Promise<string> {
+export async function connectStore(db: any, a: { companyId: string; userId?: string | null; shop: string; tokens: ShopifyTokenSet; storeName?: string | null; app?: ShopifyApp | null }): Promise<string> {
   const svc = new ShopifyService({ storeDomain: a.shop, accessToken: a.tokens.accessToken })
   let name = a.storeName || null
   if (!name) { try { name = (await svc.getShopInfo())?.name || null } catch {} }
 
-  const { data: integ, error } = await db.from('shopify_integrations').upsert({
+  const { data: integ, error } = await writeWithApp({
     company_id: a.companyId,
     store_domain: a.shop,
     store_name: name || a.shop,
@@ -101,8 +117,11 @@ export async function connectStore(db: any, a: { companyId: string; userId?: str
     is_active: true,
     uninstalled_at: null,
     installed_by: a.userId || null,
+    // Which app the tokens belong to (null: the public app). Reinstalling
+    // through the other app switches the store over.
+    app_client_id: appClientId(a.app),
     updated_at: new Date().toISOString(),
-  }, { onConflict: 'company_id,store_domain' }).select('id').single()
+  }, row => db.from('shopify_integrations').upsert(row, { onConflict: 'company_id,store_domain' }).select('id').single())
   if (error || !integ) throw new Error(error?.message || 'Could not save the store')
 
   try {
@@ -111,8 +130,10 @@ export async function connectStore(db: any, a: { companyId: string; userId?: str
     await db.from('shopify_integrations').update({ last_error: `Webhooks: ${e?.message || 'failed'}`.slice(0, 500) }).eq('id', integ.id)
   }
   try { await ensureAppMetafields(db, { id: integ.id, company_id: a.companyId, auth_type: 'oauth', app_metafields: null }, svc) } catch {}
-  // Through the app, the Colvy plan is billed by Shopify (lib/shopify-billing).
-  try { await adoptShopifyBilling(db, a.companyId, integ.id) } catch {}
+  // Through the public app, the Colvy plan is billed by Shopify
+  // (lib/shopify-billing). Custom apps can't charge through Shopify, so a
+  // store on the private app leaves the workspace's billing as it was.
+  if (!a.app?.private) { try { await adoptShopifyBilling(db, a.companyId, integ.id) } catch {} }
   return integ.id
 }
 
@@ -125,11 +146,11 @@ export async function connectedElsewhere(db: any, shop: string, companyId: strin
 }
 
 // Park an install nobody in Colvy has claimed yet. Returns the claim token.
-export async function savePendingInstall(db: any, shop: string, tokens: ShopifyTokenSet, storeName: string | null): Promise<string> {
+export async function savePendingInstall(db: any, shop: string, tokens: ShopifyTokenSet, storeName: string | null, app?: ShopifyApp | null): Promise<string> {
   const claim = crypto.randomBytes(32).toString('hex')
   // Expired ones are useless; tidy them as we go.
   await db.from('shopify_pending_installs').delete().lt('expires_at', new Date().toISOString())
-  const { error } = await db.from('shopify_pending_installs').insert({
+  const { error } = await writeWithApp({
     claim_hash: hashToken(claim),
     shop,
     store_name: storeName,
@@ -138,8 +159,9 @@ export async function savePendingInstall(db: any, shop: string, tokens: ShopifyT
     token_expires_at: tokens.expiresAt,
     refresh_expires_at: tokens.refreshExpiresAt,
     scopes: tokens.scope || null,
+    app_client_id: appClientId(app),
     expires_at: new Date(Date.now() + PENDING_TTL_MS).toISOString(),
-  })
+  }, row => db.from('shopify_pending_installs').insert(row))
   if (error) throw new Error(error.message)
   return claim
 }

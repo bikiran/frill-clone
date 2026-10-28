@@ -1,7 +1,7 @@
-import { requireCompanyAccess } from '@/lib/company-access'
+import { SUPER_ADMIN, callerUser, requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { shopifyAppConfigured } from '@/lib/shopify-auth'
+import { appFor, privateInstallUrl, shopifyAppConfigured } from '@/lib/shopify-auth'
 import { ensureStoreWebhooks } from '@/lib/shopify-sync'
 import { planSelectionUrl } from '@/lib/shopify-billing'
 
@@ -26,6 +26,10 @@ export async function GET(req: NextRequest) {
     const db = admin()
     if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { data } = await db.from('shopify_integrations').select(SAFE_COLS).eq('company_id', companyId).order('created_at', { ascending: true })
+    // Which app each store is on (lib/shopify-auth). Read on its own: the column
+    // only exists after migration V422, and a miss just means the public app.
+    const { data: apps } = await db.from('shopify_integrations').select('id, app_client_id').eq('company_id', companyId)
+    const appOf = new Map<string, string | null>((apps || []).map((r: any) => [r.id, r.app_client_id || null]))
     const stores = await Promise.all((data || []).map(async (s: any) => {
       const [{ count: customers }, { count: linked }, { count: products }, { count: orders }, { data: job }] = await Promise.all([
         db.from('shopify_customers').select('id', { count: 'exact', head: true }).eq('integration_id', s.id),
@@ -34,7 +38,8 @@ export async function GET(req: NextRequest) {
         db.from('orders').select('id', { count: 'exact', head: true }).eq('company_id', companyId).eq('sales_channel', 'shopify').eq('metadata->shopify->>shop', s.store_domain),
         db.from('shopify_sync_jobs').select('id, status, phase, customers_synced, products_synced, orders_synced, message, error, updated_at').eq('integration_id', s.id).order('started_at', { ascending: false }).limit(1),
       ])
-      return { ...s, customers: customers || 0, linked: linked || 0, products: products || 0, orders: orders || 0, lastJob: job?.[0] || null }
+      const app = appFor(appOf.get(s.id))
+      return { ...s, private_app: app.private, api_key: app.key || null, customers: customers || 0, linked: linked || 0, products: products || 0, orders: orders || 0, lastJob: job?.[0] || null }
     }))
     // The app's API key is public (it's in every install URL); the theme editor
     // deep links for the storefront blocks need it.
@@ -45,7 +50,14 @@ export async function GET(req: NextRequest) {
       const { data: b } = await db.from('shopify_integrations').select('store_domain, billing').eq('id', co.billing_integration_id).maybeSingle()
       if (b) billing = { integrationId: co.billing_integration_id, needsPlan: !b.billing?.plan && !co.is_complimentary, planUrl: planSelectionUrl(b.store_domain) }
     }
-    return NextResponse.json({ stores, appConfigured: shopifyAppConfigured(), apiKey: process.env.SHOPIFY_API_KEY || null, billing })
+    // The privately shared app's install link, for Colvy's super admin only:
+    // it works for the one store it was made for. The store's handle is in the
+    // link (admin.shopify.com/store/<handle>/…), so the button can name it.
+    const link = privateInstallUrl()
+    const privateInstall = link && (await callerUser(req, db))?.email === SUPER_ADMIN
+      ? { store: String(link).match(/\/store\/([a-z0-9-]+)/i)?.[1] || null }
+      : null
+    return NextResponse.json({ stores, appConfigured: shopifyAppConfigured(), apiKey: process.env.SHOPIFY_API_KEY || null, billing, privateInstall })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

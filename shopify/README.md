@@ -46,7 +46,8 @@ Two things stay in the Dev Dashboard: **protected customer data** access
 (name, email, phone, address) and distribution.
 
 `client_id` must match `SHOPIFY_API_KEY` in Vercel (and the app's secret is
-`SHOPIFY_API_SECRET`).
+`SHOPIFY_API_SECRET`). `shopify.app.private.toml` is the privately shared copy
+(see **Private app** below).
 
 ## How a store connects
 
@@ -67,6 +68,48 @@ before any Colvy page. The flow (`lib/shopify-install.ts`):
 
 `SHOPIFY_APP_LISTING_URL` (Vercel) is where **Install from Shopify** goes;
 it defaults to `https://apps.shopify.com/colvy`.
+
+## Private app (connect a store before App Store approval)
+
+While the public Colvy app is in review, its listing
+(`apps.shopify.com/colvy`) doesn't exist yet. A second, **privately shared**
+copy of the app (Shopify calls it *custom distribution*) can connect a store in
+the meantime. Shopify's limits: one private app works for **one store** (or the
+stores of one Shopify Plus organisation), and custom apps **can't bill through
+Shopify**, so that workspace keeps Colvy's own billing.
+
+Once, in this order:
+
+1. **Shopify Dev Dashboard → Create app** → name it `Colvy (private)`.
+   **Distribution → Custom distribution** (this can't be changed later), enter
+   the store's `….myshopify.com` address and **Generate link**. Keep the link.
+2. **Config + storefront blocks.** Paste the app's **Client ID** into
+   `shopify/shopify.app.private.toml` (`client_id`, editable on GitHub), and
+   add a repository secret `SHOPIFY_PRIVATE_APP_AUTOMATION_TOKEN` (Dev
+   Dashboard → Colvy (private) → Settings → App automation token). The
+   "Deploy Shopify app" workflow then deploys the same URLs, permissions,
+   webhooks, app proxy and theme extension to it. From a computer instead:
+   `npm run build && npx shopify app deploy --config private`.
+3. **Protected customer data**: request the same fields as the public app in
+   the Dev Dashboard (Colvy (private) → API access).
+4. **Vercel → Environment variables**, then redeploy:
+   - `SHOPIFY_CUSTOM_API_KEY` — the private app's Client ID
+   - `SHOPIFY_CUSTOM_API_SECRET` — its Client secret
+   - `SHOPIFY_CUSTOM_INSTALL_URL` — the link from step 1
+5. **Supabase → SQL editor**: run `migrations/COLVY_V422_SHOPIFY_PRIVATE_APP.sql`.
+
+Then, signed in to Colvy as the super admin, open that store's workspace →
+**Integrations → Shopify → Install with private link**. Shopify installs the
+app, asks for permissions, and the store comes back connected to that
+workspace (it shows a **Private app** badge). Opening the install link
+directly works too: after signing in, the Shopify page asks **Finish connecting
+{store}**.
+
+**When the public app is approved:** install Colvy from the App Store on the
+same store and open it. Shopify shows the permission screen, and the store moves
+over to the public app (and to Shopify billing). Then uninstall Colvy (private)
+from the store. Its uninstall notice is ignored for a store that has already
+moved.
 
 ## Billing (Shopify App Pricing)
 

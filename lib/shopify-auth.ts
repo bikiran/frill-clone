@@ -18,8 +18,46 @@
 //   SHOPIFY_API_SECRET   client secret (also signs webhooks + OAuth callbacks)
 //   SHOPIFY_REDIRECT_URI optional; defaults to https://colvy.com/api/shopify/callback
 //   SHOPIFY_SCOPES       optional override of SHOPIFY_SCOPES below
+//
+// A second, privately shared app (Shopify "custom distribution": one store, or
+// the stores of one Plus organisation) can sit alongside the public one, so a
+// store can be connected before the public app is approved:
+//   SHOPIFY_CUSTOM_API_KEY / SHOPIFY_CUSTOM_API_SECRET   its client ID + secret
+//   SHOPIFY_CUSTOM_INSTALL_URL  optional: the install link the Dev Dashboard
+//                               generated for that store (shopify/README.md)
+// Requests are matched to the app whose secret signed them, and a store
+// connected through the private app keeps its client ID (app_client_id), so its
+// tokens are refreshed with that app. Custom apps can't use Shopify billing, so
+// those workspaces keep Colvy's own billing (lib/shopify-billing).
 
 import crypto from 'crypto'
+
+export type ShopifyApp = { key: string; secret: string; private: boolean }
+
+/** The configured apps: the public Colvy app first, then the private one. */
+export function shopifyApps(): ShopifyApp[] {
+  const out: ShopifyApp[] = []
+  const pub = { key: process.env.SHOPIFY_API_KEY || '', secret: process.env.SHOPIFY_API_SECRET || '' }
+  const priv = { key: process.env.SHOPIFY_CUSTOM_API_KEY || '', secret: process.env.SHOPIFY_CUSTOM_API_SECRET || '' }
+  if (pub.key && pub.secret) out.push({ ...pub, private: false })
+  if (priv.key && priv.secret && priv.key !== pub.key) out.push({ ...priv, private: true })
+  return out
+}
+const PUBLIC_APP = (): ShopifyApp => ({ key: process.env.SHOPIFY_API_KEY || '', secret: process.env.SHOPIFY_API_SECRET || '', private: false })
+
+/** What a store row keeps in app_client_id: the private app's client ID, else null (the public app). */
+export const appClientId = (app: ShopifyApp | null | undefined): string | null => (app?.private ? app.key : null)
+
+/** The app behind a stored app_client_id (null → the public app). */
+export function appFor(clientId?: string | null): ShopifyApp {
+  if (!clientId) return PUBLIC_APP()
+  // A private app whose keys were removed can't refresh anything: an empty
+  // secret makes Shopify refuse, and the store is flagged for reconnecting.
+  return shopifyApps().find(a => a.key === clientId) || { key: clientId, secret: '', private: true }
+}
+
+/** The private app's install link, when one is set up. */
+export const privateInstallUrl = () => (shopifyApps().some(a => a.private) && process.env.SHOPIFY_CUSTOM_INSTALL_URL) || null
 
 // Everything the WooCommerce-parity plan needs, asked for once at install so
 // later phases don't send every merchant back through a re-consent screen.
@@ -32,7 +70,7 @@ export const SHOPIFY_SCOPES = [
   'read_discounts', 'write_discounts',
 ].join(',')
 
-export const shopifyAppConfigured = () => !!(process.env.SHOPIFY_API_KEY && process.env.SHOPIFY_API_SECRET)
+export const shopifyAppConfigured = () => shopifyApps().length > 0
 export const shopifyRedirectUri = () => process.env.SHOPIFY_REDIRECT_URI || 'https://colvy.com/api/shopify/callback'
 const scopes = () => process.env.SHOPIFY_SCOPES || SHOPIFY_SCOPES
 
@@ -64,9 +102,9 @@ export function normalizeShop(input: string): string | null {
 }
 export const isShopDomain = (s: string) => SHOP_RE.test(String(s || ''))
 
-export function buildAuthorizeUrl(shop: string, state: string): string {
+export function buildAuthorizeUrl(shop: string, state: string, app: ShopifyApp = PUBLIC_APP()): string {
   const q = new URLSearchParams({
-    client_id: process.env.SHOPIFY_API_KEY || '',
+    client_id: app.key,
     scope: scopes(),
     redirect_uri: shopifyRedirectUri(),
     state,
@@ -96,6 +134,9 @@ export function verifyQueryHmac(params: URLSearchParams, secret = process.env.SH
   return safeEqual(digest, given)
 }
 
+/** The app that signed an OAuth callback / App URL request, or null if none did. */
+export const appForQuery = (params: URLSearchParams) => shopifyApps().find(a => verifyQueryHmac(params, a.secret)) || null
+
 // App proxy (storefront → /apps/colvy/* → us): drop `signature`, join each
 // repeated key's values with commas, sort the key=value pairs and concatenate
 // them with NO separator; HMAC-SHA256 hex with the app secret. Requests older
@@ -113,12 +154,18 @@ export function verifyProxySignature(params: URLSearchParams, opts: { secret?: s
   return Number.isFinite(ts) && Math.abs((opts.now ?? Date.now()) / 1000 - ts) <= maxAge
 }
 
+/** The app that signed an app proxy request, or null if none did. */
+export const appForProxy = (params: URLSearchParams) => shopifyApps().find(a => verifyProxySignature(params, { secret: a.secret })) || null
+
 // Webhooks: base64 HMAC-SHA256 of the RAW body in X-Shopify-Hmac-Sha256.
 export function verifyWebhookHmac(rawBody: string, header: string | null, secret = process.env.SHOPIFY_API_SECRET || ''): boolean {
   if (!header || !secret) return false
   const digest = crypto.createHmac('sha256', secret).update(rawBody, 'utf8').digest('base64')
   return safeEqual(digest, header)
 }
+
+/** The app that signed a webhook, or null if none did. */
+export const appForWebhook = (rawBody: string, header: string | null) => shopifyApps().find(a => verifyWebhookHmac(rawBody, header, a.secret)) || null
 
 export type ShopifyTokenSet = {
   accessToken: string
@@ -135,13 +182,13 @@ export class ShopifyAuthError extends Error {
   constructor(msg: string, reauth = false) { super(msg); this.reauth = reauth }
 }
 
-async function tokenRequest(shop: string, body: Record<string, string>): Promise<ShopifyTokenSet> {
+async function tokenRequest(shop: string, app: ShopifyApp, body: Record<string, string>): Promise<ShopifyTokenSet> {
   const res = await fetch(`https://${shop}/admin/oauth/access_token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
     body: new URLSearchParams({
-      client_id: process.env.SHOPIFY_API_KEY || '',
-      client_secret: process.env.SHOPIFY_API_SECRET || '',
+      client_id: app.key,
+      client_secret: app.secret,
       ...body,
     }).toString(),
   })
@@ -161,8 +208,8 @@ async function tokenRequest(shop: string, body: Record<string, string>): Promise
   }
 }
 
-export const exchangeCode = (shop: string, code: string) => tokenRequest(shop, { code, expiring: '1' })
-export const refreshAccessToken = (shop: string, refreshToken: string) => tokenRequest(shop, { grant_type: 'refresh_token', refresh_token: refreshToken })
+export const exchangeCode = (shop: string, code: string, app: ShopifyApp = PUBLIC_APP()) => tokenRequest(shop, app, { code, expiring: '1' })
+export const refreshAccessToken = (shop: string, refreshToken: string, app: ShopifyApp = PUBLIC_APP()) => tokenRequest(shop, app, { grant_type: 'refresh_token', refresh_token: refreshToken })
 
 // Columns to write for a token set.
 export const tokenColumns = (t: ShopifyTokenSet) => ({
@@ -193,7 +240,7 @@ export async function getAccessToken(db: any, integ: any, opts: { force?: boolea
 
   let t: ShopifyTokenSet
   try {
-    t = await refreshAccessToken(integ.store_domain, integ.refresh_token)
+    t = await refreshAccessToken(integ.store_domain, integ.refresh_token, appFor(integ.app_client_id))
   } catch (e: any) {
     if (e instanceof ShopifyAuthError && e.reauth) {
       await db.from('shopify_integrations').update({ needs_reauth: true, last_error: 'Shopify access expired — reconnect this store.', updated_at: new Date().toISOString() }).eq('id', integ.id)

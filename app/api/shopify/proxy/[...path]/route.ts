@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { verifyProxySignature } from '@/lib/shopify-auth'
+import { appForProxy } from '@/lib/shopify-auth'
 import { serviceFor } from '@/lib/shopify-sync'
 import { saveShopifyProducts } from '@/lib/shopify-products'
 import { joinShopifyWaitlist } from '@/lib/shopify-waitlist'
@@ -40,7 +40,7 @@ const json = (body: any, status = 200) => NextResponse.json(body, { status, head
 
 async function storeFor(req: NextRequest) {
   const qs = req.nextUrl.searchParams
-  if (!verifyProxySignature(qs)) return { error: json({ error: 'Invalid signature' }, 401) }
+  if (!appForProxy(qs)) return { error: json({ error: 'Invalid signature' }, 401) }
   const shop = String(qs.get('shop') || '').toLowerCase()
   const db = admin()
   const { data: integs } = await db.from('shopify_integrations').select('*').eq('store_domain', shop).eq('is_active', true).limit(1)

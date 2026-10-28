@@ -26,6 +26,8 @@ export default function ShopifyIntegrationPage() {
   const [appConfigured, setAppConfigured] = useState(true)
   const [apiKey, setApiKey] = useState<string | null>(null)
   const [billing, setBilling] = useState<{ integrationId: string; needsPlan: boolean; planUrl: string } | null>(null)
+  // The privately shared Shopify app's install link (super admin only; see lib/shopify-auth).
+  const [privateInstall, setPrivateInstall] = useState<{ store: string | null } | null>(null)
   const [loading, setLoading] = useState(true)
   const [installing, setInstalling] = useState<string | null>(null)
   // A store installed in Shopify that's waiting for a workspace (see lib/shopify-install).
@@ -45,6 +47,7 @@ export default function ShopifyIntegrationPage() {
     setAppConfigured(d.appConfigured !== false)
     setApiKey(d.apiKey || null)
     setBilling(d.billing || null)
+    setPrivateInstall(d.privateInstall || null)
     setActive('shopify', (d.stores || []).some((s: any) => s.is_active))
     return d.stores || []
   }
@@ -76,15 +79,16 @@ export default function ShopifyIntegrationPage() {
   }, [ready, companyId])
 
   // No store: "Install from Shopify" — Colvy remembers this workspace and opens
-  // the Colvy listing, where the merchant picks their store. A store already
-  // here: back through Shopify's permission screen (reconnect, new permissions).
-  const install = async (domain?: string) => {
+  // the Colvy listing, where the merchant picks their store (or, with
+  // via 'private', the private app's install link). A store already here: back
+  // through Shopify's permission screen (reconnect, new permissions).
+  const install = async (domain?: string, via?: 'private') => {
     if (!companyId) return
-    setInstalling(domain || 'new'); setError(''); setSuccess('')
+    setInstalling(domain || via || 'new'); setError(''); setSuccess('')
     try {
       const res = await authFetch('/api/shopify/install', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, shop: domain || undefined, returnTo: `${window.location.origin}/admin/integrations/shopify` }),
+        body: JSON.stringify({ companyId, shop: domain || undefined, via, returnTo: `${window.location.origin}/admin/integrations/shopify` }),
       })
       const d = await res.json()
       if (!res.ok || !d.url) throw new Error(d.error || 'Could not start the install')
@@ -217,6 +221,17 @@ export default function ShopifyIntegrationPage() {
       <p className="text-xs" style={{ color: 'var(--slate)', margin: '10px 0 0' }}>
         Already installed Colvy in Shopify? Open it from your Shopify admin under <strong>Apps → Colvy</strong> and it connects here.
       </p>
+      {privateInstall && (
+        <div className="sh-private">
+          <div className="sh-private-text">
+            <strong>Private app link</strong>
+            <span>Only Colvy admins see this. It installs the privately shared Colvy app on {privateInstall.store ? <b>{privateInstall.store}</b> : 'the one store it was made for'}, while the public app is in review.</span>
+          </div>
+          <button type="button" onClick={() => install(undefined, 'private')} disabled={!!installing} {...btn('secondary', 'md', 'sh-install')}>
+            {installing === 'private' ? 'Opening Shopify…' : <>Install with private link <Icon name="external" size={13} /></>}
+          </button>
+        </div>
+      )}
     </Card>
   )
 
@@ -224,6 +239,10 @@ export default function ShopifyIntegrationPage() {
     <IntegrationPage>
       <style>{`
         .sh-install { white-space: nowrap; }
+        .sh-private { display: flex; align-items: center; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap; margin-top: 14px; padding: 12px 14px; border-radius: 14px; background: var(--canvas, #f6f6f8); }
+        .sh-private-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 260px; font-size: 12.5px; line-height: 1.45; color: var(--slate); }
+        .sh-private-text strong { font-size: 13px; color: var(--ink); }
+        .sh-private-text b { color: var(--ink); font-weight: 600; }
         .sh-bar { height: 6px; border-radius: 99px; background: var(--canvas, #f1f1f4); overflow: hidden; position: relative; }
         .sh-bar span { position: absolute; inset: 0 auto 0 0; width: 40%; border-radius: 99px; background: #008060; animation: shSlide 1.2s ease-in-out infinite; }
         @keyframes shSlide { 0% { left: -40%; } 100% { left: 100%; } }
@@ -271,7 +290,8 @@ export default function ShopifyIntegrationPage() {
           return (
             <Card key={s.id} icon="store"
               title={<span className="flex items-center gap-2 flex-wrap">{s.store_name || s.store_domain}
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: status.bg, color: status.tone }}>{status.text}</span></span>}
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: status.bg, color: status.tone }}>{status.text}</span>
+                {s.private_app && <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: 'var(--canvas, #f1f1f4)', color: 'var(--slate)' }} title="Connected through Colvy’s privately shared Shopify app">Private app</span>}</span>}
               sub={s.store_domain}>
               <div className="sh-stats">
                 {[
@@ -317,14 +337,14 @@ export default function ShopifyIntegrationPage() {
                 </Notice></div>
               )}
 
-              {s.is_active && !s.needs_reauth && s.auth_type === 'oauth' && apiKey && (
+              {s.is_active && !s.needs_reauth && s.auth_type === 'oauth' && (s.api_key || apiKey) && (
                 <div className="sh-front mt-4">
                   <div className="text-xs font-semibold" style={{ color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '.04em' }}>On your store</div>
                   {[
                     { icon: 'chat', title: 'Chat bubble', sub: 'Your Colvy chat on every page of the store.', label: 'Turn on',
-                      href: `https://${s.store_domain}/admin/themes/current/editor?context=apps&template=index&activateAppId=${apiKey}/chat-widget` },
+                      href: `https://${s.store_domain}/admin/themes/current/editor?context=apps&template=index&activateAppId=${s.api_key || apiKey}/chat-widget` },
                     { icon: 'bell', title: '“Notify me” on sold-out products', sub: 'Shoppers leave a mobile or email; Colvy texts them when it’s back. Shows in Waitlists.', label: 'Add to product page',
-                      href: `https://${s.store_domain}/admin/themes/current/editor?template=product&addAppBlockId=${apiKey}/back-in-stock&target=mainSection` },
+                      href: `https://${s.store_domain}/admin/themes/current/editor?template=product&addAppBlockId=${s.api_key || apiKey}/back-in-stock&target=mainSection` },
                   ].map(x => (
                     <div key={x.title} className="sh-front-row">
                       <span className="sh-front-ic" aria-hidden="true"><Icon name={x.icon} size={16} /></span>

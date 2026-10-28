@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { requireCompanyAccess } from '@/lib/company-access'
-import { refreshAccessToken } from '@/lib/shopify-auth'
+import { appFor, refreshAccessToken } from '@/lib/shopify-auth'
 import {
   CLAIM_COOKIE, PENDING_COOKIE, clearInstallCookies, connectStore, connectedElsewhere,
   findPendingInstall, pendingTokens,
@@ -55,11 +55,12 @@ export async function POST(req: NextRequest) {
 
   try {
     let tokens = pendingTokens(p)
+    const app = appFor(p.app_client_id)
     // The access token lasts an hour; the claim can come close to that.
     if (tokens.refreshToken && tokens.expiresAt && new Date(tokens.expiresAt).getTime() - Date.now() < 5 * 60 * 1000) {
-      tokens = await refreshAccessToken(p.shop, tokens.refreshToken)
+      tokens = await refreshAccessToken(p.shop, tokens.refreshToken, app)
     }
-    const id = await connectStore(db, { companyId, userId: access.userId, shop: p.shop, tokens, storeName: p.store_name })
+    const id = await connectStore(db, { companyId, userId: access.userId, shop: p.shop, tokens, storeName: p.store_name, app })
     await db.from('shopify_pending_installs').delete().eq('id', p.id)
     const res = NextResponse.json({ ok: true, store: { id, store_name: p.store_name || p.shop } })
     clearInstallCookies(res, req, [CLAIM_COOKIE, PENDING_COOKIE])

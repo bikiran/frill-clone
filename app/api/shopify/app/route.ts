@@ -1,8 +1,8 @@
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { buildAuthorizeUrl, isShopDomain, shopifyAppConfigured, verifyQueryHmac } from '@/lib/shopify-auth'
-import { FALLBACK_PAGE, INTENT_COOKIE, clearInstallCookies, connectedElsewhere, hasAllScopes, takeIntent, workspacePage } from '@/lib/shopify-install'
+import { appClientId, appForQuery, buildAuthorizeUrl, isShopDomain } from '@/lib/shopify-auth'
+import { FALLBACK_PAGE, INTENT_COOKIE, clearInstallCookies, connectedElsewhere, hasAllScopes, takeIntent, workspacePage, writeWithApp } from '@/lib/shopify-install'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,18 +28,25 @@ const withParams = (to: string, params: Record<string, string>) => {
  * Shopify page. Anything else — a new install, a reinstall, new permissions —
  * goes straight to Shopify's permission screen before any Colvy page (App Store
  * requirement), and the callback works out the workspace (lib/shopify-install).
+ *
+ * Either app (public or privately shared, lib/shopify-auth) can open this; the
+ * one whose secret signed the request is the one the store is connected through.
  */
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams
   const shop = (params.get('shop') || '').toLowerCase()
-  if (!verifyQueryHmac(params) || !isShopDomain(shop) || !shopifyAppConfigured()) return NextResponse.redirect(FALLBACK_PAGE)
+  const app = appForQuery(params)
+  if (!app || !isShopDomain(shop)) return NextResponse.redirect(FALLBACK_PAGE)
 
   const db = admin()
+  // '*': app_client_id may not exist before migration V422.
   const { data: rows } = await db.from('shopify_integrations')
-    .select('id, company_id, is_active, auth_type, needs_reauth, scopes, access_token, updated_at')
+    .select('*')
     .eq('store_domain', shop).order('updated_at', { ascending: false })
   const list = rows || []
-  const healthy = list.find((r: any) => r.is_active && r.auth_type === 'oauth' && !r.needs_reauth && r.access_token && hasAllScopes(r.scopes))
+  // Healthy through THIS app: opening the public app for a store that's on the
+  // private one goes through the permission screen and moves it across.
+  const healthy = list.find((r: any) => r.is_active && r.auth_type === 'oauth' && !r.needs_reauth && r.access_token && hasAllScopes(r.scopes) && (r.app_client_id || null) === appClientId(app))
 
   // "Install from Shopify" in a Colvy workspace, moments ago in this browser.
   const intent = await takeIntent(db, req.cookies.get(INTENT_COOKIE)?.value)
@@ -64,11 +71,11 @@ export async function GET(req: NextRequest) {
   const returnTo = intent?.return_to || (companyId ? await workspacePage(db, companyId) : null)
 
   const nonce = crypto.randomBytes(24).toString('hex')
-  const { error } = await db.from('shopify_oauth_states').insert({
+  const { error } = await writeWithApp({
     nonce, kind: 'oauth', company_id: companyId, user_id: intent?.user_id || null, shop,
-    return_to: returnTo,
+    return_to: returnTo, app_client_id: appClientId(app),
     expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-  })
+  }, row => db.from('shopify_oauth_states').insert(row))
   if (error) return done(withParams(returnTo || FALLBACK_PAGE, { shopify_error: 'Could not start the Shopify sign-in. Please try again.' }))
-  return done(buildAuthorizeUrl(shop, nonce))
+  return done(buildAuthorizeUrl(shop, nonce, app))
 }
