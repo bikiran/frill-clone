@@ -72,6 +72,7 @@ import WaitlistQuickAdd from '@/components/WaitlistQuickAdd'
 import { useAiDraft, AiDraftButton, AiDraftInfo } from '@/components/AiDraft'
 import { useReplyTranslate, TranslateButton, TranslateStrip, customerLanguage } from '@/components/inbox/ReplyTranslate'
 import { mightNeedTranslation } from '@/lib/call-languages'
+import { MoodBadge, MoodFace, MOODS, MOOD_COLOR, MOOD_LABEL, isMood, launchMood } from '@/components/inbox/Mood'
 import BookingLinkButton from '@/components/booking/BookingLinkButton'
 import LinkCards, { linkCodesIn, useLinkStats, LastOpen } from '@/components/LinkCards'
 import { confirmDialog } from '@/components/ConfirmDialog'
@@ -221,12 +222,6 @@ const sendChannelGlyph = (ch: string, s = 15): React.ReactNode => {
   if (c === 'sms') return Icon.mobile(s)
   if (c === 'phone' || c === 'voice') return Icon.phone(s)
   return Icon.chat(s)   // widget / chat / anything else
-}
-const SENTIMENT_ICON: Record<string, (s?: number) => React.ReactNode> = {
-  positive: Icon.smile, neutral: Icon.meh, negative: Icon.frown,
-}
-const SENTIMENT_COLOR: Record<string, string> = {
-  positive: '#16a34a', neutral: '#9ca3af', negative: '#dc2626',
 }
 const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   open:     { bg: '#fef3c7', color: '#d97706' },
@@ -4467,10 +4462,13 @@ export default function InboxPage() {
   )
 
   // ── Sentiment ──────────────────────────────────────────────────────────────
-  const setSentiment = async (sentiment: string) => {
+  const setSentiment = async (sentiment: string | null) => {
     if (!selected) return
+    const id = selected.id
     setSelected(s => s ? { ...s, sentiment } as any : s)
-    await (supabase as any).from('conversations').update({ sentiment }).eq('id', selected.id)
+    // Keep the list's copy in step, so switching away and back shows it.
+    setConversations(list => list.map(c => c.id === id ? { ...c, sentiment } as any : c))
+    await (supabase as any).from('conversations').update({ sentiment }).eq('id', id)
   }
 
   // ── Snooze ─────────────────────────────────────────────────────────────────
@@ -7593,9 +7591,10 @@ export default function InboxPage() {
         .th-menu-row > svg { color: #71717a; flex-shrink: 0; }
         .th-menu-sep { height: 1px; margin: 4px 6px; background: #f0f0f2; }
         .th-menu-label { margin: 6px 10px 4px; font-size: 12.5px; font-weight: 500; color: #8e8e93; }
-        .th-mood { flex: 1; height: 38px; display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: 10px; background: #f4f4f5; color: #71717a; cursor: pointer; transition: background .15s ease, color .15s ease; }
-        .th-mood:hover { color: var(--mood); }
-        .th-mood.on { background: color-mix(in srgb, var(--mood) 14%, #fff); color: var(--mood); }
+        .th-mood { flex: 1; min-width: 0; height: 58px; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: none; border-radius: 14px; background: #f4f4f5; color: #71717a; cursor: pointer; transition: background .15s ease, color .15s ease, box-shadow .15s ease; }
+        .th-mood:hover { background: color-mix(in srgb, var(--mood) 9%, #fff); color: var(--mood); }
+        .th-mood.on { background: color-mix(in srgb, var(--mood) 14%, #fff); color: var(--mood); box-shadow: inset 0 0 0 1.5px var(--mood); }
+        .th-mood-l { font-size: 11.5px; font-weight: 650; line-height: 1; }
         /* The contact panel, in the same style: pill tabs, a tinted Action
            pill, small pill buttons. */
         .cp-tabs { display: flex; gap: 2px; margin: 12px 14px 0; padding: 3px; border-radius: 999px; background: #f4f4f5; flex-shrink: 0; }
@@ -9441,13 +9440,8 @@ export default function InboxPage() {
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17L17 7M17 7H8M17 7v9"/></svg>
                     </a>
                   )}
-                  {/* Sentiment badge */}
-                  {(selected as any).sentiment && (
-                    <span title={`${(selected as any).sentiment} experience`}
-                      style={{ display: 'flex', alignItems: 'center', color: SENTIMENT_COLOR[(selected as any).sentiment] || 'var(--slate)' }}>
-                      {(SENTIMENT_ICON[(selected as any).sentiment] || Icon.meh)(15)}
-                    </span>
-                  )}
+                  {/* The customer's mood: flies here from the menu, then idles */}
+                  {isMood((selected as any).sentiment) && <MoodBadge mood={(selected as any).sentiment} size={20} />}
                 </p>
                 {/* Subtitle line: last-activity / channel, plus compact
                     engagement chips (Google review · social comment) so the name
@@ -9680,12 +9674,20 @@ export default function InboxPage() {
                     <div className="th-menu-sep" />
                     <p className="th-menu-label">Customer mood</p>
                     <div style={{ display: 'flex', gap: 4, padding: '2px 4px 4px' }}>
-                      {(['positive', 'neutral', 'negative'] as const).map(m => {
+                      {MOODS.map(m => {
                         const on = (selected as any).sentiment === m
                         return (
-                          <button key={m} type="button" onClick={() => setSentiment(m)} title={`Mark ${m}`} aria-label={`Mark ${m}`} aria-pressed={on}
-                            className={`th-mood${on ? ' on' : ''}`} style={{ ['--mood' as any]: SENTIMENT_COLOR[m] }}>
-                            {SENTIMENT_ICON[m](18)}
+                          <button key={m} type="button"
+                            onClick={e => {
+                              // Picking a mood sends it flying to the name; picking the current one clears it.
+                              if (!on) launchMood(m, e.currentTarget.querySelector('.mf') || e.currentTarget)
+                              setShowActions(false)
+                              setSentiment(on ? null : m)
+                            }}
+                            title={on ? `${MOOD_LABEL[m]} (click to clear)` : MOOD_LABEL[m]} aria-label={on ? `Clear mood ${MOOD_LABEL[m]}` : `Mark ${MOOD_LABEL[m]}`} aria-pressed={on}
+                            className={`th-mood mf-play${on ? ' on' : ''}`} style={{ ['--mood' as any]: MOOD_COLOR[m] }}>
+                            <MoodFace mood={m} size={22} idle={on} />
+                            <span className="th-mood-l">{MOOD_LABEL[m]}</span>
                           </button>
                         )
                       })}
