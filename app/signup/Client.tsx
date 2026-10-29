@@ -16,7 +16,7 @@ import Turnstile, { TurnstileHandle, TURNSTILE_SITE_KEY } from '@/components/Tur
 import { normaliseSignupMobile } from '@/lib/signup-delivery'
 import { signupProfilePayload } from '@/lib/signup-profile'
 import AiBuddy from '@/components/AiBuddy'
-import { COLVY_ICON, MORE_COLORS, DOMAIN_RE, cleanDomain, I, GLOBE, ICONS, SETUP_CSS, SetupPreview, SetupToast, PreviewSection, PreviewRow, GhostRows, Swatch, useSetupTheme, type Rect } from '@/components/setup/SetupKit'
+import { COLVY_ICON, MORE_COLORS, DOMAIN_RE, cleanDomain, I, GLOBE, ICONS, SETUP_CSS, SetupPreview, type PreviewFocus, SetupToast, PreviewSection, PreviewRow, GhostRows, Swatch, useSetupTheme, type Rect } from '@/components/setup/SetupKit'
 import { DAYS, type DayHours } from '@/lib/week-hours'
 
 
@@ -788,6 +788,7 @@ function SignUpForm() {
 
       {/* ── The live preview ───────────────────────────────────────────── */}
       <SetupPreview panelRef={panelRef} phase={phase} from={from} name={companyName}
+        focus={(({ 2: 'name', 3: 'site', 4: 'channels', 5: 'brand', 6: 'channels' }) as Record<number, PreviewFocus>)[step] || 'overview'}
         logo={siteIcon ? { kind: 'img', src: siteIcon } : { kind: 'colvy' }}
         corner={first ? <div className="nw-me" key={first[0]}><span className="nw-av-ini" style={{ width: 30, height: 30, fontSize: 13 }}>{first[0].toUpperCase()}</span>{first}</div> : null}
         sub={<>

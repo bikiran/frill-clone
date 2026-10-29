@@ -372,6 +372,7 @@ export default function NewWorkspacePage() {
 
       {/* ── The live preview ───────────────────────────────────────────── */}
       <SetupPreview panelRef={panelRef} phase={phase} from={from} logo={logo} name={name}
+        focus={(['name', 'site', 'brand', 'channels', 'teams'] as const)[step]}
         corner={<Account className="nw-acct-d" user={user} theme={theme} setTheme={setTheme} />}
         sub={site && step >= 1 && <div className="nw-ws-site">{siteIcon ? <img src={siteIcon} alt="" /> : I(GLOBE, 13)}{site}</div>}
         sections={step < LAST ? (
