@@ -6,9 +6,8 @@ import ImageViewer from './ImageViewer'
 import { supabase } from '@/lib/supabase'
 import { track } from '@/lib/analytics'
 import { useToast } from '@/components/ToastProvider'
-import { SurveyQuestionBuilder, type SurveyQuestion } from '@/components/SurveyQuestionBuilder'
-import { FormFieldBuilder, type FormField } from '@/components/FormFieldBuilder'
 import { notifyIntegrations } from '@/lib/integrations-notify'
+import IdeaAttachSheet from '@/components/IdeaAttachSheet'
 
 const TOPICS = [
   { id: 'welcome', label: 'Welcome', emoji: '👋' },
@@ -19,9 +18,12 @@ const TOPICS = [
   { id: 'bug', label: 'Bug Report', emoji: '🐛' },
 ]
 
-export default function IdeaModal({ onClose, onSubmitted }: {
+export default function IdeaModal({ onClose, onSubmitted, resolveCompany }: {
   onClose: () => void
   onSubmitted: () => void
+  /** The board's own way to find its workspace (the admin passes the signed-in
+      team member's workspace; without it, owners only were found). */
+  resolveCompany?: () => Promise<string | null>
 }) {
   const { addToast } = useToast()
   const [companyId, setCompanyId] = useState<string | null>(null)
@@ -29,6 +31,8 @@ export default function IdeaModal({ onClose, onSubmitted }: {
   const [title, setTitle]               = useState('')
   const [description, setDescription]   = useState('')
   const [name, setName]                 = useState('')
+  const [myName, setMyName]             = useState('')
+  const [editingName, setEditingName]   = useState(false)
   const [selectedTopics, setTopics]     = useState<string[]>([])
   const [loading, setLoading]           = useState(false)
   const [error, setError]               = useState('')
@@ -41,37 +45,19 @@ export default function IdeaModal({ onClose, onSubmitted }: {
   const [attachedSurvey, setAttachedSurvey] = useState<string | null>(null)
   const [availablePolls, setAvailablePolls] = useState<any[]>([])
   const [availableSurveys, setAvailableSurveys] = useState<any[]>([])
-  const [showPollPicker, setShowPollPicker] = useState(false)
-  const [showSurveyPicker, setShowSurveyPicker] = useState(false)
+  const [sheet, setSheet]               = useState<null | 'poll' | 'survey'>(null)
   const [isPrivate, setIsPrivate]       = useState(false)
-  const [showNameDropdown, setShowNameDropdown] = useState(false)
   const [currentUser, setCurrentUser]   = useState<any>(null)
   const [isCompanyAdmin, setIsCompanyAdmin] = useState(false)
-  const [creatingPoll, setCreatingPoll] = useState(false)
-  const [creatingSurvey, setCreatingSurvey] = useState(false)
-  const [newPollQuestion, setNewPollQuestion] = useState('')
-  const [newPollOptions, setNewPollOptions] = useState(['', ''])
-  const [newPollDescription, setNewPollDescription] = useState('')
-  const [newPollType, setNewPollType] = useState<'single_choice' | 'multiple_choice' | 'rating' | 'ranking'>('single_choice')
-  const [newSurveyTitle, setNewSurveyTitle] = useState('')
-  const [surveyQuestions, setSurveyQuestions] = useState<any[]>([])
-  const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null)
-  const [showAddUserModal, setShowAddUserModal] = useState(false)
-  const [newUserName, setNewUserName] = useState('')
-  const [newUserEmail, setNewUserEmail] = useState('')
-  const [newUserPermission, setNewUserPermission] = useState(false)
-  const [attachedForm, setAttachedForm] = useState<string | null>(null)
-  const [availableForms, setAvailableForms] = useState<any[]>([])
-  const [showFormPicker, setShowFormPicker] = useState(false)
-  const [creatingForm, setCreatingForm] = useState(false)
-  const [newFormTitle, setNewFormTitle] = useState('')
-  const [formFields, setFormFields] = useState<any[]>([])
-  const [activeFieldId, setActiveFieldId] = useState<string | null>(null)
   const [aiLoading, setAiLoading] = useState<string | null>(null)
   const [aiError, setAiError] = useState('')
+  // The text before the last AI change, so it can be undone.
+  const [aiPrev, setAiPrev] = useState<string | null>(null)
   
   const titleRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const layers = useRef({ viewer: false })
+  layers.current.viewer = showImagePreviewViewer
 
   useEffect(() => {
     setTimeout(() => titleRef.current?.focus(), 100)
@@ -80,7 +66,8 @@ export default function IdeaModal({ onClose, onSubmitted }: {
     // Fetching unscoped here leaked every company's polls, surveys and forms into the idea panel.
     const resolveCompanyAndFetch = async () => {
       let cid: string | null = null
-      if (typeof window !== 'undefined') {
+      try { cid = (await resolveCompany?.()) || null } catch {}
+      if (!cid && typeof window !== 'undefined') {
         const h = window.location.hostname
         if (h.endsWith('.colvy.com') && h !== 'colvy.com' && h !== 'www.colvy.com' && !h.includes('localhost')) {
           const slug = h.replace('.colvy.com', '')
@@ -118,6 +105,7 @@ export default function IdeaModal({ onClose, onSubmitted }: {
         setCurrentUser(user)
         const displayName = user.user_metadata?.display_name || user.email?.split('@')[0] || 'Anonymous'
         setName(displayName)
+        setMyName(displayName)
 
         // Check if user administers THIS board (owner / elevated team member / super admin)
         try {
@@ -126,15 +114,10 @@ export default function IdeaModal({ onClose, onSubmitted }: {
         } catch {}
       }
     })
-    const handleKey = (e: KeyboardEvent) => { 
-      if (e.key === 'Escape') {
-        // Close open panels first, then modal
-        if (creatingPoll) setCreatingPoll(false)
-        else if (creatingSurvey) setCreatingSurvey(false)
-        else if (creatingForm) setCreatingForm(false)
-        else if (showAddUserModal) setShowAddUserModal(false)
-        else onClose()
-      }
+    // The poll/survey sheet and the image viewer close themselves on Esc
+    // (the sheet stops the key before it gets here).
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !layers.current.viewer) onClose()
     }
     window.addEventListener('keydown', handleKey)
     document.body.style.overflow = 'hidden'
@@ -147,128 +130,17 @@ export default function IdeaModal({ onClose, onSubmitted }: {
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
+    e.target.value = ''   // picking the same file again still fires
+    if (file && !file.type.startsWith('image/')) { setError('That file isn’t an image.'); return }
+    if (file && file.size > 10 * 1024 * 1024) { setError('That image is over 10 MB. Try a smaller one.'); return }
     if (file) {
+      setError('')
       setImageFile(file)
       const reader = new FileReader()
       reader.onload = (event) => {
         setImagePreview(event.target?.result as string)
       }
       reader.readAsDataURL(file)
-    }
-  }
-
-  const createNewPoll = async () => {
-    if (!newPollQuestion.trim() || (newPollType !== 'rating' && newPollOptions.filter(o => o.trim()).length < 2)) {
-      return
-    }
-    try {
-      const { data, error } = await supabase.from('polls').insert({
-        question: newPollQuestion,
-        description: newPollDescription.trim() || null,
-        poll_type: newPollType,
-        options: newPollType !== 'rating' ? newPollOptions.filter(o => o.trim()) : null,
-        status: 'active',
-        company_id: companyId,
-      }).select().single()
-      
-      if (error) throw error
-      
-      setAvailablePolls([...availablePolls, data])
-      setAttachedPoll(data.id)
-      setCreatingPoll(false)
-      setNewPollQuestion('')
-      setNewPollOptions(['', ''])
-      setNewPollDescription('')
-      setNewPollType('single_choice')
-      addToast('Poll created successfully!', 'success')
-    } catch (err) {
-      console.error('Error creating poll:', err)
-      addToast('Failed to create poll', 'error')
-    }
-  }
-
-  const createNewSurvey = async () => {
-    if (!newSurveyTitle.trim() || surveyQuestions.length === 0) return
-    try {
-      const { data, error } = await supabase.from('surveys').insert({
-        title: newSurveyTitle,
-        questions: surveyQuestions,
-        status: 'active',
-        company_id: companyId,
-      }).select().single()
-      
-      if (error) throw error
-      
-      setAvailableSurveys([...availableSurveys, data])
-      setAttachedSurvey(data.id)
-      setCreatingSurvey(false)
-      setNewSurveyTitle('')
-      setSurveyQuestions([])
-      addToast('Survey created successfully!', 'success')
-    } catch (err) {
-      console.error('Error creating survey:', err)
-      addToast('Failed to create survey', 'error')
-    }
-  }
-
-  const addNewUser = async () => {
-    if (!newUserName.trim() || !newUserEmail.trim() || !newUserPermission) {
-      setError('Please fill all fields and confirm permission')
-      addToast('Please complete all fields', 'warning')
-      return
-    }
-    try {
-      setLoading(true)
-      // Add user to team_members (they'll be invited)
-      const { data, error } = await fetch('/api/team-members', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: newUserEmail,
-          name: newUserName,
-          role: 'viewer',
-        })
-      }).then(r => r.json())
-      
-      if (error) throw new Error(error.message)
-      
-      // Add to name dropdown
-      setCurrentUser({ ...currentUser, name: newUserName, email: newUserEmail })
-      setShowAddUserModal(false)
-      setNewUserName('')
-      setNewUserEmail('')
-      setNewUserPermission(false)
-      setLoading(false)
-      addToast('User added successfully!', 'success')
-    } catch (err: any) {
-      setError(err.message || 'Error adding user')
-      setLoading(false)
-      addToast('Failed to add user', 'error')
-    }
-  }
-
-  const createNewForm = async () => {
-    if (!newFormTitle.trim() || formFields.length === 0) return
-    try {
-      const { data, error } = await supabase.from('forms').insert({
-        title: newFormTitle,
-        fields: formFields,
-        display_style: 'modal',
-        status: 'active',
-        company_id: companyId,
-      }).select().single()
-      
-      if (error) throw error
-      
-      setAvailableForms([...availableForms, data])
-      setAttachedForm(data.id)
-      setCreatingForm(false)
-      setNewFormTitle('')
-      setFormFields([])
-      addToast('Form created successfully!', 'success')
-    } catch (err) {
-      console.error('Error creating form:', err)
-      addToast('Failed to create form', 'error')
     }
   }
 
@@ -435,7 +307,7 @@ export default function IdeaModal({ onClose, onSubmitted }: {
   }
 
   const enhanceText = async (task: 'improve_writing' | 'fix_formatting' | 'summarize') => {
-    if (!description.trim()) return
+    if (!description.trim() || aiLoading) return
     
     setAiLoading(task === 'improve_writing' ? 'improve' : task === 'fix_formatting' ? 'fix' : 'summarize')
     setAiError('')
@@ -453,12 +325,13 @@ export default function IdeaModal({ onClose, onSubmitted }: {
       })
       
       if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || 'AI service error')
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'AI isn’t available right now. Try again in a moment.')
       }
       
       const data = await res.json()
-      if (typeof data.result === 'string') {
+      if (typeof data.result === 'string' && data.result.trim()) {
+        setAiPrev(description)
         setDescription(data.result)
       }
     } catch (err: any) {
@@ -470,7 +343,7 @@ export default function IdeaModal({ onClose, onSubmitted }: {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!title.trim()) return
+    if (!title.trim() || loading) return
     setLoading(true)
     setError('')
 
@@ -537,159 +410,88 @@ export default function IdeaModal({ onClose, onSubmitted }: {
     }
   }
 
+  const pollTitle = availablePolls.find(p => p.id === attachedPoll)?.question || 'Poll'
+  const surveyTitle = availableSurveys.find(sv => sv.id === attachedSurvey)?.title || 'Survey'
+
   if (submitted) {
     return (
       <>
-        <div className="fixed inset-0 z-50 animate-backdrop" style={{ background: 'rgba(0,0,0,0.3)' }}
-          onClick={onClose} />
-        <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white rounded-2xl p-12 text-center shadow-2xl animate-modal">
-          <div className="text-6xl mb-4 animate-bounce">✨</div>
-          <h2 className="text-2xl font-bold mb-2" style={{ color: 'var(--ink)' }}>
-            Thank you!
-          </h2>
-          <p style={{ color: 'var(--slate)' }}>
-            Your idea has been shared. The team will review it soon!
-          </p>
+        <div className="idn-scrim" onClick={onClose} />
+        <div className="idn-done" role="status">
+          <span className="idn-done-ic" aria-hidden>
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5 10 17 19 7" /></svg>
+          </span>
+          <h2>Thank you!</h2>
+          <p>Your idea is on the board. The team will take a look soon.</p>
         </div>
+        <style>{IDN_CSS}</style>
       </>
     )
   }
 
   return (
     <>
-      <div className="fixed inset-0 z-50 animate-backdrop" style={{ background: 'rgba(0,0,0,0.3)' }}
-        onClick={onClose} />
+      <div className="idn-scrim" onClick={onClose} />
 
-      <div className="fixed bottom-0 right-0 left-0 md:left-auto md:w-1/2 z-50 bg-white md:h-screen h-[80vh] drawer-open flex flex-col"
-        style={{ borderLeft: '1px solid var(--border)' }}>
-
-        <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between shrink-0" style={{ borderColor: 'var(--border)' }}>
-          <h2 className="text-lg font-bold" style={{ color: 'var(--ink)' }}>Tell us your idea!</h2>
-          <button onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-smooth text-gray-400 press-effect text-xl">
-            ✕
+      <div className="idn" role="dialog" aria-modal="true" aria-labelledby="idn-h">
+        <header className="idn-head">
+          <h2 id="idn-h">Tell us your idea!</h2>
+          <button type="button" className="idn-x" onClick={onClose} aria-label="Close" title="Close (Esc)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
           </button>
-        </div>
+        </header>
 
-        <form onSubmit={handleSubmit} className="flex-1 px-6 py-6 space-y-5 overflow-y-auto">
+        <form id="idn-form" onSubmit={handleSubmit} className="idn-body">
 
           {authed === false && (
-            <div className="text-sm px-4 py-3 rounded-xl animate-fade-in-up" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>
-              Posting anonymously. <button type="button" className="underline font-semibold"
-                onClick={() => { onClose() }}>Sign in</button> to get credit.
+            <div className="idn-note">
+              Posting as a guest. <button type="button" onClick={onClose}>Sign in</button> to get credit for it.
             </div>
           )}
 
-          <div>
-            <label className="block text-sm font-bold mb-2" style={{ color: 'var(--ink)' }}>
-              One sentence that summarizes your idea
-            </label>
-            <input ref={titleRef} type="text" value={title}
+          <div className="idn-f">
+            <label className="idn-label" htmlFor="idn-title">One sentence that sums up your idea</label>
+            <input id="idn-title" ref={titleRef} type="text" value={title}
               onChange={e => setTitle(e.target.value)}
-              placeholder="e.g., Dark mode support"
+              placeholder="e.g. Dark mode support"
               maxLength={120}
-              className="w-full px-4 py-3 border rounded-xl text-sm focus:outline-none transition-smooth"
-              style={{ borderColor: title ? 'var(--coral)' : 'var(--border)', fontSize: '16px' }}
+              className="idn-field"
               required
             />
-            <p className="text-xs mt-2 text-right" style={{ color: title.length > 100 ? 'var(--coral)' : '#d1d5db' }}>
-              {title.length}/120
-            </p>
+            <span className={`idn-count${title.length > 100 ? ' warn' : ''}`}>{title.length}/120</span>
           </div>
 
-          <div>
-            <label className="block text-sm font-bold mb-2" style={{ color: 'var(--ink)' }}>
-              Why your idea is useful, who would benefit and how it should work?
-            </label>
-            <textarea value={description} onChange={e => setDescription(e.target.value)}
-              placeholder="Provide more context…"
-              rows={4}
-              className="w-full px-4 py-3 border rounded-xl text-sm focus:outline-none transition-smooth resize-none"
-              style={{ borderColor: 'var(--border)', fontSize: '16px' }}
+          <div className="idn-f">
+            <label className="idn-label" htmlFor="idn-desc">Why is it useful, who would it help, and how should it work?</label>
+            <textarea id="idn-desc" value={description} onChange={e => { setDescription(e.target.value); setAiPrev(null) }}
+              placeholder="Add a little more context…"
+              rows={5}
+              className="idn-field"
             />
-            
-            {/* AI Enhancement Buttons */}
-            <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                onClick={() => enhanceText('improve_writing')}
-                disabled={!description.trim()}
-                className="px-3 py-2 rounded-lg border text-xs font-medium transition-smooth disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ 
-                  borderColor: 'var(--border)',
-                  background: aiLoading === 'improve' ? '#f3f4f6' : '#fff',
-                  color: 'var(--ink)'
-                }}
-                title="Improve writing with AI">
-                {aiLoading === 'improve' ? '✨ Improving...' : '✨ Improve'}
-              </button>
-              
-              <button
-                type="button"
-                onClick={() => enhanceText('fix_formatting')}
-                disabled={!description.trim()}
-                className="px-3 py-2 rounded-lg border text-xs font-medium transition-smooth disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ 
-                  borderColor: 'var(--border)',
-                  background: aiLoading === 'fix' ? '#f3f4f6' : '#fff',
-                  color: 'var(--ink)'
-                }}
-                title="Fix grammar and formatting">
-                {aiLoading === 'fix' ? '🔧 Fixing...' : '🔧 Fix'}
-              </button>
-              
-              <button
-                type="button"
-                onClick={() => enhanceText('summarize')}
-                disabled={!description.trim()}
-                className="px-3 py-2 rounded-lg border text-xs font-medium transition-smooth disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ 
-                  borderColor: 'var(--border)',
-                  background: aiLoading === 'summarize' ? '#f3f4f6' : '#fff',
-                  color: 'var(--ink)'
-                }}
-                title="Summarize to be more concise">
-                {aiLoading === 'summarize' ? '📝 Summarizing...' : '📝 Summarize'}
-              </button>
+            <div className="idn-ai">
+              {AI_ACTIONS.map(a => (
+                <button key={a.key} type="button" className="idn-pill" onClick={() => enhanceText(a.task)}
+                  disabled={!description.trim() || !!aiLoading} title={a.title}>
+                  {aiLoading === a.key ? <span className="idn-spin" aria-hidden /> : a.icon}
+                  {aiLoading === a.key ? a.busy : a.label}
+                </button>
+              ))}
+              {aiPrev !== null && !aiLoading && (
+                <button type="button" className="idn-pill ghost" onClick={() => { setDescription(aiPrev); setAiPrev(null) }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M9 14 4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 0 10h-3" /></svg>
+                  Undo
+                </button>
+              )}
+              {!description.trim() && <span className="idn-ai-hint">Write a few words and AI can polish them.</span>}
             </div>
-            
-            {aiError && (
-              <div style={{
-                marginTop: 8,
-                padding: '8px 12px',
-                borderRadius: 8,
-                background: '#fee2e2',
-                color: '#991b1b',
-                fontSize: 12
-              }}>
-                {aiError}
-              </div>
-            )}
+            {aiError && <p className="idn-err">{aiError}</p>}
           </div>
 
           {imagePreview && (
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-              <div style={{ position: 'relative', display: 'inline-block', borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)' }}>
-                <img
-                  src={imagePreview}
-                  alt="Preview"
-                  title="Click to view full size"
-                  onClick={() => setShowImagePreviewViewer(true)}
-                  style={{ height: 96, width: 'auto', maxWidth: 220, objectFit: 'cover', display: 'block', cursor: 'zoom-in' }}
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setImageFile(null)
-                    setImagePreview('')
-                  }}
-                  title="Remove image"
-                  style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, background: 'rgba(0,0,0,0.65)', border: 'none', borderRadius: '50%', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}
-                >
-                  ×
-                </button>
-              </div>
-              <p style={{ fontSize: 11, color: 'var(--slate)', marginTop: 4 }}>Click image to enlarge</p>
+            <div className="idn-img">
+              <img src={imagePreview} alt="Attached" title="Open full size" onClick={() => setShowImagePreviewViewer(true)} />
+              <button type="button" onClick={() => { setImageFile(null); setImagePreview('') }} aria-label="Remove image" title="Remove image">×</button>
+              <span>Click to open, draw on it, or crop.</span>
             </div>
           )}
           {showImagePreviewViewer && imagePreview && (
@@ -712,637 +514,237 @@ export default function IdeaModal({ onClose, onSubmitted }: {
             />
           )}
 
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <label className="block text-sm font-bold" style={{ color: 'var(--ink)' }}>
-                Choose up to 3 Topics for this Idea
-              </label>
+          <div className="idn-f">
+            <div className="idn-lrow">
+              <span className="idn-label">Choose up to 3 topics</span>
+              <span className="idn-sub">{selectedTopics.length} of 3</span>
             </div>
-            <div className="flex flex-wrap gap-2 mb-2">
-              {TOPICS.map(topic => (
-                <button
-                  key={topic.id}
-                  type="button"
-                  onClick={() => toggleTopic(topic.id)}
-                  className="px-3 py-1.5 rounded-full text-sm font-medium border transition-smooth press-effect"
-                  style={{
-                    background: selectedTopics.includes(topic.id) ? 'var(--peach)' : 'white',
-                    borderColor: selectedTopics.includes(topic.id) ? 'var(--coral)' : 'var(--border)',
-                    color: selectedTopics.includes(topic.id) ? 'var(--coral)' : 'var(--slate)',
-                  }}>
-                  {topic.emoji} {topic.label}
-                </button>
-              ))}
+            <div className="idn-chips">
+              {TOPICS.map(topic => {
+                const on = selectedTopics.includes(topic.id)
+                return (
+                  <button key={topic.id} type="button" aria-pressed={on} onClick={() => toggleTopic(topic.id)}
+                    disabled={!on && selectedTopics.length >= 3}
+                    className={`idn-chip${on ? ' on' : ''}`}>
+                    <span aria-hidden>{topic.emoji}</span>{topic.label}
+                  </button>
+                )
+              })}
             </div>
           </div>
 
-          {/* Private Toggle */}
-          <div className="flex items-center gap-3 p-3 rounded-lg border" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
-            <button
-              type="button"
-              onClick={() => setIsPrivate(!isPrivate)}
-              aria-pressed={isPrivate}
-              className="relative rounded-full transition-all"
-              style={{ background: isPrivate ? 'var(--coral)' : '#d1d5db', width: 44, height: 26, flexShrink: 0, border: 'none', cursor: 'pointer', padding: 0 }}>
-              <div className="absolute transition-all" style={{
-                top: 3,
-                left: isPrivate ? 21 : 3,
-                width: 20,
-                height: 20,
-                background: 'white',
-                borderRadius: '50%',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-              }} />
-            </button>
-            <div>
-              <label className="block text-sm font-medium" style={{ color: 'var(--ink)' }}>
-                Make this idea private
-              </label>
-              <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>
-                {isPrivate ? 'Only you can see this' : 'Everyone can see this'}
-              </p>
-            </div>
-          </div>
+          <button type="button" className={`idn-switchrow${isPrivate ? ' on' : ''}`} aria-pressed={isPrivate} onClick={() => setIsPrivate(!isPrivate)}>
+            <span className="idn-switchrow-ic" aria-hidden>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="11" width="16" height="10" rx="2.5" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+            </span>
+            <span className="idn-switchrow-t">
+              <b>Make this idea private</b>
+              <small>{isPrivate ? 'Only you and the team can see it' : 'Everyone on the board can see it'}</small>
+            </span>
+            <span className="idn-sw" aria-hidden><i /></span>
+          </button>
 
-          {/* Admin Poll/Survey/Form Creation */}
           {isCompanyAdmin && (
-            <div>
-              <label className="block text-sm font-bold mb-2" style={{ color: 'var(--ink)' }}>
-                Attach Poll or Survey (optional)
-              </label>
-              <div className="flex gap-2 flex-wrap">
-                {/* Poll button */}
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => { setShowPollPicker(!showPollPicker); setShowSurveyPicker(false) }}
-                    className="px-3 py-2 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-smooth cursor-pointer hover:bg-gray-50"
-                    style={{ 
-                      borderColor: attachedPoll ? '#0369a1' : 'var(--border)',
-                      background: attachedPoll ? '#e0f2fe' : 'white',
-                      color: attachedPoll ? '#0369a1' : 'var(--slate)',
-                    }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 12h2v5H7z"/><path d="M11 8h2v9h-2z"/></svg>
-                    {attachedPoll ? availablePolls.find(p => p.id === attachedPoll)?.question?.slice(0, 25) + '...' : '+ Add Poll'}
-                    {attachedPoll && (
-                      <span onClick={(e) => { e.stopPropagation(); setAttachedPoll(null) }} className="ml-1 hover:opacity-70">×</span>
-                    )}
-                  </button>
-                  {showPollPicker && (
-                    <>
-                      <div className="fixed inset-0 z-0" onClick={() => setShowPollPicker(false)} />
-                      <div className="absolute top-full mt-1 left-0 z-10 w-72 bg-white border rounded-xl shadow-lg p-2 max-h-64 overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
-                        {availablePolls.length === 0 ? (
-                          <button
-                            type="button"
-                            onClick={() => { setCreatingPoll(true); setShowPollPicker(false) }}
-                            className="w-full text-left p-2 rounded-lg hover:bg-gray-50 text-sm transition-smooth cursor-pointer flex items-center gap-2"
-                            style={{ color: 'var(--coral)' }}>
-                            <span>+ Create new poll</span>
-                          </button>
-                        ) : (
-                          <>
-                            {availablePolls.map(poll => (
-                              <button
-                                key={poll.id}
-                                type="button"
-                                onClick={() => { setAttachedPoll(poll.id); setShowPollPicker(false) }}
-                                className="w-full text-left p-2 rounded-lg hover:bg-gray-50 text-sm transition-smooth cursor-pointer"
-                                style={{ color: 'var(--ink)' }}>
-                                {poll.question}
-                              </button>
-                            ))}
-                            <div className="border-t mt-2 pt-2" style={{ borderColor: 'var(--border)' }} />
-                            <button
-                              type="button"
-                              onClick={() => { setCreatingPoll(true); setShowPollPicker(false) }}
-                              className="w-full text-left p-2 rounded-lg hover:bg-gray-50 text-sm transition-smooth cursor-pointer flex items-center gap-2"
-                              style={{ color: 'var(--coral)' }}>
-                              <span>+ Create new poll</span>
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {/* Form button */}
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => { setShowFormPicker(!showFormPicker); setShowPollPicker(false); setShowSurveyPicker(false) }}
-                    className="px-3 py-2 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-smooth cursor-pointer hover:bg-gray-50"
-                    style={{ 
-                      borderColor: attachedForm ? '#059669' : 'var(--border)',
-                      background: attachedForm ? '#d1fae5' : 'white',
-                      color: attachedForm ? '#059669' : 'var(--slate)',
-                    }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16v16H4z"/><line x1="4" y1="9" x2="20" y2="9"/><line x1="9" y1="4" x2="9" y2="20"/></svg>
-                    {attachedForm ? availableForms.find(f => f.id === attachedForm)?.title?.slice(0, 20) + '...' : '+ Add Form'}
-                    {attachedForm && (
-                      <span onClick={(e) => { e.stopPropagation(); setAttachedForm(null) }} className="ml-1 hover:opacity-70">×</span>
-                    )}
-                  </button>
-                  {showFormPicker && (
-                    <>
-                      <div className="fixed inset-0 z-0" onClick={() => setShowFormPicker(false)} />
-                      <div className="absolute top-full mt-1 left-0 z-10 w-72 bg-white border rounded-xl shadow-lg p-2 max-h-64 overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
-                        {availableForms.length === 0 ? (
-                          <button
-                            type="button"
-                            onClick={() => { setCreatingForm(true); setShowFormPicker(false) }}
-                            className="w-full text-left p-2 rounded-lg hover:bg-gray-50 text-sm transition-smooth cursor-pointer flex items-center gap-2"
-                            style={{ color: 'var(--coral)' }}>
-                            <span>+ Create new form</span>
-                          </button>
-                        ) : (
-                          <>
-                            {availableForms.map(form => (
-                              <button
-                                key={form.id}
-                                type="button"
-                                onClick={() => { setAttachedForm(form.id); setShowFormPicker(false) }}
-                                className="w-full text-left p-2 rounded-lg hover:bg-gray-50 text-sm transition-smooth cursor-pointer"
-                                style={{ color: 'var(--ink)' }}>
-                                {form.title}
-                              </button>
-                            ))}
-                            <div className="border-t mt-2 pt-2" style={{ borderColor: 'var(--border)' }} />
-                            <button
-                              type="button"
-                              onClick={() => { setCreatingForm(true); setShowFormPicker(false) }}
-                              className="w-full text-left p-2 rounded-lg hover:bg-gray-50 text-sm transition-smooth cursor-pointer flex items-center gap-2"
-                              style={{ color: 'var(--coral)' }}>
-                              <span>+ Create new form</span>
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {/* Survey button */}
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => { setShowSurveyPicker(!showSurveyPicker); setShowPollPicker(false) }}
-                    className="px-3 py-2 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-smooth cursor-pointer hover:bg-gray-50"
-                    style={{ 
-                      borderColor: attachedSurvey ? '#7c3aed' : 'var(--border)',
-                      background: attachedSurvey ? '#ede9fe' : 'white',
-                      color: attachedSurvey ? '#7c3aed' : 'var(--slate)',
-                    }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                    {attachedSurvey ? availableSurveys.find(s => s.id === attachedSurvey)?.title?.slice(0, 20) + '...' : '+ Add Survey'}
-                    {attachedSurvey && (
-                      <span onClick={(e) => { e.stopPropagation(); setAttachedSurvey(null) }} className="ml-1 hover:opacity-70">×</span>
-                    )}
-                  </button>
-                  {showSurveyPicker && (
-                    <>
-                      <div className="fixed inset-0 z-0" onClick={() => setShowSurveyPicker(false)} />
-                      <div className="absolute top-full mt-1 left-0 z-10 w-72 bg-white border rounded-xl shadow-lg p-2 max-h-64 overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
-                        {availableSurveys.length === 0 ? (
-                          <button
-                            type="button"
-                            onClick={() => { setCreatingSurvey(true); setShowSurveyPicker(false) }}
-                            className="w-full text-left p-2 rounded-lg hover:bg-gray-50 text-sm transition-smooth cursor-pointer flex items-center gap-2"
-                            style={{ color: 'var(--coral)' }}>
-                            <span>+ Create new survey</span>
-                          </button>
-                        ) : (
-                          <>
-                            {availableSurveys.map(survey => (
-                              <button
-                                key={survey.id}
-                                type="button"
-                                onClick={() => { setAttachedSurvey(survey.id); setShowSurveyPicker(false) }}
-                                className="w-full text-left p-2 rounded-lg hover:bg-gray-50 text-sm transition-smooth cursor-pointer"
-                                style={{ color: 'var(--ink)' }}>
-                                {survey.title}
-                              </button>
-                            ))}
-                            <div className="border-t mt-2 pt-2" style={{ borderColor: 'var(--border)' }} />
-                            <button
-                              type="button"
-                              onClick={() => { setCreatingSurvey(true); setShowSurveyPicker(false) }}
-                              className="w-full text-left p-2 rounded-lg hover:bg-gray-50 text-sm transition-smooth cursor-pointer flex items-center gap-2"
-                              style={{ color: 'var(--coral)' }}>
-                              <span>+ Create new survey</span>
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
+            <div className="idn-f">
+              <span className="idn-label">Attach a poll or survey <small>optional</small></span>
+              <div className="idn-attach">
+                {attachedPoll ? (
+                  <span className="idn-att blue">
+                    <button type="button" className="t" onClick={() => setSheet('poll')} title={`${pollTitle} (click to change)`}>{POLL_ICON}<span>{pollTitle}</span></button>
+                    <button type="button" className="rm" onClick={() => setAttachedPoll(null)} aria-label="Remove poll" title="Remove">×</button>
+                  </span>
+                ) : (
+                  <button type="button" className="idn-pill" onClick={() => setSheet('poll')}>{POLL_ICON} Add poll</button>
+                )}
+                {attachedSurvey ? (
+                  <span className="idn-att green">
+                    <button type="button" className="t" onClick={() => setSheet('survey')} title={`${surveyTitle} (click to change)`}>{SURVEY_ICON}<span>{surveyTitle}</span></button>
+                    <button type="button" className="rm" onClick={() => setAttachedSurvey(null)} aria-label="Remove survey" title="Remove">×</button>
+                  </span>
+                ) : (
+                  <button type="button" className="idn-pill" onClick={() => setSheet('survey')}>{SURVEY_ICON} Add survey</button>
+                )}
               </div>
             </div>
           )}
 
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-bold" style={{ color: 'var(--ink)' }}>
-                Your name
-              </label>
-              {currentUser && name && (
-                <button type="button" onClick={() => setShowNameDropdown(!showNameDropdown)}
-                  className="text-xs font-medium press-effect"
-                  style={{ color: 'var(--coral)' }}>
-                  Change
-                </button>
-              )}
-            </div>
-            {/* Signed-in users see the name card; guests always keep an editable input.
-                (Previously the input only rendered while name was empty, so it
-                unmounted after the first typed letter.) */}
-            {currentUser && name && !showNameDropdown && (
-              <div className="px-4 py-3 rounded-xl bg-gray-50 border mb-3 flex items-center justify-between relative"
-                style={{ borderColor: 'var(--border)' }}>
-                <div className="flex items-center gap-3">
-                  <span className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm"
-                    style={{ background: 'var(--coral)' }}>
-                    {name[0]?.toUpperCase()}
-                  </span>
-                  <div>
-                    <p className="text-sm font-medium" style={{ color: 'var(--ink)' }}>{name}</p>
-                  </div>
+          <div className="idn-f">
+            <label className="idn-label" htmlFor="idn-name">Your name</label>
+            {currentUser && !editingName ? (
+              <div className="idn-who">
+                <span className="idn-av">{(name || 'A')[0]?.toUpperCase()}</span>
+                <span className="idn-who-t">
+                  <b>{name || 'Anonymous'}</b>
+                  <small>{name === myName ? 'Shown on the idea' : 'Shown on the idea instead of your name'}</small>
+                </span>
+                <button type="button" className="idn-pill sm" onClick={() => setEditingName(true)}>Change</button>
+              </div>
+            ) : currentUser ? (
+              <div className="idn-namebox">
+                <input id="idn-name" type="text" value={name} onChange={e => setName(e.target.value)} maxLength={80} autoFocus
+                  placeholder="The name shown on the idea" autoComplete="off" className="idn-field"
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); setEditingName(false) } }} />
+                <div className="idn-namechips">
+                  {myName && name !== myName && <button type="button" className="idn-pill sm" onClick={() => { setName(myName); setEditingName(false) }}>Use my name</button>}
+                  {name !== 'Anonymous' && <button type="button" className="idn-pill sm" onClick={() => { setName('Anonymous'); setEditingName(false) }}>Post anonymously</button>}
+                  <button type="button" className="idn-pill sm dark" onClick={() => setEditingName(false)}>Done</button>
                 </div>
               </div>
-            )}
-            {showNameDropdown && (
-              <div className="absolute left-0 right-0 z-50 bg-white border rounded-xl shadow-lg mb-3 p-2" 
-                style={{ borderColor: 'var(--border)' }}>
-                <button
-                  type="button"
-                  onClick={() => { setName(currentUser?.email?.split('@')[0] || 'Anonymous'); setShowNameDropdown(false) }}
-                  className="w-full px-4 py-3 text-left text-sm hover:bg-gray-50 rounded-lg transition-smooth flex items-center gap-3"
-                  style={{ color: 'var(--ink)' }}>
-                  <span className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm"
-                    style={{ background: 'var(--coral)' }}>
-                    {currentUser?.email?.[0]?.toUpperCase() || 'A'}
-                  </span>
-                  <div>
-                    <p className="text-sm font-medium">{currentUser?.email?.split('@')[0] || 'Anonymous'}</p>
-                    <p className="text-xs" style={{ color: 'var(--slate)' }}>{currentUser?.email}</p>
-                  </div>
-                </button>
-                <div className="border-t my-2" style={{ borderColor: 'var(--border)' }} />
-                <button
-                  type="button"
-                  onClick={() => { setShowAddUserModal(true); setShowNameDropdown(false) }}
-                  className="w-full px-4 py-3 text-left text-sm hover:bg-gray-50 rounded-lg transition-smooth flex items-center gap-3"
-                  style={{ color: 'var(--coral)' }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                  </svg>
-                  <p className="text-sm font-medium">Add new user</p>
-                </button>
-              </div>
-            )}
-            {!currentUser && (
-              <input type="text" value={name} onChange={e => setName(e.target.value)}
-                placeholder="Leave blank to post anonymously"
-                autoComplete="off"
-                className="w-full px-4 py-3 border rounded-xl text-sm focus:outline-none transition-smooth"
-                style={{ borderColor: 'var(--border)', fontSize: '16px' }}
-              />
+            ) : (
+              <input id="idn-name" type="text" value={name} onChange={e => setName(e.target.value)} maxLength={80}
+                placeholder="Leave blank to post anonymously" autoComplete="off" className="idn-field" />
             )}
           </div>
 
-          {error && (
-            <p className="text-sm animate-fade-in-up" style={{ color: '#dc2626' }}>{error}</p>
-          )}
+          {error && <p className="idn-err">{error}</p>}
         </form>
 
-        <div className="border-t px-6 py-3 flex items-center gap-2" style={{ borderColor: 'var(--border)' }}>
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="p-2 rounded-lg hover:bg-gray-100 transition-smooth cursor-pointer press-effect"
-            title="Add image">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2">
-              <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="m21 15-5-5L5 21" />
+        <footer className="idn-foot">
+          <button type="button" className="idn-icon" onClick={() => fileInputRef.current?.click()} title="Add an image" aria-label="Add an image">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="m21 15-5-5L5 21" />
             </svg>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleImageSelect}
-            />
           </button>
-          <div className="flex-1" />
-          <button type="button" className="px-4 py-2 rounded-lg text-sm font-medium border transition-smooth press-effect"
-            style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}
-            onClick={onClose}>
-            Cancel
+          <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleImageSelect} />
+          <span className="idn-foot-hint">{imageFile ? '1 image attached' : 'Add a screenshot'}</span>
+          <span style={{ flex: 1 }} />
+          <button type="button" className="idn-btn" onClick={onClose}>Cancel</button>
+          <button type="submit" form="idn-form" disabled={loading || !title.trim()} className="idn-btn go">
+            {loading ? <><span className="idn-spin light" aria-hidden />Posting…</> : 'Post idea'}
           </button>
-          <button type="submit" disabled={loading || !title.trim()} onClick={handleSubmit}
-            className="px-6 py-2 rounded-lg text-sm font-semibold text-white transition-smooth press-effect futuristic-submit-btn disabled:opacity-50 relative overflow-hidden"
-            style={{ background: 'var(--coral)' }}>
-            <span className="relative z-10 flex items-center gap-2">
-              {loading ? (
-                <>
-                  <span className="animate-spin">⚡</span>
-                  Posting…
-                </>
-              ) : (
-                <>
-                  ✨ Submit
-                </>
-              )}
-            </span>
-          </button>
-        </div>
+        </footer>
       </div>
 
-      {/* Form Creation Panel */}
-      {creatingForm && (
-        <>
-          <div className="fixed inset-0 z-40 animate-backdrop" style={{ background: 'rgba(0,0,0,0.3)' }} onClick={() => setCreatingForm(false)} />
-          <div className="fixed right-0 top-0 z-50 w-full sm:w-96 h-screen bg-white shadow-2xl flex flex-col overflow-hidden animate-slide-in-right">
-            <div className="p-6 border-b" style={{ borderColor: 'var(--border)' }}>
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Create Form</h2>
-                <button onClick={() => { setCreatingForm(false); setNewFormTitle(''); setFormFields([]) }} 
-                  className="p-1 hover:bg-gray-100 rounded-lg transition-smooth cursor-pointer"
-                  title="Close (Esc)">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: 'var(--ink)' }}>Form Title</label>
-                <input type="text" value={newFormTitle} onChange={e => setNewFormTitle(e.target.value)}
-                  placeholder="Customer Feedback" autoFocus
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none text-sm" style={{ borderColor: 'var(--border)' }} />
-              </div>
-
-              {/* Fields Builder */}
-              <div>
-                <label className="block text-sm font-medium mb-3" style={{ color: 'var(--ink)' }}>Fields</label>
-                <FormFieldBuilder 
-                  fields={formFields}
-                  onFieldsChange={setFormFields}
-                />
-              </div>
-            </div>
-            <div className="p-6 border-t flex gap-3" style={{ borderColor: 'var(--border)' }}>
-              <button onClick={() => { setCreatingForm(false); setNewFormTitle(''); setFormFields([]) }}
-                className="flex-1 py-2 rounded-lg border text-sm font-medium transition-smooth cursor-pointer hover:bg-gray-50"
-                style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                Cancel
-              </button>
-              <button onClick={createNewForm} disabled={!newFormTitle.trim() || formFields.length === 0}
-                className="flex-1 py-2 rounded-lg text-sm font-semibold text-white transition-smooth cursor-pointer disabled:opacity-50"
-                style={{ background: 'var(--coral)' }}>
-                Create Form
-              </button>
-            </div>
-          </div>
-        </>
+      {sheet && (
+        <IdeaAttachSheet
+          kind={sheet}
+          companyId={companyId}
+          items={sheet === 'poll' ? availablePolls : availableSurveys}
+          selectedId={sheet === 'poll' ? attachedPoll : attachedSurvey}
+          onPick={id => { if (sheet === 'poll') setAttachedPoll(id); else setAttachedSurvey(id); setSheet(null) }}
+          onCreated={row => {
+            if (sheet === 'poll') { setAvailablePolls(list => [...list, row]); setAttachedPoll(row.id) }
+            else { setAvailableSurveys(list => [...list, row]); setAttachedSurvey(row.id) }
+            setSheet(null)
+            addToast(sheet === 'poll' ? 'Poll created and attached' : 'Survey created and attached', 'success')
+          }}
+          onClose={() => setSheet(null)}
+        />
       )}
 
-      {/* Poll Creation Panel */}
-      {creatingPoll && (
-        <>
-          <div className="fixed inset-0 z-40 animate-backdrop" style={{ background: 'rgba(0,0,0,0.3)' }} onClick={() => setCreatingPoll(false)} />
-          <div className="fixed right-0 top-0 z-50 w-full sm:w-96 h-screen bg-white shadow-2xl flex flex-col overflow-hidden animate-slide-in-right">
-            <div className="p-6 border-b" style={{ borderColor: 'var(--border)' }}>
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Create Poll</h2>
-                <button onClick={() => { setCreatingPoll(false); setNewPollQuestion(''); setNewPollOptions(['', '']); setNewPollDescription(''); setNewPollType('single_choice') }} 
-                  className="p-1 hover:bg-gray-100 rounded-lg transition-smooth cursor-pointer"
-                  title="Close (Esc)">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              {/* Poll Type Selector */}
-              <div>
-                <label className="block text-sm font-medium mb-3" style={{ color: 'var(--ink)' }}>Poll Type</label>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-gray-50">
-                    <input 
-                      type="radio"
-                      name="pollType"
-                      value="single_choice"
-                      checked={newPollType === 'single_choice'}
-                      onChange={(e) => setNewPollType(e.target.value as any)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm" style={{ color: 'var(--ink)' }}>Single Choice</span>
-                  </label>
-                  <label className="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-gray-50">
-                    <input 
-                      type="radio"
-                      name="pollType"
-                      value="multiple_choice"
-                      checked={newPollType === 'multiple_choice'}
-                      onChange={(e) => setNewPollType(e.target.value as any)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm" style={{ color: 'var(--ink)' }}>Multiple Choice</span>
-                  </label>
-                  <label className="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-gray-50">
-                    <input 
-                      type="radio"
-                      name="pollType"
-                      value="rating"
-                      checked={newPollType === 'rating'}
-                      onChange={(e) => setNewPollType(e.target.value as any)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm" style={{ color: 'var(--ink)' }}>Rating (1-5)</span>
-                  </label>
-                  <label className="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-gray-50">
-                    <input 
-                      type="radio"
-                      name="pollType"
-                      value="ranking"
-                      checked={newPollType === 'ranking'}
-                      onChange={(e) => setNewPollType(e.target.value as any)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm" style={{ color: 'var(--ink)' }}>Ranking</span>
-                  </label>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: 'var(--ink)' }}>Question</label>
-                <input type="text" value={newPollQuestion} onChange={e => setNewPollQuestion(e.target.value)}
-                  placeholder="What do you think?" autoFocus
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none text-sm" style={{ borderColor: 'var(--border)' }} />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: 'var(--ink)' }}>Description (Optional)</label>
-                <textarea value={newPollDescription} onChange={e => setNewPollDescription(e.target.value)}
-                  placeholder="Add more context..." rows={2}
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none text-sm resize-none" style={{ borderColor: 'var(--border)' }} />
-              </div>
-              
-              {newPollType !== 'rating' && (
-                <div>
-                  <label className="block text-sm font-medium mb-3" style={{ color: 'var(--ink)' }}>Options</label>
-                  {newPollOptions.map((opt, i) => (
-                    <div key={i} className="flex gap-2 mb-2">
-                      <input type="text" value={opt} onChange={e => {
-                        const newOpts = [...newPollOptions]
-                        newOpts[i] = e.target.value
-                        setNewPollOptions(newOpts)
-                      }}
-                        placeholder={`Option ${i + 1}`}
-                        className="flex-1 px-4 py-2 border rounded-lg focus:outline-none text-sm"
-                        style={{ borderColor: 'var(--border)' }} />
-                      {newPollOptions.length > 2 && (
-                        <button onClick={() => setNewPollOptions(newPollOptions.filter((_, idx) => idx !== i))}
-                          className="p-2 hover:bg-red-50 rounded-lg transition-smooth cursor-pointer text-red-600"
-                          title="Delete option">
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                          </svg>
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                  {newPollOptions.length < 5 && (
-                    <button onClick={() => setNewPollOptions([...newPollOptions, ''])}
-                      className="text-xs font-medium mt-2 py-1 px-2 rounded hover:bg-gray-100" style={{ color: 'var(--coral)' }}>
-                      + Add option
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-            <div className="p-6 border-t flex gap-3" style={{ borderColor: 'var(--border)' }}>
-              <button onClick={() => { setCreatingPoll(false); setNewPollQuestion(''); setNewPollOptions(['', '']); setNewPollDescription(''); setNewPollType('single_choice') }}
-                className="flex-1 py-2 rounded-lg border text-sm font-medium transition-smooth cursor-pointer hover:bg-gray-50"
-                style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                Cancel
-              </button>
-              <button onClick={createNewPoll} disabled={!newPollQuestion.trim() || (newPollType !== 'rating' && newPollOptions.filter(o => o.trim()).length < 2)}
-                className="flex-1 py-2 rounded-lg text-sm font-semibold text-white transition-smooth cursor-pointer disabled:opacity-50"
-                style={{ background: 'var(--coral)' }}>
-                Create Poll
-              </button>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Survey Creation Panel */}
-      {creatingSurvey && (
-        <>
-          <div className="fixed inset-0 z-40 animate-backdrop" style={{ background: 'rgba(0,0,0,0.3)' }} onClick={() => setCreatingSurvey(false)} />
-          <div className="fixed right-0 top-0 z-50 w-full sm:w-96 h-screen bg-white shadow-2xl flex flex-col overflow-hidden animate-slide-in-right">
-            <div className="p-6 border-b" style={{ borderColor: 'var(--border)' }}>
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Create Survey</h2>
-                <button onClick={() => { setCreatingSurvey(false); setNewSurveyTitle(''); setSurveyQuestions([]) }} 
-                  className="p-1 hover:bg-gray-100 rounded-lg transition-smooth cursor-pointer"
-                  title="Close (Esc)">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: 'var(--ink)' }}>Survey Title</label>
-                <input type="text" value={newSurveyTitle} onChange={e => setNewSurveyTitle(e.target.value)}
-                  placeholder="Customer Satisfaction" autoFocus
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none text-sm" style={{ borderColor: 'var(--border)' }} />
-              </div>
-
-              {/* Questions Builder */}
-              <div>
-                <label className="block text-sm font-medium mb-3" style={{ color: 'var(--ink)' }}>Questions</label>
-                <SurveyQuestionBuilder 
-                  questions={surveyQuestions}
-                  onQuestionsChange={setSurveyQuestions}
-                />
-              </div>
-            </div>
-            <div className="p-6 border-t flex gap-3" style={{ borderColor: 'var(--border)' }}>
-              <button onClick={() => { setCreatingSurvey(false); setNewSurveyTitle(''); setSurveyQuestions([]) }}
-                className="flex-1 py-2 rounded-lg border text-sm font-medium transition-smooth cursor-pointer hover:bg-gray-50"
-                style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                Cancel
-              </button>
-              <button onClick={createNewSurvey} disabled={!newSurveyTitle.trim() || surveyQuestions.length === 0}
-                className="flex-1 py-2 rounded-lg text-sm font-semibold text-white transition-smooth cursor-pointer disabled:opacity-50"
-                style={{ background: 'var(--coral)' }}>
-                Create Survey
-              </button>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Add New User Modal */}
-      {showAddUserModal && (
-        <>
-          <div className="fixed inset-0 z-40 bg-black/20" onClick={() => setShowAddUserModal(false)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-white rounded-2xl p-6 sm:p-8 w-full sm:w-96 max-h-screen overflow-y-auto shadow-2xl">
-            <h2 className="text-lg font-bold mb-6" style={{ color: 'var(--ink)' }}>Add a new user</h2>
-            
-            <div className="space-y-4 mb-6">
-              <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: 'var(--ink)' }}>Name</label>
-                <input type="text" value={newUserName} onChange={e => setNewUserName(e.target.value)}
-                  placeholder="John Doe"
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none text-sm"
-                  style={{ borderColor: 'var(--border)', fontSize: '16px' }} autoFocus />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: 'var(--ink)' }}>Email</label>
-                <input type="email" value={newUserEmail} onChange={e => setNewUserEmail(e.target.value)}
-                  placeholder="john@example.com"
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none text-sm"
-                  style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <input type="checkbox" id="permission" checked={newUserPermission} onChange={e => setNewUserPermission(e.target.checked)}
-                  className="w-4 h-4 rounded cursor-pointer" />
-                <label htmlFor="permission" className="text-sm" style={{ color: 'var(--ink)' }}>
-                  I have permission to add this person's details
-                </label>
-              </div>
-            </div>
-            
-            {error && <p className="text-sm text-red-500 mb-4">{error}</p>}
-            
-            <div className="flex flex-col sm:flex-row gap-3">
-              <button onClick={() => setShowAddUserModal(false)}
-                className="flex-1 py-2 rounded-lg border text-sm font-medium transition-smooth cursor-pointer hover:bg-gray-50 order-2 sm:order-1"
-                style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                Cancel
-              </button>
-              <button onClick={addNewUser} disabled={loading || !newUserName.trim() || !newUserEmail.trim() || !newUserPermission}
-                className="flex-1 py-2 rounded-lg text-sm font-semibold text-white transition-smooth cursor-pointer disabled:opacity-50 order-1 sm:order-2"
-                style={{ background: 'var(--coral)' }}>
-                {loading ? 'Adding...' : 'Add user'}
-              </button>
-            </div>
-          </div>
-        </>
-      )}
-
-      <style>{`
-        @keyframes slide-in-right {
-          from { transform: translateX(100%); opacity: 0; }
-          to { transform: translateX(0); opacity: 1; }
-        }
-        .animate-slide-in-right { animation: slide-in-right 0.3s ease-out; }
-      `}</style>
+      <style>{IDN_CSS}</style>
     </>
   )
 }
+
+const AI_ACTIONS: { key: string; task: 'improve_writing' | 'fix_formatting' | 'summarize'; label: string; busy: string; title: string; icon: React.ReactNode }[] = [
+  { key: 'improve', task: 'improve_writing', label: 'Improve', busy: 'Improving…', title: 'Improve the writing with AI',
+    icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M12 2.5l1.9 5.6 5.6 1.9-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.9z" /><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z" opacity=".7" /></svg> },
+  { key: 'fix', task: 'fix_formatting', label: 'Fix', busy: 'Fixing…', title: 'Fix spelling, grammar and formatting',
+    icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M4 7V5h16v2" /><path d="M12 5v14" /><path d="M9 19h6" /></svg> },
+  { key: 'summarize', task: 'summarize', label: 'Summarize', busy: 'Summarizing…', title: 'Make it shorter',
+    icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden><path d="M4 6h16M4 12h10M4 18h6" /></svg> },
+]
+
+const POLL_ICON = <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M8 16v-4M12 16V8M16 16v-6" /></svg>
+const SURVEY_ICON = <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
+
+const IDN_CSS = `
+.idn-scrim{position:fixed;inset:0;z-index:50;background:rgba(15,15,20,.3);animation:idn-fade .2s ease-out}
+.idn{position:fixed;top:10px;right:10px;bottom:10px;z-index:51;width:min(640px,calc(100vw - 20px));display:flex;flex-direction:column;overflow:hidden;border-radius:26px;background:var(--card,#fff);box-shadow:0 24px 60px -12px rgba(16,24,40,.3),0 0 0 1px rgba(0,0,0,.04);animation:idn-in .32s cubic-bezier(.2,.9,.3,1)}
+@media (max-width:640px){.idn{top:auto;left:0;right:0;bottom:0;width:100%;height:92dvh;border-radius:26px 26px 0 0}}
+@keyframes idn-in{from{transform:translateX(28px);opacity:0}to{transform:none;opacity:1}}
+@keyframes idn-fade{from{opacity:0}}
+.idn button::before,.idn-done button::before{display:none!important}
+.idn-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:20px 22px 8px 26px}
+.idn-head h2{margin:0;font-family:var(--font-display),-apple-system,"SF Pro Display",sans-serif;font-size:26px;font-weight:700;letter-spacing:-.035em;color:var(--ink)}
+.idn-x{width:38px;height:38px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;border:none;border-radius:50%;background:#f4f4f5;color:var(--ink);cursor:pointer;transition:background .15s}
+.idn-x:hover{background:#e9e9ec}
+.idn-body{flex:1;min-height:0;overflow-y:auto;padding:12px 26px 26px;display:flex;flex-direction:column;gap:22px}
+.idn-f{position:relative;display:flex;flex-direction:column}
+.idn-label{display:block;margin:0 0 9px;font-size:14.5px;font-weight:650;letter-spacing:-.01em;color:var(--ink)}
+.idn-label small{margin-left:5px;font-size:12.5px;font-weight:500;color:#a1a1aa}
+.idn-lrow{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.idn-sub{font-size:12.5px;font-weight:600;color:#a1a1aa}
+.idn-field{display:block;width:100%;min-height:48px;padding:13px 16px;border:none!important;border-radius:16px;background:#f4f4f5;font:inherit;font-size:16px;line-height:1.45;color:var(--ink);outline:none;resize:vertical;transition:background .15s,box-shadow .15s}
+textarea.idn-field{min-height:120px}
+.idn-field::placeholder{color:#a1a1aa}
+.idn-field:focus,.idn-field:focus-visible{background:#fff;box-shadow:0 0 0 1.5px var(--ink)!important;outline:none!important}
+.idn-count{align-self:flex-end;margin-top:6px;font-size:12px;font-weight:600;color:#c4c4cc}
+.idn-count.warn{color:#d97706}
+.idn-ai{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:10px}
+.idn-ai-hint{margin-left:4px;font-size:12.5px;color:#a1a1aa}
+.idn-pill{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;border:none;border-radius:999px;background:#f4f4f5;font:inherit;font-size:13.5px;font-weight:600;color:var(--ink);cursor:pointer;white-space:nowrap;transition:background .15s,opacity .15s,transform .1s}
+.idn-pill:hover:not(:disabled){background:#ececef}
+.idn-pill:active:not(:disabled){transform:scale(.97)}
+.idn-pill:disabled{opacity:.45;cursor:not-allowed}
+.idn-pill.ghost{background:none;box-shadow:inset 0 0 0 1px rgba(0,0,0,.1)}
+.idn-pill.sm{height:30px;padding:0 12px;font-size:12.5px}
+.idn-pill.dark{background:var(--ink);color:#fff}
+.idn-pill.dark:hover{background:var(--ink);opacity:.9}
+.idn-spin{width:13px;height:13px;flex-shrink:0;border-radius:50%;border:2px solid rgba(0,0,0,.15);border-top-color:var(--ink);animation:idn-rot .7s linear infinite}
+.idn-spin.light{border-color:rgba(255,255,255,.35);border-top-color:#fff}
+@keyframes idn-rot{to{transform:rotate(360deg)}}
+.idn-err{margin:8px 0 0;padding:9px 12px;border-radius:12px;background:#fef2f2;font-size:13px;color:#b91c1c}
+.idn-note{padding:11px 14px;border-radius:14px;background:var(--peach);font-size:13.5px;color:var(--ink)}
+.idn-note button{padding:0;border:none;background:none;font:inherit;font-weight:700;color:var(--coral);text-decoration:underline;cursor:pointer}
+.idn-img{position:relative;display:flex;align-items:flex-end;gap:10px}
+.idn-img img{height:96px;max-width:220px;object-fit:cover;border-radius:16px;box-shadow:0 0 0 1px rgba(0,0,0,.06);cursor:zoom-in}
+.idn-img button{position:absolute;top:6px;left:calc(min(220px,100%) - 30px);width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;border:none;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:16px;line-height:1;cursor:pointer}
+.idn-img span{font-size:12px;color:#a1a1aa}
+.idn-chips{display:flex;flex-wrap:wrap;gap:8px}
+.idn-chip{display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 15px;border:none;border-radius:999px;background:#f4f4f5;font:inherit;font-size:14px;font-weight:600;color:#3f3f46;cursor:pointer;transition:background .15s,color .15s,box-shadow .15s,opacity .15s,transform .1s}
+.idn-chip:hover:not(:disabled){background:#ececef}
+.idn-chip:active:not(:disabled){transform:scale(.97)}
+.idn-chip.on{background:#fff;color:var(--ink);box-shadow:0 0 0 1.5px var(--ink)}
+.idn-chip:disabled{opacity:.4;cursor:not-allowed}
+.idn-switchrow{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;border:none;border-radius:18px;background:#f7f7f8;font:inherit;text-align:left;cursor:pointer;transition:background .15s}
+.idn-switchrow:hover{background:#f1f1f3}
+.idn-switchrow-ic{width:36px;height:36px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;border-radius:12px;background:#fff;color:#71717a;box-shadow:0 0 0 1px rgba(0,0,0,.05)}
+.idn-switchrow.on .idn-switchrow-ic{color:var(--coral)}
+.idn-switchrow-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.idn-switchrow-t b{font-size:14.5px;font-weight:650;color:var(--ink)}
+.idn-switchrow-t small{font-size:12.5px;color:#8e8e93}
+.idn-sw{position:relative;width:44px;height:26px;flex-shrink:0;border-radius:999px;background:#d4d4d8;transition:background .2s}
+.idn-sw i{position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.22);transition:transform .22s cubic-bezier(.3,.9,.4,1.2)}
+.idn-switchrow.on .idn-sw{background:var(--coral)}
+.idn-switchrow.on .idn-sw i{transform:translateX(18px)}
+.idn-switchrow:focus-visible{outline:none;box-shadow:0 0 0 2px var(--ink)}
+.idn-attach{display:flex;flex-wrap:wrap;gap:8px}
+.idn-att{display:inline-flex;align-items:center;max-width:100%;height:34px;padding:0 4px 0 0;border-radius:999px;font-size:13.5px;font-weight:600}
+.idn-att .t{display:inline-flex;align-items:center;gap:6px;min-width:0;height:100%;padding:0 6px 0 13px;border:none;background:none;font:inherit;color:inherit;cursor:pointer}
+.idn-att .t span{min-width:0;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.idn-att .rm{width:24px;height:24px;flex-shrink:0;border:none;border-radius:50%;background:rgba(255,255,255,.75);color:inherit;font-size:15px;line-height:1;cursor:pointer}
+.idn-att .rm:hover{background:#fff}
+.idn-att.blue{background:#e0f2fe;color:#0369a1}
+.idn-att.green{background:#dcfce7;color:#15803d}
+.idn-who{display:flex;align-items:center;gap:12px;padding:10px 10px 10px 12px;border-radius:18px;background:#f7f7f8}
+.idn-av{width:38px;height:38px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:var(--coral);font-size:15px;font-weight:700;color:#fff}
+.idn-who-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.idn-who-t b{font-size:15px;font-weight:650;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.idn-who-t small{font-size:12.5px;color:#8e8e93}
+.idn-who .idn-pill{background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.07)}
+.idn-namebox{display:flex;flex-direction:column;gap:8px}
+.idn-namechips{display:flex;flex-wrap:wrap;gap:6px}
+.idn-foot{display:flex;align-items:center;gap:8px;padding:12px 16px 14px 18px;box-shadow:0 -1px 0 rgba(0,0,0,.06)}
+.idn-icon{width:40px;height:40px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;border:none;border-radius:50%;background:#f4f4f5;color:var(--ink);cursor:pointer;transition:background .15s}
+.idn-icon:hover{background:#ececef}
+.idn-foot-hint{font-size:12.5px;color:#a1a1aa;white-space:nowrap}
+@media (max-width:420px){.idn-foot-hint{display:none}}
+.idn-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:44px;padding:0 20px;border:none;border-radius:999px;background:#f4f4f5;font:inherit;font-size:14.5px;font-weight:650;color:var(--ink);cursor:pointer;transition:background .15s,opacity .15s,transform .1s}
+.idn-btn:hover{background:#ececef}
+.idn-btn:active:not(:disabled){transform:scale(.97)}
+.idn-btn.go{padding:0 24px;background:var(--coral);color:#fff}
+.idn-btn.go:hover{background:var(--coral);filter:brightness(1.05)}
+.idn-btn:disabled{opacity:.45;cursor:not-allowed}
+.idn-done{position:fixed;top:50%;left:50%;z-index:51;width:min(380px,calc(100vw - 32px));transform:translate(-50%,-50%);padding:34px 28px 30px;border-radius:28px;background:var(--card,#fff);text-align:center;box-shadow:0 24px 60px -12px rgba(16,24,40,.3);animation:idn-pop .35s cubic-bezier(.2,.9,.3,1.2)}
+@keyframes idn-pop{from{transform:translate(-50%,-46%) scale(.94);opacity:0}}
+.idn-done-ic{width:64px;height:64px;margin:0 auto 14px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:#dcfce7;color:#16a34a}
+.idn-done h2{margin:0 0 6px;font-family:var(--font-display),-apple-system,"SF Pro Display",sans-serif;font-size:26px;font-weight:700;letter-spacing:-.035em;color:var(--ink)}
+.idn-done p{margin:0;font-size:14.5px;color:#71717a}
+[data-theme="dark"] .idn,[data-theme="dark"] .idn-done{background:#18181b}
+[data-theme="dark"] .idn-field,[data-theme="dark"] .idn-pill:not(.dark),[data-theme="dark"] .idn-chip,[data-theme="dark"] .idn-x,[data-theme="dark"] .idn-icon,[data-theme="dark"] .idn-btn:not(.go){background:#27272a}
+[data-theme="dark"] .idn-switchrow,[data-theme="dark"] .idn-who{background:#222225}
+[data-theme="dark"] .idn-switchrow-ic{background:#2e2e33}
+[data-theme="dark"] .idn-field:focus,[data-theme="dark"] .idn-chip.on{background:#3f3f46}
+`

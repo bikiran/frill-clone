@@ -18,7 +18,7 @@ import { SettingsFields } from './SettingsFields'
 export type SurveyKind = 'nps' | 'csat' | 'open_feedback' | 'questions'
 export type SurveyDraft = { title: string; kind: SurveyKind; question: string; description: string; questions: BuilderQuestion[]; settings: EngageSettings; legacyType: string }
 
-const KINDS: { key: SurveyKind; label: string; about: string }[] = [
+export const KINDS: { key: SurveyKind; label: string; about: string }[] = [
   { key: 'nps', label: 'Net Promoter Score', about: '0 to 10, how likely to recommend' },
   { key: 'csat', label: 'Satisfaction', about: 'How happy, 1 to 5' },
   { key: 'open_feedback', label: 'Open question', about: 'One question, a written answer' },

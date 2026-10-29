@@ -9,7 +9,8 @@ import { getRandomName } from '@/lib/randomNames'
 import { useToast } from '@/components/ToastProvider'
 import ConfirmModal from './ConfirmModal'
 import { AssignIcon, PinIcon, MergeIcon, ArchiveIcon, TrashIcon, EditIcon, ShareIcon, CloseIcon, EyeIcon, LockIcon } from './Icons'
-import { confirmDialog } from '@/components/ConfirmDialog'
+import { confirmDialog, alertDialog } from '@/components/ConfirmDialog'
+import IdeaAttachSheet from '@/components/IdeaAttachSheet'
 import { notifyIntegrations } from '@/lib/integrations-notify'
 import { loadStaffRows } from '@/lib/team-list'
 import { sanitizeHtml } from '@/lib/safe-html'
@@ -109,6 +110,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
   const [showSurveyModal, setShowSurveyModal] = useState(false)
   const [availablePolls, setAvailablePolls] = useState<any[]>([])
   const [availableSurveys, setAvailableSurveys] = useState<any[]>([])
+  const [engageCompanyId, setEngageCompanyId] = useState<string | null>(idea.company_id || null)
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }) => {
@@ -154,6 +156,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
         }
       }
       if (cid) {
+        setEngageCompanyId(cid)
         const { data: pollData } = await (supabase as any).from('polls').select('*').eq('company_id', cid)
         setAvailablePolls(pollData || [])
         const { data: surveyData } = await (supabase as any).from('surveys').select('*').eq('company_id', cid)
@@ -239,7 +242,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
       parent_id: replyingTo || null,
     })
     if (error) {
-      alert('Failed to post comment: ' + error.message)
+      alertDialog('Failed to post comment: ' + error.message)
     } else {
       if (!isPrivateNote) notifyIntegrations('idea.commented', { id: idea.id })
       // Notify: idea owner about the comment; parent comment author about the reply.
@@ -299,7 +302,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
   const copyCommentLink = (commentId: string) => {
     const url = `${window.location.origin}/?comment=${commentId}`
     navigator.clipboard.writeText(url)
-    alert('Comment link copied to clipboard!')
+    alertDialog('Comment link copied to clipboard!')
   }
 
   const uploadCommentImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -312,7 +315,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
       const { data: { publicUrl } } = supabase.storage.from('idea-images').getPublicUrl(data.path)
       setCommentImageUrl(publicUrl)
     } catch (err: any) {
-      alert('Upload failed: ' + err.message)
+      alertDialog('Upload failed: ' + err.message)
     }
   }
 
@@ -330,7 +333,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
 
   const saveEdit = async () => {
     if (!editTitle.trim()) {
-      alert('Title cannot be empty')
+      alertDialog('Title cannot be empty')
       return
     }
     await supabase.from('ideas').update({
@@ -352,7 +355,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      alert(`Share: ${url}`)
+      alertDialog(`Share: ${url}`)
     }
   }
 
@@ -453,7 +456,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
 
   const toggleVote = async () => {
     if (!user) {
-      alert('Please sign in to vote')
+      alertDialog('Please sign in to vote')
       return
     }
     setVoteAnimating(true)
@@ -547,10 +550,10 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
       }
 
       setShowMergeDropdown(false)
-      alert(`Merged "${idea.title}" into "${target.title}".`)
+      alertDialog(`Merged "${idea.title}" into "${target.title}".`)
       onClose()
     } catch (e: any) {
-      alert('Merge failed: ' + (e.message || 'unknown error'))
+      alertDialog('Merge failed: ' + (e.message || 'unknown error'))
     }
   }
 
@@ -560,7 +563,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
     if (error) {
       console.error('Update error:', error)
       setSaveStatus('error')
-      alert('Failed to save: ' + error.message + '\n\nMake sure DATABASE_SETUP.sql has been run.')
+      alertDialog('Failed to save: ' + error.message + '\n\nMake sure DATABASE_SETUP.sql has been run.')
     } else {
       if (updates.status) notifyIntegrations('idea.status_changed', { id: idea.id })
       // Log activity for status changes
@@ -597,14 +600,14 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
       const fileName = `cover-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`
       const { data, error } = await supabase.storage.from('idea-images').upload(fileName, file)
       if (error) {
-        alert('Upload failed: ' + error.message)
+        alertDialog('Upload failed: ' + error.message)
       } else {
         const { data: urlData } = supabase.storage.from('idea-images').getPublicUrl(data.path)
         setCoverImageUrl(urlData.publicUrl)
         await updateIdea({ cover_image_url: urlData.publicUrl })
       }
     } catch (err: any) {
-      alert('Upload failed: ' + err.message)
+      alertDialog('Upload failed: ' + err.message)
     }
     setUploadingCover(false)
   }
@@ -648,10 +651,11 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
       />
 
       {/* Slide-out panel from right */}
-      <div className="fixed top-0 right-0 bottom-0 z-50 w-full md:w-[90%] lg:w-[80%] xl:w-[75%] bg-white shadow-2xl drawer-open flex overflow-hidden">
+      <div className="fixed top-0 right-0 bottom-0 z-50 w-full md:w-[90%] lg:w-[80%] xl:w-[75%] bg-white shadow-2xl drawer-open flex overflow-hidden idm">
+        <style>{IDM_CSS}</style>
         {/* Left admin sidebar */}
         {isAdmin && (
-          <aside className="hidden md:flex flex-col w-72 lg:w-80 shrink-0 bg-gray-50 border-r relative overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+          <aside className="hidden md:flex flex-col w-72 lg:w-80 shrink-0 border-r relative overflow-hidden idm-side" style={{ borderColor: 'var(--border)' }}>
             {/* MAIN ADMIN VIEW */}
             <div 
               className="absolute inset-0 flex flex-col transition-transform duration-300"
@@ -660,13 +664,13 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
               <div className="flex items-center justify-between p-5 border-b" style={{ borderColor: 'var(--border)' }}>
                 <h2 className="text-lg font-bold" style={{ color: 'var(--ink)' }}>Admin</h2>
                 <div className="relative">
-                  <button onClick={() => setShowAdminMenu(!showAdminMenu)} className="w-7 h-7 rounded-lg hover:bg-gray-200 flex items-center justify-center transition-smooth">
+                  <button onClick={() => setShowAdminMenu(!showAdminMenu)} className="w-8 h-8 rounded-full hover:bg-gray-200 flex items-center justify-center transition-smooth">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--slate)" stroke="none"><circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" /></svg>
                   </button>
                   {showAdminMenu && (
                     <>
                       <div className="fixed inset-0 z-30" onClick={() => setShowAdminMenu(false)} />
-                      <div className="absolute top-full right-0 mt-2 w-44 bg-white rounded-lg shadow-2xl border z-40 overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+                      <div className="absolute top-full right-0 mt-2 w-44 bg-white rounded-2xl shadow-2xl border z-40 overflow-hidden" style={{ borderColor: 'var(--border)' }}>
                         <button onClick={shareIdea} className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50 transition-smooth cursor-pointer">
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
                           {copied ? 'Copied!' : 'Copy link'}
@@ -682,7 +686,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
                 <button
                   onClick={() => setSubPanel('status')}
                   disabled={!canEditStatus}
-                  className="w-full flex items-center justify-between gap-3 p-3 rounded-lg hover:bg-white transition-smooth disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                  className="w-full flex items-center justify-between gap-3 p-3 rounded-xl hover:bg-white transition-smooth disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                   title={!canEditStatus ? 'Only admins and editors can change status' : ''}>
                   <span className="flex items-center gap-3">
                     <span className="w-5 h-5 rounded-full border-2 flex items-center justify-center" style={{ borderColor: currentStatus.color }}>
@@ -691,7 +695,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
                     <span className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Status</span>
                   </span>
                   <span className="flex items-center gap-2">
-                    <span className="text-xs px-2 py-1 rounded font-medium" style={{ background: currentStatus.bg, color: currentStatus.color }}>
+                    <span className="text-xs px-2.5 py-1 rounded-full font-semibold" style={{ background: currentStatus.bg, color: currentStatus.color }}>
                       {currentStatus.label}
                     </span>
                     <span className="text-sm" style={{ color: 'var(--slate)' }}>›</span>
@@ -700,7 +704,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
 
                 <button
                   onClick={() => setSubPanel('priority')}
-                  className="w-full flex items-center justify-between gap-3 p-3 rounded-lg hover:bg-white transition-smooth">
+                  className="w-full flex items-center justify-between gap-3 p-3 rounded-xl hover:bg-white transition-smooth">
                   <span className="flex items-center gap-3">
                     <span className="w-5 h-5 grid grid-cols-2 gap-0.5">
                       <span className="bg-gray-400 rounded-sm" />
@@ -712,7 +716,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
                   </span>
                   <span className="flex items-center gap-2">
                     {currentPriority && (
-                      <span className="text-xs px-2 py-1 rounded font-medium flex items-center gap-1" style={{ background: currentPriority.bg, color: currentPriority.color }}>
+                      <span className="text-xs px-2.5 py-1 rounded-full font-semibold flex items-center gap-1" style={{ background: currentPriority.bg, color: currentPriority.color }}>
                         {priorityPillText}
                       </span>
                     )}
@@ -722,7 +726,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
 
                 <button
                   onClick={() => setSubPanel('visibility')}
-                  className="w-full flex items-center justify-between gap-3 p-3 rounded-lg hover:bg-white transition-smooth">
+                  className="w-full flex items-center justify-between gap-3 p-3 rounded-xl hover:bg-white transition-smooth">
                   <span className="flex items-center gap-3">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2">
                       <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
@@ -736,21 +740,21 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
 
               {/* Bottom actions */}
               <div className="p-4 border-t" style={{ borderColor: 'var(--border)' }}>
-                <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>Actions</p>
+                <p className="text-sm font-semibold mb-2.5" style={{ color: 'var(--slate)' }}>Actions</p>
                 <div className="space-y-1">
                   {/* Assign */}
                   <div className="relative" ref={assignRef}>
                     <button 
                       onClick={() => { setShowAssignDropdown(!showAssignDropdown); setShowMergeDropdown(false); if (!showAssignDropdown) loadTeamPeople() }}
-                      className="w-full flex items-center gap-3 p-2.5 rounded-lg border hover:bg-white transition-smooth cursor-pointer text-left" 
-                      style={{ borderColor: assignee.id ? 'var(--coral)' : 'var(--border)', background: assignee.id ? 'var(--peach)' : 'transparent' }}>
+                      className="idm-act" 
+                      style={{ background: assignee.id ? 'var(--peach)' : undefined }}>
                       <AssignIcon size={16} color={assignee.id ? 'var(--coral)' : 'var(--slate)'} />
                       <span className="text-xs font-medium truncate" style={{ color: assignee.id ? 'var(--coral)' : 'var(--ink)' }}>
                         {assignee.id ? `Assigned to ${assignee.name || 'team member'}` : 'Assign'}
                       </span>
                     </button>
                     {showAssignDropdown && (
-                      <div className="absolute bottom-full left-0 mb-2 w-full bg-white rounded-lg shadow-2xl border z-40 animate-fade-in-up max-h-72 overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
+                      <div className="absolute bottom-full left-0 mb-2 w-full bg-white rounded-2xl shadow-2xl border z-40 animate-fade-in-up max-h-72 overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
                         <div className="p-2 text-xs font-semibold" style={{ color: 'var(--slate)' }}>Assign to team member</div>
                         {teamPeople === null && <p className="px-3 pb-3 text-xs" style={{ color: 'var(--slate)' }}>Loading team…</p>}
                         {teamPeople !== null && teamPeople.length === 0 && (
@@ -783,11 +787,8 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
                   {/* Pin */}
                   <button 
                     onClick={() => { const newPinned = !idea.is_pinned; updateIdea({ is_pinned: newPinned }) }}
-                    className="w-full flex items-center gap-3 p-2.5 rounded-lg border hover:bg-white transition-smooth cursor-pointer" 
-                    style={{ 
-                      borderColor: idea.is_pinned ? 'var(--coral)' : 'var(--border)', 
-                      background: idea.is_pinned ? 'var(--peach)' : 'transparent' 
-                    }}>
+                    className="idm-act" 
+                    style={{ background: idea.is_pinned ? 'var(--peach)' : undefined }}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill={idea.is_pinned ? 'var(--coral)' : 'none'} stroke={idea.is_pinned ? 'var(--coral)' : 'var(--slate)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="12" y1="17" x2="12" y2="22" />
                       <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
@@ -801,13 +802,12 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
                   <div className="relative" ref={mergeRef}>
                     <button 
                       onClick={() => { setShowMergeDropdown(!showMergeDropdown); setShowAssignDropdown(false); if (!showMergeDropdown) fetchAllIdeas() }}
-                      className="w-full flex items-center gap-3 p-2.5 rounded-lg border hover:bg-white transition-smooth cursor-pointer text-left" 
-                      style={{ borderColor: 'var(--border)' }}>
+                      className="idm-act">
                       <MergeIcon size={16} color="var(--slate)" />
                       <span className="text-xs font-medium" style={{ color: 'var(--ink)' }}>Merge</span>
                     </button>
                     {showMergeDropdown && (
-                      <div className="absolute bottom-full left-0 mb-2 w-full bg-white rounded-lg shadow-2xl border z-40 animate-fade-in-up max-h-64 overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
+                      <div className="absolute bottom-full left-0 mb-2 w-full bg-white rounded-2xl shadow-2xl border z-40 animate-fade-in-up max-h-64 overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
                         <div className="p-2 sticky top-0 bg-white border-b" style={{ borderColor: 'var(--border)' }}>
                           <input
                             type="text"
@@ -836,11 +836,8 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
                       updateIdea({ is_archived: newArchived })
                       idea.is_archived = newArchived
                     }}
-                    className="w-full flex items-center gap-3 p-2.5 rounded-lg border hover:bg-white transition-smooth cursor-pointer" 
-                    style={{ 
-                      borderColor: idea.is_archived ? 'var(--coral)' : 'var(--border)', 
-                      background: idea.is_archived ? 'var(--peach)' : 'transparent' 
-                    }}>
+                    className="idm-act" 
+                    style={{ background: idea.is_archived ? 'var(--peach)' : undefined }}>
                     <ArchiveIcon size={16} color={idea.is_archived ? 'var(--coral)' : 'var(--slate)'} />
                     <span className="text-xs font-medium" style={{ color: idea.is_archived ? 'var(--coral)' : 'var(--ink)' }}>
                       {idea.is_archived ? 'Archived' : 'Archive'}
@@ -851,8 +848,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
                   {isAdmin && (
                     <button 
                       onClick={() => setConfirmDeleteIdea(true)} 
-                      className="w-full flex items-center gap-3 p-2.5 rounded-lg border hover:bg-red-50 transition-smooth cursor-pointer" 
-                      style={{ borderColor: '#fca5a5' }}>
+                      className="idm-act danger">
                       <TrashIcon size={16} color="#dc2626" />
                       <span className="text-xs font-medium" style={{ color: '#dc2626' }}>Delete</span>
                     </button>
@@ -887,7 +883,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
                     <button
                       key={key}
                       onClick={() => { setStatus(key); updateIdea({ status: key }) }}
-                      className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-white transition-smooth text-left">
+                      className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-white transition-smooth text-left">
                       <span 
                         className="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-smooth"
                         style={{ 
@@ -1013,7 +1009,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
                     </div>
                     <button
                       onClick={() => { setIsPrivate(!isPrivate); updateIdea({ is_private: !isPrivate }) }}
-                      className="px-4 py-2 rounded-lg border text-sm font-medium transition-smooth whitespace-nowrap shrink-0"
+                      className="px-4 py-2 rounded-full border text-sm font-medium transition-smooth whitespace-nowrap shrink-0"
                       style={{ 
                         background: isPrivate ? 'var(--peach)' : 'white',
                         borderColor: isPrivate ? 'var(--coral)' : 'var(--border)',
@@ -1053,7 +1049,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
                     <button
                       onClick={() => coverFileRef.current?.click()}
                       disabled={uploadingCover}
-                      className="px-4 py-2 rounded-lg border text-sm font-medium transition-smooth shrink-0 disabled:opacity-50"
+                      className="px-4 py-2 rounded-full border text-sm font-medium transition-smooth shrink-0 disabled:opacity-50"
                       style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
                       {uploadingCover ? 'Uploading...' : 'Upload'}
                     </button>
@@ -1093,7 +1089,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
             {canEdit && (
               <button
                 onClick={() => { const newPinned = !idea.is_pinned; updateIdea({ is_pinned: newPinned }) }}
-                className="w-9 h-9 rounded-lg flex items-center justify-center transition-smooth hover:bg-gray-100 cursor-pointer group relative"
+                className="w-9 h-9 rounded-full flex items-center justify-center transition-smooth hover:bg-gray-100 cursor-pointer group relative"
                 title={idea.is_pinned ? 'Unpin' : 'Pin'}
                 style={{ background: idea.is_pinned ? 'var(--peach)' : 'transparent' }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill={idea.is_pinned ? 'var(--coral)' : 'none'} stroke={idea.is_pinned ? 'var(--coral)' : 'var(--slate)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1107,7 +1103,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
             {canEdit && !editing && (
               <button
                 onClick={() => setEditing(true)}
-                className="w-9 h-9 rounded-lg flex items-center justify-center transition-smooth hover:bg-gray-100 cursor-pointer"
+                className="w-9 h-9 rounded-full flex items-center justify-center transition-smooth hover:bg-gray-100 cursor-pointer"
                 title="Edit">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
@@ -1120,7 +1116,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
             <div className="relative">
               <button
                 onClick={() => setShowMoreMenu(!showMoreMenu)}
-                className="w-9 h-9 rounded-lg flex items-center justify-center transition-smooth hover:bg-gray-100 cursor-pointer"
+                className="w-9 h-9 rounded-full flex items-center justify-center transition-smooth hover:bg-gray-100 cursor-pointer"
                 title="More options">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="var(--slate)" stroke="none">
                   <circle cx="12" cy="5" r="2" />
@@ -1131,7 +1127,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
               {showMoreMenu && (
                 <>
                   <div className="fixed inset-0 z-30" onClick={() => setShowMoreMenu(false)} />
-                  <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-lg shadow-2xl border z-40 overflow-hidden animate-fade-in-up" style={{ borderColor: 'var(--border)' }}>
+                  <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-2xl shadow-2xl border z-40 overflow-hidden animate-fade-in-up" style={{ borderColor: 'var(--border)' }}>
                     <button onClick={() => { shareIdea(); setShowMoreMenu(false) }} className="w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-gray-50 transition-smooth cursor-pointer text-left" style={{ color: 'var(--ink)' }}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
                       {copied ? 'Copied!' : 'Copy link'}
@@ -1151,7 +1147,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
             </div>
 
             {/* Close */}
-            <button onClick={onClose} className="w-9 h-9 rounded-lg hover:bg-gray-100 flex items-center justify-center transition-smooth cursor-pointer" style={{ color: 'var(--slate)' }}>
+            <button onClick={onClose} className="w-9 h-9 rounded-full hover:bg-gray-100 flex items-center justify-center transition-smooth cursor-pointer" style={{ color: 'var(--slate)' }}>
               <CloseIcon size={18} />
             </button>
           </div>
@@ -1183,10 +1179,10 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
             <div className="flex items-start gap-4 mb-6">
               <button
                 onClick={toggleVote}
-                className={`w-14 h-16 rounded-xl border-2 flex flex-col items-center justify-center shrink-0 transition-all duration-300 cursor-pointer group relative ${voteAnimating ? 'vote-animate' : ''}`}
+                className={`w-14 h-16 rounded-2xl border-2 flex flex-col items-center justify-center shrink-0 transition-all duration-300 cursor-pointer group relative ${voteAnimating ? 'vote-animate' : ''}`}
                 style={{ 
-                  borderColor: hasVoted ? 'var(--coral)' : 'var(--border)',
-                  background: hasVoted ? 'var(--peach)' : 'white',
+                  borderColor: hasVoted ? 'var(--coral)' : 'transparent',
+                  background: hasVoted ? 'var(--peach)' : '#f4f4f5',
                 }}
                 title={hasVoted ? 'Remove vote' : 'Vote for this idea'}>
                 <svg 
@@ -1310,10 +1306,10 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
             {/* Edit save/cancel */}
             {editing && (
               <div className="ml-16 mb-6 flex gap-2">
-                <button onClick={saveEdit} className="px-4 py-2 rounded-lg text-sm font-semibold text-white press-effect transition-smooth" style={{ background: 'var(--coral)' }}>
+                <button onClick={saveEdit} className="px-5 py-2 rounded-full text-sm font-semibold text-white press-effect transition-smooth" style={{ background: 'var(--coral)' }}>
                   Save
                 </button>
-                <button onClick={() => { setEditing(false); setEditTitle(idea.title); setEditDescription(idea.description || '') }} className="px-4 py-2 rounded-lg text-sm font-medium border press-effect transition-smooth" style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
+                <button onClick={() => { setEditing(false); setEditTitle(idea.title); setEditDescription(idea.description || '') }} className="px-5 py-2 rounded-full text-sm font-semibold press-effect transition-smooth" style={{ background: '#f4f4f5', color: 'var(--ink)' }}>
                   Cancel
                 </button>
               </div>
@@ -1349,7 +1345,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
             {(idea.topics?.length > 0 || true) && (
               <div className="ml-16 flex flex-wrap gap-2 mb-8 items-center">
                 {(idea.topics || []).map((t: string) => (
-                  <span key={t} className="text-xs px-2 py-1 rounded font-medium" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>
+                  <span key={t} className="text-xs px-2.5 py-1 rounded-full font-semibold" style={{ background: '#f4f4f5', color: 'var(--ink)' }}>
                     #{t}
                   </span>
                 ))}
@@ -1358,7 +1354,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
                   <button
                     type="button"
                     onClick={() => { if (canEditStatus) setShowBodyStatusMenu(v => !v) }}
-                    className="text-xs px-2 py-1 rounded font-medium inline-flex items-center gap-1"
+                    className="text-xs px-2.5 py-1 rounded-full font-semibold inline-flex items-center gap-1"
                     style={{ background: currentStatus.bg, color: currentStatus.color, border: 'none', cursor: canEditStatus ? 'pointer' : 'default' }}
                     title={canEditStatus ? 'Change status' : ''}>
                     {currentStatus.label}
@@ -1392,7 +1388,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
 
             {/* Add comment box */}
             {user ? (
-              <div className="ml-0 md:ml-16 mb-8 rounded-2xl border relative" style={{ borderColor: replyingTo ? 'var(--coral)' : 'var(--border)' }}>
+              <div className="ml-0 md:ml-16 mb-8 rounded-[20px] border relative idm-compose" style={{ borderColor: replyingTo ? 'var(--coral)' : 'var(--border)' }}>
                 {replyingTo && (
                   <div className="flex items-center justify-between px-5 py-2 border-b" style={{ background: 'var(--peach)', borderColor: 'var(--border)' }}>
                     <span className="text-xs font-medium" style={{ color: 'var(--coral)' }}>
@@ -1458,16 +1454,16 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <button onClick={() => commentFileRef.current?.click()} className="p-1.5 rounded hover:bg-gray-100 transition-smooth cursor-pointer" title="Attach image">
+                    <button onClick={() => commentFileRef.current?.click()} className="w-8 h-8 inline-flex items-center justify-center rounded-full hover:bg-gray-100 transition-smooth cursor-pointer" title="Attach image">
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
                     </button>
                     <input ref={commentFileRef} type="file" accept="image/*" className="hidden" onChange={uploadCommentImage} />
                     <button
                       onClick={addComment}
                       disabled={loadingComment || !newComment.trim()}
-                      className="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-smooth press-effect disabled:opacity-50"
+                      className="px-5 py-2 rounded-full text-sm font-semibold text-white transition-smooth press-effect disabled:opacity-50"
                       style={{ background: 'var(--coral)' }}>
-                      {loadingComment ? 'Posting...' : replyingTo ? 'Reply' : 'Add comment'}
+                      {loadingComment ? 'Posting…' : replyingTo ? 'Reply' : 'Add comment'}
                     </button>
                   </div>
                 </div>
@@ -1478,36 +1474,36 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
               </div>
             )}
 
-            {/* Poll & Survey section — full-width strip between comments and activity.
-                (The old -mb-6 negative margin pulled the Activity heading up INTO this row.) */}
-            {isAdmin && (
-              <div className="mt-6 mb-6 -mx-6 px-6 py-3 border-t border-b flex items-center gap-3 flex-wrap" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
-                <div className="flex items-center gap-2">
+            {/* Poll & survey attached to this idea: a row of chips lined up with the
+                rest of the content (the old full-width strip ran past it, and cut
+                the names at 20 letters). */}
+            {isAdmin && (() => {
+              const pollTitle = availablePolls.find(p => p.id === idea.poll_id)?.question || 'Poll'
+              const surveyTitle = availableSurveys.find(sv => sv.id === idea.survey_id)?.title || 'Survey'
+              return (
+                <div className="ml-0 md:ml-16 mb-8 idm-attach">
+                  <span className="idm-attach-l">Attached</span>
                   {idea.poll_id ? (
-                    <button onClick={() => updateIdea({ poll_id: null })} className="text-xs px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition-smooth cursor-pointer" style={{ background: '#e0f2fe', color: '#0369a1' }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="1" /><path d="M12 8v8M8 12h8" /></svg>
-                      {availablePolls.find(p => p.id === idea.poll_id)?.question.slice(0, 20) || 'Poll'} ✕
-                    </button>
+                    <span className="idm-chip blue" title={pollTitle}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M8 16v-4M12 16V8M16 16v-6" /></svg>
+                      <span className="t">{pollTitle}</span>
+                      <button type="button" onClick={() => updateIdea({ poll_id: null })} aria-label="Remove poll" title="Remove">×</button>
+                    </span>
                   ) : (
-                    <button onClick={() => setShowPollModal(true)} className="text-xs px-2.5 py-1.5 rounded-lg hover:bg-white transition-smooth cursor-pointer" style={{ color: 'var(--slate)' }}>
-                      + Poll
-                    </button>
+                    <button type="button" className="idm-add" onClick={() => setShowPollModal(true)}>+ Poll</button>
                   )}
-                </div>
-                <div className="flex items-center gap-2">
                   {idea.survey_id ? (
-                    <button onClick={() => updateIdea({ survey_id: null })} className="text-xs px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition-smooth cursor-pointer" style={{ background: '#f0fdf4', color: '#16a34a' }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
-                      {availableSurveys.find(s => s.id === idea.survey_id)?.title.slice(0, 20) || 'Survey'} ✕
-                    </button>
+                    <span className="idm-chip green" title={surveyTitle}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
+                      <span className="t">{surveyTitle}</span>
+                      <button type="button" onClick={() => updateIdea({ survey_id: null })} aria-label="Remove survey" title="Remove">×</button>
+                    </span>
                   ) : (
-                    <button onClick={() => setShowSurveyModal(true)} className="text-xs px-2.5 py-1.5 rounded-lg hover:bg-white transition-smooth cursor-pointer" style={{ color: 'var(--slate)' }}>
-                      + Survey
-                    </button>
+                    <button type="button" className="idm-add" onClick={() => setShowSurveyModal(true)}>+ Survey</button>
                   )}
                 </div>
-              </div>
-            )}
+              )
+            })()}
 
             {/* Activity */}
             <div className="ml-0 md:ml-16" style={{ display: showActivity ? undefined : 'none' }}>
@@ -1515,7 +1511,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
               
               {/* Pin activity */}
               {idea.is_pinned && (
-                <div className="flex items-center gap-3 p-3 mb-3 rounded-lg" style={{ background: 'var(--peach)' }}>
+                <div className="flex items-center gap-3 p-3 mb-3 rounded-2xl" style={{ background: 'var(--peach)' }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--coral)" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <line x1="12" y1="17" x2="12" y2="22" />
                     <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
@@ -1680,60 +1676,21 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
         />
       )}
 
-      {/* Poll selection modal */}
-      {showPollModal && (
-        <>
-          <div className="fixed inset-0 z-50 backdrop-blur-sm animate-backdrop" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setShowPollModal(false)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-2xl shadow-2xl animate-modal mx-4 max-h-[80vh] overflow-y-auto">
-            <div className="p-6 border-b" style={{ borderColor: 'var(--border)' }}>
-              <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Select a poll</h2>
-            </div>
-            <div className="p-6 space-y-2">
-              {availablePolls.length === 0 ? (
-                <p className="text-sm text-center" style={{ color: 'var(--slate)' }}>No polls available. Create one in the admin panel.</p>
-              ) : (
-                availablePolls.map(poll => (
-                  <button
-                    key={poll.id}
-                    onClick={() => { updateIdea({ poll_id: poll.id }); setShowPollModal(false) }}
-                    className="w-full p-3 rounded-lg border text-left hover:bg-gray-50 transition-smooth cursor-pointer"
-                    style={{ borderColor: 'var(--border)' }}>
-                    <p className="font-medium text-sm" style={{ color: 'var(--ink)' }}>{poll.question}</p>
-                    <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>{poll.options?.length || 0} options</p>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Survey selection modal */}
-      {showSurveyModal && (
-        <>
-          <div className="fixed inset-0 z-50 backdrop-blur-sm animate-backdrop" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setShowSurveyModal(false)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-2xl shadow-2xl animate-modal mx-4 max-h-[80vh] overflow-y-auto">
-            <div className="p-6 border-b" style={{ borderColor: 'var(--border)' }}>
-              <h2 className="text-xl font-bold" style={{ color: 'var(--ink)' }}>Select a survey</h2>
-            </div>
-            <div className="p-6 space-y-2">
-              {availableSurveys.length === 0 ? (
-                <p className="text-sm text-center" style={{ color: 'var(--slate)' }}>No surveys available. Create one in the admin panel.</p>
-              ) : (
-                availableSurveys.map(survey => (
-                  <button
-                    key={survey.id}
-                    onClick={() => { updateIdea({ survey_id: survey.id }); setShowSurveyModal(false) }}
-                    className="w-full p-3 rounded-lg border text-left hover:bg-gray-50 transition-smooth cursor-pointer"
-                    style={{ borderColor: 'var(--border)' }}>
-                    <p className="font-medium text-sm" style={{ color: 'var(--ink)' }}>{survey.title}</p>
-                    <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>{survey.type}</p>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        </>
+      {/* Attach a poll or survey: pick one the workspace has, or make one here */}
+      {(showPollModal || showSurveyModal) && (
+        <IdeaAttachSheet
+          kind={showPollModal ? 'poll' : 'survey'}
+          companyId={engageCompanyId}
+          items={showPollModal ? availablePolls : availableSurveys}
+          selectedId={showPollModal ? idea.poll_id || null : idea.survey_id || null}
+          onPick={id => { updateIdea(showPollModal ? { poll_id: id } : { survey_id: id }); setShowPollModal(false); setShowSurveyModal(false) }}
+          onCreated={row => {
+            if (showPollModal) { setAvailablePolls(list => [...list, row]); updateIdea({ poll_id: row.id }) }
+            else { setAvailableSurveys(list => [...list, row]); updateIdea({ survey_id: row.id }) }
+            setShowPollModal(false); setShowSurveyModal(false)
+          }}
+          onClose={() => { setShowPollModal(false); setShowSurveyModal(false) }}
+        />
       )}
 
       {/* Fullscreen Lightbox */}
@@ -1785,3 +1742,26 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
     </>
   )
 }
+
+const IDM_CSS = `
+.idm button::before{display:none!important}
+.idm .idm-side{background:#f7f7f8}
+.idm .idm-act{display:flex;align-items:center;gap:11px;width:100%;min-height:42px;padding:0 14px;margin-bottom:6px;border:none;border-radius:14px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.05);font:inherit;text-align:left;cursor:pointer;transition:background .15s,box-shadow .15s}
+.idm .idm-act:hover{box-shadow:0 0 0 1px rgba(0,0,0,.09),0 4px 10px -6px rgba(16,24,40,.2)}
+.idm .idm-act span{font-size:13.5px!important;font-weight:600!important}
+.idm .idm-act.danger{background:#fef2f2;box-shadow:none}
+.idm .idm-act.danger:hover{background:#fee2e2}
+.idm-attach{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;border-radius:16px;background:#f7f7f8}
+.idm-attach-l{margin-right:2px;font-size:12.5px;font-weight:600;color:#8e8e93}
+.idm-chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;height:30px;padding:0 4px 0 11px;border-radius:999px;font-size:12.5px;font-weight:600}
+.idm-chip .t{min-width:0;max-width:min(440px,60vw);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.idm-chip button{width:22px;height:22px;flex-shrink:0;border:none;border-radius:50%;background:rgba(255,255,255,.7);color:inherit;font-size:15px;line-height:1;cursor:pointer}
+.idm-chip button:hover{background:#fff}
+.idm-chip.blue{background:#e0f2fe;color:#0369a1}
+.idm-chip.green{background:#dcfce7;color:#15803d}
+.idm-add{height:30px;padding:0 12px;border:none;border-radius:999px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.07);font:inherit;font-size:12.5px;font-weight:600;color:var(--ink);cursor:pointer}
+.idm-add:hover{background:#f4f4f5}
+.idm .idm-compose{border-color:rgba(0,0,0,.08)!important;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+[data-theme="dark"] .idm .idm-side,[data-theme="dark"] .idm-attach{background:#1f1f22}
+[data-theme="dark"] .idm .idm-act,[data-theme="dark"] .idm-add{background:#2a2a2e}
+`
