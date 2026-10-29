@@ -60,7 +60,13 @@ export function useNeedsYou(companyId: string | null) {
 export function NeedsYouCard({ companyId }: { companyId: string }) {
   const { data } = useNeedsYou(companyId)
   if (!data) return null
-  const top = data.items.slice(0, 3)
+  // The same thing twice (two threads from one address) is one row with a count.
+  const rows: { item: Item; n: number }[] = []
+  for (const i of data.items) {
+    const r = rows.find(x => x.item.kind === i.kind && x.item.title === i.title)
+    if (r) r.n++; else rows.push({ item: i, n: 1 })
+  }
+  const top = rows.slice(0, 4)
   return (
     <div className="ny ny-card ny-mini ag-fade">
       <style>{NY_CSS}</style>
@@ -71,21 +77,62 @@ export function NeedsYouCard({ companyId }: { companyId: string }) {
         <a className="ny-link" href="/admin/agents/needs-you">{data.items.length ? 'See all' : 'Open'} <Arrow /></a>
       </div>
       {top.length > 0 && (
-        <ul className="ny-mini-list">
-          {top.map(i => (
-            <li key={i.key}><a href={i.kind === 'approval' ? '/admin/agents/needs-you' : i.href}>
-              <span className={`ny-dot ${i.urgency}`} /><span className="ny-mini-t">{i.title}</span><span className="ny-mini-d">{i.detail}</span>
-            </a></li>
-          ))}
+        <ul className="ny-mini-grid">
+          {top.map(({ item: i, n }) => {
+            // "Sam is waiting for a reply" reads better as Sam, then what's up.
+            const waiting = i.title.match(/^(.+?) is waiting for a reply$/)
+            const who = i.customer?.name || (waiting ? waiting[1] : null)
+            const sub = waiting ? `Waiting for a reply${i.channel ? ` · ${CHANNEL_NAME[i.channel] || i.channel}` : ''}` : i.detail
+            const hue = Array.from(String(who || i.kind)).reduce((h, x) => (h * 31 + x.charCodeAt(0)) % 360, 7)
+            return (
+              <li key={i.key}>
+                <a href={i.kind === 'approval' ? '/admin/agents/needs-you' : i.href} className={`ny-mini-row ${i.urgency}`} title={i.detail}>
+                  {who
+                    ? <span className="ny-mini-av" style={{ ['--h' as any]: hue }} aria-hidden>{who.replace(/^[^A-Za-z0-9]+/, '').charAt(0).toUpperCase() || '#'}</span>
+                    : <span className={`ny-mini-ic ny-ic ${i.kind}`} aria-hidden>{ICON[i.kind]}</span>}
+                  <span className="ny-mini-txt">
+                    <b>{who || i.title}</b>
+                    <small>{sub}</small>
+                  </span>
+                  {n > 1 && <span className="ny-mini-n" title={`${n} of these`}>×{n}</span>}
+                  <span className={`ny-mini-age ${i.urgency}`}>{shortAgo(i.at)}</span>
+                </a>
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>
   )
 }
 
+const CHANNEL_NAME: Record<string, string> = { sms: 'SMS', email: 'Email', chat: 'Website chat', widget: 'Website chat', instagram: 'Instagram', facebook: 'Messenger', messenger: 'Messenger', whatsapp: 'WhatsApp', phone: 'Phone' }
+
+// "12d", "3h", "42m": how long it's been waiting.
+function shortAgo(iso: string): string {
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
+  if (!isFinite(s)) return ''
+  if (s < 3600) return `${Math.max(1, Math.round(s / 60))}m`
+  if (s < 86400) return `${Math.round(s / 3600)}h`
+  return `${Math.round(s / 86400)}d`
+}
+
 export const NY_CSS = `
 .ny .ny-card,.ny.ny-card{background:#fff;border:1px solid var(--border);border-radius:20px;padding:18px}
 .ny-mini{margin-bottom:16px}
+.ny-mini-grid{list-style:none;margin:12px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:8px}
+.ny-mini-row{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:16px;background:#f7f7f8;color:inherit;text-decoration:none;min-width:0;transition:background .2s,box-shadow .2s,transform .2s ${EASE}}
+.ny-mini-row:hover{background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 8px 20px -12px rgba(16,24,40,.25);transform:translateY(-1px)}
+.ny-mini-row:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 30%,transparent)}
+.ny-mini-av{width:34px;height:34px;flex-shrink:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(160deg,hsl(var(--h) 90% 72%),hsl(var(--h) 72% 55%));color:#fff;font-size:14px;font-weight:700}
+.ny-mini-ic{width:34px!important;height:34px!important;border-radius:50%!important}
+.ny-mini-txt{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.3}
+.ny-mini-txt b{font-size:13.5px;font-weight:650;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ny-mini-txt small{font-size:12px;color:#8e8e93;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ny-mini-n{flex-shrink:0;padding:2px 7px;border-radius:999px;background:#fff;box-shadow:inset 0 0 0 1px #ececef;font-size:11.5px;font-weight:650;color:#52525b}
+.ny-mini-age{flex-shrink:0;min-width:36px;text-align:center;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;background:#f0f0f2;color:#52525b}
+.ny-mini-age.now{background:#fef3f2;color:#d92d20}
+.ny-mini-age.soon{background:#fffaeb;color:#b54708}
 .ny-page{max-width:1240px;margin:0 auto;padding:20px 16px 120px}
 @media (min-width:900px){.ny-page{padding:24px 28px 120px}}
 .ny-crumbs{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px;color:var(--slate)}
@@ -145,10 +192,6 @@ export const NY_CSS = `
 .ny-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .ny-pill{padding:1px 8px;border-radius:999px;font-size:12px;font-weight:800;color:#fff}
 .ny-pill.now{background:#f04438}.ny-pill.soon{background:#f79009}
-.ny-mini-list{list-style:none;margin:10px 0 0;padding:0}
-.ny-mini-list li a{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid color-mix(in srgb,var(--border) 60%,transparent);text-decoration:none;min-width:0}
-.ny-mini-t{font-size:13.5px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:1;min-width:0}
-.ny-mini-d{font-size:12.5px;color:var(--slate);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
 .ny-skel{display:flex;gap:12px;align-items:flex-start}
 .ny-sk{display:block;border-radius:8px;background:linear-gradient(90deg,#eef0f3 25%,#f6f7f9 50%,#eef0f3 75%);background-size:200% 100%;animation:nySk 1.2s ease-in-out infinite}
 .ny-sk.ic{width:34px;height:34px;border-radius:11px;flex-shrink:0}.ny-sk.t{height:14px;width:55%;margin:3px 0 8px}.ny-sk.d{height:12px;width:80%}
@@ -159,6 +202,5 @@ export const NY_CSS = `
   .ny-row{flex-wrap:wrap}
   .ny-txt{flex-basis:calc(100% - 46px)}
   .ny-open{margin-left:46px}
-  .ny-mini-d{display:none}
 }
 `
