@@ -97,6 +97,7 @@ import WidgetInstallCard from '@/components/inbox/WidgetInstallCard'
 import { boardUrl } from '@/lib/redirect'
 import { publishAiContext } from '@/lib/ai-context'
 import TicketComposer, { type TicketPriority } from '@/components/inbox/TicketComposer'
+import { CPD_CSS, CPD_ICON, PanelItem } from '@/components/inbox/ContactPanelBits'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -4289,7 +4290,6 @@ export default function InboxPage() {
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6, transform: notesOpen ? 'none' : 'rotate(-90deg)', transition: 'transform 0.18s ease' }}><polyline points="6 9 12 15 18 9" /></svg>
       </button>
       {notesOpen && <>
-      {notes.length === 0 && <p style={{ fontSize: 12, color: '#9ca3af', margin: '0 0 8px' }}>No notes.</p>}
       {notes.map(n => (
         <div key={n.id} style={{ padding: '10px 12px', borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a', marginBottom: 8 }}>
           {editingNoteId === n.id ? (
@@ -4413,7 +4413,6 @@ export default function InboxPage() {
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6, transform: tasksOpen ? 'none' : 'rotate(-90deg)', transition: 'transform 0.18s ease' }}><polyline points="6 9 12 15 18 9" /></svg>
       </button>
       {tasksOpen && <>
-      {tasks.length === 0 && <p style={{ fontSize: 12, color: '#9ca3af', margin: '0 0 8px' }}>No tasks.</p>}
       {tasks.map(t => (
         <div key={t.id} style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)', marginBottom: 8 }}>
           {editingTaskId === t.id ? (
@@ -11739,7 +11738,7 @@ export default function InboxPage() {
                         </span>
                       ))}
                     </div>
-                    <h3 style={{ margin: '12px 0 0', fontSize: 20, fontWeight: 800, color: 'var(--ink)', maxWidth: '100%', overflowWrap: 'anywhere', wordBreak: 'break-word', textAlign: 'center' }}>{contact.name || contact.email || 'Visitor'}</h3>
+                    <h3 title="Click to edit the name" onClick={() => { setEditField('name'); setEditFieldValue(contact.name || '') }} style={{ margin: '12px 0 0', fontSize: 20, fontWeight: 800, color: 'var(--ink)', maxWidth: '100%', overflowWrap: 'anywhere', wordBreak: 'break-word', textAlign: 'center', cursor: 'text' }}>{contact.name || contact.email || 'Visitor'}</h3>
                     {(contact as any).is_blocked && (
                       <span style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', padding: '3px 9px', borderRadius: 20 }}>
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/></svg>
@@ -11990,7 +11989,7 @@ export default function InboxPage() {
                           addressFromOrder = true
                         }
                       }
-                      return ([
+                      const fields = ([
                       ['name', 'Name', contact.name],
                       // The contacts table column is `company_name` (there is no
                       // `company` column); keying this row on `company` made every
@@ -12000,17 +11999,20 @@ export default function InboxPage() {
                       ['phone', 'Phone', contact.phone],
                       ['address', 'Address', addressValue],
                     ] as [string, string, string][])
-                      .map(([field, label, value]) => {
+                      // Filled-in fields are quiet rows in one card (the name is
+                      // already the card's heading above); empty ones are "+ Email"
+                      // chips underneath instead of a column of "Add …" lines.
+                      const shown = fields.filter(([field, , value]) => editField === field || (!!value && field !== 'name'))
+                      const missing = fields.filter(([field, , value]) => !value && editField !== field)
+                      return (<>
+                      {shown.length > 0 && (
+                      <div className="cpd-card">
+                      {shown.map(([field, label, value]) => {
                         const aiFilled = aiSavedFields.has(field as string) && !!value
                         const showOrderTag = field === 'address' && addressFromOrder && !!value
-                        return (
-                        <div key={field} className="contact-field-row"
-                          style={{ position: 'relative', borderRadius: 8, padding: aiFilled ? '5px 7px' : 0, margin: aiFilled ? '0 -7px' : 0, background: aiFilled ? '#f7f8fa' : 'transparent' }}>
-                          <p style={{ margin: '0 0 2px 0', fontSize: 12.5, fontWeight: 500, color: '#8e8e93', display: 'flex', alignItems: 'center', gap: 4 }}>
-                            {label}
-                            {showOrderTag && <span style={{ fontSize: 8.5, color: '#2563eb', background: '#eef4ff', padding: '1px 5px', borderRadius: 10, letterSpacing: 0 }}>from order</span>}
-                          </p>
-                          {editField === field ? (
+                        if (editField === field) return (
+                          <div key={field} className="cpd-row editing">
+                            <span className="cpd-lbl">{CPD_ICON[field]}{label}</span>
                             <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                               {field === 'address' ? (
                                 <div style={{ flex: 1 }}>
@@ -12022,7 +12024,8 @@ export default function InboxPage() {
                               ) : (
                               <input autoFocus value={editFieldValue} onChange={e => setEditFieldValue(e.target.value)}
                                 onKeyDown={e => { if (e.key === 'Enter') saveSingleField(field, editFieldValue); if (e.key === 'Escape') setEditField(null) }}
-                                style={{ ...inp, fontSize: 12, padding: '5px 8px' }} />
+                                placeholder={label} aria-label={label}
+                                style={{ ...inp, fontSize: 12.5, padding: '6px 9px' }} />
                               )}
                               <button type="button" onClick={() => saveSingleField(field, editFieldValue)} style={fieldBtn('#059669')} title="Save">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -12031,20 +12034,23 @@ export default function InboxPage() {
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                               </button>
                             </div>
-                          ) : (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          </div>
+                        )
+                        return (
+                          <div key={field} className="contact-field-row cpd-row">
+                            <span className="cpd-ic" title={label}>{CPD_ICON[field]}</span>
                             {aiFilled && (
-                              <span className="ai-spark" title="" style={{ position: 'relative', display: 'inline-flex', flexShrink: 0, color: '#8b5cf6' }}>
+                              <span className="ai-spark" title="" style={{ position: 'relative', display: 'inline-flex', flexShrink: 0, color: '#8b5cf6', marginLeft: -4 }}>
                                 <AiSparkIcon size={13} />
                                 <span className="ai-tip" style={{ position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, whiteSpace: 'nowrap', background: '#1a1a1a', color: '#fff', fontSize: 11, fontWeight: 600, padding: '5px 9px', borderRadius: 7, opacity: 0, pointerEvents: 'none', transition: 'opacity 0.12s', zIndex: 20 }}>
                                   Colvy AI saved this {label.toLowerCase()}
                                 </span>
                               </span>
                             )}
-                            <p style={{ margin: 0, fontSize: 13, color: value ? 'var(--ink)' : '#c0c0c5', flex: 1, wordBreak: 'break-word', fontStyle: value ? 'normal' : 'italic', cursor: 'pointer' }}
-                               title="Click to edit"
+                            <p className="cpd-val" title={`${label}: click to edit`}
                                onClick={() => { setEditField(field); setEditFieldValue(value || '') }}>
-                              {value || `Add ${label.toLowerCase()}`}
+                              {value}
+                              {showOrderTag && <span className="cpd-tag">from order</span>}
                             </p>
                             <div className="contact-field-actions" style={{ display: 'flex', gap: 3, opacity: 0, transition: 'opacity 0.12s' }}>
                               {field === 'phone' && (
@@ -12053,9 +12059,6 @@ export default function InboxPage() {
                                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
                                 </button>
                               )}
-                              <button type="button" title="Edit" onClick={() => { setEditField(field); setEditFieldValue(value) }} style={fieldBtn('var(--slate)')}>
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                              </button>
                               <button type="button" title="Copy" onClick={() => copyField(value)} style={fieldBtn('var(--slate)')}>
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                               </button>
@@ -12064,10 +12067,21 @@ export default function InboxPage() {
                               </button>
                             </div>
                           </div>
-                          )}
-                        </div>
                         )
-                      })
+                      })}
+                      </div>
+                      )}
+                      {missing.length > 0 && (
+                        <div className="cpd-add">
+                          {missing.map(([field, label]) => (
+                            <button key={field} type="button" className="cpd-chip" onClick={() => { setEditField(field); setEditFieldValue('') }}>
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" aria-hidden><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      </>)
                     })()}
 
                     {/* ── Google review ─────────────────────────────────────
@@ -12113,15 +12127,24 @@ export default function InboxPage() {
                       </div>
                     )}
 
-                    {/* ── Preferred agent ───────────────────────────────────
-                        When this customer calls, ring this team member first;
-                        on no answer the call still rings everyone else. */}
-                    {contact && (
-                      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4 }}>
-                        <label style={{ fontSize: 12.5, fontWeight: 500, color: '#8e8e93', display: 'block', marginBottom: 5 }}>Preferred agent</label>
-                        <select
-                          value={(contact as any).preferred_agent_user_id || ''}
-                          onChange={async (e) => {
+                    {/* ── Settings for this customer, one line each ──────────
+                        Rings first: on a call from this customer, this person
+                        rings first; if they don't pick up, everyone else rings.
+                        Back-in-stock alert: put them on a product's waitlist
+                        (one SMS when it's back). Delivery: the calendar
+                        slide-out, the delivery status and a tracking link. */}
+                    {(() => {
+                      const uid = (contact as any).preferred_agent_user_id || ''
+                      const ringName = uid ? (teamMembers.find((m: any) => m.user_id === uid)?.name || (contact as any).preferred_agent_name || 'A teammate') : ''
+                      const when = (contact as any).scheduled_delivery
+                      const dStatus = (contact as any).delivery_status || ''
+                      const D_LABEL: Record<string, string> = { pending: 'Pending', scheduled: 'Scheduled', out_for_delivery: 'Out for delivery', delivered: 'Delivered', failed: 'Failed' }
+                      return (
+                        <div className="cpd-list">
+                          <PanelItem icon={CPD_ICON.ring} label="Rings first" value={ringName || 'Everyone'} set={!!uid}
+                            title="When this customer calls, this person rings first. If they don’t pick up, everyone else rings.">
+                            <select value={uid} aria-label="Who rings first when this customer calls"
+                              onChange={async (e) => {
                             const uid = e.target.value || null
                             const nm = uid ? (teamMembers.find((m: any) => m.user_id === uid)?.name || null) : null
                             setContact((c: any) => ({ ...c, preferred_agent_user_id: uid, preferred_agent_name: nm }))
@@ -12129,23 +12152,34 @@ export default function InboxPage() {
                               await (supabase as any).from('contacts').update({ preferred_agent_user_id: uid, preferred_agent_name: nm }).eq('id', contact.id)
                               showToast(uid ? `${nm} will ring first for this customer` : 'Preferred agent cleared')
                             } catch { showToast('Could not save preferred agent') }
-                          }}
-                          style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, background: '#fff', color: 'var(--ink)', outline: 'none' }}>
-                          <option value="">No preference — ring everyone</option>
-                          {teamMembers.map((m: any) => (<option key={m.user_id} value={m.user_id}>{m.name}</option>))}
-                        </select>
-                        <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--slate)', lineHeight: 1.5 }}>On an incoming call from this customer, this person rings first; if they don’t pick up, everyone else rings.</p>
-                      </div>
-                    )}
-
-                    {/* ── Super-Admin: workspaces this contact administers ───
-                        Renders only for a platform super-admin (the lookup API
-                        403s for everyone else). Links to the company's detail in
-                        the Console. */}
-                    {/* ── Back-in-stock waitlist ──────────────────────────────
-                        Customer asked for something out of stock? Put them on
-                        its waitlist — they get one SMS when it's back. */}
-                    <WaitlistQuickAdd companyId={companyId} contact={contact as any} conversationId={selected?.id || null} />
+                          }}>
+                              <option value="">Everyone at once</option>
+                              {teamMembers.map((m: any) => (<option key={m.user_id} value={m.user_id}>{m.name}</option>))}
+                            </select>
+                          </PanelItem>
+                          <WaitlistQuickAdd compact companyId={companyId} contact={contact as any} conversationId={selected?.id || null} />
+                          <PanelItem icon={CPD_ICON.calendar} label="Delivery" set={!!when} onClick={() => setShowDeliveryPanel(true)}
+                            value={when ? new Date(when).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Schedule'} />
+                          <PanelItem icon={CPD_ICON.box} label="Delivery status" value={D_LABEL[dStatus] || 'Not set'} set={!!dStatus}>
+                            <select value={dStatus} aria-label="Delivery status"
+                              onChange={async e => {
+                          const v = e.target.value || null
+                          setContact((c: any) => ({ ...c, delivery_status: v }))
+                          await (supabase as any).from('contacts').update({ delivery_status: v }).eq('id', contact.id)
+                          showToast('Delivery status updated')
+                        }}>
+                              <option value="">Not set</option>
+                              <option value="pending">Pending</option>
+                              <option value="scheduled">Scheduled</option>
+                              <option value="out_for_delivery">Out for delivery</option>
+                              <option value="delivered">Delivered</option>
+                              <option value="failed">Failed</option>
+                            </select>
+                          </PanelItem>
+                          <PanelItem icon={CPD_ICON.truck} label="Send tracking link" value="" onClick={() => setShowTracking(true)} />
+                        </div>
+                      )
+                    })()}
 
                     <SuperAdminContactWorkspaces email={(contact as any)?.email || null} />
 
@@ -12154,67 +12188,15 @@ export default function InboxPage() {
                         one store, two locations, with @mention + edit/copy/delete
                         and synced to mobile. Replaces the old single contact.notes
                         field. */}
-                    <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+                    <div style={{ paddingTop: 14 }}>
                       {renderNotesSection()}
                     </div>
 
                     {/* ── Tasks ─────────────────────────────────────────────
                         Same conversation_tasks as the Timeline tab, shown here
                         below Notes with assignment + @mention + copy/edit/delete. */}
-                    <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+                    <div style={{ paddingTop: 14 }}>
                       {renderTasksSection()}
-                    </div>
-
-                    {/* ── Delivery (Coax-style) ─────────────────────────────
-                        Scheduled delivery date + status, saved inline. */}
-                    <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
-                      <p style={{ margin: '0 0 4px', fontSize: 12.5, fontWeight: 500, color: '#8e8e93', display: 'flex', alignItems: 'center', gap: 5 }}>
-                        {Icon.calendar(12)} Scheduled delivery
-                      </p>
-                      {/* Opens the full calendar slide-out rather than a bare
-                          date box — you can pick the date, set the window, add
-                          a note and it books a real Delivery event on the team
-                          calendar. */}
-                      <button type="button" onClick={() => setShowDeliveryPanel(true)}
-                        style={{ ...inp, fontSize: 12.5, padding: '8px 9px', textAlign: 'left', cursor: 'pointer', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-                        <span style={{ color: (contact as any).scheduled_delivery ? 'var(--ink)' : '#c0c0c5' }}>
-                          {(contact as any).scheduled_delivery
-                            ? new Date((contact as any).scheduled_delivery).toLocaleDateString('en-AU', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })
-                            : 'Schedule a delivery'}
-                        </span>
-                        <span style={{ color: 'var(--coral)', display: 'inline-flex' }}>{Icon.calendar(14)}</span>
-                      </button>
-                    </div>
-
-                    <div>
-                      <p style={{ margin: '0 0 4px', fontSize: 12.5, fontWeight: 500, color: '#8e8e93', display: 'flex', alignItems: 'center', gap: 5 }}>
-                        {Icon.box(12)} Delivery status
-                      </p>
-                      <select
-                        value={(contact as any).delivery_status || ''}
-                        onChange={async e => {
-                          const v = e.target.value || null
-                          setContact((c: any) => ({ ...c, delivery_status: v }))
-                          await (supabase as any).from('contacts').update({ delivery_status: v }).eq('id', contact.id)
-                          showToast('Delivery status updated')
-                        }}
-                        style={{ ...inp, fontSize: 12.5, padding: '7px 9px', cursor: 'pointer' }}>
-                        <option value="">--</option>
-                        <option value="pending">Pending</option>
-                        <option value="scheduled">Scheduled</option>
-                        <option value="out_for_delivery">Out for delivery</option>
-                        <option value="delivered">Delivered</option>
-                        <option value="failed">Failed</option>
-                      </select>
-
-                      {/* Send the customer a tracking link once dispatched. */}
-                      <button type="button" onClick={() => setShowTracking(true)}
-                        className="cv-btn" style={{ marginTop: 8, width: '100%', height: 36, fontSize: 13 }}>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                          <rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>
-                        </svg>
-                        Send tracking
-                      </button>
                     </div>
 
                     {contact.subscribed_to_marketing && <span style={{ fontSize: 11, color: '#059669', fontWeight: 600 }}>✓ Subscribed to marketing</span>}
@@ -12222,7 +12204,7 @@ export default function InboxPage() {
                       style={{ fontSize: 12, color: 'var(--coral)', fontWeight: 600, textDecoration: 'none' }}>
                       View full profile →
                     </Link>
-                    <style>{`.contact-field-row:hover .contact-field-actions { opacity: 1 !important; }`}</style>
+                    <style>{`.contact-field-row:hover .contact-field-actions { opacity: 1 !important; }` + CPD_CSS}</style>
                   </div>
                 ) : (
                   (selected as any)?.sms_number ? (

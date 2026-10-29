@@ -62,12 +62,11 @@ export default function CustomerAddresses({ contactId, canEdit = true, userName 
   return (
     <div style={{ marginTop: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <p style={{ margin: 0, fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>Addresses</p>
+        <p style={{ margin: 0, fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>{!loading && addresses.length === 0 ? 'No saved addresses' : 'Saved addresses'}</p>
         {canEdit && <button type="button" onClick={() => setAdding(v => !v)} style={{ border: 'none', background: 'none', color: 'var(--coral)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{adding ? 'Cancel' : '+ Add'}</button>}
       </div>
 
       {loading && addresses.length === 0 && <p style={{ fontSize: 12, color: 'var(--slate)', margin: 0 }}>Loading…</p>}
-      {!loading && addresses.length === 0 && !adding && <p style={{ fontSize: 12, color: 'var(--slate)', margin: 0 }}>No addresses on record.</p>}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {addresses.map(a => (

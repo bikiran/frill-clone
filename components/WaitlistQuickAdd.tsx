@@ -3,18 +3,40 @@
 import { useState } from 'react'
 import WaitlistAddModal from '@/components/WaitlistAddModal'
 import { BellIcon } from '@/components/booking/icons'
+import { CPD_ICON, PanelItem } from '@/components/inbox/ContactPanelBits'
 
 // Contact-panel shortcut: when a customer asks for something that's out of
 // stock ("any diamond eye molly?"), put them on its back-in-stock waitlist
 // without leaving the conversation.
-export default function WaitlistQuickAdd({ companyId, contact, conversationId }: {
+// `compact`: one line in the contact panel's settings list.
+export default function WaitlistQuickAdd({ companyId, contact, conversationId, compact }: {
   companyId: string | null
   contact: { id: string; name?: string | null; phone?: string | null; email?: string | null } | null
   conversationId: string | null
+  compact?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [done, setDone] = useState('')
   if (!companyId || !contact?.id) return null
+
+  const modal = open && (
+    <WaitlistAddModal
+      companyId={companyId}
+      presetContact={contact}
+      conversationId={conversationId}
+      onClose={() => setOpen(false)}
+      onAdded={(dup) => { setOpen(false); setDone(dup ? 'Already on that waitlist.' : 'Added to the waitlist.') }}
+    />
+  )
+  if (compact) return (
+    <>
+      <PanelItem icon={CPD_ICON.bell} label="Back-in-stock alert" value={done ? 'Added' : 'Add'} set={!!done}
+        title={`Add ${contact.name ? contact.name.split(' ')[0] : 'this customer'} to a product’s waitlist: one SMS when it’s back`}
+        onClick={() => { setDone(''); setOpen(true) }} />
+      {done && <p className="cpd-done">{done} <a href="/admin/waitlists">View waitlists</a></p>}
+      {modal}
+    </>
+  )
 
   return (
     <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
@@ -43,15 +65,7 @@ export default function WaitlistQuickAdd({ companyId, contact, conversationId }:
         .colvy-wl-icon { width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; background: var(--peach); color: var(--coral); }
         @media (prefers-reduced-motion: reduce) { .colvy-wl-row { transition: none; } .colvy-wl-row:active { transform: none; } }
       `}</style>
-      {open && (
-        <WaitlistAddModal
-          companyId={companyId}
-          presetContact={contact}
-          conversationId={conversationId}
-          onClose={() => setOpen(false)}
-          onAdded={(dup) => { setOpen(false); setDone(dup ? 'Already on that waitlist.' : 'Added to the waitlist.') }}
-        />
-      )}
+      {modal}
     </div>
   )
 }
