@@ -787,6 +787,7 @@ export default function IdeasBoard({ embedded = false }: { embedded?: boolean })
       {/* Modals */}
       {showModal && (
         <IdeaModal
+          resolveCompany={companyIdNow}
           onClose={() => setShowModal(false)}
           onSubmitted={() => {
             setShowModal(false)
