@@ -15,18 +15,21 @@
 
 /* Dark theme — applied via JS by setting data-theme="dark" on <html> */
 [data-theme="dark"] {
-  --ink: #f0f0f0;
-  --slate: #9ca3af;
-  --border: #2d2d2d;
-  --canvas: #111111;
-  --card: #1e1e1e;
-  --white: #1e1e1e;
+  /* Same palette as lib/dark-theme (DARK), which maps written-in colours. */
+  --ink: #ededf0;
+  --slate: #a1a1aa;
+  --border: #2c2c31;
+  --canvas: #111113;
+  --card: #1c1c1f;
+  --white: #1c1c1f;
   --peach: rgba(255, 122, 107, 0.12);
+  color-scheme: dark;
 }
 
 [data-theme="dark"] body { background: var(--canvas); color: var(--ink); }
 [data-theme="dark"] .bg-white { background: var(--card) !important; }
-[data-theme="dark"] header { background: rgba(17,17,17,0.85) !important; border-color: var(--border) !important; }
+/* The app's top bar (other <header>s, like a sheet's title row, keep their own surface). */
+[data-theme="dark"] header.cv-app-header { background: rgba(17,17,19,0.85) !important; border-color: var(--border) !important; }
 [data-theme="dark"] aside { background: #141414 !important; border-color: var(--border) !important; }
 [data-theme="dark"] input, [data-theme="dark"] textarea, [data-theme="dark"] select {
   background: #1e1e1e !important;

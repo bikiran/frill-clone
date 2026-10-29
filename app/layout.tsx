@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { preconnect } from 'react-dom'
 import './globals.css'
 import AppChrome from './AppChrome'
+import DarkTheme from '@/components/DarkTheme'
 import PressFeedback from '@/components/PressFeedback'
 import KeyboardAware from '@/components/KeyboardAware'
 import PhoneHost from '@/components/PhoneHost'
@@ -118,6 +119,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
         <AppChrome>{children}</AppChrome>
+        {/* Dark mode for colours written into the code (only while dark is on). */}
+        <DarkTheme />
         {/* Outside AppChrome on purpose: AppChrome swaps between two trees
             (full-page vs app chrome), which would remount — and hang up — a
             live call. Here the phone persists across every route in the tab. */}
