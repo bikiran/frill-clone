@@ -5,6 +5,7 @@ import AiBuddy from '@/components/AiBuddy'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { readAiContext } from '@/lib/ai-context'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Colvy AI — floating command bar (web + mobile).
@@ -192,9 +193,12 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
 
   const suggestions = useMemo(() => suggestionsFor(pathname), [pathname])
 
+  // What the page published by event, topped up with the latest value kept on
+  // window (lib/ai-context) — the event can arrive before this listener exists.
   const buildContext = () => ({
     currentRoute: pathname,
     ...pageCtxRef.current,
+    ...readAiContext(pathname),
   })
 
   async function authHeaders(): Promise<Record<string, string>> {
