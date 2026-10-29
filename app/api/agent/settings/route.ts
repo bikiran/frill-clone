@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { agentAccess, missingAgentTables, staffName } from '@/lib/agent/access'
-import { AUTO_TOPICS, agentsPaused, autoSentToday, getAutoSend, setAutoSend, setPaused, getReviewAuto, setReviewAuto, getSalesAuto, setSalesAuto, getOpsAuto, setOpsAuto, getAgentChannels, setAgentChannels, AGENT_CHANNEL_OPTIONS, getCommentAuto, setCommentAuto, getSalesFollowup, setSalesFollowup } from '@/lib/agent/pilot'
+import { AUTO_TOPICS, agentsPaused, autoSentToday, getAutoSend, setAutoSend, setPaused, getReviewAuto, setReviewAuto, getSalesAuto, setSalesAuto, getOpsAuto, setOpsAuto, getAgentChannels, setAgentChannels, AGENT_CHANNEL_OPTIONS, getCommentAuto, setCommentAuto, getSalesFollowup, setSalesFollowup, getAgentFaces, setAgentFaces } from '@/lib/agent/pilot'
 
 export const dynamic = 'force-dynamic'
 
 async function state(db: any, companyId: string) {
-  const [pause, autoSend, receptionAuto, reviewAuto, commentAuto, salesAuto, salesFollowup, opsAuto, channels, sentToday, { count: waiting }] = await Promise.all([
+  const [pause, autoSend, receptionAuto, reviewAuto, commentAuto, salesAuto, salesFollowup, opsAuto, channels, faces, sentToday, { count: waiting }] = await Promise.all([
     agentsPaused(db, companyId),
     getAutoSend(db, companyId),
     getAutoSend(db, companyId, 'reception'),
@@ -15,10 +15,11 @@ async function state(db: any, companyId: string) {
     getSalesFollowup(db, companyId),
     getOpsAuto(db, companyId),
     getAgentChannels(db, companyId),
+    getAgentFaces(db, companyId),
     autoSentToday(db, companyId),
     db.from('agent_approvals').select('id', { count: 'exact', head: true }).eq('company_id', companyId).eq('status', 'pending').gt('expires_at', new Date().toISOString()).then((r: any) => r, () => ({ count: 0 })),
   ])
-  return { pause, autoSend, receptionAuto, reviewAuto, commentAuto, salesAuto, salesFollowup, opsAuto, channels, channelOptions: AGENT_CHANNEL_OPTIONS, sentToday, waiting: waiting || 0, topics: Object.entries(AUTO_TOPICS).map(([key, t]) => ({ key, label: t.label })) }
+  return { pause, autoSend, receptionAuto, reviewAuto, commentAuto, salesAuto, salesFollowup, opsAuto, channels, faces, channelOptions: AGENT_CHANNEL_OPTIONS, sentToday, waiting: waiting || 0, topics: Object.entries(AUTO_TOPICS).map(([key, t]) => ({ key, label: t.label })) }
 }
 
 /** GET /api/agent/settings?companyId= — kill switch, auto-send settings and today's numbers. */
@@ -40,6 +41,7 @@ export async function GET(req: NextRequest) {
  *   { companyId, channels: ['sms','chat','email','facebook','instagram'] } — where Support and Reception answer
  *   { companyId, reviewAuto: { enabled, min_rating: 4 | 5, max_per_day } }   — Reputation Agent
  *   { companyId, commentAuto: { on, enabled, max_per_day } }   — Reputation Agent on Facebook / Instagram comments
+ *   { companyId, faces: { operations: { shape, color, photo? } | null } }  — how an agent looks (null: default)
  */
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}))
@@ -72,6 +74,9 @@ export async function POST(req: NextRequest) {
     }
     if (body.reviewAuto && typeof body.reviewAuto === 'object') {
       await setReviewAuto(db, body.companyId, body.reviewAuto, userId || null)
+    }
+    if (body.faces && typeof body.faces === 'object') {
+      await setAgentFaces(db, body.companyId, body.faces, userId || null)
     }
     return NextResponse.json(await state(db, body.companyId))
   } catch (e: any) {

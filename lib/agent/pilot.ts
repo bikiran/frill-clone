@@ -11,6 +11,7 @@
 //     in the same run (see send_message's autoCheck).
 
 import type { PolicyLimits } from './types'
+import { cleanFaces, type AgentFaces } from '@/lib/agent-faces'
 
 export const PAUSE_ACTION = '*'
 
@@ -234,6 +235,26 @@ export async function setAgentChannels(db: any, companyId: string, raw: any, use
   const channels = AGENT_CHANNEL_OPTIONS.map(o => o.key).filter(k => list.includes(k))
   await putPolicy(db, { company_id: companyId, role_key: null, action_key: CHANNELS_ACTION, autonomy: 'prepare', limits: { channels }, updated_by: userId })
   return channels
+}
+
+// ── How the agents look ──────────────────────────────────────────────────────
+// Each agent's face (shape and colour, or a photo) on the AI agents page. A
+// company-wide policy row like the channels above; the policy engine ignores it.
+const FACES_ACTION = 'agent_faces'
+
+export async function getAgentFaces(db: any, companyId: string): Promise<AgentFaces> {
+  try {
+    const { data } = await db.from('agent_policies').select('limits').eq('company_id', companyId).is('role_key', null).eq('action_key', FACES_ACTION).limit(1)
+    return cleanFaces(data?.[0]?.limits?.faces)
+  } catch { return {} }
+}
+
+export async function setAgentFaces(db: any, companyId: string, raw: any, userId: string | null): Promise<AgentFaces> {
+  // One agent at a time from the page: merge into what's saved.
+  const faces = cleanFaces({ ...(await getAgentFaces(db, companyId)), ...(raw && typeof raw === 'object' ? raw : {}) })
+  for (const k of Object.keys(raw || {})) if (raw[k] === null) delete faces[k]   // null: back to the default
+  await putPolicy(db, { company_id: companyId, role_key: null, action_key: FACES_ACTION, autonomy: 'prepare', limits: { faces }, updated_by: userId })
+  return faces
 }
 
 // ── Reputation Agent: Facebook / Instagram comments ──────────────────────────

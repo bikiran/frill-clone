@@ -1,12 +1,13 @@
 'use client'
 
 import { useEffect, useId, useRef } from 'react'
+import type { BuddyShape } from '@/lib/buddy-shapes'
 
 // Colvy AI's face: a soft shape with two eyes that follow the pointer and blink
 // now and then. On touch screens (no pointer to follow) it glances around
 // instead, and with reduced motion it simply sits still.
 
-export type BuddyShape = 'star' | 'squircle' | 'flower' | 'blob'
+export type { BuddyShape } from '@/lib/buddy-shapes'
 
 type Pt = [number, number]
 const f = (n: number) => n.toFixed(2)
@@ -29,6 +30,15 @@ const SHAPES: Record<BuddyShape, { d: string; eyeY: number }> = {
   squircle: { d: smooth(Array.from({ length: 24 }, (_, i) => { const a = (i / 24) * Math.PI * 2, c = Math.cos(a), s = Math.sin(a); return [50 + 44 * Math.sign(c) * Math.abs(c) ** 0.5, 50 + 44 * Math.sign(s) * Math.abs(s) ** 0.5] as Pt })), eyeY: 50 },
   flower: { d: smooth(radial(Array.from({ length: 16 }, (_, i) => (i % 2 ? 40 : 46)), -90, 50, 50)), eyeY: 50 },
   blob: { d: smooth(radial([45, 41, 46, 39, 44, 42], 12, 50, 50)), eyeY: 50 },
+  // A square with its sides pinched in, like a cushion.
+  pillow: { d: smooth(radial([56, 39, 56, 39, 56, 39, 56, 39], -135, 50, 50)), eyeY: 50 },
+  pill: { d: 'M50 5C67.7 5 82 19.3 82 37V63C82 80.7 67.7 95 50 95C32.3 95 18 80.7 18 63V37C18 19.3 32.3 5 50 5Z', eyeY: 44 },
+  ghost: { d: 'M14 46C14 24 30 8 50 8S86 24 86 46V90C80 96 74 96 68 90C62 84 56 84 50 90C44 96 38 96 32 90C26 84 20 84 14 90Z', eyeY: 44 },
+  gem: { d: smooth(radial([49, 49, 49, 49], -90, 50, 50)), eyeY: 50 },
+  cookie: { d: smooth(radial(Array.from({ length: 24 }, (_, i) => (i % 2 ? 42 : 47)), -90, 50, 50)), eyeY: 50 },
+  circle: { d: 'M50 6A44 44 0 1 1 50 94A44 44 0 1 1 50 6Z', eyeY: 50 },
+  bubble: { d: 'M52 8C75.2 8 94 25 94 46S75.2 84 52 84C46.2 84 40.7 83 35.7 81.1L14 93L20.6 73.2C13.9 66.3 10 56.6 10 46C10 25 28.8 8 52 8Z', eyeY: 46 },
+  splat: { d: smooth(radial([48, 37, 46, 39, 49, 36, 45], 18, 50, 50)), eyeY: 50 },
 }
 
 // Lighter or darker version of a #rrggbb colour.

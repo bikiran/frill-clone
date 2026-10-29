@@ -15,6 +15,9 @@ import ConversationPicker, { cleanPreview, type PickConv } from '@/components/Co
 import { waitlistEntryHref, waitlistPreview } from '@/lib/waitlist-ai'
 import { friendlyRunError } from '@/lib/agent/tool-schema'
 import { AGENTS } from '@/lib/agents-marketing'
+import AgentFace, { FacePicker } from '@/components/agents/AgentFace'
+import AgentShowcase, { GearIcon } from '@/components/agents/AgentShowcase'
+import { faceFor, type AgentFace as Face, type AgentFaces } from '@/lib/agent-faces'
 
 // AI Agents (Phase 1 of the Agent Engine). Every agent run is recorded — what
 // it knew, every action it asked for, the permission decision and why, and the
@@ -42,7 +45,7 @@ type ReviewAuto = { enabled: boolean; min_rating: number; max_per_day: number }
 type AutoSend = { enabled: boolean; topics: string[]; max_per_day: number; max_per_conversation_per_hour: number; require_verified_customer: boolean }
 type Settings = {
   pause: { paused: boolean; byName?: string | null; at?: string | null; platform?: boolean }
-  autoSend: AutoSend; receptionAuto?: AutoSend; reviewAuto?: ReviewAuto; commentAuto?: CommentAuto; salesAuto?: SalesAuto; salesFollowup?: SalesFollowup; opsAuto?: DailyAuto; channels?: string[]; channelOptions?: { key: string; label: string }[]; sentToday: number; waiting: number; topics: { key: string; label: string }[]
+  autoSend: AutoSend; receptionAuto?: AutoSend; reviewAuto?: ReviewAuto; commentAuto?: CommentAuto; salesAuto?: SalesAuto; salesFollowup?: SalesFollowup; opsAuto?: DailyAuto; channels?: string[]; faces?: AgentFaces; channelOptions?: { key: string; label: string }[]; sentToday: number; waiting: number; topics: { key: string; label: string }[]
 }
 type Waiting = Suggestion & { run?: any; conversation?: { id: string; channel: string | null; customer: string | null } | null }
 const TOPIC_SHORT: Record<string, string> = { opening_hours: 'opening hours', order_status: 'order status (when tracking looks normal)', stock: 'stock', store_info: 'things your knowledge covers' }
@@ -115,8 +118,6 @@ const I = {
   check: <Svg size={12} d={<polyline points="20 6 9 17 4 12" />} />,
   inbox: <Svg size={14} d={<><polyline points="22 12 16 12 14 15 10 15 8 12 2 12" /><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></>} />,
 }
-// Each agent's face on the team roster: its own colour and shape.
-const FACE: Record<string, { shape: 'star' | 'squircle' | 'flower' | 'blob' }> = { support: { shape: 'star' }, reception: { shape: 'squircle' }, reputation: { shape: 'flower' }, sales: { shape: 'blob' }, operations: { shape: 'squircle' } }
 const KIND_ICON: Record<string, React.ReactNode> = { context: I.layers, model: I.brain, action: I.bolt, finish: I.flag, error: I.alert, approval: I.flag }
 
 export default function AgentsPage() {
@@ -238,6 +239,34 @@ export default function AgentsPage() {
       setSettings(d); return true
     } catch { setError('Couldn’t reach Colvy.'); return false } finally { setSavingSettings(false) }
   }
+  // How each agent looks (lib/agent-faces). Changes show at once and are saved
+  // a moment after the last one, so dragging the colour slider is one save.
+  const faceOf = (k: string) => faceFor(k, settings?.faces)
+  const [editFace, setEditFace] = useState<{ key: string; el: HTMLElement } | null>(null)
+  const closeFace = useCallback(() => setEditFace(null), [])
+  const faceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingFaces = useRef<Record<string, Face | null>>({})
+  const changeFace = (key: string, face: Face | null) => {
+    setSettingsState(cur => {
+      if (!cur) return cur
+      const faces = { ...(cur.faces || {}) }
+      if (face) faces[key] = face; else delete faces[key]
+      const next = { ...cur, faces }
+      writeStored(companyId ? `agents-settings:${companyId}` : null, next)
+      return next
+    })
+    pendingFaces.current[key] = face
+    if (faceTimer.current) clearTimeout(faceTimer.current)
+    faceTimer.current = setTimeout(async () => {
+      const patch = pendingFaces.current; pendingFaces.current = {}
+      try {
+        const r = await authFetch('/api/agent/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, faces: patch }) })
+        if (!r.ok) setError((await r.json().catch(() => ({}))).error || 'Couldn’t save the new look.')
+      } catch { setError('Couldn’t reach Colvy.') }
+    }, 500)
+  }
+  const openFace = (key: string) => settings ? (el: HTMLElement) => setEditFace(cur => (cur?.key === key ? null : { key, el })) : undefined
+
   const pauseAll = async () => {
     const ok = await confirmDialog({
       title: 'Pause all agents?',
@@ -322,6 +351,7 @@ export default function AgentsPage() {
     { key: 'operations', label: 'Operations', on: opsOn },
   ]
   const onCount = navAgents.filter(a => a.on).length
+  const agentState = (on: boolean | null) => (on == null ? '' : paused ? 'paused' : on ? 'on' : 'off') as 'on' | 'off' | 'paused' | ''
 
   return (
     <div style={{ minHeight: '100%', background: 'var(--canvas, #f6f7f9)' }}>
@@ -338,9 +368,9 @@ export default function AgentsPage() {
           <p className="ag-nav-group">Agents</p>
           {navAgents.map(a => (
             <a key={a.key} href={`#ag-${a.key}`} className={spy === `ag-${a.key}` ? 'on' : ''}>
-              <span className={`ag-nav-dot${paused ? ' paused' : a.on ? ' on' : ''}`} aria-hidden="true" />
+              <span className="ag-nav-face" aria-hidden="true"><AgentFace face={faceOf(a.key)} size={20} /></span>
               {a.label}
-              <span className="ag-nav-state">{a.on == null ? '' : paused ? 'Paused' : a.on ? 'On' : 'Off'}</span>
+              <span className={`ag-nav-state${paused ? ' paused' : a.on ? ' on' : ''}`}>{a.on == null ? '' : paused ? 'Paused' : a.on ? 'On' : 'Off'}</span>
             </a>
           ))}
           <a href="#ag-tools" className={spy === 'ag-tools' ? 'on' : ''}>{I.bolt} Outside tools</a>
@@ -403,16 +433,24 @@ export default function AgentsPage() {
               const meta = AGENTS.find(x => x.key === a.key)
               const last = runs.find(r => r.role_key === a.key && r.mode === 'live')
               const state = paused ? 'paused' : a.on ? 'on' : a.on == null ? '' : 'off'
+              const face = faceOf(a.key)
               return (
-                <a key={a.key} href={`#ag-${a.key}`} className={`ag-mate ${state}`} style={{ ['--c' as any]: meta?.color || '#ff6a4d' }}>
-                  <span className="ag-mate-face"><AiBuddy size={42} color={meta?.color} shape={FACE[a.key]?.shape} /></span>
+                <div key={a.key} className={`ag-mate ${state}`} style={{ ['--c' as any]: face.color }}>
+                  <a href={`#ag-${a.key}`} className="ag-mate-link" aria-label={`${a.label}: ${a.on == null ? '' : paused ? 'paused' : a.on ? 'working' : 'off'}`} />
+                  <span className="ag-mate-face">
+                    <AgentFace face={face} size={44} />
+                    {settings && (
+                      <button type="button" className={`ag-mate-edit${editFace?.key === a.key ? ' on' : ''}`} aria-label={`Change how the ${a.label} agent looks`} aria-expanded={editFace?.key === a.key}
+                        onClick={e => openFace(a.key)?.(e.currentTarget)}><GearIcon /></button>
+                    )}
+                  </span>
                   <b>{a.label}</b>
                   <span className="ag-mate-state"><i />{a.on == null ? '…' : paused ? 'Paused' : a.on ? 'Working' : 'Off'}</span>
                   <span className="ag-mate-line" key={last?.id || 'role'}>
                     <span className="t">{last?.summary ? last.summary : meta?.role}</span>
                     {last && <span className="w">{when(last.created_at)}</span>}
                   </span>
-                </a>
+                </div>
               )
             })}
           </div>
@@ -424,31 +462,46 @@ export default function AgentsPage() {
         {/* This week + earned-trust suggestions (Phase 9) */}
         {companyId && !needsMigration && <ResultsStrip companyId={companyId} onSettingsChanged={() => { loadSettings() }} />}
 
-        {/* Live switch */}
-        <div id="ag-support" className="ag-card ag-fade" style={{ marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'space-between' }}>
-            <div style={{ minWidth: 0 }}>
-              <p className="ag-h">Support Agent on incoming messages</p>
-              <p className="ag-p">{settings?.autoSend.enabled
-                ? 'When a customer gets in touch, the Support Agent works out what they need and looks it up. It replies on its own when the answer is one you allowed and it has just checked the facts; anything else waits for your team.'
-                : 'When a customer gets in touch, the Support Agent works out what they need, checks their order and tracking, and suggests a reply in the conversation. Nothing is sent until someone on your team presses Send.'}</p>
-            </div>
-            <button type="button" role="switch" aria-checked={!!supportOn} aria-label="Support Agent on incoming messages" onClick={toggleSupport} disabled={supportOn == null || savingRole} className={`ag-switch ${supportOn ? 'on' : ''}`}><span /></button>
-          </div>
+        {/* The agents, one card each: what it watches for, what it does, the rules it keeps. */}
+        <AgentShowcase id="ag-support" name="Support Agent" face={faceOf('support')} state={agentState(supportOn)}
+          onEditFace={openFace('support')} editing={editFace?.key === 'support'}
+          tagline="Answers customers when they get in touch, and checks the facts before it says anything."
+          watchTitle="Customers ask"
+          watches={[
+            { icon: 'box', t: '“Where’s my order?”', s: 'Finds their order and checks live tracking' },
+            { icon: 'stock', t: '“Have you got it in stock?”', s: 'Checks stock at your stores' },
+            { icon: 'clock', t: '“Are you open Sunday?”', s: 'Checks your opening hours' },
+          ]}
+          does={settings?.autoSend.enabled ? [
+            { icon: 'send', t: 'Replies on its own', s: 'When the answer is one you allowed and it has just checked the facts' },
+            { icon: 'hand', t: 'Anything else waits for your team', s: 'With a suggested reply in the conversation' },
+          ] : [
+            { icon: 'pen', t: 'Suggests a reply', s: 'Right in the conversation, with what it checked' },
+            { icon: 'hand', t: 'Your team sends it', s: 'Nothing goes out until someone presses Send' },
+          ]}
+          rules={[{ icon: 'shield', t: 'Never guesses an order, price or date' }, { icon: 'hand', t: 'Upset customers go straight to your team' }]}
+          toggle={<button type="button" role="switch" aria-checked={!!supportOn} aria-label="Support Agent on incoming messages" onClick={toggleSupport} disabled={supportOn == null || savingRole} className={`ag-switch ${supportOn ? 'on' : ''}`}><span /></button>}>
           {(supportOn || recOn) && settings?.channels && settings.channelOptions && (
             <ChannelPicker value={settings.channels} options={settings.channelOptions} saving={savingSettings} onSave={c => saveSettings({ channels: c })} />
           )}
           {supportOn && settings && <AutoSendPanel settings={settings} saving={savingSettings} onSave={a => saveSettings({ autoSend: a })} />}
-        </div>
+        </AgentShowcase>
 
-        <div id="ag-reception" className="ag-card ag-fade" style={{ marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'space-between' }}>
-            <div style={{ minWidth: 0 }}>
-              <p className="ag-h">Reception Agent for bookings</p>
-              <p className="ag-p">Booking messages — “can I book…”, “what times do you have…”, “can I move my appointment…” — go to the Reception Agent; everything else stays with the Support Agent. It checks free times, finds the customer’s bookings and sends booking or manage links. Moving or cancelling a booking always waits for you.</p>
-            </div>
-            <button type="button" role="switch" aria-checked={!!recOn} aria-label="Reception Agent for bookings" onClick={() => toggleRole('reception')} disabled={recOn == null || savingRole} className={`ag-switch ${recOn ? 'on' : ''}`}><span /></button>
-          </div>
+        <AgentShowcase id="ag-reception" name="Reception Agent" face={faceOf('reception')} state={agentState(recOn)}
+          onEditFace={openFace('reception')} editing={editFace?.key === 'reception'}
+          tagline="Books, finds and moves appointments by text or chat."
+          watchTitle="Customers ask"
+          watches={[
+            { icon: 'calendar', t: '“Can I book…”', s: 'Checks your free times' },
+            { icon: 'clock', t: '“What times do you have…”', s: 'Offers real free times' },
+            { icon: 'move', t: '“Can I move my appointment…”', s: 'Finds the customer’s bookings' },
+          ]}
+          does={[
+            { icon: 'link', t: 'Sends a booking or manage link', s: 'The customer picks the time themselves' },
+            { icon: 'hand', t: 'Moving or cancelling waits for you', s: 'You approve every change to a booking' },
+          ]}
+          rules={[{ icon: 'chat', t: 'Everything else stays with the Support Agent' }, { icon: 'shield', t: 'Prices and deposits only from your service list' }]}
+          toggle={<button type="button" role="switch" aria-checked={!!recOn} aria-label="Reception Agent for bookings" onClick={() => toggleRole('reception')} disabled={recOn == null || savingRole} className={`ag-switch ${recOn ? 'on' : ''}`}><span /></button>}>
           {recOn && settings?.receptionAuto && (
             <AutoSendPanel
               settings={{ ...settings, autoSend: settings.receptionAuto, topics: settings.topics.filter(t => ['booking', 'opening_hours', 'store_info'].includes(t.key)) }}
@@ -456,42 +509,75 @@ export default function AgentsPage() {
               onSave={a => saveSettings({ receptionAuto: a })}
             />
           )}
-        </div>
+        </AgentShowcase>
 
-        <div id="ag-reputation" className="ag-card ag-fade" style={{ marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'space-between' }}>
-            <div style={{ minWidth: 0 }}>
-              <p className="ag-h">Reputation Agent on reviews and comments</p>
-              <p className="ag-p">When a new Google review comes in — and, if you switch it on, a comment on your Facebook or Instagram posts — the Reputation Agent drafts a reply in your voice. Unhappy customers also go to your team with a follow-up task.{settings?.reviewAuto?.enabled ? ` It posts replies to ${settings.reviewAuto.min_rating === 5 ? '5' : '4 and 5'}-star reviews on its own; everything else waits for you.` : ' Every reply waits for you to post it.'}</p>
-            </div>
-            <button type="button" role="switch" aria-checked={!!repOn} aria-label="Reputation Agent on reviews and comments" onClick={() => toggleRole('reputation')} disabled={repOn == null || savingRole} className={`ag-switch ${repOn ? 'on' : ''}`}><span /></button>
-          </div>
+        <AgentShowcase id="ag-reputation" name="Reputation Agent" face={faceOf('reputation')} state={agentState(repOn)}
+          onEditFace={openFace('reputation')} editing={editFace?.key === 'reputation'}
+          tagline="Replies to your reviews and comments, in your voice."
+          watchTitle="When someone posts"
+          watches={[
+            { icon: 'star', t: 'A new Google review', s: 'Five stars or one' },
+            { icon: 'comment', t: 'A comment on Facebook or Instagram', s: settings?.commentAuto?.on ? 'On your posts' : 'Once you switch comments on below' },
+            { icon: 'frown', t: 'An unhappy customer', s: 'A low rating or a complaint' },
+          ]}
+          does={[
+            { icon: 'pen', t: 'Drafts a reply in your voice', s: 'Thanks them by name and mentions what they said' },
+            { icon: 'task', t: 'A follow-up task for your team', s: 'When a customer is unhappy' },
+            settings?.reviewAuto?.enabled
+              ? { icon: 'send', t: `Posts ${settings.reviewAuto.min_rating === 5 ? '5' : '4 and 5'}-star replies on its own`, s: 'Everything else waits for you' }
+              : { icon: 'hand', t: 'Every reply waits for you', s: 'Nothing is posted until you do' },
+          ]}
+          rules={[{ icon: 'shield', t: 'Never replaces a reply you already wrote' }, { icon: 'skip', t: 'Skips spam and abuse, and flags it' }]}
+          toggle={<button type="button" role="switch" aria-checked={!!repOn} aria-label="Reputation Agent on reviews and comments" onClick={() => toggleRole('reputation')} disabled={repOn == null || savingRole} className={`ag-switch ${repOn ? 'on' : ''}`}><span /></button>}>
           {repOn && settings?.reviewAuto && <ReviewAutoPanel value={settings.reviewAuto} saving={savingSettings} onSave={v => saveSettings({ reviewAuto: v })} />}
           {repOn && settings?.commentAuto && <CommentPanel value={settings.commentAuto} saving={savingSettings} onSave={v => saveSettings({ commentAuto: v })} />}
-        </div>
+        </AgentShowcase>
 
-        <div id="ag-sales" className="ag-card ag-fade" style={{ marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'space-between' }}>
-            <div style={{ minWidth: 0 }}>
-              <p className="ag-h">Sales Agent for carts, quotes and enquiries</p>
-              <p className="ag-p">When a shopper leaves items in their cart, the Sales Agent looks at what they picked, checks stock and writes them a short, personal follow-up with their checkout link — by SMS, else email, within your sending hours. It never offers a discount unless you approve it. While it’s on, Colvy’s template cart message stands down so nobody gets two.{settings?.salesAuto?.enabled ? ' It sends follow-ups on its own; anything unusual waits for you.' : ' Every follow-up waits for you to send it.'}</p>
-            </div>
-            <button type="button" role="switch" aria-checked={!!salesOn} aria-label="Sales Agent for carts, quotes and enquiries" onClick={() => toggleRole('sales')} disabled={salesOn == null || savingRole} className={`ag-switch ${salesOn ? 'on' : ''}`}><span /></button>
-          </div>
+        <AgentShowcase id="ag-sales" name="Sales Agent" face={faceOf('sales')} state={agentState(salesOn)}
+          onEditFace={openFace('sales')} editing={editFace?.key === 'sales'}
+          tagline="Follows up carts, quotes and enquiries that went quiet. One helpful message, never pushy."
+          watchTitle="It notices"
+          watches={[
+            { icon: 'cart', t: 'A cart left at checkout', s: 'Looks at what they picked and checks stock' },
+            { icon: 'quote', t: 'Quotes and enquiries gone quiet', s: settings?.salesFollowup?.on ? `No reply for ${settings.salesFollowup.after_days} days` : 'Once you switch them on below' },
+          ]}
+          does={[
+            { icon: 'chat', t: 'A short, personal follow-up', s: 'With their checkout link, by SMS (else email), within your sending hours' },
+            settings?.salesAuto?.enabled
+              ? { icon: 'send', t: 'Sends it on its own', s: 'Anything unusual waits for you' }
+              : { icon: 'hand', t: 'Waits for you to send it', s: 'Send, edit or dismiss it' },
+          ]}
+          rules={[{ icon: 'tag', t: 'No discounts unless you approve them' }, { icon: 'skip', t: 'Colvy’s template cart message stands down, so nobody gets two' }]}
+          toggle={<button type="button" role="switch" aria-checked={!!salesOn} aria-label="Sales Agent for carts, quotes and enquiries" onClick={() => toggleRole('sales')} disabled={salesOn == null || savingRole} className={`ag-switch ${salesOn ? 'on' : ''}`}><span /></button>}>
           {salesOn && settings?.salesAuto && <DailyAutoPanel value={settings.salesAuto} saving={savingSettings} onSave={v => saveSettings({ salesAuto: v })} copy={SALES_AUTO_COPY} />}
           {salesOn && settings?.salesFollowup && <FollowupPanel value={settings.salesFollowup} saving={savingSettings} onSave={v => saveSettings({ salesFollowup: v })} />}
-        </div>
+        </AgentShowcase>
 
-        <div id="ag-operations" className="ag-card ag-fade" style={{ marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'space-between' }}>
-            <div style={{ minWidth: 0 }}>
-              <p className="ag-h">Operations Agent for late and stuck orders</p>
-              <p className="ag-p">Every few hours it checks recent orders against live tracking and your usual shipping times: orders not shipped yet, parcels that stopped moving or that the carrier has a problem with, and orders waiting on an out-of-stock item. For each real problem it gives your team a task with the facts and a next step, and can write the customer an honest update so they don’t have to chase you. Orders someone already has a task for are left alone.{settings?.opsAuto?.enabled ? ' It sends updates on its own; anything unusual waits for you.' : ' Every customer update waits for you to send it.'}</p>
-            </div>
-            <button type="button" role="switch" aria-checked={!!opsOn} aria-label="Operations Agent for late and stuck orders" onClick={() => toggleRole('operations')} disabled={opsOn == null || savingRole} className={`ag-switch ${opsOn ? 'on' : ''}`}><span /></button>
-          </div>
+        <AgentShowcase id="ag-operations" name="Operations Agent" face={faceOf('operations')} state={agentState(opsOn)}
+          onEditFace={openFace('operations')} editing={editFace?.key === 'operations'}
+          tagline="Catches late, stuck and out-of-stock orders before the customer has to chase you."
+          watchTitle="Every few hours it looks for"
+          watches={[
+            { icon: 'box', t: 'Orders not shipped yet', s: 'Later than your usual shipping time' },
+            { icon: 'truck', t: 'Parcels that stopped moving', s: 'Checked against live tracking' },
+            { icon: 'alert', t: 'Carrier problems', s: 'Anything the carrier has flagged' },
+            { icon: 'stock', t: 'Orders waiting on stock', s: 'An item that’s out of stock' },
+          ]}
+          does={[
+            { icon: 'task', t: 'A task for your team', s: 'With the facts and a next step' },
+            settings?.opsAuto?.enabled
+              ? { icon: 'send', t: 'An honest update for the customer', s: 'Sent on its own; anything unusual waits for you' }
+              : { icon: 'pen', t: 'An honest update for the customer', s: 'Written for you; it waits for you to send it' },
+          ]}
+          rules={[{ icon: 'skip', t: 'Leaves orders that already have a task' }, { icon: 'shield', t: 'Never promises refunds or dates it hasn’t confirmed' }]}
+          toggle={<button type="button" role="switch" aria-checked={!!opsOn} aria-label="Operations Agent for late and stuck orders" onClick={() => toggleRole('operations')} disabled={opsOn == null || savingRole} className={`ag-switch ${opsOn ? 'on' : ''}`}><span /></button>}>
           {opsOn && settings?.opsAuto && <DailyAutoPanel value={settings.opsAuto} saving={savingSettings} onSave={v => saveSettings({ opsAuto: v })} copy={OPS_AUTO_COPY} />}
-        </div>
+        </AgentShowcase>
+
+        {editFace && (
+          <FacePicker key={editFace.key} name={`${navAgents.find(a => a.key === editFace.key)?.label || ''} agent`} face={faceOf(editFace.key)} anchor={editFace.el} companyId={companyId}
+            onChange={f => changeFace(editFace.key, f)} onReset={() => changeFace(editFace.key, null)} onClose={closeFace} />
+        )}
 
         {waiting.length > 0 && companyId && (
           <div className="ag-card ag-fade ag-wait" style={{ marginBottom: 16 }}>
@@ -1224,10 +1310,11 @@ const CSS = `
 .ag-nav a.on{background:#f4f4f5;color:#18181b;font-weight:600}
 .ag-nav a svg{flex-shrink:0;width:15px;height:15px;color:#8e8e93}
 .ag-nav a.on svg{color:var(--coral)}
-.ag-nav-dot{width:8px;height:8px;margin:0 3.5px;border-radius:50%;background:#d4d4d8;flex-shrink:0}
-.ag-nav-dot.on{background:#34c759;box-shadow:0 0 0 3px color-mix(in srgb,#34c759 18%,transparent)}
-.ag-nav-dot.paused{background:#f59e0b}
+.ag-nav-face{display:inline-flex;flex-shrink:0;margin:-2px -2px -2px -3px}
+.ag-nav a .ag-nav-face svg{width:20px;height:20px;color:inherit}
 .ag-nav-state{margin-left:auto;font-size:12px;font-weight:500;color:#a1a1aa}
+.ag-nav-state.on{color:#16a34a;font-weight:600}
+.ag-nav-state.paused{color:#b45309}
 .ag-me{padding:22px 16px 16px;text-align:center;background:radial-gradient(120% 70% at 50% 0%,color-mix(in srgb,var(--coral) 9%,#fff),#fff 70%)}
 .ag-me-face{display:flex;justify-content:center;margin-bottom:12px}
 .ag-me-name{margin:0;font-size:18px;font-weight:800;letter-spacing:-.01em;color:var(--ink)}
@@ -1268,14 +1355,22 @@ const CSS = `
 .ag-team{background:#fff;border-radius:22px;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04);padding:18px;margin-bottom:16px}
 .ag-team-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:2px 2px 14px}
 .ag-team-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:10px}
-.ag-mate{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:14px;border-radius:18px;background:#f7f7f8;color:inherit;text-decoration:none;overflow:hidden;transition:background .2s,box-shadow .2s,transform .25s cubic-bezier(.22,1,.36,1)}
-.ag-mate:hover{background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 10px 28px -12px rgba(16,24,40,.22);transform:translateY(-2px)}
-.ag-mate:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 30%,transparent)}
-.ag-mate::after{content:"";position:absolute;right:-30px;top:-30px;width:110px;height:110px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--c) 22%,transparent),transparent 70%);opacity:0;transition:opacity .4s}
+.ag-mate{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:14px;border-radius:18px;background:color-mix(in srgb,var(--c) 7%,#f7f7f8);color:inherit;text-decoration:none;overflow:hidden;transition:background .2s,box-shadow .2s,transform .25s cubic-bezier(.22,1,.36,1)}
+.ag-mate:hover{background:#fff;box-shadow:0 0 0 1px color-mix(in srgb,var(--c) 25%,rgba(0,0,0,.06)),0 10px 28px -12px color-mix(in srgb,var(--c) 45%,rgba(16,24,40,.22));transform:translateY(-2px)}
+.ag-mate:has(.ag-mate-link:focus-visible){box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 35%,transparent)}
+.ag-mate-link{position:absolute;inset:0;z-index:1;border-radius:inherit;outline:none}
+.ag-mate::after{content:"";position:absolute;right:-30px;top:-30px;width:110px;height:110px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--c) 26%,transparent),transparent 70%);opacity:.45;transition:opacity .4s}
 .ag-mate.on::after{opacity:1}
-.ag-mate-face{position:relative;display:inline-flex;margin-bottom:4px;transition:filter .3s,opacity .3s}
-.ag-mate.on .ag-mate-face{animation:agBob 3.2s ease-in-out infinite}
-.ag-mate.off .ag-mate-face,.ag-mate.paused .ag-mate-face{filter:grayscale(1);opacity:.55}
+.ag-mate-face{position:relative;display:inline-flex;margin-bottom:4px}
+.ag-mate.on .ag-mate-face>svg,.ag-mate.on .ag-mate-face>img{animation:agBob 3.2s ease-in-out infinite}
+.ag-mate.off .ag-mate-face>svg,.ag-mate.off .ag-mate-face>img,.ag-mate.paused .ag-mate-face>svg,.ag-mate.paused .ag-mate-face>img{opacity:.9}
+.ag-mate-edit{position:absolute;z-index:2;right:-8px;bottom:-6px;width:24px;height:24px;border-radius:50%;border:none;background:#fff;color:#3f3f46;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 0 0 1px rgba(0,0,0,.08),0 2px 6px rgba(16,24,40,.14);opacity:0;transform:scale(.8);transition:opacity .2s,transform .25s cubic-bezier(.34,1.56,.64,1),color .15s}
+.ag-mate-edit::before{display:none!important}
+.ag-mate-edit svg{width:13px;height:13px}
+.ag-mate:hover .ag-mate-edit,.ag-mate-edit:focus-visible,.ag-mate-edit.on{opacity:1;transform:none}
+.ag-mate-edit:hover,.ag-mate-edit.on{color:var(--c);transform:rotate(45deg)}
+.ag-mate-edit:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 35%,transparent)}
+@media (hover:none){.ag-mate-edit{opacity:1;transform:none}}
 .ag-mate b{font-size:14.5px;font-weight:700;color:#111;letter-spacing:-.01em}
 .ag-mate-state{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#8e8e93}
 .ag-mate-state i{position:relative;width:7px;height:7px;border-radius:50%;background:#d4d4d8}
@@ -1291,6 +1386,6 @@ const CSS = `
 @keyframes agBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
 @keyframes agPing{0%{transform:scale(1);opacity:.6}80%,100%{transform:scale(2.4);opacity:0}}
 @keyframes agType{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
-@media (prefers-reduced-motion:reduce){.ag-mate,.ag-mate-face{animation:none!important;transition:none}.ag-mate-line .t,.ag-mate-state i::after{animation:none!important}}
+@media (prefers-reduced-motion:reduce){.ag-mate,.ag-mate-face>svg,.ag-mate-face>img,.ag-mate-edit{animation:none!important;transition:none}.ag-mate-line .t,.ag-mate-state i::after{animation:none!important}}
 
 `
