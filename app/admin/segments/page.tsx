@@ -4,9 +4,9 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, resolveCompanyUser } from '@/lib/client-cache'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
-import ConfirmModal from '@/components/ConfirmModal'
+import { confirmDialog, alertDialog } from '@/components/ConfirmDialog'
 import { TrashIcon, PlusIcon, SearchIcon } from '@/components/Icons'
+import { AdminPage, Panel } from '@/components/ui/AdminKit'
 import { SkeletonList } from '@/components/Skeleton'
 import EmptyScroll from '@/components/EmptyScroll'
 
@@ -26,7 +26,6 @@ export default function SegmentsPage() {
   const [newName, setNewName] = useState('')
   const [newMatchType, setNewMatchType] = useState('all')
   const [newConditions, setNewConditions] = useState([{ field: 'email', operator: 'contains', value: '' }])
-  const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null)
   const [selectedUser, setSelectedUser] = useState<any>(null)
 
   useEffect(() => {
@@ -142,7 +141,7 @@ export default function SegmentsPage() {
       conditions: newConditions.filter(c => c.value.trim()),
     })
     if (error) {
-      alert('Failed to create segment. Run DATABASE_SETUP.sql.\n' + error.message)
+      await alertDialog({ title: 'Couldn’t save the segment', message: error.message })
       return
     }
     setNewName('')
@@ -151,192 +150,195 @@ export default function SegmentsPage() {
     fetchSegments()
   }
 
-  const deleteSegment = async (id: string) => {
+  const deleteSegment = async (id: string, name: string) => {
+    if (!await confirmDialog({ title: `Delete “${name}”?`, message: 'The customers stay; only this segment is removed.', confirmLabel: 'Delete', tone: 'danger' })) return
     await supabase.from('segments').delete().eq('id', id)
     if (selectedSegment?.id === id) setSelectedSegment(null)
     fetchSegments()
-    setConfirmDelete(null)
   }
 
   if (loading || !user) return <SkeletonList rows={6} />
 
+  const SRC: Record<string, { label: string; tone: string }> = {
+    woocommerce: { label: 'WooCommerce', tone: 'violet' },
+    shopify: { label: 'Shopify', tone: 'green' },
+    chat: { label: 'Chat', tone: 'blue' },
+    feedback: { label: 'Feedback', tone: 'amber' },
+  }
+  const hues = ['#6366f1', '#16a34a', '#f59e0b', '#ef4444', '#0ea5e9', '#d946ef', '#14b8a6', '#ff6a4d']
+  const hue = (s: string) => hues[[...(s || '?')].reduce((n, ch) => n + ch.charCodeAt(0), 0) % hues.length]
+  const FIELD_LABEL: Record<string, string> = { name: 'Name', email: 'Email', phone: 'Phone', source: 'Source' }
+  const OP_LABEL: Record<string, string> = { contains: 'contains', is_equal_to: 'is', starts_with: 'starts with' }
+  const describe = (seg: Segment) => (seg.conditions || []).map((c: any) => `${FIELD_LABEL[c.field] || c.field} ${OP_LABEL[c.operator] || c.operator} “${c.value}”`).join(seg.match_type === 'all' ? ' and ' : ' or ')
+
   return (
-    <div className="flex min-h-[calc(100vh-56px)]">
-      {/* Sidebar */}
-      <aside className="hidden md:flex flex-col w-64 shrink-0 bg-white border-r" style={{ borderColor: 'var(--border)' }}>
-        <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
-          <Link href="/admin" className="text-sm font-medium hover:opacity-70 transition-smooth" style={{ color: 'var(--coral)' }}>← Admin</Link>
-          <button onClick={() => setShowCreate(true)} className="p-2 rounded-lg hover:bg-gray-100 transition-smooth cursor-pointer" title="Create Segment">
-            <PlusIcon size={16} color="var(--coral)" />
+    <AdminPage width="xl" title="Segments" sub="Groups of customers from chat, your store and the feedback board, so you can target them."
+      actions={<button type="button" className="ak-btn go" onClick={() => setShowCreate(true)}><PlusIcon size={15} color="currentColor" /> New segment</button>}>
+      <div className="sg-cols">
+        <aside className="ak-panel sg-side" aria-label="Segments">
+          <button type="button" className={`sg-seg${!selectedSegment ? ' on' : ''}`} onClick={() => setSelectedSegment(null)}>
+            <span className="t">All customers</span><span className="n">{allUsers.length}</span>
           </button>
-        </div>
-        <div className="flex-1 overflow-y-auto py-2 px-2">
-          <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--slate)' }}>Segments</p>
-          <button
-            onClick={() => setSelectedSegment(null)}
-            className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-smooth hover:bg-gray-50 cursor-pointer"
-            style={{ background: !selectedSegment ? 'var(--canvas)' : 'transparent', color: 'var(--ink)', fontWeight: !selectedSegment ? 600 : 400 }}>
-            <span>All Customers</span>
-            <span className="text-xs px-1.5 rounded" style={{ background: 'var(--canvas)', color: 'var(--slate)' }}>{allUsers.length}</span>
-          </button>
-          {segments.map(s => (
-            <button
-              key={s.id}
-              onClick={() => setSelectedSegment(s)}
-              className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-smooth hover:bg-gray-50 cursor-pointer"
-              style={{ background: selectedSegment?.id === s.id ? 'var(--canvas)' : 'transparent', color: 'var(--ink)', fontWeight: selectedSegment?.id === s.id ? 600 : 400 }}>
-              <span className="truncate">{s.name}</span>
+          {segments.length > 0 && <p className="sg-side-h">Your segments</p>}
+          {segments.map(sg => (
+            <button key={sg.id} type="button" className={`sg-seg${selectedSegment?.id === sg.id ? ' on' : ''}`} onClick={() => setSelectedSegment(sg)}>
+              <span className="t">{sg.name}</span>
+              <span className="n">{allUsers.filter(u => matchUser(u, sg)).length}</span>
             </button>
           ))}
-        </div>
-      </aside>
+          {segments.length === 0 && <p className="ak-hint" style={{ padding: '8px 10px 4px', margin: 0 }}>No segments yet. Make one to group customers by email, source and more.</p>}
+        </aside>
 
-      {/* Main */}
-      <main className="flex-1 overflow-y-auto">
-        <div className="px-4 md:px-8 py-6">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h1 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>{selectedSegment ? selectedSegment.name : 'All Customers'}</h1>
-              <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>{segmentUsers.length} {segmentUsers.length === 1 ? 'customer' : 'customers'}</p>
+        <div style={{ minWidth: 0 }}>
+          {/* Phones: segments as chips. */}
+          <div className="sg-chips">
+            <button type="button" className={`ak-chip${!selectedSegment ? ' on' : ''}`} onClick={() => setSelectedSegment(null)}>All <span>{allUsers.length}</span></button>
+            {segments.map(sg => <button key={sg.id} type="button" className={`ak-chip${selectedSegment?.id === sg.id ? ' on' : ''}`} onClick={() => setSelectedSegment(sg)}>{sg.name}</button>)}
+          </div>
+
+          <Panel flush
+            title={selectedSegment ? selectedSegment.name : 'All customers'}
+            sub={<>{segmentUsers.length.toLocaleString()} {segmentUsers.length === 1 ? 'customer' : 'customers'}{selectedSegment && describe(selectedSegment) ? <> · {describe(selectedSegment)}</> : null}</>}
+            right={selectedSegment ? (
+              <button type="button" className="ak-icon-btn danger" onClick={() => deleteSegment(selectedSegment.id, selectedSegment.name)} title="Delete segment" aria-label="Delete segment">
+                <TrashIcon size={15} color="currentColor" />
+              </button>
+            ) : undefined}>
+            <div style={{ padding: '0 14px 10px' }}>
+              <label className="sg-search">
+                <SearchIcon size={16} color="currentColor" />
+                <input type="text" value={searchUsers} onChange={e => setSearchUsers(e.target.value)} placeholder="Search by name or email" aria-label="Search customers" />
+              </label>
             </div>
-            <div className="flex items-center gap-2">
-              {selectedSegment && (
-                <button onClick={() => setConfirmDelete({ id: selectedSegment.id, name: selectedSegment.name })} className="px-3 py-2 rounded-lg border text-sm text-red-600 hover:bg-red-50 transition-smooth cursor-pointer" style={{ borderColor: '#fca5a5' }}>
-                  <TrashIcon size={14} color="#dc2626" />
+            <div className="ak-list" style={{ padding: '0 8px 8px' }}>
+              {visibleUsers.map(u => {
+                const open = selectedUser?.id === u.id
+                return (
+                  <div key={u.id}>
+                    <button type="button" className={`ak-row sg-user${open ? ' on' : ''}`} onClick={() => setSelectedUser(open ? null : u)} aria-expanded={open}>
+                      <span className="sg-av" style={{ background: hue(u.name || u.email) }} aria-hidden>{(u.name || 'A')[0].toUpperCase()}</span>
+                      <span className="ak-row-t">
+                        <b>{u.name}</b>
+                        <small>{u.email || (u.last_seen ? `Last seen ${new Date(u.last_seen).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}` : '')}</small>
+                      </span>
+                      {u.total_spend ? <span className="sg-spend">${Number(u.total_spend).toLocaleString('en-AU', { maximumFractionDigits: 0 })}</span> : null}
+                      <span className="sg-srcs">
+                        {(u.sources || []).map((src: string) => <span key={src} className={`ak-tag ${SRC[src]?.tone || ''}`}>{SRC[src]?.label || src}</span>)}
+                      </span>
+                    </button>
+                    {open && (
+                      <div className="sg-detail">
+                        {u.email && <span><small>Email</small>{u.email}</span>}
+                        {u.phone && <span><small>Phone</small>{u.phone}</span>}
+                        {u.total_orders ? <span><small>Orders</small>{u.total_orders}</span> : null}
+                        {u.total_spend ? <span><small>Spent</small>${Number(u.total_spend).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> : null}
+                        {u.last_seen && <span><small>First seen</small>{new Date(u.last_seen).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}</span>}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+              {segmentUsers.length === 0 && <EmptyScroll compact kinds={['contact']} title="No customers in this segment" line="Customers who fit this segment show up here." />}
+              {visibleCount < segmentUsers.length && (
+                <button type="button" className="ak-btn ghost" style={{ margin: '8px 4px 2px' }} onClick={() => setVisibleCount(c => c + 50)}>
+                  Show more ({(segmentUsers.length - visibleCount).toLocaleString()} left)
                 </button>
               )}
-              <button onClick={() => setShowCreate(true)} className="px-4 py-2.5 rounded-xl font-semibold text-white text-sm transition-smooth press-effect cursor-pointer flex items-center gap-2" style={{ background: 'var(--coral)' }}>
-                <PlusIcon size={14} color="white" /> Create Segment
+            </div>
+          </Panel>
+        </div>
+      </div>
+
+      {/* New segment */}
+      {showCreate && (
+        <div className="sg-scrim" onClick={() => setShowCreate(false)}>
+          <div className="sg-dialog" role="dialog" aria-modal="true" aria-labelledby="sg-new-h" onClick={e => e.stopPropagation()}>
+            <div className="sg-dialog-h">
+              <h2 id="sg-new-h">New segment</h2>
+              <button type="button" className="ak-icon-btn" onClick={() => setShowCreate(false)} aria-label="Close">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
               </button>
             </div>
-          </div>
+            <label className="ak-label" htmlFor="sg-name">Name</label>
+            <input id="sg-name" className="ak-field" type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Big spenders, Reef keepers, Wholesale" autoFocus />
 
-          <div className="flex gap-6">
-            {/* User list */}
-            <div className="flex-1">
-              <div className="mb-4">
-                <div className="flex items-center gap-2 px-3 py-2 rounded-lg border" style={{ borderColor: 'var(--border)' }}>
-                  <SearchIcon size={16} color="var(--slate)" />
-                  <input type="text" value={searchUsers} onChange={e => setSearchUsers(e.target.value)} placeholder="Search customers" className="flex-1 text-sm focus:outline-none" style={{ fontSize: '16px' }} />
-                </div>
+            <div className="sg-match">
+              Customers who match
+              <div className="ak-seg" role="radiogroup" aria-label="Match">
+                <button type="button" role="radio" aria-checked={newMatchType === 'all'} className={newMatchType === 'all' ? 'on' : ''} onClick={() => setNewMatchType('all')}>all</button>
+                <button type="button" role="radio" aria-checked={newMatchType === 'any'} className={newMatchType === 'any' ? 'on' : ''} onClick={() => setNewMatchType('any')}>any</button>
               </div>
-              <div className="space-y-1">
-                {visibleUsers.map(u => {
-                  const SRC: Record<string, { label: string; bg: string; c: string }> = {
-                    woocommerce: { label: 'WooCommerce', bg: '#f3e8ff', c: '#96588A' },
-                    shopify: { label: 'Shopify', bg: '#eefbe0', c: '#5c8a1b' },
-                    chat: { label: 'Chat', bg: '#e0f2fe', c: '#0369a1' },
-                    feedback: { label: 'Feedback', bg: '#fef3c7', c: '#b45309' },
-                  }
-                  return (
-                  <button key={u.id} onClick={() => setSelectedUser(selectedUser?.id === u.id ? null : u)} className="w-full flex items-center gap-3 p-3 rounded-xl border transition-smooth hover:shadow-md cursor-pointer text-left" style={{ borderColor: selectedUser?.id === u.id ? 'var(--coral)' : 'var(--border)', background: selectedUser?.id === u.id ? 'var(--peach)' : 'white' }}>
-                    <span className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0" style={{ background: 'var(--coral)' }}>
-                      {(u.name || 'A')[0].toUpperCase()}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate" style={{ color: 'var(--ink)' }}>{u.name}</p>
-                      <p className="text-xs truncate" style={{ color: 'var(--slate)' }}>{u.email || (u.last_seen ? `Last seen ${new Date(u.last_seen).toLocaleDateString()}` : '')}{u.total_spend ? ` · $${u.total_spend} spent` : ''}</p>
-                      <div className="flex gap-1 mt-1 flex-wrap">
-                        {(u.sources || []).map((s: string) => {
-                          const meta = SRC[s] || { label: s, bg: '#f3f4f6', c: '#6b7280' }
-                          return <span key={s} style={{ fontSize: 9.5, fontWeight: 700, padding: '1px 6px', borderRadius: 10, background: meta.bg, color: meta.c }}>{meta.label}</span>
-                        })}
-                      </div>
-                    </div>
-                  </button>
-                )})}
-                {segmentUsers.length === 0 && <EmptyScroll compact kinds={['contact']} title="No customers in this segment" line="Customers who fit this segment show up here." />}
-                {visibleCount < segmentUsers.length && (
-                  <button onClick={() => setVisibleCount(c => c + 50)} className="w-full py-2.5 mt-2 rounded-lg border text-sm font-medium" style={{ borderColor: 'var(--border)', color: 'var(--coral)' }}>
-                    Load more ({segmentUsers.length - visibleCount} remaining)
-                  </button>
+              of these:
+            </div>
+
+            {newConditions.map((c, i) => (
+              <div key={i} className="sg-cond">
+                <select className="ak-select sm" value={c.field} aria-label="Field" onChange={e => { const nc = [...newConditions]; nc[i].field = e.target.value; setNewConditions(nc) }}>
+                  <option value="name">Name</option>
+                  <option value="email">Email</option>
+                  <option value="phone">Phone</option>
+                  <option value="source">Source</option>
+                </select>
+                <select className="ak-select sm" value={c.operator} aria-label="Rule" onChange={e => { const nc = [...newConditions]; nc[i].operator = e.target.value; setNewConditions(nc) }}>
+                  <option value="contains">contains</option>
+                  <option value="is_equal_to">is</option>
+                  <option value="starts_with">starts with</option>
+                </select>
+                <input className="ak-field sm" type="text" value={c.value} aria-label="Value"
+                  placeholder={c.field === 'source' ? 'shopify, woocommerce, chat or feedback' : 'Value'}
+                  onChange={e => { const nc = [...newConditions]; nc[i].value = e.target.value; setNewConditions(nc) }} />
+                {newConditions.length > 1 && (
+                  <button type="button" className="ak-icon-btn danger" aria-label="Remove condition" onClick={() => setNewConditions(newConditions.filter((_, idx) => idx !== i))}>×</button>
                 )}
               </div>
-            </div>
+            ))}
+            <button type="button" className="ak-btn ghost sm" style={{ marginTop: 4 }} onClick={() => setNewConditions([...newConditions, { field: 'name', operator: 'contains', value: '' }])}>+ Add a condition</button>
 
-            {/* User detail */}
-            {selectedUser && (
-              <div className="hidden lg:block w-80 bg-white rounded-2xl border p-6 h-fit sticky top-6" style={{ borderColor: 'var(--border)' }}>
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="w-14 h-14 rounded-full flex items-center justify-center text-white text-xl font-bold" style={{ background: 'var(--coral)' }}>
-                    {(selectedUser.name || 'A')[0].toUpperCase()}
-                  </span>
-                  <div>
-                    <p className="font-bold" style={{ color: 'var(--ink)' }}>{selectedUser.name}</p>
-                    <p className="text-xs" style={{ color: 'var(--slate)' }}>Joined {new Date(selectedUser.last_seen).toLocaleDateString()}</p>
-                  </div>
-                </div>
-              </div>
-            )}
+            <div className="sg-dialog-foot">
+              <button type="button" className="ak-btn ghost" onClick={() => setShowCreate(false)}>Cancel</button>
+              <button type="button" className="ak-btn go" onClick={createSegment} disabled={!newName.trim()}>Save segment</button>
+            </div>
           </div>
         </div>
-      </main>
-
-      {/* Create segment modal */}
-      {showCreate && (
-        <>
-          <div className="fixed inset-0 z-50 backdrop-blur-sm animate-backdrop" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setShowCreate(false)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-xl bg-white rounded-2xl shadow-2xl animate-modal mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b" style={{ borderColor: 'var(--border)' }}>
-              <h2 className="text-xl font-bold flex items-center gap-2" style={{ color: 'var(--ink)' }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" /></svg>
-                Segment name
-                <button className="p-1 hover:bg-gray-100 rounded cursor-pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg></button>
-              </h2>
-              <input type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Power Users, Enterprise, Beta Testers..." className="w-full mt-3 px-4 py-2.5 rounded-lg border text-sm focus:outline-none" style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
-            </div>
-            <div className="p-6">
-              <div className="flex items-center gap-2 mb-4 text-sm" style={{ color: 'var(--ink)' }}>
-                Match customers that meet
-                <select value={newMatchType} onChange={e => setNewMatchType(e.target.value)} className="px-3 py-1.5 rounded-lg border text-sm" style={{ borderColor: 'var(--border)' }}>
-                  <option value="all">All</option>
-                  <option value="any">Any</option>
-                </select>
-                of the following conditions:
-              </div>
-
-              {newConditions.map((c, i) => (
-                <div key={i} className="flex gap-2 mb-2 items-center">
-                  <select value={c.field} onChange={e => { const nc = [...newConditions]; nc[i].field = e.target.value; setNewConditions(nc) }} className="flex-1 px-3 py-2 rounded-lg border text-sm" style={{ borderColor: 'var(--border)' }}>
-                    <option value="name">Name</option>
-                    <option value="email">Email</option>
-                    <option value="phone">Phone</option>
-                    <option value="source">Source (woocommerce/shopify/chat/feedback)</option>
-                  </select>
-                  <select value={c.operator} onChange={e => { const nc = [...newConditions]; nc[i].operator = e.target.value; setNewConditions(nc) }} className="flex-1 px-3 py-2 rounded-lg border text-sm" style={{ borderColor: 'var(--border)' }}>
-                    <option value="contains">Contains</option>
-                    <option value="is_equal_to">Is equal to</option>
-                    <option value="starts_with">Starts with</option>
-                  </select>
-                  <input type="text" value={c.value} onChange={e => { const nc = [...newConditions]; nc[i].value = e.target.value; setNewConditions(nc) }} placeholder="Value" className="flex-1 px-3 py-2 rounded-lg border text-sm" style={{ borderColor: 'var(--border)', fontSize: '14px' }} />
-                  {newConditions.length > 1 && (
-                    <button onClick={() => setNewConditions(newConditions.filter((_, idx) => idx !== i))} className="p-1.5 rounded hover:bg-gray-100 cursor-pointer" style={{ color: 'var(--slate)' }}>−</button>
-                  )}
-                </div>
-              ))}
-
-              <button onClick={() => setNewConditions([...newConditions, { field: 'name', operator: 'contains', value: '' }])} className="text-sm font-medium mt-2 cursor-pointer" style={{ color: 'var(--coral)' }}>
-                + Add condition
-              </button>
-            </div>
-            <div className="flex gap-3 p-6 border-t" style={{ borderColor: 'var(--border)' }}>
-              <button onClick={() => setShowCreate(false)} className="flex-1 py-2.5 rounded-xl text-sm font-medium border transition-smooth cursor-pointer" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Cancel</button>
-              <button onClick={createSegment} disabled={!newName.trim()} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-smooth disabled:opacity-50 cursor-pointer" style={{ background: 'var(--coral)' }}>Save</button>
-            </div>
-          </div>
-        </>
       )}
-
-      {confirmDelete && (
-        <ConfirmModal
-          title="Delete Segment"
-          message={`Delete "${confirmDelete.name}"?`}
-          confirmLabel="Delete"
-          variant="danger"
-          onConfirm={() => deleteSegment(confirmDelete.id)}
-          onCancel={() => setConfirmDelete(null)}
-        />
-      )}
-    </div>
+      <style>{SG_CSS}</style>
+    </AdminPage>
   )
 }
+
+const SG_CSS = `
+.sg-cols{display:grid;grid-template-columns:250px minmax(0,1fr);gap:14px;align-items:start}
+.sg-side{position:sticky;top:76px;margin:0;padding:8px;max-height:calc(100vh - 96px);overflow-y:auto}
+.sg-side-h{margin:10px 10px 4px;font-size:12.5px;font-weight:650;color:var(--soft)}
+.sg-seg{display:flex;align-items:center;gap:8px;width:100%;min-height:40px;padding:8px 10px;border:none;border-radius:12px;background:none;font:inherit;font-size:14px;color:var(--ink);text-align:left;cursor:pointer}
+.sg-seg:hover{background:color-mix(in srgb,var(--f) 70%,transparent)}
+.sg-seg.on{background:var(--f);font-weight:650}
+.sg-seg .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sg-seg .n{font-size:12px;font-weight:600;color:var(--mut);font-variant-numeric:tabular-nums}
+.sg-chips{display:none}
+.sg-search{display:flex;align-items:center;gap:9px;height:42px;padding:0 14px;border-radius:999px;background:var(--f);color:var(--soft)}
+.ak .sg-search input{flex:1;min-width:0;height:100%;padding:0;border:none!important;background:transparent!important;box-shadow:none!important;outline:none;font:inherit;font-size:14.5px;color:var(--ink)!important}
+button.sg-user{width:100%;border:none;background:none;font:inherit;text-align:left;cursor:pointer}
+button.sg-user.on{background:var(--f)}
+.sg-av{width:38px;height:38px;flex-shrink:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:15px;font-weight:700}
+.sg-spend{flex-shrink:0;font-size:13.5px;font-weight:650;color:var(--ink);font-variant-numeric:tabular-nums}
+.sg-srcs{display:flex;gap:4px;flex-shrink:0}
+.sg-detail{display:flex;flex-wrap:wrap;gap:6px 22px;margin:2px 4px 8px 62px;padding:10px 14px;border-radius:14px;background:var(--f);font-size:13.5px;color:var(--ink)}
+.sg-detail small{display:block;font-size:11.5px;font-weight:600;color:var(--soft)}
+@media (max-width:899px){
+  .sg-cols{grid-template-columns:minmax(0,1fr)}
+  .sg-side{display:none}
+  .sg-chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -16px 12px;padding:0 16px}
+  .sg-srcs{display:none}
+  .sg-detail{margin-left:4px}
+}
+.sg-scrim{position:fixed;inset:0;z-index:3000;background:rgba(15,15,20,.42);display:flex;align-items:center;justify-content:center;padding:16px}
+.sg-dialog{width:min(600px,100%);max-height:90vh;overflow-y:auto;padding:22px;border-radius:26px;background:var(--card,#fff);box-shadow:0 30px 80px -20px rgba(0,0,0,.35)}
+.sg-dialog-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.sg-dialog-h h2{margin:0;font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:21px;font-weight:700;letter-spacing:-.03em;color:var(--ink)}
+.sg-match{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:18px 0 10px;font-size:14px;color:var(--ink)}
+.sg-match .ak-seg button{height:30px;padding:0 13px}
+.sg-cond{display:grid;grid-template-columns:120px 130px minmax(0,1fr) auto;gap:6px;align-items:center;margin-bottom:6px}
+@media (max-width:560px){.sg-cond{grid-template-columns:1fr 1fr}.sg-cond .ak-field{grid-column:1/-1}}
+.sg-dialog-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+`

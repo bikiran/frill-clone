@@ -2,13 +2,21 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { resolveCompanyUser } from '@/lib/client-cache'
-import ConfirmModal from '@/components/ConfirmModal'
+import { confirmDialog, alertDialog } from '@/components/ConfirmDialog'
 import { TrashIcon, PlusIcon } from '@/components/Icons'
 import { SkeletonList } from '@/components/Skeleton'
+import { AdminPage, Panel } from '@/components/ui/AdminKit'
 
+
+// Always on the board and roadmap, whatever else is added below.
+const BUILT_IN = [
+  { key: 'new', label: 'Under consideration', color: '#f97316' },
+  { key: 'planned', label: 'Planned', color: '#3b82f6' },
+  { key: 'in_progress', label: 'In Development', color: '#ea580c' },
+  { key: 'shipped', label: 'Shipped', color: '#10b981' },
+]
 
 const COLORS = [
   '#f97316', '#ea580c', '#dc2626', '#ec4899', 
@@ -22,7 +30,6 @@ export default function StatusesPage() {
   const [statuses, setStatuses] = useState<any[]>([])
   const [newLabel, setNewLabel] = useState('')
   const [newColor, setNewColor] = useState(COLORS[5])
-  const [confirmDelete, setConfirmDelete] = useState<{ id: string; label: string } | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [companyId, setCompanyId] = useState<string | null>(null)
@@ -62,7 +69,7 @@ export default function StatusesPage() {
       order_index: statuses.length,
     })
     if (error) {
-      alert('Failed to add status. Run DATABASE_SETUP.sql to create the statuses table.\n\n' + error.message)
+      await alertDialog({ title: 'Couldn’t add the status', message: error.message })
     } else {
       setNewLabel('')
       fetchStatuses()
@@ -70,111 +77,87 @@ export default function StatusesPage() {
     setSaving(false)
   }
 
-  const deleteStatus = async (id: string) => {
+  const deleteStatus = async (id: string, label: string) => {
+    const ok = await confirmDialog({
+      title: `Delete “${label}”?`,
+      message: 'Ideas with this status keep it, but its column won’t show on the roadmap.',
+      confirmLabel: 'Delete', tone: 'danger',
+    })
+    if (!ok) return
     await supabase.from('statuses').delete().eq('id', id)
     fetchStatuses()
-    setConfirmDelete(null)
   }
 
   if (loading || !user) return <SkeletonList rows={6} />
 
   return (
-    <div className="max-w-4xl mx-auto px-4 md:px-6 py-8">
-      <div className="mb-8">
-        <Link href="/admin" className="text-sm font-medium hover:opacity-70 transition-smooth" style={{ color: 'var(--coral)' }}>
-          ← Back to admin
-        </Link>
-        <h1 className="text-3xl font-bold mt-3 mb-2" style={{ color: 'var(--ink)' }}>
-          Statuses
-        </h1>
-        <p style={{ color: 'var(--slate)' }}>
-          Use statuses to track ideas on your roadmap.
-        </p>
-      </div>
-
-      <div className="bg-white rounded-2xl border p-4 md:p-6 mb-6" style={{ borderColor: 'var(--border)' }}>
-        <h3 className="text-sm font-bold mb-4" style={{ color: 'var(--ink)' }}>Add Status</h3>
-        
-        <div className="flex flex-col sm:flex-row gap-3 mb-4">
-          <input
-            type="text"
-            value={newLabel}
-            onChange={e => setNewLabel(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && addStatus()}
-            placeholder="Status name"
-            className="flex-1 px-4 py-2.5 rounded-lg border text-sm focus:outline-none transition-smooth"
-            style={{ borderColor: 'var(--border)', fontSize: '16px' }}
-          />
-          <button
-            onClick={addStatus}
-            disabled={!newLabel.trim() || saving}
-            className="px-5 py-2.5 rounded-lg font-semibold text-white text-sm transition-smooth press-effect disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1"
-            style={{ background: 'var(--coral)' }}>
-            <PlusIcon size={16} color="white" />
-            {saving ? 'Adding...' : 'Add Status'}
+    <AdminPage width="sm" title="Statuses" sub="Statuses show where each idea is on your roadmap. Every status gets its own column."
+      back={{ href: '/admin/roadmap', label: 'Roadmap' }}>
+      <Panel title="Add a status">
+        <div className="st-add">
+          <input className="ak-field" type="text" value={newLabel} onChange={e => setNewLabel(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && addStatus()} placeholder="e.g. Testing, Waiting on supplier" aria-label="Status name" />
+          <button type="button" className="ak-btn go" onClick={addStatus} disabled={!newLabel.trim() || saving}>
+            <PlusIcon size={15} color="currentColor" /> {saving ? 'Adding…' : 'Add status'}
           </button>
         </div>
+        <span className="ak-label" style={{ margin: '16px 0 9px' }}>Colour</span>
+        <div className="st-swatches" role="radiogroup" aria-label="Colour">
+          {COLORS.map(c => (
+            <button key={c} type="button" role="radio" aria-checked={newColor === c} aria-label={c}
+              className={`st-swatch${newColor === c ? ' on' : ''}`} style={{ '--c': c } as React.CSSProperties} onClick={() => setNewColor(c)} />
+          ))}
+        </div>
+        {newLabel.trim() && (
+          <p className="ak-hint" style={{ marginTop: 14 }}>Preview: <span className="st-pill"><i style={{ background: newColor }} />{newLabel.trim()}</span></p>
+        )}
+      </Panel>
 
-        <div>
-          <p className="text-xs font-semibold mb-2" style={{ color: 'var(--slate)' }}>Color</p>
-          <div className="flex flex-wrap gap-2">
-            {COLORS.map(c => (
-              <button
-                key={c}
-                onClick={() => setNewColor(c)}
-                className="w-7 h-7 rounded-full transition-smooth cursor-pointer"
-                style={{
-                  background: c,
-                  border: newColor === c ? '3px solid white' : '3px solid transparent',
-                  boxShadow: newColor === c ? `0 0 0 2px ${c}` : 'none',
-                }}
-              />
+      <Panel title="Your statuses" sub={statuses.length ? `${statuses.length} added for this workspace` : undefined} flush>
+        {statuses.length === 0 ? (
+          <div className="ak-empty">
+            <b>No statuses of your own yet</b>
+            Add one above. The built-in ones below are always there.
+          </div>
+        ) : (
+          <div className="ak-list" style={{ padding: '0 8px 8px' }}>
+            {statuses.map(s => (
+              <div key={s.id} className="ak-row">
+                <span className="st-dot" style={{ background: s.color }} aria-hidden />
+                <span className="ak-row-t"><b>{s.label || s.name}</b><small>{s.key}</small></span>
+                <button type="button" className="ak-icon-btn danger" onClick={() => deleteStatus(s.id, s.label || s.name)} title="Delete status" aria-label={`Delete ${s.label || s.name}`}>
+                  <TrashIcon size={15} color="currentColor" />
+                </button>
+              </div>
             ))}
           </div>
-        </div>
-      </div>
+        )}
+      </Panel>
 
-      {statuses.length === 0 ? (
-        <div className="text-center py-12 rounded-2xl border" style={{ borderColor: 'var(--border)' }}>
-          <p style={{ color: 'var(--slate)' }}>No custom statuses yet. Add one above to get started.</p>
-          <p className="text-xs mt-2" style={{ color: 'var(--slate)' }}>
-            Defaults shown on the roadmap: Under consideration, Planned, In Development, Shipped
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {statuses.map(s => (
-            <div key={s.id} className="bg-white rounded-xl border p-4 flex items-center gap-3 hover:shadow-md transition-smooth" style={{ borderColor: 'var(--border)' }}>
-              <span className="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0" style={{ borderColor: s.color }}>
-                <span className="w-2 h-2 rounded-full" style={{ background: s.color }} />
-              </span>
-              <span className="flex-1 text-sm font-medium" style={{ color: 'var(--ink)' }}>
-                {s.label}
-              </span>
-              <span className="text-xs px-2 py-0.5 rounded" style={{ color: 'var(--slate)', background: 'var(--canvas)' }}>
-                {s.key}
-              </span>
-              <button
-                onClick={() => setConfirmDelete({ id: s.id, label: s.label })}
-                className="p-2 rounded-lg hover:bg-red-50 transition-smooth cursor-pointer"
-                title="Delete status">
-                <TrashIcon size={16} color="#dc2626" />
-              </button>
+      <Panel title="Built in" sub="Always on your board and roadmap." flush>
+        <div className="ak-list" style={{ padding: '0 8px 8px' }}>
+          {BUILT_IN.map(s => (
+            <div key={s.key} className="ak-row">
+              <span className="st-dot" style={{ background: s.color }} aria-hidden />
+              <span className="ak-row-t"><b>{s.label}</b><small>{s.key}</small></span>
+              <span className="ak-tag">Built in</span>
             </div>
           ))}
         </div>
-      )}
-
-      {confirmDelete && (
-        <ConfirmModal
-          title="Delete Status"
-          message={`Are you sure you want to delete "${confirmDelete.label}"? Ideas using this status will keep the value but the column won't appear on the roadmap.`}
-          confirmLabel="Delete"
-          variant="danger"
-          onConfirm={() => deleteStatus(confirmDelete.id)}
-          onCancel={() => setConfirmDelete(null)}
-        />
-      )}
-    </div>
+      </Panel>
+      <style>{ST_CSS}</style>
+    </AdminPage>
   )
 }
+
+const ST_CSS = `
+.st-add{display:flex;gap:8px}
+@media (max-width:560px){.st-add{flex-direction:column}}
+.st-swatches{display:flex;flex-wrap:wrap;gap:8px}
+.st-swatch{width:30px;height:30px;padding:0;border:none;border-radius:50%;background:var(--c);cursor:pointer;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08);transition:transform .12s,box-shadow .15s}
+.st-swatch:hover{transform:scale(1.08)}
+.st-swatch.on{box-shadow:0 0 0 3px var(--card,#fff),0 0 0 5px var(--c)}
+.st-dot{width:12px;height:12px;flex-shrink:0;margin:0 4px;border-radius:50%;box-shadow:0 0 0 4px color-mix(in srgb,currentColor 0%,transparent)}
+.st-pill{display:inline-flex;align-items:center;gap:7px;height:26px;padding:0 11px;margin-left:4px;border-radius:999px;background:var(--f);font-size:12.5px;font-weight:600;color:var(--ink)}
+.st-pill i{width:8px;height:8px;border-radius:50%}
+`
