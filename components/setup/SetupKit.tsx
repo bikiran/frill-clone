@@ -81,7 +81,9 @@ const FOLDER_ICONS = [
 /** The live preview: the workspace's colour behind a copy of the app with its
  *  logo, name and whatever the form has filled in so far. While the workspace
  *  is being made it fills the screen and shows `build` instead. */
-export function SetupPreview({ panelRef, phase, from, logo, name, sub, sections, conv, build, corner }: {
+export type PreviewFocus = 'overview' | 'name' | 'site' | 'brand' | 'channels' | 'teams'
+
+export function SetupPreview({ panelRef, phase, from, logo, name, sub, sections, conv, build, corner, focus = 'overview' }: {
   panelRef: React.RefObject<HTMLDivElement | null>
   phase: 'form' | 'zoom' | 'full'
   from: Rect | null
@@ -96,12 +98,14 @@ export function SetupPreview({ panelRef, phase, from, logo, name, sub, sections,
   build: React.ReactNode
   /** Top right of the panel (the account). */
   corner?: React.ReactNode
+  /** What the current step changes: the preview glides and zooms to it. */
+  focus?: PreviewFocus
 }) {
   return (
     <div ref={panelRef} className="nw-panel"
       style={phase !== 'form' && from ? { position: 'fixed', top: from.top, left: from.left, right: from.right, bottom: from.bottom, margin: 0, zIndex: 3 } : undefined}>
       {phase === 'form' && corner}
-      <div className="nw-app" aria-hidden="true">
+      <div className={`nw-app${phase === 'form' && focus !== 'overview' ? ' f-' + focus : ''}`} aria-hidden="true">
         <div className="nw-rail">
           <span className="nw-logo" key={logo.kind + (logo.src || '')}>
             {logo.kind === 'img' ? <img src={logo.src} alt="" /> : logo.kind === 'globe' ? <span className="nw-logo-globe">{I(GLOBE, 22, 1.7)}</span> : <img src={COLVY_ICON} alt="" />}
@@ -345,7 +349,17 @@ body:has(.nw) button[title="Send feedback"]{display:none!important}
 /* The preview: the workspace's colour, a fine lattice and grain, and the app. */
 .nw-panel{position:relative;min-height:0;border-radius:26px;overflow:hidden;background-color:var(--c);background-image:radial-gradient(120% 90% at 85% 0%,rgba(255,255,255,.28),transparent 55%),radial-gradient(90% 70% at 0% 100%,rgba(0,0,0,.14),transparent 60%),repeating-linear-gradient(45deg,rgba(255,255,255,.12) 0 1px,transparent 1px 78px),repeating-linear-gradient(-45deg,rgba(255,255,255,.12) 0 1px,transparent 1px 78px);transition:background-color .6s ease,top .8s cubic-bezier(.65,0,.35,1),left .8s cubic-bezier(.65,0,.35,1),right .8s cubic-bezier(.65,0,.35,1),bottom .8s cubic-bezier(.65,0,.35,1),border-radius .8s ease}
 .nw-full .nw-panel{border-radius:0}
-.nw-app{position:absolute;left:16%;top:32%;right:-6%;bottom:-6%;display:flex;background:#fff;border-radius:30px 0 0 0;box-shadow:0 30px 80px -20px rgba(0,0,0,.35);overflow:hidden;transition:left .9s cubic-bezier(.65,0,.35,1),top .9s cubic-bezier(.65,0,.35,1),right .9s cubic-bezier(.65,0,.35,1),bottom .9s cubic-bezier(.65,0,.35,1),border-radius .9s ease}
+.nw-app{position:absolute;left:16%;top:32%;right:-6%;bottom:-6%;display:flex;background:#fff;border-radius:30px 0 0 0;box-shadow:0 30px 80px -20px rgba(0,0,0,.35);overflow:hidden;transition:left .9s cubic-bezier(.65,0,.35,1),top .9s cubic-bezier(.65,0,.35,1),right .9s cubic-bezier(.65,0,.35,1),bottom .9s cubic-bezier(.65,0,.35,1),border-radius .9s ease,transform 1.05s cubic-bezier(.65,0,.35,1);transform-origin:0 0}
+/* The camera: each step glides and zooms the app to the part that step
+   changes, and a soft tint settles on it once the move is under way. */
+.nw-app.f-name{transform:translate(-1%,-2%) scale(1.08)}
+.nw-app.f-site{transform:translate(-3%,-6%) scale(1.16)}
+.nw-app.f-brand{transform:translate(4%,3%) scale(1.3)}
+.nw-app.f-channels{transform:translate(-2%,-23%) scale(1.2)}
+.nw-app.f-teams{transform:translate(-4%,-21%) scale(1.24)}
+.nw-ws,.nw-ws-site,.nw-secs{border-radius:12px;transition:background-color .55s ease .35s,box-shadow .55s ease .35s}
+.nw-app.f-name .nw-ws,.nw-app.f-site .nw-ws-site,.nw-app.f-channels .nw-secs,.nw-app.f-teams .nw-secs{background-color:color-mix(in srgb,var(--c) 7%,transparent);box-shadow:0 0 0 7px color-mix(in srgb,var(--c) 7%,transparent)}
+.nw-app.f-brand .nw-logo{box-shadow:0 0 0 4px color-mix(in srgb,var(--c) 30%,transparent),0 2px 8px rgba(0,0,0,.08);transition:box-shadow .55s ease .35s}
 .nw-zoom .nw-app{left:6%;top:9%;right:6%;bottom:9%;border-radius:28px}
 .nw-full .nw-app{left:10px;top:10px;right:10px;bottom:10px;border-radius:22px}
 .nw-rail{width:78px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:10px;padding:16px 0;background:#f4f4f5}
