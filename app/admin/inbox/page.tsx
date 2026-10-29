@@ -97,7 +97,7 @@ import WidgetInstallCard from '@/components/inbox/WidgetInstallCard'
 import { boardUrl } from '@/lib/redirect'
 import { publishAiContext } from '@/lib/ai-context'
 import TicketComposer, { type TicketPriority } from '@/components/inbox/TicketComposer'
-import { CPD_CSS, CPD_ICON, DELIVERY_STATUS_OPTIONS, PanelItem } from '@/components/inbox/ContactPanelBits'
+import { CPD_CSS, CPD_ICON, DELIVERY_STATUS_OPTIONS, PanelItem, PT_CSS } from '@/components/inbox/ContactPanelBits'
 import { MenuAvatar } from '@/components/ui/SelectMenu'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -5225,7 +5225,8 @@ export default function InboxPage() {
     } catch {}
   }
 
-  const miniBtn = (color: string): React.CSSProperties => ({ fontSize: 11.5, fontWeight: 600, color, background: '#fff', border: '1.5px solid #e4e4e7', borderRadius: 999, padding: '4px 10px', cursor: 'pointer' })
+  // The order card's action pills (Edit, Issue refund, Invoice…): grey, the text in the action's colour.
+  const miniBtn = (color: string): React.CSSProperties => ({ height: 30, fontSize: 12.5, fontWeight: 600, color, background: 'var(--pt-fill, #f4f4f5)', border: 'none', borderRadius: 999, padding: '0 12px', cursor: 'pointer' })
 
   const folderBtnInbox = (active: boolean): React.CSSProperties => ({ display: 'block', width: '100%', textAlign: 'left', padding: '7px 10px', borderRadius: 7, border: 'none', background: active ? 'var(--peach)' : 'transparent', color: active ? 'var(--coral)' : 'var(--ink)', fontSize: 12.5, fontWeight: active ? 700 : 500, cursor: 'pointer', marginBottom: 2 }) 
 
@@ -12426,80 +12427,71 @@ export default function InboxPage() {
 
             {activePanel === 'timeline' && (
               <>
-                {/* AI Summary & To-dos */}
-                <div style={{ marginBottom: 18, padding: '12px 14px', borderRadius: 10, background: 'linear-gradient(135deg, #faf5ff, #f3e8ff)', border: '1px solid #e9d5ff' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#7c3aed' }}>✨ AI Summary</h3>
-                    <button type="button" onClick={generateAiSummary} disabled={generatingAi} className="cp-mini violet">
-                      {generatingAi ? 'Thinking…' : aiSummary ? 'Regenerate' : 'Generate'}
+                <style>{PT_CSS}</style>
+                {/* AI summary & next steps */}
+                <section className="pt-ai">
+                  <div className="pt-ai-head">
+                    <span className="pt-ai-ic" aria-hidden><AiSparkIcon size={15} /></span>
+                    <h3>AI summary</h3>
+                    <button type="button" onClick={generateAiSummary} disabled={generatingAi} className="pt-ai-btn">
+                      {generatingAi ? 'Thinking…' : aiSummary ? 'Refresh' : 'Summarise'}
                     </button>
                   </div>
                   {aiSummary ? (
-                    <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.5 }}>
+                    <p className="pt-ai-text">
                       <Highlight text={aiSummary} q={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} />
                     </p>
                   ) : (
-                    <p style={{ margin: 0, fontSize: 12, color: '#9ca3af' }}>Generate a summary and action items for this conversation.</p>
+                    <p className="pt-ai-empty">{generatingAi ? 'Reading the conversation…' : 'A short summary of this conversation and what to do next.'}</p>
                   )}
                   {aiTodos.length > 0 && (
-                    <div style={{ marginTop: 10 }}>
-                      <p style={{ margin: '0 0 5px', fontSize: 12, fontWeight: 600, color: '#7c3aed' }}>To-dos</p>
+                    <div className="pt-todos">
+                      <span className="pt-lbl">Next steps</span>
                       {aiTodos.map((t: any, i: number) => (
-                        <label key={i} style={{ display: 'flex', gap: 7, alignItems: 'flex-start', fontSize: 12, color: 'var(--ink)', marginBottom: 4, cursor: 'pointer' }}>
+                        <label key={i} className={`pt-todo${t.done ? ' done' : ''}`}>
                           <input type="checkbox" checked={!!t.done} onChange={() => {
                             const upd = aiTodos.map((x: any, xi: number) => xi === i ? { ...x, done: !x.done } : x)
                             setAiTodos(upd)
                             ;(supabase as any).from('conversations').update({ ai_todos: upd }).eq('id', selected.id)
                               // A query builder only runs once awaited/then'd — without this the tick was never saved.
                               .then(() => {}, () => {})
-                          }} style={{ marginTop: 2 }} />
-                          <span style={{ textDecoration: t.done ? 'line-through' : 'none', opacity: t.done ? 0.6 : 1 }}>
-                            <Highlight text={t.text} q={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} />
-                          </span>
+                          }} />
+                          <span className="pt-tick" aria-hidden><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg></span>
+                          <span className="pt-todo-t"><Highlight text={t.text} q={(showMsgSearch && msgSearch.trim()) ? msgSearch : searchTerm} accent={companyInfo?.accent_color || 'var(--coral)'} /></span>
                         </label>
                       ))}
-                      <p style={{ margin: '8px 0 0', fontSize: 11, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <span style={{ color: '#7c3aed' }}>✨</span> Draft tasks from these appear in the conversation.
-                      </p>
+                      <p className="pt-ai-foot">Draft tasks from these appear in the conversation.</p>
                     </div>
                   )}
-                </div>
+                </section>
 
                 {/* Timeline events */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Timeline</h3>
-                  <span style={{ fontSize: 11, color: '#9ca3af' }}>Showing: All</span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginBottom: 18, position: 'relative' }}>
-                  {/* Quick actions */}
-                  <div style={{ display: 'flex', gap: 6, marginBottom: 12, marginTop: 6, flexWrap: 'wrap' }}>
-                    <ReviewRequestButton buttonLabel="Send review request" key={`rvp-${selected?.id || ''}`}
-                      buttonStyle={{ fontSize: 11, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', fontWeight: 600 }}
+                <section className="pt-sec">
+                  <div className="pt-sec-h">
+                    <h3>Timeline</h3>
+                    <ReviewRequestButton buttonLabel="Ask for a review" key={`rvp-${selected?.id || ''}`} buttonClassName="pt-pill"
                       channel={reviewChannel()} alreadyReviewed={reviewAlready()} getLink={createReviewLink} onSend={sendReviewRequest} onError={showToast}
                       onInsert={showEmailComposer && !internalMode ? undefined : (t => setReply(r => (r.trim() ? r.trimEnd() + '\n' : '') + t))} />
                   </div>
                   {events.length === 0 ? (
-                    <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>No timeline events yet.</p>
+                    <p className="pt-empty">Nothing has happened here yet.</p>
                   ) : (
-                    events.map((ev, i) => {
-                      const d = new Date(ev.created_at)
-                      return (
-                        <div key={ev.id} style={{ display: 'flex', gap: 10, paddingBottom: 14, position: 'relative' }}>
-                          {/* Timeline dot + line */}
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
-                            <div style={{ width: 9, height: 9, borderRadius: '50%', background: 'var(--coral)', marginTop: 3 }} />
-                            {i < events.length - 1 && <div style={{ width: 1.5, flex: 1, background: 'var(--border)', marginTop: 2 }} />}
-                          </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <p style={{ margin: 0, fontSize: 10, color: '#9ca3af' }}>{d.toLocaleDateString([], { month: 'short', day: 'numeric' })} · {d.toLocaleTimeString([], timeOpts())}</p>
-                            <p style={{ margin: '2px 0 0', fontSize: 12.5, color: 'var(--ink)' }}>{ev.detail}</p>
-                            {ev.actor_name && <p style={{ margin: '1px 0 0', fontSize: 11, color: '#9ca3af' }}>by {ev.actor_name}</p>}
-                          </div>
-                        </div>
-                      )
-                    })
+                    <ol className="pt-tl">
+                      {events.map(ev => {
+                        const d = new Date(ev.created_at)
+                        return (
+                          <li key={ev.id}>
+                            <span className="pt-tl-dot" aria-hidden />
+                            <div className="pt-tl-body">
+                              <p className="pt-tl-text">{ev.detail}</p>
+                              <p className="pt-tl-meta">{d.toLocaleDateString([], { month: 'short', day: 'numeric' })} · {d.toLocaleTimeString([], timeOpts())}{ev.actor_name ? ` · ${ev.actor_name}` : ''}</p>
+                            </div>
+                          </li>
+                        )
+                      })}
+                    </ol>
                   )}
-                </div>
+                </section>
 
                 {/* Notes */}
                 {renderNotesSection()}
@@ -12507,58 +12499,53 @@ export default function InboxPage() {
                 {/* Tasks */}
                 {renderTasksSection()}
 
-                {/* Page history */}
-                <div>
-                  <h3 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Page History</h3>
-                  {(!selected.page_history || selected.page_history.length === 0) ? (
-                    <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>No page history recorded yet.</p>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {[...selected.page_history].reverse().map((h: any, i: number) => (
-                        <div key={i} style={{ padding: '9px 12px', borderRadius: 8, background: 'var(--canvas)', border: i === 0 ? '1.5px solid var(--coral)' : '1px solid var(--border)' }}>
-                          {i === 0 && <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--coral)', display: 'block', marginBottom: 3 }}>Current</span>}
-                          <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dec(h.title) || 'Untitled'}</p>
-                          <a href={h.url} target="_blank" rel="noopener" style={{ fontSize: 11, color: 'var(--coral)', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{h.url}</a>
-                          <p style={{ margin: '3px 0 0', fontSize: 10, color: '#9ca3af' }}>{fmtTime(h.ts)}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                {/* Pages they visited (website chat), newest first */}
+                {Array.isArray(selected.page_history) && selected.page_history.length > 0 && (
+                  <section className="pt-sec">
+                    <div className="pt-sec-h"><h3>Pages visited</h3></div>
+                    <ol className="pt-pages">
+                      {[...selected.page_history].reverse().map((h: any, i: number) => {
+                        const where = (() => { try { const u = new URL(h.url); return u.hostname.replace(/^www\./, '') + (u.pathname !== '/' ? u.pathname : '') } catch { return h.url } })()
+                        return (
+                          <li key={i}>
+                            <a href={h.url} target="_blank" rel="noopener" className={`pt-page${i === 0 ? ' latest' : ''}`} title={h.url}>
+                              <span className="pt-page-t"><b>{dec(h.title) || 'Untitled'}</b><small>{where}</small></span>
+                              <span className="pt-page-time">{i === 0 && <em>Latest</em>}{fmtTime(h.ts)}</span>
+                            </a>
+                          </li>
+                        )
+                      })}
+                    </ol>
+                  </section>
+                )}
               </>
             )}
 
             {activePanel === 'orders' && (
-              <>
+              <div className="pt-orders">
+                <style>{PT_CSS}</style>
                 {/* Store customer summary (WooCommerce, or Shopify when there's no WooCommerce match) */}
-                {wooCustomer && (
-                  <div style={{ marginBottom: 16, padding: '14px 16px', borderRadius: 12, background: 'linear-gradient(135deg, #f5f3ff, #ede9fe)', border: '1px solid #ddd6fe' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                      <span style={{ color: "var(--coral)", display: "inline-flex" }}>{Icon.cart(16)}</span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: '#6d28d9' }}>{wooCustomer._channel === 'shopify' ? 'Shopify Customer' : 'WooCommerce Customer'}</span>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                      <div>
-                        <p style={{ margin: 0, fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>Total spend</p>
-                        <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>
-                          {(() => {
-                            const spend = (parseFloat(wooCustomer.total_spend) || 0) || wooOrders.reduce((s, o) => s + (parseFloat(o.total) || 0), 0)
-                            return spend > 0 ? `$${spend.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'N/A'
-                          })()}
-                        </p>
+                {wooCustomer && (() => {
+                  const spend = (parseFloat(wooCustomer.total_spend) || 0) || wooOrders.reduce((s, o) => s + (parseFloat(o.total) || 0), 0)
+                  return (
+                    <section className="pt-card">
+                      <div className="pt-card-h">
+                        <span className="pt-card-ic">{Icon.cart(15)}</span>
+                        <b>{wooCustomer._channel === 'shopify' ? 'Shopify' : 'WooCommerce'}</b>
+                        <small>Online store</small>
                       </div>
-                      <div>
-                        <p style={{ margin: 0, fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>Orders</p>
-                        <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>{wooCustomer.total_orders || wooOrders.length || 0}</p>
+                      <div className="pt-stats">
+                        <div><span>{spend > 0 ? `$${spend.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</span><small>Total spend</small></div>
+                        <div><span>{wooCustomer.total_orders || wooOrders.length || 0}</span><small>Orders</small></div>
                       </div>
-                    </div>
-                    {contact?.id && (
-                      <a href={`/admin/customers/profile?id=${contact.id}`} style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: '#6d28d9', fontWeight: 600, textDecoration: 'none' }}>
-                        View full profile →
-                      </a>
-                    )}
-                  </div>
-                )}
+                      {contact?.id && (
+                        <a className="pt-card-link" href={`/admin/customers/profile?id=${contact.id}`}>
+                          Full profile <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="9 18 15 12 9 6" /></svg>
+                        </a>
+                      )}
+                    </section>
+                  )
+                })()}
 
                 {/* Prexty POS customer — a compact strip rather than a big tinted
                     block, so the order history below stays the focus. */}
@@ -12576,34 +12563,27 @@ export default function InboxPage() {
                   const where = [prextyCustomer.city, prextyCustomer.state].filter(Boolean).join(', ')
                   const since = prextyCustomer.memberSince ? new Date(prextyCustomer.memberSince).toLocaleDateString('en-AU', { month: 'short', year: 'numeric' }) : ''
                   return (
-                    <div style={{ marginBottom: 16, borderRadius: 12, border: '1px solid var(--border)', background: '#fff', overflow: 'hidden' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderBottom: '1px solid var(--border)' }}>
-                        <PrextyMark size={16} />
-                        <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink)' }}>Prexty POS</span>
-                        {(since || where) && (
-                          <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--slate)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
-                            {since ? `Since ${since}` : where}
-                          </span>
-                        )}
+                    <section className="pt-card">
+                      <div className="pt-card-h">
+                        <span className="pt-card-ic plain"><PrextyMark size={16} /></span>
+                        <b>Prexty POS</b>
+                        {(since || where) && <small>{since ? `Since ${since}` : where}</small>}
                       </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: `1.6fr repeat(${stats.length - 1}, 1fr)` }}>
-                        {stats.map((st, i) => (
-                          <div key={st.label} style={{ padding: '9px 12px', borderLeft: i ? '1px solid var(--border)' : 'none', minWidth: 0 }}>
-                            <p style={{ margin: 0, fontSize: 14.5, fontWeight: 800, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{st.value}</p>
-                            <p title={st.label} style={{ margin: '1px 0 0', fontSize: 10.5, fontWeight: 600, color: '#9ca3af', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{st.label}</p>
-                          </div>
+                      <div className={`pt-stats n${stats.length}`}>
+                        {stats.map(st => (
+                          <div key={st.label}><span title={st.value}>{st.value}</span><small title={st.label}>{st.label}</small></div>
                         ))}
                       </div>
-                    </div>
+                    </section>
                   )
                 })()}
 
                 {/* Order history */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                  <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Order History ({wooOrders.length})</h3>
+                <div className="pt-sec-h" style={{ marginTop: 4 }}>
+                  <h3>Orders <span className="pt-count">{wooOrders.length}</span></h3>
                   <button type="button" onClick={() => setShowOrderSearch(v => !v)} title="Search orders" aria-label="Search orders" aria-pressed={showOrderSearch}
-                    className={`th-btn${showOrderSearch ? ' on' : ''}`} style={{ width: 30, height: 30 }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    className={`pt-icon-btn${showOrderSearch ? ' on' : ''}`}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                   </button>
                 </div>
                 {showOrderSearch && (
@@ -12660,7 +12640,7 @@ export default function InboxPage() {
                       const onum = o.order_number || o.woo_order_id || o.id
                       const payload = { order_id: oid, order_number: onum, total: o.total, currency: o.currency, status: o.status, pay_link: o.payment_url || (o.store_url && o.order_key ? `${o.store_url}/checkout/order-pay/${oid}/?pay_for_order=true&key=${o.order_key}` : null), store_url: o.store_url, integration_id: o.integration_id }
                       return (
-                      <div key={oid} style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff' }}>
+                      <div key={oid} className="pt-order">
                         {(() => {
                           // Header: number + status on the left, total on the right.
                           // A Prexty in-store sale (V407 columns, or the order's own
@@ -12678,10 +12658,10 @@ export default function InboxPage() {
                             <>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-                                  <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--ink)' }}>#{onum}</span>
-                                  <span style={{ fontSize: 10.5, padding: '1px 7px', borderRadius: 99, background: tone[0], color: tone[1], fontWeight: 700, textTransform: 'capitalize', whiteSpace: 'nowrap' }}>{o.status}</span>
+                                  <span className="pt-order-n">#{onum}</span>
+                                  <span className="pt-status" style={{ background: tone[0], color: tone[1] }}>{o.status}</span>
                                 </span>
-                                <span style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--ink)', whiteSpace: 'nowrap' }}>${(parseFloat(o.total) || 0).toFixed(2)}</span>
+                                <span className="pt-order-total">${(parseFloat(o.total) || 0).toFixed(2)}</span>
                               </div>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginTop: 4 }}>
                                 {pos.isPos ? (
@@ -12693,7 +12673,7 @@ export default function InboxPage() {
                                     </span>
                                   </span>
                                 ) : <span />}
-                                <span style={{ fontSize: 11, color: '#9ca3af', whiteSpace: 'nowrap' }}>{date}</span>
+                                <span className="pt-order-date">{date}</span>
                               </div>
                             </>
                           )
@@ -12718,32 +12698,32 @@ export default function InboxPage() {
                             <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--border)' }}>
                               {o.line_items.map((li: any, i: number) => {
                                 const placeholder = (
-                                  <div style={{ width: 34, height: 34, borderRadius: 6, background: 'var(--canvas)', border: '1px solid var(--border)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#cbd5e1' }}>
+                                  <div className="pt-thumb ph">
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
                                   </div>
                                 )
                                 return (
-                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '3px 0' }}>
+                                <div key={i} className="pt-li">
                                   {li.image?.src ? (
                                     <ResilientImage src={li.image.src} onClick={(e) => { e.stopPropagation(); openAt(li.image.src) }}
                                       fallback={placeholder}
-                                      style={{ width: 34, height: 34, borderRadius: 6, objectFit: 'cover', border: '1px solid var(--border)', cursor: 'pointer', flexShrink: 0 }} />
+                                      className="pt-thumb" style={{ cursor: 'pointer' }} />
                                   ) : placeholder}
                                   <div style={{ minWidth: 0 }}>
-                                    <p style={{ margin: 0, fontSize: 11, color: 'var(--slate)' }}>{li.quantity}× {dec(li.name)}</p>
-                                    {li.sku ? <p style={{ margin: '1px 0 0', fontSize: 9.5, color: '#9ca3af', letterSpacing: '0.02em' }}>SKU: {li.sku}</p> : null}
+                                    <p className="pt-li-t"><b>{li.quantity}×</b> {dec(li.name)}</p>
+                                    {li.sku ? <p className="pt-li-sku">SKU {li.sku}</p> : null}
                                   </div>
                                 </div>
                               )})}
                               {images.length > 0 && (
                                 <button type="button" onClick={(e) => { e.stopPropagation(); openAt() }}
-                                  style={{ marginTop: 6, background: 'none', border: 'none', color: 'var(--coral)', fontSize: 11, fontWeight: 700, cursor: 'pointer', padding: 0 }}>
+                                  className="pt-link">
                                   View {images.length} product image{images.length > 1 ? 's' : ''}
                                 </button>
                               )}
                               {(o.shipping_method || o.shipping_total != null) && (
-                                <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                                  <span>🚚</span>
+                                <p className="pt-ship">
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="1" y="3" width="15" height="13" rx="1.5" /><path d="M16 8h4l3 3v5h-7z" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>
                                   {o.shipping_method || 'Shipping'}{Number(o.shipping_total) > 0 ? ` — $${Number(o.shipping_total).toFixed(2)}` : ' — Free'}
                                 </p>
                               )}
@@ -12793,7 +12773,7 @@ export default function InboxPage() {
                   </div>
                   )
                 })()}
-              </>
+              </div>
             )}
           </div>
         </div>
