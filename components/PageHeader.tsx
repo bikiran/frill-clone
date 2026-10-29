@@ -12,6 +12,7 @@ import React from 'react'
 // messy on mobile — and wraps normally on desktop where there's room.
 export default function PageHeader({
   title,
+  accent,
   subtitle,
   action,
   children,
@@ -21,6 +22,8 @@ export default function PageHeader({
   icon,
 }: {
   title: string
+  // One word set in the serif italic after the title, e.g. Workspace <em>analytics</em>.
+  accent?: string
   // Optional icon shown in a soft tile beside the title.
   icon?: React.ReactNode
   subtitle?: string
@@ -48,7 +51,7 @@ export default function PageHeader({
       <div className="ph-row" style={{ display: 'flex', alignItems: icon ? 'center' : 'flex-start', justifyContent: 'space-between', gap: 12 }}>
         {icon && <div className="ph-icon" style={{ width: 42, height: 42, borderRadius: 13, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--peach, #fff1ee)', color: 'var(--coral, #ff7a6b)' }}>{icon}</div>}
         <div style={{ minWidth: 0, flex: 1 }}>
-          <h1 style={{ margin: 0, fontSize: 21, fontWeight: 800, color: 'var(--ink)', lineHeight: 1.15, letterSpacing: '-0.01em' }}>{title}</h1>
+          <h1 style={{ margin: 0, fontSize: 21, fontWeight: 800, color: 'var(--ink)', lineHeight: 1.15 }}>{title}{accent && <> <em className="cv-accent">{accent}</em></>}</h1>
           {subtitle && <p style={{ margin: '3px 0 0', fontSize: 13, color: 'var(--slate)' }}>{subtitle}</p>}
         </div>
         {action && <div className="ph-actions" style={{ flexShrink: 0, display: 'flex', gap: 8, alignItems: 'center' }}>{action}</div>}

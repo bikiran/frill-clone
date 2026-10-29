@@ -58,8 +58,8 @@ export default function LocationInsightsPage() {
             <Kpi icon="money" label="Revenue" value={money(s.revenue)} sub={`${s.orders.toLocaleString('en-AU')} paid orders`} tone="#16a34a" />
             <Kpi icon="people" label="Customers" value={s.customers.toLocaleString('en-AU')} sub={`${money(s.avgSpend)} each on average`} tone="#6366f1" />
             <Kpi icon="pin" label="Suburbs" value={s.suburbCount.toLocaleString('en-AU')} sub="With at least one order" tone="#0ea5e9" />
-            <Kpi icon="trophy" label="Top suburb" value={s.topSuburb?.name || '—'} sub={s.topSuburb ? `${money(s.topSuburb.revenue)} · ${s.topSuburb.orders} orders` : 'No orders in this period'} tone="#f59e0b" />
-            <Kpi icon="people" label="Most customers" value={s.mostActive?.name || '—'} sub={s.mostActive ? `${s.mostActive.customers} customers` : undefined} tone="#d946ef" />
+            <Kpi icon="trophy" label="Top suburb" value={s.topSuburb?.name || '—'} sub={s.topSuburb ? `${money(s.topSuburb.revenue)} · ${s.topSuburb.orders} order${s.topSuburb.orders === 1 ? '' : 's'}` : 'No orders in this period'} tone="#f59e0b" />
+            <Kpi icon="people" label="Most customers" value={s.mostActive?.name || '—'} sub={s.mostActive ? `${s.mostActive.customers} customer${s.mostActive.customers === 1 ? '' : 's'}` : undefined} tone="#d946ef" />
             <Kpi icon="repeat" label="Came back" value={`${s.repeatRate}%`} sub="Bought more than once" tone="#ff6a4d" />
           </div>
 
