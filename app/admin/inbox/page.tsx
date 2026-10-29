@@ -89,6 +89,7 @@ import { ProtectionCard, ProtectionBanner } from '@/components/inbox/ProtectionC
 import EmptyScroll from '@/components/EmptyScroll'
 import CustomerGlance from '@/components/inbox/CustomerGlance'
 import { ColvyChatRow, ColvyChatThread, ColvyChatInfo, useColvySummary } from '@/components/inbox/ColvyChat'
+import BrandLogo, { type BrandKey } from '@/components/BrandLogo'
 import WidgetInstallCard from '@/components/inbox/WidgetInstallCard'
 import { boardUrl } from '@/lib/redirect'
 
@@ -1020,7 +1021,16 @@ export default function InboxPage() {
     const el = document.getElementById(`cmsg-${msgMatchIds[idx]}`)
     if (el) { el.classList.add('cmsg-active-hit'); el.scrollIntoView({ behavior: 'smooth', block: 'center' }) }
   }, [showMsgSearch, msgSearchIdx, msgMatchIds])
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsedState] = useState(false)
+  // While the list folds open or shut its header is clipped, so nothing
+  // spills over the conversations mid-animation.
+  const [listAnim, setListAnim] = useState(false)
+  const listAnimTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const setSidebarCollapsed = (v: boolean) => {
+    setSidebarCollapsedState(v); setListAnim(true)
+    if (listAnimTimer.current) clearTimeout(listAnimTimer.current)
+    listAnimTimer.current = setTimeout(() => setListAnim(false), 380)
+  }
   // On phones we show one pane at a time: the conversation list, the open
   // thread, or the contact panel. Desktop shows all three side by side.
   const [mobilePane, setMobilePane] = useState<'list' | 'thread' | 'contact'>('list')
@@ -1040,6 +1050,7 @@ export default function InboxPage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [tabletContact])
   const [isMobile, setIsMobile] = useState(false)
+  const listCollapsed = sidebarCollapsed && !isMobile
 
   useEffect(() => {
     const check = () => setIsMobile(typeof window !== 'undefined' && window.innerWidth < 768)
@@ -2539,7 +2550,7 @@ export default function InboxPage() {
 
     const [ctsRes, candRes] = await Promise.all([
       contactIds.length
-        ? (supabase as any).from('contacts').select('id, name, email, phone, relationship_type, prexty_customer_id').in('id', contactIds)
+        ? (supabase as any).from('contacts').select('id, name, email, phone, relationship_type, prexty_customer_id, avatar_url').in('id', contactIds)
         : Promise.resolve(null),
       unlinked.length
         ? (supabase as any).from('contacts').select('id, name, email, phone, relationship_type').eq('company_id', id)
@@ -7590,6 +7601,78 @@ export default function InboxPage() {
         .il-who { display: flex; align-items: center; gap: 6px; margin-top: 6px; min-width: 0; font-size: 12px; font-weight: 500; color: #71717a; }
         .il-who-av { width: 18px; height: 18px; flex-shrink: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--coral) 14%, #fff); color: var(--coral); font-size: 10px; font-weight: 700; }
         .il-who-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        /* Conversation cards (Sellio-style): avatar with the channel on it, name
+           and time, one line of the latest message, then the tags hanging off a
+           little connector from the avatar. */
+        .il-scroll { padding: 6px 0 10px; }
+        .ilc { position: relative; display: grid; grid-template-columns: 42px minmax(0, 1fr); column-gap: 11px; align-items: start; width: calc(100% - 16px); margin: 3px 8px; padding: 11px 12px; border: none; border-radius: 18px; background: #f6f6f7; text-align: left; cursor: pointer; font-family: inherit; color: inherit; transition: background .2s, box-shadow .2s, transform .15s; }
+        .ilc::before { display: none !important; }
+        .ilc:hover { background: #efeff1; }
+        .ilc:active { transform: scale(.985); }
+        .ilc.unread { background: color-mix(in srgb, var(--acc) 8%, #fff); }
+        .ilc.unread:hover { background: color-mix(in srgb, var(--acc) 12%, #fff); }
+        .ilc.sel { background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.07), 0 8px 22px -12px rgba(16,24,40,.28); }
+        .ilc.sel::after { content: ''; position: absolute; left: -8px; top: 16px; bottom: 16px; width: 4px; border-radius: 0 4px 4px 0; background: var(--acc); }
+        .ilc:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 30%, transparent); }
+        .ilc-avcol { grid-row: 1 / span 2; align-self: stretch; display: flex; flex-direction: column; }
+        .ilc-av { position: relative; width: 42px; height: 42px; flex-shrink: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: linear-gradient(160deg, hsl(var(--h, 14) 92% 72%), hsl(var(--h, 14) 72% 55%)); color: #fff; font-size: 17px; font-weight: 700; transition: box-shadow .25s, transform .25s cubic-bezier(.34,1.56,.64,1); }
+        .ilc-av img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+        .ilc-av.logo { background: #fff; box-shadow: inset 0 0 0 1px rgba(0,0,0,.06); }
+        .ilc-av.logo img { inset: 5px; width: calc(100% - 10px); height: calc(100% - 10px); border-radius: 9px; }
+        .ilc-ch { position: absolute; right: -4px; bottom: -3px; display: inline-flex; border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px #fff; }
+        .ilc-new { position: absolute; top: -1px; right: -1px; width: 11px; height: 11px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 0 2px #fff; }
+        .ilc-line { flex: 1; min-height: 8px; width: 24px; margin: 5px 0 10px 20px; border-left: 1.5px solid #d4d4d8; border-bottom: 1.5px solid #d4d4d8; border-bottom-left-radius: 10px; transition: opacity .18s, min-height .36s cubic-bezier(.32,.72,0,1), margin .36s cubic-bezier(.32,.72,0,1); }
+        .ilc-main { grid-column: 2; min-width: 0; display: flex; flex-direction: column; gap: 3px; padding-top: 2px; transition: opacity .18s; }
+        .ilc-top { display: flex; align-items: center; gap: 5px; min-width: 0; }
+        .ilc-name { min-width: 0; font-size: 14px; font-weight: 650; letter-spacing: -.005em; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .ilc.unread .ilc-name { font-weight: 750; }
+        .ilc-pin { display: inline-flex; flex-shrink: 0; color: var(--coral); }
+        .ilc-time { margin-left: auto; padding-left: 6px; display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; font-size: 11.5px; color: #a1a1aa; }
+        .ilc.unread .ilc-time { color: var(--acc); font-weight: 600; }
+        .ilc-mid { display: flex; align-items: center; gap: 6px; min-width: 0; }
+        .ilc-mid > p { font-size: 12.5px !important; }
+        .ilc-prev { flex: 1; min-width: 0; font-size: 12.5px; color: #71717a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .ilc.unread .ilc-prev { color: var(--ink); font-weight: 600; }
+        .ilc-who { width: 20px; height: 20px; flex-shrink: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: #6a9f3e; color: #fff; font-size: 10.5px; font-weight: 700; }
+        .ilc-count { min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; flex-shrink: 0; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; background: var(--acc); color: #fff; font-size: 10.5px; font-weight: 750; }
+        .ilc-tags { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; min-width: 0; margin-top: 8px; max-height: 60px; overflow: hidden; transition: opacity .18s, max-height .36s cubic-bezier(.32,.72,0,1), margin-top .36s cubic-bezier(.32,.72,0,1); }
+        .ilc-where { display: inline-flex; align-items: center; gap: 4px; height: 22px; max-width: 100%; min-width: 0; padding: 0 8px; border-radius: 999px; background: #fff; box-shadow: inset 0 0 0 1px #ececef; font-size: 11.5px; font-weight: 500; color: #71717a; }
+        .ilc-where svg { flex-shrink: 0; }
+        .ilc-where span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .ilc.sel .ilc-where { background: #f6f6f7; box-shadow: none; }
+
+        /* Desktop: the list folds to a strip of avatars and back. The column's
+           width is the only thing that moves; inside it everything keeps its
+           full-width layout (so nothing re-wraps), the header folds away and
+           the words fade. */
+        .inbox-col-list.il-desk { overflow: hidden; transition: width .36s cubic-bezier(.32,.72,0,1); }
+        .il-inner { position: relative; flex: 1; min-height: 0; width: 100%; display: flex; flex-direction: column; }
+        .il-desk .il-inner { width: 300px; }
+        .il-fold { display: grid; grid-template-rows: 1fr; grid-template-columns: minmax(0, 1fr); transition: grid-template-rows .36s cubic-bezier(.32,.72,0,1), opacity .2s; }
+        .il-fold > div { min-height: 0; min-width: 0; }
+        .il-collapsed .il-fold { grid-template-rows: 0fr; opacity: 0; }
+        .il-collapsed .il-fold > div, .il-anim .il-fold > div { overflow: hidden; }
+        .il-titlerow { transition: opacity .2s; }
+        .il-collapsed .il-titlerow { opacity: 0; pointer-events: none; }
+        .il-mini { position: absolute; top: 10px; left: 0; width: 82px; z-index: 6; display: flex; justify-content: center; opacity: 0; pointer-events: none; transition: opacity .18s; }
+        .il-collapsed .il-mini { opacity: 1; pointer-events: auto; transition-delay: .14s; }
+        .il-mini-btn { position: relative; width: 40px; height: 40px; border-radius: 50%; border: none; background: #f4f4f5; color: #3f3f46; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: background .15s, transform .2s cubic-bezier(.34,1.56,.64,1); }
+        .il-mini-btn::before { display: none !important; }
+        .il-mini-btn:hover { background: #ececef; transform: translateX(2px); }
+        .il-mini-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 30%, transparent); }
+        .il-mini-count { position: absolute; top: -6px; right: -10px; min-width: 20px; height: 20px; padding: 0 5px; box-sizing: border-box; border-radius: 999px; background: var(--coral); color: #fff; font-size: 10.5px; font-weight: 750; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px #fff; }
+        .il-wide-only, .inbox-col-list .colvy-page-fab { transition: opacity .18s; }
+        .il-collapsed .il-wide-only, .il-collapsed .colvy-page-fab { opacity: 0; pointer-events: none; }
+        .il-collapsed .ilc { background: transparent; box-shadow: none; }
+        .il-collapsed .ilc-main { opacity: 0; }
+        .il-collapsed .ilc-line { opacity: 0; min-height: 0; margin-top: 0; margin-bottom: 0; }
+        .il-collapsed .ilc-tags { opacity: 0; max-height: 0; margin-top: 0; }
+        .il-collapsed .ilc:hover .ilc-av { transform: scale(1.07); }
+        .il-collapsed .ilc.sel .ilc-av { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--acc); }
+        @media (prefers-reduced-motion: reduce) {
+          .inbox-col-list.il-desk, .il-fold, .ilc, .ilc-av, .ilc-main, .ilc-tags, .ilc-line, .il-mini, .il-titlerow { transition: none !important; }
+        }
         @media (prefers-reduced-motion: reduce) { .th-menu { animation: none; } }
         /* Desktop / tablet: the tools sit inline on the right as before */
         @media (min-width: 768px) {
@@ -8819,20 +8902,18 @@ export default function InboxPage() {
       )}
 
       {/* ── LEFT: Conversation list ─────────────────────────────────────────── */}
-      {sidebarCollapsed && !isMobile ? (
-        <div className="inbox-collapsed-rail" style={{ width: 48, flexShrink: 0, borderRight: '1px solid var(--border)', background: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 14 }}>
-          <button type="button" onClick={() => setSidebarCollapsed(false)} title="Expand sidebar"
-            style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)' }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-          </button>
-          {conversations.filter(c => c.is_unread && !['closed','resolved'].includes(c.status)).length > 0 && (
-            <span style={{ marginTop: 10, fontSize: 10, fontWeight: 700, background: 'var(--coral)', color: '#fff', width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              {conversations.filter(c => c.is_unread && !['closed','resolved'].includes(c.status)).length}
-            </span>
-          )}
-        </div>
-      ) : (
-      <div className="inbox-col-list" style={{ width: 300, flexShrink: 0, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: '#fff', position: 'relative' }}>
+      {/* One column that folds down to a strip of avatars (desktop): the list
+          stays mounted and keeps its scroll, and only the width animates. */}
+      <div className={`inbox-col-list${isMobile ? '' : ' il-desk'}${listCollapsed ? ' il-collapsed' : ''}${listAnim ? ' il-anim' : ''}`} style={{ width: listCollapsed ? 82 : 300, flexShrink: 0, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: '#fff', position: 'relative' }}>
+        {!isMobile && (
+          <div className="il-mini" inert={!listCollapsed}>
+            <button type="button" onClick={() => setSidebarCollapsed(false)} title="Expand sidebar" aria-label="Expand sidebar" className="il-mini-btn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+              {(() => { const n = conversations.filter(c => c.is_unread && !['closed', 'resolved'].includes(c.status)).length; return n > 0 && <span className="il-mini-count">{n > 99 ? '99+' : n}</span> })()}
+            </button>
+          </div>
+        )}
+        <div className="il-inner">
         {/* Floating compose button — start a new outbound message/call */}
         <button type="button" onClick={() => setShowCompose(true)} title="New message" aria-label="New message" className="colvy-page-fab"
           style={{ position: 'absolute', right: 16, bottom: 16, zIndex: 20, width: 52, height: 52, borderRadius: '50%', border: 'none', background: 'var(--coral)', color: '#fff', cursor: 'pointer', boxShadow: '0 6px 18px rgba(255,122,107,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -8842,7 +8923,7 @@ export default function InboxPage() {
         <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
           {/* The title with its unread count, then the actions, kept on one row
               in the column's 300px. */}
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10, gap: 6 }}>
+          <div className="il-titlerow" inert={listCollapsed} style={{ display: 'flex', alignItems: 'center', marginBottom: 10, gap: 6 }}>
             <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--ink)' }}>Inbox</h2>
             {(() => {
               const n = conversations.filter(c => c.is_unread && !['closed', 'resolved'].includes(c.status)).length
@@ -8862,12 +8943,15 @@ export default function InboxPage() {
                 className="cv-btn cv-btn-icon" style={{ width: 30, height: 30 }}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
               </Link>
-              <button type="button" onClick={() => setSidebarCollapsed(true)} title="Collapse sidebar" aria-label="Collapse sidebar"
-                className="cv-btn cv-btn-icon" style={{ width: 30, height: 30 }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-              </button>
+              {!isMobile && (
+                <button type="button" onClick={() => setSidebarCollapsed(true)} title="Collapse sidebar" aria-label="Collapse sidebar"
+                  className="cv-btn cv-btn-icon" style={{ width: 30, height: 30 }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
+              )}
             </div>
           </div>
+          <div className="il-fold" inert={listCollapsed}><div>
           <div style={{ position: 'relative' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#71717a', pointerEvents: 'none' }}><circle cx="11" cy="11" r="7"/><line x1="20.5" y1="20.5" x2="16" y2="16"/></svg>
             <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search conversations…" aria-label="Search conversations"
@@ -8989,10 +9073,11 @@ export default function InboxPage() {
               {activeFilterCount > 0 && <span className="il-badge">{activeFilterCount}</span>}
             </button>
           </div>
+          </div></div>
         </div>
 
         {/* List */}
-        <div style={{ flex: 1, overflowY: 'auto' }}>
+        <div className="il-scroll" style={{ flex: 1, overflowY: 'auto' }}>
           {/* The conversations first; the setup card sits at the foot of the
               column (below a short list, after a long one), clear of the + button. */}
           <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
@@ -9009,7 +9094,7 @@ export default function InboxPage() {
               : assignFilter === 'mine' ? ['Nothing assigned to you', 'Conversations assigned to you will show up here.']
               : assignFilter === 'unassigned' ? ['Every conversation has an owner', 'New ones without an owner will show up here.']
               : ['No conversations yet', 'New conversations will show up here.']
-            return <div style={{ paddingTop: 24 }}><EmptyScroll title={title} line={line} /></div>
+            return <div className="il-wide-only" style={{ paddingTop: 24 }}><EmptyScroll title={title} line={line} /></div>
           })()}
           {filteredConvs.map((conv, ci) => {
             // Customer name first — the source is a tag, not the headline.
@@ -9124,145 +9209,150 @@ export default function InboxPage() {
             return (
             <Fragment key={conv.id}>
             {ci === colvyAt && colvyRowEl}
+            {(() => {
+              const isSel = selected?.id === conv.id
+              // The channel as a badge on the avatar (Sellio-style), so the tag
+              // row is left for what matters: order and cart state, and where.
+              const chBrand = ({ sms: 'sms', email: 'email', instagram: 'instagram', facebook: 'messenger', messenger: 'messenger', whatsapp: 'whatsapp', phone: 'calls', call: 'calls', voice: 'calls', colvy: 'colvy' } as Record<string, BrandKey>)[ch] || 'chat'
+              const showSource = !CHANNEL_BADGE[ch]
+              const av = (contact as any).avatar_url as string | undefined
+              const hue = Array.from(String(displayName)).reduce((h, x) => (h * 31 + x.charCodeAt(0)) % 360, 7)
+              const subjLc = String(conv.subject || '').toLowerCase()
+              const hasWhere = locationFilter === 'all' && (!!((conv as any).assigned_location_id || (conv as any).location_id) || subjLc.startsWith('abandoned cart') || subjLc.startsWith('order #') || !!(conv as any).order_status || ['chat', 'widget', 'live_chat'].includes(String(conv.channel)))
+              const hasTags = showSource || !!secondBadge || hasWhere
+              return (
             <button type="button" onClick={() => selectConversation(conv)} data-conv-row={conv.id}
               onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, conv }) }}
-              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '12px 14px', paddingLeft: unread ? 11 : 14, border: 'none', borderLeft: unread ? `3px solid ${accent}` : '3px solid transparent', borderBottom: '1px solid var(--border)', cursor: 'pointer', background: selected?.id === conv.id ? 'var(--peach)' : unread ? '#fff6f4' : '#fff', transition: 'background 0.1s' }}>
-              {/* Location label — only shown when viewing All locations, so the
-                  agent can see which outlet each enquiry belongs to (Coax-style).
-                  Live-chat widget conversations show "Live Chat". */}
-              {locationFilter === 'all' && (() => {
-                const locId = (conv as any).assigned_location_id || (conv as any).location_id
-                const loc = outlets.find((o: any) => o.id === locId)
-                // An abandoned cart or a placed order came from the store, not the
-                // chat widget — labelling either "Live Chat" was misleading. Orders
-                // carry the customer's name as the subject, so detect them by
-                // order_status (matching the source badge above), not just subject.
-                const subjLc = String(conv.subject || '').toLowerCase()
-                const isCart = subjLc.startsWith('abandoned cart')
-                const isOrder = !!(conv as any).order_status || subjLc.startsWith('order #')
-                const isWidget = conv.channel === 'chat' || conv.channel === 'widget' || conv.channel === 'live_chat'
-                const label = loc ? (loc.label || loc.suburb)
-                  : (isCart || isOrder) ? 'Website'
-                  : isWidget ? 'Live Chat'
-                  : null
-                if (!label) return null
-                return (
-                  <div className="il-where">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                    <span>{label}</span>
-                  </div>
-                )
-              })()}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 3 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                  {unread && <span style={{ width: 7, height: 7, borderRadius: '50%', background: accent, flexShrink: 0 }} />}
+              title={listCollapsed ? String(displayName) : undefined}
+              className={`ilc${isSel ? ' sel' : ''}${unread ? ' unread' : ''}${hasTags ? ' tagged' : ''}`} style={{ ['--acc' as any]: accent }}>
+              <span className="ilc-avcol">
+                <span className="ilc-av" style={{ ['--h' as any]: hue }}>
+                  {av
+                    ? <img src={av} alt="" referrerPolicy="no-referrer" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+                    : <span aria-hidden>{String(displayName).replace(/^[^A-Za-z0-9]+/, '').charAt(0).toUpperCase() || '#'}</span>}
+                  <span className="ilc-ch" title={CHANNEL_BADGE[ch]?.label || 'Website'}><BrandLogo brand={chBrand} size={18} radius={9} /></span>
+                  {unread && <span className="ilc-new" aria-hidden />}
+                </span>
+                {hasTags && <span className="ilc-line" aria-hidden />}
+              </span>
+              <span className="ilc-main">
+                <span className="ilc-top">
                   {pinnedIds.has(conv.id) && (
-                    <span title="Pinned" style={{ color: 'var(--coral)', flexShrink: 0, display: 'inline-flex' }}>
+                    <span title="Pinned" className="ilc-pin">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14l-1.5-3V7a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7z"/></svg>
                     </span>
                   )}
-                  <span style={{ fontSize: 13.5, fontWeight: conv.is_unread ? 700 : 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    <Highlight text={displayName} q={searchTerm} accent={accent} />
+                  <span className="ilc-name"><Highlight text={displayName} q={searchTerm} accent={accent} /></span>
+                  {contact.prexty_customer_id && <PrextyMark size={14} title="Prexty POS customer" />}
+                  <span className="ilc-time">
+                    {isOverdue && (
+                      <span title={`Waiting ${Math.floor(waitingHours)}h for a reply — reply or close this conversation.`} style={{ display: 'inline-flex', color: '#f59e0b' }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+                      </span>
+                    )}
+                    {listTime(conv.last_message_at)}
                   </span>
-                  {contact.prexty_customer_id && (
-                    <PrextyMark size={14} title="Prexty POS customer" />
-                  )}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginLeft: 6 }}>
-                  {isOverdue && (
-                    <span title={`Waiting ${Math.floor(waitingHours)}h for a reply — reply or close this conversation.`}
-                      style={{ display: 'inline-flex', color: '#f59e0b', flexShrink: 0 }}>
-                      {/* Gentle clock icon (amber, not a red alert) — a nudge, not
-                          an error about the customer. Native title tooltip on hover;
-                          no custom CSS that could leak the text inline. */}
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
-                    </span>
-                  )}
-                  <span style={{ fontSize: 10.5, color: '#9ca3af', fontStyle: 'italic' }}>{listTime(conv.last_message_at)}</span>
-                </div>
-              </div>
-
-              {/* Source tag(s) — channel plus order status when both apply */}
-              <span style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 5 }}>
-                <span className="cv-tag" style={{ ['--tag' as any]: isLiveChat && isLiveNow ? '#16a34a' : source.fg }}>
-                  <span className={`cv-tag-dot${isLiveChat && isLiveNow ? ' live' : ''}`} />
-                  {isLiveChat ? (isLiveNow ? 'Live chat' : 'Web enquiry') : source.label}
                 </span>
-                {secondBadge && (
-                  <span className="cv-tag" style={{ ['--tag' as any]: secondBadge.fg }}>
-                    <span className="cv-tag-dot" />
-                    {secondBadge.label}
-                  </span>
-                )}
-              </span>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {callMatches(activeCall, { conversationId: c.id, contactId: c.contact_id, phone: contact.phone || c.sms_number || (conv as any).subject || (typeof displayName === 'string' ? displayName : '') }) ? (
-                  <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 12, color: '#059669', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', animation: 'livePulse 1.6s ease-in-out infinite', flexShrink: 0 }} />
-                    {activeCall?.status === 'ringing' ? 'Calling…' : 'Ongoing call'}
-                  </p>
-                ) : ((conv.ai_status === 'thinking' || conv.ai_status === 'pending') && (!conv.ai_draft_send_at || Date.parse(conv.ai_draft_send_at) > Date.now() - 30000)) ? (
-                  <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, color: '#e2553f', display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ff7a6b', animation: 'livePulse 1.6s ease-in-out infinite', flexShrink: 0 }} />
-                    {conv.ai_status === 'pending' ? 'Colvy AI is about to reply' : 'Colvy AI is writing…'}
-                  </p>
-                ) : (
-                <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 12, color: conv.is_unread ? 'var(--ink)' : '#6b7280', fontWeight: conv.is_unread ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}>
-                  {(() => { const k = callGlyphKind(conv.last_message); return k ? <CallGlyph kind={k} /> : null })()}
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    <Highlight text={(callGlyphKind(conv.last_message) ? stripCallEmoji(conv.last_message) : waitlistPreview(conv.last_message)) || 'No messages yet'} q={searchTerm} accent={accent} />
-                  </span>
-                </p>
-                )}
-                {conv.unread_count > 0 && (
-                  <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, background: 'var(--coral)', color: '#fff', minWidth: 18, height: 18, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px', borderRadius: 20, boxSizing: 'border-box' }}>{conv.unread_count}</span>
-                )}
-              </div>
-              {/* Where a deep search matched — a call transcript, an AI summary,
-                  an older message, a note. Shown only when the match isn't
-                  already visible in the name/last-message above, so the agent
-                  can see WHY this conversation is in the results. */}
-              {(() => {
-                if (!searchTerm.trim()) return null
-                const hit = searchMsgHits[c.id]
-                if (!hit || hit.field === 'contact' || !hit.snippet) return null
-                const ql = searchTerm.trim().toLowerCase()
-                // Skip if the last-message preview already shows the match.
-                if ((conv.last_message || '').toLowerCase().includes(ql)) return null
-                return (
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginTop: 3, fontSize: 11, color: '#6b7280', overflow: 'hidden' }}>
-                    <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 600, color: '#7c3aed' }}>{hit.field}</span>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
-                      <Highlight text={hit.snippet} q={searchTerm} accent={accent} />
+                <span className="ilc-mid">
+                  {callMatches(activeCall, { conversationId: c.id, contactId: c.contact_id, phone: contact.phone || c.sms_number || (conv as any).subject || (typeof displayName === 'string' ? displayName : '') }) ? (
+                    <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 12, color: '#059669', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', animation: 'livePulse 1.6s ease-in-out infinite', flexShrink: 0 }} />
+                      {activeCall?.status === 'ringing' ? 'Calling…' : 'Ongoing call'}
+                    </p>
+                  ) : ((conv.ai_status === 'thinking' || conv.ai_status === 'pending') && (!conv.ai_draft_send_at || Date.parse(conv.ai_draft_send_at) > Date.now() - 30000)) ? (
+                    <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, color: '#e2553f', display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ff7a6b', animation: 'livePulse 1.6s ease-in-out infinite', flexShrink: 0 }} />
+                      {conv.ai_status === 'pending' ? 'Colvy AI is about to reply' : 'Colvy AI is writing…'}
+                    </p>
+                  ) : (
+                  <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 12, color: conv.is_unread ? 'var(--ink)' : '#6b7280', fontWeight: conv.is_unread ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    {(() => { const k = callGlyphKind(conv.last_message); return k ? <CallGlyph kind={k} /> : null })()}
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <Highlight text={(callGlyphKind(conv.last_message) ? stripCallEmoji(conv.last_message) : waitlistPreview(conv.last_message)) || 'No messages yet'} q={searchTerm} accent={accent} />
                     </span>
-                  </div>
-                )
-              })()}
-              {conv.assigned_name && (
-                <span className="il-who" title={`Assigned to ${conv.assigned_name}`}>
-                  <span className="il-who-av" aria-hidden>{conv.assigned_name.charAt(0).toUpperCase()}</span>
-                  <span className="il-who-name">{conv.assigned_name}</span>
+                  </p>
+                  )}
+                  {conv.assigned_name && (
+                    <span className="ilc-who" title={`Assigned to ${conv.assigned_name}`} aria-label={`Assigned to ${conv.assigned_name}`}>{conv.assigned_name.charAt(0).toUpperCase()}</span>
+                  )}
+                  {conv.unread_count > 0 && <span className="ilc-count">{conv.unread_count}</span>}
+                </span>
+                {(() => {
+                  if (!searchTerm.trim()) return null
+                  const hit = searchMsgHits[c.id]
+                  if (!hit || hit.field === 'contact' || !hit.snippet) return null
+                  const ql = searchTerm.trim().toLowerCase()
+                  // Skip if the last-message preview already shows the match.
+                  if ((conv.last_message || '').toLowerCase().includes(ql)) return null
+                  return (
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginTop: 3, fontSize: 11, color: '#6b7280', overflow: 'hidden' }}>
+                      <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 600, color: '#7c3aed' }}>{hit.field}</span>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                        <Highlight text={hit.snippet} q={searchTerm} accent={accent} />
+                      </span>
+                    </div>
+                  )
+                })()}
+              </span>
+              {hasTags && (
+                <span className="ilc-tags">
+                  {showSource && (
+                    <span className="cv-tag" style={{ ['--tag' as any]: isLiveChat && isLiveNow ? '#16a34a' : source.fg }}>
+                      <span className={`cv-tag-dot${isLiveChat && isLiveNow ? ' live' : ''}`} />
+                      {isLiveChat ? (isLiveNow ? 'Live chat' : 'Web enquiry') : source.label}
+                    </span>
+                  )}
+                  {secondBadge && (
+                    <span className="cv-tag" style={{ ['--tag' as any]: secondBadge.fg }}>
+                      <span className="cv-tag-dot" />
+                      {secondBadge.label}
+                    </span>
+                  )}
+                  {locationFilter === 'all' && (() => {
+                    const locId = (conv as any).assigned_location_id || (conv as any).location_id
+                    const loc = outlets.find((o: any) => o.id === locId)
+                    // An abandoned cart or a placed order came from the store, not the
+                    // chat widget — labelling either "Live Chat" was misleading. Orders
+                    // carry the customer's name as the subject, so detect them by
+                    // order_status (matching the source badge above), not just subject.
+                    const subjLc = String(conv.subject || '').toLowerCase()
+                    const isCart = subjLc.startsWith('abandoned cart')
+                    const isOrder = !!(conv as any).order_status || subjLc.startsWith('order #')
+                    const isWidget = conv.channel === 'chat' || conv.channel === 'widget' || conv.channel === 'live_chat'
+                    const label = loc ? (loc.label || loc.suburb)
+                      : (isCart || isOrder) ? 'Website'
+                      : isWidget ? 'Live Chat'
+                      : null
+                    if (!label) return null
+                    return (
+                      <span className="ilc-where">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                        <span>{label}</span>
+                      </span>
+                    )
+                  })()}
                 </span>
               )}
             </button>
+              )
+            })()}
             </Fragment>
             )
           })}
           {colvyAt > 0 && colvyAt === filteredConvs.length && colvyRowEl}
           {hasMoreConvs && (
-            <button type="button" onClick={() => setConvLimit(l => l + 50)}
-              style={{ display: 'block', width: '100%', padding: '12px', border: 'none', borderTop: '1px solid var(--border)', background: '#fff', color: 'var(--coral)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+            <button type="button" onClick={() => setConvLimit(l => l + 50)} className="il-wide-only"
+              style={{ display: 'block', width: '100%', padding: '12px', border: 'none', background: 'transparent', color: 'var(--coral)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
               Load more conversations
             </button>
           )}
           </div>
           {/* Until the chat widget is on their website: how to add it (owners and admins). */}
-          {isManager && !searchTerm.trim() && statusFilter !== 'closed' && activeFilterCount === 0 && <WidgetInstallCard companyId={companyId} dock />}
+          {isManager && !searchTerm.trim() && statusFilter !== 'closed' && activeFilterCount === 0 && <div className="il-wide-only"><WidgetInstallCard companyId={companyId} dock /></div>}
           </div>
         </div>
+        </div>
       </div>
-      )}
 
       {/* ── MIDDLE: Chat thread ─────────────────────────────────────────────── */}
       <div className="inbox-col-thread" style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#f9f9f9', minWidth: 0 }}>

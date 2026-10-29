@@ -75,23 +75,27 @@ const receipt = (iso: string, mine: boolean) => {
 /** Its row in the conversation list: on top while there's something new, else by time. */
 export function ColvyChatRow({ summary, active, onOpen }: { summary: ColvySummary; active: boolean; onOpen: () => void }) {
   const unread = summary.unread > 0
+  // A conversation card like the others in the list (styled by the inbox page).
   return (
-    <button type="button" onClick={onOpen} data-colvy-row aria-label={`Colvy${unread ? `, ${summary.unread} unread` : ''}`}
-      style={{ display: 'flex', alignItems: 'center', gap: 11, width: '100%', textAlign: 'left', padding: '11px 14px', border: 'none', borderBottom: '1px solid var(--border)', borderLeft: unread ? '3px solid var(--coral)' : '3px solid transparent', paddingLeft: 11, cursor: 'pointer', background: active ? 'var(--peach)' : unread ? '#fff6f4' : '#fff', fontFamily: 'inherit' }}>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={LOGO} alt="" width={36} height={36} style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0 }} />
-      <span style={{ minWidth: 0, flex: 1 }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <span style={{ fontSize: 13.5, fontWeight: unread ? 750 : 650, color: 'var(--ink)' }}>Colvy</span>
-          <Tick />
-          {unread && <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--coral)', background: 'var(--peach)', padding: '1px 6px', borderRadius: 99 }}>New</span>}
-          <span style={{ marginLeft: 'auto', fontSize: 10.5, color: '#9ca3af', fontStyle: 'italic', flexShrink: 0 }}>{shortTime(summary.last?.at)}</span>
+    <button type="button" onClick={onOpen} data-colvy-row title="Colvy" aria-label={`Colvy${unread ? `, ${summary.unread} unread` : ''}`}
+      className={`ilc${active ? ' sel' : ''}${unread ? ' unread' : ''}`} style={{ ['--acc' as any]: 'var(--coral)' }}>
+      <span className="ilc-avcol">
+        <span className="ilc-av logo">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={LOGO} alt="" width={32} height={32} />
+          {unread && <span className="ilc-new" aria-hidden />}
         </span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
-          <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: unread ? 'var(--ink)' : 'var(--slate)', fontWeight: unread ? 600 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {summary.last?.kind === 'me' ? 'You: ' : ''}{summary.last?.text || 'Updates and help from the Colvy team'}
-          </span>
-          {unread && <span style={{ minWidth: 18, height: 18, padding: '0 5px', borderRadius: 99, background: 'var(--coral)', color: '#fff', fontSize: 10.5, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{summary.unread}</span>}
+      </span>
+      <span className="ilc-main">
+        <span className="ilc-top">
+          <span className="ilc-name">Colvy</span>
+          <Tick />
+          {unread && <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--coral)', background: 'var(--peach)', padding: '1px 6px', borderRadius: 99, flexShrink: 0 }}>New</span>}
+          <span className="ilc-time">{shortTime(summary.last?.at)}</span>
+        </span>
+        <span className="ilc-mid">
+          <span className="ilc-prev">{summary.last?.kind === 'me' ? 'You: ' : ''}{summary.last?.text || 'Updates and help from the Colvy team'}</span>
+          {unread && <span className="ilc-count">{summary.unread}</span>}
         </span>
       </span>
     </button>
