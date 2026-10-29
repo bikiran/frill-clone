@@ -535,21 +535,22 @@ export default function EmailComposer({
       {/* The signature that will be added, on one quiet line; tap to see it all. */}
       {sigPreview && compact && showDetails && (
         <div style={{ padding: '0 12px 8px' }}>
-          <button type="button" onClick={() => setShowSig(v => !v)} aria-expanded={showSig}
-            title={showSig ? 'Hide the signature' : 'Show the whole signature'}
-            style={{ display: 'flex', alignItems: 'flex-start', gap: 6, width: '100%', margin: 0, padding: '7px 0 0', border: 'none', borderTop: '1px dashed var(--border)', background: 'none', cursor: 'pointer', textAlign: 'left', fontSize: 11.5, lineHeight: 1.5, color: 'var(--slate)', fontFamily: 'inherit' }}>
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0, marginTop: 3, transform: showSig ? 'rotate(90deg)' : 'none', transition: 'transform .15s ease' }}><polyline points="9 18 15 12 9 6"/></svg>
-            <span style={showSig ? { whiteSpace: 'pre-wrap', minWidth: 0 } : { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
-              {showSig ? sigPreview : sigPreview.split('\n').map(l => l.trim()).filter(Boolean).join(' · ').replace(/([,;:]) · /g, '$1 ')}
-            </span>
-          </button>
+          <div className="ecmp-sigwrap">
+            <style>{SIG_CSS}</style>
+            <button type="button" className="ecmp-sigline" onClick={() => setShowSig(v => !v)} aria-expanded={showSig}
+              title="Show the whole signature" style={{ width: '100%', padding: '7px 0 0', borderTop: '1px dashed var(--border)' }}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0 }}><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+              <span>{sigPreview.split('\n').map(l => l.trim()).filter(Boolean).join(' · ').replace(/([,;:]) · /g, '$1 ')}</span>
+            </button>
+            {showSig && <SigCard text={sigPreview} onClose={() => setShowSig(false)} />}
+          </div>
         </div>
       )}
 
       {/* Wide screens: which signature, and a one-line look at it (tap for all of it). */}
       {!compact && (
-        <div className="ecmp-sig" style={{ display: 'flex', alignItems: showSig ? 'flex-start' : 'center', gap: 6, padding: '5px 12px', borderTop: '1px dashed var(--border)', fontSize: 11.5, color: 'var(--slate)', minWidth: 0 }}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0, marginTop: showSig ? 4 : 0 }}><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+        <div className="ecmp-sig" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderTop: '1px dashed var(--border)', fontSize: 11.5, color: 'var(--slate)', minWidth: 0 }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0 }}><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
           <select value={sigId} onChange={e => setSigId(e.target.value)} aria-label="Signature" title="Signature added to this email"
             style={{ border: 'none', background: 'transparent', color: sigId ? 'var(--ink)' : 'var(--slate)', fontSize: 12, fontWeight: 600, cursor: 'pointer', maxWidth: 160, outline: 'none', padding: '1px 0', fontFamily: 'inherit', flexShrink: 0 }}>
             <option value="">No signature</option>
@@ -561,13 +562,14 @@ export default function EmailComposer({
             + New
           </button>
           {sigPreview && (
-            <button type="button" onClick={() => setShowSig(v => !v)} aria-expanded={showSig} title={showSig ? 'Hide the signature' : 'Show the whole signature'}
-              style={{ flex: 1, minWidth: 0, display: 'flex', gap: 6, margin: 0, padding: 0, border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left', fontSize: 11.5, lineHeight: 1.5, color: 'var(--slate)', fontFamily: 'inherit' }}>
-              <span aria-hidden style={{ color: 'var(--border)' }}>·</span>
-              <span style={showSig ? { whiteSpace: 'pre-wrap', minWidth: 0 } : { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
-                {showSig ? sigPreview : sigPreview.split('\n').map(l => l.trim()).filter(Boolean).join(' · ').replace(/([,;:]) · /g, '$1 ')}
-              </span>
-            </button>
+            <div className="ecmp-sigwrap" style={{ flex: 1, minWidth: 0 }}>
+              <style>{SIG_CSS}</style>
+              <button type="button" className="ecmp-sigline" onClick={() => setShowSig(v => !v)} aria-expanded={showSig} title="Show the whole signature">
+                <span aria-hidden style={{ color: 'var(--border)' }}>·</span>
+                <span>{sigPreview.split('\n').map(l => l.trim()).filter(Boolean).join(' · ').replace(/([,;:]) · /g, '$1 ')}</span>
+              </button>
+              {showSig && <SigCard text={sigPreview} onClose={() => setShowSig(false)} />}
+            </div>
           )}
         </div>
       )}
@@ -603,3 +605,36 @@ export default function EmailComposer({
     </div>
   )
 }
+
+// The whole signature in a small card above its one-line preview, so looking
+// at it never pushes the reply box around. Closes on a click outside or Esc.
+function SigCard({ text, onClose }: { text: string; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const down = (e: PointerEvent) => { if (!ref.current?.parentElement?.contains(e.target as Node)) onClose() }
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('pointerdown', down); document.addEventListener('keydown', key)
+    return () => { document.removeEventListener('pointerdown', down); document.removeEventListener('keydown', key) }
+  }, [onClose])
+  return (
+    <div ref={ref} className="ecmp-sigcard" role="dialog" aria-label="Signature">
+      <p className="h">Added to the end of this email</p>
+      <p className="b">{text}</p>
+    </div>
+  )
+}
+
+const SIG_CSS = `
+        .ecmp-sigwrap{position:relative;min-width:0}
+        .ecmp-sigline{display:flex;align-items:center;gap:6px;max-width:100%;margin:0;padding:0;border:none;background:none;cursor:pointer;text-align:left;font:inherit;font-size:11.5px;line-height:1.5;color:var(--slate);border-radius:6px}
+        .ecmp-sigline>span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+        .ecmp-sigline:hover{color:var(--ink)}
+        .ecmp-sigline:focus{outline:none}
+        .ecmp-sigline:focus-visible{box-shadow:0 0 0 2px color-mix(in srgb,var(--coral) 35%,transparent)}
+        .ecmp-sigcard{position:absolute;left:0;bottom:calc(100% + 8px);z-index:40;width:max-content;max-width:min(360px,90vw);padding:12px 14px;border-radius:14px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 14px 34px -12px rgba(16,24,40,.28);animation:ecmpSig .16s cubic-bezier(.22,1,.36,1) both}
+        .ecmp-sigcard p{margin:0}
+        .ecmp-sigcard .h{font-size:11.5px;font-weight:600;color:#8e8e93;margin-bottom:6px}
+        .ecmp-sigcard .b{font-size:12.5px;line-height:1.55;color:#18181b;white-space:pre-wrap}
+        @keyframes ecmpSig{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+        @media (prefers-reduced-motion:reduce){.ecmp-sigcard{animation:none}}
+`

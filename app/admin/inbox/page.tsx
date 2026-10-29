@@ -95,6 +95,7 @@ import { ColvyChatRow, ColvyChatThread, ColvyChatInfo, useColvySummary } from '@
 import BrandLogo, { type BrandKey } from '@/components/BrandLogo'
 import WidgetInstallCard from '@/components/inbox/WidgetInstallCard'
 import { boardUrl } from '@/lib/redirect'
+import { publishAiContext } from '@/lib/ai-context'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -677,11 +678,7 @@ export default function InboxPage() {
   // knows what "reply to this customer" or "task for this chat" refers to. It
   // clears itself on navigation, so we re-publish whenever the selection moves.
   useEffect(() => {
-    try {
-      window.dispatchEvent(new CustomEvent('colvy:ai-context', {
-        detail: { conversationId: selected?.id || null, contactId: (selected as any)?.contact_id || null },
-      }))
-    } catch {}
+    publishAiContext({ conversationId: selected?.id || null, contactId: (selected as any)?.contact_id || null })
   }, [selected?.id, (selected as any)?.contact_id])
   const loadWooDataRef = useRef<((id: string | null) => void) | null>(null)
   // Inbox settings popover + the 12/24-hour time-format choice (per-user).
@@ -2017,6 +2014,8 @@ export default function InboxPage() {
   })
   const activeFilterCount = ['dateFrom', 'dateTo', 'channel', 'assignedTo', 'source', 'relationship', 'purchased', 'orderStatus']
     .filter(k => filters[k]).length + (filters.oldestFirst ? 1 : 0)
+  // The filter sheet's Custom date range is open (it also opens on its own for a range that isn't a preset).
+  const [filtersCustomDates, setFiltersCustomDates] = useState(false)
   const resetFilters = () => setFilters({ dateFrom: '', dateTo: '', channel: '', assignedTo: '', source: '', relationship: '', purchased: '', orderStatus: '', oldestFirst: false })
   // Purchase-history lookup for the "Purchased (SKU or title)" filter, keyed by
   // lowercased contact email (a contact's orders live in woocommerce_customers,
@@ -8304,115 +8303,123 @@ export default function InboxPage() {
       )}
 
       {/* Filter panel (Coax style) */}
-      {showFilters && (
-        <div onClick={() => setShowFilters(false)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 20 }}>
-          <div onClick={e => e.stopPropagation()}
-            style={{ width: 860, maxWidth: '95vw', maxHeight: '88vh', overflowY: 'auto', background: '#fff', borderRadius: 20, padding: 26 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: 'var(--coral)' }}>Filter</h2>
-              <button type="button" onClick={() => setShowFilters(false)} title="Close" aria-label="Close filters"
-                style={{ width: 34, height: 34, borderRadius: 10, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', flexShrink: 0 }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      {showFilters && (() => {
+        // Sellio-style filters: pills for the short lists, grey fields for the
+        // long ones, quick date ranges, and a footer that says what you'll get.
+        const set = (k: string, v: any) => setFilters({ ...filters, [k]: v })
+        const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        const daysAgo = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n); return iso(d) }
+        const today = iso(new Date())
+        const range = !filters.dateFrom && !filters.dateTo ? 'any'
+          : filters.dateTo === today && filters.dateFrom === today ? 'today'
+          : filters.dateTo === today && filters.dateFrom === daysAgo(7) ? '7'
+          : filters.dateTo === today && filters.dateFrom === daysAgo(30) ? '30' : 'custom'
+        const [customOpen, setCustomOpen] = [range === 'custom' || filtersCustomDates, setFiltersCustomDates]
+        const chips = (k: string, opts: [string, string][]) => (
+          <div className="ifl-chips">
+            {opts.map(([v, label]) => (
+              <button key={v || 'all'} type="button" aria-pressed={filters[k] === v} className={`il-chip${filters[k] === v ? ' on' : ''}`} onClick={() => set(k, v)}>{label}</button>
+            ))}
+          </div>
+        )
+        const n = filteredConvs.length
+        return (
+        <div className="ifl-wrap" onClick={() => setShowFilters(false)}>
+          <style>{IFL_CSS}</style>
+          <div className="ifl" role="dialog" aria-modal="true" aria-label="Filter conversations" onClick={e => e.stopPropagation()}>
+            <div className="ifl-head">
+              <h2>Filters{activeFilterCount > 0 && <span className="ifl-count">{activeFilterCount}</span>}</h2>
+              <button type="button" className="ifl-x" onClick={() => setShowFilters(false)} aria-label="Close filters">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
-              {/* Left: date range + sort */}
-              <div>
-                <div style={{ background: 'var(--canvas)', borderRadius: 14, padding: 18, marginBottom: 14 }}>
-                  <p style={{ margin: '0 0 14px', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Date Range</p>
-                  <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', marginBottom: 5 }}>From</label>
-                  <input type="date" value={filters.dateFrom} onChange={e => setFilters({ ...filters, dateFrom: e.target.value })}
-                    style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, marginBottom: 14, boxSizing: 'border-box', background: '#fff' }} />
-                  <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', marginBottom: 5 }}>To</label>
-                  <input type="date" value={filters.dateTo} onChange={e => setFilters({ ...filters, dateTo: e.target.value })}
-                    style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box', background: '#fff' }} />
-                </div>
-
-                <div style={{ background: 'var(--canvas)', borderRadius: 14, padding: 18 }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
-                    <input type="checkbox" checked={filters.oldestFirst}
-                      onChange={e => setFilters({ ...filters, oldestFirst: e.target.checked })}
-                      style={{ width: 18, height: 18, accentColor: 'var(--coral)' }} />
-                    <span style={{ fontSize: 14, color: 'var(--ink)' }}>Order by oldest to newest</span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Right: channel / assigned / source */}
-              <div style={{ background: 'var(--canvas)', borderRadius: 14, padding: 18 }}>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--ink)', marginBottom: 7 }}>Channel</label>
-                <select value={filters.channel} onChange={e => setFilters({ ...filters, channel: e.target.value })}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, marginBottom: 16, boxSizing: 'border-box', background: '#fff' }}>
-                  <option value="">Select channel</option>
-                  <option value="chat">Live chat</option>
-                  <option value="sms">SMS</option>
-                  <option value="email">Email</option>
-                  <option value="instagram">Instagram</option>
-                  <option value="whatsapp">WhatsApp</option>
-                </select>
-
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--ink)', marginBottom: 7 }}>Assigned user</label>
-                <select value={filters.assignedTo} onChange={e => setFilters({ ...filters, assignedTo: e.target.value })}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, marginBottom: 16, boxSizing: 'border-box', background: '#fff' }}>
-                  <option value="">Select an assigned user</option>
-                  <option value="__unassigned">Unassigned</option>
-                  {teamMembers.map((t: any) => (
-                    <option key={t.user_id || t.id} value={t.user_id || t.id}>{t.name || t.email}</option>
+            <div className="ifl-body">
+              <section>
+                <p className="ifl-l">Last activity</p>
+                <div className="ifl-chips">
+                  {([['any', 'Any time'], ['today', 'Today'], ['7', 'Last 7 days'], ['30', 'Last 30 days']] as const).map(([k, label]) => (
+                    <button key={k} type="button" aria-pressed={range === k && !customOpen} className={`il-chip${range === k && !customOpen ? ' on' : ''}`}
+                      onClick={() => { setCustomOpen(false); setFilters({ ...filters, dateFrom: k === 'any' ? '' : k === 'today' ? today : daysAgo(Number(k)), dateTo: k === 'any' ? '' : today }) }}>{label}</button>
                   ))}
-                </select>
+                  <button type="button" aria-pressed={customOpen} className={`il-chip${customOpen ? ' on' : ''}`} onClick={() => setCustomOpen(true)}>Custom</button>
+                </div>
+                {customOpen && (
+                  <div className="ifl-dates">
+                    <label><span>From</span><input type="date" value={filters.dateFrom} onChange={e => set('dateFrom', e.target.value)} /></label>
+                    <label><span>To</span><input type="date" value={filters.dateTo} onChange={e => set('dateTo', e.target.value)} /></label>
+                  </div>
+                )}
+              </section>
 
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--ink)', marginBottom: 7 }}>Source</label>
-                <select value={filters.source} onChange={e => setFilters({ ...filters, source: e.target.value })}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, marginBottom: 16, boxSizing: 'border-box', background: '#fff' }}>
-                  <option value="">Select source</option>
-                  <option value="chat">Live chat enquiry</option>
-                  <option value="order">Order placed</option>
-                  <option value="cart">Abandoned cart</option>
-                </select>
+              <section>
+                <p className="ifl-l">Channel</p>
+                {chips('channel', [['', 'All'], ['chat', 'Live chat'], ['sms', 'SMS'], ['email', 'Email'], ['instagram', 'Instagram'], ['whatsapp', 'WhatsApp']])}
+              </section>
 
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--ink)', marginBottom: 7 }}>Relationship</label>
-                <select value={filters.relationship} onChange={e => setFilters({ ...filters, relationship: e.target.value })}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, marginBottom: 16, boxSizing: 'border-box', background: '#fff' }}>
-                  <option value="">All types</option>
-                  <option value="customer">Customer</option>
-                  <option value="supplier">Supplier</option>
-                  <option value="wholesaler">Wholesaler</option>
-                  <option value="business">Business contact</option>
-                </select>
+              <section>
+                <p className="ifl-l">Source</p>
+                {chips('source', [['', 'Any'], ['chat', 'Live chat enquiry'], ['order', 'Order placed'], ['cart', 'Abandoned cart']])}
+              </section>
 
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--ink)', marginBottom: 7 }}>Order status</label>
-                <select value={filters.orderStatus} onChange={e => setFilters({ ...filters, orderStatus: e.target.value })}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, marginBottom: 6, boxSizing: 'border-box', background: '#fff' }}>
-                  <option value="">Any status</option>
-                  <option value="pending">Order placed (pending payment)</option>
-                  <option value="processing">Processing</option>
-                  <option value="on-hold">On hold</option>
-                  <option value="completed">Completed</option>
-                  <option value="refunded">Refunded</option>
-                  <option value="cancelled">Cancelled</option>
-                  <option value="failed">Failed</option>
-                </select>
-                <p style={{ margin: '0 0 16px', fontSize: 11.5, color: 'var(--slate)' }}>Contacts with an order in this WooCommerce status. For abandoned carts, use Source above.</p>
+              <section>
+                <p className="ifl-l">Relationship</p>
+                {chips('relationship', [['', 'Everyone'], ['customer', 'Customers'], ['supplier', 'Suppliers'], ['wholesaler', 'Wholesalers'], ['business', 'Business contacts']])}
+              </section>
 
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--ink)', marginBottom: 7 }}>Purchased (SKU or title)</label>
-                <input value={filters.purchased} onChange={e => setFilters({ ...filters, purchased: e.target.value })}
-                  placeholder="e.g. 1132 or Pleco"
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box', background: '#fff' }} />
-                <p style={{ margin: '7px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>Matches the contact&rsquo;s order history.</p>
+              <div className="ifl-two">
+                <section>
+                  <p className="ifl-l">Assigned to</p>
+                  <select className="ifl-field" value={filters.assignedTo} onChange={e => set('assignedTo', e.target.value)}>
+                    <option value="">Anyone</option>
+                    <option value="__unassigned">Unassigned</option>
+                    {teamMembers.map((t: any) => (
+                      <option key={t.user_id || t.id} value={t.user_id || t.id}>{t.name || t.email}</option>
+                    ))}
+                  </select>
+                </section>
+                <section>
+                  <p className="ifl-l">Order status</p>
+                  <select className="ifl-field" value={filters.orderStatus} onChange={e => set('orderStatus', e.target.value)}>
+                    <option value="">Any status</option>
+                    <option value="pending">Placed (pending payment)</option>
+                    <option value="processing">Processing</option>
+                    <option value="on-hold">On hold</option>
+                    <option value="completed">Completed</option>
+                    <option value="refunded">Refunded</option>
+                    <option value="cancelled">Cancelled</option>
+                    <option value="failed">Failed</option>
+                  </select>
+                </section>
               </div>
+
+              <section>
+                <p className="ifl-l">Bought</p>
+                <div className="ifl-search">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden><circle cx="11" cy="11" r="7"/><line x1="20.5" y1="20.5" x2="16" y2="16"/></svg>
+                  <input className="ifl-field" value={filters.purchased} onChange={e => set('purchased', e.target.value)} placeholder="A product name or SKU, e.g. Pleco or 1132" />
+                </div>
+                <p className="ifl-hint">Matches the customer’s order history.</p>
+              </section>
+
+              <section>
+                <p className="ifl-l">Order</p>
+                <div className="ifl-seg" role="tablist" aria-label="Order">
+                  <span className="cmp-mode-thumb" aria-hidden style={{ transform: filters.oldestFirst ? 'translateX(100%)' : 'none' }} />
+                  <button type="button" role="tab" aria-selected={!filters.oldestFirst} onClick={() => set('oldestFirst', false)}>Newest first</button>
+                  <button type="button" role="tab" aria-selected={!!filters.oldestFirst} onClick={() => set('oldestFirst', true)}>Oldest first</button>
+                </div>
+              </section>
             </div>
 
-            <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
-              <button type="button" onClick={() => setShowFilters(false)}
-                style={{ padding: '12px 34px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Apply</button>
-              <button type="button" onClick={resetFilters}
-                style={{ padding: '12px 30px', borderRadius: 10, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Reset</button>
+            <div className="ifl-foot">
+              <button type="button" className="ifl-reset" onClick={() => { resetFilters(); setFiltersCustomDates(false) }} disabled={activeFilterCount === 0}>Reset</button>
+              <button type="button" className="ifl-go" onClick={() => setShowFilters(false)}>Show {n} conversation{n === 1 ? '' : 's'}</button>
             </div>
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {/* Right-click menu on a conversation */}
       {ctxMenu && (
@@ -12829,3 +12836,50 @@ function ReviewCard({ msg, companyId, render }: { msg: any; companyId: string | 
   return <>{render(s || null)}</>
 }
 
+const IFL_CSS = `
+.ifl-wrap{position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(15,15,20,.32);animation:iflFade .18s ease both}
+.ifl{width:560px;max-width:100%;max-height:min(760px,92vh);display:flex;flex-direction:column;background:#fff;border-radius:24px;box-shadow:0 30px 80px -20px rgba(16,24,40,.35);animation:iflIn .26s cubic-bezier(.22,1,.36,1) both;overflow:hidden}
+.ifl button::before{display:none!important}
+.ifl-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:20px 22px 10px}
+.ifl-head h2{margin:0;display:flex;align-items:center;gap:8px;font-size:20px;font-weight:800;letter-spacing:-.02em;color:var(--ink,#111)}
+.ifl-count{min-width:22px;height:22px;padding:0 7px;box-sizing:border-box;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;background:#18181b;color:#fff;font-size:12px;font-weight:700}
+.ifl-x{width:34px;height:34px;border-radius:50%;border:none;background:#f4f4f5;color:#52525b;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.ifl-x:hover{background:#ececef}
+.ifl-body{flex:1;min-height:0;overflow-y:auto;padding:6px 22px 18px;display:flex;flex-direction:column;gap:18px}
+.ifl-body section{min-width:0}
+.ifl-l{margin:0 0 8px;font-size:13px;font-weight:650;color:#111}
+.ifl-chips{display:flex;flex-wrap:wrap;gap:6px}
+.ifl-chips .il-chip{height:34px;padding:0 14px}
+.ifl-two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.ifl-field{width:100%;height:42px;box-sizing:border-box;padding:0 14px;border:1px solid transparent;border-radius:12px;background:#f4f4f5;color:#111;font:inherit;font-size:14px;outline:none;appearance:auto}
+.ifl-field:focus{background:#fff;border-color:#e4e4e7;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 18%,transparent)}
+.ifl-dates{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.ifl-dates label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:600;color:#71717a}
+.ifl-dates input{height:42px;box-sizing:border-box;padding:0 12px;border:1px solid transparent;border-radius:12px;background:#f4f4f5;font:inherit;font-size:14px;color:#111;outline:none}
+.ifl-dates input:focus{background:#fff;border-color:#e4e4e7}
+.ifl-search{position:relative}
+.ifl-search svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#71717a;pointer-events:none}
+.ifl-search .ifl-field{padding-left:38px;border-radius:999px}
+.ifl-hint{margin:6px 2px 0;font-size:12px;color:#8e8e93}
+.ifl-seg{position:relative;display:inline-grid;grid-template-columns:1fr 1fr;width:260px;max-width:100%;padding:3px;border-radius:12px;background:#f4f4f5}
+.ifl-seg .cmp-mode-thumb{position:absolute;top:3px;bottom:3px;left:3px;width:calc(50% - 3px);border-radius:9px;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.08),0 2px 6px -2px rgba(16,24,40,.12);transition:transform .28s cubic-bezier(.22,1,.36,1)}
+.ifl-seg button{position:relative;z-index:1;height:32px;border:none;background:none;font:inherit;font-size:13px;font-weight:650;color:#71717a;cursor:pointer}
+.ifl-seg button[aria-selected="true"]{color:#111}
+.ifl-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 22px 18px;border-top:1px solid #f0f0f2}
+.ifl-reset{height:42px;padding:0 18px;border-radius:999px;border:none;background:none;color:#52525b;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.ifl-reset:hover:not(:disabled){background:#f4f4f5}
+.ifl-reset:disabled{opacity:.4;cursor:default}
+.ifl-go{height:44px;padding:0 22px;border-radius:999px;border:none;background:#0d0d0d;color:#fff;font:inherit;font-size:14px;font-weight:650;cursor:pointer;transition:transform .15s,background .15s}
+.ifl-go:hover{background:#27272a}
+.ifl-go:active{transform:scale(.98)}
+@media (max-width:560px){
+  .ifl-wrap{align-items:flex-end;padding:0}
+  .ifl{border-radius:24px 24px 0 0;max-height:92vh;animation:iflUp .3s cubic-bezier(.22,1,.36,1) both}
+  .ifl-two{grid-template-columns:1fr}
+  .ifl-foot{padding-bottom:calc(18px + env(safe-area-inset-bottom))}
+}
+@keyframes iflFade{from{opacity:0}to{opacity:1}}
+@keyframes iflIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes iflUp{from{transform:translateY(100%)}to{transform:none}}
+@media (prefers-reduced-motion:reduce){.ifl-wrap,.ifl{animation:none}}
+`

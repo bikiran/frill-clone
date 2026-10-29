@@ -27,6 +27,7 @@ import { authFetch } from '@/lib/auth-fetch'
 import { loadStaffRows } from '@/lib/team-list'
 import type { OrderRefund } from '@/lib/order-refunds'
 import { sanitizeHtml } from '@/lib/safe-html'
+import { publishAiContext } from '@/lib/ai-context'
 
 type Order = any
 
@@ -267,11 +268,7 @@ export default function OrdersPage() {
   // order" / "mark this order completed" resolve to the drawer's order.
   useEffect(() => {
     const o = drawerId ? orders.find(x => x.id === drawerId) : null
-    try {
-      window.dispatchEvent(new CustomEvent('colvy:ai-context', {
-        detail: { orderId: drawerId || null, contactId: (o as any)?.contact_id || null, conversationId: (o as any)?.conversation_id || null },
-      }))
-    } catch {}
+    publishAiContext({ orderId: drawerId || null, contactId: (o as any)?.contact_id || null, conversationId: (o as any)?.conversation_id || null })
   }, [drawerId, orders])
 
   const [printModal, setPrintModal] = useState<{ doc: 'packing_slip' | 'label'; ids: string[]; title: string } | null>(null)
