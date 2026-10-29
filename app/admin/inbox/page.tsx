@@ -97,7 +97,8 @@ import WidgetInstallCard from '@/components/inbox/WidgetInstallCard'
 import { boardUrl } from '@/lib/redirect'
 import { publishAiContext } from '@/lib/ai-context'
 import TicketComposer, { type TicketPriority } from '@/components/inbox/TicketComposer'
-import { CPD_CSS, CPD_ICON, PanelItem } from '@/components/inbox/ContactPanelBits'
+import { CPD_CSS, CPD_ICON, DELIVERY_STATUS_OPTIONS, PanelItem } from '@/components/inbox/ContactPanelBits'
+import { MenuAvatar } from '@/components/ui/SelectMenu'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -12142,40 +12143,37 @@ export default function InboxPage() {
                       return (
                         <div className="cpd-list">
                           <PanelItem icon={CPD_ICON.ring} label="Rings first" value={ringName || 'Everyone'} set={!!uid}
-                            title="When this customer calls, this person rings first. If they don’t pick up, everyone else rings.">
-                            <select value={uid} aria-label="Who rings first when this customer calls"
-                              onChange={async (e) => {
-                            const uid = e.target.value || null
-                            const nm = uid ? (teamMembers.find((m: any) => m.user_id === uid)?.name || null) : null
-                            setContact((c: any) => ({ ...c, preferred_agent_user_id: uid, preferred_agent_name: nm }))
-                            try {
-                              await (supabase as any).from('contacts').update({ preferred_agent_user_id: uid, preferred_agent_name: nm }).eq('id', contact.id)
-                              showToast(uid ? `${nm} will ring first for this customer` : 'Preferred agent cleared')
-                            } catch { showToast('Could not save preferred agent') }
-                          }}>
-                              <option value="">Everyone at once</option>
-                              {teamMembers.map((m: any) => (<option key={m.user_id} value={m.user_id}>{m.name}</option>))}
-                            </select>
-                          </PanelItem>
+                            title="When this customer calls, this person rings first. If they don’t pick up, everyone else rings."
+                            menu={{
+                              label: 'Who rings first when this customer calls', value: uid, width: 260,
+                              options: [
+                                { value: '', label: 'Everyone at once', hint: 'All phones ring together', icon: CPD_ICON.ring },
+                                ...teamMembers.filter((m: any) => m.user_id).map((m: any, i: number) => ({ value: m.user_id, label: m.name || 'Teammate', icon: <MenuAvatar name={m.name || '?'} color={['#6366f1', '#16a34a', '#f59e0b', '#ef4444', '#0ea5e9', '#d946ef'][i % 6]} /> })),
+                              ],
+                              onChange: async (v: string) => {
+                                const next = v || null
+                                const nm = next ? (teamMembers.find((m: any) => m.user_id === next)?.name || null) : null
+                                setContact((c: any) => ({ ...c, preferred_agent_user_id: next, preferred_agent_name: nm }))
+                                try {
+                                  await (supabase as any).from('contacts').update({ preferred_agent_user_id: next, preferred_agent_name: nm }).eq('id', contact.id)
+                                  showToast(next ? `${nm} will ring first for this customer` : 'Everyone rings at once for this customer')
+                                } catch { showToast('Could not save who rings first') }
+                              },
+                            }} />
                           <WaitlistQuickAdd compact companyId={companyId} contact={contact as any} conversationId={selected?.id || null} />
                           <PanelItem icon={CPD_ICON.calendar} label="Delivery" set={!!when} onClick={() => setShowDeliveryPanel(true)}
                             value={when ? new Date(when).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Schedule'} />
-                          <PanelItem icon={CPD_ICON.box} label="Delivery status" value={D_LABEL[dStatus] || 'Not set'} set={!!dStatus}>
-                            <select value={dStatus} aria-label="Delivery status"
-                              onChange={async e => {
-                          const v = e.target.value || null
-                          setContact((c: any) => ({ ...c, delivery_status: v }))
-                          await (supabase as any).from('contacts').update({ delivery_status: v }).eq('id', contact.id)
-                          showToast('Delivery status updated')
-                        }}>
-                              <option value="">Not set</option>
-                              <option value="pending">Pending</option>
-                              <option value="scheduled">Scheduled</option>
-                              <option value="out_for_delivery">Out for delivery</option>
-                              <option value="delivered">Delivered</option>
-                              <option value="failed">Failed</option>
-                            </select>
-                          </PanelItem>
+                          <PanelItem icon={CPD_ICON.box} label="Delivery status" value={D_LABEL[dStatus] || 'Not set'} set={!!dStatus}
+                            menu={{
+                              label: 'Delivery status', value: dStatus,
+                              options: [{ value: '', label: 'Not set', dot: '#d4d4d8' }, ...DELIVERY_STATUS_OPTIONS],
+                              onChange: async (v: string) => {
+                                const next = v || null
+                                setContact((c: any) => ({ ...c, delivery_status: next }))
+                                await (supabase as any).from('contacts').update({ delivery_status: next }).eq('id', contact.id)
+                                showToast('Delivery status updated')
+                              },
+                            }} />
                           <PanelItem icon={CPD_ICON.truck} label="Send tracking link" value="" onClick={() => setShowTracking(true)} />
                         </div>
                       )

@@ -59,6 +59,7 @@ interface Props {
   role?: 'menu' | 'dialog' | 'listbox'
   padding?: number | string
   autoFocus?: boolean           // focus [data-autofocus] or the first item on open (default true)
+  radius?: number               // corner radius (default 12)
 }
 
 export const POPOVER_CSS = `
@@ -72,7 +73,7 @@ export const POPOVER_CSS = `
 @media (prefers-reduced-motion:reduce){.cpop{animation:none}}
 `
 
-export default function Popover({ open, onClose, anchorRef, children, width = 280, prefer = 'bottom', align = 'start', label, role = 'dialog', padding = 6, autoFocus = true }: Props) {
+export default function Popover({ open, onClose, anchorRef, children, width = 280, prefer = 'bottom', align = 'start', label, role = 'dialog', padding = 6, autoFocus = true, radius = 12 }: Props) {
   const panelRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<Position | null>(null)
@@ -175,7 +176,7 @@ export default function Popover({ open, onClose, anchorRef, children, width = 28
         top: pos?.top ?? 0, left: pos?.left ?? 0, width: pos?.width ?? width, maxHeight: pos?.maxHeight,
         visibility: pos ? 'visible' : 'hidden',
         overflowY: 'auto', overscrollBehavior: 'contain', boxSizing: 'border-box',
-        background: 'var(--card, #fff)', border: '1px solid var(--border)', borderRadius: 12,
+        background: 'var(--card, #fff)', border: '1px solid var(--border)', borderRadius: radius,
         boxShadow: '0 16px 40px -12px rgba(0,0,0,.25), 0 2px 6px rgba(0,0,0,.06)',
       }}>
       <style>{POPOVER_CSS}</style>

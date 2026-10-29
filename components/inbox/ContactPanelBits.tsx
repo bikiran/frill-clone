@@ -1,5 +1,8 @@
 'use client'
 
+import { useRef, useState } from 'react'
+import { SelectPopover, type MenuOption } from '@/components/ui/SelectMenu'
+
 // Building blocks for the inbox contact panel's Information tab (Sellio-style):
 // the details card (one quiet row per filled-in field, icon first), "+ Email"
 // chips for the empty ones, and the settings list (Rings first, back-in-stock
@@ -38,38 +41,53 @@ export const CPD_CSS = `
 .cpd-list{border-radius:16px;background:#f6f6f7;padding:3px 0;margin-top:14px}
 .cpd-li{position:relative;display:flex;align-items:center;gap:10px;width:100%;min-height:42px;padding:6px 12px;border:none;background:none;font:inherit;text-align:left;color:#18181b;cursor:pointer;border-radius:12px}
 .cpd-li+.cpd-li{box-shadow:0 -1px 0 #ececee}
-.cpd-li:hover{background:#efeff1}
-.cpd-li:focus-visible,.cpd-li:focus-within{outline:2px solid var(--coral);outline-offset:-2px}
+.cpd-li:hover,.cpd-li.open{background:#efeff1}
+.cpd-li:focus-visible{outline:2px solid var(--coral);outline-offset:-2px}
 .cpd-li-t{flex:0 0 auto;font-size:13.5px;font-weight:500;white-space:nowrap}
 .cpd-li-v{flex:1;min-width:0;justify-content:flex-end;display:inline-flex;align-items:center;gap:3px;font-size:13px;color:#71717a;white-space:nowrap}
 .cpd-li-v>span{overflow:hidden;text-overflow:ellipsis}
 .cpd-li-v.set{color:#18181b;font-weight:600}
-.cpd-li select{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:16px}
 .cpd-li-v svg{color:#a1a1aa;flex-shrink:0}
 .cpd-done{margin:6px 12px 4px;font-size:12px;color:#059669}
 .cpd-done a{color:inherit;font-weight:600}
 `
 
-/** One setting in the list: icon, name, and its current value on the right. */
-export function PanelItem({ icon, label, value, set, onClick, title, children }: {
+/** Delivery statuses, each with its colour (the contact panel and the delivery sheet). */
+export const DELIVERY_STATUS_OPTIONS: MenuOption[] = [
+  { value: 'pending', label: 'Pending', dot: '#f59e0b' },
+  { value: 'scheduled', label: 'Scheduled', dot: '#3b82f6' },
+  { value: 'out_for_delivery', label: 'Out for delivery', dot: '#8b5cf6' },
+  { value: 'delivered', label: 'Delivered', dot: '#16a34a' },
+  { value: 'failed', label: 'Failed', dot: '#ef4444' },
+]
+
+/** One setting in the list: icon, name, and its current value on the right.
+ *  With `menu` the row opens a dropdown of choices (SelectMenu) instead of
+ *  running `onClick`. */
+export function PanelItem({ icon, label, value, set, onClick, title, menu }: {
   icon: React.ReactNode
   label: string
   value: React.ReactNode
   set?: boolean
   onClick?: () => void
   title?: string
-  /** A native <select> laid over the whole row (it opens the platform picker). */
-  children?: React.ReactNode
+  menu?: { value: string; options: MenuOption[]; onChange: (v: string) => void; label: string; width?: number }
 }) {
-  const inner = (
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLButtonElement | null>(null)
+  return (
     <>
-      <span className="cpd-ic">{icon}</span>
-      <span className="cpd-li-t">{label}</span>
-      <span className={`cpd-li-v${set ? ' set' : ''}`}><span>{value}</span>{children ? CPD_ICON.down : CPD_ICON.chev}</span>
-      {children}
+      <button ref={ref} type="button" className={`cpd-li${open ? ' open' : ''}`} title={title}
+        aria-haspopup={menu ? 'listbox' : undefined} aria-expanded={menu ? open : undefined}
+        onClick={menu ? () => setOpen(v => !v) : onClick}>
+        <span className="cpd-ic">{icon}</span>
+        <span className="cpd-li-t">{label}</span>
+        <span className={`cpd-li-v${set ? ' set' : ''}`}><span>{value}</span>{menu ? CPD_ICON.down : CPD_ICON.chev}</span>
+      </button>
+      {menu && (
+        <SelectPopover open={open} onClose={() => setOpen(false)} anchorRef={ref} value={menu.value} options={menu.options}
+          onPick={menu.onChange} label={menu.label} width={menu.width} />
+      )}
     </>
   )
-  return children
-    ? <label className="cpd-li" title={title}>{inner}</label>
-    : <button type="button" className="cpd-li" title={title} onClick={onClick}>{inner}</button>
 }
