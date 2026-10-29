@@ -95,6 +95,7 @@ const TICKETS_CSS = `
   .tk-stat:hover { border-color: #d5d8de; }
   .tk-stat[aria-pressed="true"] { border-color: var(--tk-c); box-shadow: inset 0 0 0 1px var(--tk-c); }
   .tk-stat-ic { width: 36px; height: 36px; border-radius: 10px; background: var(--tk-bg); color: var(--tk-c); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  [data-theme="dark"] .tk-stat-ic { background: color-mix(in srgb, var(--tk-c) 20%, transparent); }
   .tk-stat-txt { min-width: 0; }
   .tk-stat-n { display: block; font-size: 22px; font-weight: 800; line-height: 1; }
   .tk-stat-l { display: block; margin-top: 4px; font-size: 12.5px; font-weight: 600; color: var(--slate); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

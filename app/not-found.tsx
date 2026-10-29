@@ -96,6 +96,18 @@ export default function NotFound() {
     if (typeof window !== 'undefined') setPathname(window.location.pathname)
   }, [])
 
+  // This page is drawn for light only: while it's open, a workspace's dark
+  // theme steps aside (and comes back when you leave).
+  useEffect(() => {
+    const html = document.documentElement
+    let was: string | null = null
+    const keepLight = () => { if (html.getAttribute('data-theme') === 'dark') { was = 'dark'; html.removeAttribute('data-theme') } }
+    keepLight()
+    const mo = new MutationObserver(keepLight)
+    mo.observe(html, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => { mo.disconnect(); if (was) html.setAttribute('data-theme', was) }
+  }, [])
+
   const match = useMemo(() => (pathname ? bestMatch(pathname) : null), [pathname])
 
   // Auto-recover: when we have a confident guess, count down and redirect.
