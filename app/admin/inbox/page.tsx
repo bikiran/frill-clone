@@ -96,6 +96,7 @@ import BrandLogo, { type BrandKey } from '@/components/BrandLogo'
 import WidgetInstallCard from '@/components/inbox/WidgetInstallCard'
 import { boardUrl } from '@/lib/redirect'
 import { publishAiContext } from '@/lib/ai-context'
+import TicketComposer, { type TicketPriority } from '@/components/inbox/TicketComposer'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Conversation = {
@@ -728,7 +729,9 @@ export default function InboxPage() {
   const [mrMaxFiles, setMrMaxFiles] = useState('10')
   const [mrExpiry, setMrExpiry] = useState('168')
   const [mrSaving, setMrSaving] = useState(false)
-  const [showTicketPanel, setShowTicketPanel] = useState(false)
+  // "Create ticket" turns the reply box into a Ticket box (a third tab next
+  // to Reply and Note) until the ticket is created or discarded.
+  const [ticketMode, setTicketMode] = useState(false)
   const [showCreateOrder, setShowCreateOrder] = useState(false)
   const [orderPrefillCart, setOrderPrefillCart] = useState<any>(null)
   const [showCoupon, setShowCoupon] = useState(false)
@@ -5010,18 +5013,31 @@ export default function InboxPage() {
   // the email composer (on an email thread, Note swaps in the note box).
   const renderModeHead = () => (
                 <div className="cmp-head">
-                  <div className="cmp-mode" role="tablist" aria-label="Reply or internal note">
-                    <span className="cmp-mode-thumb" style={{ transform: internalMode ? 'translateX(100%)' : 'none' }} />
-                    <button type="button" role="tab" aria-selected={!internalMode} onClick={() => setInternalMode(false)}>Reply</button>
-                    <button type="button" role="tab" aria-selected={internalMode} onClick={() => setInternalMode(true)}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4z"/></svg>
-                      Note
-                    </button>
-                  </div>
+                  {(() => {
+                    // The Ticket tab is only there while a ticket is being written.
+                    const tabs = ticketMode || ticketSubject.trim() || ticketDesc.trim() ? 3 : 2
+                    const at = ticketMode ? 2 : internalMode ? 1 : 0
+                    return (
+                      <div className="cmp-mode" role="tablist" aria-label="Reply, internal note or ticket" style={tabs === 3 ? { gridTemplateColumns: '1fr 1fr 1fr' } : undefined}>
+                        <span className="cmp-mode-thumb" style={{ width: tabs === 3 ? 'calc(33.333% - 2px)' : undefined, transform: at ? `translateX(${at * 100}%)` : 'none' }} />
+                        <button type="button" role="tab" aria-selected={at === 0} onClick={() => { setTicketMode(false); setInternalMode(false) }}>Reply</button>
+                        <button type="button" role="tab" aria-selected={at === 1} onClick={() => { setTicketMode(false); setInternalMode(true) }}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4z"/></svg>
+                          Note
+                        </button>
+                        {tabs === 3 && (
+                          <button type="button" role="tab" aria-selected={at === 2} onClick={openTicket} className="cmp-mode-ticket">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4z"/></svg>
+                            Ticket
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })()}
                   <span className="cmp-via">
-                    {internalMode ? 'Only your team sees this' : channelResolving ? 'Choosing a channel…' : <><span className="cmp-via-lbl">Sending by </span><b>{({ sms: 'SMS', email: 'email', chat: 'live chat', instagram: 'Instagram', messenger: 'Messenger', whatsapp: 'WhatsApp', call: 'SMS', colvy: 'Colvy app' } as Record<string, string>)[sendChannel !== 'auto' ? sendChannel : outboundChannel] || 'chat'}</b> {sendChannelGlyph(sendChannel !== 'auto' ? sendChannel : outboundChannel, 13)}</>}
+                    {ticketMode ? 'A support ticket, linked to this conversation' : internalMode ? 'Only your team sees this' : channelResolving ? 'Choosing a channel…' : <><span className="cmp-via-lbl">Sending by </span><b>{({ sms: 'SMS', email: 'email', chat: 'live chat', instagram: 'Instagram', messenger: 'Messenger', whatsapp: 'WhatsApp', call: 'SMS', colvy: 'Colvy app' } as Record<string, string>)[sendChannel !== 'auto' ? sendChannel : outboundChannel] || 'chat'}</b> {sendChannelGlyph(sendChannel !== 'auto' ? sendChannel : outboundChannel, 13)}</>}
                     {/* Both a mobile and an email: one tap to the other. */}
-                    {!internalMode && !channelResolving && (() => {
+                    {!internalMode && !ticketMode && !channelResolving && (() => {
                       const cur = sendChannel !== 'auto' ? sendChannel : outboundChannel
                       const other = cur === 'email' && ((selected as any)?.sms_number || contact?.phone) ? 'sms' : cur === 'sms' && contact?.email ? 'email' : null
                       return other ? (
@@ -5557,6 +5573,15 @@ export default function InboxPage() {
     } finally { setPodSending(false) }
   }
 
+  const openTicket = () => {
+    // A draft for this conversation is kept; otherwise start from its subject.
+    if (!ticketSubject.trim() && !ticketDesc.trim()) { setTicketSubject(dec(selected?.subject || '')); setTicketPriority('normal') }
+    setTicketMode(true); setMComposerOpen(true)
+  }
+  const discardTicket = () => { setTicketMode(false); setTicketSubject(''); setTicketDesc(''); setTicketPriority('normal') }
+  // A ticket draft belongs to the conversation it was started in.
+  useEffect(() => { setTicketMode(false); setTicketSubject(''); setTicketDesc('') }, [selected?.id])
+
   const createTicket = async () => {
     if (!companyId || !ticketSubject.trim()) return
     setTicketSaving(true)
@@ -5571,7 +5596,7 @@ export default function InboxPage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not create ticket')
-      setShowTicketPanel(false)
+      setTicketMode(false); setTicketSubject(''); setTicketDesc('')
       showToast(`Ticket ${data.ticket?.ticket_number} created`)
       if (selected) selectConversation(selected)
     } catch (e: any) {
@@ -8790,41 +8815,6 @@ export default function InboxPage() {
         </div>
       )}
 
-      {/* Create support ticket panel */}
-      {showTicketPanel && selected && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', justifyContent: 'flex-end' }} onClick={() => setShowTicketPanel(false)}>
-          <div onClick={e => e.stopPropagation()} style={{ width: 420, maxWidth: '100%', height: '100%', background: '#fff', overflowY: 'auto', boxShadow: '-8px 0 32px rgba(0,0,0,0.2)' }}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>New Support Ticket</h2>
-              <button onClick={() => setShowTicketPanel(false)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--slate)' }}>✕</button>
-            </div>
-            <div style={{ padding: 20 }}>
-              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 5 }}>Subject</label>
-              <input value={ticketSubject} onChange={e => setTicketSubject(e.target.value)} placeholder="Brief summary of the issue" autoFocus
-                style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box', marginBottom: 14 }} />
-
-              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 5 }}>Description</label>
-              <textarea value={ticketDesc} onChange={e => setTicketDesc(e.target.value)} placeholder="Details, context, what the customer needs…" rows={5}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, boxSizing: 'border-box', marginBottom: 14, resize: 'vertical', fontFamily: 'inherit' }} />
-
-              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 5 }}>Priority</label>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
-                {['low', 'normal', 'high', 'urgent'].map(p => (
-                  <button key={p} onClick={() => setTicketPriority(p)}
-                    style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: ticketPriority === p ? '2px solid var(--coral)' : '1px solid var(--border)', background: ticketPriority === p ? 'var(--peach)' : '#fff', color: ticketPriority === p ? 'var(--coral)' : 'var(--slate)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', textTransform: 'capitalize' }}>{p}</button>
-                ))}
-              </div>
-
-              <button onClick={createTicket} disabled={ticketSaving || !ticketSubject.trim()}
-                style={{ width: '100%', padding: '12px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: ticketSubject.trim() ? 'pointer' : 'not-allowed', opacity: ticketSubject.trim() ? 1 : 0.6 }}>
-                {ticketSaving ? 'Creating…' : 'Create ticket'}
-              </button>
-              <p style={{ fontSize: 11.5, color: 'var(--slate)', marginTop: 10, lineHeight: 1.5 }}>A ticket number and link will be posted into this conversation.</p>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Media gallery / lightbox */}
       {galleryIndex !== null && (() => {
         const media: MediaItem[] = [...chatGalleryMedia(), ...emailGalleryMedia().map(({ key: _k, ...x }) => x)]
@@ -10928,7 +10918,7 @@ export default function InboxPage() {
                     onTakeControl={takeControl} onHandBack={() => setConvAi(null)} onPause={() => setConvAi(false)}
                     onAssign={m => assignTo(m ? (teamMembers.find(t => t.user_id === m.user_id) || null) : null)}
                     onNote={() => { setInternalMode(true); setMComposerOpen(true); setTimeout(() => textareaRef.current?.focus(), 30) }}
-                    onTicket={() => { setTicketSubject(selected?.subject || ''); setTicketDesc(''); setTicketPriority('normal'); setShowTicketPanel(true) }} />
+                    onTicket={openTicket} />
                 )
               })()}
               {/* Phones: the composer starts as this one-line bar so the thread
@@ -10992,7 +10982,12 @@ export default function InboxPage() {
               </div>
               {/* Email threads get a proper email composer (To/Cc/Subject +
                   signature) instead of the plain chat box. */}
-              {channelResolving && !internalMode ? (
+              {ticketMode ? (
+                <TicketComposer head={renderModeHead()} customer={contact?.name || (selected as any)?.contacts?.name || contact?.email || (selected as any)?.sms_number || ''}
+                  subject={ticketSubject} onSubject={setTicketSubject} description={ticketDesc} onDescription={setTicketDesc}
+                  priority={ticketPriority} onPriority={(p: TicketPriority) => setTicketPriority(p)}
+                  saving={ticketSaving} onCreate={createTicket} onDiscard={discardTicket} bodyHeight={isMobile ? undefined : composerH} />
+              ) : channelResolving && !internalMode ? (
                 <div className="cmp-card" aria-busy="true" style={{ overflow: 'hidden' }}>
                   {renderModeHead()}
                   <div style={{ height: isMobile ? 64 : composerH, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', fontSize: 12.5 }}>Choosing how to reach this customer…</div>
@@ -11670,7 +11665,7 @@ export default function InboxPage() {
                             if (key === 'doa' || key === 'return_refund') setShowDoa(true)
                             else if (key === 'create_order') setShowCreateOrder(true)
                             else if (key === 'send_coupon') { setCouponAmount(''); setCouponCode(''); setCouponType('fixed'); setCouponOneTime(true); setCouponExpiry(''); setShowCoupon(true) }
-                            else if (key === 'support_ticket') { setTicketSubject(selected?.subject || ''); setTicketDesc(''); setTicketPriority('normal'); setShowTicketPanel(true) }
+                            else if (key === 'support_ticket') openTicket()
                             else if (key === 'proof_of_delivery') { setPodNote(''); setPodFiles([]); setShowPod(true) }
                             else if (cfg.form_id) {
                               const { data: form } = await (supabase as any).from('forms').select('*').eq('id', cfg.form_id).maybeSingle()
