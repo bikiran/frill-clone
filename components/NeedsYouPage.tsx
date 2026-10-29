@@ -393,7 +393,7 @@ export function NeedsYouView({ companyId }: { companyId: string | null }) {
 }
 
 const CSS = `
-.nyp-page{max-width:1360px;margin:0 auto;padding:20px 16px 120px}
+.nyp-page{max-width:1480px;margin:0 auto;padding:20px 16px 120px}
 @media (min-width:900px){.nyp-page{padding:24px 28px 120px}}
 .nyp-title{margin:0;font-size:clamp(26px,3.6vw,34px);font-weight:800;letter-spacing:-0.025em;color:var(--ink)}
 .nyp-sub{margin:6px 0 22px;font-size:15px;color:var(--slate);line-height:1.5;max-width:720px}
@@ -473,12 +473,12 @@ const CSS = `
 .nyp-more{display:flex;align-items:center;gap:6px;margin:0 0 10px 20px;padding:6px 0;border:none;background:none;font:inherit;font-size:13.5px;font-weight:700;color:var(--coral);cursor:pointer}
 .nyp-more::before{display:none}
 
-.nyp-detail{background:#fff;border:1px solid var(--border);border-radius:20px;padding:18px;animation:nyIn .35s ${EASE} both}
+.nyp-detail{min-width:0;background:#fff;border:1px solid var(--border);border-radius:20px;padding:18px;animation:nyIn .35s ${EASE} both}
 .nyp-detail.inline{margin:2px 0 12px;padding:14px 12px 4px;border:none;border-top:1px dashed var(--border);border-radius:0;background:transparent}
 .nyp-d-head{display:flex;align-items:center;gap:12px}
 .nyp-d-name{margin:0;font-size:16px;font-weight:800;color:var(--ink);line-height:1.3;overflow:hidden;text-overflow:ellipsis}
 .nyp-d-meta{margin:2px 0 0;font-size:13px;color:var(--slate)}
-.nyp-quote{margin:14px 0 0;padding:12px 14px;border-radius:14px;background:var(--canvas,#f6f7f9);font-size:14.5px;line-height:1.5;color:var(--ink)}
+.nyp-quote{margin:14px 0 0;padding:12px 14px;border-radius:14px;background:var(--canvas,#f6f7f9);font-size:14.5px;line-height:1.5;color:var(--ink);overflow-wrap:anywhere;word-break:break-word}
 .nyp-tabs{display:flex;gap:4px;margin:16px 0 0;border-bottom:1px solid var(--border)}
 .nyp-tabs button{padding:9px 12px;border:none;background:none;font:inherit;font-size:13.5px;font-weight:700;color:var(--slate);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
 .nyp-tabs button::before{display:none}

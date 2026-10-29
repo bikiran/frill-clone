@@ -174,7 +174,7 @@ export function ResultsView({ companyId }: { companyId: string | null }) {
   return (
     <div className="ar" style={{ minHeight: '100%', background: 'var(--canvas, #f6f7f9)' }}>
       <style>{CSS}</style>
-      <div style={{ maxWidth: 1160, margin: '0 auto', padding: '24px 16px 120px' }}>
+      <div className="ar-page">
         <a href="/admin/agents" className="ar-back"><Back /> AI Agents</a>
         <div className="ar-top">
           <div style={{ minWidth: 0, flex: '1 1 320px' }}>
@@ -300,6 +300,8 @@ const CSS = `
 .ar-back:hover{color:var(--ink)}
 .ar-top{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:18px}
 .ar-title{margin:0;font-size:clamp(22px,3.4vw,28px);font-weight:800;letter-spacing:-0.02em;color:var(--ink)}
+.ar-page{max-width:1480px;margin:0 auto;padding:24px 16px 120px}
+@media (min-width:900px){.ar-page{padding:28px 32px 120px}}
 .ar-sub{margin:4px 0 0;font-size:14px;color:var(--slate);max-width:640px;line-height:1.5}
 .ar-seg{position:relative;display:inline-grid;grid-template-columns:repeat(3,1fr);padding:3px;border-radius:12px;background:color-mix(in srgb,var(--slate) 10%,#fff);flex-shrink:0}
 .ar-seg button{position:relative;z-index:1;padding:7px 14px;border:none;background:none;font-size:13px;font-weight:600;color:var(--slate);cursor:pointer;font-family:inherit;white-space:nowrap;transition:color .25s ease}

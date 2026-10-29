@@ -503,7 +503,8 @@ const CSS = `
 .bm-fade{animation:bmFade .5s ${EASE} both}
 @keyframes bmFade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion: reduce){.bm-fade{animation:none!important}}
-.bm-page{max-width:1240px;margin:0 auto;padding:20px 16px 120px}
+.bm-page{max-width:1480px;margin:0 auto;padding:20px 16px 120px}
+@media (min-width:900px){.bm-page{padding:24px 32px 120px}}
 @media (min-width:900px){.bm-page{padding:24px 28px 120px}}
 .bm-crumbs{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--slate)}
 .bm-crumbs a{color:var(--slate);text-decoration:none;font-weight:600}.bm-crumbs a:hover{color:var(--ink)}
