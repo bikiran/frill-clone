@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { AdminPage, Panel } from '@/components/ui/AdminKit'
+import { TrashIcon } from '@/components/Icons'
 
 const DEFAULT_TOPICS = [
   { id: 'welcome', label: 'Welcome', emoji: '👋' },
@@ -77,175 +78,92 @@ export default function TopicsPage() {
   if (checking) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
-        <p style={{ color: 'var(--slate)' }}>Checking permissions...</p>
+        <p style={{ color: 'var(--slate)' }}>Checking permissions…</p>
       </div>
     )
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-6 py-8">
-      <style>{`.topic-row:hover .topic-actions { opacity: 1 !important; }`}</style>
-      <div className="mb-8">
-        <Link href="/" className="text-sm font-medium" style={{ color: 'var(--coral)' }}>
-          ← Back to Ideas
-        </Link>
-        <h1 className="text-3xl font-bold mt-4 mb-2" style={{ color: 'var(--ink)' }}>
-          Topics
-        </h1>
-        <p style={{ color: 'var(--slate)' }}>
-          Organize ideas with topics so users can filter by tags.
-        </p>
-      </div>
+    <AdminPage width="sm" title="Topics" sub="Topics are tags on ideas, so people can filter the board by what they care about."
+      back={{ href: '/admin/ideas', label: 'Ideas' }}>
+      <p className="ak-note info">
+        <span aria-hidden>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginTop: 2 }}><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+        </span>
+        <span><b>Private topics are a paid feature.</b> They’re part of the Privacy add-on and turn into normal topics when your trial ends, unless you’re on Growth or have the add-on. <a href="/admin/billing">Compare plans</a></span>
+      </p>
 
-      {/* Private Topics Notice */}
-      <div className="bg-blue-50 border-l-4 border-blue-500 rounded-lg p-4 mb-8" style={{ borderColor: '#3b82f6' }}>
-        <h3 className="font-semibold text-sm mb-2" style={{ color: '#1e40af' }}>Remember: Private Topics are a paid feature</h3>
-        <p className="text-sm mb-3" style={{ color: '#1e40af' }}>
-          Private Topics are part of the Privacy Add-on. They will be converted to normal Topics at the end of your trial unless you purchase the Growth plan or Privacy Add-on.
-        </p>
-        <a href="/admin/billing" className="text-sm font-medium hover:underline" style={{ color: '#3b82f6' }}>
-          Compare plans →
-        </a>
-      </div>
-
-      {/* Topic Settings */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-        {/* Topic Limit */}
-        <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
-          <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--ink)' }}>Topic Limit</h3>
-          <p className="text-sm mb-4" style={{ color: 'var(--slate)' }}>The maximum number of topics on an Idea (set to 0 for unlimited).</p>
-          <div className="flex items-center gap-3">
-            <input
-              type="number"
-              value={topicLimit}
-              onChange={e => setTopicLimit(Math.max(0, parseInt(e.target.value) || 0))}
-              min="0"
-              className="w-20 px-4 py-2 border rounded-lg focus:outline-none text-sm"
-              style={{ borderColor: 'var(--border)', fontSize: '16px' }}
-            />
-            <span style={{ color: 'var(--slate)' }} className="text-sm">topics per idea</span>
+      <div className="ak-grid2" style={{ marginBottom: 14 }}>
+        <Panel title="Topic limit" sub="The most topics one idea can have. 0 means no limit.">
+          <div className="tp-limit">
+            <input className="ak-field" type="number" min={0} value={topicLimit} aria-label="Topics per idea"
+              onChange={e => setTopicLimit(Math.max(0, parseInt(e.target.value) || 0))} />
+            <span>topics per idea</span>
           </div>
-        </div>
-
-        {/* Topic Permissions */}
-        <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
-          <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--ink)' }}>Topic Permissions</h3>
-          <p className="text-sm mb-4" style={{ color: 'var(--slate)' }}>Control who can assign topics to Ideas.</p>
-          <div className="space-y-2">
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input 
-                type="radio" 
-                name="permission"
-                checked={topicPermission === 'everybody'}
-                onChange={() => setTopicPermission('everybody')}
-                className="w-4 h-4"
-              />
-              <span className="text-sm" style={{ color: 'var(--ink)' }}>Everybody</span>
-            </label>
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input 
-                type="radio" 
-                name="permission"
-                checked={topicPermission === 'members'}
-                onChange={() => setTopicPermission('members')}
-                className="w-4 h-4"
-              />
-              <span className="text-sm" style={{ color: 'var(--ink)' }}>Company members</span>
-            </label>
+        </Panel>
+        <Panel title="Who can add topics" sub="Who may tag an idea with a topic.">
+          <div className="ak-seg" role="radiogroup" aria-label="Who can add topics">
+            <button type="button" role="radio" aria-checked={topicPermission === 'everybody'} className={topicPermission === 'everybody' ? 'on' : ''} onClick={() => setTopicPermission('everybody')}>Everybody</button>
+            <button type="button" role="radio" aria-checked={topicPermission === 'members'} className={topicPermission === 'members' ? 'on' : ''} onClick={() => setTopicPermission('members')}>Your team only</button>
           </div>
-        </div>
+        </Panel>
       </div>
 
-      {/* Add Topic Form */}
-      <div className="bg-white rounded-2xl border p-6 mb-8" style={{ borderColor: 'var(--border)' }}>
-        <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--ink)' }}>
-          Add Topic
-        </h2>
-        <div className="flex gap-3">
-          <input
-            type="text"
-            value={newTopic}
-            onChange={e => setNewTopic(e.target.value)}
-            placeholder="Topic name"
-            className="flex-1 px-4 py-2.5 border rounded-lg text-sm focus:outline-none transition-smooth"
-            style={{ borderColor: 'var(--border)', fontSize: '16px' }}
-            onKeyPress={e => e.key === 'Enter' && addTopic()}
-          />
-          <input
-            type="text"
-            value={newEmoji}
-            onChange={e => setNewEmoji(e.target.value)}
-            maxLength={2}
-            className="px-4 py-2.5 border rounded-lg text-sm focus:outline-none transition-smooth w-20 text-center"
-            style={{ borderColor: 'var(--border)', fontSize: '16px' }}
-          />
-          <button
-            onClick={addTopic}
-            className="px-6 py-2.5 rounded-lg font-semibold text-white text-sm transition-smooth press-effect"
-            style={{ background: 'var(--coral)' }}>
-            Add Topic
-          </button>
+      <Panel title="Add a topic">
+        <div className="tp-add">
+          <input className="ak-field tp-emoji" type="text" value={newEmoji} onChange={e => setNewEmoji(e.target.value)} maxLength={2} aria-label="Emoji" />
+          <input className="ak-field" type="text" value={newTopic} onChange={e => setNewTopic(e.target.value)} placeholder="e.g. Plants, Delivery, Website"
+            aria-label="Topic name" onKeyDown={e => e.key === 'Enter' && addTopic()} />
+          <button type="button" className="ak-btn go" onClick={addTopic} disabled={!newTopic.trim()}>Add topic</button>
         </div>
-      </div>
+      </Panel>
 
-      {/* Topics List */}
-      <div className="bg-white rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
-        <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
+      <Panel title="Your topics" sub={`${topics.length} topic${topics.length !== 1 ? 's' : ''} · drag to reorder`} flush>
+        <div className="ak-list" style={{ padding: '0 8px 8px' }}>
           {topics.map(topic => (
-            <div
-              key={topic.id}
-              draggable
+            <div key={topic.id} className="ak-row tp-row" draggable
               onDragStart={() => setDraggedId(topic.id)}
               onDragOver={e => e.preventDefault()}
               onDrop={() => { if (draggedId) reorder(draggedId, topic.id); setDraggedId(null) }}
-              className="topic-row p-4 flex items-center justify-between hover:bg-gray-50 transition-smooth"
-              style={{ cursor: 'grab', opacity: draggedId === topic.id ? 0.5 : 1 }}
-            >
-              <div className="flex items-center gap-3" style={{ flex: 1 }}>
-                <span style={{ color: 'var(--slate)', cursor: 'grab' }} title="Drag to reorder">⠿</span>
-                <span className="text-2xl">{topic.emoji}</span>
-                {editingId === topic.id ? (
-                  <input
-                    value={editLabel}
-                    onChange={e => setEditLabel(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') saveEdit(topic.id); if (e.key === 'Escape') setEditingId(null) }}
-                    autoFocus
-                    style={{ flex: 1, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14 }}
-                  />
-                ) : (
-                  <div>
-                    <p className="font-semibold text-sm" style={{ color: 'var(--ink)' }}>{topic.label}</p>
-                    <p className="text-xs" style={{ color: 'var(--slate)' }}>#{topic.id}</p>
-                  </div>
-                )}
-              </div>
+              style={{ opacity: draggedId === topic.id ? 0.5 : 1 }}>
+              <span className="tp-grip" title="Drag to reorder" aria-hidden>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6" /><circle cx="15" cy="6" r="1.6" /><circle cx="9" cy="12" r="1.6" /><circle cx="15" cy="12" r="1.6" /><circle cx="9" cy="18" r="1.6" /><circle cx="15" cy="18" r="1.6" /></svg>
+              </span>
+              <span className="tp-emo" aria-hidden>{topic.emoji}</span>
               {editingId === topic.id ? (
-                <div className="flex gap-2">
-                  <button onClick={() => saveEdit(topic.id)} className="px-3 py-1.5 rounded-lg text-sm font-medium" style={{ background: 'var(--coral)', color: '#fff' }}>Save</button>
-                  <button onClick={() => setEditingId(null)} className="px-3 py-1.5 rounded-lg text-sm font-medium border" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>Cancel</button>
-                </div>
+                <>
+                  <input className="ak-field sm" value={editLabel} onChange={e => setEditLabel(e.target.value)} autoFocus aria-label="Topic name"
+                    onKeyDown={e => { if (e.key === 'Enter') saveEdit(topic.id); if (e.key === 'Escape') setEditingId(null) }} />
+                  <button type="button" className="ak-btn go sm" onClick={() => saveEdit(topic.id)}>Save</button>
+                  <button type="button" className="ak-btn ghost sm" onClick={() => setEditingId(null)}>Cancel</button>
+                </>
               ) : (
-                <div className="topic-actions flex gap-2" style={{ opacity: 0, transition: 'opacity 0.12s' }}>
-                  <button onClick={() => { setEditingId(topic.id); setEditLabel(topic.label) }}
-                    className="px-3 py-1.5 rounded-lg text-sm font-medium border transition-smooth press-effect"
-                    style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                    Edit
+                <>
+                  <span className="ak-row-t"><b>{topic.label}</b><small>#{topic.id}</small></span>
+                  <button type="button" className="ak-icon-btn" onClick={() => { setEditingId(topic.id); setEditLabel(topic.label) }} title="Rename" aria-label={`Rename ${topic.label}`}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
                   </button>
-                  <button onClick={() => removeTopic(topic.id)}
-                    className="px-3 py-1.5 rounded-lg text-sm font-medium border transition-smooth press-effect text-red-600"
-                    style={{ borderColor: '#fca5a5' }}>
-                    Delete
+                  <button type="button" className="ak-icon-btn danger" onClick={() => removeTopic(topic.id)} title="Delete" aria-label={`Delete ${topic.label}`}>
+                    <TrashIcon size={15} color="currentColor" />
                   </button>
-                </div>
+                </>
               )}
             </div>
           ))}
         </div>
-      </div>
-
-      <p className="text-xs text-center mt-8" style={{ color: 'var(--slate)' }}>
-        {topics.length} topic{topics.length !== 1 ? 's' : ''} total
-      </p>
-    </div>
+      </Panel>
+      <style>{TP_CSS}</style>
+    </AdminPage>
   )
 }
+
+const TP_CSS = `
+.tp-limit{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--mut)}
+.tp-limit .ak-field{width:90px}
+.tp-add{display:flex;gap:8px}
+.ak .tp-emoji{width:64px;flex-shrink:0;text-align:center;font-size:20px;padding:0}
+@media (max-width:560px){.tp-add{flex-wrap:wrap}.tp-add .ak-btn{width:100%}.tp-add .ak-field:not(.tp-emoji){flex:1;min-width:0}}
+.tp-row{cursor:grab}
+.tp-grip{color:var(--soft);display:inline-flex}
+.tp-emo{width:36px;height:36px;flex-shrink:0;border-radius:12px;background:var(--f);display:inline-flex;align-items:center;justify-content:center;font-size:18px}
+`
