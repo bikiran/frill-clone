@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { resolveCompanyUser } from '@/lib/client-cache'
+import { peekCompanyUser, readStored, resolveCompanyUser, writeStored } from '@/lib/client-cache'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import AdminList, { type RowAction } from '@/components/announcements/AdminList'
 import NotifyDialog from '@/components/announcements/NotifyDialog'
@@ -14,10 +14,20 @@ import { annAction, boardBase, loadAdmin, type AdminData } from '@/components/an
 
 const VIEW_KEY = 'colvy_announcements_view'
 
+// The list as this browser last saw it paints straight away and is refreshed
+// underneath. Posts' text is cut short in the copy: the list only shows an
+// excerpt, and the editor always loads the full post.
+const listKey = (cid: string | null | undefined) => (cid ? `announcements:${cid}` : null)
+const slim = (d: AdminData): AdminData => ({
+  ...d,
+  ideas: [],
+  announcements: d.announcements.map(a => ({ ...a, content: typeof a.content === 'string' ? a.content.slice(0, 600) : a.content, description: typeof a.description === 'string' ? a.description.slice(0, 600) : a.description })),
+})
+
 export default function AnnouncementsAdmin() {
   const router = useRouter()
-  const [companyId, setCompanyId] = useState<string | null>(null)
-  const [data, setData] = useState<AdminData | null>(null)
+  const [companyId, setCompanyId] = useState<string | null>(() => peekCompanyUser()?.companyId || null)
+  const [data, setData] = useState<AdminData | null>(() => readStored<AdminData>(listKey(peekCompanyUser()?.companyId)) || null)
   const [error, setError] = useState<string | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const [view, setView] = useState<'list' | 'grid'>('list')
@@ -34,7 +44,11 @@ export default function AnnouncementsAdmin() {
       const { companyId: cid } = await resolveCompanyUser()
       if (!cid) { setError('No workspace found for your account.'); return }
       setCompanyId(cid)
-      setData(await loadAdmin(cid))
+      const cached = readStored<AdminData>(listKey(cid))
+      if (cached) setData(d => d || cached)
+      const fresh = await loadAdmin(cid)
+      setData(fresh)
+      writeStored(listKey(cid), slim(fresh))
       setNow(Date.now())
     } catch (e: any) { setError(e.message || 'Couldn’t load announcements') }
   }, [])

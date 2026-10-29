@@ -1,379 +1,122 @@
 'use client'
 
-import { loadInsightsOrders } from '@/lib/insights-orders'
-import { useState, useEffect, useMemo } from 'react'
-import { SkeletonList } from '@/components/Skeleton'
-import { CustomerMap, MapPoint } from './CustomerMap'
-import { AU_BY_POSTCODE, AU_STATE_CAPITAL } from './auGeo'
+import { useMemo, useState } from 'react'
+import { BarList, Card, FreqBar, InsightsEmpty, InsightsPage, InsightsSkeleton, Kpi, RangePills, money } from '@/components/insights/InsightsUI'
+import { useInsightsSummary } from '@/components/insights/useInsightsSummary'
+import type { locationSummary } from '@/lib/insights-summary'
+import { CustomerMap, type MapPoint } from './CustomerMap'
 
-type Order = {
-  id: string
-  customer_email: string | null
-  woo_customer_id: number | null
-  total: number
-  order_date: string | null
-  status: string | null
-  line_items: any[]
-  billing: any
-}
+// Location Insights: where customers are, what they spend and which suburbs
+// drive the business. Worked out on the server (/api/insights/summary); orders
+// with no address (mostly in-store sales) are counted in the totals but kept
+// off the map and the suburb list.
 
-const money = (n: number) =>
-  new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', currencyDisplay: 'narrowSymbol' }).format(n || 0)
-const pct = (n: number) => `${Math.round(n)}%`
-const titleCase = (s: string) =>
-  s.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-
-function parseTs(d: string | null | undefined): Date | null {
-  if (!d) return null
-  let s = String(d).trim().replace(' ', 'T').replace(/([+-]\d{2})$/, '$1:00')
-  if (!/(Z|[+-]\d{2}:?\d{2})$/.test(s)) s += 'Z'
-  const p = new Date(s)
-  return isNaN(p.getTime()) ? null : p
-}
-
-const PAID = ['processing', 'completed', 'on-hold']
-const DEAD = ['cancelled', 'refunded', 'failed', 'trash', 'checkout-draft', 'draft', 'pending', 'pending-payment']
+type Summary = ReturnType<typeof locationSummary>
+type Range = 'day' | 'week' | 'month' | 'all' | 'custom'
+const RANGES: [Range, string][] = [['day', 'Today'], ['week', 'Last 7 days'], ['month', 'Last 30 days'], ['all', 'All time'], ['custom', 'Custom']]
 
 export default function LocationInsightsPage() {
-  const [loading, setLoading] = useState(true)
-  const [orders, setOrders] = useState<Order[]>([])
-  const [range, setRange] = useState<'day' | 'week' | 'month' | 'all' | 'custom'>('month')
+  const [range, setRange] = useState<Range>('month')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [suburb, setSuburb] = useState('')
+  const custom = range === 'custom'
+  const { data: s, empty, loading, stale, error } = useInsightsSummary<Summary>('location', { range, from: custom ? from : '', to: custom ? to : '', suburb })
 
-  useEffect(() => {
-    let live = true
-    loadInsightsOrders(({ orders: list }) => {
-      if (!live) return
-      setOrders(list)
-      setLoading(false)
-    })
-    return () => { live = false }
-  }, [])
+  const points = useMemo<MapPoint[]>(() => (s?.suburbs || []).filter(x => x.lat != null && x.lng != null)
+    .map(x => ({ name: x.name, revenue: x.revenue, customers: x.customers, orders: x.orders, lat: x.lat as number, lng: x.lng as number })), [s])
 
-  // ── Date window ────────────────────────────────────────────────────────────
-  const window = useMemo(() => {
-    const now = new Date()
-    if (range === 'all') return { start: new Date(0), end: new Date(8640000000000000) }
-    if (range === 'custom') {
-      return {
-        start: from ? new Date(from + 'T00:00:00') : new Date(0),
-        end: to ? new Date(to + 'T23:59:59') : now,
-      }
-    }
-    const days = range === 'day' ? 1 : range === 'week' ? 7 : 30
-    return { start: new Date(now.getTime() - days * 86400000), end: now }
-  }, [range, from, to])
-
-  const suburbOf = (o: Order): string => {
-    const c = o.billing?.city || o.billing?.suburb || ''
-    return c ? titleCase(String(c).trim()) : 'Unknown'
-  }
-  const customerOf = (o: Order): string =>
-    (o.woo_customer_id ? `c${o.woo_customer_id}` : (o.customer_email || '').toLowerCase()) || 'guest'
-
-  // ── Filtered orders ─────────────────────────────────────────────────────────
-  const visible = useMemo(() => {
-    return orders.filter(o => {
-      const d = parseTs(o.order_date)
-      if (!d) return range === 'all'
-      if (d < window.start || d > window.end) return false
-      if (suburb && suburbOf(o) !== suburb) return false
-      return true
-    })
-  }, [orders, window, suburb, range])
-
-  const suburbList = useMemo(() => {
-    const set = new Set<string>()
-    orders.forEach(o => set.add(suburbOf(o)))
-    return Array.from(set).filter(s => s && s !== 'Unknown').sort()
-  }, [orders])
-
-  // ── Aggregations ────────────────────────────────────────────────────────────
-  const stats = useMemo(() => {
-    const paid = visible.filter(o => !DEAD.includes(String(o.status || '').toLowerCase().replace(/^wc-/, '')))
-    const bySuburb: Record<string, { revenue: number; orders: number; customers: Set<string>; pc: string; state: string }> = {}
-    const byCustomer: Record<string, number> = {}
-    const byProduct: Record<string, { revenue: number; qty: number }> = {}
-    let revenue = 0
-
-    for (const o of paid) {
-      const s = suburbOf(o)
-      const t = Number(o.total) || 0
-      revenue += t
-      const cust = customerOf(o)
-      byCustomer[cust] = (byCustomer[cust] || 0) + 1
-      ;(bySuburb[s] ||= { revenue: 0, orders: 0, customers: new Set(), pc: '', state: '' })
-      bySuburb[s].revenue += t
-      bySuburb[s].orders += 1
-      bySuburb[s].customers.add(cust)
-      if (!bySuburb[s].pc && o.billing?.postcode) bySuburb[s].pc = String(o.billing.postcode).trim()
-      if (!bySuburb[s].state && o.billing?.state) bySuburb[s].state = String(o.billing.state).trim().toUpperCase()
-      for (const li of (o.line_items || [])) {
-        const name = titleCase(String(li.name || 'Item'))
-        ;(byProduct[name] ||= { revenue: 0, qty: 0 })
-        byProduct[name].revenue += Number(li.total || 0)
-        byProduct[name].qty += Number(li.quantity || 1)
-      }
-    }
-
-    const suburbs = Object.entries(bySuburb)
-      .map(([name, v]) => ({ name, revenue: v.revenue, orders: v.orders, customers: v.customers.size, pc: v.pc, state: v.state }))
-      .sort((a, b) => b.revenue - a.revenue)
-
-    const products = Object.entries(byProduct)
-      .map(([name, v]) => ({ name, revenue: v.revenue, qty: v.qty }))
-      .sort((a, b) => b.revenue - a.revenue)
-
-    const customers = Object.keys(byCustomer)
-    const repeatCustomers = customers.filter(c => byCustomer[c] > 1).length
-    const freq = { one: 0, two: 0, threePlus: 0 }
-    for (const c of customers) {
-      const n = byCustomer[c]
-      if (n >= 3) freq.threePlus++
-      else if (n === 2) freq.two++
-      else freq.one++
-    }
-
-    return {
-      revenue,
-      orders: paid.length,
-      customers: customers.length,
-      suburbs,
-      products,
-      repeatRate: customers.length ? (repeatCustomers / customers.length) * 100 : 0,
-      avgSpend: customers.length ? revenue / customers.length : 0,
-      topSuburb: suburbs[0] || null,
-      mostActive: [...suburbs].sort((a, b) => b.customers - a.customers)[0] || null,
-      topProduct: products[0] || null,
-      freq,
-    }
-  }, [visible])
-
-  const insights = useMemo(() => {
-    const out: string[] = []
-    if (stats.orders === 0) return out
-    if (stats.topSuburb) {
-      const share = stats.revenue ? (stats.topSuburb.revenue / stats.revenue) * 100 : 0
-      out.push(`${stats.topSuburb.name} is your strongest area — ${money(stats.topSuburb.revenue)} across ${stats.topSuburb.orders} orders (${pct(share)} of revenue in this period).`)
-    }
-    if (stats.mostActive && stats.topSuburb && stats.mostActive.name !== stats.topSuburb.name) {
-      out.push(`${stats.mostActive.name} has the most distinct customers (${stats.mostActive.customers}) even though it isn't your highest-spending suburb — a good target for repeat-purchase campaigns.`)
-    }
-    out.push(`Repeat purchase rate is ${pct(stats.repeatRate)} — ${stats.repeatRate >= 30 ? 'strong loyalty' : 'room to grow with follow-ups and reminders'}.`)
-    if (stats.topProduct) {
-      out.push(`Your top seller is "${stats.topProduct.name}" (${money(stats.topProduct.revenue)}), worth featuring in campaigns to your best suburbs.`)
-    }
-    if (stats.suburbs.length >= 3) {
-      const top3 = stats.suburbs.slice(0, 3).reduce((s, x) => s + x.revenue, 0)
-      const share = stats.revenue ? (top3 / stats.revenue) * 100 : 0
-      out.push(`Your top 3 suburbs drive ${pct(share)} of revenue — ${share > 60 ? 'quite concentrated, so a delivery push into nearby suburbs could expand reach.' : 'a healthy spread across areas.'}`)
-    }
-    return out
-  }, [stats])
-
-  const mapPoints = useMemo<MapPoint[]>(() => {
-    const pts: MapPoint[] = []
-    for (const s of stats.suburbs) {
-      const coord = (s.pc && AU_BY_POSTCODE[s.pc]) || (s.state && AU_STATE_CAPITAL[s.state]) || null
-      if (!coord) continue
-      pts.push({ name: s.name, revenue: s.revenue, customers: s.customers, orders: s.orders, lat: coord[0], lng: coord[1] })
-    }
-    return pts
-  }, [stats.suburbs])
-
-  // ── UI helpers ──────────────────────────────────────────────────────────────
-  const card: React.CSSProperties = { background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: 18 }
-  const statLbl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em' }
-  const statNum: React.CSSProperties = { fontSize: 26, fontWeight: 800, color: 'var(--ink)', margin: '4px 0 0' }
-  const sub: React.CSSProperties = { fontSize: 12, color: 'var(--slate)', marginTop: 2 }
-  const h2: React.CSSProperties = { fontSize: 15, fontWeight: 800, color: 'var(--ink)', margin: '0 0 12px' }
-  const rangeBtn = (v: typeof range, label: string) => (
-    <button key={v} type="button" onClick={() => setRange(v)}
-      style={{ padding: '7px 12px', borderRadius: 9, border: '1px solid var(--border)', background: range === v ? 'var(--peach)' : '#fff', color: range === v ? 'var(--coral)' : 'var(--ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-      {label}
-    </button>
+  const controls = (
+    <>
+      <RangePills value={range} options={RANGES} onChange={setRange} />
+      {custom && (
+        <span className="loc-dates">
+          <input className="ins-field" type="date" aria-label="From" value={from} onChange={e => setFrom(e.target.value)} />
+          <span>to</span>
+          <input className="ins-field" type="date" aria-label="To" value={to} onChange={e => setTo(e.target.value)} />
+        </span>
+      )}
+      <span className="loc-sub">
+        <select className="ins-field" aria-label="Suburb" value={suburb} onChange={e => setSuburb(e.target.value)}>
+          <option value="">All suburbs</option>
+          {(s?.suburbList || []).map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="6 9 12 15 18 9" /></svg>
+      </span>
+    </>
   )
-
-  const Bars = ({ rows, max, color, valueFmt }: { rows: { name: string; value: number; meta?: string }[]; max: number; color: string; valueFmt: (n: number) => string }) => (
-    <div style={{ display: 'grid', gap: 9 }}>
-      {rows.map(r => (
-        <div key={r.name}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, marginBottom: 3 }}>
-            <span style={{ color: 'var(--ink)', fontWeight: 600 }}>{r.name}</span>
-            <span style={{ color: 'var(--slate)' }}>{valueFmt(r.value)}{r.meta ? ` · ${r.meta}` : ''}</span>
-          </div>
-          <div style={{ height: 8, borderRadius: 6, background: 'var(--canvas)', overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${max ? Math.max(3, (r.value / max) * 100) : 0}%`, background: color, borderRadius: 6 }} />
-          </div>
-        </div>
-      ))}
-      {rows.length === 0 && <p style={{ fontSize: 13, color: 'var(--slate)', margin: 0 }}>No data for this period.</p>}
-    </div>
-  )
-
-  if (loading) return <div style={{ padding: 24 }}><SkeletonList /></div>
-
-  const metricCards: { label: string; value: string; sub?: string }[] = [
-    { label: 'Total Customers', value: String(stats.customers) },
-    { label: 'Total Suburbs', value: String(stats.suburbs.length) },
-    { label: 'Total Location Revenue', value: money(stats.revenue) },
-    { label: 'Avg Spend / Customer', value: money(stats.avgSpend) },
-    { label: 'Highest-Spending Suburb', value: stats.topSuburb?.name || '—', sub: stats.topSuburb ? money(stats.topSuburb.revenue) : undefined },
-    { label: 'Most Popular Product', value: stats.topProduct?.name || '—', sub: stats.topProduct ? money(stats.topProduct.revenue) : undefined },
-    { label: 'Most Active Area', value: stats.mostActive?.name || '—', sub: stats.mostActive ? `${stats.mostActive.customers} customers` : undefined },
-    { label: 'Repeat Purchase Rate', value: pct(stats.repeatRate) },
-  ]
-
-  const totalFreq = stats.freq.one + stats.freq.two + stats.freq.threePlus
 
   return (
-    <div style={{ padding: '24px 28px', maxWidth: 1200 }}>
-      <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>Location Insights</h1>
-      <p style={{ fontSize: 14, color: 'var(--slate)', margin: '6px 0 20px' }}>
-        Where your customers are, what they spend, and which suburbs drive your business.
-      </p>
-
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 20 }}>
-        {rangeBtn('day', 'Daily')}
-        {rangeBtn('week', 'Weekly')}
-        {rangeBtn('month', 'Monthly')}
-        {rangeBtn('all', 'All time')}
-        {rangeBtn('custom', 'Custom')}
-        {range === 'custom' && (
-          <>
-            <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ padding: '7px 10px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13 }} />
-            <span style={{ color: 'var(--slate)' }}>to</span>
-            <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ padding: '7px 10px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13 }} />
-          </>
-        )}
-        <select value={suburb} onChange={e => setSuburb(e.target.value)}
-          style={{ padding: '7px 10px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13, background: '#fff', marginLeft: 4 }}>
-          <option value="">All suburbs</option>
-          {suburbList.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-      </div>
-
-      {/* Metric cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: 12, marginBottom: 24 }}>
-        {metricCards.map(m => (
-          <div key={m.label} style={card}>
-            <div style={statLbl}>{m.label}</div>
-            <p style={{ ...statNum, fontSize: m.value.length > 12 ? 18 : 26, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.value}</p>
-            {m.sub && <div style={sub}>{m.sub}</div>}
+    <InsightsPage title="Location" accent="insights" sub="Where your customers are, what they spend, and which suburbs drive your business." controls={controls}>
+      {error && <p className="ins-err">{error}</p>}
+      {loading && !s ? <InsightsSkeleton /> : empty || !s ? (
+        <InsightsEmpty title="No orders yet" body="Once your store is connected and its orders have synced, you’ll see which suburbs your customers come from."
+          href="/admin/integrations" cta="Connect your store" />
+      ) : (
+        <div className={`ins-body${stale ? ' stale' : ''}`}>
+          <div className="ins-kpis">
+            <Kpi icon="money" label="Revenue" value={money(s.revenue)} sub={`${s.orders.toLocaleString('en-AU')} paid orders`} tone="#16a34a" />
+            <Kpi icon="people" label="Customers" value={s.customers.toLocaleString('en-AU')} sub={`${money(s.avgSpend)} each on average`} tone="#6366f1" />
+            <Kpi icon="pin" label="Suburbs" value={s.suburbCount.toLocaleString('en-AU')} sub="With at least one order" tone="#0ea5e9" />
+            <Kpi icon="trophy" label="Top suburb" value={s.topSuburb?.name || '—'} sub={s.topSuburb ? `${money(s.topSuburb.revenue)} · ${s.topSuburb.orders} orders` : 'No orders in this period'} tone="#f59e0b" />
+            <Kpi icon="people" label="Most customers" value={s.mostActive?.name || '—'} sub={s.mostActive ? `${s.mostActive.customers} customers` : undefined} tone="#d946ef" />
+            <Kpi icon="repeat" label="Came back" value={`${s.repeatRate}%`} sub="Bought more than once" tone="#ff6a4d" />
           </div>
-        ))}
-      </div>
 
-      {/* Geographic Overview */}
-      <div style={{ ...card, marginBottom: 16 }}>
-        <h2 style={h2}>Geographic Overview</h2>
-        <p style={{ fontSize: 13.5, color: 'var(--ink)', margin: 0, lineHeight: 1.6 }}>
-          {stats.orders === 0
-            ? 'No paid orders in this period yet.'
-            : `In this period you served ${stats.customers} customer${stats.customers === 1 ? '' : 's'} across ${stats.suburbs.length} suburb${stats.suburbs.length === 1 ? '' : 's'}, generating ${money(stats.revenue)} from ${stats.orders} order${stats.orders === 1 ? '' : 's'}. ${stats.topSuburb ? `${stats.topSuburb.name} leads with ${money(stats.topSuburb.revenue)}.` : ''}`}
-        </p>
-      </div>
+          <div className="ins-grid-map">
+            <Card className="loc-mapcard" title="Customer map" sub={points.length ? `${points.length} suburb${points.length === 1 ? '' : 's'} by postcode · bubble size is revenue` : undefined}>
+              {points.length > 0
+                ? <div className="ins-map"><CustomerMap points={points} /></div>
+                : <p className="ins-empty">{s.orders ? 'None of the orders in this period have a postcode to map.' : 'No orders in this period.'}</p>}
+            </Card>
+            <Card title="Top suburbs" sub="By revenue">
+              <BarList color="#16a34a" fmt={n => money(n)} empty="No orders with an address in this period."
+                rows={s.suburbs.slice(0, 8).map(x => ({ name: x.name, value: x.revenue, meta: `${x.orders} order${x.orders === 1 ? '' : 's'} · ${x.customers} customer${x.customers === 1 ? '' : 's'}${x.state ? ` · ${x.state}` : ''}` }))} />
+              {s.noAddress.orders > 0 && (
+                <p className="loc-noaddr"><b>{s.noAddress.orders.toLocaleString('en-AU')} orders</b> ({money(s.noAddress.revenue)}) have no address, mostly in-store sales. They count in the totals but not here.</p>
+              )}
+            </Card>
+          </div>
 
-      {/* Customer Map — interactive */}
-      <div style={{ ...card, marginBottom: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <h2 style={{ ...h2, margin: 0 }}>Customer Map</h2>
-          <span style={{ fontSize: 11, color: 'var(--slate)', background: 'var(--canvas)', padding: '3px 8px', borderRadius: 10 }}>Bubble size = revenue</span>
-        </div>
-        {mapPoints.length > 0 ? (
-          <CustomerMap points={mapPoints} />
-        ) : (
-          <p style={{ fontSize: 13, color: 'var(--slate)', margin: 0 }}>
-            {stats.orders === 0 ? 'No orders in this period.' : 'No mappable locations — orders in this period are missing postcodes.'}
-          </p>
-        )}
-        {mapPoints.length > 0 && (
-          <p style={{ fontSize: 11.5, color: 'var(--slate)', margin: '10px 0 0' }}>
-            {mapPoints.length} suburb{mapPoints.length === 1 ? '' : 's'} plotted by postcode. Tap a bubble for detail.
-          </p>
-        )}
-      </div>
-
-      {/* Two-column: Suburb Performance + Purchase Categories */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16, marginBottom: 16 }}>
-        <div style={card}>
-          <h2 style={h2}>Suburb Performance</h2>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-              <thead><tr style={{ textAlign: 'left', color: 'var(--slate)' }}>
-                <th style={{ padding: '6px 8px' }}>Suburb</th>
-                <th style={{ padding: '6px 8px', textAlign: 'right' }}>Revenue</th>
-                <th style={{ padding: '6px 8px', textAlign: 'right' }}>Orders</th>
-                <th style={{ padding: '6px 8px', textAlign: 'right' }}>Customers</th>
-              </tr></thead>
-              <tbody>
-                {stats.suburbs.slice(0, 10).map(s => (
-                  <tr key={s.name} style={{ borderTop: '1px solid var(--border)' }}>
-                    <td style={{ padding: '7px 8px', color: 'var(--ink)', fontWeight: 600 }}>{s.name}</td>
-                    <td style={{ padding: '7px 8px', textAlign: 'right' }}>{money(s.revenue)}</td>
-                    <td style={{ padding: '7px 8px', textAlign: 'right' }}>{s.orders}</td>
-                    <td style={{ padding: '7px 8px', textAlign: 'right' }}>{s.customers}</td>
-                  </tr>
-                ))}
-                {stats.suburbs.length === 0 && <tr><td colSpan={4} style={{ padding: 10, color: 'var(--slate)' }}>No data.</td></tr>}
-              </tbody>
-            </table>
+          <div className="ins-grid2">
+            <Card title="Top products" sub={suburb ? `Bought in ${suburb}` : 'Across every suburb'}>
+              <BarList color="#6366f1" fmt={n => money(n)} rows={s.products.map(p => ({ name: p.name, value: p.revenue, meta: `${p.qty.toLocaleString('en-AU')} sold` }))} />
+            </Card>
+            <div className="loc-stack">
+              <Card title="How often they buy" sub={`${s.customers.toLocaleString('en-AU')} customers`}>
+                <FreqBar freq={s.freq} />
+              </Card>
+              {s.takeaways.length > 0 && (
+                <Card title="What stands out" sub="From this period’s orders" className="loc-take">
+                  <ul>
+                    {s.takeaways.map((t, i) => <li key={i} style={{ animationDelay: `${i * 50}ms` }}><span aria-hidden>{i + 1}</span><p>{t}</p></li>)}
+                  </ul>
+                </Card>
+              )}
+            </div>
           </div>
         </div>
-
-        <div style={card}>
-          <h2 style={h2}>Purchase Categories</h2>
-          <Bars color="#6366f1" max={stats.products[0]?.revenue || 0}
-            rows={stats.products.slice(0, 8).map(p => ({ name: p.name, value: p.revenue, meta: `${p.qty} sold` }))}
-            valueFmt={money} />
-          <p style={{ fontSize: 11.5, color: 'var(--slate)', margin: '12px 0 0' }}>
-            Shown at product level. True WooCommerce category grouping is a follow-up (needs product taxonomy sync).
-          </p>
-        </div>
-      </div>
-
-      {/* Spending by Location + Purchase Frequency */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16, marginBottom: 16 }}>
-        <div style={card}>
-          <h2 style={h2}>Spending by Location</h2>
-          <Bars color="#15803d" max={stats.suburbs[0]?.revenue || 0}
-            rows={stats.suburbs.slice(0, 10).map(s => ({ name: s.name, value: s.revenue }))}
-            valueFmt={money} />
-        </div>
-        <div style={card}>
-          <h2 style={h2}>Purchase Frequency</h2>
-          <Bars color="#f59e0b" max={Math.max(stats.freq.one, stats.freq.two, stats.freq.threePlus)}
-            rows={[
-              { name: 'One-time', value: stats.freq.one },
-              { name: 'Twice', value: stats.freq.two },
-              { name: '3+ times', value: stats.freq.threePlus },
-            ]}
-            valueFmt={n => `${n}${totalFreq ? ` (${pct((n / totalFreq) * 100)})` : ''}`} />
-          <p style={{ fontSize: 12, color: 'var(--slate)', margin: '12px 0 0' }}>
-            Repeat purchase rate: <strong style={{ color: 'var(--ink)' }}>{pct(stats.repeatRate)}</strong>
-          </p>
-        </div>
-      </div>
-
-      {/* AI Geographic Insights */}
-      <div style={{ ...card, background: 'linear-gradient(180deg,#faf9ff,#fff)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="#8b5cf6"><path d="M12 2l2.09 6.26L20 10l-5.91 1.74L12 18l-2.09-6.26L4 10l5.91-1.74z"/></svg>
-          <h2 style={{ ...h2, margin: 0 }}>AI Geographic Insights</h2>
-        </div>
-        {insights.length === 0 ? (
-          <p style={{ fontSize: 13.5, color: 'var(--slate)', margin: 0 }}>Insights appear once there are paid orders in the selected period.</p>
-        ) : (
-          <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 8 }}>
-            {insights.map((t, i) => (
-              <li key={i} style={{ fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.55 }}>{t}</li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </div>
+      )}
+      <style>{PAGE_CSS}</style>
+    </InsightsPage>
   )
 }
+
+const PAGE_CSS = `
+.loc-dates{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#8e8e93}
+.loc-sub{position:relative;display:inline-flex;align-items:center;margin-left:auto}
+.loc-sub select{appearance:none;-webkit-appearance:none;padding-right:34px;cursor:pointer;max-width:220px}
+.loc-sub svg{position:absolute;right:13px;pointer-events:none;color:#71717a}
+@media (max-width:700px){.loc-sub{margin-left:0}}
+.loc-noaddr{margin:16px 0 0;padding:11px 13px;border-radius:14px;background:#f7f7f8;font-size:12.5px;line-height:1.5;color:#71717a}
+.loc-noaddr b{color:#3f3f46;font-weight:650}
+.loc-take{background:linear-gradient(180deg,#fff7f4 0%,#fff 70%)}
+.loc-stack{display:flex;flex-direction:column;gap:14px;min-width:0}
+.loc-mapcard{display:flex;flex-direction:column}
+.loc-mapcard .ins-map{flex:1;min-height:400px}
+.loc-mapcard .ins-map .cmap{position:absolute!important;inset:0;height:auto!important}
+.loc-take ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.loc-take li{display:flex;gap:12px;align-items:flex-start;padding:13px 14px;border-radius:16px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.05);animation:insIn .4s cubic-bezier(.22,1,.36,1) both}
+.loc-take li span{flex-shrink:0;width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#ff6a4d;color:#fff;font-family:var(--fd);font-size:13px;font-weight:700}
+.loc-take li p{margin:0;font-size:13.5px;line-height:1.5;color:#3f3f46}
+`

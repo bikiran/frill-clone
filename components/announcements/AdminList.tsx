@@ -5,6 +5,7 @@
 // and who was told. Presentational: app/admin/announcements/page.tsx owns the
 // data and the actions. Full width of the admin content area at every size.
 
+import { reportFonts } from '@/lib/fonts'
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
@@ -283,7 +284,7 @@ export default function AdminList({ items, loading, error, onRetry, now, schemaR
   }
 
   return (
-    <div className="an-root">
+    <div className={`an-root ${reportFonts}`}>
       <style>{ADMIN_CSS}</style>
       {header}
       {body}

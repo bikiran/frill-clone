@@ -29,7 +29,7 @@ function loadLeaflet(): Promise<any> {
   return leafletPromise
 }
 
-export function CustomerMap({ points }: { points: MapPoint[] }) {
+export function CustomerMap({ points, height = 440 }: { points: MapPoint[]; height?: number }) {
   const elRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<any>(null)
   const layerRef = useRef<any>(null)
@@ -56,10 +56,10 @@ export function CustomerMap({ points }: { points: MapPoint[] }) {
       for (const p of points) {
         const radius = 7 + Math.sqrt(p.revenue / maxRev) * 26
         const m = L.circleMarker([p.lat, p.lng], {
-          radius, color: '#ff7a6b', weight: 2, fillColor: '#ff7a6b', fillOpacity: 0.45,
+          radius, color: '#ff5a3c', weight: 1.5, fillColor: '#ff6a4d', fillOpacity: 0.42,
         })
         m.bindPopup(
-          `<div style="font-family:system-ui;font-size:13px"><b>${p.name}</b><br/>` +
+          `<div style="font:13px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"><b style="font-size:14px">${p.name}</b><br/>` +
           `${money(p.revenue)} &middot; ${p.orders} order${p.orders === 1 ? '' : 's'}<br/>` +
           `${p.customers} customer${p.customers === 1 ? '' : 's'}</div>`
         )
@@ -75,5 +75,22 @@ export function CustomerMap({ points }: { points: MapPoint[] }) {
 
   useEffect(() => () => { if (mapRef.current) { try { mapRef.current.remove() } catch {}; mapRef.current = null } }, [])
 
-  return <div ref={elRef} style={{ height: 440, width: '100%', borderRadius: 12, overflow: 'hidden', background: 'var(--canvas)' }} />
+  // isolation keeps Leaflet's own stacking (its +/- controls sit at z-index
+  // 1000) inside the map, so the rail's flyouts and menus draw over it.
+  return (
+    <>
+      <style>{MAP_CSS}</style>
+      <div ref={elRef} className="cmap" style={{ height, width: '100%', borderRadius: 16, overflow: 'hidden', background: '#f4f4f5', isolation: 'isolate', position: 'relative', zIndex: 0 }} />
+    </>
+  )
 }
+
+// Softer, grey tiles so the bubbles stand out; pill zoom buttons.
+const MAP_CSS = `
+.cmap .leaflet-tile-pane{filter:grayscale(1) contrast(.92) brightness(1.04)}
+.cmap .leaflet-control-zoom{border:none!important;border-radius:14px!important;overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 6px 16px -6px rgba(16,24,40,.25)!important}
+.cmap .leaflet-control-zoom a{width:34px!important;height:34px!important;line-height:34px!important;color:#18181b!important;border-bottom-color:#f1f1f3!important}
+.cmap .leaflet-control-zoom a::before{display:none!important}
+.cmap .leaflet-popup-content-wrapper{border-radius:14px;box-shadow:0 12px 32px -10px rgba(16,24,40,.3)}
+.cmap .leaflet-control-attribution{font-size:10px;background:rgba(255,255,255,.75)!important;border-radius:8px 0 0 0}
+`
