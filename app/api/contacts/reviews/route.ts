@@ -3,6 +3,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { linkedContacts } from '@/lib/identity'
 
+// What the contact panel shows for each: enough to draw the review or comment
+// the way Google, Instagram or Facebook would (photo, reply, the post).
+const REVIEW_COLS = 'id, review_id, reviewer_name, reviewer_photo, star_rating, comment, reply_comment, replied_at, review_created_at, contact_id'
+const COMMENT_COLS = 'id, platform, author_name, author_photo, message, attachment_url, is_replied, reply_text, external_post_id, external_comment_id, commented_at, created_at, post_id, contact_id'
+
 export const dynamic = 'force-dynamic'
 
 function admin() {
@@ -86,7 +91,7 @@ export async function GET(req: NextRequest) {
 
     // Pull this company's reviews once; split into "already ours" and candidates.
     const { data: reviews } = await db.from('google_reviews')
-      .select('id, review_id, reviewer_name, star_rating, comment, review_created_at, contact_id')
+      .select(REVIEW_COLS)
       .eq('company_id', companyId)
       .order('review_created_at', { ascending: false })
       .limit(2000)
@@ -109,7 +114,7 @@ export async function GET(req: NextRequest) {
       const { data: upd } = await db.from('google_reviews')
         .update({ contact_id: contactId, contact_name: me?.name || null, match_checked_at: new Date().toISOString() })
         .eq('id', r.id).is('contact_id', null)
-        .select('id, review_id, reviewer_name, star_rating, comment, review_created_at, contact_id')
+        .select(REVIEW_COLS)
       if (Array.isArray(upd) && upd.length) linked.push(upd[0])
     }
 
@@ -117,8 +122,9 @@ export async function GET(req: NextRequest) {
     const seen = new Set<string>()
     const out = linked.filter((r: any) => (seen.has(r.id) ? false : (seen.add(r.id), true)))
       .map((r: any) => ({
-        id: r.id, reviewId: r.review_id, reviewerName: r.reviewer_name,
+        id: r.id, reviewId: r.review_id, reviewerName: r.reviewer_name, reviewerPhoto: r.reviewer_photo || null,
         rating: r.star_rating, comment: r.comment, createdAt: r.review_created_at,
+        reply: r.reply_comment || null, repliedAt: r.replied_at || null,
       }))
       .sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
 
@@ -133,14 +139,14 @@ export async function GET(req: NextRequest) {
     try {
       const linkedComments: any[] = []
       const { data: cLinked } = await db.from('social_comments')
-        .select('id, platform, author_name, message, external_post_id, external_comment_id, commented_at, created_at, post_id, contact_id')
+        .select(COMMENT_COLS)
         .eq('company_id', companyId).in('contact_id', groupIds.length ? groupIds : ['00000000-0000-0000-0000-000000000000'])
         .order('commented_at', { ascending: false }).limit(50)
       if (Array.isArray(cLinked)) linkedComments.push(...cLinked)
 
       if (metaIds.length) {
         const { data: byAuthor } = await db.from('social_comments')
-          .select('id, platform, author_name, message, external_post_id, external_comment_id, commented_at, created_at, post_id, contact_id, author_id')
+          .select(`${COMMENT_COLS}, author_id`)
           .eq('company_id', companyId).in('author_id', metaIds).is('contact_id', null)
           .order('commented_at', { ascending: false }).limit(50)
         for (const c of (byAuthor || [])) {
@@ -153,7 +159,8 @@ export async function GET(req: NextRequest) {
       const seenC = new Set<string>()
       socialComments = linkedComments.filter((c: any) => (seenC.has(c.id) ? false : (seenC.add(c.id), true)))
         .map((c: any) => ({
-          id: c.id, platform: c.platform, authorName: c.author_name, message: c.message,
+          id: c.id, platform: c.platform, authorName: c.author_name, authorPhoto: c.author_photo || null, message: c.message,
+          attachment: c.attachment_url || null, replied: !!c.is_replied, reply: c.reply_text || null, postId: c.post_id || null,
           externalCommentId: c.external_comment_id, externalPostId: c.external_post_id,
           // commented_at can be null for some IG/webhook comments — fall back to
           // the row's ingestion time so the thread pill sorts into view instead
@@ -161,6 +168,15 @@ export async function GET(req: NextRequest) {
           commentedAt: c.commented_at || c.created_at || null,
         }))
         .sort((a: any, b: any) => new Date(b.commentedAt || 0).getTime() - new Date(a.commentedAt || 0).getTime())
+      // The posts the latest comments were left on (thumbnail, caption, link).
+      const postIds = [...new Set(socialComments.slice(0, 10).map((c: any) => c.postId).filter(Boolean))]
+      if (postIds.length) {
+        try {
+          const { data: posts } = await db.from('social_posts').select('id, permalink, message, media_url, post_type').in('id', postIds)
+          const byId = new Map((posts || []).map((p: any) => [p.id, { permalink: p.permalink || null, caption: p.message || null, media: p.media_url || null, type: p.post_type || null }]))
+          socialComments = socialComments.map((c: any) => ({ ...c, post: c.postId ? byId.get(c.postId) || null : null }))
+        } catch {}
+      }
     } catch { socialComments = [] }
 
     const latestComment = socialComments[0] || null
