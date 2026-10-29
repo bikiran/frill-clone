@@ -177,7 +177,7 @@ export const PERMISSION_SUITES: SuiteDef[] = [
     key: 'feedback',
     label: 'Feedback',
     features: [
-      { key: 'ideas', label: 'Ideas', paths: [] }, // Ideas is the public board (/?view=ideas) — nav-only toggle, no admin route to gate
+      { key: 'ideas', label: 'Ideas', paths: ['/admin/ideas'] },
       { key: 'roadmap', label: 'Roadmap', paths: ['/roadmap', '/admin/roadmap'] },
       { key: 'announcements', label: 'Announcements', paths: ['/admin/announcements'] },
       { key: 'polls', label: 'Polls', paths: ['/admin/polls'] },

@@ -170,10 +170,10 @@ const SECTIONS: NavSection[] = [
   ] },
   { key: 'feedback', label: 'Feedback', glyph: 'feedback', groups: [
     { items: [
-      // The ideas board itself (the public board, like Roadmap). ?view=ideas
-      // reaches it even when another page is set as the board's homepage.
-      { label: 'Ideas', href: '/?view=ideas', icon: 'ideas' },
-      { label: 'Roadmap', href: '/roadmap', icon: 'roadmap' },
+      // The ideas board and roadmap, shown inside the admin (the public
+      // versions stay at /?view=ideas and /roadmap).
+      { label: 'Ideas', href: '/admin/ideas', icon: 'ideas' },
+      { label: 'Roadmap', href: '/admin/roadmap', icon: 'roadmap' },
       { label: 'Announcements', href: '/admin/announcements', icon: 'announcements' },
       { label: 'Polls', href: '/admin/polls', icon: 'polls' },
       { label: 'Forms', href: '/admin/forms', icon: 'forms' },
