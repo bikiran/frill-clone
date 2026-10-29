@@ -1,7 +1,7 @@
-import { redirect } from 'next/navigation'
+import RoadmapBoard from '@/components/board/RoadmapBoard'
 
-// The roadmap is the public board page at /roadmap (that's where the sidebar's
-// Roadmap link goes). Links to /admin/roadmap land there.
-export default function AdminRoadmapRedirect() {
-  redirect('/roadmap')
+// The roadmap inside the admin, so Feedback → Roadmap keeps the sidebar like
+// every other admin page. The public one is still at /roadmap.
+export default function AdminRoadmapPage() {
+  return <RoadmapBoard embedded />
 }
