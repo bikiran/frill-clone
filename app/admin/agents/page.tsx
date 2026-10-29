@@ -384,7 +384,7 @@ export default function AgentsPage() {
         <div id="ag-top" style={{ marginBottom: 20, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ minWidth: 0, flex: '1 1 320px' }}>
             <h1 style={{ margin: 0, fontSize: 'clamp(26px, 3.4vw, 30px)', fontWeight: 800, letterSpacing: '-0.025em', lineHeight: 1.1, color: 'var(--ink)' }}>AI agents</h1>
-            <p style={{ margin: '8px 0 0', fontSize: 14.5, color: '#71717a', maxWidth: 640, lineHeight: 1.55 }}>Everything Colvy’s AI does, in one place — the Support Agent, the auto-reply, the assistant and connected apps. Each run shows what it knew, what it decided, which permission allowed it, and why.</p>
+            <p style={{ margin: '8px 0 0', fontSize: 14.5, color: '#71717a', maxWidth: 640, lineHeight: 1.55 }}>Your AI team: what each agent did, and why.</p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <a href="/admin/agents/needs-you" className="ag-ghost ag-headlink" style={{ display: 'inline-flex', alignItems: 'center', height: 38, textDecoration: 'none' }}>Needs you</a>
