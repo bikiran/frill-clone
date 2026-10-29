@@ -40,7 +40,7 @@ import ColvyAssistant from '@/components/ColvyAssistant'
 import SuperAdminBar from '@/components/SuperAdminBar'
 import RouteScrollTop from '@/components/RouteScrollTop'
 import SetupRing from '@/components/SetupRing'
-import AdminRail, { RAIL_W, type RailSection } from '@/components/AdminRail'
+import AdminRail, { RAIL_W, RailGlyph, type RailSection } from '@/components/AdminRail'
 import { SettingsAccess } from '@/components/settings/SettingsShell'
 import { SETTINGS_NAV } from '@/components/settings/settings-nav'
 import { canUseFeature, canAccessPath, featureForPath, hasFullAccess, type PermissionMap } from '@/lib/permissions'
@@ -371,20 +371,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [demoMsg, setDemoMsg] = useState('')
   useEffect(() => { if (!demoMsg) return; const t = setTimeout(() => setDemoMsg(''), 4000); return () => clearTimeout(t) }, [demoMsg])
 
-  // Per-section collapse. Not everyone needs every group expanded, so each
-  // titled nav group can be minimised. The choice is remembered for the tab
-  // session (sessionStorage) — a fresh browser session starts fully expanded.
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(() => {
-    if (typeof window === 'undefined') return {}
-    try { return JSON.parse(sessionStorage.getItem('colvy:nav-collapsed') || '{}') } catch { return {} }
-  })
-  const toggleGroup = (label: string) => {
-    setCollapsedGroups(prev => {
-      const next = { ...prev, [label]: !prev[label] }
-      try { sessionStorage.setItem('colvy:nav-collapsed', JSON.stringify(next)) } catch {}
-      return next
-    })
-  }
+  // The phone menu lists one row per section; one section at a time shows its
+  // other pages. Undefined follows the page you're on (its section opens).
+  const [menuSection, setMenuSection] = useState<string | null | undefined>(undefined)
 
   // ── Agent presence ────────────────────────────────────────────────────────
   // Email sync, back-in-stock texts, ticket deadlines and booking reminders used
@@ -673,7 +662,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // The top-bar hamburger (in the root layout) fires this event on admin pages
   // so the single top-left hamburger opens the admin sidebar.
   useEffect(() => {
-    const open = () => setMobileSidebarOpen(v => !v)
+    const open = () => { setMobileSidebarOpen(v => !v); setMenuSection(undefined) }
     window.addEventListener('colvy:toggle-admin-sidebar', open)
     return () => window.removeEventListener('colvy:toggle-admin-sidebar', open)
   }, [])
@@ -1037,46 +1026,40 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           .admin-mobile-close { display: flex !important; }
           .admin-ws-head { padding: 18px 56px 12px 20px !important; border-bottom: none !important; }
           .admin-ws-head .admin-ws-name { font-size: 17px !important; font-weight: 700 !important; }
-          .admin-sidebar nav { padding: 4px 12px 24px !important; }
-          /* Rows at the app's own text size (15px), with section headings the
-             same size, set in bold with a chevron, like the sidebar in Files. */
-          .admin-sidebar .nav-item {
-            font-size: 15px !important; padding: 10px 12px !important; gap: 14px !important; border-radius: 12px !important;
-            min-height: 44px; color: #1c1c1e !important; font-weight: 500 !important; margin-bottom: 1px !important;
-          }
-          .admin-sidebar .nav-item.is-active { background: #f2f2f7 !important; }
-          .admin-sidebar .nav-item.is-active .nav-ic { color: var(--coral); }
-          .admin-sidebar .nav-item .nav-ic { opacity: 0.75 !important; }
-          .admin-sidebar .nav-item .nav-ic svg { width: 20px; height: 20px; }
-          .admin-sidebar .nav-item:not(.is-active):hover { background: #f7f7f9; }
-          .admin-sidebar .nav-group-header { padding: 10px 12px !important; min-height: 44px; margin: 4px 0 1px !important; border-radius: 12px !important; }
-          .admin-sidebar .nav-group-header span { font-size: 15px !important; letter-spacing: -0.01em !important; text-transform: none !important; color: #1c1c1e !important; font-weight: 650 !important; }
-          .admin-sidebar .nav-group-header .nav-group-chevron { width: 15px; height: 15px; opacity: 0.5; }
-          .admin-sidebar .nav-group-header.is-collapsed { background: transparent; }
-          .admin-sidebar .nav-group-header:hover { background: #f7f7f9; }
-          /* Touch screens keep :hover after a tap; show the press instead. */
-          @media (hover: none) {
-            .admin-sidebar .nav-group-header:hover, .admin-sidebar .nav-group-header.is-collapsed:hover,
-            .admin-sidebar .nav-item:not(.is-active):hover { background: transparent !important; }
-            .admin-sidebar .nav-group-header:active, .admin-sidebar .nav-item:not(.is-active):active { background: #f2f2f7 !important; }
-          }
-          .admin-sidebar .ss-trigger { min-height: 42px; font-size: 15px !important; border-radius: 12px !important; padding: 9px 12px !important; gap: 12px !important; margin-bottom: 8px !important; }
-          .admin-sidebar .ss-trigger .nav-ic svg { width: 18px; height: 18px; }
+          .admin-ws-sub { display: none; }
+          .admin-sidebar nav { padding: 2px 12px 20px !important; }
         }
+        /* The phone menu (sheet): a row per section, Sellio-like. */
+        .msheet { flex: 1; padding: 2px 12px 20px; }
+        .msheet button::before { display: none !important; }
+        .ms-sec { margin-bottom: 2px; }
+        .ms-row { display: flex; align-items: center; gap: 2px; }
+        .ms-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; min-height: 48px; padding: 0 12px; border: none; border-radius: 14px; background: none; font: inherit; font-size: 16px; font-weight: 550; letter-spacing: -0.01em; color: #1c1c1e; text-decoration: none; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background .14s ease; }
+        .ms-ic { width: 24px; flex-shrink: 0; display: flex; justify-content: center; color: #6b6b72; }
+        .ms-sec.here > .ms-row .ms-main { background: #f2f2f7; }
+        .ms-sec.here > .ms-row .ms-ic { color: var(--coral); }
+        .ms-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .ms-count { min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #fff; }
+        .ms-count.sm { min-width: 18px; height: 18px; padding: 0 5px; font-size: 11px; margin-left: auto; }
+        .ms-more { width: 40px; height: 40px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: 12px; background: none; color: #a1a1aa; cursor: pointer; transition: background .14s ease, color .14s ease; }
+        .ms-more svg { transition: transform .2s ease; }
+        .ms-sec.open .ms-more { color: #1c1c1e; }
+        .ms-sec.open .ms-more svg { transform: rotate(180deg); }
+        .ms-sub { margin: 2px 0 8px 50px; padding-left: 12px; box-shadow: inset 1.5px 0 0 #ececf0; animation: msSub .2s ease-out; }
+        @keyframes msSub { from { opacity: 0; transform: translateY(-4px); } }
+        .ms-sub-l { margin: 10px 0 2px; padding: 0 10px; font-size: 12px; font-weight: 600; color: #a1a1aa; }
+        .ms-page { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 10px; border-radius: 10px; font-size: 14.5px; font-weight: 500; color: #3f3f46; text-decoration: none; -webkit-tap-highlight-color: transparent; }
+        .ms-page.on { background: #f2f2f7; color: var(--ink); font-weight: 650; }
+        .ms-lock { margin-left: auto; font-size: 12px; opacity: .55; }
+        .ms-div { height: 1px; margin: 10px 12px; background: #ececf0; }
+        @media (hover: hover) {
+          .ms-main:hover, .ms-page:not(.on):hover, .ms-more:hover { background: #f7f7f9; }
+        }
+        @media (hover: none) {
+          .ms-main:active, .ms-page:active, .ms-more:active { background: #f2f2f7; }
+        }
+        @media (prefers-reduced-motion: reduce) { .ms-sub { animation: none; } }
         @keyframes cvOverlayIn { from { opacity: 0 } to { opacity: 1 } }
-        /* Collapsible nav-group header — a proper padded, rounded row that
-           highlights on hover, with the chevron fading in a touch. */
-        .nav-group-header {
-          display: flex; align-items: center; justify-content: space-between;
-          width: 100%; padding: 5px 10px; margin-bottom: 4px; border-radius: 8px;
-          background: transparent; border: none; cursor: pointer;
-          transition: background 0.14s ease;
-        }
-        .nav-group-header:hover { background: #f1f2f4; }
-        .nav-group-header .nav-group-chevron { opacity: 0.45; transition: transform 0.18s ease, opacity 0.14s ease; }
-        .nav-group-header:hover .nav-group-chevron { opacity: 0.85; }
-        .nav-group-header.is-collapsed { background: #f5f6f8; }
-        .nav-group-header.is-collapsed:hover { background: #ececf0; }
         /* Sidebar nav item — clear hover highlight so you can see which row
            you're pointing at, with the icon giving a small lift/brighten. */
         .nav-item { transition: background 0.14s ease, color 0.14s ease; cursor: pointer; }
@@ -1177,7 +1160,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <p className="admin-ws-name" style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {company?.name || user?.email?.split('@')[0] || 'My Board'}
               </p>
-              <p style={{ fontSize: 11, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <p className="admin-ws-sub" style={{ fontSize: 11, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {company ? `${company.slug}.colvy.com` : typeof window !== 'undefined' ? window.location.hostname : 'colvy.com'}
               </p>
             </div>
@@ -1192,115 +1175,76 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           )}
         </div>
 
-        {/* Nav groups */}
-        <nav style={{ flex: 1, padding: '10px 8px' }}>
-          {/* Search — jumps to any sidebar page or settings destination. */}
-          <SidebarSearch items={searchItems} collapsed={false} />
-          {NAV_GROUPS.map((group, gi) => {
-            // Hide features this member isn't permitted to use, and drop a whole
-            // group once nothing in it is visible.
-            const permittedItems = group.items.filter(canUseNavItem)
-            if (permittedItems.length === 0) return null
-            // Groups without a title (Home) are never collapsible.
-            const groupCollapsed = !!group.label && !!collapsedGroups[group.label]
+        {/* The menu: a row per section (as on the rail), its other pages under
+            it on request, then Search and Settings. */}
+        <nav className="msheet">
+          {(() => {
+            const go = (it: { href: string; locked?: boolean; external?: boolean }) => (e: React.MouseEvent) => {
+              if (it.locked) { e.preventDefault(); setDemoMsg(DEMO_LOCK_MESSAGE) } else setMobileSidebarOpen(false)
+            }
+            const row = (sec: RailSection) => {
+              const items = sec.groups.flatMap(g => g.items)
+              const first = items[0]
+              const here = items.some(i => i.active)
+              const open = items.length > 1 && (menuSection === undefined ? here : menuSection === sec.key)
+              const count = items.reduce((n, i) => n + (i.count || 0), 0)
+              const tone = items.find(i => i.count)?.tone
+              return (
+                <div key={sec.key} className={`ms-sec${here ? ' here' : ''}${open ? ' open' : ''}`}>
+                  <div className="ms-row">
+                    <Link href={first.locked ? '#' : first.href} className="ms-main" onClick={go(first)} aria-current={here ? 'page' : undefined}>
+                      <span className="ms-ic"><RailGlyph name={sec.glyph} active={here} size={22} /></span>
+                      <span className="ms-t">{sec.label}</span>
+                      {count > 0 && <span key={count} className="ms-count count-pop" style={{ background: tone || '#ef4444' }}>{count > 99 ? '99+' : count}</span>}
+                    </Link>
+                    {items.length > 1 && (
+                      <button type="button" className="ms-more" aria-expanded={open} aria-label={`${open ? 'Hide' : 'Show'} ${sec.label} pages`}
+                        onClick={() => setMenuSection(open ? null : sec.key)}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="6 9 12 15 18 9" /></svg>
+                      </button>
+                    )}
+                  </div>
+                  {open && (
+                    <div className="ms-sub">
+                      {sec.groups.map((g, gi) => (
+                        <React.Fragment key={gi}>
+                          {g.label && <p className="ms-sub-l">{g.label}</p>}
+                          {g.items.map(it => it.external ? (
+                            <a key={it.href} href={it.href} className="ms-page" onClick={() => setMobileSidebarOpen(false)}>{it.label}</a>
+                          ) : (
+                            <Link key={it.href + it.label} href={it.locked ? '#' : it.href} onClick={go(it)}
+                              className={`ms-page${it.active ? ' on' : ''}`} aria-current={it.active ? 'page' : undefined}>
+                              {it.label}
+                              {it.locked && <span className="ms-lock" title="Not available in the demo">🔒</span>}
+                              {!!it.count && <span className="ms-count sm" style={{ background: it.tone || '#ef4444' }}>{it.count > 99 ? '99+' : it.count}</span>}
+                            </Link>
+                          ))}
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            }
             return (
-            <div key={gi} style={{ marginBottom: groupCollapsed ? 8 : 20 }}>
-              {group.label && (
-                <button type="button" onClick={() => toggleGroup(group.label!)}
-                  aria-expanded={!groupCollapsed}
-                  title={groupCollapsed ? `Show ${group.label}` : `Hide ${group.label}`}
-                  className={`nav-group-header${groupCollapsed ? ' is-collapsed' : ''}`}>
-                  <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--slate)' }}>
-                    {group.label}
-                  </span>
-                  <svg className="nav-group-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
-                    style={{ flexShrink: 0, transform: groupCollapsed ? 'rotate(180deg)' : 'none' }}>
-                    <polyline points="18 15 12 9 6 15" />
-                  </svg>
-                </button>
-              )}
-              {!groupCollapsed && permittedItems.map(item => {
-                const active = isActive(item.href)
-                // In a demo workspace, pages that connect real accounts, handle
-                // billing or import/export real data are locked. Sending is
-                // already blocked server-side; this hides the surfaces too.
-                const locked = !!company?.is_demo && DEMO_LOCKED_HREFS.some(h => item.href === h || item.href.startsWith(h + '/'))
-                return (
-                  <Link key={item.href + item.label} href={locked ? '#' : item.href}
-                    className={`nav-item${active ? ' is-active' : ''}`}
-                    onClick={(e) => { if (locked) { e.preventDefault(); setDemoMsg(DEMO_LOCK_MESSAGE) } else setMobileSidebarOpen(false) }}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 9, padding: '7px 10px',
-                      borderRadius: 8, fontSize: 13, textDecoration: 'none', marginBottom: 1,
-                      background: active ? 'var(--peach)' : undefined,
-                      color: active ? 'var(--coral)' : 'var(--slate)',
-                      fontWeight: active ? 600 : 400,
-                    }}>
-                    {/* Any section with things waiting shows a count, so you can
-                        see there's work elsewhere without navigating to it. */}
-                    {(() => {
-                      const count = item.label === 'Inbox' ? inboxUnread
-                        : item.label === 'Tasks' ? taskDue
-                        : item.label === 'Orders' ? ordersNew
-                        : item.label === 'Tickets' ? ticketsNew
-                        : item.label === 'Bookings' ? bookingsNew
-                        : item.label === 'Waitlists' ? waitlistNew
-                        : 0
-                      const tone = item.label === 'Tasks' ? 'var(--coral)' : item.label === 'Orders' || item.label === 'Bookings' || item.label === 'Waitlists' ? '#2563eb' : '#ef4444'
-                      return (
-                        <>
-                          <span className="nav-ic" style={{ flexShrink: 0, display: 'flex', opacity: active ? 1 : 0.65, position: 'relative' }}>
-                            {icons[item.icon]}
-                          </span>
-                          {item.label}
-                          {locked && <span title="Not available in the demo" style={{ marginLeft: 'auto', fontSize: 12, opacity: 0.55 }}>🔒</span>}
-                          {count > 0 && (
-                            <span
-                              // key on the number so React remounts it and the
-                              // pop animation replays whenever the count moves.
-                              key={count}
-                              className="count-pop"
-                              title={item.label === 'Tasks' ? `${count} task${count === 1 ? '' : 's'} due or overdue` : item.label === 'Orders' ? `${count} new order${count === 1 ? '' : 's'}` : item.label === 'Tickets' ? `${count} new ticket${count === 1 ? '' : 's'}` : item.label === 'Bookings' ? `${count} new booking${count === 1 ? '' : 's'}` : `${count} unread`}
-                              style={{ marginLeft: 'auto', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: tone, color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              {count > 99 ? '99+' : count}
-                            </span>
-                          )}
-                        </>
-                      )
-                    })()}
-                  </Link>
-                )
-              })}
-            </div>
-          )})}
-
-          {/* Super admin */}
-          {isSuperAdmin && (
-            <div style={{ marginBottom: 20 }}>
-              <p style={{ padding: '0 10px', marginBottom: 4, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--slate)' }}>
-                Super Admin
-              </p>
-              {/* The super-admin "create a company for a customer" form (owner,
-                  plan, industry). Creating a workspace for yourself is the
-                  "Create Workspace" option in the workspace switcher above. */}
-              <Link href="/admin/create-company"
-                style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 10px', borderRadius: 8, fontSize: 13, textDecoration: 'none', color: 'var(--slate)', background: 'transparent' }}>
-                <span style={{ flexShrink: 0, display: 'flex', opacity: 0.65 }}>{icons.company}</span>
-                Create Company
-              </Link>
-              <a href="https://admin.colvy.com"
-                style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 10px', borderRadius: 8, fontSize: 13, textDecoration: 'none', color: 'var(--slate)', background: 'transparent' }}>
-                <span style={{ flexShrink: 0, display: 'flex', opacity: 0.65 }}>{icons.lock || icons.company}</span>
-                Platform panel
-              </a>
-              <Link href="/admin/legal"
-                style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 10px', borderRadius: 8, fontSize: 13, textDecoration: 'none', color: 'var(--slate)', background: 'transparent' }}>
-                <span style={{ flexShrink: 0, display: 'flex', opacity: 0.65 }}>{icons.legal || icons.settings}</span>
-                Legal Pages
-              </Link>
-            </div>
-          )}
+              <>
+                {railSections.map(row)}
+                <div className="ms-div" />
+                <div className="ms-sec">
+                  <div className="ms-row">
+                    <button type="button" className="ms-main" onClick={() => { setMobileSidebarOpen(false); window.dispatchEvent(new Event('colvy:open-search')) }}>
+                      <span className="ms-ic"><RailGlyph name="search" size={22} /></span>
+                      <span className="ms-t">Search</span>
+                    </button>
+                  </div>
+                </div>
+                {railSettings && row(railSettings)}
+              </>
+            )
+          })()}
         </nav>
+        {/* The search palette, opened by the Search row (or ⌘K). */}
+        <SidebarSearch items={searchItems} collapsed={false} hideTrigger />
 
         {/* Getting started: setup progress, for new workspaces (components/SetupRing). */}
         {hasFullAccess(myRole) && company?.id && <SetupRing companyId={company.id} />}
