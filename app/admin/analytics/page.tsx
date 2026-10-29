@@ -1,461 +1,274 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
+import { peekCompanyUser, readCache, resolveCompanyUser, writeCache } from '@/lib/client-cache'
 import { useEntitlements } from '@/lib/entitlements-client'
 import ProGate from '@/components/ProGate'
-import PageHeader from '@/components/PageHeader'
+import { BarList, Card, InsightsPage, InsightsSkeleton, Kpi, RangePills } from '@/components/insights/InsightsUI'
 
-function StatCard({ label, value, sub, color }: any) {
-  return (
-    <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
-      <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--slate)' }}>{label}</p>
-      <p className="text-3xl font-black" style={{ color: color || 'var(--coral)' }}>{value}</p>
-      {sub && <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>{sub}</p>}
-    </div>
-  )
+// Analytics: ideas, the Help Centre and support, the widget and tasks by
+// outlet for a date range. Totals are counted by the database (head counts)
+// rather than downloading every row, so the page stays quick however much
+// history a workspace has.
+
+type Range = 'today' | 'yesterday' | '7d' | '30d' | 'month' | 'all' | 'custom'
+const RANGES: [Range, string][] = [['today', 'Today'], ['yesterday', 'Yesterday'], ['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['month', 'This month'], ['all', 'All time'], ['custom', 'Custom']]
+
+type Snapshot = {
+  stats: { totalIdeas: number; totalVotes: number; totalComments: number; topIdeas: any[] }
+  helpStats: { totalArticles: number; totalViews: number; totalLikes: number; totalTickets: number; openTickets: number; topArticles: any[] }
+  widgetStats: { totalViews: number; byTab: Record<string, number>; avgViewsPerDay: number }
+  taskStats: { total: number; open: number; overdue: number; completed: number; byOutlet: any[] }
+}
+
+const n = (v: number) => (v || 0).toLocaleString('en-AU')
+const db = supabase as any
+
+function dateRange(range: Range, customStart: string, customEnd: string) {
+  const now = new Date()
+  let start: Date, end: Date
+  if (range === 'today') {
+    start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+  } else if (range === 'yesterday') {
+    start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
+    end = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  } else if (range === '7d') {
+    start = new Date(now.getTime() - 7 * 86400000); end = now
+  } else if (range === '30d') {
+    start = new Date(now.getTime() - 30 * 86400000); end = now
+  } else if (range === 'month') {
+    start = new Date(now.getFullYear(), now.getMonth(), 1)
+    end = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+  } else if (range === 'custom' && customStart && customEnd) {
+    start = new Date(customStart); end = new Date(customEnd + 'T23:59:59')
+  } else {
+    start = new Date('2000-01-01'); end = new Date('2099-12-31')
+  }
+  const days = Math.max(1, Math.ceil((Math.min(end.getTime(), now.getTime()) - start.getTime()) / 86400000))
+  return { start: start.toISOString(), end: end.toISOString(), days }
+}
+
+async function loadIdeas(cid: string, start: string, end: string, allTime: boolean): Promise<Snapshot['stats']> {
+  const [{ data: ideas }, allIdeas] = await Promise.all([
+    db.from('ideas').select('id,title,votes,status,created_at').eq('company_id', cid).gte('created_at', start).lte('created_at', end),
+    // "All time" also counts votes stored on the ideas (includes guest votes).
+    allTime ? db.from('ideas').select('votes').eq('company_id', cid) : Promise.resolve({ data: null }),
+  ])
+  const list: any[] = ideas || []
+  const ids = list.map(i => i.id)
+  let totalVotes = 0, totalComments = 0
+  if (ids.length) {
+    // Vote rows in the window, scoped to this workspace's ideas; summing
+    // ideas.votes would ignore the date range.
+    const [{ count: votes }, { count: comments }] = await Promise.all([
+      db.from('votes').select('*', { count: 'exact', head: true }).in('idea_id', ids).gte('created_at', start).lte('created_at', end),
+      db.from('comments').select('*', { count: 'exact', head: true }).in('idea_id', ids).gte('created_at', start).lte('created_at', end),
+    ])
+    totalVotes = votes || 0; totalComments = comments || 0
+  }
+  if (allIdeas?.data) totalVotes = Math.max(totalVotes, allIdeas.data.reduce((s: number, i: any) => s + (i.votes || 0), 0))
+  return { totalIdeas: list.length, totalVotes, totalComments, topIdeas: [...list].sort((a, b) => (b.votes || 0) - (a.votes || 0)).slice(0, 6) }
+}
+
+async function loadHelp(cid: string, start: string, end: string): Promise<Snapshot['helpStats']> {
+  const tickets = () => db.from('support_tickets').select('*', { count: 'exact', head: true }).eq('company_id', cid).gte('created_at', start).lte('created_at', end)
+  const [{ data: articles }, { count: totalTickets }, { count: openTickets }] = await Promise.all([
+    db.from('help_articles').select('id, title, views, likes').eq('company_id', cid).gte('created_at', start).lte('created_at', end),
+    tickets(),
+    tickets().eq('status', 'open'),
+  ])
+  const list: any[] = articles || []
+  let totalViews = list.reduce((s, a) => s + (a.views || 0), 0)
+  if (list.length) {
+    // help_article_views, where it exists, is the accurate count for the window.
+    try {
+      const { count } = await db.from('help_article_views').select('*', { count: 'exact', head: true })
+        .in('article_id', list.map(a => a.id)).gte('viewed_at', start).lte('viewed_at', end)
+      if (count != null) totalViews = count
+    } catch {}
+  }
+  return {
+    totalArticles: list.length, totalViews, totalLikes: list.reduce((s, a) => s + (a.likes || 0), 0),
+    totalTickets: totalTickets || 0, openTickets: openTickets || 0,
+    topArticles: [...list].sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 6),
+  }
+}
+
+async function loadWidget(cid: string, start: string, end: string, days: number): Promise<Snapshot['widgetStats']> {
+  const count = () => db.from('widget_analytics').select('*', { count: 'exact', head: true }).eq('company_id', cid).gte('created_at', start).lte('created_at', end)
+  try {
+    // The tabs in use come from the latest events; each tab is then counted.
+    const [{ count: views }, { data: recent }] = await Promise.all([
+      count().eq('event', 'view'),
+      db.from('widget_analytics').select('tab').eq('company_id', cid).gte('created_at', start).lte('created_at', end)
+        .not('tab', 'is', null).order('created_at', { ascending: false }).limit(1000),
+    ])
+    const tabs = [...new Set<string>((recent || []).map((r: any) => r.tab).filter(Boolean))].slice(0, 12)
+    const perTab = await Promise.all(tabs.map(t => count().eq('tab', t).then((r: any) => [t, r.count || 0] as const)))
+    return { totalViews: views || 0, byTab: Object.fromEntries(perTab), avgViewsPerDay: Math.round((views || 0) / days) }
+  } catch {
+    return { totalViews: 0, byTab: {}, avgViewsPerDay: 0 }
+  }
+}
+
+// Tasks created in the window, per outlet. A task tied to several outlets
+// counts toward each; tasks with no outlet land under "No outlet".
+async function loadTasks(cid: string, start: string, end: string): Promise<Snapshot['taskStats']> {
+  const empty = { total: 0, open: 0, overdue: 0, completed: 0, byOutlet: [] as any[] }
+  try {
+    // Prefer location_ids (V227); fall back if the column isn't there.
+    const run = (cols: string) => db.from('conversation_tasks').select(cols).eq('company_id', cid).gte('created_at', start).lte('created_at', end)
+    const [{ data: locs }, first] = await Promise.all([
+      db.from('company_locations').select('id, label, suburb').eq('company_id', cid),
+      run('id, done, due_date, location_id, location_ids'),
+    ])
+    const locName: Record<string, string> = {}
+    for (const l of locs || []) locName[l.id] = l.label || l.suburb || 'Outlet'
+    let res = first
+    if (res.error) res = await run('id, done, due_date, location_id')
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+    const acc: Record<string, { open: number; overdue: number; completed: number; total: number }> = {}
+    let total = 0, open = 0, overdue = 0, completed = 0
+    for (const t of res.data || []) {
+      const done = !!t.done
+      const due = t.due_date ? new Date(String(t.due_date).replace(' ', 'T')).getTime() : null
+      const late = !done && due != null && !isNaN(due) && due < today
+      total++
+      if (done) completed++; else { open++; if (late) overdue++ }
+      const outs: string[] = Array.isArray(t.location_ids) && t.location_ids.length ? t.location_ids : t.location_id ? [t.location_id] : ['']
+      for (const o of outs) {
+        const a = (acc[o] ||= { open: 0, overdue: 0, completed: 0, total: 0 })
+        a.total++
+        if (done) a.completed++; else { a.open++; if (late) a.overdue++ }
+      }
+    }
+    const byOutlet = Object.entries(acc).map(([id, v]) => ({ id, name: id ? locName[id] || 'Outlet' : 'No outlet', ...v })).sort((a, b) => b.total - a.total)
+    return { total, open, overdue, completed, byOutlet }
+  } catch {
+    return empty
+  }
 }
 
 export default function AnalyticsPage() {
-  const getMyCompanyId = async () => {
-    // Resolve once per session from the shared identity cache when possible.
-    const peeked = peekCompanyUser()?.companyId
-    if (peeked) return peeked
-    if (typeof window !== 'undefined') {
-      const h = window.location.hostname
-      if (h.endsWith('.colvy.com') && h !== 'colvy.com') {
-        const slug = h.replace('.colvy.com', '')
-        const { data: co } = await (supabase as any).from('companies').select('id').eq('slug', slug).maybeSingle()
-        if (co?.id) return co.id
-      }
-    }
-    const { data: { session } } = await supabase.auth.getSession()
-    if (session?.user) {
-      const { data: co } = await (supabase as any).from('companies').select('id').eq('owner_id', session.user.id).maybeSingle()
-      return co?.id || null
-    }
-    return null
-  }
-
-  const router = useRouter()
   const ent = useEntitlements()
-  const seededCu = peekCompanyUser()
-  // The last snapshot we rendered for the default (30d) view, if any — lets a
-  // revisit paint the stat cards instantly instead of flashing zeros.
-  const seededAnalytics = seededCu?.companyId ? readCache<any>(`analytics:${seededCu.companyId}:30d::`) : undefined
-  const [user, setUser] = useState<any>(seededCu?.user ?? null)
-  const [loading, setLoading] = useState(!seededAnalytics)
-  const [timeRange, setTimeRange] = useState<'today' | 'yesterday' | '7d' | '30d' | 'month' | 'all' | 'custom'>('30d')
+  const seededCid = peekCompanyUser()?.companyId || null
+  const [range, setRange] = useState<Range>('30d')
   const [customStart, setCustomStart] = useState('')
   const [customEnd, setCustomEnd] = useState('')
-
-  // Ideas stats
-  const [stats, setStats] = useState(seededAnalytics?.stats ?? { totalIdeas: 0, totalVotes: 0, totalComments: 0, topIdeas: [] as any[], recentIdeas: [] as any[] })
-  // Help stats
-  const [helpStats, setHelpStats] = useState(seededAnalytics?.helpStats ?? { totalArticles: 0, totalViews: 0, totalLikes: 0, totalTickets: 0, openTickets: 0, topArticles: [] as any[], ticketsByStatus: {} as any })
-  // Widget stats
-  const [widgetStats, setWidgetStats] = useState(seededAnalytics?.widgetStats ?? { totalViews: 0, byTab: {} as Record<string, number>, avgViewsPerDay: 0 })
-  // Task stats, broken down per outlet. A task tied to several outlets counts
-  // toward each; tasks with no outlet fall under "No outlet".
-  const [taskStats, setTaskStats] = useState(seededAnalytics?.taskStats ?? { total: 0, open: 0, overdue: 0, completed: 0, byOutlet: [] as any[] })
-
-  // Calculate date range
-  const getDateRange = () => {
-    const now = new Date()
-    let start: Date, end: Date
-
-    if (timeRange === 'today') {
-      start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-      end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
-    } else if (timeRange === 'yesterday') {
-      start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
-      end = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    } else if (timeRange === '7d') {
-      start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-      end = now
-    } else if (timeRange === '30d') {
-      start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-      end = now
-    } else if (timeRange === 'month') {
-      start = new Date(now.getFullYear(), now.getMonth(), 1)
-      end = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-    } else if (timeRange === 'custom' && customStart && customEnd) {
-      start = new Date(customStart)
-      end = new Date(customEnd)
-    } else {
-      start = new Date('2000-01-01')
-      end = new Date('2099-12-31')
-    }
-
-    return { start: start.toISOString(), end: end.toISOString(), daysBack: Math.ceil((now.getTime() - new Date(start).getTime()) / (24 * 60 * 60 * 1000)) }
-  }
+  const cacheKey = (cid: string | null) => (cid ? `analytics:v2:${cid}:${range}:${customStart}:${customEnd}` : '')
+  const [snap, setSnap] = useState<Snapshot | null>(() => (seededCid ? readCache<Snapshot>(cacheKey(seededCid)) ?? null : null))
+  const [stale, setStale] = useState(false)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }: any) => {
-      const u = data?.session?.user
-      setUser(u)
-      loadAll()
-    })
-  }, [router, timeRange, customStart, customEnd])
-
-  // Build the per-outlet task breakdown for the selected window. Filtered by
-  // created_at (same basis as the other sections). A multi-outlet task is
-  // counted once per outlet it touches; outlet-less tasks land in "No outlet".
-  const loadTaskStats = async (cid: string, start: string, end: string) => {
-    const empty = { total: 0, open: 0, overdue: 0, completed: 0, byOutlet: [] as any[] }
-    try {
-      // Prefer selecting location_ids (V227); fall back if the column isn't there.
-      const run = (cols: string) => (supabase as any)
-        .from('conversation_tasks').select(cols)
-        .eq('company_id', cid).gte('created_at', start).lte('created_at', end)
-      const [{ data: locs }, first] = await Promise.all([
-        (supabase as any).from('company_locations').select('id, label, suburb').eq('company_id', cid),
-        run('id, done, due_date, created_at, location_id, location_ids'),
+    let live = true
+    ;(async () => {
+      const cid = peekCompanyUser()?.companyId || (await resolveCompanyUser().catch(() => null))?.companyId
+      if (!cid || !live) return
+      const key = cacheKey(cid)
+      const hit = readCache<Snapshot>(key)
+      if (hit) { setSnap(hit); setStale(false) } else setStale(true)
+      const { start, end, days } = dateRange(range, customStart, customEnd)
+      // The four sections don't depend on each other: load them side by side.
+      const [stats, helpStats, widgetStats, taskStats] = await Promise.all([
+        loadIdeas(cid, start, end, range === 'all').catch(() => ({ totalIdeas: 0, totalVotes: 0, totalComments: 0, topIdeas: [] })),
+        loadHelp(cid, start, end).catch(() => ({ totalArticles: 0, totalViews: 0, totalLikes: 0, totalTickets: 0, openTickets: 0, topArticles: [] })),
+        loadWidget(cid, start, end, days),
+        loadTasks(cid, start, end),
       ])
-      const locName: Record<string, string> = {}
-      for (const l of locs || []) locName[l.id] = l.label || l.suburb || 'Outlet'
-      let res = first
-      if (res.error) res = await run('id, done, due_date, created_at, location_id')
-      const tasks: any[] = res.data || []
+      if (!live) return
+      const next = { stats, helpStats, widgetStats, taskStats }
+      writeCache(key, next)
+      setSnap(next); setStale(false)
+    })()
+    return () => { live = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [range, customStart, customEnd])
 
-      const now = new Date()
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-      // key '' = no outlet; otherwise the outlet id
-      const acc: Record<string, { open: number; overdue: number; completed: number; total: number }> = {}
-      const bump = (key: string, done: boolean, overdue: boolean) => {
-        const a = acc[key] || (acc[key] = { open: 0, overdue: 0, completed: 0, total: 0 })
-        a.total++
-        if (done) a.completed++
-        else { a.open++; if (overdue) a.overdue++ }
-      }
-
-      let total = 0, open = 0, overdue = 0, completed = 0
-      for (const t of tasks) {
-        const done = !!t.done
-        const dueTs = t.due_date ? new Date(String(t.due_date).replace(' ', 'T')).getTime() : null
-        const isOverdue = !done && dueTs != null && !isNaN(dueTs) && dueTs < today
-        total++
-        if (done) completed++; else { open++; if (isOverdue) overdue++ }
-        const outs: string[] = (Array.isArray(t.location_ids) && t.location_ids.length)
-          ? t.location_ids : (t.location_id ? [t.location_id] : [])
-        if (outs.length === 0) bump('', done, isOverdue)
-        else for (const o of outs) bump(o, done, isOverdue)
-      }
-
-      const byOutlet = Object.entries(acc)
-        .map(([id, v]) => ({ id, name: id ? (locName[id] || 'Outlet') : 'No outlet', ...v }))
-        .sort((a, b) => b.total - a.total)
-
-      return { total, open, overdue, completed, byOutlet }
-    } catch {
-      return empty
-    }
-  }
-
-  const loadAll = async () => {
-    try {
-      const cid = await getMyCompanyId()
-      if (!cid) return
-
-      const { start, end, daysBack } = getDateRange()
-
-      // Instant paint on revisit / range switch: hydrate the stat cards from the
-      // last snapshot for this exact range while fresh numbers load behind them.
-      const cacheKey = `analytics:${cid}:${timeRange}:${customStart}:${customEnd}`
-      const cachedA = readCache<any>(cacheKey)
-      if (cachedA) {
-        setStats(cachedA.stats)
-        setHelpStats(cachedA.helpStats)
-        setWidgetStats(cachedA.widgetStats)
-        if (cachedA.taskStats) setTaskStats(cachedA.taskStats)
-        setLoading(false)
-      }
-
-      // Ideas, help, the widget and tasks don't depend on each other: load the
-      // four side by side (each one's own follow-up reads run in parallel too).
-      const ideasP = (async () => {
-        const [{ data: ideas }, allIdeas] = await Promise.all([
-          (supabase as any).from('ideas').select('id,title,votes,status,created_at')
-            .eq('company_id', cid).gte('created_at', start).lte('created_at', end),
-          // "All time" also counts votes stored on the ideas (includes guest votes).
-          timeRange === 'all' ? (supabase as any).from('ideas').select('votes').eq('company_id', cid) : Promise.resolve({ data: null }),
-        ])
-        const ideasList = ideas || []
-        // Total votes: count actual vote rows in the time window, scoped to this company's ideas.
-        // Summing ideas.votes would miss the date filter and double-count with the period picker.
-        const ideaIds = ideasList.map((i: any) => i.id)
-        let totalVotes = 0
-        let commentsCount = 0
-        if (ideaIds.length > 0) {
-          const [{ count: voteCount }, { count }] = await Promise.all([
-            (supabase as any).from('votes').select('*', { count: 'exact', head: true })
-              .in('idea_id', ideaIds).gte('created_at', start).lte('created_at', end),
-            (supabase as any).from('comments').select('*', { count: 'exact', head: true })
-              .in('idea_id', ideaIds).gte('created_at', start).lte('created_at', end),
-          ])
-          totalVotes = voteCount || 0
-          commentsCount = count || 0
-        }
-        if (allIdeas?.data) {
-          const accum = (allIdeas.data || []).reduce((s: number, i: any) => s + (i.votes || 0), 0)
-          // Use the higher number — accumulated covers guest votes not in votes table
-          totalVotes = Math.max(totalVotes, accum)
-        }
-        const top = [...ideasList].sort((a: any, b: any) => (b.votes || 0) - (a.votes || 0)).slice(0, 5)
-        const recent = [...ideasList].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 5)
-        const statsObj = { totalIdeas: ideasList.length, totalVotes, totalComments: commentsCount, topIdeas: top, recentIdeas: recent }
-        setStats(statsObj)
-        return statsObj
-      })()
-
-      const helpP = (async () => {
-        const [{ data: articles }, { data: tickets }] = await Promise.all([
-          (supabase as any).from('help_articles').select('*').eq('company_id', cid).gte('created_at', start).lte('created_at', end),
-          (supabase as any).from('support_tickets').select('*').eq('company_id', cid).gte('created_at', start).lte('created_at', end),
-        ])
-        const artList = articles || []
-        const ticketList = tickets || []
-        const byStatus: Record<string, number> = {}
-        ticketList.forEach((t: any) => { byStatus[t.status] = (byStatus[t.status] || 0) + 1 })
-
-        // help_article_views table may exist for accurate tracking
-        let helpViews = artList.reduce((s: number, a: any) => s + (a.views || 0), 0)
-        const helpLikes = artList.reduce((s: number, a: any) => s + (a.likes || 0), 0)
-        if (artList.length) {
-          try {
-            const { count: viewCount } = await (supabase as any)
-              .from('help_article_views')
-              .select('*', { count: 'exact', head: true })
-              .in('article_id', artList.map((a: any) => a.id))
-              .gte('viewed_at', start)
-              .lte('viewed_at', end)
-            if (viewCount !== null && viewCount !== undefined) helpViews = viewCount
-          } catch {}
-        }
-        const helpObj = {
-          totalArticles: artList.length,
-          totalViews: helpViews,
-          totalLikes: helpLikes,
-          totalTickets: ticketList.length,
-          openTickets: byStatus['open'] || 0,
-          topArticles: [...artList].sort((a: any, b: any) => (b.views || 0) - (a.views || 0)).slice(0, 5),
-          ticketsByStatus: byStatus,
-        }
-        setHelpStats(helpObj)
-        return helpObj
-      })()
-
-      const widgetP = (async () => {
-        // Widget analytics — created_at is the tracked timestamp column
-        let events: any[] = []
-        try {
-          const { data: we1 } = await (supabase as any)
-            .from('widget_analytics')
-            .select('tab, event, created_at')
-            .eq('company_id', cid)
-            .gte('created_at', start)
-            .lte('created_at', end)
-          events = we1 || []
-        } catch { events = [] }
-        const viewEvents = events.filter((e: any) => e.event === 'view')
-        const byTab: Record<string, number> = {}
-        events.forEach((e: any) => { if (e.tab) byTab[e.tab] = (byTab[e.tab] || 0) + 1 })
-        const widgetObj = { totalViews: viewEvents.length, byTab, avgViewsPerDay: daysBack > 0 ? Math.round(viewEvents.length / daysBack) : 0 }
-        setWidgetStats(widgetObj)
-        return widgetObj
-      })()
-
-      // Tasks by outlet — a task with several outlets counts toward each.
-      const taskP = loadTaskStats(cid, start, end).then(t => { setTaskStats(t); return t })
-
-      const [statsObj, helpObj, widgetObj, taskObj] = await Promise.all([ideasP, helpP, widgetP, taskP])
-      writeCache(cacheKey, { stats: statsObj, helpStats: helpObj, widgetStats: widgetObj, taskStats: taskObj })
-    } catch (err) {
-      console.error('Analytics error:', err)
-    }
-    setLoading(false)
-  }
-
-  if (!user || loading) return <div className="p-8" style={{ color: 'var(--slate)' }}>Loading...</div>
-
-  // Advanced analytics is an Everything-plan feature. Once entitlements resolve,
-  // lower plans see an upgrade wall instead of the dashboard.
+  // Advanced analytics is an Everything-plan feature: lower plans see an
+  // upgrade wall instead of the dashboard.
   if (ent.ready && ('advancedAnalytics' in ent.features) && !ent.hasFeature('advancedAnalytics')) {
     return (
-      <div className="p-8 max-w-lg mx-auto">
-        <h1 className="text-3xl font-bold mb-6" style={{ color: 'var(--ink)' }}>Analytics</h1>
-        <ProGate feature="advancedAnalytics"><div /></ProGate>
-      </div>
+      <InsightsPage title="Workspace" accent="analytics" sub="Ideas, your Help Centre, the widget and your team’s tasks, in one place.">
+        <div style={{ maxWidth: 520 }}><ProGate feature="advancedAnalytics"><div /></ProGate></div>
+      </InsightsPage>
     )
   }
 
+  const controls = (
+    <>
+      <RangePills value={range} options={RANGES} onChange={setRange} />
+      {range === 'custom' && (
+        <span className="aly-dates">
+          <input className="ins-field" type="date" aria-label="From" value={customStart} onChange={e => setCustomStart(e.target.value)} />
+          <span>to</span>
+          <input className="ins-field" type="date" aria-label="To" value={customEnd} onChange={e => setCustomEnd(e.target.value)} />
+        </span>
+      )}
+    </>
+  )
+
+  const s = snap
   return (
-    <div className="p-8 max-w-7xl mx-auto">
-      <PageHeader title="Analytics" subtitle="Platform performance and engagement metrics" bleed={32} />
+    <InsightsPage title="Workspace" accent="analytics" sub="Ideas, your Help Centre, the widget and your team’s tasks, in one place." controls={controls}>
+      <style>{ALY_CSS}</style>
+      {!s ? <InsightsSkeleton /> : (
+        <div className={`ins-body${stale ? ' stale' : ''}`}>
+          <div className="ins-kpis">
+            <Kpi icon="bulb" label="Ideas" value={n(s.stats.totalIdeas)} sub={`${n(s.stats.totalComments)} comments`} tone="#f59e0b" />
+            <Kpi icon="vote" label="Votes" value={n(s.stats.totalVotes)} sub="On your ideas" tone="#6366f1" />
+            <Kpi icon="eye" label="Help Centre views" value={n(s.helpStats.totalViews)} sub={`${n(s.helpStats.totalArticles)} articles · ${n(s.helpStats.totalLikes)} likes`} tone="#0ea5e9" />
+            <Kpi icon="ticket" label="Open tickets" value={n(s.helpStats.openTickets)} sub={`${n(s.helpStats.totalTickets)} in this period`} tone="#ff6a4d" />
+            <Kpi icon="megaphone" label="Widget views" value={n(s.widgetStats.totalViews)} sub={`About ${n(s.widgetStats.avgViewsPerDay)} a day`} tone="#d946ef" />
+            <Kpi icon="check" label="Open tasks" value={n(s.taskStats.open)} sub={s.taskStats.overdue ? `${n(s.taskStats.overdue)} overdue` : `${n(s.taskStats.completed)} done`} tone={s.taskStats.overdue ? '#ef4444' : '#16a34a'} />
+          </div>
 
-
-      {/* Date Range Filter */}
-      <div style={{
-        display: 'flex',
-        gap: '8px',
-        marginBottom: '24px',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        padding: '16px',
-        borderRadius: '12px',
-        background: 'var(--peach)',
-        border: '1px solid var(--border)'
-      }}>
-        {(['today', 'yesterday', '7d', '30d', 'month', 'all', 'custom'] as const).map(range => (
-          <button
-            key={range}
-            onClick={() => setTimeRange(range)}
-            style={{
-              padding: '8px 14px',
-              borderRadius: '6px',
-              border: timeRange === range ? 'none' : '1px solid var(--border)',
-              background: timeRange === range ? 'var(--coral)' : '#fff',
-              color: timeRange === range ? '#fff' : 'var(--ink)',
-              fontSize: '12px',
-              fontWeight: 600,
-              cursor: 'pointer'
-            }}
-          >
-            {range === 'today' && 'Today'}
-            {range === 'yesterday' && 'Yesterday'}
-            {range === '7d' && 'Last 7 Days'}
-            {range === '30d' && 'Last 30 Days'}
-            {range === 'month' && 'This Month'}
-            {range === 'all' && 'All Time'}
-            {range === 'custom' && 'Custom'}
-          </button>
-        ))}
-      </div>
-
-      {/* Custom Date Range */}
-      {timeRange === 'custom' && (
-        <div style={{
-          display: 'flex',
-          gap: '12px',
-          marginBottom: '24px',
-          alignItems: 'center'
-        }}>
-          <input
-            type="date"
-            value={customStart}
-            onChange={(e) => setCustomStart(e.target.value)}
-            style={{
-              padding: '8px 12px',
-              borderRadius: '6px',
-              border: '1px solid var(--border)',
-              fontSize: '13px'
-            }}
-          />
-          <span style={{ color: 'var(--slate)' }}>to</span>
-          <input
-            type="date"
-            value={customEnd}
-            onChange={(e) => setCustomEnd(e.target.value)}
-            style={{
-              padding: '8px 12px',
-              borderRadius: '6px',
-              border: '1px solid var(--border)',
-              fontSize: '13px'
-            }}
-          />
+          <div className="ins-grid2">
+            <Card title="Most voted ideas" sub={`${n(s.stats.totalIdeas)} ideas in this period`}>
+              <BarList color="#6366f1" fmt={v => `${n(v)} vote${v === 1 ? '' : 's'}`} empty="No ideas in this period yet."
+                rows={s.stats.topIdeas.map((i: any) => ({ name: i.title || 'Untitled idea', value: i.votes || 0, meta: i.status ? String(i.status).replace(/[_-]/g, ' ').replace(/^\w/, c => c.toUpperCase()) : undefined }))} />
+            </Card>
+            <Card title="Most read articles" sub={`${n(s.helpStats.totalArticles)} articles in this period`}>
+              <BarList color="#0ea5e9" fmt={v => `${n(v)} view${v === 1 ? '' : 's'}`} empty="No Help Centre articles in this period."
+                rows={s.helpStats.topArticles.map((a: any) => ({ name: a.title || 'Untitled article', value: a.views || 0, meta: a.likes ? `${n(a.likes)} like${a.likes === 1 ? '' : 's'}` : undefined }))} />
+            </Card>
+            <Card title="Widget tabs" sub="Where visitors spend their time">
+              <BarList color="#d946ef" fmt={v => n(v)} empty="No widget activity in this period."
+                rows={Object.entries(s.widgetStats.byTab).sort((a, b) => b[1] - a[1]).map(([tab, v]) => ({ name: tab.replace(/[_-]/g, ' ').replace(/^\w/, c => c.toUpperCase()), value: v }))} />
+            </Card>
+            <Card title="Tasks by outlet" sub="Tasks tied to more than one outlet count under each">
+              {s.taskStats.byOutlet.length === 0 ? <p className="ins-empty">No tasks in this period.</p> : (
+                <div className="aly-tasks" role="table">
+                  <div className="aly-tr aly-th" role="row"><span role="columnheader">Outlet</span><span role="columnheader">Open</span><span role="columnheader">Overdue</span><span role="columnheader">Done</span></div>
+                  {s.taskStats.byOutlet.map((o: any) => (
+                    <div key={o.id || 'none'} className="aly-tr" role="row">
+                      <span role="cell" className={o.id ? '' : 'none'}>{o.name}</span>
+                      <span role="cell">{n(o.open)}</span>
+                      <span role="cell">{o.overdue ? <em>{n(o.overdue)}</em> : '0'}</span>
+                      <span role="cell" className="done">{n(o.completed)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
         </div>
       )}
-
-      {/* Ideas Section */}
-      <div style={{ marginBottom: '48px' }}>
-        <h2 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '16px', color: 'var(--ink)' }}>Ideas</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
-          <StatCard label="Total Ideas" value={stats.totalIdeas} />
-          <StatCard label="Total Votes" value={stats.totalVotes} />
-          <StatCard label="Total Comments" value={stats.totalComments} />
-        </div>
-      </div>
-
-      {/* Help & Support Section */}
-      <div style={{ marginBottom: '48px' }}>
-        <h2 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '16px', color: 'var(--ink)' }}>Help Center & Support</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
-          <StatCard label="Total Articles" value={helpStats.totalArticles} />
-          <StatCard label="Total Views" value={helpStats.totalViews} />
-          <StatCard label="Total Likes" value={helpStats.totalLikes} />
-          <StatCard label="Open Tickets" value={helpStats.openTickets} sub={`${helpStats.totalTickets} total`} color="var(--coral)" />
-        </div>
-      </div>
-
-      {/* Widget Analytics Section */}
-      <div style={{ marginBottom: '48px' }}>
-        <h2 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '16px', color: 'var(--ink)' }}>Widget Analytics</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
-          <StatCard label="Widget Views" value={widgetStats.totalViews} />
-          <StatCard label="Avg Views/Day" value={widgetStats.avgViewsPerDay} />
-          <StatCard label="Active Tabs" value={Object.keys(widgetStats.byTab).length} />
-        </div>
-
-        {Object.keys(widgetStats.byTab).length > 0 && (
-          <div style={{
-            marginTop: '24px',
-            padding: '16px',
-            borderRadius: '12px',
-            border: '1px solid var(--border)',
-            background: '#fff'
-          }}>
-            <p style={{ fontSize: '14px', fontWeight: 600, marginBottom: '12px', color: 'var(--ink)' }}>Views by Tab</p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
-              {Object.entries(widgetStats.byTab).map(([tab, count]) => (
-                <div key={tab} style={{
-                  padding: '12px',
-                  borderRadius: '8px',
-                  background: 'var(--peach)',
-                  textAlign: 'center'
-                }}>
-                  <p style={{ margin: '0', fontSize: '13px', color: 'var(--slate)' }}>{tab}</p>
-                  <p style={{ margin: '4px 0 0 0', fontSize: '20px', fontWeight: 700, color: 'var(--coral)' }}>{String(count)}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Tasks by Outlet Section */}
-      <div style={{ marginBottom: '48px' }}>
-        <h2 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '16px', color: 'var(--ink)' }}>Tasks by Outlet</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
-          <StatCard label="Total Tasks" value={taskStats.total} />
-          <StatCard label="Open" value={taskStats.open} />
-          <StatCard label="Overdue" value={taskStats.overdue} color={taskStats.overdue > 0 ? '#dc2626' : undefined} />
-          <StatCard label="Completed" value={taskStats.completed} color="#16a34a" />
-        </div>
-
-        {taskStats.byOutlet.length > 0 ? (
-          <div style={{ marginTop: '24px', borderRadius: '12px', border: '1px solid var(--border)', background: '#fff', overflow: 'hidden' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1fr 1fr', gap: 0, padding: '12px 16px', background: 'var(--peach)', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--slate)' }}>
-              <span>Outlet</span>
-              <span style={{ textAlign: 'right' }}>Open</span>
-              <span style={{ textAlign: 'right' }}>Overdue</span>
-              <span style={{ textAlign: 'right' }}>Completed</span>
-            </div>
-            {taskStats.byOutlet.map((o: any) => (
-              <div key={o.id || 'none'} style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1fr 1fr', gap: 0, padding: '12px 16px', borderTop: '1px solid var(--border)', fontSize: '14px', alignItems: 'center' }}>
-                <span style={{ fontWeight: 700, color: o.id ? 'var(--ink)' : 'var(--slate)' }}>{o.name}</span>
-                <span style={{ textAlign: 'right', color: 'var(--ink)' }}>{o.open}</span>
-                <span style={{ textAlign: 'right', fontWeight: o.overdue > 0 ? 700 : 400, color: o.overdue > 0 ? '#dc2626' : 'var(--slate)' }}>{o.overdue}</span>
-                <span style={{ textAlign: 'right', color: '#16a34a' }}>{o.completed}</span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p style={{ marginTop: '16px', fontSize: '13px', color: 'var(--slate)' }}>No tasks in this period.</p>
-        )}
-        <p style={{ marginTop: '10px', fontSize: '12px', color: 'var(--slate)' }}>Tasks tied to more than one outlet are counted under each of them.</p>
-      </div>
-    </div>
+    </InsightsPage>
   )
 }
+
+const ALY_CSS = `
+.aly-dates{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#8e8e93}
+.aly-tasks{display:flex;flex-direction:column}
+.aly-tr{display:grid;grid-template-columns:minmax(0,1.8fr) repeat(3,minmax(54px,.6fr));align-items:center;gap:8px;padding:11px 2px;border-top:1px solid #f1f1f3;font-size:14px;color:#18181b;font-variant-numeric:tabular-nums}
+.aly-tr>span:not(:first-child){text-align:right}
+.aly-tr>span:first-child{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aly-tr>span.none{color:#8e8e93;font-weight:500}
+.aly-tr em{font-style:normal;font-weight:700;color:#dc2626;background:#fef2f2;padding:2px 8px;border-radius:999px}
+.aly-tr .done{color:#16a34a;font-weight:600}
+.aly-th{border-top:none;padding-top:0;font-size:12.5px;font-weight:600;color:#8e8e93}
+.aly-th>span:first-child{font-weight:600}
+`
