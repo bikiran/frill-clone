@@ -63,19 +63,36 @@ export function AiDraftButton({ busy, onClick, height = 32, orb = false }: { bus
   if (orb) return (
     <button type="button" onClick={onClick} disabled={busy} className={`ai-orb${busy ? ' busy' : ''}`}
       title="Draft a reply with AI from your help centre, products and this customer's orders" aria-label="Draft a reply with AI"
-      style={{ width: height, height, borderRadius: 12, border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', cursor: busy ? 'wait' : 'pointer', flexShrink: 0,
+      style={{ width: height, height, borderRadius: '50%', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', cursor: busy ? 'wait' : 'pointer', flexShrink: 0,
         background: 'linear-gradient(135deg,#8b5cf6 0%,#d946ef 55%,#f472b6 100%)', boxShadow: '0 6px 16px -8px rgba(168,85,247,.8)' }}>
       <style>{`.ai-orb{transition:transform .18s cubic-bezier(.22,1,.36,1),box-shadow .18s}.ai-orb:hover{transform:translate3d(0,-1px,0);box-shadow:0 10px 20px -8px rgba(168,85,247,.9)!important}.ai-orb:active{transform:scale(.94)}.ai-orb.busy svg{animation:aiOrbSpin 1.1s linear infinite}@keyframes aiOrbSpin{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){.ai-orb.busy svg{animation:none}}`}</style>
       <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M12 2.5l1.9 5.6 5.6 1.9-5.6 1.9L12 17.5l-1.9-5.6-5.6-1.9 5.6-1.9z" /><path d="M19 14.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" opacity=".85" /></svg>
     </button>
   )
   return (
-    <button type="button" onClick={onClick} disabled={busy} title="Draft a reply with AI from your help centre, products and this customer's orders"
-      style={{ height, display: 'inline-flex', alignItems: 'center', gap: 5, padding: '0 11px', borderRadius: 8, border: '1px solid #e9d5ff', background: '#faf5ff', color: '#7c3aed', fontSize: 12.5, fontWeight: 700, cursor: busy ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}>
-      <Sparkle /> {busy ? 'Drafting…' : 'Draft reply'}
-    </button>
+    <>
+      <style>{AI_PILL_CSS}</style>
+      <button type="button" onClick={onClick} disabled={busy} className={`ai-pill${busy ? ' busy' : ''}`} style={{ height }}
+        title="Draft a reply with AI from your help centre, products and this customer's orders">
+        <Sparkle /> {busy ? 'Drafting…' : 'Draft reply'}
+      </button>
+    </>
   )
 }
+
+/** The soft violet pill the AI actions use (Draft reply, AI improve). */
+export const AI_PILL_CSS = `
+.ai-pill{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 15px;border:none;border-radius:999px;background:color-mix(in srgb,#8b5cf6 11%,var(--card,#fff));color:#7c3aed;font:inherit;font-size:13px;font-weight:650;white-space:nowrap;cursor:pointer;flex-shrink:0;transition:background .15s,transform .12s}
+.ai-pill::before{display:none!important}
+.ai-pill:hover{background:color-mix(in srgb,#8b5cf6 18%,var(--card,#fff))}
+.ai-pill:active{transform:scale(.97)}
+.ai-pill:disabled{cursor:wait;opacity:.75}
+.ai-pill.busy svg{animation:aiPillSpin 1.1s linear infinite}
+.ai-pill:focus-visible{outline:2px solid #8b5cf6;outline-offset:2px}
+[data-theme="dark"] .ai-pill{color:#c4b5fd;background:color-mix(in srgb,#8b5cf6 20%,var(--card,#18181b))}
+@keyframes aiPillSpin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.ai-pill.busy svg{animation:none}}
+`
 
 const RedoIcon = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
 const BookIcon = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z" /><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5" /></svg>

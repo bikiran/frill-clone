@@ -223,7 +223,7 @@ const REVIEWS_CSS = `
   /* Phone-only pieces are hidden on desktop. */
   .rv-m, .rv-bar, .rv-count-m, .rv-loadmore-wrap, .rv-newer-wrap, .rv-link-m, .rv-foot.rv-foot-m { display:none; }
 
-  .rv-rail { padding:20px; position:sticky; top:20px; }
+  .rv-rail { padding:20px; position:sticky; top:76px; max-height:calc(100vh - 96px); overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; }
   .rv-rail-h { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
   .rv-rail-h b { display:block; font-size:16px; font-weight:700; }
   .rv-rail-h small { display:block; font-size:12.5px; color:#8e8e93; }
@@ -295,15 +295,16 @@ const REVIEWS_CSS = `
      in for the rail's stats; the rail's settings sit below the list. */
   @media (max-width: 1023px) {
     .rv-grid { grid-template-columns: minmax(0, 1fr); }
-    .rv-rail { position:static; }
+    .rv-rail { position:static; max-height:none; overflow:visible; }
     .rv-rail-stats { display:none; }
   }
 
+  /* The admin's content column is a scroll container that never scrolls (the
+     page does), which stops anything sticking. Clip sideways instead, so the
+     rail (desktop) and the search bar (phones) stick while you scroll. */
+  .admin-main:has(.rv-page) { overflow-x: clip !important; overflow-y: visible !important; min-width: 0; }
+
   @media (max-width: 767px) {
-    /* The admin's content column is a scroll container that never scrolls
-       (the page does), which stops anything sticking. Clip sideways instead,
-       so the search bar can stick under the top bar while you scroll. */
-    .admin-main:has(.rv-page) { overflow-x: clip !important; overflow-y: visible !important; }
 
     .rv-page { padding: 16px 14px 24px !important; }
     .rv-headbar { flex-direction:column; align-items:stretch; margin-bottom:14px; }

@@ -1,5 +1,6 @@
 'use client'
 
+import OverviewMetrics from '@/components/settings/OverviewMetrics'
 import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -1787,116 +1788,7 @@ export default function SettingsPage() {
 
         {/* General, Theme, Emails tabs — show content based on activeSettingsTab */}
         {activeSettingsTab === 'overview' && (
-          <div>
-            {/* Range selector */}
-            <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
-              {[7, 30, 90].map(d => (
-                <button key={d} onClick={() => setOverviewDays(d)}
-                  style={{ padding: '6px 14px', borderRadius: 999, border: '1.5px solid #e4e4e7', background: overviewDays === d ? 'var(--peach)' : '#fff', color: overviewDays === d ? 'var(--coral)' : 'var(--slate)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                  {d} days
-                </button>
-              ))}
-            </div>
-
-            {overviewLoading && !overview ? (
-              <p style={{ fontSize: 14, color: 'var(--slate)' }}>Loading…</p>
-            ) : overview ? (
-              <>
-                {/* Conversations & service */}
-                <p style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--slate)', margin: '0 0 10px' }}>Conversations</p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 26 }}>
-                  {[
-                    { label: 'Customers served', value: overview.customersServed, hint: 'Distinct people you chatted with' },
-                    { label: 'Messages received', value: overview.messagesReceived, hint: 'Messages sent by customers' },
-                    { label: 'Conversations replied', value: overview.conversationsReplied, hint: 'Chats where your team responded' },
-                    { label: 'Resolved', value: overview.resolved, hint: 'Marked resolved or closed' },
-                  ].map(m => (
-                    <div key={m.label} style={{ padding: 16, borderRadius: 14, border: '1px solid var(--border)', background: '#fff' }}>
-                      <p style={{ fontSize: 26, fontWeight: 800, color: 'var(--ink)', margin: '0 0 2px' }}>{m.value ?? '—'}</p>
-                      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>{m.label}</p>
-                      <p style={{ fontSize: 11, color: 'var(--slate)', margin: '3px 0 0' }}>{m.hint}</p>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Customers */}
-                <p style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--slate)', margin: '0 0 10px' }}>Customers</p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 26 }}>
-                  {[
-                    { label: 'New customers', value: overview.newCustomers, hint: 'First conversation in this period' },
-                    { label: 'Returning customers', value: overview.returningCustomers, hint: 'Had chatted with you before' },
-                    { label: 'Total conversations', value: overview.conversations, hint: 'Chats started in this period' },
-                  ].map(m => (
-                    <div key={m.label} style={{ padding: 16, borderRadius: 14, border: '1px solid var(--border)', background: '#fff' }}>
-                      <p style={{ fontSize: 26, fontWeight: 800, color: 'var(--ink)', margin: '0 0 2px' }}>{m.value ?? '—'}</p>
-                      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>{m.label}</p>
-                      <p style={{ fontSize: 11, color: 'var(--slate)', margin: '3px 0 0' }}>{m.hint}</p>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Conversions */}
-                <p style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--slate)', margin: '0 0 10px' }}>Sales converted through chat</p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 12 }}>
-                  <div style={{ padding: 16, borderRadius: 14, border: '1px solid var(--coral)', background: 'var(--peach)' }}>
-                    <p style={{ fontSize: 26, fontWeight: 800, color: 'var(--coral)', margin: '0 0 2px' }}>${(overview.salesAmount ?? 0).toLocaleString()}</p>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>Revenue converted</p>
-                    <p style={{ fontSize: 11, color: 'var(--slate)', margin: '3px 0 0' }}>
-                      {overview.totalOrderAmount > 0
-                        ? `${Math.round((overview.salesAmount / overview.totalOrderAmount) * 100)}% of $${overview.totalOrderAmount.toLocaleString()} total`
-                        : 'From chat-attributed orders'}
-                    </p>
-                  </div>
-                  <div style={{ padding: 16, borderRadius: 14, border: '1px solid var(--coral)', background: 'var(--peach)' }}>
-                    <p style={{ fontSize: 26, fontWeight: 800, color: 'var(--coral)', margin: '0 0 2px' }}>{overview.salesConverted ?? 0}</p>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>Orders converted</p>
-                    <p style={{ fontSize: 11, color: 'var(--slate)', margin: '3px 0 0' }}>
-                      {overview.totalOrders > 0 ? `of ${overview.totalOrders} total orders` : 'Attributed to chat'}
-                    </p>
-                  </div>
-                  <div style={{ padding: 16, borderRadius: 14, border: '1px solid var(--border)', background: '#fff' }}>
-                    <p style={{ fontSize: 26, fontWeight: 800, color: 'var(--ink)', margin: '0 0 2px' }}>{overview.cartsRecovered ?? 0}</p>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>Carts recovered</p>
-                    <p style={{ fontSize: 11, color: 'var(--slate)', margin: '3px 0 0' }}>${(overview.cartsRecoveredAmount ?? 0).toLocaleString()} recovered</p>
-                  </div>
-                  <div style={{ padding: 16, borderRadius: 14, border: '1px solid var(--border)', background: '#fff' }}>
-                    <p style={{ fontSize: 26, fontWeight: 800, color: 'var(--ink)', margin: '0 0 2px' }}>{overview.cartsCaptured ?? 0}</p>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', margin: 0 }}>Carts captured</p>
-                    <p style={{ fontSize: 11, color: 'var(--slate)', margin: '3px 0 0' }}>${(overview.cartsCapturedAmount ?? 0).toLocaleString()} at risk</p>
-                  </div>
-                </div>
-
-                {/* Attribution breakdown */}
-                {overview.byAttribution && Object.keys(overview.byAttribution).length > 0 && (
-                  <div style={{ marginBottom: 12, border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-                    {Object.entries(overview.byAttribution).map(([key, v]: any) => {
-                      const labels: Record<string, string> = {
-                        chat_order: 'Order created from chat',
-                        cart_recovered: 'Recovered abandoned cart',
-                        chat_assisted: 'Customer chatted before ordering',
-                      }
-                      return (
-                        <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid var(--border)', background: '#fff' }}>
-                          <span style={{ fontSize: 13, color: 'var(--ink)' }}>{labels[key] || key}</span>
-                          <span style={{ fontSize: 13, color: 'var(--slate)' }}>
-                            <strong style={{ color: 'var(--ink)' }}>${v.amount.toLocaleString()}</strong> · {v.count} order{v.count === 1 ? '' : 's'}
-                          </span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-
-                <div style={{ padding: 12, borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)' }}>
-                  <p style={{ fontSize: 12, color: 'var(--slate)', margin: 0, lineHeight: 1.5 }}>
-                    <strong>How attribution works:</strong> an order counts as converted through chat only when Colvy can prove it — the agent created it from the chat, it recovered a cart Colvy captured, or the customer actually conversed before ordering. Cancelled, failed and refunded orders are excluded. These are real order totals from your store, not estimates.
-                  </p>
-                </div>
-              </>
-            ) : (
-              <p style={{ fontSize: 14, color: 'var(--slate)' }}>Could not load metrics.</p>
-            )}
-          </div>
+          <OverviewMetrics overview={overview} days={overviewDays} onDays={setOverviewDays} loading={overviewLoading} />
         )}
 
         {(activeSettingsTab === 'general' || activeSettingsTab === 'theme' || activeSettingsTab === 'emails') && (<>
