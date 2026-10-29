@@ -22,6 +22,7 @@ import { posSaleInfo, prextySpendIncGst } from '@/lib/prexty-pos'
 import PrextyMark from '@/components/PrextyMark'
 import ResilientImage from '@/components/ResilientImage'
 import { AiSparkIcon, CHANNEL_ICON, CHANNEL_NAME, Highlight, Icon, STATUS_COLOR, STATUS_ICON, VideoTileMark, fmtDateTime, fmtTime, timeOpts, videoPoster } from '@/components/inbox/inbox-shared'
+import { ENGAGEMENT_CSS, FacebookComment, GoogleReview, InstagramComment } from '@/components/inbox/EngagementCards'
 import { useInbox } from '@/components/inbox/InboxContext'
 
 export default function ContactPanelBody() {
@@ -437,46 +438,22 @@ export default function ContactPanelBody() {
                   </>)
                 })()}
 
-                {/* ── Google review ─────────────────────────────────────
-                    Stars for a review this customer left on Google (linked
-                    by contact match). Clicking opens the reviews dashboard. */}
-                {contactReviews.count > 0 && contactReviews.latest && (
+                {/* ── What they said in public ───────────────────────────
+                    Their latest Google review and Instagram / Facebook comment,
+                    drawn the way each platform shows them. Each opens its
+                    manager (Reviews, Social Engagement). */}
+                {(contactReviews.latest || contactReviews.latestComment) && (
                   <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4 }}>
-                    <p style={{ margin: '0 0 3px 0', fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>Google review</p>
-                    <a href="/admin/reviews" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none' }} title="View on the reviews dashboard">
-                      <span style={{ fontSize: 15, letterSpacing: 1, color: '#f5b301' }}>
-                        {'★'.repeat(Math.max(0, Math.min(5, contactReviews.latest.rating || 0)))}
-                        <span style={{ color: '#d4d4d8' }}>{'★'.repeat(5 - Math.max(0, Math.min(5, contactReviews.latest.rating || 0)))}</span>
-                      </span>
-                      <span style={{ fontSize: 12, color: 'var(--slate)' }}>
-                        {contactReviews.latest.rating}/5{contactReviews.count > 1 ? ` · ${contactReviews.count} reviews` : ''}
-                      </span>
-                    </a>
-                    {contactReviews.latest.comment && (
-                      <p style={{ margin: '5px 0 0 0', fontSize: 12, color: 'var(--ink)', fontStyle: 'italic', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                        “{contactReviews.latest.comment}”
-                      </p>
+                    <p style={{ margin: '0 0 8px 0', fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>Reviews &amp; comments</p>
+                    {contactReviews.count > 0 && contactReviews.latest && (
+                      <GoogleReview r={contactReviews.latest} count={contactReviews.count} avg={contactReviews.avg} />
                     )}
-                  </div>
-                )}
-
-                {/* ── Social comment ────────────────────────────────────
-                    This customer commented on a post/ad (any linked channel);
-                    opens the comment in the Social Engagement manager. */}
-                {contactReviews.commentCount > 0 && contactReviews.latestComment && (
-                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4 }}>
-                    <p style={{ margin: '0 0 3px 0', fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>Social engagement</p>
-                    <a href={`/admin/social?comment=${encodeURIComponent(contactReviews.latestComment.id)}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }} title="View on the Social Engagement manager">
-                      <span style={{ fontSize: 13 }}>💬</span>
-                      <span style={{ fontSize: 12, color: 'var(--slate)' }}>
-                        Commented on {contactReviews.latestComment.platform === 'instagram' ? 'Instagram' : 'Facebook'}{contactReviews.commentCount > 1 ? ` · ${contactReviews.commentCount}` : ''}
-                      </span>
-                    </a>
-                    {contactReviews.latestComment.message && (
-                      <p style={{ margin: '5px 0 0 0', fontSize: 12, color: 'var(--ink)', fontStyle: 'italic', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                        “{contactReviews.latestComment.message}”
-                      </p>
+                    {contactReviews.commentCount > 0 && contactReviews.latestComment && (
+                      contactReviews.latestComment.platform === 'instagram'
+                        ? <InstagramComment c={contactReviews.latestComment} count={contactReviews.commentCount} business={companyInfo?.name || 'You'} />
+                        : <FacebookComment c={contactReviews.latestComment} count={contactReviews.commentCount} business={companyInfo?.name || 'You'} />
                     )}
+                    <style href="colvy-engagement-cards" precedence="default">{ENGAGEMENT_CSS}</style>
                   </div>
                 )}
 
