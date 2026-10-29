@@ -40,10 +40,6 @@ export default function InboxList() {
           </div>
         )}
         <div className="il-inner">
-        {/* Floating compose button — start a new outbound message/call */}
-        <button type="button" onClick={() => setShowCompose(true)} title="New message" aria-label="New message" className="colvy-page-fab il-fab">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        </button>
         {/* Header */}
         <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
           {/* The title with its unread count, then the actions, kept on one row
@@ -59,10 +55,14 @@ export default function InboxList() {
               )
             })()}
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-              <button type="button" onClick={() => setShowAddContact(true)} title="Add a contact manually"
-                className="cv-btn" style={{ height: 30, padding: '0 12px', gap: 5, fontSize: 12.5 }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                Contact
+              {/* New conversation: a message or call to anyone (Sellio puts it here). */}
+              <button type="button" onClick={() => setShowCompose(true)} aria-label="New conversation" className="il-new">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                <span className="il-tip" role="tooltip">New conversation</span>
+              </button>
+              <button type="button" onClick={() => setShowAddContact(true)} title="Add a contact" aria-label="Add a contact"
+                className="cv-btn cv-btn-icon" style={{ width: 30, height: 30 }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg>
               </button>
               <Link href="/admin/crm-settings/profile" title="Inbox settings" aria-label="Inbox settings"
                 className="cv-btn cv-btn-icon" style={{ width: 30, height: 30 }}>
