@@ -554,6 +554,15 @@ export const INBOX_CSS = `
         .il-mini-count { position: absolute; top: -6px; right: -10px; min-width: 20px; height: 20px; padding: 0 5px; box-sizing: border-box; border-radius: 999px; background: var(--coral); color: #fff; font-size: 10.5px; font-weight: 750; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px #fff; }
         .il-wide-only, .inbox-col-list .colvy-page-fab { transition: opacity .18s; }
         .il-collapsed .il-wide-only, .il-collapsed .colvy-page-fab { opacity: 0; pointer-events: none; }
+        /* New message: an accent squircle that lifts on hover, its + turning a quarter. */
+        .inbox-col-list .colvy-page-fab.il-fab { position: absolute; right: 16px; bottom: 16px; z-index: 20; width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; padding: 0; border: none; border-radius: 18px; background: var(--coral); color: #fff; cursor: pointer; box-shadow: 0 0 0 4px #fff, 0 14px 28px -10px color-mix(in srgb, var(--coral) 75%, transparent); transition: opacity .18s, transform .22s cubic-bezier(.3,1.4,.5,1), box-shadow .2s ease, filter .15s ease; }
+        .il-fab::before { display: none !important; }
+        .il-fab svg { transition: transform .3s cubic-bezier(.3,1.4,.5,1); }
+        .il-fab:hover { transform: translateY(-2px); filter: brightness(1.06); box-shadow: 0 0 0 4px #fff, 0 18px 32px -10px color-mix(in srgb, var(--coral) 85%, transparent); }
+        .il-fab:hover svg { transform: rotate(90deg); }
+        .il-fab:active { transform: scale(.93); }
+        .il-fab:focus-visible { outline: none; box-shadow: 0 0 0 4px #fff, 0 0 0 6px var(--ink); }
+        [data-theme="dark"] .il-fab { box-shadow: 0 0 0 4px #18181b, 0 14px 28px -10px color-mix(in srgb, var(--coral) 75%, transparent); }
         .il-collapsed .ilc { background: transparent; box-shadow: none; }
         .il-collapsed .ilc-main { opacity: 0; }
         .il-collapsed .ilc-line { opacity: 0; min-height: 0; margin-top: 0; margin-bottom: 0; }
