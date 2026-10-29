@@ -8,6 +8,9 @@ import { Fragment, useState, useEffect, useLayoutEffect, useRef, useCallback, us
 import AiLiveReply from '@/components/AiLiveReply'
 import AgentSuggestion from '@/components/AgentSuggestion'
 import { WhyLink } from '@/components/WhyAgent'
+import AgentBar from '@/components/agents/AgentBar'
+import AgentFace from '@/components/agents/AgentFace'
+import { useAgentTeam, agentName, roleFromName, agentChannel } from '@/components/agents/useAgentTeam'
 import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth-fetch'
 import { peekCompanyUser, resolveCompanyUser, readCache, writeCache } from '@/lib/client-cache'
@@ -6492,6 +6495,31 @@ export default function InboxPage() {
   // ── Accept AI-detected info ────────────────────────────────────────────────
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2200) }
 
+  // The AI team (faces, who's on, which channels): who's answering the open
+  // conversation, and each agent's face on what it did.
+  const { team: agentTeam, faceOf: agentFaceOf } = useAgentTeam(companyId)
+  // The agent that answers this conversation, or null when none does here.
+  const answeringRole = (conv: any): string | null => {
+    if (!conv || !agentTeam || agentTeam.paused) return null
+    const ch = agentChannel(conv.channel)
+    if (!ch || !agentTeam.channels.includes(ch)) return null
+    return agentTeam.enabled.includes('support') ? 'support' : agentTeam.enabled.includes('reception') ? 'reception' : null
+  }
+  // null = follow the workspace setting; false = paused for this conversation.
+  const setConvAi = async (next: false | null, quiet = false) => {
+    if (!selected) return
+    await (supabase as any).from('conversations').update({ ai_enabled: next }).eq('id', selected.id)
+    setSelected(s => (s ? ({ ...s, ai_enabled: next } as any) : s))
+    if (!quiet) showToast(next === false ? 'AI paused here. Your team is answering.' : 'Handed back to the agent')
+  }
+  // Take control: the AI stops sending here, and the conversation is yours.
+  const takeControl = async () => {
+    await setConvAi(false, true)
+    const me = teamMembers.find(m => m.user_id && m.user_id === user?.id)
+    if (me && selected?.assigned_to !== me.user_id) await assignTo(me)
+    showToast('You’re answering. The agent won’t send anything here.')
+  }
+
   const copyField = (value: string) => {
     try { navigator.clipboard.writeText(value); showToast('Copied to your clipboard') } catch {}
   }
@@ -9570,8 +9598,8 @@ export default function InboxPage() {
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><circle cx="11" cy="11" r="7"/><line x1="20.5" y1="20.5" x2="16" y2="16"/></svg>
               </button>
 
-              {/* AI on/off for this conversation */}
-              <button type="button"
+              {/* AI on/off for this conversation (the agent bar above the reply box has it when an agent answers here) */}
+              {!answeringRole(selected) && <button type="button"
                 onClick={async () => {
                   if (!selected) return
                   // null = follow the company default; false = silenced here.
@@ -9585,7 +9613,7 @@ export default function InboxPage() {
                 className={`th-btn th-ai${(selected as any).ai_enabled === false ? ' off' : ''}`}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z"/><path d="M18.5 14.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/></svg>
                 {(selected as any).ai_enabled === false && <span className="th-ai-slash" aria-hidden />}
-              </button>
+              </button>}
 
               {/* Product search */}
               <button type="button" onClick={() => setShowProducts(true)} title="Product search — send a price or buy link" aria-label="Product search"
@@ -9950,8 +9978,10 @@ export default function InboxPage() {
                     return (
                       <div key={`ev-${ev.id}`} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '8px 0' }}>
                         <div style={{ flex: 1, height: 1, background: 'color-mix(in srgb, var(--coral, #ff7a6b) 22%, transparent)' }} />
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 600, color: 'var(--coral, #ff7a6b)', whiteSpace: 'nowrap', maxWidth: 460, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}><path d="M12 2l1.6 4.6L18 8l-4.4 1.4L12 14l-1.6-4.6L6 8l4.4-1.4L12 2zM19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14zM5 15l.7 1.8L7.5 17l-1.8.7L5 19.5l-.7-1.8L2.5 17l1.8-.7L5 15z"/></svg>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600, color: ev.metadata?.agent_run_id ? agentFaceOf(roleFromName(ev.actor_name)).color : 'var(--coral, #ff7a6b)', whiteSpace: 'nowrap', maxWidth: 460, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {ev.metadata?.agent_run_id
+                            ? <AgentFace face={agentFaceOf(roleFromName(ev.actor_name))} size={18} />
+                            : <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}><path d="M12 2l1.6 4.6L18 8l-4.4 1.4L12 14l-1.6-4.6L6 8l4.4-1.4L12 2zM19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14zM5 15l.7 1.8L7.5 17l-1.8.7L5 19.5l-.7-1.8L2.5 17l1.8-.7L5 15z"/></svg>}
                           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.detail || 'Updated by Colvy AI'}</span>
                           <span style={{ opacity: 0.75, fontWeight: 500 }}>· {ev.metadata?.agent_run_id ? (ev.actor_name || 'Support Agent').replace(/^Colvy /, '') : 'Colvy AI'}</span>
                           {ev.created_at && <span style={{ opacity: 0.55, fontWeight: 500 }}> · {fmtTime(ev.created_at)}</span>}
@@ -10155,11 +10185,11 @@ export default function InboxPage() {
                 // chat bubbles and email cards so both say the same thing.
                 const aiCredit = (msg as any).is_ai && (msg.metadata?.agent_run_id ? (
                       // Sent by an agent (Agent Engine): who let it go out, and why.
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#8b5cf6', fontWeight: 700 }}>
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.6 5.3L19 9l-5.4 1.7L12 16l-1.6-5.3L5 9l5.4-1.7z"/></svg>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: agentFaceOf(roleFromName(msg.metadata.agent_name)).color, fontWeight: 700 }}>
+                        <AgentFace face={agentFaceOf(roleFromName(msg.metadata.agent_name))} size={16} />
                         {msg.metadata.agent_name || 'Support Agent'} · {msg.metadata.approved_by ? `${msg.metadata.edited ? 'edited' : 'approved'} by ${msg.metadata.approved_by}` : 'sent on its own'}
                         <span aria-hidden="true">·</span>
-                        <WhyLink companyId={companyId} runId={msg.metadata.agent_run_id} style={{ color: '#8b5cf6' }} />
+                        <WhyLink companyId={companyId} runId={msg.metadata.agent_run_id} style={{ color: agentFaceOf(roleFromName(msg.metadata.agent_name)).color }} />
                       </span>
                     ) : (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: '#8b5cf6', fontWeight: 700 }}>
@@ -10881,6 +10911,19 @@ export default function InboxPage() {
 
             {/* Reply box */}
             <div className={`inbox-composer ${mComposerOpen ? 'mcmp-open' : 'mcmp-collapsed'}`} style={{ padding: '10px 14px', background: '#fff', borderTop: '1px solid var(--border)', position: 'relative' }}>
+              {(() => {
+                const role = answeringRole(selected)
+                if (!role || !selected) return null
+                return (
+                  <AgentBar face={agentFaceOf(role)} name={agentName(role)} aiOff={(selected as any).ai_enabled === false}
+                    autoSend={!!agentTeam?.autoSend && role === 'support'}
+                    members={teamMembers.filter(m => m.name).map(m => ({ user_id: m.user_id, name: m.name }))} assignedTo={(selected as any).assigned_to}
+                    onTakeControl={takeControl} onHandBack={() => setConvAi(null)} onPause={() => setConvAi(false)}
+                    onAssign={m => assignTo(m ? (teamMembers.find(t => t.user_id === m.user_id) || null) : null)}
+                    onNote={() => { setInternalMode(true); setMComposerOpen(true); setTimeout(() => textareaRef.current?.focus(), 30) }}
+                    onTicket={() => { setTicketSubject(selected?.subject || ''); setTicketDesc(''); setTicketPriority('normal'); setShowTicketPanel(true) }} />
+                )
+              })()}
               {/* Phones: the composer starts as this one-line bar so the thread
                   gets the screen. Tap it to write; the full composer (and any
                   draft) is still mounted underneath, just hidden. */}

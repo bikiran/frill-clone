@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { WhyLink } from '@/components/WhyAgent'
 import { authFetch } from '@/lib/auth-fetch'
+import AgentFace from '@/components/agents/AgentFace'
+import { useAgentTeam } from '@/components/agents/useAgentTeam'
 
 // Inbox: a reply the Support Agent prepared for this conversation, waiting for
 // the team (Agent Engine "prepare"). Send it as is, edit it first, or dismiss
@@ -12,7 +14,6 @@ import { authFetch } from '@/lib/auth-fetch'
 // folded for that suggestion until opened again.
 
 const EASE = 'cubic-bezier(.22,1,.36,1)'
-const Spark = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.6L18.5 9l-4.7 1.4L12 15l-1.8-4.6L5.5 9l4.7-1.4z" /></svg>
 
 // Suggestions folded this visit, so switching conversations doesn't reopen them.
 const folded = new Set<string>()
@@ -21,6 +22,8 @@ const Chevron = ({ up }: { up?: boolean }) => <svg width="15" height="15" viewBo
 export type Suggestion = { id: string; run_id: string; action_key: string; args: any; created_at: string; run?: { summary?: string | null; intent?: string | null; role_key?: string | null; input?: any } | null }
 
 export function SuggestionCard({ s, companyId, onDone, compact, foldable }: { s: Suggestion; companyId: string; onDone: (id: string, result: string) => void; compact?: boolean; foldable?: boolean }) {
+  // The face of the agent that drafted it (lib/agent-faces).
+  const { faceOf } = useAgentTeam(companyId)
   const [editing, setEditing] = useState(false)
   const [isFolded, setFolded] = useState(() => !!foldable && folded.has(s.id))
   const fold = (v: boolean) => { if (v) folded.add(s.id); else folded.delete(s.id); setFolded(v) }
@@ -69,7 +72,7 @@ export function SuggestionCard({ s, companyId, onDone, compact, foldable }: { s:
   if (isFolded) {
     return (
       <button type="button" className="agsg-bar" onClick={() => fold(false)} aria-expanded={false} aria-label={`${title}. Show`}>
-        <span className="agsg-orb" style={{ width: 22, height: 22, borderRadius: 7 }}><Spark /></span>
+        <span className="agsg-face"><AgentFace face={faceOf(String(s.run?.role_key || 'support'))} size={22} /></span>
         <span className="agsg-bar-t">{title}</span>
         <span className="agsg-bar-go">Review <Chevron up /></span>
         <style>{CSS}</style>
@@ -80,7 +83,7 @@ export function SuggestionCard({ s, companyId, onDone, compact, foldable }: { s:
   return (
     <div className="agsg" role="region" aria-label="Suggested reply">
       <div className="agsg-head">
-        <span className="agsg-orb"><Spark /></span>
+        <span className="agsg-face"><AgentFace face={faceOf(String(s.run?.role_key || 'support'))} size={26} /></span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <p className="agsg-t">{title}</p>
           {!compact && s.run?.summary && <p className="agsg-s">{s.run.summary}</p>}
@@ -168,6 +171,7 @@ const CSS = `
 @keyframes agsgIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion: reduce){.agsg{animation:none}}
 .agsg-head{display:flex;align-items:flex-start;gap:10px;padding:11px 13px;background:color-mix(in srgb,var(--coral,#e2553f) 6%,#fff);border-bottom:1px solid color-mix(in srgb,var(--coral,#e2553f) 14%,#f1f1f1)}
+.agsg-face{display:inline-flex;flex-shrink:0}
 .agsg-orb{width:26px;height:26px;flex-shrink:0;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;color:#fff;background:linear-gradient(135deg,var(--coral,#e2553f),color-mix(in srgb,var(--coral,#e2553f) 55%,#a855f7))}
 .agsg-t{margin:0;font-size:13px;font-weight:800;color:#0d0d0d}
 .agsg-s{margin:2px 0 0;font-size:12px;color:#71717a;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
