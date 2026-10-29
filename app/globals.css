@@ -192,6 +192,33 @@ select:focus {
   box-shadow: 0 0 0 3px rgba(255, 122, 107, 0.1);
 }
 
+/* ── DISPLAY TYPE (admin) ──
+   Page and section titles and the big numbers on the admin pages are set
+   in Bricolage Grotesque (lib/fonts, loaded on the admin shell), and
+   `.cv-accent` is the
+   one-word Instrument Serif italic accent ("Good morning, Roxy"). Previews
+   of customer-facing pages (poll views, payment result, booking flow) keep
+   their own type. :where() keeps this at a single class of specificity, so
+   a page's own sizes, weights and spacing (".ord-head h1" and up) still
+   apply. */
+.admin-main :where(h1:not(.pv-q):not(.pr-h):not(.bk-rise), h2:not(.pv-q):not(.pr-h)),
+.admin-main :where(.dh-big, .dh-kpi-v, .dh-n, .dh-chart-v, .ord-stat-n, .py-kpi-v, .rv-tile-n, .cp-stat-v, .cp-tile-v,
+  .fr-big, .fr-kpi-v, .im-tile-n, .nyp-stat-v, .ar-tile-v, .se-tile-v, .tp-tile-v, .wl-tile-v, .gl-pct, .eg-score, .tk-stat-n) {
+  font-family: var(--font-display), -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+  font-optical-sizing: auto;
+  letter-spacing: -0.03em;
+}
+.admin-main :where(h1:not(.pv-q):not(.pr-h):not(.bk-rise)) { letter-spacing: -0.035em; }
+.admin-main :where(h2:not(.pv-q):not(.pr-h)) { letter-spacing: -0.02em; }
+.cv-accent {
+  font-family: var(--font-accent), Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-weight: 400;
+  font-size: 1.1em;
+  letter-spacing: -0.01em;
+  color: #ff5a3c;
+}
+
 /* ── SMOOTH SCROLL ── */
 html {
   scroll-behavior: smooth;

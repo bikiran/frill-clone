@@ -44,6 +44,7 @@ import AdminRail, { RAIL_W, type RailSection } from '@/components/AdminRail'
 import { SettingsAccess } from '@/components/settings/SettingsShell'
 import { SETTINGS_NAV } from '@/components/settings/settings-nav'
 import { canUseFeature, canAccessPath, featureForPath, hasFullAccess, type PermissionMap } from '@/lib/permissions'
+import { reportFonts } from '@/lib/fonts'
 
 const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
@@ -1325,7 +1326,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       )}
 
       {/* Main content — offset by sidebar width on desktop, full width on mobile */}
-      <div className="admin-main" style={{ marginLeft: desktop ? RAIL_W : 0, flex: 1, overflowY: 'auto', minHeight: 'calc(100vh - 56px)', paddingBottom: 'var(--sab-h, 0px)' }}>
+      <div className={`admin-main ${reportFonts}`} style={{ marginLeft: desktop ? RAIL_W : 0, flex: 1, overflowY: 'auto', minHeight: 'calc(100vh - 56px)', paddingBottom: 'var(--sab-h, 0px)' }}>
         {/* The banners' total height is published as --admin-banners-h so
             full-height screens (the inbox) can fit below them instead of
             running under the phone's bottom nav. */}

@@ -84,7 +84,7 @@ export default function Greeting({ name }: { name?: string }) {
         <span suppressHydrationWarning>{date}</span>
       </p>
       <h1 style={{ margin: '4px 0 0', fontSize: 28, lineHeight: 1.15, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--ink)' }}>
-        {c.greeting}{first ? `, ${first}` : ''}
+        {c.greeting}{first ? <>, <em className="cv-accent">{first}</em></> : ''}
       </h1>
       <p style={{ margin: '6px 0 0', fontSize: 15, color: 'var(--slate)', minHeight: 20 }}>{line}</p>
     </div>
