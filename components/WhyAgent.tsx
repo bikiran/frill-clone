@@ -157,7 +157,7 @@ const CSS = `
 .why-s{margin:2px 0 0;font-size:12.5px;color:#71717a}
 .why-x{width:32px;height:32px;flex-shrink:0;border:none;border-radius:10px;background:#f4f4f5;color:#52525b;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
 .why-body{padding:14px 16px 6px;overflow:auto}
-.why-quote{margin:0;font-size:14px;color:#52525b;font-style:italic;line-height:1.5}
+.why-quote{margin:0;font-size:14px;color:#52525b;font-style:italic;line-height:1.5;overflow-wrap:anywhere;word-break:break-word}
 .why-sum{margin-top:12px;padding:12px 14px;border-radius:14px;background:#f6f7f9}
 .why-sum p:last-child{margin:0;font-size:14px;line-height:1.55;color:#18181b}
 .why-label{margin:0 0 6px;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#71717a}

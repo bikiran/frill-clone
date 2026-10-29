@@ -1188,7 +1188,7 @@ const CSS = `
 .ag-chip.live{background:color-mix(in srgb,var(--coral) 12%,#fff);color:var(--coral)}
 .ag-dot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:agPulse 1.4s ease-in-out infinite}
 @keyframes agPulse{0%,100%{opacity:1}50%{opacity:.3}}
-.ag-quote{margin:6px 0 0;font-size:14px;color:var(--slate);font-style:italic;line-height:1.5}
+.ag-quote{margin:6px 0 0;font-size:14px;color:var(--slate);font-style:italic;line-height:1.5;overflow-wrap:anywhere;word-break:break-word}
 .ag-why{margin-top:14px;padding:14px 16px;border-radius:14px;background:var(--canvas,#f6f7f9)}
 .ag-stats{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:12px;font-size:12.5px;color:var(--slate)}
 .ag-refs{display:flex;flex-wrap:wrap;gap:6px}
@@ -1305,8 +1305,8 @@ const CSS = `
 .ag-rail-card + .ag-rail-card{margin-top:12px}
 .ag-nav-title{margin:4px 10px 10px;font-size:17px;font-weight:700;color:var(--ink)}
 .ag-nav-group{margin:16px 10px 4px;font-size:12.5px;font-weight:600;color:#8e8e93}
-.ag-nav a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:12px;font-size:14px;font-weight:500;color:#3f3f46;text-decoration:none;transition:background-color .15s,color .15s}
-.ag-nav a:hover{background:#f4f4f5;color:#18181b}
+.ag-nav a{display:flex;align-items:center;gap:10px;padding:8px 10px;margin:2px 0;border-radius:12px;font-size:14px;font-weight:500;color:#3f3f46;text-decoration:none;transition:background-color .15s,color .15s}
+.ag-nav a:hover{background:#f7f7f8;color:#18181b}
 .ag-nav a.on{background:#f4f4f5;color:#18181b;font-weight:600}
 .ag-nav a svg{flex-shrink:0;width:15px;height:15px;color:#8e8e93}
 .ag-nav a.on svg{color:var(--coral)}

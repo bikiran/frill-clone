@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { authFetch } from '@/lib/auth-fetch'
 import { readStored, writeStored } from '@/lib/client-cache'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import AgentFace from '@/components/agents/AgentFace'
+import { useAgentTeam } from '@/components/agents/useAgentTeam'
 
 // Agents page: outside tools. A business connects its agents to other systems
 // that speak MCP (Zapier, a CRM, a booking or stock system…), picks which
@@ -22,6 +24,14 @@ const Chev = ({ open }: { open: boolean }) => <span style={{ display: 'inline-fl
 const Refresh = () => ico(<><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></>, 14)
 const Trash = () => ico(<><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></>, 14)
 const Plus = () => ico(<><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></>, 15)
+const Close = () => ico(<><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>, 15)
+const Shield = () => ico(<><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></>, 15)
+// The three ways a server can sign in, as choice cards.
+const SIGN_IN: { k: 'none' | 'bearer' | 'header'; label: string; hint: string; icon: React.ReactNode }[] = [
+  { k: 'none', label: 'No sign-in', hint: 'Or the key is in the address', icon: ico(<><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></>, 17) },
+  { k: 'bearer', label: 'API key or token', hint: 'Sent as a Bearer token', icon: ico(<><circle cx="7.5" cy="15.5" r="4.5" /><path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3" /></>, 17) },
+  { k: 'header', label: 'Custom header', hint: 'Your own header and value', icon: ico(<><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></>, 17) },
+]
 
 const host = (u: string) => { try { return new URL(u).host } catch { return u } }
 const MODE_LABEL: Record<Tool['mode'], string> = { off: 'Off', ask: 'Ask first', auto: 'On its own' }
@@ -37,6 +47,7 @@ export default function AgentConnections({ companyId }: { companyId: string }) {
   const [busy, setBusy] = useState<string>('')
   const [error, setError] = useState('')
   const [form, setForm] = useState({ name: '', url: '', authType: 'bearer' as Conn['auth_type'], authHeader: 'X-API-Key', secret: '', roles: [] as string[] })
+  const { faceOf } = useAgentTeam(companyId)
 
   const load = useCallback(async () => {
     try {
@@ -165,51 +176,68 @@ export default function AgentConnections({ companyId }: { companyId: string }) {
           })}
 
           {!adding ? (
-            <button type="button" className="agx-add" onClick={() => { setAdding(true); setError('') }} disabled={conns.length >= 10}><Plus /> Connect a tool</button>
+            <button type="button" className="agx-add" onClick={() => { setAdding(true); setError('') }} disabled={conns.length >= 10}>
+              <span className="agx-add-ic" aria-hidden><Plus /></span>
+              <span className="agx-add-t"><b>Connect a tool</b><small>{conns.length >= 10 ? 'You’ve connected the most tools a workspace can have (10).' : 'Zapier, your CRM, a booking or stock system: anything with an MCP server'}</small></span>
+              {ico(<polyline points="9 18 15 12 9 6" />, 16)}
+            </button>
           ) : (
-            <div className="agx-form">
+            <div className="agx-form" role="group" aria-labelledby="agx-form-h">
+              <div className="agx-form-h">
+                <span className="ag-orb agx-form-orb" aria-hidden><Plug /></span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <p id="agx-form-h" className="agx-form-title">Connect a tool</p>
+                  <p className="agx-form-sub">Point your agents at a server that speaks MCP.</p>
+                </div>
+                <button type="button" className="agx-x" aria-label="Cancel" onClick={() => { setAdding(false); setError('') }} disabled={busy === 'create'}><Close /></button>
+              </div>
               <div className="agx-grid">
                 <div>
-                  <label className="ag-label" htmlFor="agx-name">Name</label>
-                  <input id="agx-name" className="ag-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Zapier" maxLength={60} />
+                  <label className="agx-lbl" htmlFor="agx-name">Name</label>
+                  <input id="agx-name" className="agx-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Zapier" maxLength={60} autoFocus />
                 </div>
                 <div>
-                  <label className="ag-label" htmlFor="agx-url">Server address</label>
-                  <input id="agx-url" className="ag-input" value={form.url} onChange={e => setForm({ ...form, url: e.target.value })} placeholder="https://…/mcp" inputMode="url" autoComplete="off" />
+                  <label className="agx-lbl" htmlFor="agx-url">Server address</label>
+                  <input id="agx-url" className="agx-input" value={form.url} onChange={e => setForm({ ...form, url: e.target.value })} placeholder="https://…/mcp" inputMode="url" autoComplete="off" spellCheck={false} />
                 </div>
               </div>
-              <p className="ag-label" style={{ margin: '12px 0 6px' }}>How it signs in</p>
-              <div className="agx-seg wide" role="radiogroup" aria-label="How it signs in">
-                {([['none', 'Nothing / in the address'], ['bearer', 'API key or token'], ['header', 'Custom header']] as const).map(([k, l]) => (
-                  <button key={k} type="button" role="radio" aria-checked={form.authType === k} className={form.authType === k ? 'on' : ''} onClick={() => setForm({ ...form, authType: k })}>{l}</button>
+              <p className="agx-lbl" id="agx-auth-l">How it signs in</p>
+              <div className="agx-auth" role="radiogroup" aria-labelledby="agx-auth-l">
+                {SIGN_IN.map(o => (
+                  <button key={o.k} type="button" role="radio" aria-checked={form.authType === o.k} className={`agx-auth-opt${form.authType === o.k ? ' on' : ''}`} onClick={() => setForm({ ...form, authType: o.k })}>
+                    <span className="agx-auth-ic" aria-hidden>{o.icon}</span>
+                    <span className="agx-auth-t"><b>{o.label}</b><small>{o.hint}</small></span>
+                  </button>
                 ))}
               </div>
               {form.authType !== 'none' && (
-                <div className="agx-grid" style={{ marginTop: 10 }}>
+                <div className="agx-grid agx-secret">
                   {form.authType === 'header' && (
                     <div>
-                      <label className="ag-label" htmlFor="agx-h">Header name</label>
-                      <input id="agx-h" className="ag-input" value={form.authHeader} onChange={e => setForm({ ...form, authHeader: e.target.value })} placeholder="X-API-Key" autoComplete="off" />
+                      <label className="agx-lbl" htmlFor="agx-h">Header name</label>
+                      <input id="agx-h" className="agx-input" value={form.authHeader} onChange={e => setForm({ ...form, authHeader: e.target.value })} placeholder="X-API-Key" autoComplete="off" spellCheck={false} />
                     </div>
                   )}
                   <div>
-                    <label className="ag-label" htmlFor="agx-k">{form.authType === 'bearer' ? 'API key or token' : 'Value'}</label>
-                    <input id="agx-k" className="ag-input" type="password" value={form.secret} onChange={e => setForm({ ...form, secret: e.target.value })} placeholder="Kept on Colvy’s server, never shown again" autoComplete="new-password" />
+                    <label className="agx-lbl" htmlFor="agx-k">{form.authType === 'bearer' ? 'API key or token' : 'Value'}</label>
+                    <input id="agx-k" className="agx-input" type="password" value={form.secret} onChange={e => setForm({ ...form, secret: e.target.value })} placeholder="Kept on Colvy’s server, never shown again" autoComplete="new-password" />
                   </div>
                 </div>
               )}
-              <p className="ag-label" style={{ margin: '12px 0 6px' }}>Agents that may use it</p>
+              <p className="agx-lbl">Agents that may use it</p>
               <div className="agx-pills">
                 {roles.map(r => (
-                  <button key={r.key} type="button" className={`agx-pill ${form.roles.includes(r.key) ? 'on' : ''}`} aria-pressed={form.roles.includes(r.key)} onClick={() => setForm({ ...form, roles: form.roles.includes(r.key) ? form.roles.filter(x => x !== r.key) : [...form.roles, r.key] })}>{r.name.replace(/ Agent$/, '')}</button>
+                  <button key={r.key} type="button" className={`agx-pill ${form.roles.includes(r.key) ? 'on' : ''}`} aria-pressed={form.roles.includes(r.key)} onClick={() => setForm({ ...form, roles: form.roles.includes(r.key) ? form.roles.filter(x => x !== r.key) : [...form.roles, r.key] })}>
+                    <AgentFace face={faceOf(r.key)} size={20} />{r.name.replace(/ Agent$/, '')}
+                  </button>
                 ))}
               </div>
-              <p className="agx-hint">Only connect servers you trust — agents will read what they return. You choose what each tool may do after it connects.</p>
+              <p className="agx-trust"><Shield /><span>Only connect servers you trust: agents read what they return. You choose what each tool may do once it’s connected.</span></p>
               <div className="agx-actions">
-                <button type="button" className="ag-primary" onClick={create} disabled={busy === 'create' || !form.name.trim() || !form.url.trim() || (form.authType !== 'none' && !form.secret.trim())}>
+                <button type="button" className="agx-go" onClick={create} disabled={busy === 'create' || !form.name.trim() || !form.url.trim() || (form.authType !== 'none' && !form.secret.trim())}>
                   {busy === 'create' ? <><span className="ag-spin" /> Connecting…</> : 'Connect'}
                 </button>
-                <button type="button" className="ag-ghost agx-btn" onClick={() => { setAdding(false); setError('') }} disabled={busy === 'create'}>Cancel</button>
+                <button type="button" className="agx-cancel" onClick={() => { setAdding(false); setError('') }} disabled={busy === 'create'}>Cancel</button>
               </div>
             </div>
           )}
@@ -224,16 +252,17 @@ const CSS = `
 .agx-list{display:flex;flex-direction:column;gap:10px;margin-top:14px}
 .agx-note{margin:12px 0 0;padding:10px 12px;border-radius:12px;background:#fffaeb;color:#93370d;font-size:13px;line-height:1.45}
 .agx-err{margin:10px 0;padding:9px 12px;border-radius:11px;background:#fef3f2;color:#b42318;font-size:12.5px;line-height:1.45}
-.agx-conn{border:1px solid var(--border);border-radius:14px;background:#fff;transition:box-shadow .3s ${EASE},border-color .3s ease}
-.agx-conn.open{box-shadow:0 8px 24px rgba(15,23,42,.06);border-color:color-mix(in srgb,var(--slate) 22%,var(--border))}
-.agx-row{display:flex;align-items:center;gap:10px;width:100%;padding:12px 14px;border:none;background:none;cursor:pointer;font-family:inherit;color:var(--ink)}
+.agx-conn{border-radius:18px;background:#f6f6f7;transition:box-shadow .3s ${EASE},background .3s ease}
+.agx-conn.open{background:var(--card,#fff);box-shadow:0 0 0 1px rgba(0,0,0,.06),0 12px 30px -14px rgba(15,23,42,.18)}
+.agx-row{display:flex;align-items:center;gap:10px;width:100%;padding:13px 16px;border:none;background:none;cursor:pointer;font-family:inherit;color:var(--ink)}
 .agx-name{display:block;font-size:14px;font-weight:700;color:var(--ink)}
 .agx-sub{display:block;margin-top:2px;font-size:12px;color:var(--slate);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .agx-body{display:grid;transition:grid-template-rows .35s ${EASE}}
-.agx-inner{padding:2px 14px 14px;border-top:1px solid var(--border);padding-top:12px}
+.agx-inner{padding:12px 16px 16px;border-top:1px solid #ececee}
 .agx-pills{display:flex;flex-wrap:wrap;gap:6px}
-.agx-pill{padding:6px 12px;border-radius:999px;border:1px solid var(--border);background:#fff;font-size:12.5px;font-weight:600;color:var(--slate);cursor:pointer;font-family:inherit;transition:background .2s ease,color .2s ease,border-color .2s ease,transform .15s ${EASE}}
-.agx-pill.on{background:color-mix(in srgb,var(--coral) 12%,#fff);border-color:color-mix(in srgb,var(--coral) 45%,#fff);color:var(--coral)}
+.agx-pill{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 14px 0 8px;border-radius:999px;border:none;background:#f4f4f5;font-size:13.5px;font-weight:600;color:#3f3f46;cursor:pointer;font-family:inherit;transition:background .2s ease,color .2s ease,transform .15s ${EASE}}
+.agx-pill:hover{background:#ececef}
+.agx-pill.on{background:#18181b;color:#fff}
 .agx-pill:active{transform:scale(.96)}
 .agx-hint{margin:8px 0 0;font-size:12px;color:var(--slate);line-height:1.45}
 .agx-tools{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
@@ -249,14 +278,49 @@ const CSS = `
 .agx-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px}
 .agx-btn{display:inline-flex;align-items:center;gap:6px}
 .agx-btn.danger{color:#b42318}
-.agx-add{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:11px 14px;border-radius:14px;border:1.5px dashed var(--border);background:none;color:var(--slate);font-size:13.5px;font-weight:600;cursor:pointer;font-family:inherit;transition:border-color .2s ease,color .2s ease,background .2s ease}
-.agx-add:hover:not(:disabled){border-color:var(--coral);color:var(--coral);background:color-mix(in srgb,var(--coral) 5%,#fff)}
+.agx-add{display:flex;align-items:center;gap:13px;width:100%;padding:12px 16px 12px 12px;border-radius:18px;border:none;background:#f6f6f7;color:#71717a;text-align:left;cursor:pointer;font-family:inherit;transition:background .2s ease,transform .15s ${EASE}}
+.agx-add-ic{width:40px;height:40px;flex-shrink:0;border-radius:13px;display:inline-flex;align-items:center;justify-content:center;background:#18181b;color:#fff;transition:transform .25s ${EASE}}
+.agx-add-t{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.35}
+.agx-add-t b{font-size:14.5px;font-weight:650;color:var(--ink)}
+.agx-add-t small{font-size:12.5px;color:#8e8e93}
+.agx-add:hover:not(:disabled){background:#efeff1}
+.agx-add:hover:not(:disabled) .agx-add-ic{transform:rotate(90deg)}
+.agx-add:active:not(:disabled){transform:scale(.995)}
 .agx-add:disabled{opacity:.5;cursor:default}
-.agx-form{border:1px solid var(--border);border-radius:14px;padding:14px;background:#fff;animation:agx-in .35s ${EASE}}
-.agx-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.agx-form{border-radius:22px;padding:18px;background:var(--card,#fff);box-shadow:0 0 0 1px rgba(0,0,0,.06),0 16px 40px -18px rgba(15,23,42,.22);animation:agx-in .35s ${EASE}}
+.agx-form button::before,.agx-add::before,.agx-pill::before{display:none!important}
+.agx-form-h{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.agx-form-orb{width:40px;height:40px}
+.agx-form-title{margin:0;font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:19px;font-weight:700;letter-spacing:-.025em;color:var(--ink)}
+.agx-form-sub{margin:2px 0 0;font-size:13px;color:#8e8e93}
+.agx-x{width:34px;height:34px;flex-shrink:0;border:none;border-radius:50%;background:#f4f4f5;color:#71717a;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.agx-x:hover{background:#ececef;color:var(--ink)}
+.agx-lbl{display:block;margin:16px 0 7px;font-size:13px;font-weight:600;color:var(--ink)}
+.agx-grid .agx-lbl{margin-top:0}
+.agx-input{width:100%;height:46px;padding:0 14px;border-radius:14px;border:1.5px solid transparent!important;background:#f4f4f5!important;box-shadow:none!important;font:inherit;font-size:14.5px;color:var(--ink);outline:none;box-sizing:border-box;transition:background .15s,border-color .15s}
+.agx-input:focus{background:var(--card,#fff)!important;border-color:#e4e4e7!important}
+.agx-auth{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.agx-auth-opt{display:flex;align-items:center;gap:10px;min-height:58px;padding:10px 12px;border:none;border-radius:16px;background:#f4f4f5;text-align:left;font:inherit;cursor:pointer;transition:background .15s,box-shadow .15s}
+.agx-auth-opt:hover{background:#ececef}
+.agx-auth-opt.on{background:var(--card,#fff);box-shadow:0 0 0 2px #18181b}
+.agx-auth-ic{width:32px;height:32px;flex-shrink:0;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;background:var(--card,#fff);color:#52525b}
+.agx-auth-opt.on .agx-auth-ic{background:#18181b;color:#fff}
+.agx-auth-t{min-width:0;display:flex;flex-direction:column;line-height:1.3}
+.agx-auth-t b{font-size:13.5px;font-weight:650;color:var(--ink)}
+.agx-auth-t small{font-size:11.5px;color:#8e8e93}
+.agx-secret{margin-top:12px}
+.agx-trust{display:flex;align-items:flex-start;gap:9px;margin:16px 0 0;padding:11px 13px;border-radius:14px;background:#f6f6f7;font-size:12.5px;line-height:1.5;color:#52525b}
+.agx-trust svg{margin-top:1px;color:#16a34a}
+.agx-go{display:inline-flex;align-items:center;gap:8px;height:44px;padding:0 24px;border:none;border-radius:999px;background:var(--coral);color:#fff;font:inherit;font-size:14.5px;font-weight:650;cursor:pointer;transition:filter .15s,transform .12s}
+.agx-go:hover:not(:disabled){filter:brightness(.95)}
+.agx-go:active:not(:disabled){transform:scale(.98)}
+.agx-go:disabled{opacity:.45;cursor:not-allowed}
+.agx-cancel{height:44px;padding:0 20px;border:none;border-radius:999px;background:#f4f4f5;color:var(--ink);font:inherit;font-size:14.5px;font-weight:600;cursor:pointer}
+.agx-cancel:hover{background:#ececef}
+.agx-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @keyframes agx-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 @media (max-width:640px){
-  .agx-grid{grid-template-columns:1fr}
+  .agx-grid,.agx-auth{grid-template-columns:1fr}
   .agx-tools li{flex-direction:column;align-items:stretch;gap:8px}
   .agx-seg{display:flex}.agx-seg button{flex:1}
 }
