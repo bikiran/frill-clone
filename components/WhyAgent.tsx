@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { authFetch } from '@/lib/auth-fetch'
+import AgentFace from '@/components/agents/AgentFace'
+import { useAgentTeam, roleFromName } from '@/components/agents/useAgentTeam'
 
 // "Why?" — open the explanation of something an agent did (a reply, a hand-off,
 // a task) without leaving the page: what the customer asked, what the agent
@@ -45,6 +47,7 @@ export function WhyLink({ companyId, children = 'Why?', className, style, ...ref
 }
 
 export function WhySheet({ companyId, refs, onClose }: { companyId: string; refs: WhyRef; onClose: () => void }) {
+  const { faceOf } = useAgentTeam(companyId)
   const [data, setData] = useState<Explanation | null>(null)
   const [error, setError] = useState('')
   const [closing, setClosing] = useState(false)
@@ -70,7 +73,7 @@ export function WhySheet({ companyId, refs, onClose }: { companyId: string; refs
       <div className="why-sheet" role="dialog" aria-modal="true" aria-label="Why the agent did this" onClick={e => e.stopPropagation()}>
         <div className="why-grab" aria-hidden="true" />
         <div className="why-head">
-          <span className="why-orb"><Spark size={14} /></span>
+          <span className="why-face">{r ? <AgentFace face={faceOf(roleFromName(r.role))} size={34} /> : <span className="why-orb"><Spark size={14} /></span>}</span>
           <div style={{ minWidth: 0, flex: 1 }}>
             <p className="why-t">Why {!r?.role ? 'the agent' : /^Colvy /.test(r.role) ? `the ${r.role.slice(6)}` : r.role} did this</p>
             {r && <p className="why-s">{when(r.createdAt)}{r.mode === 'sandbox' ? ' · Sandbox' : ''}{r.outcome ? ` · ${OUTCOME[r.outcome] || r.outcome}` : ''}</p>}
@@ -148,6 +151,7 @@ const CSS = `
 .why-grab{width:38px;height:4px;border-radius:99px;background:#e4e4e7;margin:8px auto 0}
 @media (min-width:720px){.why-grab{display:none}}
 .why-head{display:flex;align-items:flex-start;gap:11px;padding:14px 16px 12px;border-bottom:1px solid #f1f1f3}
+.why-face{display:inline-flex;flex-shrink:0}
 .why-orb{width:30px;height:30px;flex-shrink:0;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;color:#fff;background:linear-gradient(135deg,var(--coral,#e2553f),color-mix(in srgb,var(--coral,#e2553f) 55%,#a855f7))}
 .why-t{margin:0;font-size:15px;font-weight:800;color:#0d0d0d}
 .why-s{margin:2px 0 0;font-size:12.5px;color:#71717a}
