@@ -60,7 +60,7 @@ export default function BillingDetailsCard({ companyId }: { companyId: string })
   const err = (k: string) => errors[k] ? <span className="block text-xs mt-1 font-normal" style={{ color: '#b42318' }}>{errors[k]}</span> : null
 
   return (
-    <section id="business-details" className="bg-white rounded-2xl border p-5 md:p-6 mb-6" style={{ borderColor: 'var(--border)', scrollMarginTop: 80 }}>
+    <section id="business-details" className="ak-panel" style={{ scrollMarginTop: 80 }}>
       <div className="flex items-start gap-3 mb-5" style={{ minWidth: 0 }}>
         <span className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'var(--peach)', color: 'var(--coral)' }}><BuildingIcon /></span>
         <div style={{ minWidth: 0 }}>

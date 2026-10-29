@@ -14,6 +14,7 @@ import BillingDetailsCard from '@/components/billing/BillingDetailsCard'
 import { fmtAud } from '@/lib/tax-invoice-core'
 import { noteLabel } from '@/lib/tax-credit-note-core'
 import { soonLabel } from '@/lib/feature-availability'
+import { AdminPage, Panel } from '@/components/ui/AdminKit'
 
 // Mirrors the modular plans on /pricing and /upgrade. Each id is a Stripe checkout
 // tier (see lib/billing-config.ts). Prices are the Australian dollar amounts
@@ -93,55 +94,43 @@ function ShopifyBilling({ info }: { info: any }) {
     : sub.trial_ends_at ? `Free trial until ${fmtDate(sub.trial_ends_at)}${price ? `, then ${price}` : ''}.`
     : sub.cancel_at_end ? `Ends on ${fmtDate(sub.period_end)}.`
     : `${price ? `${price}. ` : ''}${sub.period_end ? `Renews ${fmtDate(sub.period_end)}.` : ''}`
+  const currentShop = comp ? plan : sub?.plan || plan
   return (
-    <div className="w-full px-4 md:px-11 py-6 md:py-9" style={{ maxWidth: 1040 }}>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>Billing</h1>
-        <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>
-          Current plan: <span className="font-semibold" style={{ color: 'var(--coral)' }}>{PLAN_LABEL[plan] || plan}</span>
-        </p>
-      </div>
+    <AdminPage width="md" title="Billing" sub={<>You’re on the <b style={{ color: 'var(--ink)' }}>{PLAN_LABEL[plan] || plan}</b> plan.</>}>
+      {returned === 'updated' && <p role="status" className="ak-note good">Your plan is updated.</p>}
+      {returned === 'pending' && <p role="status" className="ak-note">Shopify is still confirming your plan. It shows here within a few minutes.</p>}
+      {info.note && <p className="ak-note">{info.note}</p>}
 
-      {returned === 'updated' && (
-        <div role="status" className="mb-5 p-3.5 rounded-xl text-sm" style={{ background: '#ecfdf3', border: '1px solid #abefc6', color: '#067647' }}>Your plan is updated.</div>
-      )}
-      {returned === 'pending' && (
-        <div role="status" className="mb-5 p-3.5 rounded-xl text-sm" style={{ background: 'var(--canvas)', border: '1px solid var(--border)', color: 'var(--slate)' }}>Shopify is still confirming your plan. It shows here within a few minutes.</div>
-      )}
-      {info.note && <div className="mb-5 p-3.5 rounded-xl text-sm" style={{ background: 'var(--canvas)', border: '1px solid var(--border)', color: 'var(--slate)' }}>{info.note}</div>}
-
-      <div className="bg-white rounded-2xl border p-5 md:p-6 mb-6" style={{ borderColor: 'var(--border)' }}>
-        <div className="flex items-start gap-3">
-          <span className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: '#e3f1ec', color: '#008060' }}><ShopifyBagIcon /></span>
-          <div style={{ minWidth: 0 }}>
-            <p className="font-bold" style={{ color: 'var(--ink)' }}>{managed ? 'Managed by Colvy' : comp ? 'Complimentary — no charge' : 'Billed through Shopify'}</p>
-            <p className="text-sm mt-0.5" style={{ color: 'var(--slate)', lineHeight: 1.5 }}>
-              {managed
-                ? <>Your plan is arranged with the Colvy team. Anything you add through the app is charged on {info.store?.name ? <strong style={{ color: 'var(--ink)' }}>{info.store.name}</strong> : 'your store'}’s Shopify bill.</>
-                : comp
-                ? <>Colvy has given this workspace its plan free of charge. Nothing is added to {info.store?.name ? <strong style={{ color: 'var(--ink)' }}>{info.store.name}</strong> : 'your store'}’s Shopify bill.</>
-                : <>Your Colvy plan is charged on {info.store?.name ? <strong style={{ color: 'var(--ink)' }}>{info.store.name}</strong> : 'your store'}’s Shopify bill.</>}
-            </p>
+      <section className="bl-hero">
+        <div className="bl-hero-top">
+          <span className="bl-hero-ic shop" aria-hidden><ShopifyBagIcon /></span>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <p className="bl-eyebrow">{managed ? 'Managed by Colvy' : comp ? 'Complimentary, no charge' : 'Billed through Shopify'}</p>
+            <h2>{comp ? (PLAN_LABEL[plan] || plan) : (sub?.name || PLAN_LABEL[sub?.plan || plan] || plan)}</h2>
+            <p className={paidInShopify ? 'bad' : ''}>{status}</p>
           </div>
         </div>
-        <div className="mt-5 p-4 rounded-xl" style={{ background: 'var(--canvas)' }}>
-          <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{comp ? (PLAN_LABEL[plan] || plan) : (sub?.name || PLAN_LABEL[sub?.plan || plan] || plan)}</p>
-          <p className="text-sm mt-0.5" style={{ color: paidInShopify ? '#b42318' : 'var(--slate)', lineHeight: 1.5 }}>{status}</p>
-        </div>
+        <p className="bl-hero-sub">
+          {managed
+            ? <>Your plan is arranged with the Colvy team. Anything you add through the app is charged on {info.store?.name ? <b>{info.store.name}</b> : 'your store'}’s Shopify bill.</>
+            : comp
+            ? <>Colvy has given this workspace its plan free of charge. Nothing is added to {info.store?.name ? <b>{info.store.name}</b> : 'your store'}’s Shopify bill.</>
+            : <>Your Colvy plan is charged on {info.store?.name ? <b>{info.store.name}</b> : 'your store'}’s Shopify bill.</>}
+        </p>
         {comp && !paidInShopify ? null : info.planUrl && info.store?.active ? (
-          <a href={info.planUrl} target="_top" rel="noopener" className="mt-5 w-full md:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity hover:opacity-90" style={{ background: '#008060' }}>
+          <a href={info.planUrl} target="_top" rel="noopener" className="ak-btn bl-shopify">
             {paidInShopify ? 'Change to Free in Shopify' : sub?.plan ? 'Change plan in Shopify' : 'Choose a plan in Shopify'}
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17 17 7M8 7h9v9"/></svg>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M7 17 17 7M8 7h9v9"/></svg>
           </a>
         ) : (
-          <p className="mt-4 text-sm" style={{ color: 'var(--slate)' }}>Reconnect your Shopify store under Integrations → Shopify to change your plan.</p>
+          <p className="ak-hint">Reconnect your Shopify store under Integrations → Shopify to change your plan.</p>
         )}
         {(card || cardMsg) && (
-          <div className="mt-5 p-4 rounded-xl text-sm" style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', lineHeight: 1.5 }}>
+          <div className="ak-note warn" style={{ margin: '16px 0 0', display: 'block' }}>
             {card ? (
               <>
                 <p style={{ margin: 0 }}>You still have a Colvy card subscription{card.tier ? ` (${PLAN_LABEL[card.tier] || card.tier})` : ''} from before you connected Shopify. Once your plan in Shopify has started, stop the card subscription so you aren’t charged twice. It runs to the end of the period you’ve paid for.</p>
-                <button type="button" onClick={cancelCard} disabled={cancelling} className="mt-3 px-4 py-2 rounded-lg text-sm font-bold" style={{ background: '#fff', border: '1px solid #f59e0b', color: '#92400e', cursor: cancelling ? 'wait' : 'pointer' }}>
+                <button type="button" onClick={cancelCard} disabled={cancelling} className="ak-btn sm" style={{ marginTop: 10 }}>
                   {cancelling ? 'Stopping…' : 'Stop card subscription'}
                 </button>
               </>
@@ -150,41 +139,34 @@ function ShopifyBilling({ info }: { info: any }) {
           </div>
         )}
         {!comp && (
-          <p className="text-xs mt-4" style={{ color: 'var(--slate)', lineHeight: 1.5 }}>
+          <p className="ak-hint" style={{ marginTop: 14 }}>
             Plans, invoices and your payment method are in your Shopify admin under Settings → Billing. To cancel, choose the Free plan in Shopify or uninstall Colvy from your store.
           </p>
         )}
-      </div>
+      </section>
 
-      <div className="grid md:grid-cols-3 gap-4">
+      <div className="bl-plans">
         {PLANS.map(p => (
-          <div key={p.id} className="bg-white rounded-2xl border p-5" style={{ borderColor: ((comp ? plan : sub?.plan || plan) === p.id) ? p.color : 'var(--border)' }}>
-            <div className="flex items-center justify-between mb-1">
-              <h3 className="font-bold" style={{ color: 'var(--ink)' }}>{p.name}</h3>
-              {(comp ? plan : sub?.plan || plan) === p.id && <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#dcfce7', color: '#16a34a' }}>Current</span>}
+          <div key={p.id} className={`bl-plan${currentShop === p.id ? ' current' : ''}`} style={{ '--pc': p.color } as React.CSSProperties}>
+            <div className="bl-plan-h">
+              <h3>{p.name}</h3>
+              {currentShop === p.id && <span className="ak-tag green">Current</span>}
             </div>
-            <p className="text-xs mb-3" style={{ color: 'var(--slate)' }}>{p.desc}</p>
-            <div className="space-y-2">
-              {p.features.map(f => (
-                <div key={f} className="flex items-center gap-2 text-sm" style={{ color: 'var(--ink)' }}>
-                  <span style={{ color: p.color, flexShrink: 0 }}><CheckIcon /></span>{f}
-                </div>
-              ))}
-            </div>
+            <p className="bl-plan-desc">{p.desc}</p>
+            <ul className="bl-feats">
+              {p.features.map(f => <li key={f}><span aria-hidden><CheckIcon /></span>{f}</li>)}
+            </ul>
           </div>
         ))}
       </div>
-    </div>
+      <style>{BL_CSS}</style>
+    </AdminPage>
   )
 }
 
 const ReceiptIcon = () => (
   <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M5 3h14v18l-2.5-1.5L14 21l-2-1.5L10 21l-2.5-1.5L5 21V3z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>
 )
-
-// '#rrggbb' + alpha suffixes don't work on CSS variables ('var(--coral)30' is
-// invalid, so the browser fell back to a near-black border). Mix instead.
-const coralA = (pct: number) => `color-mix(in srgb, var(--coral) ${pct}%, transparent)`
 
 const CreditCardIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
@@ -370,273 +352,159 @@ export default function BillingPage() {
   const hasStripe = !!subscription?.stripe_customer_id
   const brandingIncluded = ['feedback', 'omnichannel', 'everything', 'business', 'growth', 'enterprise', 'pro'].includes(currentPlanId)
 
+  const trialInfo = (() => {
+    // The trial's own end date (what the banner counts to, and what an
+    // extension moves); 14 days from sign-up only for a workspace that has none.
+    const ends = company?.trial_ends_at || (company?.created_at ? new Date(new Date(company.created_at).getTime() + 14 * 86400000) : null)
+    const t = trialLeft(ends)
+    if (!t) return null
+    if (t.ended) return { line: 'Your trial has ended', pct: 100 }
+    const on = t.ends.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })
+    return { line: t.days < 2 ? `Ends ${trialEndsPhrase(t)}` : `${t.days} days left · ends ${on}`, pct: Math.max(4, Math.min(100, ((14 - t.days) / 14) * 100)) }
+  })()
+  const onTrial = currentPlanId === 'trial' || currentPlanId === 'free'
+
   return (
-    <div className="w-full px-4 md:px-11 py-6 md:py-9" style={{ maxWidth: 1040 }}>
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3 flex-wrap mb-8">
-        <div>
-          <h1 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>Billing</h1>
-          <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>
-            Current plan: <span className="font-semibold" style={{ color: 'var(--coral)' }}>{planLabel}</span>
-          </p>
-        </div>
+    <AdminPage width="md" title="Billing"
+      sub={<>You’re on the <b style={{ color: 'var(--ink)' }}>{planLabel}</b> plan. Prices are in Australian dollars and include GST.</>}
+      actions={isPaid && hasStripe ? (
+        <button type="button" className="ak-btn" onClick={handleManageBilling} disabled={portalLoading}>
+          <CreditCardIcon /> {portalLoading ? 'Opening…' : 'Manage billing'}
+        </button>
+      ) : undefined}>
 
-        <div className="flex items-center gap-3">
-          {/* Manage billing portal */}
-          {isPaid && subscription?.stripe_customer_id && (
-            <button onClick={handleManageBilling} disabled={portalLoading}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium cursor-pointer hover:bg-gray-50 disabled:opacity-50"
-              style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-              <CreditCardIcon />
-              {portalLoading ? 'Loading...' : 'Manage Billing'}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Trial / Current plan banner */}
-      {(isPaid || currentPlanId === 'free' || currentPlanId === 'trial') && (
-        <div className="mb-8 p-5 rounded-2xl border" style={{ background: 'var(--peach)', borderColor: coralA(30) }}>
-          {currentPlanId === 'trial' || currentPlanId === 'free' ? (
+      {/* Where you are now */}
+      {(isPaid || onTrial) && (
+        <section className="bl-hero">
+          {onTrial ? (
             <>
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <p className="font-bold" style={{ color: 'var(--coral)' }}>
-                    14 Day Free Trial
-                    {(() => {
-                      // The trial's own end date (what the banner counts to,
-                      // and what an extension moves); 14 days from sign-up
-                      // only for a workspace that has none.
-                      const ends = company?.trial_ends_at || (company?.created_at ? new Date(new Date(company.created_at).getTime() + 14 * 86400000) : null)
-                      const t = trialLeft(ends)
-                      if (!t) return null
-                      if (t.ended) return ' — Trial ended'
-                      const on = t.ends.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })
-                      return t.days < 2 ? ` — ends ${trialEndsPhrase(t)}` : ` — ${t.days} days left, ends ${on}`
-                    })()}
-                  </p>
-                  <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>
-                    Your trial includes Unlimited Surveys, White Labelling & Privacy Add-ons.
-                  </p>
+              <div className="bl-hero-top">
+                <span className="bl-hero-ic" aria-hidden>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg>
+                </span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <p className="bl-eyebrow">14-day free trial</p>
+                  <h2>{trialInfo?.line || 'Try everything free'}</h2>
+                  <p>Your trial includes unlimited surveys, white labelling and the Privacy add-on.</p>
                 </div>
-                <span className="px-3 py-1 rounded-full text-xs font-bold" style={{ background: 'var(--coral)', color: '#fff' }}>Trial</span>
+                <span className="ak-tag" style={{ background: 'color-mix(in srgb,var(--coral) 14%,var(--card,#fff))', color: 'var(--coral)' }}>Trial</span>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 pt-4 border-t" style={{ borderColor: coralA(20) }}>
-                {[
-                  { label: 'Ideas', value: '∞', sub: 'Unlimited' },
-                  { label: 'Surveys', value: '∞', sub: 'Unlimited' },
-                  { label: 'Polls', value: '∞', sub: 'Poll unlimited' },
-                  { label: 'Help Articles', value: '∞', sub: 'Unlimited' },
-                ].map(s => (
-                  <div key={s.label} className="text-center">
-                    <p className="text-2xl font-black" style={{ color: 'var(--coral)' }}>{s.value}</p>
-                    <p className="text-xs font-semibold mt-0.5" style={{ color: 'var(--ink)' }}>{s.label}</p>
-                    <p className="text-xs" style={{ color: 'var(--slate)' }}>{s.sub}</p>
-                  </div>
+              {trialInfo && <div className="bl-trial" role="img" aria-label={trialInfo.line}><i style={{ width: `${trialInfo.pct}%` }} /></div>}
+              <div className="bl-incl">
+                {['Unlimited ideas', 'Unlimited surveys', 'Unlimited polls', 'Unlimited help articles'].map(x => (
+                  <span key={x}><CheckIcon />{x}</span>
                 ))}
               </div>
             </>
           ) : (
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-              <div className="flex items-start gap-3" style={{ minWidth: 0 }}>
-                <span className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-white" style={{ background: 'var(--coral)' }}>
-                  <CheckIcon />
-                </span>
-                <div style={{ minWidth: 0 }}>
-                  <p className="font-bold" style={{ color: 'var(--ink)' }}>
-                    You&apos;re on the <span style={{ color: 'var(--coral)' }}>{planLabel}</span> plan
-                  </p>
-                  <p className="text-sm mt-0.5" style={{ color: 'var(--slate)', lineHeight: 1.5 }}>
-                    {!hasStripe
-                      ? 'Your plan is set up and managed by the Colvy team. Contact us for any billing changes.'
-                      : subscription?.status === 'active' ? 'Your subscription is active.' : 'Manage your subscription below.'}
-                    {hasStripe && subscription?.current_period_end && ` Renews ${new Date(subscription.current_period_end * 1000).toLocaleDateString()}.`}
-                  </p>
-                </div>
+            <div className="bl-hero-top">
+              <span className="bl-hero-ic good" aria-hidden><CheckIcon /></span>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <p className="bl-eyebrow">Your plan</p>
+                <h2>{planLabel}</h2>
+                <p>
+                  {!hasStripe
+                    ? 'Set up and managed by the Colvy team. Contact us for any billing changes.'
+                    : subscription?.status === 'active' ? 'Your subscription is active.' : 'Manage your subscription below.'}
+                  {hasStripe && subscription?.current_period_end && ` Renews ${new Date(subscription.current_period_end * 1000).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}.`}
+                </p>
               </div>
-              {hasStripe ? (
-                <button onClick={handleManageBilling} disabled={portalLoading}
-                  className="px-4 py-2 rounded-xl text-sm font-semibold text-white cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-70 disabled:cursor-default"
-                  style={{ background: 'var(--coral)' }}>
-                  {portalLoading ? 'Loading...' : 'Manage →'}
-                </button>
-              ) : (
-                <span className="px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: '#fff', color: 'var(--coral)', border: `1px solid ${coralA(30)}` }}>
-                  Managed by Colvy
-                </span>
-              )}
+              {hasStripe
+                ? <button type="button" className="ak-btn go" onClick={handleManageBilling} disabled={portalLoading}>{portalLoading ? 'Opening…' : 'Manage'}</button>
+                : <span className="ak-tag">Managed by Colvy</span>}
             </div>
           )}
-        </div>
+        </section>
       )}
 
-      {/* Billing toggle */}
-      <div className="flex items-center justify-center gap-3 mb-8">
-        <span className="text-sm font-medium" style={{ color: billing === 'monthly' ? 'var(--ink)' : 'var(--slate)' }}>Monthly</span>
-        <button onClick={() => setBilling(billing === 'monthly' ? 'annual' : 'monthly')}
-          className="relative inline-flex h-6 w-12 items-center rounded-full cursor-pointer transition-all"
-          style={{ background: billing === 'annual' ? 'var(--coral)' : '#d1d5db' }}>
-          <span className="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
-            style={{ transform: billing === 'annual' ? 'translateX(28px)' : 'translateX(4px)' }} />
-        </button>
-        <span className="text-sm font-medium" style={{ color: billing === 'annual' ? 'var(--ink)' : 'var(--slate)' }}>
-          Annual
-          <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-xs font-bold" style={{ background: '#dcfce7', color: '#16a34a' }}>Save 20%</span>
-        </span>
+      {/* Plans */}
+      <div className="bl-plans-h">
+        <h2>Plans</h2>
+        <div className="ak-seg" role="radiogroup" aria-label="Billing period">
+          <button type="button" role="radio" aria-checked={billing === 'monthly'} className={billing === 'monthly' ? 'on' : ''} onClick={() => setBilling('monthly')}>Monthly</button>
+          <button type="button" role="radio" aria-checked={billing === 'annual'} className={billing === 'annual' ? 'on' : ''} onClick={() => setBilling('annual')}>Yearly <span className="ak-tag green" style={{ height: 20 }}>Save 20%</span></button>
+        </div>
       </div>
-      <p className="text-center text-xs -mt-5 mb-8" style={{ color: 'var(--slate)' }}>Prices in Australian dollars, including GST.</p>
-
-      {/* Plan cards */}
-      <div className="grid md:grid-cols-3 gap-5 mb-10">
+      <div className="bl-plans">
         {PLANS.map(plan => {
           const price = billing === 'monthly' ? plan.monthly : Math.round(plan.annual / 12)
           const active = isOnPlan(plan.id)
+          const best = !!(plan as any).highlighted
           return (
-            <div key={plan.id} className="rounded-2xl border overflow-hidden"
-              style={{ borderColor: (plan as any).highlighted ? 'var(--coral)' : active ? plan.color : 'var(--border)', boxShadow: (plan as any).highlighted ? `0 0 0 2px ${coralA(20)}` : 'none' }}>
-              {(plan as any).highlighted && (
-                <div className="py-1.5 text-center text-xs font-bold text-white" style={{ background: 'var(--coral)' }}>
-                  BEST VALUE
-                </div>
-              )}
-              <div className="p-6 bg-white">
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className="text-lg font-bold" style={{ color: 'var(--ink)' }}>{plan.name}</h3>
-                  {active && <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#dcfce7', color: '#16a34a' }}>Current</span>}
-                </div>
-                <p className="text-xs mb-4" style={{ color: 'var(--slate)' }}>{plan.desc}</p>
-                <div className="mb-1">
-                  <span className="text-4xl font-black" style={{ color: 'var(--ink)' }}>{formatPrice(price)}</span>
-                  <span className="text-sm" style={{ color: 'var(--slate)' }}>/mo</span>
-                </div>
-                {billing === 'annual' && (
-                  <p className="text-xs mb-4" style={{ color: '#16a34a' }}>
-                    {formatPrice(plan.annual)} billed annually
-                  </p>
-                )}
-                <div className="space-y-2.5 mb-6 mt-4">
-                  {plan.features.map(f => (
-                    <div key={f} className="flex items-center gap-2 text-sm" style={{ color: 'var(--ink)' }}>
-                      <span style={{ color: plan.color, flexShrink: 0 }}><CheckIcon /></span>
-                      {f}
-                    </div>
-                  ))}
-                </div>
-                <button onClick={() => handleUpgrade(plan.id)} disabled={active || loading === plan.id}
-                  className="w-full py-2.5 rounded-xl text-sm font-bold cursor-pointer disabled:opacity-60 transition-all hover:opacity-90"
-                  style={{ background: active ? '#f3f4f6' : (plan as any).highlighted ? 'var(--coral)' : plan.color, color: active ? 'var(--slate)' : '#fff' }}>
-                  {loading === plan.id ? 'Redirecting...' : active ? 'Current Plan' : 'Upgrade →'}
-                </button>
+            <div key={plan.id} className={`bl-plan${best ? ' best' : ''}${active ? ' current' : ''}`} style={{ '--pc': plan.color } as React.CSSProperties}>
+              <div className="bl-plan-h">
+                <h3>{plan.name}</h3>
+                {active ? <span className="ak-tag green">Current</span> : best ? <span className="bl-best">Best value</span> : null}
               </div>
+              <p className="bl-plan-desc">{plan.desc}</p>
+              <p className="bl-price"><b>{formatPrice(price)}</b><span>/month</span></p>
+              <p className="bl-price-sub">{billing === 'annual' ? `${formatPrice(plan.annual)} billed yearly` : 'Billed monthly'}</p>
+              <button type="button" onClick={() => handleUpgrade(plan.id)} disabled={active || loading === plan.id}
+                className={`ak-btn${active ? ' ghost' : best ? ' go' : ' dark'}`} style={{ width: '100%' }}>
+                {loading === plan.id ? 'Opening checkout…' : active ? 'Your plan' : `Choose ${plan.name}`}
+              </button>
+              <ul className="bl-feats">
+                {plan.features.map(f => <li key={f}><span aria-hidden><CheckIcon /></span>{f}</li>)}
+              </ul>
             </div>
           )
         })}
       </div>
 
-      {/* Remove Branding Add-on */}
-      <div className="st-sec">
-        <div className="flex items-start md:items-center justify-between gap-4 flex-col md:flex-row">
-          <div>
-            <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <h2 className="font-bold" style={{ color: 'var(--ink)' }}>Remove "Powered by Colvy" branding</h2>
-              <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: '#fef3c7', color: '#ca8a04' }}>Add-on</span>
-            </div>
-            <p className="text-sm" style={{ color: 'var(--slate)' }}>
-              Available on any plan. Hide the Colvy footer from your public board.
-            </p>
-          </div>
-          <div className="md:text-right shrink-0">
-            <div className="text-xl font-black mb-1" style={{ color: 'var(--ink)' }}>
-              A$5<span className="text-sm font-normal" style={{ color: 'var(--slate)' }}>/mo</span>
-            </div>
-            {brandingIncluded ? (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: '#dcfce7', color: '#16a34a' }}><CheckIcon />Included</span>
-            ) : brandingAddon ? (
-              <div className="flex md:justify-end items-center gap-3">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: '#dcfce7', color: '#16a34a' }}><CheckIcon />Active</span>
-                {hasStripe && (
-                  <button onClick={handleManageBilling} disabled={portalLoading} className="text-sm font-medium cursor-pointer hover:underline" style={{ color: 'var(--coral)' }}>
-                    {portalLoading ? 'Loading...' : 'Manage'}
-                  </button>
-                )}
-              </div>
-            ) : addonPending ? (
-              <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: 'var(--canvas)', color: 'var(--slate)' }}>
-                <span className="w-3 h-3 rounded-full border-2 animate-spin" style={{ borderColor: 'var(--coral)', borderTopColor: 'transparent' }} />
-                Turning on…
-              </span>
-            ) : (
-            <button
-              onClick={() => handleUpgrade('branding_removal')}
-              disabled={loading === 'branding_removal'}
-              className="px-4 py-2 rounded-xl text-sm font-bold cursor-pointer disabled:opacity-60 transition-all hover:opacity-90"
-              style={{ background: 'var(--coral)', color: '#fff' }}>
-              {loading === 'branding_removal' ? 'Redirecting...' : 'Add for +A$5/mo'}
+      {/* Remove branding add-on */}
+      <Panel title={<>Remove “Powered by Colvy” <span className="ak-tag amber" style={{ marginLeft: 6, verticalAlign: 2 }}>Add-on</span></>}
+        sub="Hide the Colvy footer from your board, help centre, forms and booking pages. Available on any plan."
+        right={
+          brandingIncluded ? <span className="ak-tag green"><CheckIcon />Included</span>
+          : brandingAddon ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <span className="ak-tag green"><CheckIcon />On</span>
+              {hasStripe && <button type="button" className="ak-btn sm" onClick={handleManageBilling} disabled={portalLoading}>{portalLoading ? 'Opening…' : 'Manage'}</button>}
+            </span>
+          ) : addonPending ? (
+            <span className="ak-tag"><span className="bl-spin" aria-hidden />Turning on…</span>
+          ) : (
+            <button type="button" className="ak-btn go" onClick={() => handleUpgrade('branding_removal')} disabled={loading === 'branding_removal'}>
+              {loading === 'branding_removal' ? 'Opening checkout…' : 'Add for A$5/month'}
             </button>
-            )}
-          </div>
-        </div>
-        {!brandingIncluded && brandingAddon && (
-          <div className="mt-3 p-3 rounded-xl text-sm flex items-center gap-2" style={{ background: '#dcfce7', color: '#16a34a' }}>
-            <span className="shrink-0"><CheckIcon /></span>
-            Colvy branding is hidden on your board, help centre, forms and booking pages.
-          </div>
-        )}
-        {brandingIncluded && (
-          <div className="mt-3 p-3 rounded-xl text-sm flex items-center gap-2" style={{ background: '#dcfce7', color: '#16a34a' }}>
-            <span className="shrink-0"><CheckIcon /></span>
-            Branding removal is included free on your {planLabel} plan.
-          </div>
-        )}
-      </div>
+          )
+        }>
+        {brandingIncluded
+          ? <p className="ak-note good" style={{ margin: 0 }}><CheckIcon /> Branding removal is included free on your {planLabel} plan.</p>
+          : brandingAddon ? <p className="ak-note good" style={{ margin: 0 }}><CheckIcon /> Colvy branding is hidden on your board, help centre, forms and booking pages.</p>
+          : null}
+      </Panel>
 
       {/* Prepaid SMS credits for texts beyond the monthly allowance */}
       {company?.id && <SmsCreditsCard companyId={company.id} companyName={company.name} />}
 
-      {/* Payment Method */}
-      <div className="st-sec">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-bold" style={{ color: 'var(--ink)' }}>Payment Method</h2>
-          {isPaid && hasStripe && (
-            <button onClick={handleManageBilling} disabled={portalLoading}
-              className="text-sm font-medium cursor-pointer hover:underline" style={{ color: 'var(--coral)' }}>
-              {portalLoading ? 'Loading...' : 'Manage →'}
-            </button>
-          )}
-        </div>
+      {/* Payment method */}
+      <Panel title="Payment method"
+        right={isPaid && hasStripe ? <button type="button" className="ak-btn sm" onClick={handleManageBilling} disabled={portalLoading}>{portalLoading ? 'Opening…' : 'Update'}</button> : undefined}>
         {isPaid && hasStripe ? (
-          <div className="flex items-center gap-3 p-4 rounded-xl" style={{ background: 'var(--canvas)' }}>
-            {/* We don't know the card brand here, so a neutral card — not a
-                hard-coded black Mastercard block. */}
-            <div className="w-10 h-7 rounded-md flex items-center justify-center bg-white border shrink-0" style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
-              <CreditCardIcon />
-            </div>
-            <div>
-              <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Card on file</p>
-              <p className="text-xs" style={{ color: 'var(--slate)' }}>Click "Manage Billing" to update payment details</p>
-            </div>
+          <div className="bl-card">
+            {/* We don't know the card brand here, so a neutral card. */}
+            <span className="bl-card-ic" aria-hidden><CreditCardIcon /></span>
+            <span className="ak-row-t"><b>Card on file</b><small>Update it in the billing portal (Manage billing)</small></span>
           </div>
         ) : (
-          <div className="text-center py-8">
-            <div className="flex justify-center mb-3" style={{ color: 'var(--slate)', opacity: 0.4 }}><CreditCardIcon /></div>
-            <p className="text-sm font-medium mb-1" style={{ color: 'var(--slate)' }}>No payment method on file</p>
-            <p className="text-xs mb-4" style={{ color: 'var(--slate)' }}>{isPaid ? 'Your plan is managed by the Colvy team, so no card is needed.' : 'Subscribe to a plan above to add a payment method'}</p>
+          <div className="bl-card muted">
+            <span className="bl-card-ic" aria-hidden><CreditCardIcon /></span>
+            <span className="ak-row-t"><b>No card on file</b><small>{isPaid ? 'Your plan is managed by the Colvy team, so no card is needed.' : 'Choose a plan above to add a card.'}</small></span>
           </div>
         )}
-      </div>
+      </Panel>
 
       {/* Business details on Colvy's tax invoices */}
       {company?.id && <BillingDetailsCard companyId={company.id} />}
 
-      {/* Billing History */}
-      <div className="st-sec st-one">
-        <h2 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Billing History</h2>
-        <p className="text-sm mb-4" style={{ color: 'var(--slate)', lineHeight: 1.5 }}>Every payment to Colvy, with a tax invoice you can print or save as a PDF. Refunds come with an adjustment note.</p>
+      {/* Billing history */}
+      <Panel title="Billing history" sub="Every payment to Colvy, with a tax invoice you can print or save as a PDF. Refunds come with an adjustment note." flush>
         {billingHistory.length === 0 ? (
-          <div className="text-center py-10">
-            <div className="flex justify-center mb-3" style={{ color: 'var(--slate)', opacity: 0.4 }}><ReceiptIcon /></div>
-            <p className="text-sm" style={{ color: 'var(--slate)' }}>No billing history yet</p>
-            <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>Invoices will appear here after your first payment</p>
+          <div className="ak-empty">
+            <span style={{ opacity: .5 }}><ReceiptIcon /></span>
+            <b>No payments yet</b>
+            Invoices show up here after your first payment.
           </div>
         ) : (() => {
           const docLink = (inv: any) => {
@@ -644,94 +512,66 @@ export default function BillingPage() {
             if (!paid || !company?.id) return null
             const label = inv.taxInvoice?.docType === 'receipt' ? 'Receipt' : 'Tax invoice'
             return (
-              <Link href={`/admin/billing/tax-invoice?ref=${encodeURIComponent(inv.taxInvoice?.id || inv.ref || inv.id)}&company=${encodeURIComponent(company.id)}`}
-                className="text-xs font-semibold hover:underline cursor-pointer whitespace-nowrap" style={{ color: 'var(--coral)' }}>
+              <Link href={`/admin/billing/tax-invoice?ref=${encodeURIComponent(inv.taxInvoice?.id || inv.ref || inv.id)}&company=${encodeURIComponent(company.id)}`} className="ak-btn sm">
                 {label}{inv.taxInvoice?.number ? ` ${inv.taxInvoice.number}` : ''}
               </Link>
             )
           }
           const stripePdf = (inv: any) => inv.invoice_pdf ? (
-            <a href={inv.invoice_pdf} target="_blank" rel="noopener noreferrer" className="text-xs font-medium hover:underline cursor-pointer whitespace-nowrap" style={{ color: 'var(--slate)' }}>Stripe PDF</a>
+            <a href={inv.invoice_pdf} target="_blank" rel="noopener noreferrer" className="bl-pdf">Stripe PDF</a>
           ) : null
           const badge = (inv: any) => (
-            <span className="px-2 py-0.5 rounded-full text-xs font-semibold capitalize"
-              style={{ background: inv.status === 'paid' ? '#dcfce7' : inv.status === 'refunded' ? 'var(--canvas)' : '#fee2e2', color: inv.status === 'paid' ? '#16a34a' : inv.status === 'refunded' ? 'var(--slate)' : '#dc2626' }}>
-              {inv.status}
-            </span>
+            <span className={`ak-tag ${inv.status === 'paid' ? 'green' : inv.status === 'refunded' ? '' : 'red'}`} style={{ textTransform: 'capitalize' }}>{inv.status}</span>
           )
           // Refunded (or credited by a credit note) on this payment.
           const liveNotes = (inv: any) => (Array.isArray(inv.notes) ? inv.notes : []).filter((n: any) => n.status !== 'void')
           const refundBadge = (inv: any) => {
             const refunded = Number(inv.refundedCents) || 0
-            const credited = liveNotes(inv).reduce((s: number, n: any) => s + (Number(n.amountCents) || 0), 0)
+            const credited = liveNotes(inv).reduce((sum: number, n: any) => sum + (Number(n.amountCents) || 0), 0)
             if (refunded <= 0 && credited <= 0) return null
-            return (
-              <span className="px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap" style={{ background: '#fef3c7', color: '#92400e' }}>
-                {refunded > 0 ? `Refunded ${fmtAud(Math.max(refunded, credited))}` : `Credited ${fmtAud(credited)}`}
-              </span>
-            )
+            return <span className="ak-tag amber">{refunded > 0 ? `Refunded ${fmtAud(Math.max(refunded, credited))}` : `Credited ${fmtAud(credited)}`}</span>
           }
           // Its adjustment notes (credit notes), each opening the printable note.
           const noteLinks = (inv: any) => {
             const notes: any[] = Array.isArray(inv.notes) ? inv.notes : []
             if (!notes.length || !company?.id) return null
             return (
-              <div className="flex flex-col gap-1 mt-1.5">
+              <div className="bl-notes">
                 {notes.map((n: any) => (
-                  <Link key={n.id} href={`/admin/billing/tax-invoice?note=${encodeURIComponent(n.id)}&company=${encodeURIComponent(company.id)}`}
-                    className="text-xs font-semibold hover:underline cursor-pointer" style={{ color: n.status === 'void' ? 'var(--slate)' : 'var(--coral)', overflowWrap: 'anywhere' }}>
-                    {noteLabel(n.kind)} {n.number} · {n.status === 'void' ? 'void' : `\u2212${fmtAud(n.amountCents)}`}
+                  <Link key={n.id} href={`/admin/billing/tax-invoice?note=${encodeURIComponent(n.id)}&company=${encodeURIComponent(company.id)}`} className={n.status === 'void' ? 'void' : ''}>
+                    {noteLabel(n.kind)} {n.number} · {n.status === 'void' ? 'void' : `−${fmtAud(n.amountCents)}`}
                   </Link>
                 ))}
               </div>
             )
           }
+          const when = (inv: any) => new Date(inv.created * 1000).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
           return (
             <>
-              <ul className="md:hidden divide-y rounded-xl border" style={{ borderColor: 'var(--border)' }}>
+              <ul className="bl-hist-m">
                 {billingHistory.map((inv: any) => (
-                  <li key={inv.id} className="p-3.5" style={{ borderColor: 'var(--border)' }}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div style={{ minWidth: 0 }}>
-                        <p className="text-sm font-semibold" style={{ color: 'var(--ink)', overflowWrap: 'anywhere' }}>{inv.description || 'Subscription'}</p>
-                        <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>{new Date(inv.created * 1000).toLocaleDateString()}</p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{formatMoney(inv.amount_paid / 100, inv.currency)}</p>
-                        <div className="mt-1 flex flex-col items-end gap-1">{badge(inv)}{refundBadge(inv)}</div>
-                      </div>
+                  <li key={inv.id}>
+                    <div className="bl-hist-top">
+                      <span className="ak-row-t"><b style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{inv.description || 'Subscription'}</b><small>{when(inv)}</small></span>
+                      <span className="bl-amt">{formatMoney(inv.amount_paid / 100, inv.currency)}</span>
                     </div>
-                    <div className="flex items-center gap-4 mt-2">{docLink(inv)}{stripePdf(inv)}</div>
+                    <div className="bl-hist-tags">{badge(inv)}{refundBadge(inv)}</div>
+                    <div className="bl-hist-acts">{docLink(inv)}{stripePdf(inv)}</div>
                     {noteLinks(inv)}
                   </li>
                 ))}
               </ul>
-              <div className="hidden md:block overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b" style={{ borderColor: 'var(--border)' }}>
-                      {['Date', 'Description', 'Amount', 'Status', ''].map(h => (
-                        <th key={h} className="text-left py-2 px-3 text-xs font-semibold uppercase" style={{ color: 'var(--slate)' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
+              <div className="bl-hist-d" style={{ overflowX: 'auto' }}>
+                <table className="ak-table">
+                  <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Status</th><th /></tr></thead>
                   <tbody>
                     {billingHistory.map((inv: any) => (
-                      <tr key={inv.id} className="border-b last:border-b-0 hover:bg-gray-50" style={{ borderColor: 'var(--border)' }}>
-                        <td className="py-3 px-3" style={{ color: 'var(--ink)' }}>
-                          {new Date(inv.created * 1000).toLocaleDateString()}
-                        </td>
-                        <td className="py-3 px-3" style={{ color: 'var(--ink)' }}>
-                          {inv.description || 'Subscription'}
-                          {noteLinks(inv)}
-                        </td>
-                        <td className="py-3 px-3 font-medium" style={{ color: 'var(--ink)' }}>
-                          {formatMoney(inv.amount_paid / 100, inv.currency)}
-                        </td>
-                        <td className="py-3 px-3"><div className="flex flex-wrap items-center gap-1.5">{badge(inv)}{refundBadge(inv)}</div></td>
-                        <td className="py-3 px-3">
-                          <div className="flex items-center gap-4 justify-end">{docLink(inv)}{stripePdf(inv)}</div>
-                        </td>
+                      <tr key={inv.id}>
+                        <td style={{ whiteSpace: 'nowrap' }}>{when(inv)}</td>
+                        <td>{inv.description || 'Subscription'}{noteLinks(inv)}</td>
+                        <td className="bl-amt">{formatMoney(inv.amount_paid / 100, inv.currency)}</td>
+                        <td><span className="bl-hist-tags">{badge(inv)}{refundBadge(inv)}</span></td>
+                        <td><div className="bl-hist-acts" style={{ justifyContent: 'flex-end' }}>{docLink(inv)}{stripePdf(inv)}</div></td>
                       </tr>
                     ))}
                   </tbody>
@@ -740,7 +580,67 @@ export default function BillingPage() {
             </>
           )
         })()}
-      </div>
-    </div>
+      </Panel>
+      <style>{BL_CSS}</style>
+    </AdminPage>
   )
 }
+
+const BL_CSS = `
+.bl-hero{margin-bottom:22px;padding:20px 22px;border-radius:24px;background:linear-gradient(160deg,color-mix(in srgb,var(--coral) 7%,var(--card,#fff)),var(--card,#fff) 65%);box-shadow:0 0 0 1px rgba(0,0,0,.05),0 1px 2px rgba(16,24,40,.04)}
+.bl-hero-top{display:flex;align-items:flex-start;gap:14px}
+.bl-hero-ic{width:44px;height:44px;flex-shrink:0;border-radius:15px;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--coral) 14%,var(--card,#fff));color:var(--coral)}
+.bl-hero-ic.good{background:#dcfce7;color:#15803d}
+.bl-hero-ic.shop{background:#e3f1ec;color:#008060}
+.bl-eyebrow{margin:0;font-size:12.5px;font-weight:650;color:var(--mut)}
+.bl-hero h2{margin:2px 0 0;font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:24px;font-weight:700;letter-spacing:-.035em;color:var(--ink)}
+.bl-hero-top p:not(.bl-eyebrow){margin:4px 0 0;font-size:14px;line-height:1.5;color:var(--mut)}
+.bl-hero-top p.bad{color:#b42318}
+.bl-hero-sub{margin:14px 0 0;font-size:14px;line-height:1.55;color:var(--mut)}
+.bl-hero-sub b{color:var(--ink)}
+.bl-trial{height:8px;margin:16px 0 0;border-radius:999px;background:var(--f);overflow:hidden}
+.bl-trial i{display:block;height:100%;border-radius:999px;background:var(--coral)}
+.bl-incl{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
+.bl-incl span{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:999px;background:var(--card,#fff);box-shadow:0 0 0 1px rgba(0,0,0,.06);font-size:13px;font-weight:600;color:var(--ink)}
+.bl-incl svg{color:#16a34a}
+.ak-btn.bl-shopify{margin-top:16px;background:#008060;color:#fff;box-shadow:none}
+.ak-btn.bl-shopify:hover{background:#008060;filter:brightness(.95)}
+.bl-plans-h{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:6px 0 12px}
+.bl-plans-h h2{margin:0;font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:20px;font-weight:700;letter-spacing:-.03em;color:var(--ink)}
+.bl-plans{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:22px}
+@media (max-width:900px){.bl-plans{grid-template-columns:minmax(0,1fr)}}
+.bl-plan{display:flex;flex-direction:column;padding:20px;border-radius:22px;background:var(--card,#fff);box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04)}
+.bl-plan.best{box-shadow:0 0 0 2px var(--coral),0 16px 36px -20px color-mix(in srgb,var(--coral) 60%,transparent)}
+.bl-plan.current{box-shadow:0 0 0 2px #22c55e}
+.bl-plan-h{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.bl-plan-h h3{margin:0;font-size:17px;font-weight:700;letter-spacing:-.02em;color:var(--ink)}
+.bl-best{height:22px;padding:0 9px;border-radius:999px;display:inline-flex;align-items:center;background:var(--coral);color:#fff;font-size:11.5px;font-weight:700}
+.bl-plan-desc{margin:3px 0 0;font-size:13px;color:var(--mut)}
+.bl-price{display:flex;align-items:baseline;gap:4px;margin:16px 0 0}
+.bl-price b{font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:38px;font-weight:700;letter-spacing:-.045em;line-height:1;color:var(--ink);font-variant-numeric:tabular-nums}
+.bl-price span{font-size:14px;color:var(--mut)}
+.bl-price-sub{margin:6px 0 16px;font-size:12.5px;color:var(--soft)}
+.bl-feats{list-style:none;margin:18px 0 0;padding:0;display:flex;flex-direction:column;gap:9px}
+.bl-feats li{display:flex;align-items:flex-start;gap:9px;font-size:13.5px;line-height:1.4;color:var(--ink)}
+.bl-feats li span{flex-shrink:0;width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--pc) 14%,var(--card,#fff));color:var(--pc)}
+.bl-feats li span svg{width:12px;height:12px}
+.bl-card{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:16px;background:var(--f)}
+.bl-card-ic{width:44px;height:32px;flex-shrink:0;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;background:var(--card,#fff);color:var(--mut);box-shadow:0 0 0 1px rgba(0,0,0,.06)}
+.bl-card.muted .ak-row-t b{color:var(--mut)}
+.bl-spin{width:12px;height:12px;border-radius:50%;border:2px solid var(--coral);border-top-color:transparent;animation:blSpin .8s linear infinite}
+@keyframes blSpin{to{transform:rotate(360deg)}}
+.bl-amt{font-weight:650;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.bl-hist-tags{display:inline-flex;flex-wrap:wrap;gap:5px}
+.bl-hist-acts{display:flex;align-items:center;gap:10px}
+.bl-pdf{font-size:12.5px;font-weight:600;color:var(--mut);text-decoration:none;white-space:nowrap}
+.bl-pdf:hover{color:var(--ink);text-decoration:underline}
+.bl-notes{display:flex;flex-direction:column;gap:3px;margin-top:5px}
+.bl-notes a{font-size:12.5px;font-weight:600;color:var(--coral);text-decoration:none;overflow-wrap:anywhere}
+.bl-notes a.void{color:var(--mut)}
+.bl-hist-m{display:none;list-style:none;margin:0;padding:0 8px 8px}
+.bl-hist-m li{padding:12px;border-radius:14px}
+.bl-hist-m li+li{box-shadow:0 -1px 0 var(--line)}
+.bl-hist-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.bl-hist-m .bl-hist-tags,.bl-hist-m .bl-hist-acts{margin-top:8px}
+@media (max-width:760px){.bl-hist-m{display:block}.bl-hist-d{display:none}}
+`

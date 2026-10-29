@@ -106,39 +106,40 @@ export default function IntegrationsShell({ children }: { children: React.ReactN
 
   return (
     <IntegrationsCtx.Provider value={{ companyId, ready, active, generic, setActive, reload }}>
-      <div className="flex min-h-[calc(100vh-56px)]">
-        <Suspense fallback={<aside className="hidden md:block w-64 shrink-0 bg-white border-r" style={{ borderColor: 'var(--border)' }} />}>
+      <style>{IGS_CSS}</style>
+      <div className="igs">
+        <Suspense fallback={null}>
           <Sidebar active={active} />
         </Suspense>
-        <div className="flex-1 min-w-0">{children}</div>
+        <div className="igs-main">{children}</div>
       </div>
     </IntegrationsCtx.Provider>
   )
 }
 
+// Inside one integration: the list of them all on the left, as a white card
+// that stays put while the page scrolls. The overview page is the list
+// itself, so it has none.
 function Sidebar({ active }: { active: Record<string, boolean> }) {
   const pathname = usePathname() || ''
   const params = useSearchParams()
   const current = pathname.match(/\/admin\/integrations\/([^/?]+)/)?.[1] || params?.get('i') || null
   const count = INTEGRATIONS.filter(i => active[i.id]).length
+  if (!current) return null
   return (
-    <aside className="hidden md:flex flex-col w-64 shrink-0 bg-white border-r" style={{ borderColor: 'var(--border)' }}>
-      <Link href="/admin/integrations" className="block p-4 border-b hover:bg-gray-50 transition-colors" style={{ borderColor: 'var(--border)' }}>
-        <span className="block font-bold text-sm" style={{ color: 'var(--ink)' }}>Integrations</span>
-        <span className="block text-xs mt-0.5" style={{ color: 'var(--slate)' }}>{count} active</span>
+    <aside className="igs-side" aria-label="Integrations">
+      <Link href="/admin/integrations" className="igs-all">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="15 18 9 12 15 6" /></svg>
+        <span><b>All integrations</b><small>{count} connected</small></span>
       </Link>
-      <nav className="flex-1 overflow-y-auto py-2 px-2" aria-label="Integrations">
+      <nav aria-label="Integrations">
         {INTEGRATIONS.map(intg => {
           const on = current === intg.id || (current === 'telnyx' && intg.id === 'calls')
           return (
-            <Link key={intg.id} href={integrationHref(intg)} aria-current={on ? 'page' : undefined}
-              className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg mb-0.5 transition-colors hover:bg-gray-50"
-              style={{ background: on ? 'var(--peach)' : undefined }}>
-              <span className="flex items-center gap-2.5 min-w-0">
-                <img src={intg.logo || '/logos/webhook.svg'} alt="" width={24} height={24} className="shrink-0" style={{ width: 24, height: 24 }} />
-                <span className="text-sm font-medium truncate" style={{ color: on ? 'var(--coral)' : 'var(--ink)' }}>{intg.name}</span>
-              </span>
-              {active[intg.id] && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: '#10b981' }} aria-label="Active" />}
+            <Link key={intg.id} href={integrationHref(intg)} aria-current={on ? 'page' : undefined} className={`igs-item${on ? ' on' : ''}`}>
+              <span className="igs-logo"><img src={intg.logo || '/logos/webhook.svg'} alt="" width={20} height={20} /></span>
+              <span className="igs-name">{intg.name}</span>
+              {active[intg.id] && <span className="igs-dot" aria-label="Connected" />}
             </Link>
           )
         })}
@@ -146,3 +147,26 @@ function Sidebar({ active }: { active: Record<string, boolean> }) {
     </aside>
   )
 }
+
+const IGS_CSS = `
+.igs{display:flex;gap:12px;align-items:flex-start;min-height:calc(100vh - 56px)}
+.igs-main{flex:1;min-width:0}
+.admin-main:has(.igs-side){overflow-x:clip!important;overflow-y:visible!important;min-width:0}
+.igs-side{position:sticky;top:68px;width:250px;flex-shrink:0;margin:12px 0 12px 12px;max-height:calc(100vh - 80px);overflow-y:auto;scrollbar-width:thin;padding:8px;border-radius:20px;background:var(--card,#fff);box-shadow:0 0 0 1px rgba(0,0,0,.05),0 1px 2px rgba(16,24,40,.04)}
+@media (max-width:767px){.igs-side{display:none}}
+.igs-all{display:flex;align-items:center;gap:8px;padding:9px 10px 11px;margin-bottom:4px;border-radius:12px;color:var(--ink);text-decoration:none;box-shadow:0 1px 0 #f0f0f2}
+.igs-all:hover{background:#f7f7f8}
+.igs-all span{display:flex;flex-direction:column;line-height:1.25}
+.igs-all b{font-size:14px;font-weight:650}
+.igs-all small{font-size:12px;color:#8e8e93}
+.igs-item{display:flex;align-items:center;gap:10px;padding:7px 10px;margin:1px 0;border-radius:12px;color:var(--ink);text-decoration:none;font-size:14px;font-weight:500;transition:background .12s}
+.igs-item:hover{background:#f7f7f8}
+.igs-item.on{background:#efeff1;font-weight:650}
+.igs-logo{width:28px;height:28px;flex-shrink:0;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;background:#f4f4f5}
+.igs-logo img{width:18px;height:18px;object-fit:contain}
+.igs-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.igs-dot{width:8px;height:8px;flex-shrink:0;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px #dcfce7}
+[data-theme="dark"] .igs-all:hover,[data-theme="dark"] .igs-item:hover{background:#2a2a2e}
+[data-theme="dark"] .igs-item.on{background:#333337}
+[data-theme="dark"] .igs-logo{background:#2a2a2e}
+`
