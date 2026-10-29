@@ -6,15 +6,23 @@ import { supabase } from '@/lib/supabase'
 import { isValidSlug, isSlugAvailable } from '@/lib/board'
 import { PLAN_NAMES, Plan } from '@/lib/plan'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { INDUSTRIES } from '@/lib/industries'
+import { AdminPage, Panel } from '@/components/ui/AdminKit'
 
 const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 // The real tiers customers buy (plus the trial state). Values match
 // companies.plan / lib/plan.ts, so the entitlement model applies exactly.
 const PLANS = ['free', 'trial', 'feedback', 'omnichannel', 'everything', 'enterprise']
-const PLAN_EMOJI: Record<string, string> = {
-  free: '🆓', trial: '⏱️', feedback: '💬', omnichannel: '📥', everything: '⭐', enterprise: '🏆',
+const PLAN_HINT: Record<string, string> = {
+  free: 'The basics, no charge', trial: '14 days of everything', feedback: 'Ideas, roadmap, surveys',
+  omnichannel: 'Inbox, contacts, SMS', everything: 'The whole platform', enterprise: 'Set up by the Colvy team',
+}
+
+// A readable temporary password from the browser's secure random source.
+function newPassword() {
+  const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789'
+  const bytes = crypto.getRandomValues(new Uint8Array(12))
+  return Array.from(bytes, b => chars[b % chars.length]).join('') + '!'
 }
 
 export default function CreateCompanyPage() {
@@ -136,142 +144,146 @@ export default function CreateCompanyPage() {
     setLoading(false)
   }
 
-  if (!user) return <div className="p-8">Loading...</div>
+  if (!user) return <div className="p-8" style={{ color: 'var(--slate)' }}>Loading…</div>
+
+  const slugNote = { idle: '', checking: 'Checking…', available: 'Available', taken: 'Already taken', invalid: 'Use 3–30 lowercase letters, numbers and dashes' }[slugStatus]
+  const copy = (t: string) => { try { navigator.clipboard.writeText(t) } catch {} }
 
   return (
-    <div className="max-w-2xl mx-auto px-6 py-8">
-      <div className="flex items-center gap-3 mb-8">
-        <Link href="/admin" className="text-sm" style={{ color: 'var(--slate)' }}>← Admin</Link>
-        <span style={{ color: 'var(--slate)' }}>/</span>
-        <h1 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>Create Company</h1>
-      </div>
-
+    <AdminPage width="sm" title="Create a company" sub="Make a workspace and its owner’s account in one go. Only Colvy’s platform admin can do this."
+      back={{ href: '/admin', label: 'Admin' }}>
       {success && (
-        <div className="mb-6 p-5 rounded-2xl border" style={{ borderColor: '#10b981', background: '#f0fdf4' }}>
-          <p className="font-bold text-green-700 mb-3">✅ Company created successfully!</p>
-          <div className="space-y-1.5 text-sm">
-            <p><span className="font-medium text-gray-600">Board URL:</span> <a href={success.boardUrl} target="_blank" className="text-green-600 underline">{success.boardUrl}</a></p>
-            <p><span className="font-medium text-gray-600">Admin URL:</span> <a href={success.adminUrl} target="_blank" className="text-green-600 underline">{success.adminUrl}</a></p>
-            <p><span className="font-medium text-gray-600">Login email:</span> <code className="bg-gray-100 px-1 rounded">{success.ownerEmail}</code></p>
-            <p><span className="font-medium text-gray-600">Password:</span> <code className="bg-gray-100 px-1 rounded">{success.ownerPassword}</code></p>
-            <p><span className="font-medium text-gray-600">Plan:</span> {success.plan}</p>
-          </div>
-          <button onClick={() => setSuccess(null)} className="mt-3 text-xs underline text-gray-500 cursor-pointer">Create another</button>
-        </div>
+        <section className="cc-done">
+          <p className="cc-done-h">
+            <span aria-hidden><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg></span>
+            Company created
+          </p>
+          {[
+            ['Board', success.boardUrl, true],
+            ['Admin', success.adminUrl, true],
+            ['Login email', success.ownerEmail, false],
+            ['Password', success.ownerPassword, false],
+          ].map(([k, v, link]) => (
+            <div key={k as string} className="cc-done-row">
+              <small>{k}</small>
+              {link ? <a href={v as string} target="_blank" rel="noopener">{v}</a> : <code>{v}</code>}
+              <button type="button" className="ak-btn sm" onClick={() => copy(v as string)}>Copy</button>
+            </div>
+          ))}
+          <div className="cc-done-row"><small>Plan</small><span>{PLAN_NAMES[success.plan as Plan] || success.plan}</span></div>
+          <button type="button" className="ak-btn ghost sm" style={{ marginTop: 10 }} onClick={() => setSuccess(null)}>Create another</button>
+        </section>
       )}
 
-      {error && <div className="mb-4 p-3 rounded-lg text-sm" style={{ background: '#fee2e2', color: '#dc2626' }}>{error}</div>}
+      {error && <p className="ak-note bad" role="alert">{error}</p>}
 
-      <form onSubmit={handleCreate} className="space-y-6">
-        {/* Owner Account */}
-        <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
-          <h2 className="font-bold mb-4" style={{ color: 'var(--ink)' }}>👤 Owner Account</h2>
-          <div className="space-y-4">
+      <form onSubmit={handleCreate}>
+        <Panel title="Owner" sub="The person who’ll run this workspace. Send them these details.">
+          <div className="cc-fields">
             <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Full name</label>
-              <input type="text" value={ownerName} onChange={e => setOwnerName(e.target.value)} placeholder="John Doe" required
-                className="w-full px-4 py-2.5 rounded-xl border focus:outline-none" style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
+              <label className="ak-label" htmlFor="cc-name">Full name</label>
+              <input id="cc-name" className="ak-field" type="text" value={ownerName} onChange={e => setOwnerName(e.target.value)} placeholder="Jane Doe" required />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Email address</label>
-              <input type="email" value={ownerEmail} onChange={e => setOwnerEmail(e.target.value)} placeholder="owner@company.com" required
-                className="w-full px-4 py-2.5 rounded-xl border focus:outline-none" style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
+              <label className="ak-label" htmlFor="cc-email">Email</label>
+              <input id="cc-email" className="ak-field" type="email" value={ownerEmail} onChange={e => setOwnerEmail(e.target.value)} placeholder="owner@business.com" required />
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>
-                Password <span className="font-normal" style={{ color: 'var(--slate)' }}>(send this to them)</span>
-              </label>
-              <div className="flex gap-2">
-                <input type="text" value={ownerPassword} onChange={e => setOwnerPassword(e.target.value)} placeholder="Min. 8 characters" required
-                  className="flex-1 px-4 py-2.5 rounded-xl border focus:outline-none" style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
-                <button type="button" onClick={() => setOwnerPassword(Math.random().toString(36).slice(2, 10) + 'A1!')}
-                  className="px-4 py-2.5 rounded-xl border text-sm cursor-pointer hover:bg-gray-50"
-                  style={{ borderColor: 'var(--border)', color: 'var(--slate)' }}>
-                  Generate
-                </button>
+            <div className="cc-wide">
+              <label className="ak-label" htmlFor="cc-pass">Temporary password</label>
+              <div className="cc-inline">
+                <input id="cc-pass" className="ak-field" type="text" value={ownerPassword} onChange={e => setOwnerPassword(e.target.value)} placeholder="At least 8 characters" required />
+                <button type="button" className="ak-btn ghost" onClick={() => setOwnerPassword(newPassword())}>Generate</button>
               </div>
             </div>
           </div>
-        </div>
+        </Panel>
 
-        {/* Company Details */}
-        <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
-          <h2 className="font-bold mb-4" style={{ color: 'var(--ink)' }}>🏢 Company Details</h2>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Company name</label>
-              <input type="text" value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="Acme Inc." required
-                className="w-full px-4 py-2.5 rounded-xl border focus:outline-none" style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
+        <Panel title="Company" sub="How the business shows up on its board and in the admin.">
+          <div className="cc-fields">
+            <div className="cc-wide">
+              <label className="ak-label" htmlFor="cc-co">Company name</label>
+              <input id="cc-co" className="ak-field" type="text" value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="Roxy Aquarium" required />
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Board URL</label>
-              <div className="flex items-center rounded-xl border overflow-hidden"
-                style={{ borderColor: slugStatus === 'available' ? '#10b981' : slugStatus === 'taken' ? '#ef4444' : 'var(--border)' }}>
-                <input type="text" value={slug} onChange={e => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
-                  placeholder="acme" required
-                  className="flex-1 px-4 py-2.5 focus:outline-none text-sm min-w-0" style={{ fontSize: '16px' }} />
-                <span className="px-3 py-2.5 text-sm border-l shrink-0" style={{ background: 'var(--canvas)', color: 'var(--slate)', borderColor: 'var(--border)' }}>
-                  .colvy.com
-                </span>
+            <div className="cc-wide">
+              <label className="ak-label" htmlFor="cc-slug">Address</label>
+              <div className={`cc-slug ${slugStatus}`}>
+                <input id="cc-slug" type="text" value={slug} onChange={e => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))} placeholder="roxy" required aria-describedby="cc-slug-note" />
+                <span>.colvy.com</span>
               </div>
-              <p className="text-xs mt-1" style={{ color: slugStatus === 'available' ? '#10b981' : '#ef4444' }}>
-                {{ idle: '', checking: 'Checking...', available: '✓ Available', taken: '✗ Already taken', invalid: '✗ Invalid format' }[slugStatus]}
-              </p>
+              <p id="cc-slug-note" className={`cc-slug-note ${slugStatus}`} aria-live="polite">{slugNote}</p>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Business type / Industry</label>
-              <select value={industry} onChange={e => setIndustry(e.target.value)} required
-                className="w-full px-4 py-2.5 rounded-xl border focus:outline-none text-sm"
-                style={{ borderColor: 'var(--border)', fontSize: '16px', color: industry ? 'var(--ink)' : 'var(--slate)' }}>
-                <option value="">Select industry</option>
+              <label className="ak-label" htmlFor="cc-ind">Industry</label>
+              <select id="cc-ind" className="ak-select" value={industry} onChange={e => setIndustry(e.target.value)} required>
+                <option value="">Choose one</option>
                 {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Description <span className="font-normal" style={{ color: 'var(--slate)' }}>(optional)</span></label>
-              <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="What does this company do?"
-                rows={2} className="w-full px-4 py-2.5 rounded-xl border focus:outline-none resize-none text-sm"
-                style={{ borderColor: 'var(--border)', fontSize: '16px' }} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--ink)' }}>Brand color</label>
-              <div className="flex items-center gap-3">
-                <input type="color" value={accentColor} onChange={e => setAccentColor(e.target.value)}
-                  className="w-12 h-10 rounded-lg cursor-pointer border p-1" style={{ borderColor: 'var(--border)' }} />
-                <input type="text" value={accentColor} onChange={e => setAccentColor(e.target.value)}
-                  className="flex-1 px-4 py-2.5 rounded-xl border focus:outline-none text-sm font-mono"
-                  style={{ borderColor: 'var(--border)' }} />
-                <div className="w-10 h-10 rounded-xl" style={{ background: accentColor }} />
+              <label className="ak-label" htmlFor="cc-col">Brand colour</label>
+              <div className="cc-color">
+                <input type="color" value={accentColor} onChange={e => setAccentColor(e.target.value)} aria-label="Pick a colour" />
+                <input id="cc-col" className="ak-field" type="text" value={accentColor} onChange={e => setAccentColor(e.target.value)} />
               </div>
             </div>
+            <div className="cc-wide">
+              <label className="ak-label" htmlFor="cc-desc">Description <span style={{ fontWeight: 500, color: 'var(--soft)' }}>optional</span></label>
+              <textarea id="cc-desc" className="ak-field" value={description} onChange={e => setDescription(e.target.value)} placeholder="What does this business do?" rows={2} />
+            </div>
           </div>
-        </div>
+        </Panel>
 
-        {/* Plan */}
-        <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
-          <h2 className="font-bold mb-4" style={{ color: 'var(--ink)' }}>💳 Plan</h2>
-          <div className="grid grid-cols-2 gap-3">
+        <Panel title="Plan">
+          <div className="cc-plans" role="radiogroup" aria-label="Plan">
             {PLANS.map(p => (
-              <button key={p} type="button" onClick={() => setPlan(p)}
-                className="py-3 px-4 rounded-xl border text-sm font-semibold capitalize cursor-pointer transition-all text-left"
-                style={{
-                  borderColor: plan === p ? 'var(--coral)' : 'var(--border)',
-                  background: plan === p ? 'var(--peach)' : 'white',
-                  color: plan === p ? 'var(--coral)' : 'var(--ink)',
-                }}>
-                {PLAN_EMOJI[p] ? PLAN_EMOJI[p] + ' ' : ''}
-                {PLAN_NAMES[p as Plan] || (p.charAt(0).toUpperCase() + p.slice(1))}
+              <button key={p} type="button" role="radio" aria-checked={plan === p} className={`cc-plan${plan === p ? ' on' : ''}`} onClick={() => setPlan(p)}>
+                <b>{PLAN_NAMES[p as Plan] || (p.charAt(0).toUpperCase() + p.slice(1))}</b>
+                <small>{PLAN_HINT[p]}</small>
               </button>
             ))}
           </div>
-        </div>
+        </Panel>
 
-        <button type="submit" disabled={loading || slugStatus !== 'available'}
-          className="w-full py-3.5 rounded-xl font-semibold text-white cursor-pointer disabled:opacity-50 text-base"
-          style={{ background: 'var(--coral)' }}>
-          {loading ? 'Creating company...' : '🚀 Create Company & Account'}
+        <button type="submit" className="ak-btn go cc-go" disabled={loading || slugStatus !== 'available'}>
+          {loading ? 'Creating…' : 'Create company and account'}
         </button>
       </form>
-    </div>
+      <style>{CC_CSS}</style>
+    </AdminPage>
   )
 }
+
+const CC_CSS = `
+.cc-fields{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.cc-wide{grid-column:1/-1}
+@media (max-width:600px){.cc-fields{grid-template-columns:minmax(0,1fr)}}
+.cc-inline{display:flex;gap:8px}
+.cc-slug{display:flex;align-items:center;height:44px;border-radius:14px;background:var(--f);border:1.5px solid transparent;overflow:hidden;transition:border-color .15s,background .15s}
+.cc-slug:focus-within{background:var(--card,#fff);border-color:var(--f2)}
+.cc-slug.available{border-color:#86efac}.cc-slug.taken,.cc-slug.invalid{border-color:#fca5a5}
+.ak .cc-slug input{flex:1;min-width:0;height:100%;padding:0 14px;border:none!important;background:transparent!important;box-shadow:none!important;outline:none;font:inherit;font-size:14.5px;color:var(--ink)!important}
+.cc-slug span{padding:0 14px;font-size:14px;color:var(--mut)}
+.cc-slug-note{min-height:18px;margin:6px 0 0;font-size:12.5px;color:var(--soft)}
+.cc-slug-note.available{color:#15803d}.cc-slug-note.taken,.cc-slug-note.invalid{color:#b91c1c}
+.cc-color{display:flex;gap:8px;align-items:center}
+.cc-color input[type=color]{width:44px;height:44px;flex-shrink:0;padding:0;border:none;border-radius:14px;background:none;cursor:pointer}
+.cc-color input[type=color]::-webkit-color-swatch-wrapper{padding:0}
+.cc-color input[type=color]::-webkit-color-swatch{border:none;border-radius:14px}
+.ak .cc-color .ak-field{font-family:ui-monospace,monospace}
+.cc-plans{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+@media (max-width:600px){.cc-plans{grid-template-columns:1fr 1fr}}
+.cc-plan{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px 14px;border:none;border-radius:16px;background:var(--f);font:inherit;text-align:left;cursor:pointer;transition:background .15s,box-shadow .15s}
+.cc-plan:hover{background:var(--f2)}
+.cc-plan.on{background:var(--card,#fff);box-shadow:0 0 0 2px var(--ink)}
+.cc-plan b{font-size:14px;font-weight:650;color:var(--ink)}
+.cc-plan small{font-size:12px;color:var(--mut)}
+.ak-btn.cc-go{width:100%;height:50px;font-size:15px;margin-top:4px}
+.cc-done{margin-bottom:14px;padding:18px 20px;border-radius:22px;background:#ecfdf3;box-shadow:0 0 0 1px #abefc6}
+.cc-done-h{display:flex;align-items:center;gap:9px;margin:0 0 10px;font-size:16px;font-weight:700;color:#05603a}
+.cc-done-h span{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#16a34a;color:#fff}
+.cc-done-row{display:flex;align-items:center;gap:10px;min-height:36px;font-size:14px;color:#05603a}
+.cc-done-row small{width:96px;flex-shrink:0;font-size:12.5px;font-weight:600;color:#067647}
+.cc-done-row a{color:#05603a;font-weight:600;overflow-wrap:anywhere}
+.cc-done-row code{padding:3px 8px;border-radius:8px;background:#fff;font-size:13px;overflow-wrap:anywhere}
+.cc-done-row .ak-btn{margin-left:auto}
+`

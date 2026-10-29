@@ -66,7 +66,7 @@ export function WelcomeSettingsPanel({ welcome, onPatch, themeColor, uploading, 
   const countOn = welcome.showResponseCount === true
   return (
     <div>
-      <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 16 }}>Welcome screen</h3>
+      <h3 className="fb-h">Welcome screen</h3>
       <div className="fb-set-row">
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <span style={LABEL}>Time to complete</span>
@@ -90,7 +90,7 @@ export function WelcomeSettingsPanel({ welcome, onPatch, themeColor, uploading, 
         </div>
         <input id="fb-welcome-btn" value={text} maxLength={MAX_BUTTON_TEXT} placeholder="Start"
           onChange={e => onPatch(buttonTextPatch(e.target.value))}
-          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, boxSizing: 'border-box' }} />
+          className="fb-field" />
       </div>
       <div style={{ marginBottom: 16 }}>
         <span style={SUB}>Image or video</span>
@@ -105,7 +105,7 @@ export function WelcomeSettingsPanel({ welcome, onPatch, themeColor, uploading, 
             </button>
           </div>
         ) : (
-          <label className="fb-soft" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 14, borderRadius: 10, color: themeColor, fontSize: 12, fontWeight: 600, cursor: uploading ? 'wait' : 'pointer' }}>
+          <label className="fb-soft" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 16, borderRadius: 16, color: themeColor, fontSize: 12, fontWeight: 600, cursor: uploading ? 'wait' : 'pointer' }}>
             {uploading ? 'Uploading...' : (
               <>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>

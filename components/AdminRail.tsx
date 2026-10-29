@@ -267,8 +267,10 @@ export default function AdminRail({ workspace, sections, settings, search, ring,
           .rail-upgrade { display: none !important; }
         }
         /* The phone's status pill: in the middle of the top bar, clear of the
-           rail and the Settings menu. */
-        .cv-phone-pill { top: calc(15px + var(--imp-h, 0px)); bottom: auto !important; left: 50% !important; transform: translateX(-50%); z-index: 70 !important; }
+           rail and the Settings menu. Above the top bar (40) and rail (45), but
+           under dialogs and side panels (50 and up), so it never sits on a
+           panel's title. */
+        .cv-phone-pill { top: calc(15px + var(--imp-h, 0px)); bottom: auto !important; left: 50% !important; transform: translateX(-50%); z-index: 46 !important; }
         /* The rail runs the full height with the workspace logo at the very top,
            and the top bar starts beside it. */
         @media (min-width: 861px) {

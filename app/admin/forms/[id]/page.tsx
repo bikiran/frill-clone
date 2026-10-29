@@ -541,17 +541,50 @@ export default function FormBuilder() {
   return (
     <div style={{ ['--ff' as any]: themeColor, display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px)' }}>
       <style>{`
-        .fb-add { width: 100%; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 10px 12px; margin-bottom: 14px; border-radius: 8px; border: none; background: #18181b; color: #fff; font-size: 13.5px; font-weight: 700; cursor: pointer; transition: transform .12s, background .15s; }
+        .fb-add { width: 100%; display: flex; align-items: center; justify-content: center; gap: 7px; height: 44px; padding: 0 14px; margin-bottom: 14px; border-radius: 999px; border: none; background: #18181b; color: #fff; font-size: 14px; font-weight: 650; cursor: pointer; transition: transform .12s, background .15s; }
+        .fb-pill { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 38px; padding: 0 15px; border-radius: 999px; border: none; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.09); color: var(--ink); font: inherit; font-size: 13.5px; font-weight: 600; text-decoration: none; white-space: nowrap; flex-shrink: 0; cursor: pointer; transition: background .15s, filter .15s, transform .12s; }
+        .fb-pill::before { display: none !important; }
+        .fb-pill:hover { background: #f4f4f5; }
+        .fb-pill:active { transform: scale(.98); }
+        .fb-pill:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+        .fb-pill.go { background: var(--coral); color: #fff; box-shadow: none; }
+        .fb-pill.go:hover { background: var(--coral); filter: brightness(.95); }
+        .fb-pill.muted { background: #f4f4f5; box-shadow: none; color: #3f3f46; }
+        .fb-pill.muted:hover { background: #ececef; }
+        .fb-pill.muted:disabled { color: #a1a1aa; opacity: 1; cursor: default; }
+        .fb-pill.ai { background: color-mix(in srgb, #ff6a4d 11%, #fff); box-shadow: none; color: #e2553f; }
+        .fb-pill.ai:hover { background: color-mix(in srgb, #ff6a4d 17%, #fff); }
+        .fb-pill.sm { height: 32px; padding: 0 12px; font-size: 12.5px; }
+        .fb-pill.tight { padding: 0 11px; }
+        .fb-state { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border-radius: 999px; background: #f4f4f5; color: #71717a; font-size: 12.5px; font-weight: 650; white-space: nowrap; }
+        .fb-state i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+        .fb-state.live { background: #dcfce7; color: #15803d; }
+        .fb-state.live i { box-shadow: 0 0 0 3px rgba(34,197,94,.25); }
+        .fb-saved { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+        .fb-h { margin: 0 0 16px; font-size: 15px; font-weight: 700; letter-spacing: -.01em; color: var(--ink); }
+        .fb-label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--ink); }
+        .fb-seg { display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: #f4f4f5; }
+        .fb-seg button { flex: 1; height: 34px; border: none; border-radius: 999px; background: none; font: inherit; font-size: 13px; font-weight: 600; color: #71717a; cursor: pointer; }
+        .fb-seg button:hover { color: var(--ink); }
+        .fb-seg button[aria-pressed="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(16,24,40,.12); }
+        .fb-swatches { display: flex; flex-wrap: wrap; gap: 9px; }
+        .fb-swatch { width: 30px; height: 30px; padding: 0; border: none; border-radius: 50%; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); transition: transform .12s, box-shadow .15s; }
+        .fb-swatch:hover { transform: scale(1.08); }
+        .fb-swatch[aria-pressed="true"] { box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--sw); }
+        .fb-field { width: 100%; height: 42px; padding: 0 13px; border-radius: 12px; border: 1.5px solid transparent !important; background: #f4f4f5 !important; box-shadow: none !important; font: inherit; font-size: 14px; color: var(--ink); outline: none; box-sizing: border-box; transition: background .15s, border-color .15s; }
+        .fb-field:focus { background: #fff !important; border-color: #e4e4e7 !important; }
+        .fb-help { display: flex; gap: 9px; padding: 12px 14px; border-radius: 16px; background: #f4f4f5; font-size: 12.5px; line-height: 1.55; color: #71717a; }
         .fb-add:hover { background: #000; }
         .fb-add:active { transform: scale(.98); }
-        .fb-row { position: relative; width: 100%; display: flex; align-items: center; gap: 10px; padding: 7px 8px; margin-bottom: 2px; border-radius: 8px; border: none; background: transparent; cursor: pointer; text-align: left; transition: background .15s; }
+        .fb-row { position: relative; width: 100%; display: flex; align-items: center; gap: 10px; padding: 8px 9px; margin-bottom: 2px; border-radius: 12px; border: none; background: transparent; cursor: pointer; text-align: left; transition: background .15s; }
         .fb-row[draggable="true"] { cursor: grab; }
         .fb-row:hover { background: #f4f4f5; }
-        .fb-row.on { background: #f1f1f3; box-shadow: inset 3px 0 0 var(--tint, #18181b); }
+        .fb-row.on { background: #efeff1; }
+        .fb-row.on .fb-row-title { font-weight: 650; }
         .fb-row.drop::before { content: ''; position: absolute; left: 6px; right: 6px; top: -2px; height: 2px; border-radius: 2px; background: var(--tint, #18181b); }
-        .fb-badge { display: inline-flex; align-items: center; gap: 5px; height: 24px; min-width: 24px; padding: 0 7px; border-radius: 6px; font-size: 12px; flex-shrink: 0; justify-content: center; }
+        .fb-badge { display: inline-flex; align-items: center; gap: 5px; height: 26px; min-width: 26px; padding: 0 8px; border-radius: 9px; font-size: 12px; flex-shrink: 0; justify-content: center; }
         .fb-badge b { font-weight: 700; }
-        .fb-row-title { flex: 1; min-width: 0; font-size: 13px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .fb-row-title { flex: 1; min-width: 0; font-size: 13.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .fb-row-x { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; border: none; background: transparent; color: #9ca3af; cursor: pointer; flex-shrink: 0; opacity: 0; transition: opacity .15s, background .15s, color .15s; }
         .fb-row:hover .fb-row-x, .fb-row.on .fb-row-x, .fb-row-x:focus-visible { opacity: 1; }
         .fb-row-x:hover { background: #fee2e2; color: #dc2626; }
@@ -562,23 +595,23 @@ export default function FormBuilder() {
         @keyframes fbFade { from { opacity: 0; } to { opacity: 1; } }
         @keyframes fbPop { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
         .fb-modal-bg { position: fixed; inset: 0; z-index: 60; background: rgba(15, 15, 20, .35); display: flex; align-items: flex-start; justify-content: center; padding: 8vh 16px 16px; animation: fbFade .18s ease both; }
-        .fb-modal { width: min(820px, 100%); max-height: 80vh; display: flex; flex-direction: column; background: #fff; border-radius: 14px; box-shadow: 0 24px 64px -12px rgba(0,0,0,.3); overflow: hidden; animation: fbPop .28s cubic-bezier(.16,1,.3,1) both; }
+        .fb-modal { width: min(820px, 100%); max-height: 80vh; display: flex; flex-direction: column; background: #fff; border-radius: 24px; box-shadow: 0 24px 64px -12px rgba(0,0,0,.3); overflow: hidden; animation: fbPop .28s cubic-bezier(.16,1,.3,1) both; }
         .fb-modal-ai { width: 100%; display: flex; align-items: center; gap: 12px; padding: 10px 12px; margin-bottom: 16px; border-radius: 10px; border: 1px solid #ffd6cc; background: linear-gradient(135deg, #fff6f3, #fff1ea); cursor: pointer; transition: transform .12s, box-shadow .15s; }
         .fb-modal-ai:hover { box-shadow: 0 4px 14px -6px rgba(226, 85, 63, .35); }
         .fb-modal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px 18px; }
         .fb-cat { font-size: 11px; font-weight: 700; color: var(--slate); text-transform: uppercase; letter-spacing: .06em; margin: 4px 0 6px; }
-        .fb-type { width: 100%; display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: none; border-radius: 8px; background: transparent; cursor: pointer; text-align: left; font-size: 13.5px; color: var(--ink); transition: background .12s; }
+        .fb-type { width: 100%; display: flex; align-items: center; gap: 10px; padding: 7px 9px; border: none; border-radius: 12px; background: transparent; cursor: pointer; text-align: left; font-size: 13.5px; color: var(--ink); transition: background .12s; }
         .fb-type:hover { background: #f4f4f5; }
-        .fb-type-ic { width: 28px; height: 28px; border-radius: 7px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: transform .15s cubic-bezier(.34,1.56,.64,1); }
+        .fb-type-ic { width: 30px; height: 30px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: transform .15s cubic-bezier(.34,1.56,.64,1); }
         .fb-type:hover .fb-type-ic { transform: scale(1.08); }
         .fb-bare:focus { box-shadow: none !important; }
-        .fb-icon-btn { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px; border: none; background: transparent; color: var(--slate); cursor: pointer; }
+        .fb-icon-btn { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; border: none; background: transparent; color: var(--slate); cursor: pointer; }
         .fb-icon-btn:hover { background: #f4f4f5; color: var(--ink); }
 
-        .fb-soft { border: 1px solid color-mix(in srgb, currentColor 30%, transparent); background: color-mix(in srgb, currentColor 6%, #fff); transition: background .15s; }
-        .fb-soft:hover { background: color-mix(in srgb, currentColor 11%, #fff); }
-        .fb-ghost { border: 1px solid var(--border); background: #fff; color: var(--ink); transition: background .15s, border-color .15s; }
-        .fb-ghost:hover { background: #f4f4f5; border-color: #d4d4d8; }
+        .fb-soft { border: none; background: color-mix(in srgb, currentColor 8%, #fff); transition: background .15s; }
+        .fb-soft:hover { background: color-mix(in srgb, currentColor 13%, #fff); }
+        .fb-ghost { border: none; box-shadow: 0 0 0 1px rgba(0,0,0,.09); background: #fff; color: var(--ink); border-radius: 999px !important; transition: background .15s; }
+        .fb-ghost:hover { background: #f4f4f5; }
 
         @keyframes fbPvIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
         .fb-pv-in { animation: fbPvIn .45s cubic-bezier(.16,1,.3,1) both; }
@@ -591,8 +624,9 @@ export default function FormBuilder() {
         .fb-pv-x:hover { color: #dc2626; }
         @media (hover: none) { .fb-pv-x { opacity: 1; } }
         .fb-icon-btn:focus-visible, .fb-tip:focus-visible, .fb-toggle:focus-visible { outline: 2px solid var(--ff); outline-offset: 2px; }
-        .fb-toggle { position: relative; width: 38px; height: 21px; border-radius: 999px; border: none; cursor: pointer; flex-shrink: 0; padding: 0; transition: background .15s; }
-        .fb-toggle span { position: absolute; top: 3px; width: 15px; height: 15px; border-radius: 50%; background: #fff; transition: left .15s; }
+        .fb-toggle { position: relative; width: 44px; height: 26px; border-radius: 999px; border: none; cursor: pointer; flex-shrink: 0; padding: 0; transition: background .18s; }
+        .fb-toggle::before { display: none !important; }
+        .fb-toggle span { position: absolute; top: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.2); transition: left .2s cubic-bezier(.22,1,.36,1); }
         .fb-set-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
         .fb-tip { position: relative; width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); background: #fff; color: var(--slate); font-size: 10.5px; font-weight: 700; line-height: 1; padding: 0; cursor: help; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
         .fb-tip[data-tip]::after { content: attr(data-tip); position: absolute; z-index: 30; left: 50%; top: calc(100% + 8px); transform: translateX(-50%) translateY(-4px); width: 220px; padding: 8px 10px; border-radius: 8px; background: #18181b; color: #fff; font-size: 11.5px; font-weight: 500; line-height: 1.45; text-align: left; white-space: normal; pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .12s, transform .12s; }
@@ -625,44 +659,39 @@ export default function FormBuilder() {
           // Desktop: sized to the title but allowed to shrink, so the top bar stays on one line.
           style={{ fontSize: isMobile ? 14 : 15, fontWeight: 700, color: 'var(--ink)', border: 'none', outline: 'none', background: 'transparent', minWidth: isMobile ? 0 : 80, flex: isMobile ? 1 : '0 1 auto', width: isMobile ? undefined : `${Math.min(Math.max(title.length, 8), 40) + 1}ch`, textOverflow: 'ellipsis' }}
         />
-        <span style={{ fontSize: 11, color: saving ? '#f59e0b' : isDirty ? '#6b6b70' : '#16a34a', display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
-          {saving ? 'Saving...' : isDirty ? (isMobile ? '●' : 'Unsaved changes') : (isMobile ? '✓' : '✓ Saved')}
+        <span className="fb-saved" style={{ color: saving ? '#b45309' : isDirty ? '#71717a' : '#15803d' }} aria-live="polite">
+          {!saving && !isDirty && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="20 6 9 17 4 12" /></svg>}
+          {saving ? 'Saving…' : isDirty ? (isMobile ? '●' : 'Unsaved changes') : (isMobile ? '' : 'Saved')}
         </span>
-        <button onClick={handleSave} disabled={saving || !isDirty}
-          style={{ padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: (saving || !isDirty) ? 'default' : 'pointer', border: 'none', background: isDirty ? 'var(--coral)' : '#f3f4f6', color: isDirty ? '#fff' : '#9ca3af', opacity: saving ? 0.7 : 1, whiteSpace: 'nowrap', flexShrink: 0 }}>
-          {saving ? 'Saving...' : 'Save'}
+        <button type="button" onClick={handleSave} disabled={saving || !isDirty} className={`fb-pill sm ${isDirty ? 'go' : 'muted'}`}>
+          {saving ? 'Saving…' : 'Save'}
         </button>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 10, flexWrap: isMobile ? 'wrap' : 'nowrap', flexShrink: 0 }}>
-          <button type="button" className="fb-ghost" onClick={() => openLogic(selectedQ ?? null)} disabled={questions.length === 0}
+          <button type="button" onClick={() => openLogic(selectedQ ?? null)} disabled={questions.length === 0}
             aria-label={questions.length === 0 ? 'Logic (add a question first)' : `Logic${totalRules ? `, ${rulesSetText(totalRules)}` : ''}${hasLogicErrors ? ', needs attention' : ''}`}
             title={questions.length === 0 ? 'Add a question first' : 'Logic: show, hide, skip or score questions'}
-            style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6, padding: isMobile ? '6px 10px' : !isRoomy ? '8px 10px' : '8px 14px', borderRadius: 10, fontSize: isMobile ? 12 : 13, fontWeight: 700, cursor: questions.length === 0 ? 'not-allowed' : 'pointer', opacity: questions.length === 0 ? 0.5 : 1, whiteSpace: 'nowrap' }}>
+            className={`fb-pill${isMobile ? ' sm' : ''}${!isMobile && !isRoomy ? ' tight' : ''}`}>
             <BranchIcon size={15} />
             {(isMobile || isRoomy) && 'Logic'}
             {totalRules > 0 && <span className="fb-count">{totalRules}</span>}
             {hasLogicErrors && <span className="fb-dot" role="img" aria-label="Logic needs attention" />}
           </button>
-          <button onClick={() => setAiOpen(true)} aria-label="Open Colvy AI" title="Colvy AI" className="fb-ai-btn"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: isMobile ? '6px 10px' : !isRoomy ? '8px 10px' : '8px 14px', borderRadius: 10, fontSize: isMobile ? 12 : 13, fontWeight: 700, cursor: 'pointer', border: '1px solid #ffd6cc', background: 'linear-gradient(135deg, #fff5f2, #fff0e8)', color: '#e2553f', whiteSpace: 'nowrap' }}>
+          <button type="button" onClick={() => setAiOpen(true)} aria-label="Open Colvy AI" title="Colvy AI"
+            className={`fb-pill ai fb-ai-btn${isMobile ? ' sm' : ''}${!isMobile && !isRoomy ? ' tight' : ''}`}>
             <AiSpark size={15} />{isMobile ? 'AI' : isRoomy ? 'Colvy AI' : null}
           </button>
           {!isMobile && (
-            <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 999, background: isPublished ? '#dcfce7' : '#f3f4f6', color: isPublished ? '#16a34a' : '#6b7280', fontWeight: 600, whiteSpace: 'nowrap' }}>
-              {isPublished ? 'Live' : 'Draft'}
-            </span>
+            <span className={`fb-state${isPublished ? ' live' : ''}`}><i aria-hidden />{isPublished ? 'Live' : 'Draft'}</span>
           )}
-          <button onClick={togglePublish}
-            style={{ padding: isMobile ? '6px 12px' : '8px 16px', borderRadius: 10, fontSize: isMobile ? 12 : 13, fontWeight: 700, cursor: 'pointer', border: 'none', background: isPublished ? '#f3f4f6' : 'var(--coral)', color: isPublished ? '#374151' : '#fff', whiteSpace: 'nowrap' }}>
+          <button type="button" onClick={togglePublish} className={`fb-pill ${isPublished ? 'muted' : 'go'}${isMobile ? ' sm' : ''}`}>
             {isPublished ? 'Unpublish' : 'Publish'}
           </button>
           {isPublished && (
-            <Link href={`/forms/${formId}`} target="_blank"
-              style={{ padding: isMobile ? '6px 12px' : '8px 16px', borderRadius: 10, fontSize: isMobile ? 12 : 13, fontWeight: 600, border: '1px solid var(--border)', color: 'var(--ink)', textDecoration: 'none', whiteSpace: 'nowrap' }}>
+            <Link href={`/forms/${formId}`} target="_blank" className={`fb-pill${isMobile ? ' sm' : ''}`}>
               View
             </Link>
           )}
-          <Link href={`/admin/forms/${formId}/results`}
-            style={{ padding: isMobile ? '6px 12px' : '8px 16px', borderRadius: 10, fontSize: isMobile ? 12 : 13, fontWeight: 600, border: '1px solid var(--border)', color: 'var(--ink)', textDecoration: 'none', whiteSpace: 'nowrap' }}>
+          <Link href={`/admin/forms/${formId}/results`} className={`fb-pill${isMobile ? ' sm' : ''}`}>
             Results
           </Link>
           {!isMobile && (
@@ -1253,60 +1282,35 @@ export default function FormBuilder() {
                   <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0 18px' }} />
                 </>
               )}
-              <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 16 }}>Form Design</h3>
+              <h3 className="fb-h">Form design</h3>
 
               <div style={{ marginBottom: 16 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 8 }}>Display style</label>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button type="button" aria-pressed={listMode} onClick={() => saveDisplayStyle('list')}
-                    style={{
-                      flex: 1,
-                      padding: '8px 12px',
-                      borderRadius: 8,
-                      border: listMode ? `2px solid ${themeColor}` : '1px solid var(--border)',
-                      background: listMode ? `${themeColor}11` : '#fff',
-                      color: listMode ? themeColor : 'var(--ink)',
-                      fontSize: 12,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}>
-                    List view
-                  </button>
-                  <button type="button" aria-pressed={!listMode} onClick={() => saveDisplayStyle('typeform')}
-                    style={{
-                      flex: 1,
-                      padding: '8px 12px',
-                      borderRadius: 8,
-                      border: !listMode ? `2px solid ${themeColor}` : '1px solid var(--border)',
-                      background: !listMode ? `${themeColor}11` : '#fff',
-                      color: !listMode ? themeColor : 'var(--ink)',
-                      fontSize: 12,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}>
-                    Typeform style
-                  </button>
+                <span className="fb-label">Display style</span>
+                <div className="fb-seg" role="group" aria-label="Display style">
+                  <button type="button" aria-pressed={listMode} onClick={() => saveDisplayStyle('list')}>List view</button>
+                  <button type="button" aria-pressed={!listMode} onClick={() => saveDisplayStyle('typeform')}>One at a time</button>
                 </div>
               </div>
-              
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 8 }}>Theme color</label>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+
+              <div style={{ marginBottom: 18 }}>
+                <span className="fb-label">Theme colour</span>
+                <div className="fb-swatches" role="group" aria-label="Theme colour">
                   {THEME_COLORS.map(c => (
-                    <button key={c} onClick={() => setThemeColor(c)}
-                      style={{ width: 28, height: 28, borderRadius: 8, background: c, border: themeColor === c ? '2.5px solid #0d0d0d' : '2.5px solid transparent', cursor: 'pointer' }} />
+                    <button key={c} type="button" className="fb-swatch" aria-pressed={themeColor === c} aria-label={c} onClick={() => setThemeColor(c)}
+                      style={{ background: c, '--sw': c } as React.CSSProperties} />
                   ))}
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                 <div>
-                  <label style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600, display: 'block' }}>Confetti on submit</label>
-                  <span style={{ fontSize: 11, color: 'var(--slate)' }}>Celebrate when someone finishes the form</span>
+                  <span style={{ fontSize: 13.5, color: 'var(--ink)', fontWeight: 600, display: 'block' }}>Confetti on submit</span>
+                  <span style={{ fontSize: 12, color: 'var(--slate)' }}>Celebrate when someone finishes the form</span>
                 </div>
                 <span style={{ marginLeft: 12, display: 'flex' }}><Toggle on={showConfetti} onChange={setShowConfetti} label="Confetti on submit" color={themeColor} /></span>
               </div>
-              <div style={{ padding: 14, borderRadius: 12, background: '#fafafa', fontSize: 12, color: 'var(--slate)', lineHeight: 1.6 }}>
-                Select a question on the left to edit its settings, or click "Welcome screen" / "Thank you screen" to edit those messages.
+              <div className="fb-help">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0, marginTop: 1 }}><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+                <span>Pick a question on the left to edit it, or choose the welcome or thank-you screen to change their messages.</span>
               </div>
             </>
           )}

@@ -4,8 +4,8 @@ import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import Link from 'next/link'
-import { confirmDialog } from '@/components/ConfirmDialog'
+import { confirmDialog, alertDialog } from '@/components/ConfirmDialog'
+import { AdminPage, Panel } from '@/components/ui/AdminKit'
 import { countAllRules, readFormLogic } from '@/lib/form-logic'
 
 // Why a version was saved (older versions have no reason).
@@ -59,7 +59,7 @@ export default function FormVersionsPage() {
   }
 
   const handleRollback = async (versionId: string, versionNumber: number) => {
-    if (!await confirmDialog(`Roll back to version ${versionNumber}? The current form will be replaced.`)) return
+    if (!await confirmDialog({ title: `Roll back to version ${versionNumber}?`, message: 'The form is replaced with this version. What’s there now is saved as a version first, so you can undo this.', confirmLabel: 'Roll back' })) return
 
     setRolling(true)
     try {
@@ -77,101 +77,104 @@ export default function FormVersionsPage() {
 
       // Reload data
       await loadData()
-      alert(`Rolled back to version ${versionNumber}`)
+      await alertDialog({ title: `Rolled back to version ${versionNumber}`, message: 'The form now matches that version.' })
     } catch (error: any) {
-      alert('Rollback failed: ' + error.message)
+      await alertDialog({ title: 'Couldn’t roll back', message: error.message })
     } finally {
       setRolling(false)
     }
   }
 
-  if (loading) return <div className="p-8" style={{ color: 'var(--slate)' }}>Loading...</div>
+  if (loading) return <div className="p-8" style={{ color: 'var(--slate)' }}>Loading…</div>
   if (!form) return <div className="p-8" style={{ color: 'var(--slate)' }}>Form not found</div>
 
-  return (
-    <div className="min-h-screen p-8" style={{ background: 'var(--canvas)' }}>
-      <div className="max-w-4xl mx-auto">
-        <div className="mb-8">
-          <Link href={`/admin/forms/${formId}`} className="text-sm font-medium hover:opacity-70" style={{ color: 'var(--coral)' }}>
-            ← Back to form
-          </Link>
-          <h1 className="text-3xl font-bold mt-3" style={{ color: 'var(--ink)' }}>Version History</h1>
-          <p style={{ color: 'var(--slate)' }}>{form.title} • {versions.length} versions</p>
-        </div>
+  const ago = (iso: string) => {
+    const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
+    if (m < 1) return 'just now'
+    if (m < 60) return `${m} min ago`
+    const h = Math.round(m / 60); if (h < 24) return `${h} hr ago`
+    const d = Math.round(h / 24); return d === 1 ? 'yesterday' : `${d} days ago`
+  }
 
-        {versions.length === 0 ? (
-          <div className="bg-white rounded-2xl border p-8 text-center" style={{ borderColor: 'var(--border)' }}>
-            <p style={{ color: 'var(--slate)' }}>No version history yet. A version is saved automatically when you publish, and every ten minutes or so while you edit.</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {versions.map((version) => (
-              <div
-                key={version.id}
-                className="bg-white rounded-2xl border p-6 hover:shadow-md transition-all"
-                style={{ borderColor: selectedVersion?.id === version.id ? 'var(--coral)' : 'var(--border)' }}>
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 cursor-pointer" onClick={() => setSelectedVersion(selectedVersion?.id === version.id ? null : version)}>
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className="px-2 py-1 rounded-full text-xs font-bold" style={{ background: 'var(--canvas)', color: 'var(--slate)' }}>
-                        v{version.version_number}
+  return (
+    <AdminPage width="sm" title="Version history" sub={<>{form.title} · {versions.length} version{versions.length === 1 ? '' : 's'}. A version is saved when you publish, and every ten minutes or so while you edit.</>}
+      back={{ href: `/admin/forms/${formId}`, label: 'Back to the form' }}>
+      {versions.length === 0 ? (
+        <Panel>
+          <div className="ak-empty"><b>No versions yet</b>Publish the form, or keep editing, and versions show up here.</div>
+        </Panel>
+      ) : (
+        <ol className="fv-list">
+          {versions.map(version => {
+            const open = selectedVersion?.id === version.id
+            const current = version.id === currentId
+            const rules = countAllRules(readFormLogic(version))
+            const qs: any[] = version.questions || []
+            return (
+              <li key={version.id} className={`fv-item${open ? ' fv-open' : ''}${current ? ' current' : ''}`}>
+                <span className="fv-rail" aria-hidden><i /></span>
+                <div className="fv-card">
+                  <div className="fv-top">
+                    <button type="button" className="fv-main" onClick={() => setSelectedVersion(open ? null : version)} aria-expanded={open}>
+                      <span className="fv-tags">
+                        <span className="ak-tag">v{version.version_number}</span>
+                        {current && <span className="ak-tag green">Current</span>}
+                        {REASON_LABEL[version.reason] && <span className="ak-tag blue">{REASON_LABEL[version.reason]}</span>}
                       </span>
-                      {version.id === currentId && (
-                        <span className="px-2 py-1 rounded-full text-xs font-bold" style={{ background: 'var(--coral)', color: 'white' }}>
-                          Current
-                        </span>
-                      )}
-                    </div>
-                    <h3 className="font-semibold mb-1" style={{ color: 'var(--ink)' }}>{version.title}</h3>
-                    <p className="text-sm" style={{ color: 'var(--slate)' }}>
-                      {new Date(version.created_at).toLocaleString()} • {version.questions?.length || 0} questions{REASON_LABEL[version.reason] ? ` • ${REASON_LABEL[version.reason]}` : ''}
-                    </p>
-                    {(() => {
-                      const rules = countAllRules(readFormLogic(version))
-                      return rules > 0 ? (
-                        <p className="text-xs mt-1" style={{ color: 'var(--slate)', opacity: 0.8 }}>
-                          {rules} logic rule{rules === 1 ? '' : 's'}
-                        </p>
-                      ) : null
-                    })()}
-                  </div>
-                  {version.id !== currentId && (
-                    <button
-                      onClick={() => handleRollback(version.id, version.version_number)}
-                      disabled={rolling}
-                      className="px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer border"
-                      style={{
-                        borderColor: 'var(--border)',
-                        color: 'var(--ink)',
-                        background: rolling ? 'var(--canvas)' : '#fff',
-                        opacity: rolling ? 0.6 : 1,
-                      }}>
-                      {rolling ? 'Rolling back…' : 'Roll back'}
+                      <b>{version.title}</b>
+                      <small>
+                        <span title={new Date(version.created_at).toLocaleString('en-AU')}>{ago(version.created_at)}</span>
+                        <span>{qs.length} question{qs.length === 1 ? '' : 's'}</span>
+                        {rules > 0 && <span>{rules} logic rule{rules === 1 ? '' : 's'}</span>}
+                      </small>
                     </button>
+                    {!current && (
+                      <button type="button" className="ak-btn sm" onClick={() => handleRollback(version.id, version.version_number)} disabled={rolling}>
+                        {rolling ? 'Rolling back…' : 'Roll back'}
+                      </button>
+                    )}
+                  </div>
+                  {open && (
+                    <ul className="fv-qs">
+                      {qs.slice(0, 8).map((q: any, qi: number) => (
+                        <li key={qi}><span>{qi + 1}</span><b>{q.title || 'Untitled question'}</b><small>{String(q.type || '').replace(/_/g, ' ')}</small></li>
+                      ))}
+                      {qs.length > 8 && <li className="more">+{qs.length - 8} more questions</li>}
+                      {qs.length === 0 && <li className="more">No questions in this version</li>}
+                    </ul>
                   )}
                 </div>
-
-                {selectedVersion?.id === version.id && (
-                  <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
-                    <p className="text-xs font-semibold mb-3" style={{ color: 'var(--slate)' }}>Preview</p>
-                    <div className="space-y-2">
-                      {version.questions?.slice(0, 3).map((q: any, qi: number) => (
-                        <div key={qi} className="p-2 rounded-lg" style={{ background: 'var(--canvas)' }}>
-                          <p className="text-sm font-medium" style={{ color: 'var(--ink)' }}>{q.title}</p>
-                          <p className="text-xs" style={{ color: 'var(--slate)' }}>{q.type}</p>
-                        </div>
-                      ))}
-                      {version.questions?.length > 3 && (
-                        <p className="text-xs" style={{ color: 'var(--slate)' }}>+{version.questions.length - 3} more questions</p>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+              </li>
+            )
+          })}
+        </ol>
+      )}
+      <style>{FV_CSS}</style>
+    </AdminPage>
   )
 }
+
+const FV_CSS = `
+.fv-list{list-style:none;margin:0;padding:0}
+.fv-item{display:flex;gap:12px}
+.fv-rail{position:relative;width:14px;flex-shrink:0;display:flex;justify-content:center}
+.fv-rail::before{content:"";position:absolute;top:0;bottom:0;width:2px;background:var(--f2)}
+.fv-item:first-child .fv-rail::before{top:26px}
+.fv-item:last-child .fv-rail::before{bottom:calc(100% - 26px)}
+.fv-rail i{position:relative;margin-top:20px;width:12px;height:12px;border-radius:50%;background:var(--card,#fff);box-shadow:inset 0 0 0 2.5px var(--soft)}
+.fv-item.current .fv-rail i{box-shadow:inset 0 0 0 6px #22c55e}
+.fv-card{flex:1;min-width:0;margin-bottom:10px;padding:14px 16px;border-radius:20px;background:var(--card,#fff);box-shadow:0 0 0 1px rgba(0,0,0,.05),0 1px 2px rgba(16,24,40,.04)}
+.fv-item.fv-open .fv-card{box-shadow:0 0 0 1.5px var(--ink)}
+.fv-top{display:flex;align-items:center;gap:12px}
+.fv-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;padding:0;border:none;background:none;font:inherit;text-align:left;cursor:pointer}
+.fv-tags{display:flex;flex-wrap:wrap;gap:5px}
+.fv-main b{font-size:15px;font-weight:650;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fv-main small{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12.5px;color:var(--soft)}
+.fv-qs{list-style:none;margin:12px 0 0;padding:6px;border-radius:16px;background:var(--f)}
+.fv-qs li{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:12px;font-size:13.5px}
+.fv-qs li+li{box-shadow:0 -1px 0 var(--f2)}
+.fv-qs span{width:22px;height:22px;flex-shrink:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:var(--card,#fff);font-size:11.5px;font-weight:700;color:var(--mut)}
+.fv-qs b{flex:1;min-width:0;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fv-qs small{flex-shrink:0;font-size:12px;color:var(--soft);text-transform:capitalize}
+.fv-qs li.more{justify-content:center;font-size:12.5px;color:var(--mut)}
+`
