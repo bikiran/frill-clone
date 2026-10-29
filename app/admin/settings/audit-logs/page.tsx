@@ -3,24 +3,10 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth-fetch'
-import Link from 'next/link'
 import EmptyScroll from '@/components/EmptyScroll'
+import { resolveCompanyUser } from '@/lib/client-cache'
+import { AdminPage, Panel } from '@/components/ui/AdminKit'
 
-const ACTIVITY_ICONS: Record<string, string> = {
-  form_created: '📝',
-  form_updated: '✏️',
-  form_deleted: '🗑️',
-  form_published: '🚀',
-  response_received: '📨',
-  idea_created: '💡',
-  idea_updated: '💭',
-  announcement_created: '📢',
-  announcement_deleted: '❌',
-  team_member_invited: '👤',
-  team_member_removed: '👋',
-  settings_updated: '⚙️',
-  integration_added: '🔗',
-}
 
 // SVG Icons for activity types
 function getActivityIcon(type: string) {
@@ -71,10 +57,10 @@ const loggedAt = (v: string) => new Date(/Z$|[+-]\d{2}:?\d{2}$/.test(v) ? v : v.
 export default function AuditLogsPage() {
   const [logs, setLogs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [company, setCompany] = useState<any>(null)
   const [filterType, setFilterType] = useState<string | null>(null)
   const [filterUser, setFilterUser] = useState<string | null>(null)
   const [users, setUsers] = useState<Map<string, string>>(new Map())
+  const [allTypes, setAllTypes] = useState<string[]>([])
 
   useEffect(() => {
     loadData()
@@ -86,15 +72,11 @@ export default function AuditLogsPage() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.user) return
 
-      // Get company
-      const { data: co } = await (supabase as any)
-        .from('companies')
-        .select('*')
-        .eq('owner_id', session.user.id)
-        .maybeSingle()
-
-      if (!co) return
-      setCompany(co)
+      // The workspace you're signed in to (owner or team member; looking it
+      // up by owner only left every other admin with an empty log).
+      const { companyId } = await resolveCompanyUser()
+      if (!companyId) return
+      const co = { id: companyId }
 
       // Build query
       let query = (supabase as any)
@@ -110,6 +92,8 @@ export default function AuditLogsPage() {
       const { data: logsData } = await query
 
       setLogs(logsData || [])
+      // Remember every type seen, so the filter keeps its choices once one is picked.
+      setAllTypes(prev => Array.from(new Set([...prev, ...(logsData || []).map((l: any) => l.activity_type).filter(Boolean)])).sort())
 
       // Load user names
       if (logsData && logsData.length > 0) {
@@ -131,7 +115,7 @@ export default function AuditLogsPage() {
             if (n) userMap.set(uid, n.email || n.name || 'Unknown')
           }
         } catch { /* names are a nicety */ }
-        setUsers(userMap)
+        setUsers(prev => new Map([...prev, ...userMap]))
       }
     } catch (error) {
       console.error('Failed to load audit logs:', error)
@@ -140,114 +124,88 @@ export default function AuditLogsPage() {
     }
   }
 
-  const activityTypes = [...new Set(logs.map((l: any) => l.activity_type))]
+  const label = (t: string) => { const x = String(t || '').replace(/_/g, ' '); return x.charAt(0).toUpperCase() + x.slice(1) }
+  const tone = (t: string) => /deleted|removed/.test(t) ? '#ef4444' : /created|added|invited|published/.test(t) ? '#16a34a' : /team_member/.test(t) ? '#6366f1' : /settings|integration/.test(t) ? '#0ea5e9' : /response|announcement/.test(t) ? '#f59e0b' : '#71717a'
+  const dayOf = (d: Date) => {
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const x = new Date(d); x.setHours(0, 0, 0, 0)
+    const diff = Math.round((today.getTime() - x.getTime()) / 86400000)
+    return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : d.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: today.getFullYear() === d.getFullYear() ? undefined : 'numeric' })
+  }
+  const groups: { day: string; items: any[] }[] = []
+  for (const log of logs) {
+    const day = dayOf(loggedAt(log.created_at))
+    const g = groups[groups.length - 1]
+    if (g && g.day === day) g.items.push(log); else groups.push({ day, items: [log] })
+  }
+  const people = Array.from(users.entries())
 
   return (
-    <div className="min-h-screen p-8" style={{ background: 'var(--canvas)' }}>
-      <div className="max-w-5xl mx-auto">
-        <div className="mb-8">
-          <Link href="/admin/settings" className="text-sm font-medium hover:opacity-70" style={{ color: 'var(--coral)' }}>
-            ← Back to settings
-          </Link>
-          <h1 className="text-3xl font-bold mt-3 mb-2" style={{ color: 'var(--ink)' }}>Audit Logs</h1>
-          <p style={{ color: 'var(--slate)' }}>Track all team activity and changes</p>
-        </div>
-
-        {/* Filters */}
-        <div className="bg-white rounded-2xl border p-4 mb-8" style={{ borderColor: 'var(--border)' }}>
-          <div className="flex flex-wrap gap-3">
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', display: 'block', marginBottom: 6 }}>Activity Type</label>
-              <select
-                value={filterType || ''}
-                onChange={e => setFilterType(e.target.value || null)}
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: 8,
-                  border: '1px solid var(--border)',
-                  fontSize: 13,
-                  cursor: 'pointer',
-                  minWidth: 150,
-                }}>
-                <option value="">All activities</option>
-                {activityTypes.map(t => (
-                  <option key={t} value={t}>{ACTIVITY_ICONS[t] || '•'} {t.replace(/_/g, ' ')}</option>
-                ))}
-              </select>
-            </div>
-            {filterType && (
-              <button
-                onClick={() => setFilterType(null)}
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: 999,
-                  border: '1.5px solid #e4e4e7',
-                  background: 'white',
-                  fontSize: 13,
-                  cursor: 'pointer',
-                  alignSelf: 'flex-end',
-                  marginTop: 20,
-                  fontWeight: 600,
-                }}>
-                Clear filter
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Logs */}
-        {loading ? (
-          <div style={{ textAlign: 'center', padding: 40, color: 'var(--slate)' }}>Loading...</div>
-        ) : logs.length === 0 ? (
-          <div className="bg-white rounded-2xl border p-4" style={{ borderColor: 'var(--border)' }}>
-            <EmptyScroll kinds={['note', 'contact', 'task']} title="No activity yet" line="What your team changes shows up here as they use Colvy." />
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {logs.map((log: any) => (
-              <div
-                key={log.id}
-                className="bg-white rounded-2xl border p-4 hover:shadow-md transition-all"
-                style={{ borderColor: 'var(--border)' }}>
-                <div className="flex items-start gap-3">
-                  <div style={{ color: 'var(--slate)' }}>
-                    {getActivityIcon(log.activity_type)}
-                  </div>
-                  <div className="flex-1">
-                    <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 4 }}>
-                      {log.description}
-                    </p>
-                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 12, color: 'var(--slate)' }}>
-                        {users.get(log.user_id) || 'System'}
-                      </span>
-                      <span style={{ fontSize: 12, color: 'var(--slate)' }}>
-                        {loggedAt(log.created_at).toLocaleString()}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          background: 'var(--canvas)',
-                          padding: '2px 8px',
-                          borderRadius: 4,
-                          color: 'var(--slate)',
-                          fontWeight: 600,
-                        }}>
-                        {log.activity_type.replace(/_/g, ' ')}
-                      </span>
-                    </div>
-                    {log.ip_address && log.ip_address !== 'unknown' && (
-                      <p style={{ fontSize: 11, color: '#9ca3af', marginTop: 8 }}>
-                        IP: {log.ip_address}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+    <AdminPage width="md" title="Activity log" sub="What your team changed in Colvy, newest first. The last 100 entries are shown.">
+      <div className="al-filters">
+        <select className="ak-select" value={filterType || ''} onChange={e => setFilterType(e.target.value || null)} aria-label="Activity">
+          <option value="">All activity</option>
+          {allTypes.map(t => <option key={t} value={t}>{label(t)}</option>)}
+        </select>
+        {people.length > 0 && (
+          <select className="ak-select" value={filterUser || ''} onChange={e => setFilterUser(e.target.value || null)} aria-label="Person">
+            <option value="">Everyone</option>
+            {people.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          </select>
         )}
+        {(filterType || filterUser) && <button type="button" className="ak-btn ghost" onClick={() => { setFilterType(null); setFilterUser(null) }}>Clear</button>}
       </div>
-    </div>
+
+      {loading ? (
+        <Panel><div className="al-skel">{[0, 1, 2, 3, 4].map(i => <span key={i} />)}</div></Panel>
+      ) : logs.length === 0 ? (
+        <Panel>
+          <EmptyScroll kinds={['note', 'contact', 'task']} title={filterType || filterUser ? 'Nothing matches' : 'No activity yet'}
+            line={filterType || filterUser ? 'Try another filter, or clear it.' : 'What your team changes shows up here as they use Colvy.'} />
+        </Panel>
+      ) : groups.map(g => (
+        <Panel key={g.day} title={g.day} flush>
+          <ul className="al-list">
+            {g.items.map((log: any) => {
+              const t = loggedAt(log.created_at)
+              return (
+                <li key={log.id}>
+                  <span className="al-ic" style={{ '--t': tone(log.activity_type) } as React.CSSProperties} aria-hidden>{getActivityIcon(log.activity_type)}</span>
+                  <div className="al-t">
+                    <p>{log.description}</p>
+                    <small>
+                      <b>{users.get(log.user_id) || 'System'}</b>
+                      <span>{t.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })}</span>
+                      {log.ip_address && log.ip_address !== 'unknown' && <span>IP {log.ip_address}</span>}
+                    </small>
+                  </div>
+                  <span className="ak-tag al-type">{label(log.activity_type)}</span>
+                </li>
+              )
+            })}
+          </ul>
+        </Panel>
+      ))}
+      <style>{AL_CSS}</style>
+    </AdminPage>
   )
 }
+
+const AL_CSS = `
+.al-filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.al-filters .ak-select{width:auto;min-width:190px}
+.al-list{list-style:none;margin:0;padding:0 8px 8px}
+.al-list li{display:flex;align-items:flex-start;gap:12px;padding:11px 12px;border-radius:14px}
+.al-list li+li{box-shadow:0 -1px 0 var(--line)}
+.al-ic{width:34px;height:34px;flex-shrink:0;border-radius:11px;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--t) 12%,var(--card,#fff));color:var(--t)}
+.al-ic svg{width:16px;height:16px}
+.al-t{flex:1;min-width:0}
+.al-t p{margin:2px 0 0;font-size:14px;font-weight:550;line-height:1.45;color:var(--ink);overflow-wrap:anywhere}
+.al-t small{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:3px;font-size:12.5px;color:var(--soft)}
+.al-t small b{font-weight:600;color:var(--mut)}
+.al-type{flex-shrink:0;margin-top:4px}
+@media (max-width:640px){.al-type{display:none}}
+.al-skel{display:flex;flex-direction:column;gap:10px}
+.al-skel span{height:44px;border-radius:12px;background:linear-gradient(90deg,var(--f) 25%,var(--f2) 37%,var(--f) 63%);background-size:400% 100%;animation:alSk 1.2s ease infinite}
+@keyframes alSk{0%{background-position:100% 50%}100%{background-position:0 50%}}
+`

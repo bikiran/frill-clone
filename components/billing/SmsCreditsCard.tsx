@@ -66,7 +66,7 @@ function Note({ icon, children, tone = 'plain', className = '' }: { icon: React.
 
 function Shell({ children, right, viaShopify }: { children: React.ReactNode; right?: React.ReactNode; viaShopify?: boolean }) {
   return (
-    <section id="sms-credits" className="bg-white rounded-2xl border p-5 md:p-6 mb-6" style={{ borderColor: 'var(--border)', scrollMarginTop: 80 }}>
+    <section id="sms-credits" className="ak-panel" style={{ scrollMarginTop: 80 }}>
       <div className="flex items-start justify-between gap-3 flex-wrap mb-5">
         <div className="flex items-start gap-3" style={{ minWidth: 0 }}>
           <span className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>{Ico.sms}</span>
