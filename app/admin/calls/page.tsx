@@ -4,7 +4,6 @@ import VoicePlayer from '@/components/VoicePlayer'
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
-import PageHeader from '@/components/PageHeader'
 import { callRoutingFacts } from '@/lib/call-routing'
 
 type Call = {
@@ -284,53 +283,65 @@ export default function CallsPage() {
   }
   const toggleTranscript = (id: string) => setOpenTranscript(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
 
-  const Avatar = ({ name, size = 38 }: { name: string; size?: number }) => (
-    <span style={{ width: size, height: size, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: size * 0.4, flexShrink: 0 }}>
-      {(/[a-z]/i.test(name) ? name.replace(/[^a-z]/gi, '')[0] : '#')?.toUpperCase() || '#'}
-    </span>
-  )
-  const DirIcon = ({ c }: { c: Call }) => (
-    <span style={{ color: isMissed(c) ? '#dc2626' : c.direction === 'inbound' ? '#16a34a' : '#2563eb', fontSize: 14 }}>{c.direction === 'inbound' ? '↙' : '↗'}</span>
-  )
+  // A coloured initial (a number gets "#"), the same colour every time for a name.
+  const Avatar = ({ name, size = 38 }: { name: string; size?: number }) => {
+    const letter = (/[a-z]/i.test(name) ? name.replace(/[^a-z]/gi, '')[0] : '#')?.toUpperCase() || '#'
+    const hue = ['#6366f1', '#16a34a', '#f59e0b', '#ef4444', '#0ea5e9', '#d946ef', '#14b8a6', '#ff6a4d'][[...name].reduce((n, ch) => n + ch.charCodeAt(0), 0) % 8]
+    return <span className="clg-av" style={{ width: size, height: size, fontSize: size * 0.4, background: letter === '#' ? '#a1a1aa' : hue }}>{letter}</span>
+  }
+  // Which way the call went, in its outcome's colour.
+  const DirIcon = ({ c, size = 22 }: { c: Call; size?: number }) => {
+    const tone = isMissed(c) ? '#dc2626' : isVoicemail(c) ? '#b45309' : c.direction === 'inbound' ? '#16a34a' : '#2563eb'
+    return (
+      <span className="clg-dir" style={{ width: size, height: size, color: tone, background: `color-mix(in srgb, ${tone} 12%, transparent)` }} aria-hidden>
+        <svg width={size * 0.55} height={size * 0.55} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+          {c.direction === 'inbound' ? <><line x1="17" y1="7" x2="7" y2="17" /><polyline points="15 17 7 17 7 9" /></> : <><line x1="7" y1="17" x2="17" y2="7" /><polyline points="9 7 17 7 17 15" /></>}
+        </svg>
+      </span>
+    )
+  }
+  const outcome = (c: Call): [string, string] => isVoicemail(c) ? ['Voicemail', 'amber'] : isMissed(c) ? ['Missed', 'red']
+    : ['no-answer', 'missed', 'failed', 'busy', 'canceled', 'cancelled', 'no_answer'].includes(c.status) ? ['Not answered', 'grey'] : ['Answered', 'green']
   const sentimentChip = (s: string | null) => {
     if (!s) return null
-    const tone = s === 'positive' ? { bg: '#dcfce7', fg: '#16a34a' } : s === 'negative' ? { bg: '#fee2e2', fg: '#dc2626' } : { bg: '#f3f4f6', fg: '#6b7280' }
-    return <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 999, background: tone.bg, color: tone.fg, textTransform: 'capitalize' }}>{s}</span>
+    return <span className={`clg-pill ${s === 'positive' ? 'green' : s === 'negative' ? 'red' : 'grey'}`}>{s.charAt(0).toUpperCase() + s.slice(1)}</span>
   }
 
-  if (loading) return <div style={{ padding: 40, color: 'var(--slate)' }}>Loading calls…</div>
+  if (loading) return <div className="clg"><style>{CLG_CSS}</style><div className="clg-loading">Loading calls…</div></div>
 
   const showList = !isMobile || !selected
   const showDetail = !isMobile || !!selected
   const showContact = !isMobile && !isNarrow && !!selected
 
   return (
-    <div style={{ padding: '20px 24px', height: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column' }}>
-      <style>{`.calls-tabs::-webkit-scrollbar{display:none}`}</style>
-      <PageHeader title="Call Logs" subtitle="Every inbound and outbound call, with recordings and summaries." bleed={24} bleedTop={20} sticky={false} />
-      <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0 }}>
+    <div className="clg">
+      <style>{CLG_CSS}</style>
+      <header className="clg-head">
+        <h1>Call logs</h1>
+        <p>Every call in and out, with recordings and summaries.</p>
+      </header>
+      <div className="clg-cols">
         {/* ── List ── */}
         {showList && (
-        <div style={{ width: isMobile ? '100%' : 330, flexShrink: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 16, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search calls…"
-              style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13, outline: 'none' }} />
-            <div className="calls-tabs" style={{ display: 'flex', gap: 6, marginTop: 10, overflowX: 'auto', scrollbarWidth: 'none' }}>
+        <div className="clg-list" style={{ width: isMobile ? '100%' : 340 }}>
+          <div className="clg-list-top">
+            <label className="clg-search">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search calls" aria-label="Search calls" />
+            </label>
+            <div className="clg-tabs" role="tablist" aria-label="Show">
               {([['all', 'All'], ['inbound', 'Incoming'], ['outbound', 'Outgoing'], ['missed', 'Missed'], ['voicemail', 'Voicemail']] as const).map(([k, l]) => (
-                <button key={k} onClick={() => setFilter(k)} style={{ padding: '5px 11px', borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', border: '1px solid ' + (filter === k ? 'var(--coral)' : 'var(--border)'), background: filter === k ? 'var(--peach)' : '#fff', color: filter === k ? 'var(--coral)' : 'var(--slate)' }}>
-                  {l} <span style={{ opacity: 0.7 }}>{counts[k]}</span>
+                <button key={k} type="button" role="tab" aria-selected={filter === k} onClick={() => setFilter(k)} className={filter === k ? 'on' : ''}>
+                  {l}<span>{counts[k]}</span>
                 </button>
               ))}
             </div>
-            {/* Advanced filters */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
-              <button onClick={() => setAdvOpen(v => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: '1px solid ' + (activeAdvCount ? 'var(--coral)' : 'var(--border)'), background: activeAdvCount ? 'var(--peach)' : '#fff', color: activeAdvCount ? 'var(--coral)' : 'var(--slate)' }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-                Filters{activeAdvCount ? ` · ${activeAdvCount}` : ''}
+            <div className="clg-filter-row">
+              <button type="button" onClick={() => setAdvOpen(v => !v)} aria-expanded={advOpen} className={`clg-filter${activeAdvCount ? ' active' : ''}`}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><line x1="4" y1="6" x2="20" y2="6"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="10" y1="18" x2="14" y2="18"/></svg>
+                Filters{activeAdvCount ? <b>{activeAdvCount}</b> : null}
               </button>
-              {activeAdvCount > 0 && (
-                <button onClick={() => setAdv(emptyAdv)} style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', background: 'none', border: 'none', cursor: 'pointer' }}>Clear</button>
-              )}
+              {activeAdvCount > 0 && <button type="button" className="clg-clear" onClick={() => setAdv(emptyAdv)}>Clear</button>}
             </div>
             {advOpen && (() => {
               const AF: { key: string; label: string; opts: [string, string][] }[] = [
@@ -346,46 +357,43 @@ export default function CallsPage() {
                 { key: 'summary', label: 'AI summary', opts: [['', 'Any'], ['yes', 'Has summary'], ['no', 'None']] },
                 { key: 'transferred', label: 'Transferred', opts: [['', 'Any'], ['yes', 'Transferred'], ['no', 'Not transferred']] },
               ]
-              const sel: React.CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12, background: '#fff', color: 'var(--ink)', outline: 'none' }
-              const lab: React.CSSProperties = { fontSize: 10, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block', marginBottom: 3 }
               return (
-                <div style={{ marginTop: 10, padding: 12, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--canvas, #f8fafc)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
+                <div className="clg-adv">
                   {AF.map(f => (
-                    <div key={f.key}>
-                      <label style={lab}>{f.label}</label>
-                      <select value={adv[f.key]} onChange={e => setAdv(a => ({ ...a, [f.key]: e.target.value }))} style={sel}>
+                    <label key={f.key} className="clg-adv-f">
+                      <span>{f.label}</span>
+                      <select value={adv[f.key]} onChange={e => setAdv(a => ({ ...a, [f.key]: e.target.value }))}>
                         {f.opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                       </select>
-                    </div>
+                    </label>
                   ))}
                   {adv.date === 'custom' && (
-                    <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 9 }}>
-                      <div style={{ flex: 1 }}><label style={lab}>From</label><input type="date" value={adv.from} onChange={e => setAdv(a => ({ ...a, from: e.target.value }))} style={sel} /></div>
-                      <div style={{ flex: 1 }}><label style={lab}>To</label><input type="date" value={adv.to} onChange={e => setAdv(a => ({ ...a, to: e.target.value }))} style={sel} /></div>
+                    <div className="clg-adv-dates">
+                      <label className="clg-adv-f"><span>From</span><input type="date" value={adv.from} onChange={e => setAdv(a => ({ ...a, from: e.target.value }))} /></label>
+                      <label className="clg-adv-f"><span>To</span><input type="date" value={adv.to} onChange={e => setAdv(a => ({ ...a, to: e.target.value }))} /></label>
                     </div>
                   )}
                 </div>
               )
             })()}
           </div>
-          <div style={{ overflowY: 'auto', flex: 1 }}>
+          <div className="clg-rows">
             {groups.length === 0 ? (
-              <p style={{ padding: 24, color: 'var(--slate)', fontSize: 13, textAlign: 'center' }}>No calls to show.</p>
+              <p className="clg-none">No calls to show.</p>
             ) : groups.map(g => (
-              <button key={g.key} onClick={() => setSelectedKey(g.key)}
-                style={{ width: '100%', textAlign: 'left', display: 'flex', gap: 11, alignItems: 'center', padding: '12px 14px', border: 'none', borderBottom: '1px solid var(--border)', background: selectedKey === g.key ? 'var(--peach)' : 'transparent', cursor: 'pointer' }}>
+              <button key={g.key} type="button" onClick={() => setSelectedKey(g.key)} className={`clg-row${selectedKey === g.key ? ' on' : ''}`}>
                 <Avatar name={g.name} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                    <span style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.name}</span>
-                    <span style={{ fontSize: 11, color: 'var(--slate)', flexShrink: 0 }}>{new Date(g.latest.created_at).toLocaleString('en-AU', { day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit' })}</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
-                    <DirIcon c={g.latest} />
-                    <span style={{ fontSize: 12, color: isMissed(g.latest) ? '#dc2626' : isVoicemail(g.latest) ? '#b45309' : 'var(--slate)' }}>{callLabel(g.latest)}</span>
-                    {g.calls.length > 1 && <span style={{ fontSize: 11, color: 'var(--slate)' }}>· {g.calls.length} calls</span>}
-                  </div>
-                </div>
+                <span className="clg-row-t">
+                  <span className="clg-row-top">
+                    <b>{g.name}</b>
+                    <small>{new Date(g.latest.created_at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</small>
+                  </span>
+                  <span className={`clg-row-sub ${outcome(g.latest)[1]}`}>
+                    <DirIcon c={g.latest} size={16} />
+                    {callLabel(g.latest)}
+                    {g.calls.length > 1 && <em>· {g.calls.length} calls</em>}
+                  </span>
+                </span>
               </button>
             ))}
           </div>
@@ -394,87 +402,83 @@ export default function CallsPage() {
 
         {/* ── Timeline ── */}
         {showDetail && (
-        <div style={{ flex: 1, minWidth: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 16, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div className="clg-detail">
           {!selected ? (
-            <div style={{ margin: 'auto', color: 'var(--slate)', fontSize: 13 }}>Select a call to see its history.</div>
+            <div className="clg-pick">Pick a call to see its history.</div>
           ) : (
             <>
-              <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}>
-                {isMobile && <button onClick={() => setSelectedKey(null)} style={{ border: 'none', background: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--slate)' }}>←</button>}
-                <Avatar name={selected.name} />
+              <div className="clg-detail-h">
+                {isMobile && <button type="button" className="clg-back" onClick={() => setSelectedKey(null)} aria-label="Back to calls">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+                </button>}
+                <Avatar name={selected.name} size={44} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ margin: 0, fontWeight: 800, fontSize: 16 }}>{selected.name}</p>
-                  <p style={{ margin: 0, fontSize: 12, color: 'var(--slate)' }}>{selected.key !== selected.name ? selected.key + ' · ' : ''}Last activity {relTime(selected.latest.created_at)}</p>
+                  <p className="clg-name">{selected.name}</p>
+                  <p className="clg-meta">{selected.key !== selected.name ? selected.key + ' · ' : ''}Last call {relTime(selected.latest.created_at)}</p>
                 </div>
-                <span style={{ fontSize: 12, color: 'var(--slate)' }}>{selected.calls.length} call{selected.calls.length === 1 ? '' : 's'}</span>
+                <span className="clg-count">{selected.calls.length} call{selected.calls.length === 1 ? '' : 's'}</span>
               </div>
 
-              <div style={{ overflowY: 'auto', flex: 1, padding: '18px 20px', background: 'var(--canvas)' }}>
+              <div className="clg-calls">
                 {selected.calls.map(c => {
                   const realTranscript = c.transcription && !isDiagnostic(c.transcription)
+                  const [oLabel, oTone] = outcome(c)
+                  const r = callRoutingFacts(c)
                   return (
-                  <div key={c.id} style={{ marginBottom: 16 }}>
-                    <p style={{ textAlign: 'center', fontSize: 12, color: 'var(--slate)', margin: '0 0 10px' }}>
-                      <DirIcon c={c} /> {c.direction === 'inbound' ? 'Inbound' : 'Outbound'} call {c.direction === 'inbound' ? 'from' : 'to'} {selected.key} · {new Date(c.created_at).toLocaleString('en-AU', { day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit' })}
-                    </p>
-                    <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '14px 16px' }}>
-                      {c.ai_summary ? (
-                        <div style={{ background: '#f5f8ff', borderRadius: 10, padding: '12px 14px', marginBottom: c.recording_url || realTranscript ? 12 : 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                            <span style={{ fontSize: 12.5, fontWeight: 800, color: '#2563eb' }}>✨ Call Summary</span>
-                            {sentimentChip(c.sentiment)}
-                          </div>
-                          <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)', lineHeight: 1.55 }}>{c.ai_summary}</p>
-                        </div>
-                      ) : realTranscript ? (
-                        <button onClick={() => summarize(c)} disabled={summarizing.has(c.id)} style={{ background: 'none', border: 'none', color: '#7c3aed', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: 0, marginBottom: 12 }}>
-                          ✨ {summarizing.has(c.id) ? 'Summarizing…' : 'Generate AI summary'}
-                        </button>
-                      ) : null}
-
-                      {isDiagnostic(c.transcription) && (
-                        <p style={{ margin: '0 0 12px', fontSize: 11.5, color: '#b45309', fontFamily: 'ui-monospace, monospace', background: '#fffbeb', padding: '4px 8px', borderRadius: 6, display: 'inline-block' }}>{c.transcription}</p>
-                      )}
-
-                      {c.recording_url ? (
-                        <>
-                          <CallPlayer url={c.recording_url} durationSec={c.recording_duration} />
-                          <div style={{ marginTop: 8 }}>
-                            <a href={c.recording_url} download style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--coral)', textDecoration: 'none' }}>⬇ Download recording</a>
-                          </div>
-                        </>
-                      ) : !isDiagnostic(c.transcription) && !c.ai_summary ? (
-                        <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>No call recording · {callLabel(c)}</p>
-                      ) : null}
-
-                      {realTranscript && (
-                        <div style={{ marginTop: 10 }}>
-                          <button onClick={() => toggleTranscript(c.id)} style={{ background: 'none', border: 'none', color: 'var(--ink)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: 0 }}>
-                            {openTranscript.has(c.id) ? 'Hide transcription' : 'View transcription'}
-                          </button>
-                          {openTranscript.has(c.id) && (
-                            <p style={{ margin: '8px 0 0', fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.6, whiteSpace: 'pre-wrap', background: 'var(--canvas)', borderRadius: 8, padding: '10px 12px' }}>{c.transcription}</p>
-                          )}
-                        </div>
-                      )}
-
-                      <div style={{ display: 'flex', gap: 14, marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)', fontSize: 11.5, color: 'var(--slate)', flexWrap: 'wrap' }}>
-                        <span>Duration: {fmtDuration(c.duration_seconds)}</span>
-                        <span>Status: {isVoicemail(c) ? 'Voicemail' : isMissed(c) ? 'Missed' : c.status}</span>
-                        {c.agent_name && !callRoutingFacts(c).forwardedTo && <span>Agent: {c.agent_name}</span>}
-                        {(() => {
-                          const r = callRoutingFacts(c)
-                          return (
-                            <>
-                              {r.choice && <span>Menu: {r.choice}</span>}
-                              {r.forwardedTo && <span>Forwarded to {r.forwardedTo}{r.forwardedSeconds ? ` · ${fmtDuration(r.forwardedSeconds)}` : ''}</span>}
-                              {r.path && <span style={{ flexBasis: '100%' }}>Route: {r.path}</span>}
-                            </>
-                          )
-                        })()}
+                  <article key={c.id} className="clg-call">
+                    <div className="clg-call-h">
+                      <DirIcon c={c} size={30} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <b>{c.direction === 'inbound' ? 'Incoming call' : 'Outgoing call'}</b>
+                        <small>{new Date(c.created_at).toLocaleString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</small>
                       </div>
+                      <span className={`clg-pill ${oTone}`}>{oLabel}</span>
                     </div>
-                  </div>
+
+                    {c.ai_summary ? (
+                      <div className="clg-sum">
+                        <div className="clg-sum-h"><span>Summary</span>{sentimentChip(c.sentiment)}</div>
+                        <p>{c.ai_summary}</p>
+                      </div>
+                    ) : realTranscript ? (
+                      <button type="button" className="clg-sum-btn" onClick={() => summarize(c)} disabled={summarizing.has(c.id)}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M12 2l2.09 6.26L20 10l-5.91 1.74L12 18l-2.09-6.26L4 10l5.91-1.74z" /></svg>
+                        {summarizing.has(c.id) ? 'Summarising…' : 'Summarise this call'}
+                      </button>
+                    ) : null}
+
+                    {isDiagnostic(c.transcription) && <p className="clg-diag">{c.transcription}</p>}
+
+                    {c.recording_url ? (
+                      <div className="clg-rec">
+                        <CallPlayer url={c.recording_url} durationSec={c.recording_duration} />
+                        <a href={c.recording_url} download className="clg-dl">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                          Download recording
+                        </a>
+                      </div>
+                    ) : !isDiagnostic(c.transcription) && !c.ai_summary ? (
+                      <p className="clg-norec">No recording</p>
+                    ) : null}
+
+                    {realTranscript && (
+                      <div className="clg-tx">
+                        <button type="button" onClick={() => toggleTranscript(c.id)} aria-expanded={openTranscript.has(c.id)}>
+                          {openTranscript.has(c.id) ? 'Hide transcript' : 'Show transcript'}
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ transform: openTranscript.has(c.id) ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }}><polyline points="6 9 12 15 18 9" /></svg>
+                        </button>
+                        {openTranscript.has(c.id) && <p>{c.transcription}</p>}
+                      </div>
+                    )}
+
+                    <div className="clg-chips">
+                      <span>{fmtDuration(c.duration_seconds)}</span>
+                      {c.agent_name && !r.forwardedTo && <span>{c.agent_name}</span>}
+                      {r.choice && <span>Menu: {r.choice}</span>}
+                      {r.forwardedTo && <span>Forwarded to {r.forwardedTo}{r.forwardedSeconds ? ` · ${fmtDuration(r.forwardedSeconds)}` : ''}</span>}
+                      {r.path && <span className="wide">Route: {r.path}</span>}
+                    </div>
+                  </article>
                 )})}
               </div>
             </>
@@ -484,51 +488,147 @@ export default function CallsPage() {
 
         {/* ── Contact rail ── */}
         {showContact && selected && (
-        <div style={{ width: 280, flexShrink: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'auto', padding: '22px 20px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: 18 }}>
+        <aside className="clg-side">
+          <div className="clg-side-top">
             <Avatar name={contact?.name || selected.name} size={64} />
-            <p style={{ margin: '12px 0 2px', fontWeight: 800, fontSize: 17 }}>{contact?.name || selected.name}</p>
-            {contact?.id && <p style={{ margin: 0, fontSize: 12, color: 'var(--slate)' }}>{(({ supplier: 'Supplier', wholesaler: 'Wholesaler', business: 'Business contact' } as Record<string, string>)[String(contact.relationship_type || '').toLowerCase()]) || 'Customer'}</p>}
-            <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-              <a href={`tel:${contact?.phone || selected.key}`} style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.81.36 1.6.7 2.34a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.74-1.27a2 2 0 0 1 2.11-.45c.74.34 1.53.57 2.34.7A2 2 0 0 1 22 16.92z"/></svg>
+            <p className="clg-side-name">{contact?.name || selected.name}</p>
+            {contact?.id && <p className="clg-meta">{(({ supplier: 'Supplier', wholesaler: 'Wholesaler', business: 'Business contact' } as Record<string, string>)[String(contact.relationship_type || '').toLowerCase()]) || 'Customer'}</p>}
+            <div className="clg-acts">
+              <a href={`tel:${contact?.phone || selected.key}`} aria-label="Call" title="Call">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.81.36 1.6.7 2.34a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.74-1.27a2 2 0 0 1 2.11-.45c.74.34 1.53.57 2.34.7A2 2 0 0 1 22 16.92z"/></svg>
               </a>
-              {contact?.email && <a href={`mailto:${contact.email}`} style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>
+              {contact?.email && <a href={`mailto:${contact.email}`} aria-label="Email" title="Email">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>
               </a>}
             </div>
           </div>
 
           {/* Open the full conversation (with all its context) in the inbox. */}
           {convId && (
-            <a href={`/admin/inbox?conversation=${convId}`}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '10px', borderRadius: 12, background: 'var(--coral)', color: '#fff', fontWeight: 700, fontSize: 13, textDecoration: 'none', marginBottom: 16 }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <a href={`/admin/inbox?conversation=${convId}`} className="clg-open">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
               Open in inbox
             </a>
           )}
 
-          {/* Just the essentials — only fields that actually have a value. */}
-          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-            <p style={{ margin: '0 0 12px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Contact</p>
+          {/* Just the essentials: only fields that actually have a value. */}
+          <div className="clg-facts">
             {([
-              ['Mobile', contact?.phone || selected.key],
-              ['Email', contact?.email],
-              ['Company', contact?.company],
-              ['Address', contact?.address],
-            ] as const).filter(([, val]) => !!val).map(([label, val]) => (
-              <div key={label} style={{ marginBottom: 12 }}>
-                <p style={{ margin: '0 0 2px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: 'var(--slate)' }}>{label}</p>
-                <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)', wordBreak: 'break-word' }}>{val}</p>
+              ['phone', 'Mobile', contact?.phone || selected.key],
+              ['email', 'Email', contact?.email],
+              ['company', 'Company', contact?.company],
+              ['address', 'Address', contact?.address],
+            ] as const).filter(([, , val]) => !!val).map(([k, label, val]) => (
+              <div key={k} className="clg-fact" title={label}>
+                <span className="clg-fact-ic" aria-hidden>{FACT_ICON[k]}</span>
+                <span>{typeof val === 'string' ? val : String(val)}</span>
               </div>
             ))}
-            {!contact?.id && (
-              <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--slate)', fontStyle: 'italic' }}>Not linked to a saved contact.</p>
-            )}
           </div>
-        </div>
+          {!contact?.id && <p className="clg-unlinked">Not linked to a saved contact.</p>}
+        </aside>
         )}
       </div>
     </div>
   )
 }
+
+const fi = (d: React.ReactNode) => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{d}</svg>
+const FACT_ICON: Record<string, React.ReactNode> = {
+  phone: fi(<><rect x="6" y="2.5" width="12" height="19" rx="2.5" /><path d="M11 18h2" /></>),
+  email: fi(<><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 5L2 7" /></>),
+  company: fi(<><path d="M3 21h18M5 21V7l7-4 7 4v14" /><path d="M9 9h1M14 9h1M9 13h1M14 13h1" /></>),
+  address: fi(<><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z" /><circle cx="12" cy="10" r="3" /></>),
+}
+
+const CLG_CSS = `
+.clg{--f:#f4f4f5;--f2:#ececef;--line:#ececee;--mut:#71717a;--soft:#8e8e93;height:calc(100vh - 120px);display:flex;flex-direction:column;padding:24px 16px 16px}
+[data-theme="dark"] .clg{--f:#2a2a2e;--f2:#333337;--line:#2e2e33;--mut:#a1a1aa;--soft:#8b8b90}
+@media (min-width:900px){.clg{padding:28px 28px 20px}}
+.clg button::before,.clg a::before{display:none!important}
+.clg-loading{margin:auto;color:var(--mut);font-size:14px}
+.clg-head{margin-bottom:18px}
+.clg-head h1{margin:0;font-size:clamp(28px,3.4vw,34px);font-weight:700;letter-spacing:-.04em;line-height:1.05;color:var(--ink)}
+.clg-head p{margin:7px 0 0;font-size:14.5px;color:var(--mut)}
+.clg-cols{display:flex;gap:14px;flex:1;min-height:0}
+.clg-list,.clg-detail,.clg-side{background:var(--card,#fff);border-radius:22px;box-shadow:0 0 0 1px rgba(0,0,0,.05),0 1px 2px rgba(16,24,40,.04)}
+.clg-list{flex-shrink:0;display:flex;flex-direction:column;overflow:hidden}
+.clg-list-top{padding:12px 12px 8px}
+.clg-search{display:flex;align-items:center;gap:8px;height:40px;padding:0 13px;border-radius:999px;background:var(--f);color:var(--mut)}
+.clg .clg-search input{flex:1;min-width:0;height:100%;border:none!important;background:transparent!important;box-shadow:none!important;outline:none;font:inherit;font-size:14px;color:var(--ink)!important;padding:0}
+.clg-tabs{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.clg-tabs::-webkit-scrollbar{display:none}
+.clg-tabs button{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:none;border-radius:999px;background:var(--f);color:var(--ink);font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.clg-tabs button:hover{background:var(--f2)}
+.clg-tabs button span{font-weight:500;color:var(--mut);font-variant-numeric:tabular-nums}
+.clg-tabs button.on{background:var(--ink);color:var(--card,#fff)}
+.clg-tabs button.on span{color:inherit;opacity:.65}
+.clg-filter-row{display:flex;align-items:center;gap:8px;margin-top:8px}
+.clg-filter{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border:none;border-radius:999px;background:transparent;color:var(--mut);font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.clg-filter:hover,.clg-filter[aria-expanded="true"]{background:var(--f);color:var(--ink)}
+.clg-filter b{min-width:18px;height:18px;padding:0 5px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;background:var(--coral);color:#fff;font-size:11px}
+.clg-clear{border:none;background:none;font:inherit;font-size:12.5px;font-weight:600;color:var(--mut);cursor:pointer}
+.clg-adv{margin-top:8px;padding:10px;border-radius:16px;background:var(--f);display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.clg-adv-f{display:flex;flex-direction:column;gap:3px;min-width:0}
+.clg-adv-f span{font-size:11.5px;font-weight:600;color:var(--mut)}
+.clg .clg-adv-f select,.clg .clg-adv-f input{width:100%;height:32px;padding:0 9px;border-radius:10px;border:none!important;background:var(--card,#fff)!important;box-shadow:none!important;font:inherit;font-size:12.5px;color:var(--ink)!important;outline:none}
+.clg-adv-dates{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.clg-rows{flex:1;overflow-y:auto;padding:2px 8px 8px}
+.clg-none{padding:24px;margin:0;text-align:center;color:var(--mut);font-size:13.5px}
+.clg-row{display:flex;align-items:center;gap:11px;width:100%;padding:10px;margin:2px 0;border:none;border-radius:14px;background:transparent;text-align:left;font:inherit;cursor:pointer;transition:background .15s}
+.clg-row:hover{background:color-mix(in srgb,var(--f) 55%,transparent)}
+.clg-row.on{background:var(--f)}
+.clg-av{border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-weight:700}
+.clg-row-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.clg-row-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.clg-row-top b{font-size:14px;font-weight:650;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.clg-row-top small{flex-shrink:0;font-size:11.5px;color:var(--soft)}
+.clg-row-sub{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--mut);min-width:0}
+.clg-row-sub.red{color:#dc2626}.clg-row-sub.amber{color:#b45309}
+.clg-row-sub em{font-style:normal;color:var(--soft)}
+.clg-dir{border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center}
+.clg-detail{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+.clg-pick{margin:auto;color:var(--mut);font-size:14px}
+.clg-detail-h{display:flex;align-items:center;gap:12px;padding:16px 18px;border-bottom:1px solid var(--line)}
+.clg-back{width:34px;height:34px;border:none;border-radius:50%;background:var(--f);color:var(--ink);display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.clg-name{margin:0;font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:19px;font-weight:700;letter-spacing:-.025em;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.clg-meta{margin:2px 0 0;font-size:12.5px;color:var(--mut)}
+.clg-count{height:26px;padding:0 10px;border-radius:999px;display:inline-flex;align-items:center;background:var(--f);font-size:12.5px;font-weight:600;color:var(--mut);white-space:nowrap}
+.clg-calls{flex:1;overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:10px}
+.clg-call{padding:14px 16px;border-radius:18px;background:var(--f)}
+.clg-call-h{display:flex;align-items:center;gap:11px}
+.clg-call-h b{display:block;font-size:14px;font-weight:650;color:var(--ink)}
+.clg-call-h small{display:block;margin-top:1px;font-size:12px;color:var(--soft)}
+.clg-pill{height:24px;padding:0 10px;border-radius:999px;display:inline-flex;align-items:center;font-size:12px;font-weight:650;white-space:nowrap}
+.clg-pill.green{background:#dcfce7;color:#15803d}.clg-pill.red{background:#fee2e2;color:#b91c1c}.clg-pill.amber{background:#fef3c7;color:#b45309}.clg-pill.grey{background:var(--card,#fff);color:var(--mut)}
+.clg-sum{margin-top:12px;padding:12px 14px;border-radius:14px;background:var(--card,#fff)}
+.clg-sum-h{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.clg-sum-h span:first-child{font-size:12.5px;font-weight:650;color:#7c3aed}
+.clg-sum p{margin:0;font-size:13.5px;line-height:1.55;color:var(--ink)}
+.clg-sum-btn{display:inline-flex;align-items:center;gap:6px;margin-top:12px;height:32px;padding:0 13px;border:none;border-radius:999px;background:color-mix(in srgb,#8b5cf6 12%,var(--card,#fff));color:#7c3aed;font:inherit;font-size:12.5px;font-weight:650;cursor:pointer}
+.clg-sum-btn:disabled{opacity:.6;cursor:default}
+.clg-diag{margin:12px 0 0;display:inline-block;padding:4px 9px;border-radius:8px;background:#fffbeb;color:#b45309;font-family:ui-monospace,monospace;font-size:11.5px}
+.clg-rec{margin-top:12px;display:flex;flex-direction:column;gap:8px}
+.clg-dl{align-self:flex-start;display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:999px;background:var(--card,#fff);color:var(--ink);font-size:12.5px;font-weight:600;text-decoration:none}
+.clg-norec{margin:10px 0 0;font-size:13px;color:var(--soft)}
+.clg-tx{margin-top:10px}
+.clg-tx button{display:inline-flex;align-items:center;gap:5px;padding:0;border:none;background:none;font:inherit;font-size:12.5px;font-weight:650;color:var(--ink);cursor:pointer}
+.clg-tx p{margin:8px 0 0;padding:11px 13px;border-radius:12px;background:var(--card,#fff);font-size:13px;line-height:1.6;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere}
+.clg-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.clg-chips span{height:24px;padding:0 9px;border-radius:999px;display:inline-flex;align-items:center;background:var(--card,#fff);font-size:12px;color:var(--mut);font-variant-numeric:tabular-nums;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.clg-chips span.wide{height:auto;min-height:24px;padding:3px 9px;white-space:normal}
+.clg-side{width:290px;flex-shrink:0;overflow:auto;padding:22px 18px}
+.clg-side-top{display:flex;flex-direction:column;align-items:center;text-align:center;margin-bottom:16px}
+.clg-side-name{margin:12px 0 0;font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:20px;font-weight:700;letter-spacing:-.025em;color:var(--ink)}
+.clg-acts{display:flex;gap:10px;margin-top:12px}
+.clg-acts a{width:40px;height:40px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:var(--f);color:var(--ink);text-decoration:none}
+.clg-acts a:hover{background:var(--f2)}
+.clg-open{display:flex;align-items:center;justify-content:center;gap:7px;height:44px;margin-bottom:14px;border-radius:999px;background:var(--coral);color:#fff;font-size:14px;font-weight:650;text-decoration:none}
+.clg-open:hover{filter:brightness(.95)}
+.clg-facts{border-radius:16px;background:var(--f);padding:3px 0}
+.clg-fact{display:flex;align-items:flex-start;gap:10px;padding:10px 13px;font-size:13.5px;color:var(--ink);overflow-wrap:anywhere}
+.clg-fact+.clg-fact{box-shadow:0 -1px 0 var(--line)}
+.clg-fact-ic{color:var(--soft);flex-shrink:0;margin-top:1px}
+.clg-unlinked{margin:10px 2px 0;font-size:12.5px;color:var(--soft)}
+.clg :focus-visible{outline:2px solid var(--coral);outline-offset:2px}
+`
