@@ -552,17 +552,20 @@ export const INBOX_CSS = `
         .il-mini-btn:hover { background: #ececef; transform: translateX(2px); }
         .il-mini-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 30%, transparent); }
         .il-mini-count { position: absolute; top: -6px; right: -10px; min-width: 20px; height: 20px; padding: 0 5px; box-sizing: border-box; border-radius: 999px; background: var(--coral); color: #fff; font-size: 10.5px; font-weight: 750; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px #fff; }
-        .il-wide-only, .inbox-col-list .colvy-page-fab { transition: opacity .18s; }
-        .il-collapsed .il-wide-only, .il-collapsed .colvy-page-fab { opacity: 0; pointer-events: none; }
-        /* New message: an accent squircle that lifts on hover, its + turning a quarter. */
-        .inbox-col-list .colvy-page-fab.il-fab { position: absolute; right: 16px; bottom: 16px; z-index: 20; width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; padding: 0; border: none; border-radius: 18px; background: var(--coral); color: #fff; cursor: pointer; box-shadow: 0 0 0 4px #fff, 0 14px 28px -10px color-mix(in srgb, var(--coral) 75%, transparent); transition: opacity .18s, transform .22s cubic-bezier(.3,1.4,.5,1), box-shadow .2s ease, filter .15s ease; }
-        .il-fab::before { display: none !important; }
-        .il-fab svg { transition: transform .3s cubic-bezier(.3,1.4,.5,1); }
-        .il-fab:hover { transform: translateY(-2px); filter: brightness(1.06); box-shadow: 0 0 0 4px #fff, 0 18px 32px -10px color-mix(in srgb, var(--coral) 85%, transparent); }
-        .il-fab:hover svg { transform: rotate(90deg); }
-        .il-fab:active { transform: scale(.93); }
-        .il-fab:focus-visible { outline: none; box-shadow: 0 0 0 4px #fff, 0 0 0 6px var(--ink); }
-        [data-theme="dark"] .il-fab { box-shadow: 0 0 0 4px #18181b, 0 14px 28px -10px color-mix(in srgb, var(--coral) 75%, transparent); }
+        .il-wide-only { transition: opacity .18s; }
+        .il-collapsed .il-wide-only { opacity: 0; pointer-events: none; }
+        /* New conversation: a round + in the list's header, with a tooltip. */
+        .il-new { position: relative; width: 34px; height: 34px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: none; border-radius: 50%; background: #f4f4f5; color: var(--ink); cursor: pointer; transition: background .15s ease, transform .1s ease; }
+        .il-new::before { display: none !important; }
+        .il-new:hover { background: #ececef; }
+        .il-new:active { transform: scale(.94); }
+        .il-new:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--ink); }
+        .il-new svg { transition: transform .25s cubic-bezier(.3,1.4,.5,1); }
+        .il-new:hover svg { transform: rotate(90deg); }
+        .il-tip { position: absolute; top: calc(100% + 10px); left: 50%; z-index: 30; padding: 8px 12px; border-radius: 12px; background: var(--card, #fff); color: var(--ink); font-size: 13px; font-weight: 550; white-space: nowrap; box-shadow: 0 10px 28px -8px rgba(16,24,40,.22), 0 0 0 1px rgba(0,0,0,.06); opacity: 0; transform: translate(-50%, -4px); pointer-events: none; transition: opacity .15s ease, transform .15s ease; }
+        .il-tip::before { content: ''; position: absolute; top: -5px; left: 50%; width: 10px; height: 10px; background: inherit; transform: translateX(-50%) rotate(45deg); box-shadow: -1px -1px 0 rgba(0,0,0,.06); border-radius: 2px 0 0 0; }
+        .il-new:hover .il-tip, .il-new:focus-visible .il-tip { opacity: 1; transform: translate(-50%, 0); transition-delay: .25s; }
+        @media (hover: none) { .il-tip { display: none; } }
         .il-collapsed .ilc { background: transparent; box-shadow: none; }
         .il-collapsed .ilc-main { opacity: 0; }
         .il-collapsed .ilc-line { opacity: 0; min-height: 0; margin-top: 0; margin-bottom: 0; }

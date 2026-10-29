@@ -561,9 +561,6 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
         /* Phones: in an open inbox thread the orb's default spot sits on the
            Send button — lift it above the reply box (unless they've dragged it). */
         @media (max-width: 860px) {
-          /* A page with its own floating button (the inbox's New message +):
-             stack the orb above it with a gap instead of on top of it. */
-          body:has(.inbox-pane-list .colvy-page-fab) .colvy-ai-orb-wrap[data-default-pos] { bottom: calc(58px + env(safe-area-inset-bottom, 0px) + 16px + 52px + 14px) !important; }
           body:has(.inbox-composer .cmp-card) .colvy-ai-orb-wrap[data-default-pos] { bottom: calc(58px + env(safe-area-inset-bottom, 0px) + 250px) !important; }
           /* …and steps aside while an auto-reply countdown card needs its buttons. */
           .colvy-ai-orb-wrap { transition: opacity .2s ease, transform .2s ease; }
