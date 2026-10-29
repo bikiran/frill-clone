@@ -301,7 +301,7 @@ export default function WaitlistsPage() {
     return { label: 'Out of stock', c: '#ef4444' }
   }
 
-  if (loading) return <div style={{ padding: '24px 28px', maxWidth: 1280, margin: '0 auto' }}><SkeletonList /></div>
+  if (loading) return <div style={{ padding: '24px 28px', maxWidth: 1600, margin: '0 auto' }}><SkeletonList /></div>
 
   const I = (d: React.ReactNode) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>
   const tiles: any[] = [
@@ -622,7 +622,7 @@ function SettingsPanel({ companyId, businessName, settings, onSaved }: { company
 // The Waitlists look: a big bold header, soft tiles, a pill toolbar and one
 // white card per item that opens to the customers waiting for it.
 const WL_CSS = `
-.wl{padding:24px 28px 48px;max-width:1280px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
+.wl{padding:24px 28px 48px;max-width:1600px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
 .wl button::before{display:none}
 .wl-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:22px}
 .wl-head h1{margin:0;font-size:30px;font-weight:800;letter-spacing:-.025em;line-height:1.1}

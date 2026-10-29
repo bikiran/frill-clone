@@ -2,7 +2,7 @@
 
 import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useRef } from 'react'
-import { useAiDraft, AiDraftButton, AiDraftInfo } from '@/components/AiDraft'
+import { useAiDraft, AiDraftButton, AiDraftInfo, AI_PILL_CSS } from '@/components/AiDraft'
 import { uploadDirect } from '@/lib/upload-attachment'
 import VoiceDictationButton from '@/components/VoiceDictationButton'
 import { voiceKind, tagVoice } from '@/lib/voice-typed'
@@ -374,7 +374,7 @@ export default function EmailComposer({
       .ecmp { container-type: inline-size; }
       .ecmp .ecmp-short { display: none; }
       .ecmp .ecmp-long { display: contents; }
-      @container (max-width: 780px) { .ecmp .ecmp-long { display: none; } .ecmp .ecmp-short { display: contents; } }`}</style>
+      @container (max-width: 780px) { .ecmp .ecmp-long { display: none; } .ecmp .ecmp-short { display: contents; } .ecmp .ecmp-improve { width: 38px; padding: 0; } }`}</style>
     <div className={compact ? 'ecmp-toolbar compact' : 'ecmp-toolbar'} style={compact ? { display: 'flex', alignItems: 'center', gap: 2, padding: '6px 8px', borderBottom: '1px solid var(--border)', flexWrap: 'nowrap', position: 'relative', overflowX: 'auto', overflowY: 'hidden', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' } as React.CSSProperties : { display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', position: 'relative', flex: '1 1 0', minWidth: 0 }}>
       {/* Colvy Voice — dictate the email (same as the chat reply box). */}
       <VoiceDictationButton size={28} soft title="Voice type" keyterms={keyterms} onText={insertDictation} />
@@ -585,16 +585,16 @@ export default function EmailComposer({
         {compact ? (err ? <span style={{ fontSize: 12, color: '#dc2626' }}>{err}</span> : null) : toolbarEl}
         <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 6 : 8, marginLeft: 'auto', flexShrink: 0 }}>
           {compact ? <AiDraftButton busy={aiDraft.busy} onClick={() => aiDraft.run()} height={34} /> : (<>
-            <span className="ecmp-long"><AiDraftButton busy={aiDraft.busy} onClick={() => aiDraft.run()} height={34} /></span>
-            <span className="ecmp-short"><AiDraftButton busy={aiDraft.busy} onClick={() => aiDraft.run()} height={34} orb /></span>
+            <span className="ecmp-long"><AiDraftButton busy={aiDraft.busy} onClick={() => aiDraft.run()} height={38} /></span>
+            <span className="ecmp-short"><AiDraftButton busy={aiDraft.busy} onClick={() => aiDraft.run()} height={38} orb /></span>
           </>)}
+          <style>{AI_PILL_CSS + SEND_CSS}</style>
           <button type="button" onClick={improveWithAI} disabled={aiBusy} title="Improve this draft with AI" aria-label="Improve this draft with AI"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '8px 12px', borderRadius: 9, border: '1px solid #e9d5ff', background: '#faf5ff', color: '#7c3aed', fontSize: 12.5, fontWeight: 700, cursor: aiBusy ? 'wait' : 'pointer' }}>
+            className={`ai-pill${compact ? '' : ' ecmp-improve'}${aiBusy ? ' busy' : ''}`} style={{ height: compact ? 34 : 38 }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>
             {aiBusy ? 'Improving…' : compact ? 'Improve' : <span className="ecmp-long">AI improve</span>}
           </button>
-          <button type="button" onClick={send} disabled={sending}
-          style={{ padding: '9px 20px', borderRadius: 9, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: sending ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 7 }}>
+          <button type="button" onClick={send} disabled={sending} className="ecmp-send" style={{ height: compact ? 34 : 38, cursor: sending ? 'wait' : 'pointer' }}>
           {sending ? 'Sending…' : compact ? 'Send email' : <><span className="ecmp-long">Send email</span><span className="ecmp-short">Send</span></>}
           {!sending && (
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
@@ -623,6 +623,16 @@ function SigCard({ text, onClose }: { text: string; onClose: () => void }) {
     </div>
   )
 }
+
+// The coral Send pill.
+const SEND_CSS = `
+.ecmp-send{display:inline-flex;align-items:center;gap:7px;padding:0 18px;border:none;border-radius:999px;background:var(--coral);color:#fff;font:inherit;font-size:13.5px;font-weight:650;white-space:nowrap;flex-shrink:0;transition:filter .15s,transform .12s}
+.ecmp-send::before{display:none!important}
+.ecmp-send:hover{filter:brightness(.95)}
+.ecmp-send:active{transform:scale(.97)}
+.ecmp-send:disabled{opacity:.7}
+.ecmp-send:focus-visible{outline:2px solid var(--coral);outline-offset:2px}
+`
 
 const SIG_CSS = `
         .ecmp-sigwrap{position:relative;min-width:0}

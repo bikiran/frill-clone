@@ -10,6 +10,22 @@ const admin = () => createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
+// PostgREST hands back at most 1,000 rows a request, so page through the rest.
+async function every<T>(build: () => any, size = 1000): Promise<T[]> {
+  const out: T[] = []
+  for (let from = 0; from < 100_000; from += size) {
+    const { data, error } = await build().range(from, from + size - 1)
+    if (error) throw new Error(error.message)
+    out.push(...(data || []))
+    if (!data || data.length < size) break
+  }
+  return out
+}
+
+// A long `in (…)` list makes the request URL too long and it fails outright,
+// so ids go in batches.
+const batches = <T,>(ids: T[], n = 120) => Array.from({ length: Math.ceil(ids.length / n) }, (_, i) => ids.slice(i * n, i * n + n))
+
 // Real business metrics for the company Overview tab. Every number below is
 // computed from actual rows — nothing is estimated or faked. Where a metric
 // can't be derived from available data it is returned as null so the UI can
@@ -26,33 +42,30 @@ export async function GET(req: NextRequest) {
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
 
     // ── Conversations in range ────────────────────────────────────────────────
-    const { data: convs } = await db
+    const conversations = await every<{ id: string; contact_id: string | null; status: string | null }>(() => db
       .from('conversations')
       .select('id, contact_id, status, created_at')
       .eq('company_id', companyId)
       .gte('created_at', since)
-
-    const conversations = convs || []
+      .order('id'))
     const conversationIds = conversations.map(c => c.id)
 
     // Resolved / closed conversations.
     const resolved = conversations.filter(c => ['resolved', 'closed'].includes((c.status || '').toLowerCase())).length
 
     // ── Messages ──────────────────────────────────────────────────────────────
-    // Received = from the customer; Replied = conversations where an agent sent
-    // at least one message (a truer "replied" than counting agent messages).
+    // Received = from the customer; Replied = conversations where the team (or
+    // an AI agent) sent at least one message (truer than counting messages).
     let messagesReceived = 0
-    let agentRepliedConvIds = new Set<string>()
-    if (conversationIds.length) {
-      const { data: msgs } = await db
-        .from('messages')
-        .select('conversation_id, sender_type')
-        .in('conversation_id', conversationIds)
-      for (const m of msgs || []) {
-        if (m.sender_type === 'visitor') messagesReceived++
-        if (m.sender_type === 'agent') agentRepliedConvIds.add(m.conversation_id)
-      }
-    }
+    const agentRepliedConvIds = new Set<string>()
+    await Promise.all(batches(conversationIds).map(async ids => {
+      const { count } = await db.from('messages').select('id', { count: 'exact', head: true })
+        .in('conversation_id', ids).eq('sender_type', 'visitor')
+      messagesReceived += count || 0
+      const replies = await every<{ conversation_id: string }>(() => db.from('messages').select('conversation_id')
+        .in('conversation_id', ids).in('sender_type', ['agent', 'ai']).order('id'))
+      for (const m of replies) agentRepliedConvIds.add(m.conversation_id)
+    }))
     const conversationsReplied = agentRepliedConvIds.size
 
     // ── Customers served (distinct contacts with a conversation in range) ──────
@@ -64,13 +77,17 @@ export async function GET(req: NextRequest) {
     let newCustomers = 0
     let returningCustomers = 0
     if (contactIds.length) {
-      const { data: priorConvs } = await db
-        .from('conversations')
-        .select('contact_id')
-        .eq('company_id', companyId)
-        .in('contact_id', contactIds)
-        .lt('created_at', since)
-      const hadBefore = new Set((priorConvs || []).map(c => c.contact_id))
+      const hadBefore = new Set<string>()
+      await Promise.all(batches(contactIds).map(async ids => {
+        const prior = await every<{ contact_id: string }>(() => db
+          .from('conversations')
+          .select('contact_id')
+          .eq('company_id', companyId)
+          .in('contact_id', ids)
+          .lt('created_at', since)
+          .order('id'))
+        for (const c of prior) hadBefore.add(c.contact_id)
+      }))
       for (const id of contactIds) {
         if (hadBefore.has(id)) returningCustomers++
         else newCustomers++
@@ -84,13 +101,14 @@ export async function GET(req: NextRequest) {
     let salesAmount = 0
     const byAttribution: Record<string, { count: number; amount: number }> = {}
     try {
-      const { data: orders } = await db
+      const orders = await every<any>(() => db
         .from('woocommerce_orders')
         .select('total, attribution, status, order_date')
         .eq('company_id', companyId)
         .not('attribution', 'is', null)
         .gte('order_date', since)
-      for (const o of orders || []) {
+        .order('order_date').order('woo_order_id'))
+      for (const o of orders) {
         // Don't count cancelled/failed/refunded orders as converted revenue.
         const st = (o.status || '').toLowerCase()
         if (['cancelled', 'failed', 'refunded', 'trash'].includes(st)) continue
@@ -105,13 +123,14 @@ export async function GET(req: NextRequest) {
     } catch {}
     // Shopify orders carry the same attribution on the operational orders row.
     try {
-      const { data: shopOrders } = await db
+      const shopOrders = await every<any>(() => db
         .from('orders')
         .select('total, attribution, status, payment_status')
         .eq('company_id', companyId).eq('sales_channel', 'shopify')
         .not('attribution', 'is', null)
         .gte('order_date', since)
-      for (const o of shopOrders || []) {
+        .order('id'))
+      for (const o of shopOrders) {
         if (['cancelled', 'refunded'].includes(String(o.status || '')) || ['refunded', 'failed'].includes(String(o.payment_status || ''))) continue
         const amt = parseFloat(o.total as any) || 0
         salesConverted++
@@ -127,12 +146,13 @@ export async function GET(req: NextRequest) {
     let totalOrders = 0
     let totalOrderAmount = 0
     try {
-      const { data: allOrders } = await db
+      const allOrders = await every<any>(() => db
         .from('woocommerce_orders')
         .select('total, status')
         .eq('company_id', companyId)
         .gte('order_date', since)
-      for (const o of allOrders || []) {
+        .order('order_date').order('woo_order_id'))
+      for (const o of allOrders) {
         const st = (o.status || '').toLowerCase()
         if (['cancelled', 'failed', 'refunded', 'trash'].includes(st)) continue
         totalOrders++
@@ -141,12 +161,13 @@ export async function GET(req: NextRequest) {
     } catch {}
     // Shopify orders (operational orders table) count toward the store total too.
     try {
-      const { data: shopOrders } = await db
+      const shopOrders = await every<any>(() => db
         .from('orders')
         .select('total, status, payment_status')
         .eq('company_id', companyId).eq('sales_channel', 'shopify')
         .gte('order_date', since)
-      for (const o of shopOrders || []) {
+        .order('id'))
+      for (const o of shopOrders) {
         if (['cancelled', 'refunded'].includes(String(o.status || '')) || ['refunded', 'failed'].includes(String(o.payment_status || ''))) continue
         totalOrders++
         totalOrderAmount += parseFloat(o.total as any) || 0
@@ -157,13 +178,14 @@ export async function GET(req: NextRequest) {
     let cartsRecovered = 0
     let cartsRecoveredAmount = 0
     try {
-      const { data: carts } = await db
+      const carts = await every<any>(() => db
         .from('abandoned_carts')
         .select('total, status, created_at')
         .eq('company_id', companyId)
         .eq('status', 'recovered')
         .gte('created_at', since)
-      for (const c of carts || []) {
+        .order('id'))
+      for (const c of carts) {
         cartsRecovered++
         cartsRecoveredAmount += parseFloat(c.total as any) || 0
       }
@@ -173,12 +195,13 @@ export async function GET(req: NextRequest) {
     let cartsCaptured = 0
     let cartsCapturedAmount = 0
     try {
-      const { data: allCarts } = await db
+      const allCarts = await every<any>(() => db
         .from('abandoned_carts')
         .select('total, created_at')
         .eq('company_id', companyId)
         .gte('created_at', since)
-      for (const c of allCarts || []) {
+        .order('id'))
+      for (const c of allCarts) {
         cartsCaptured++
         cartsCapturedAmount += parseFloat(c.total as any) || 0
       }
