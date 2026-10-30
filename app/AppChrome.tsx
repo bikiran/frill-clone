@@ -14,6 +14,7 @@ import UpdateNotification from '@/components/UpdateNotification'
 import NotificationsPanel, { notificationSoundOn, inWorkspace } from '@/components/NotificationsPanel'
 import Analytics from '@/components/Analytics'
 import { NEUTRAL_ICON } from '@/lib/tenant-meta'
+import { setAppearance } from '@/lib/seasonal-themes'
 
 // Where a notification should take you when clicked. Shared by the in-app
 // notifications menu AND the bottom-right OS notification, so both route the
@@ -269,16 +270,9 @@ export default function AppChrome({
             const b = parseInt(s.accentColor.slice(5, 7), 16)
             document.documentElement.style.setProperty('--peach', `rgba(${r}, ${g}, ${b}, 0.1)`)
           }
-          // Theme mode — use data-theme attribute, respect auto/system
-          const mode = s.themeMode || 'light'
-          if (mode === 'dark') {
-            document.documentElement.setAttribute('data-theme', 'dark')
-          } else if (mode === 'auto') {
-            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-            document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light')
-          } else {
-            document.documentElement.removeAttribute('data-theme')
-          }
+          // Light/dark (auto follows the system) and the seasonal theme
+          // (lib/seasonal-themes), which can switch to dark while it runs.
+          setAppearance({ themeMode: s.themeMode || 'light', seasonal: s.seasonal || {} })
         }
       }
     }

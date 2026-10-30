@@ -3,6 +3,7 @@ import { preconnect } from 'react-dom'
 import './globals.css'
 import AppChrome from './AppChrome'
 import DarkTheme from '@/components/DarkTheme'
+import SeasonalTheme from '@/components/seasons/SeasonalTheme'
 import PressFeedback from '@/components/PressFeedback'
 import KeyboardAware from '@/components/KeyboardAware'
 import PhoneHost from '@/components/PhoneHost'
@@ -121,6 +122,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <AppChrome>{children}</AppChrome>
         {/* Dark mode for colours written into the code (only while dark is on). */}
         <DarkTheme />
+        {/* Halloween and the other seasonal themes, while one is on (Settings → Theme). */}
+        <SeasonalTheme />
         {/* Outside AppChrome on purpose: AppChrome swaps between two trees
             (full-page vs app chrome), which would remount — and hang up — a
             live call. Here the phone persists across every route in the tab. */}

@@ -12,6 +12,8 @@ import { confirmDialog } from '@/components/ConfirmDialog'
 import TerminologySettings from '@/components/TerminologySettings'
 import { cleanTerms } from '@/lib/terminology'
 import { WP_PLUGIN_VERSION } from '@/lib/wp-plugin'
+import SeasonalSettings from '@/components/settings/SeasonalSettings'
+import { setAppearance, type SeasonalConfig } from '@/lib/seasonal-themes'
 
 // Colvy-branded CNAME target shown to customers for custom domains — a
 // colvy.com host that itself points at our platform, so the underlying
@@ -105,6 +107,8 @@ export default function SettingsPage() {
   // Styling
   const [accentColor, setAccentColor] = useState('#ff7a6b')
   const [themeMode, setThemeMode] = useState<'light' | 'dark' | 'auto'>('light')
+  // Halloween and the other seasonal themes (lib/seasonal-themes).
+  const [seasonal, setSeasonal] = useState<SeasonalConfig>({})
   const [borderRadius, setBorderRadius] = useState<'sharp' | 'soft' | 'rounded'>('soft')
   // Email customization
   const [emailFromName, setEmailFromName] = useState('')
@@ -332,6 +336,7 @@ export default function SettingsPage() {
             setWidgetOrder([...missing, ...kept])
           }
           if (s.themeMode) setThemeMode(s.themeMode)
+          if (s.seasonal && typeof s.seasonal === 'object') setSeasonal(s.seasonal)
           if (s.borderRadius) setBorderRadius(s.borderRadius)
           if (s.emailFromName) setEmailFromName(s.emailFromName)
           if (s.emailReplyTo) setEmailReplyTo(s.emailReplyTo)
@@ -386,6 +391,10 @@ export default function SettingsPage() {
   // Auto-save: debounced — fires 1.2s after the user stops typing/changing settings
   const autoSaveTimer = useRef<NodeJS.Timeout | null>(null)
   const settingsLoadedRef = useRef(false)
+  // Theme appearance and the seasonal theme show as soon as they're changed.
+  useEffect(() => {
+    if (settingsLoadedRef.current) setAppearance({ themeMode, seasonal })
+  }, [themeMode, seasonal])
   const isFirstRender = useRef(true)
   useEffect(() => {
     // Skip auto-save on initial mount (before data loads)
@@ -405,7 +414,7 @@ export default function SettingsPage() {
     companyName, logoUrl, faviconUrl, ogImageUrl, logoLink, customScript,
     navIdeas, navRoadmap, navAnnouncements, navHelp, navOrder,
     widgetChat, widgetFeedback, widgetRoadmap, widgetUpdates, widgetForms, widgetPolls, widgetSurveys, widgetKnowledgeBase, widgetOrder,
-    accentColor, themeMode, borderRadius,
+    accentColor, themeMode, seasonal, borderRadius,
     emailFromName, emailReplyTo, emailSignature,
     hidePoweredBy, boardDomain, helpDomain,
     guestVotingEnabled, guestSubmitEnabled, termValues, privacyMode,
@@ -434,7 +443,7 @@ export default function SettingsPage() {
       companyName, logoUrl, faviconUrl, ogImageUrl, logoLink, customScript,
       navIdeas, navRoadmap, navAnnouncements, navHelp, navOrder,
       widgetChat, widgetFeedback, widgetRoadmap, widgetUpdates, widgetForms, widgetPolls, widgetSurveys, widgetKnowledgeBase, widgetOrder,
-      accentColor, themeMode, borderRadius,
+      accentColor, themeMode, seasonal, borderRadius,
       emailFromName, emailReplyTo, emailSignature,
       hidePoweredBy, showPoweredBy: !hidePoweredBy, customDomain, boardDomain, helpDomain, domainStatus,
       guestVotingEnabled, guestSubmitEnabled, termValues: cleanTerms(termValues), privacyMode, categories, defaultHomepage,
@@ -1981,6 +1990,15 @@ export default function SettingsPage() {
               <p className="text-xs mt-2" style={{ color: 'var(--slate)' }}>
                 Auto follows the user's system preference.
               </p>
+            </div>
+
+            {/* Seasonal theme: Halloween now, more to come */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium mb-1" style={{ color: 'var(--ink)' }}>Seasonal theme</label>
+              <p className="text-xs mb-3" style={{ color: 'var(--slate)' }}>
+                Dress Colvy up for the holidays, with your team and, if you like, your customers.
+              </p>
+              <SeasonalSettings value={seasonal} onChange={setSeasonal} />
             </div>
 
             {/* Accent Color */}

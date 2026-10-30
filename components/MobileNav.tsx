@@ -199,6 +199,8 @@ export default function MobileNav() {
         @keyframes mnUp { from { transform: translateY(100%); } to { transform: none; } }
         @keyframes mnDown { from { transform: none; } to { transform: translateY(100%); } }
         @media (prefers-reduced-motion: reduce) { .mn-tab .mn-ic, .mn-sheet-bg, .mn-sheet { animation: none !important; } }
+        /* The bar's see-through white, in dark mode. */
+        [data-theme="dark"] .colvy-mobile-nav { background: rgba(17,17,19,.92) !important; }
       `}</style>
 
       {/* ── Bottom tab bar ─────────────────────────────────────────────────── */}
