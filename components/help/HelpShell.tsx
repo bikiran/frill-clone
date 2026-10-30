@@ -1,6 +1,12 @@
 'use client'
 
 // The Help Centre's frame, like the Settings area (components/settings):
+// it lives in app/admin/help/layout.tsx (HelpFrame), so moving between
+// Articles, Reporting, Import and Settings swaps only the page, not the
+// whole frame (it flashed when each page drew its own). Pages still wrap
+// themselves in <HelpShell nav={…}>: inside the frame that just renders the
+// page and hands its own list (the articles, the report sections) to the menu.
+//
 // one white menu card — Articles, Reporting, Import, Settings — with the
 // page's own list under it (the articles, or the report sections), beside the
 // page in a white card, on the rail's soft grey. Both scroll on their own, so
@@ -8,7 +14,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 
 const ic = (d: ReactNode) => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0, display: 'block' }}>{d}</svg>
@@ -21,7 +28,29 @@ const LINKS = [
   { href: '/admin/help/settings', label: 'Settings', icon: ic(<><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></>) },
 ]
 
+// The menu's slot for the page's own list, when the frame is the layout's.
+const SlotCtx = createContext<{ slot: HTMLElement | null } | null>(null)
+
+/** The persistent frame, for app/admin/help/layout.tsx. The article editor has its own screen. */
+export function HelpFrame({ children }: { children: ReactNode }) {
+  const pathname = usePathname() || ''
+  const [slot, setSlot] = useState<HTMLElement | null>(null)
+  if (pathname.startsWith('/admin/help/new')) return <>{children}</>
+  return (
+    <SlotCtx.Provider value={{ slot }}>
+      <Frame slotRef={setSlot}><div key={pathname} className="hc-page">{children}</div></Frame>
+    </SlotCtx.Provider>
+  )
+}
+
+/** A Help Centre page: inside the frame, the page and its list for the menu; on its own, the whole frame. */
 export default function HelpShell({ children, nav }: { children: ReactNode; nav?: ReactNode }) {
+  const ctx = useContext(SlotCtx)
+  if (ctx) return <>{children}{nav && ctx.slot ? createPortal(nav, ctx.slot) : null}</>
+  return <Frame nav={nav}>{children}</Frame>
+}
+
+function Frame({ children, nav, slotRef }: { children: ReactNode; nav?: ReactNode; slotRef?: (el: HTMLDivElement | null) => void }) {
   const pathname = usePathname() || ''
   const [open, setOpen] = useState(false)  // the phone's folded menu
   useEffect(() => { setOpen(false) }, [pathname])
@@ -48,6 +77,9 @@ export default function HelpShell({ children, nav }: { children: ReactNode; nav?
         .hc-item:focus-visible { outline: none; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--coral) 40%, transparent); }
         .hc-new:focus-visible { outline: 2px solid var(--coral); outline-offset: 2px; }
         .hc-sub { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; padding: 6px 10px 14px; border-top: 1px solid #f0f0f2; }
+        .hc-sub:empty { display: none; }
+        .hc-page { min-height: 100%; animation: hcPage .22s ease both; }
+        @keyframes hcPage { from { opacity: 0 } to { opacity: 1 } }
         .hc-group { margin: 10px 0 4px; padding: 0 10px; font-size: 13px; font-weight: 500; color: #8e8e93; }
         .hc-main { flex: 1; min-width: 0; overflow-y: auto; border-radius: 18px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.04), 0 1px 2px rgba(0,0,0,.03); }
         .hc-main h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; color: #111; }
@@ -62,13 +94,14 @@ export default function HelpShell({ children, nav }: { children: ReactNode; nav?
         .hc-tag { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px 0 7px; border-radius: 999px; background: color-mix(in srgb, var(--tag) 9%, #fff); color: color-mix(in srgb, var(--tag) 88%, #000); font-size: 11.5px; font-weight: 600; white-space: nowrap; }
         .hc-tag::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--tag); }
         .hc-chip { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; background: #f4f4f5; color: #52525b; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
-        @media (prefers-reduced-motion: reduce) { .hc-menu { animation: none; } }
+        @media (prefers-reduced-motion: reduce) { .hc-menu, .hc-page { animation: none; } }
         @media (max-width: 860px) {
           .hc-wrap { flex-direction: column; height: auto; gap: 0; padding: 0; background: #fff; }
           .hc-nav { width: 100%; border-radius: 0; box-shadow: none; border-bottom: 1px solid #f0f0f2; }
           .hc-nav .hc-top, .hc-nav .hc-sub { display: none; }
           .hc-nav.open .hc-top { display: block; }
           .hc-nav.open .hc-sub { display: block; max-height: 55vh; }
+          .hc-nav.open .hc-sub:empty { display: none; }
           .hc-fold { display: flex; align-items: center; gap: 10px; width: 100%; padding: 14px 16px; border: none; background: none; font: inherit; font-size: 15.5px; font-weight: 650; color: #111; cursor: pointer; text-align: left; }
           .hc-fold .hc-ic { color: var(--coral); display: flex; }
           .hc-main { overflow: visible; border-radius: 0; box-shadow: none; }
@@ -94,7 +127,7 @@ export default function HelpShell({ children, nav }: { children: ReactNode; nav?
             </Link>
           ))}
         </div>
-        {nav && <div className="hc-sub">{nav}</div>}
+        {slotRef ? <div className="hc-sub" ref={slotRef} /> : nav && <div className="hc-sub">{nav}</div>}
       </nav>
       <main className="hc-main">{children}</main>
     </div>

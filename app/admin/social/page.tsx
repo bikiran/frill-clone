@@ -712,7 +712,9 @@ button.se-tile:hover{transform:translateY(-1px)}
 .se-btn.ai:hover:not(:disabled){background-color:color-mix(in srgb,#7c3aed 16%,#fff)}
 .se-btn.quiet{background:none;color:#71717a;padding:0 10px}
 .se-btn.quiet:hover{background:#f4f4f5;color:#18181b}
-.se-filters{padding:18px;position:sticky;top:16px}
+.se-filters{padding:18px;position:sticky;top:76px;max-height:calc(100vh - 96px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+/* The admin column scrolls with the page; clip it sideways so the filters stick. */
+.admin-main:has(.se){overflow-x:clip!important;overflow-y:visible!important;min-width:0}
 .se-f-head{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:12px}
 .se-f-head b{margin-right:auto}
 .se-f-toggle{display:none;align-items:center;gap:6px;height:30px;padding:0 12px;border:none;border-radius:999px;background:#f4f4f5;font:inherit;font-size:13px;font-weight:600;color:#18181b;cursor:pointer}
@@ -758,7 +760,7 @@ button.se-tile:hover{transform:translateY(-1px)}
 .se-contact:hover{background-color:#f4f4f5}
 .se-contact.on{background:color-mix(in srgb,var(--coral) 9%,#fff)}
 .se-tile:focus-visible,.se-btn:focus-visible,.se-fchip:focus-visible,.se-seg button:focus-visible,.se-cat:focus-visible,.se-link:focus-visible,.se-switch:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 28%,transparent)}
-@media(max-width:1023px){.se-grid{grid-template-columns:1fr}.se-filters{position:static;order:-1;padding:14px 16px}.se-f-toggle{display:inline-flex}.se-filters:not(.open) .se-f-body{display:none}.se-f-head{margin-bottom:10px}}
+@media(max-width:1023px){.se-grid{grid-template-columns:1fr}.se-filters{position:static;order:-1;padding:14px 16px;max-height:none;overflow:visible}.se-f-toggle{display:inline-flex}.se-filters:not(.open) .se-f-body{display:none}.se-f-head{margin-bottom:10px}}
 @media(max-width:700px){
   .se{padding:16px 14px 40px}
   .se-head{flex-direction:column;align-items:stretch}
