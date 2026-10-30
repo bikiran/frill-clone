@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
+import { SETTINGS_NAV } from '@/components/settings/settings-nav'
 
 export const rnd = (a: number, b: number) => a + Math.random() * (b - a)
 
@@ -39,4 +40,13 @@ export function useSceneFrame() {
     return () => { clearTimeout(t); window.removeEventListener('resize', measure) }
   }, [pathname, later])
   return frame
+}
+
+// Settings pages sit on their own solid panel, so the scene behind them only
+// ever showed in the blink between two Settings pages, as a flash. There the
+// scene stays hidden (the effects on top still play).
+const SETTINGS_PATHS = [...new Set(SETTINGS_NAV.flatMap(g => g.items.map(i => i.href.split('#')[0])))]
+export function useSceneHidden() {
+  const path = usePathname() || '/'
+  return SETTINGS_PATHS.some(h => path === h || path.startsWith(h + '/')) || path.startsWith('/admin/crm-settings')
 }
