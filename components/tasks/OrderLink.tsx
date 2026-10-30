@@ -17,6 +17,7 @@ import { authFetch } from '@/lib/auth-fetch'
 import { supabase } from '@/lib/supabase'
 import { PlatformLogo, platformName } from '@/components/StoreLogo'
 import { SkClose, SkIcon, SkStyle } from '@/components/ui/SheetKit'
+import { decodeEntities } from '@/lib/html-entities'
 
 export type OrderSource = 'woocommerce' | 'shopify' | 'prexty'
 
@@ -67,6 +68,32 @@ const addressLines = (a: any): string[] => {
   return [name, a.company, a.address_1, a.address_2, town, a.country && a.country !== 'AU' ? a.country : ''].filter(Boolean)
 }
 const prettyKey = (k: string) => k.replace(/^prexty_/i, '').replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase())
+
+// The Prexty fields worth calling out, by what their key looks like. Prexty
+// copies a sale into WooCommerce with `_prexty_*` meta; any of these it sends
+// shows with a proper label (the rest are listed after, as they come).
+const PREXTY_FIELDS: { key: string; label: string; test: RegExp }[] = [
+  { key: 'payment', label: 'Payment', test: /pay(ment)?_?(method|type|mode)?$|tender|payments?$/i },
+  { key: 'served', label: 'Served by', test: /served|staff|cashier|employee|operator|seller|sales_?person|user(_name)?$/i },
+  { key: 'register', label: 'Register', test: /register|till|terminal|device|station/i },
+  { key: 'outlet', label: 'Outlet', test: /outlet|location|store|branch/i },
+  { key: 'total', label: 'Total in Prexty', test: /(^|_)(grand_)?total$/i },
+  { key: 'discount', label: 'Discount in Prexty', test: /discount/i },
+  { key: 'note', label: 'Note', test: /note|comment|memo/i },
+]
+const HIDE_PREXTY = /^prexty_(source|sale_id)$/i
+/** Prexty's fields, the known ones first with their labels. */
+function prextyRows(prexty: any): { label: string; value: string; key: string; known?: string }[] {
+  const entries = prexty && typeof prexty === 'object' ? Object.entries(prexty).filter(([k, v]) => v != null && v !== '' && !HIDE_PREXTY.test(k)) : []
+  const used = new Set<string>()
+  const known: { label: string; value: string; key: string; known: string }[] = []
+  for (const f of PREXTY_FIELDS) {
+    const hit = entries.find(([k]) => !used.has(k) && f.test.test(k.replace(/^prexty_/i, '')))
+    if (hit) { used.add(hit[0]); known.push({ label: f.label, value: decodeEntities(hit[1]), key: hit[0], known: f.key }) }
+  }
+  const rest = entries.filter(([k]) => !used.has(k)).map(([k, v]) => ({ label: prettyKey(k), value: decodeEntities(v), key: k }))
+  return [...known, ...rest]
+}
 
 /** Find the customer's conversation: the order's own, else their contact's newest, else one on their number. */
 async function findConversation(companyId: string, o: any): Promise<{ id: string; name: string | null } | null> {
@@ -125,7 +152,7 @@ export function OrderViewSheet({ companyId, orderId, orderNumber, customer, onCl
   }, [companyId, orderId])
 
   const cur = order?.currency && order.currency !== 'AUD' ? `${order.currency} ` : ''
-  const m = (v: any) => `${cur}$${(parseFloat(v) || 0).toFixed(2)}`
+  const m = (v: any) => `${cur}$${(parseFloat(v) || 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   const items: any[] = Array.isArray(order?.line_items) ? order.line_items : []
   const itemsTotal = items.reduce((t, li) => t + (parseFloat(li.total ?? li.subtotal ?? 0) || 0), 0)
   const fees: any[] = Array.isArray(order?.fee_lines) ? order.fee_lines.filter((f: any) => parseFloat(f.total)) : []
@@ -135,7 +162,9 @@ export function OrderViewSheet({ companyId, orderId, orderNumber, customer, onCl
   const phone = order?.billing?.phone || ''
   const ship = addressLines(order?.shipping && Object.values(order.shipping).some(Boolean) ? order.shipping : null)
   const bill = addressLines(order?.billing)
-  const prexty = order?.prexty && typeof order.prexty === 'object' ? Object.entries(order.prexty).filter(([, v]) => v != null && v !== '') : []
+  const prexty = prextyRows(order?.prexty)
+  const pPay = prexty.find(r => r.known === 'payment')?.value
+  const pServed = prexty.find(r => r.known === 'served')?.value
   const STATUS_TONE: Record<string, string> = { completed: '#16a34a', processing: '#2563eb', 'on-hold': '#d97706', pending: '#ea580c', refunded: '#7c3aed', cancelled: '#dc2626', failed: '#dc2626', paid: '#16a34a' }
   const status = String(order?.status || '')
 
@@ -186,7 +215,7 @@ export function OrderViewSheet({ companyId, orderId, orderNumber, customer, onCl
                         ? <img src={img} alt="" className="ov-thumb" loading="lazy" />
                         : <span className="ov-thumb" aria-hidden>{SkIcon.box}</span>}
                       <span className="sk-item-t">
-                        <b style={{ whiteSpace: 'normal' }}>{li.name || li.product_name || 'Item'}</b>
+                        <b style={{ whiteSpace: 'normal' }}>{decodeEntities(li.name || li.product_name || 'Item')}</b>
                         <small>{q} × {m(total / q)}{li.sku ? ` · SKU ${li.sku}` : ''}</small>
                       </span>
                       <span className="sk-amt">{m(total)}</span>
@@ -209,7 +238,9 @@ export function OrderViewSheet({ companyId, orderId, orderNumber, customer, onCl
               <div className="ov-grid">
                 <div className="sk-card">
                   <span className="ov-k">Payment</span>
-                  <p className="ov-v">{order.payment_method_title || order.payment_method || '—'}</p>
+                  <p className="ov-v">{decodeEntities(order.payment_method_title || pPay || order.payment_method || (src === 'prexty' ? 'In store' : '—'))}</p>
+                  {src === 'prexty' && !order.payment_method_title && !pPay && <p className="ov-s">Prexty didn&rsquo;t send how it was paid</p>}
+                  {pServed && <p className="ov-s">Served by {pServed}</p>}
                   {order.date_paid && <p className="ov-s">Paid {when(order.date_paid)}</p>}
                   {order.transaction_id && <p className="ov-s" style={{ overflowWrap: 'anywhere' }}>Ref {order.transaction_id}</p>}
                 </div>
@@ -228,7 +259,7 @@ export function OrderViewSheet({ companyId, orderId, orderNumber, customer, onCl
               {order.customer_note && (
                 <>
                   <span className="sk-lbl">Customer note</span>
-                  <div className="sk-card ov-note">{order.customer_note}</div>
+                  <div className="sk-card ov-note">{decodeEntities(order.customer_note)}</div>
                 </>
               )}
 
@@ -236,7 +267,7 @@ export function OrderViewSheet({ companyId, orderId, orderNumber, customer, onCl
                 <>
                   <span className="sk-lbl">In store (Prexty)</span>
                   <div className="sk-card ov-kv">
-                    {prexty.map(([k, v]) => <div key={k}><span>{prettyKey(k)}</span><b>{String(v)}</b></div>)}
+                    {prexty.map(r => <div key={r.key}><span>{r.label}</span><b>{r.known === 'total' || r.known === 'discount' ? (Number.isFinite(parseFloat(r.value)) ? m(r.value) : r.value) : r.value}</b></div>)}
                   </div>
                 </>
               )}
