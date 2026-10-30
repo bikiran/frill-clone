@@ -6,15 +6,41 @@
 // matching manager (Social Engagement, Reviews).
 
 import Link from 'next/link'
+import { useState } from 'react'
 
 export type EngagementComment = {
   id: string; platform: string; authorName?: string | null; authorPhoto?: string | null; message?: string | null
   attachment?: string | null; replied?: boolean; reply?: string | null; commentedAt?: string | null
-  post?: { permalink?: string | null; caption?: string | null; media?: string | null; type?: string | null } | null
+  post?: { permalink?: string | null; caption?: string | null; media?: string | null; type?: string | null; video?: boolean } | null
 }
 export type EngagementReview = {
   id: string; reviewerName?: string | null; reviewerPhoto?: string | null; rating?: number | null; comment?: string | null
   createdAt?: string | null; reply?: string | null; repliedAt?: string | null
+}
+
+// The post's picture. A reel may only have its video (shown paused on the
+// first frame), and Instagram's links expire, so a failed one falls back to
+// a tile in the platform's colours, with a play mark for a reel.
+function PostThumb({ post }: { post: NonNullable<EngagementComment['post']> }) {
+  const [failed, setFailed] = useState(false)
+  const reel = post.type === 'reel' || !!post.video
+  const src = post.media || ''
+  const video = !!post.video || /\.(mp4|mov|m4v|webm)(\?|$)/i.test(src)
+  return (
+    <span className={`egc-thumb${reel ? ' reel' : ''}`}>
+      {src && !failed
+        ? (video
+          ? <video src={src} muted playsInline preload="metadata" onError={() => setFailed(true)} aria-hidden />
+          // eslint-disable-next-line @next/next/no-img-element
+          : <img src={src} alt="" referrerPolicy="no-referrer" loading="lazy" onError={() => setFailed(true)} />)
+        : <span className="egc-post-ph" aria-hidden>
+            {reel
+              ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="5" /><path d="M3 8.5h18M8 3l3 5.5M13.5 3l3 5.5" /><path d="M10 12.5v5l4.5-2.5z" fill="currentColor" /></svg>
+              : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="5" /><circle cx="12" cy="12" r="4" /><circle cx="17.3" cy="6.7" r=".8" fill="currentColor" /></svg>}
+          </span>}
+      {reel && src && !failed && <i className="egc-play" aria-hidden><svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z" /></svg></i>}
+    </span>
+  )
 }
 
 const ms = (iso?: string | null) => { const t = iso ? Date.parse(iso) : NaN; return Number.isFinite(t) ? Date.now() - t : null }
@@ -77,7 +103,7 @@ export function InstagramComment({ c, count, business }: { c: EngagementComment;
       <Head glyph={<IgGlyph />} label="Instagram" more={count > 1 ? `${count} comments` : 'Comment'} href={href} />
       {c.post && (c.post.media || c.post.caption) && (
         <a className="egc-post" href={c.post.permalink || href} target={c.post.permalink ? '_blank' : undefined} rel="noopener noreferrer" title="Open the post">
-          {c.post.media ? <img src={c.post.media} alt="" referrerPolicy="no-referrer" /> : <span className="egc-post-ph" aria-hidden><IgGlyph /></span>}
+          <PostThumb post={c.post} />
           <span><b>{business}</b> {c.post.caption || (c.post.type === 'reel' ? 'Reel' : 'Post')}</span>
         </a>
       )}
@@ -106,7 +132,7 @@ export function FacebookComment({ c, count, business }: { c: EngagementComment; 
       <Head glyph={<FbGlyph />} label="Facebook" more={count > 1 ? `${count} comments` : 'Comment'} href={href} />
       {c.post && (c.post.media || c.post.caption) && (
         <a className="egc-post" href={c.post.permalink || href} target={c.post.permalink ? '_blank' : undefined} rel="noopener noreferrer" title="Open the post">
-          {c.post.media ? <img src={c.post.media} alt="" referrerPolicy="no-referrer" /> : <span className="egc-post-ph" aria-hidden><FbGlyph /></span>}
+          <PostThumb post={c.post} />
           <span>{c.post.caption || 'Your post'}</span>
         </a>
       )}
@@ -171,7 +197,12 @@ export const ENGAGEMENT_CSS = `
 .egc-av.ig>*{box-shadow:0 0 0 1.5px var(--card,#fff)}
 .egc-av-l{width:100%;height:100%;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-weight:600}
 .egc-post{display:flex;align-items:center;gap:9px;padding:6px;border-radius:12px;background:#f7f7f8;font-size:12px;line-height:1.35;color:#52525b}
-.egc-post img,.egc-post-ph{width:40px;height:40px;flex-shrink:0;border-radius:8px;object-fit:cover;background:#ececef;display:inline-flex;align-items:center;justify-content:center}
+.egc-thumb{position:relative;width:40px;height:40px;flex-shrink:0;border-radius:8px;overflow:hidden;background:#ececef}
+.egc-thumb img,.egc-thumb video{display:block;width:100%;height:100%;object-fit:cover}
+.egc-post-ph{width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#fff;background:linear-gradient(135deg,#feda75,#fa7e1e 30%,#d62976 60%,#962fbf 85%,#4f5bd5)}
+.egc.fb .egc-post-ph{background:linear-gradient(135deg,#4c8dff,#1877f2)}
+.egc-post-ph svg{filter:drop-shadow(0 1px 1px rgba(0,0,0,.2))}
+.egc-play{position:absolute;right:3px;bottom:3px;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55);color:#fff;padding-left:1px}
 .egc-post>span:last-child{min-width:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .egc-post b{color:var(--ink);font-weight:650}
 /* Instagram: username in bold inline with the text, then time · Reply, a heart. */

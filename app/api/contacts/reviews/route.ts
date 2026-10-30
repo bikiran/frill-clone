@@ -172,8 +172,17 @@ export async function GET(req: NextRequest) {
       const postIds = [...new Set(socialComments.slice(0, 10).map((c: any) => c.postId).filter(Boolean))]
       if (postIds.length) {
         try {
-          const { data: posts } = await db.from('social_posts').select('id, permalink, message, media_url, post_type').in('id', postIds)
-          const byId = new Map((posts || []).map((p: any) => [p.id, { permalink: p.permalink || null, caption: p.message || null, media: p.media_url || null, type: p.post_type || null }]))
+          // A reel synced before the fix kept its .mp4 as media_url; its
+          // picture is in the raw Instagram reply (thumbnail_url).
+          const first = await db.from('social_posts').select('id, permalink, message, media_url, post_type, thumb:raw->>thumbnail_url').in('id', postIds)
+          let posts: any[] | null = first.data
+          if (first.error) posts = (await db.from('social_posts').select('id, permalink, message, media_url, post_type').in('id', postIds)).data
+          const isVideoUrl = (u: any) => /\.(mp4|mov|m4v|webm)(\?|$)/i.test(String(u || ''))
+          const byId = new Map((posts || []).map((p: any) => [p.id, {
+            permalink: p.permalink || null, caption: p.message || null, type: p.post_type || null,
+            media: p.thumb || p.media_url || null,
+            video: !p.thumb && isVideoUrl(p.media_url),
+          }]))
           socialComments = socialComments.map((c: any) => ({ ...c, post: c.postId ? byId.get(c.postId) || null : null }))
         } catch {}
       }
