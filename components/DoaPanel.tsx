@@ -36,6 +36,8 @@ export default function DoaPanel({ companyId, conversationId, contactId, contact
   const [looking, setLooking] = useState(false)
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<Record<number, boolean>>({})
+  // How many of each line arrived damaged (2 of 6 fish); unset means all of them.
+  const [qtys, setQtys] = useState<Record<number, number>>({})
   const [refundShipping, setRefundShipping] = useState(false)
   const [customAmount, setCustomAmount] = useState('')
   const [notes, setNotes] = useState('')
@@ -95,11 +97,20 @@ export default function DoaPanel({ companyId, conversationId, contactId, contact
       const sel: Record<number, boolean> = {}
       ;(data.order.items || []).forEach((it: any) => { sel[it.id] = true })
       setSelected(sel)
+      setQtys({})
     } catch (e: any) { setError(e.message) } finally { setLooking(false); setPicking(null) }
   }
   const pick = (num: string) => { setOrderNumber(num); setPicking(num); lookup(num) }
 
-  const selectedItems = order ? (order.items || []).filter((it: any) => selected[it.id]) : []
+  const fullQty = (it: any) => Math.max(1, Number(it.quantity) || 1)
+  const qtyOf = (it: any) => Math.min(fullQty(it), Math.max(1, qtys[it.id] ?? fullQty(it)))
+  const setQty = (it: any, n: number) => setQtys(q => ({ ...q, [it.id]: Math.min(fullQty(it), Math.max(1, n)) }))
+  // The ticked lines at the chosen quantity, each total scaled to match, which
+  // is what the refund sends (WooCommerce line refunds and Shopify quantities).
+  const selectedItems = order ? (order.items || []).filter((it: any) => selected[it.id]).map((it: any) => {
+    const q = qtyOf(it), full = fullQty(it)
+    return q === full ? it : { ...it, quantity: q, total: ((parseFloat(it.total) || 0) * q / full).toFixed(2) }
+  }) : []
   const selectedTotal = selectedItems.reduce((s: number, it: any) => s + (parseFloat(it.total) || 0), 0)
   const shippingTotal = order ? (parseFloat(order.shipping_total) || 0) : 0
   const shipRefund = refundShipping ? shippingTotal : 0
@@ -270,13 +281,28 @@ export default function DoaPanel({ companyId, conversationId, contactId, contact
 
                   {/* What arrived damaged */}
                   <span className="sk-lbl">What arrived damaged?</span>
-                  {(order.items || []).map((it: any) => (
-                    <label key={it.id} className={`sk-check box doa-line${selected[it.id] ? ' on' : ''}`}>
-                      <input type="checkbox" checked={!!selected[it.id]} onChange={e => setSelected(s => ({ ...s, [it.id]: e.target.checked }))} />
-                      <span style={{ flex: 1, minWidth: 0 }}>{it.name} <span style={{ color: 'var(--sk-muted)' }}>× {it.quantity}</span></span>
-                      <span className="sk-amt">{money(it.total)}</span>
-                    </label>
-                  ))}
+                  {(order.items || []).map((it: any) => {
+                    const on = !!selected[it.id], full = fullQty(it), q = qtyOf(it)
+                    const lineTotal = (parseFloat(it.total) || 0) * (on ? q : full) / full
+                    return (
+                      <div key={it.id} className={`sk-check box doa-line${on ? ' on' : ''}${full > 1 && on ? ' has-qty' : ''}`}>
+                        <input type="checkbox" id={`doa-it-${it.id}`} checked={on} onChange={e => setSelected(s => ({ ...s, [it.id]: e.target.checked }))} />
+                        <label htmlFor={`doa-it-${it.id}`} className="doa-line-t">
+                          {it.name}
+                          {full > 1 && !on && <span style={{ color: 'var(--sk-muted)' }}> × {full}</span>}
+                          {full > 1 && on && <small>{q === full ? `All ${full}` : `${q} of ${full}`} · {money((parseFloat(it.total) || 0) / full)} each</small>}
+                        </label>
+                        {full > 1 && on && (
+                          <span className="sk-stepper doa-qty" role="group" aria-label={`How many ${it.name}`}>
+                            <button type="button" aria-label="One fewer" onClick={() => setQty(it, q - 1)} disabled={q <= 1}>−</button>
+                            <span>{q}</span>
+                            <button type="button" aria-label="One more" onClick={() => setQty(it, q + 1)} disabled={q >= full}>+</button>
+                          </span>
+                        )}
+                        <span className="sk-amt" style={{ minWidth: 64, textAlign: 'right' }}>{money(lineTotal)}</span>
+                      </div>
+                    )
+                  })}
                   {shippingTotal > 0 && (
                     <label className={`sk-check box doa-line${refundShipping ? ' on' : ''}`}>
                       <input type="checkbox" checked={refundShipping} onChange={e => setRefundShipping(e.target.checked)} />
@@ -382,6 +408,11 @@ const DOA_CSS = `
 .doa-card-s{margin:6px 0 0;font-size:13px;line-height:1.5;color:var(--sk-muted);overflow-wrap:anywhere}
 .doa-line{transition:box-shadow .15s,background .15s}
 .doa-line.on{background:var(--card,#fff);box-shadow:inset 0 0 0 1.5px var(--sk-fill-2)}
+.doa-line-t{flex:1;min-width:0;cursor:pointer;line-height:1.35}
+.doa-line-t small{display:block;margin-top:2px;font-size:12.5px;color:var(--sk-muted)}
+.doa-qty{flex-shrink:0;background:var(--sk-fill);box-shadow:none}
+.doa-qty button:hover:not(:disabled){background:var(--sk-fill-2)}
+@media (max-width:420px){.doa-line.has-qty{flex-wrap:wrap}.doa-line.has-qty .doa-line-t{flex-basis:calc(100% - 34px)}.doa-qty{margin-left:31px}.doa-line.has-qty .sk-amt{margin-left:auto}}
 .doa-fixes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .doa-fix{display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:12px;border:none;border-radius:18px;background:var(--sk-fill);font:inherit;text-align:left;color:var(--ink);cursor:pointer;box-shadow:inset 0 0 0 1.5px transparent;transition:box-shadow .15s,background .15s}
 .doa-fix:hover{background:var(--sk-fill-2)}
