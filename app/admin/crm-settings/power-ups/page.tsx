@@ -140,7 +140,7 @@ export default function PowerUpsSettings() {
     <div style={{ maxWidth: 760 }}>
       <h1 style={S.h1}>Time Savers</h1>
       <p style={S.sub}>Tools to help you work faster and smarter.</p>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(320px, 100%), 1fr))', gap: 14 }}>
         {TOOLS.map(t => {
           const clickable = t.id === 'quick-response' || t.id === 'category'
           return (

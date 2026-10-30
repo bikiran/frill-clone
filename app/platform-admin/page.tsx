@@ -2033,7 +2033,7 @@ function BackgroundJobsPage() {
           {unlogged.length > 0 && (
             <Notice tone="info">{unlogged.length} scheduled job{unlogged.length === 1 ? ' doesn’t' : 's don’t'} report to job_runs yet ({unlogged.map(j => j.label).join(', ')}), so they show as “Not logged”. They still run on Vercel’s schedule — add a <code>logJobRun()</code> call to each cron route to see their heartbeat here.</Notice>
           )}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 14, marginBottom: 22 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(280px, 100%), 1fr))', gap: 14, marginBottom: 22 }}>
             {cards.map(j => {
               const s = stat(j.key)
               const lastColor = s.last ? (JOB_STATUS_COLOR[String(s.last.status)] || '#6b7280') : '#6b7280'
@@ -3606,7 +3606,7 @@ function SystemPage({ onGo }: { onGo?: (p: any) => void }) {
     <div>
       <SectionHeader title="System Health" sub="Live checks from your data — infra metrics link out to their dashboards" />
       <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '4px 0 10px' }}>Live checks</p>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14, marginBottom: 26 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(240px, 100%), 1fr))', gap: 14, marginBottom: 26 }}>
         {loading ? <p style={{ color: 'var(--sa-muted)' }}>Running checks…</p> : checks.map(m => (
           <div key={m.label} style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 18 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -3623,7 +3623,7 @@ function SystemPage({ onGo }: { onGo?: (p: any) => void }) {
       {pulse === null ? <p style={{ color: 'var(--sa-muted)', marginBottom: 26 }}>Loading…</p> : pulse.error ? <Notice tone="error">{pulse.error}</Notice> : (
         <>
           {(pulse.issues || []).length > 0 && <Notice>{pulse.issues.join(' · ')}</Notice>}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14, marginBottom: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(240px, 100%), 1fr))', gap: 14, marginBottom: 14 }}>
             {[
               { label: 'Background jobs', value: `${pulse.jobs?.errors || 0} failed`, note: `${pulse.jobs?.runs || 0} runs logged`, bad: (pulse.jobs?.errors || 0) > 0, go: 'jobs' },
               { label: 'API errors', value: String(pulse.api?.errors || 0), note: `${pulse.api?.warnings || 0} warnings`, bad: (pulse.api?.errors || 0) > 0, go: 'apilogs' },
@@ -3687,7 +3687,7 @@ function SystemPage({ onGo }: { onGo?: (p: any) => void }) {
       )}
 
       <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '4px 0 10px' }}>Not monitored here</p>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(240px, 100%), 1fr))', gap: 14 }}>
         {notMonitored.map(m => (
           <div key={m.label} style={{ background: 'var(--sa-card)', border: '1px dashed var(--sa-border)', borderRadius: 14, padding: 18, opacity: 0.75 }}>
             <span style={{ fontSize: 13, color: 'var(--sa-muted)' }}>{m.label}</span>

@@ -178,7 +178,7 @@ export default function PhonesPage() {
 
       {/* FEATURE GRID */}
       <section style={{ maxWidth: 1280, margin: '0 auto', padding: '10px 24px 40px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 18 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(280px, 100%), 1fr))', gap: 18 }}>
           {FEATURES.map((f, i) => (
             <Reveal key={f.title} delay={(i % 3) * 0.05}>
               <div className="ph-card" style={{ height: '100%', borderRadius: 20, padding: 26, background: cardBg, border: `1px solid ${cardBorder}` }}>
@@ -197,7 +197,7 @@ export default function PhonesPage() {
           <h2 style={{ fontSize: 'clamp(24px, 3.4vw, 38px)', fontWeight: 900, letterSpacing: '-0.02em', textAlign: 'center', margin: '0 0 8px' }}>Every phone feature</h2>
           <p style={{ fontSize: 16, color: muted, maxWidth: 560, margin: '0 auto 28px', lineHeight: 1.55, textAlign: 'center' }}>A complete phone system — explore each capability in depth.</p>
         </Reveal>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(240px, 100%), 1fr))', gap: 14 }}>
           {ALL_FEATURES.map((a, i) => (
             <Reveal key={a.slug} delay={(i % 4) * 0.04}>
               <a href={`/phones/${a.slug}`} className="ph-card" style={{ display: 'flex', alignItems: 'flex-start', gap: 13, height: '100%', borderRadius: 16, padding: '16px 18px', background: cardBg, border: `1px solid ${cardBorder}`, textDecoration: 'none' }}>

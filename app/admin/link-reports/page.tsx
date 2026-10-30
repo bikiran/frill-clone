@@ -695,7 +695,7 @@ export default function LinkReportsPage() {
 
       {/* ── Devices & locations ───────────────────────────────────────────── */}
       {tab === 'devices' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(240px, 100%), 1fr))', gap: 12 }}>
           {([['Device', 'device'], ['Operating system', 'os'], ['Browser', 'browser'], ['City', 'city'], ['Country', 'country']] as const).map(([label, key]) => (
             <div key={key} style={card}>
               <h3 style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{label}</h3>

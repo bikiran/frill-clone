@@ -386,7 +386,7 @@ export default function InboxCrmPage() {
               <h2 style={{ fontSize: 'clamp(30px, 4.6vw, 52px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.05, margin: 0, color: text }}>Everything to reply fast <span style={{ color: CORAL }}>and turn chats into sales</span></h2>
             </div>
           </Reveal>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 18 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(240px, 100%), 1fr))', gap: 18 }}>
             {CAPS.map((c, i) => (
               <Reveal key={c.t} delay={(i % 4) * 0.05}>
                 <div className="cv-card" style={{ padding: 24, borderRadius: 20, background: cardBg, border: `1px solid ${cardBorder}`, height: '100%' }}>
@@ -412,7 +412,7 @@ export default function InboxCrmPage() {
               <p style={{ fontSize: 18, color: 'rgba(255,255,255,0.9)', margin: '16px auto 0', maxWidth: 560, lineHeight: 1.6 }}>Your tone, your knowledge, your control. Roll it out at your own pace — from suggestions to full autopilot.</p>
             </div>
           </Reveal>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 18 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(260px, 100%), 1fr))', gap: 18 }}>
             {AISTEPS.map((s, i) => (
               <Reveal key={s.n} delay={i * 0.08}>
                 <div style={{ padding: 26, borderRadius: 20, background: 'rgba(255,255,255,0.96)', height: '100%' }}>

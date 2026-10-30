@@ -14,7 +14,7 @@
 // hidden, and with reduced motion only the still scene shows.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { rnd, useLater, useSceneFrame } from './kit'
+import { rnd, useLater, useSceneFrame, useSceneHidden } from './kit'
 import { takePreview } from '@/lib/seasonal-themes'
 
 type Kind = 'sleigh' | 'peek' | 'gift' | 'gust' | 'star'
@@ -191,6 +191,7 @@ function GiftChute({ c }: { c: number }) {
 
 export default function Christmas({ calm }: { calm: boolean }) {
   const frame = useSceneFrame()
+  const sceneHidden = useSceneHidden()
   const later = useLater()
   const [fx, setFx] = useState<Fx[]>([])
   const [orn, setOrn] = useState<'up' | 'down'>('up')
@@ -284,7 +285,7 @@ export default function Christmas({ calm }: { calm: boolean }) {
   return (
     <>
       <style data-colvy-dark="">{CSS}</style>
-      <div className="xm-scene" style={vars} aria-hidden>
+      {!sceneHidden && <div className="xm-scene" style={vars} aria-hidden>
         <div className="xm-stars" style={{ boxShadow: STARS.a }} />
         <div className="xm-stars b" style={{ boxShadow: STARS.b }} />
         <div className="xm-aurora" /><div className="xm-aurora b" />
@@ -307,7 +308,7 @@ export default function Christmas({ calm }: { calm: boolean }) {
         <div className="xm-bigtree"><BigTree /></div>
         <div className="xm-snowman"><Snowman /></div>
         <i className="xm-glint" style={{ left: '30%' }} /><i className="xm-glint b" style={{ left: '46%' }} /><i className="xm-glint c" style={{ left: '62%' }} /><i className="xm-glint" style={{ left: '78%', animationDelay: '-2.2s' }} />
-      </div>
+      </div>}
 
       <div className="xm-fx" style={vars} aria-hidden>
         <div className="xm-snow">

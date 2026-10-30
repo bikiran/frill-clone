@@ -446,7 +446,7 @@ const RMB_CSS = `
 .rmb-round:hover{background:var(--f);color:var(--ink)}
 .rmb-new{display:inline-flex;align-items:center;gap:7px;height:40px;padding:0 17px;border:none;border-radius:999px;background:var(--coral);color:#fff;font:inherit;font-size:14px;font-weight:650;cursor:pointer;white-space:nowrap;transition:filter .15s,transform .12s}
 .rmb-new:hover{filter:brightness(.95)}.rmb-new:active{transform:scale(.98)}
-.rmb-board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(272px,1fr);gap:12px;align-items:start;overflow-x:auto;padding-bottom:8px;scrollbar-width:thin}
+.rmb-board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(min(272px, 100%), 1fr);gap:12px;align-items:start;overflow-x:auto;padding-bottom:8px;scrollbar-width:thin}
 .rmb-col{display:flex;flex-direction:column;min-width:0;padding:8px;border-radius:22px;background:var(--f);transition:box-shadow .15s,background .15s}
 .rmb-col.over{box-shadow:0 0 0 2px var(--coral);background:color-mix(in srgb,var(--coral) 6%,var(--f))}
 .rmb-col.sk{height:420px;background:linear-gradient(90deg,var(--f) 25%,var(--f2) 37%,var(--f) 63%);background-size:400% 100%;animation:rmbSk 1.2s ease infinite}

@@ -1759,7 +1759,8 @@ function TaskCalendar({ tasks, statusOf, onSelect, onToggle, selectedId }: any) 
     const noDate: any[] = []
     for (const t of tasks) {
       const due = parseTs(t.due_date)
-      if (!due) { noDate.push(t); continue }
+      // Unscheduled tasks that are done leave the list (they'd sit there for ever).
+      if (!due) { if (statusOf(t) !== 'done') noDate.push(t); continue }
       ;(m[dayKey(due)] ||= []).push(t)
     }
     for (const k in m) m[k].sort(orderCmp)
@@ -1985,7 +1986,7 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
     const noDate: any[] = []
     for (const t of tasks) {
       const due = parseTs(t.due_date)
-      if (!due) { noDate.push(t); continue }
+      if (!due) { if (statusOf(t) !== 'done') noDate.push(t); continue }
       const k = dayKey(due)
       if (!m.has(k)) m.set(k, [])
       m.get(k)!.push(t)

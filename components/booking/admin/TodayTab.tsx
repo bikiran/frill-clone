@@ -58,7 +58,7 @@ export default function TodayTab({ companyId, onOpenBookings, reloadKey }: { com
         .td-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:22px}
         .td-tile{animation:tdIn .45s cubic-bezier(.22,1,.36,1) backwards}
         @keyframes tdIn{from{opacity:0;transform:translate3d(0,8px,0)}to{opacity:1;transform:none}}
-        .td-cols{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(260px,1fr);gap:12px;overflow-x:auto;padding-bottom:6px;scroll-snap-type:x mandatory}
+        .td-cols{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(min(260px, 100%), 1fr);gap:12px;overflow-x:auto;padding-bottom:6px;scroll-snap-type:x mandatory}
         .td-col{scroll-snap-align:start;padding:12px;border-radius:20px;background:#f4f4f5}
         .td-col-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 4px 10px;font-weight:700;font-size:14px;color:var(--ink,#111)}
         .td-n{min-width:20px;height:20px;padding:0 6px;box-sizing:border-box;border-radius:999px;background:#fff;color:#52525b;font-size:11.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
@@ -70,7 +70,7 @@ export default function TodayTab({ companyId, onOpenBookings, reloadKey }: { com
         .td-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px}
         .td-h h2{margin:0;font-size:19px;font-weight:800;letter-spacing:-.015em;color:var(--ink,#111)}
         .td-h small{font-size:13.5px;color:#8e8e93}
-        .td-ins{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+        .td-ins{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(280px, 100%), 1fr));gap:12px}
         .td-bars{display:flex;align-items:flex-end;gap:6px;height:120px;margin-top:14px}
         .td-bar{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:4px}
         .td-bar i{display:block;width:100%;max-width:34px;border-radius:7px 7px 3px 3px;background:var(--coral,#ff7a6b);opacity:.3;transition:opacity .2s}

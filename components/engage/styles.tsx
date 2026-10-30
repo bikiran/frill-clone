@@ -49,7 +49,7 @@ textarea.eg-input { height: auto; padding: 10px 12px; line-height: 1.45; resize:
 
 /* Results extras */
 .eg-results { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
-@media (min-width: 1100px) { .eg-results.has-side { grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr); } }
+@media (min-width: 1100px) { .eg-results.has-side { grid-template-columns: minmax(0, 1.6fr) minmax(min(320px, 100%), 1fr); } }
 .eg-bar-big .fr-track { height: 14px; }
 .eg-bar-big .fr-bar-top { font-size: 14px; }
 .eg-lead { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #fef3c7; color: #92400e; }
@@ -75,7 +75,7 @@ textarea.eg-input { height: auto; padding: 10px 12px; line-height: 1.45; resize:
 
 /* Editor */
 .eg-editor { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-items: start; }
-@media (min-width: 1100px) { .eg-editor { grid-template-columns: minmax(0, 1.25fr) minmax(360px, 1fr); } .eg-preview-col { position: sticky; top: 16px; } }
+@media (min-width: 1100px) { .eg-editor { grid-template-columns: minmax(0, 1.25fr) minmax(min(360px, 100%), 1fr); } .eg-preview-col { position: sticky; top: 16px; } }
 .eg-card { background: var(--card, #fff); border: 1px solid var(--fr-line, #f0f0f0); border-radius: 14px; padding: 18px; min-width: 0; }
 .eg-card + .eg-card { margin-top: 16px; }
 .eg-field { display: block; margin-bottom: 14px; min-width: 0; }

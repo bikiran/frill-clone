@@ -285,7 +285,7 @@ export default function CustomDomainPage({ initial, domain }: { initial?: Custom
                     <span style={{ color: '#f5b301' }}>★</span> {T('help_featured')}
                   </h2>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 18 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(300px, 100%), 1fr))', gap: 18 }}>
                   {featured.map(a => {
                     const img = a.image_url || a.cover_url || a.image
                     return (

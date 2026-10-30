@@ -13,7 +13,7 @@
 // two soft pulses, well under the three-flashes-a-second limit.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { rnd, useLater, useSceneFrame } from './kit'
+import { rnd, useLater, useSceneFrame, useSceneHidden } from './kit'
 import { takePreview } from '@/lib/seasonal-themes'
 
 type BatSpec = { y: number; size: number; dur: number; delay: number; amp: number; bob: number; flap: number }
@@ -150,6 +150,7 @@ export default function Halloween({ calm }: { calm: boolean }) {
   const [flash, setFlash] = useState<{ n: number; x: number }>({ n: 0, x: 50 })
   const [spider, setSpider] = useState<'up' | 'down'>('up')
   const frame = useSceneFrame()
+  const sceneHidden = useSceneHidden()
   const [spot] = useState(() => ({ x: rnd(56, 74), drop: rnd(60, 130) }))
   const ids = useRef(0)
   const last = useRef<Kind | null>(null)
@@ -249,7 +250,7 @@ export default function Halloween({ calm }: { calm: boolean }) {
   return (
     <>
       <style data-colvy-dark="">{CSS}</style>
-      <div className="hw-scene" style={vars} aria-hidden>
+      {!sceneHidden && <div className="hw-scene" style={vars} aria-hidden>
         <div className="hw-stars" style={{ boxShadow: STARS.a }} />
         <div className="hw-stars b" style={{ boxShadow: STARS.b }} />
         {flash.n > 0 && <div key={flash.n} className="hw-sky-flash" style={{ '--x': `${flash.x}%` } as React.CSSProperties} />}
@@ -311,7 +312,7 @@ export default function Halloween({ calm }: { calm: boolean }) {
         <div className="hw-pkw p3"><Pumpkin /></div>
         <div className="hw-fog" />
         <div className="hw-fog b" />
-      </div>
+      </div>}
 
       <div className="hw-fx" style={vars} aria-hidden>
         {flash.n > 0 && <div key={flash.n} className="hw-flash" />}

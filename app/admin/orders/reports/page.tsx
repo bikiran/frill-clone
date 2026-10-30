@@ -236,7 +236,7 @@ export default function OrdersReportsPage() {
             <Kpi label="Fulfilment Rate" value={`${fulfil.rate}%`} />
             <Kpi label="Avg Time to Ship" value={fulfil.avgHrs ? `${fulfil.avgHrs.toFixed(1)} h` : '—'} />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(320px, 100%), 1fr))', gap: 16 }}>
             <div style={{ ...card, padding: 18 }}>
               <p style={kick}>Unshipped Backlog by Age</p>
               <Bars rows={[
@@ -295,7 +295,7 @@ export default function OrdersReportsPage() {
             </div>
             {shippingR.detail.length > 200 && <p style={{ padding: '10px 18px', fontSize: 11.5, color: 'var(--slate)' }}>Showing first 200 of {shippingR.detail.length}. Export CSV for the full list.</p>}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(320px, 100%), 1fr))', gap: 16 }}>
             <div style={{ ...card, padding: 18 }}>
               <p style={kick}>Shipments by Carrier</p>
               <Bars rows={shippingR.carriers} />
@@ -325,7 +325,7 @@ export default function OrdersReportsPage() {
             <p style={kick}>Revenue per Day</p>
             <DailyChart series={dailyRevenue} color="#16a34a" money />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(320px, 100%), 1fr))', gap: 16 }}>
             <div style={{ ...card, padding: 18 }}>
               <p style={kick}>Revenue by Channel</p>
               <Bars rows={sales.channels} />
@@ -348,7 +348,7 @@ export default function OrdersReportsPage() {
             {colvySales.count === 0 ? (
               <p style={{ fontSize: 12.5, color: 'var(--slate)', margin: 0 }}>No in-chat sales recorded in this period. Log one from a conversation via <b>+ Action → Record sale</b>.</p>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(280px, 100%), 1fr))', gap: 16 }}>
                 <div><p style={kick}>By team member</p><Bars rows={colvySales.bySeller} money /></div>
                 <div><p style={kick}>By payment method</p><Bars rows={colvySales.byMethod} money /></div>
               </div>

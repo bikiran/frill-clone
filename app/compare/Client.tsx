@@ -120,7 +120,7 @@ export default function CompareHub() {
 
       {/* WHY grid */}
       <section style={{ maxWidth: 1280, margin: '0 auto', padding: '10px 24px 30px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(260px, 100%), 1fr))', gap: 16 }}>
           {WHY.map((f, i) => (
             <Reveal key={f.title} delay={(i % 3) * 0.05}>
               <div className="sol-card" style={{ height: '100%', borderRadius: 18, padding: 22, background: cardBg, border: `1px solid ${cardBorder}` }}>
@@ -139,7 +139,7 @@ export default function CompareHub() {
           <h2 style={{ fontSize: 'clamp(26px, 3.8vw, 44px)', fontWeight: 900, letterSpacing: '-0.025em', textAlign: 'center', margin: '0 0 6px' }}>See how Colvy <span style={{ color: CORAL }}>compares</span></h2>
           <p style={{ textAlign: 'center', fontSize: 16.5, color: muted, maxWidth: 620, margin: '0 auto 36px', lineHeight: 1.55 }}>More channels, smarter AI, Australian 🇦🇺 support and a 45-minute set-up — against the biggest names in customer communication.</p>
         </Reveal>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(320px, 100%), 1fr))', gap: 20 }}>
           {CARDS.map((card, i) => (
             <Reveal key={card.slug} delay={(i % 3) * 0.05}>
               <a href={`/compare/${card.slug}`} className="ch-card" style={{ position: 'relative', overflow: 'hidden', display: 'block', height: '100%', borderRadius: 22, background: cardBg, border: `1px solid ${cardBorder}`, padding: '24px 24px 22px', textDecoration: 'none', boxShadow: '0 1px 2px rgba(15,17,25,0.04)' }}>

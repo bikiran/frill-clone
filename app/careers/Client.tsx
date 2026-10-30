@@ -117,7 +117,7 @@ export default function CareersPage() {
           <h2 style={{ fontSize: 'clamp(26px, 3.8vw, 44px)', fontWeight: 900, letterSpacing: '-0.025em', textAlign: 'center', margin: '0 0 6px' }}>What it’s like <span style={{ color: CORAL }}>here</span></h2>
           <p style={{ textAlign: 'center', fontSize: 16.5, color: muted, maxWidth: 600, margin: '0 auto 36px', lineHeight: 1.55 }}>A small team that ships, looks after each other, and stays close to the customers we build for.</p>
         </Reveal>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 18 }}>
           {PERKS.map((p, i) => (
             <Reveal key={p.title} delay={(i % 3) * 0.05}>
               <div className="cr-card" style={{ height: '100%', borderRadius: 20, padding: 26, background: cardBg, border: `1px solid ${cardBorder}` }}>
@@ -157,7 +157,7 @@ export default function CareersPage() {
           <h2 style={{ fontSize: 'clamp(26px, 3.8vw, 44px)', fontWeight: 900, letterSpacing: '-0.025em', textAlign: 'center', margin: '0 0 6px' }}>Teams we’re <span style={{ color: CORAL }}>growing</span></h2>
           <p style={{ textAlign: 'center', fontSize: 16.5, color: muted, maxWidth: 640, margin: '0 auto 36px', lineHeight: 1.55 }}>We post specific openings as they come up. These are the areas we’re building — if one is yours, reach out even before a role is listed.</p>
         </Reveal>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 18 }}>
           {TEAMS.map((t, i) => (
             <Reveal key={t.title} delay={(i % 3) * 0.05}>
               <a href={`mailto:${CAREERS_EMAIL}?subject=${encodeURIComponent(t.title + ' at Colvy')}`} className="cr-card" style={{ position: 'relative', overflow: 'hidden', display: 'block', height: '100%', borderRadius: 20, padding: 26, background: cardBg, border: `1px solid ${cardBorder}`, textDecoration: 'none' }}>

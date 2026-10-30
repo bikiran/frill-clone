@@ -51,7 +51,7 @@ function Editor({ initial, busy, onSave, onCancel }: { initial: Draft; busy: boo
   const [d, setD] = useState<Draft>(initial)
   const set = (k: keyof Draft) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setD(x => ({ ...x, [k]: e.target.value }))
   return (
-    <div style={{ ...card, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 18 }}>
+    <div style={{ ...card, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(280px, 100%), 1fr))', gap: 18 }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
         <label><span style={label}>Title</span><input style={input} value={d.title} onChange={set('title')} maxLength={120} placeholder="SMS is now live" /></label>
         <label><span style={label}>Message</span><textarea style={{ ...input, minHeight: 120, resize: 'vertical' }} value={d.body} onChange={set('body')} maxLength={4000} placeholder="What’s new and why it helps. Plain text; links work." /></label>

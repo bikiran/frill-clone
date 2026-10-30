@@ -392,7 +392,7 @@ export default function HelpCentrePage({ initial }: { initial?: HelpIndexData } 
             {featured.length > 0 && !search && (
               <div className="mb-11">
                 <h2 className="flex items-center gap-2 mb-4" style={{ fontSize: 20, fontWeight: 800, color: 'var(--ink)' }}><span style={{ color: '#f5b301' }}>★</span> {getTerm('help_featured')}</h2>
-                <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))' }}>
+                <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(min(300px, 100%), 1fr))' }}>
                   {featured.map(a => {
                     const img = a.image_url || a.cover_url || a.image
                     return (

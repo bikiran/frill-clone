@@ -288,7 +288,7 @@ export default function ProfilePage() {
         .pf-count { margin-left: 6px; font-size: 12px; padding: 1px 7px; border-radius: 999px; background: #f1f5f9; color: var(--slate); }
         .pf-tab[aria-selected="true"] .pf-count { background: var(--peach, #fff1ee); color: var(--coral); }
         .pf-body { padding-top: 24px; padding-bottom: 48px; }
-        .pf-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 12px; }
+        .pf-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(360px, 100%), 1fr)); gap: 12px; }
         .pf-card { background: #fff; border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; text-align: left; }
         .pf-idea { display: flex; gap: 14px; align-items: flex-start; width: 100%; cursor: pointer; transition: border-color .15s ease; }
         .pf-idea:hover { border-color: var(--coral); }

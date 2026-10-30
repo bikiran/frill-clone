@@ -73,7 +73,7 @@ export default function BlogIndexView({ articles }: { articles: Article[] }) {
       )}
 
       {/* Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 26 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))', gap: 26 }}>
         {rest.map(a => (
           <a key={a.slug} href={`/blog/${a.slug}`} style={{ display: 'flex', flexDirection: 'column', textDecoration: 'none', color: 'inherit', borderRadius: 16, overflow: 'hidden', border: '1px solid var(--blog-border)', background: 'var(--blog-surface)' }}>
             <div style={{ position: 'relative', height: 180 }}><Cover a={a} /></div>

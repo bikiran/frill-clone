@@ -169,7 +169,7 @@ export default function AiAssistantPage() {
 
       {/* FEATURE GRID */}
       <section style={{ maxWidth: 1280, margin: '0 auto', padding: '10px 24px 40px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 18 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(280px, 100%), 1fr))', gap: 18 }}>
           {FEATURES.map((f, i) => (
             <Reveal key={f.title} delay={(i % 3) * 0.05}>
               <div className="ai-card" style={{ height: '100%', borderRadius: 20, padding: 26, background: cardBg, border: `1px solid ${cardBorder}` }}>
