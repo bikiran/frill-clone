@@ -10,6 +10,7 @@ import { TerminologyProvider } from '@/lib/terminologyContext'
 import { termFor } from '@/lib/terminology'
 import { ToastProvider } from '@/components/ToastProvider'
 import LiveChat from '@/components/LiveChat'
+import OverlayWatch from '@/components/OverlayWatch'
 import UpdateNotification from '@/components/UpdateNotification'
 import NotificationsPanel, { notificationSoundOn, inWorkspace } from '@/components/NotificationsPanel'
 import Analytics from '@/components/Analytics'
@@ -1159,6 +1160,8 @@ export default function AppChrome({
         {/* Public-facing chat widget — hidden on the admin panel where staff
             work (they don't need to open a support chat with themselves). */}
         {!pathname?.startsWith('/admin') && !pathname?.startsWith('/f/') && !pathname?.startsWith('/forms/') && <LiveChat />}
+        {/* The chat bubble steps aside while a modal or sheet is open (the admin has its own). */}
+        {!pathname?.startsWith('/admin') && <OverlayWatch />}
         <UpdateNotification accentColor={company?.accent_color} />
     </>
   )
