@@ -71,8 +71,8 @@ export default function PageHeader({
           /* Two or more actions: put them on their own full-width row under
              the title, so the title isn't squeezed to a word per line. */
           .ph-row:has(> .ph-actions > :nth-child(2)) { flex-wrap: wrap; }
-          .ph-actions:has(> :nth-child(2)) { flex: 1 1 100%; }
-          .ph-actions:has(> :nth-child(2)) > * { flex: 1 1 0; justify-content: center; text-align: center; white-space: nowrap; }
+          .ph-actions:has(> :nth-child(2)) { flex: 1 1 100%; flex-wrap: wrap; }
+          .ph-actions:has(> :nth-child(2)) > * { flex: 1 1 auto; justify-content: center; text-align: center; white-space: nowrap; }
         }
         .ph-toolbar > * { flex-shrink: 0; }
         @media (min-width: 768px) {

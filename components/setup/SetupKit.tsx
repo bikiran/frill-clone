@@ -406,7 +406,7 @@ body:has(.nw) button[title="Send feedback"]{display:none!important}
 .nw-card-row span{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .nw-card-row em{margin-left:auto;font-style:normal;font-size:12px;font-weight:600;color:#15803d;flex-shrink:0}
 .nw-me{position:absolute;top:18px;right:18px;z-index:5;display:flex;align-items:center;gap:8px;padding:4px 14px 4px 4px;border-radius:999px;background:rgba(255,255,255,.92);box-shadow:0 6px 16px rgba(0,0,0,.14);font-size:13.5px;font-weight:600;color:#18181b;animation:nwPopIn .45s cubic-bezier(.2,.9,.3,1.3) both}
-.nw-top-link{display:inline-flex;align-items:center;height:34px;padding:0 14px;border-radius:999px;border:1.5px solid #e4e4e7;font-size:13.5px;font-weight:600;color:#18181b;text-decoration:none}
+.nw-top-link{display:inline-flex;align-items:center;flex-shrink:0;white-space:nowrap;height:34px;padding:0 14px;border-radius:999px;border:1.5px solid #e4e4e7;font-size:13.5px;font-weight:600;color:#18181b;text-decoration:none}
 .nw-top-link:hover{background:#fafafa}
 .nw.dark .nw-msg p{background:#232327;color:#f4f4f5}
 .nw.dark .nw-card{background:#1c1c1f;box-shadow:0 0 0 1px rgba(255,255,255,.07)}
@@ -446,6 +446,16 @@ body:has(.nw) button[title="Send feedback"]{display:none!important}
   .nw-build-for{font-size:19px}
   .nw-build-chip{width:32px;height:32px;border-radius:10px}
   .nw-build-chip img{width:20px;height:20px}
+}
+/* Small phones (an iPhone SE): a tighter top bar so the logo, steps and Sign in fit on one line. */
+@media (max-width:420px){
+  .nw-top{gap:10px}
+  .nw-brand{font-size:19px;gap:7px}
+  .nw-brand img{width:26px;height:26px}
+  .nw-dots{gap:4px}
+  .nw-dots span{width:5px;height:5px}
+  .nw-dots span.on{width:16px}
+  .nw-top-link{height:32px;padding:0 12px;font-size:13px}
 }
 /* Dark: this screen only (the account menu's Theme). */
 .nw.dark{background:#0f0f11;color:#f4f4f5}
