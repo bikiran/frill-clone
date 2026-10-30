@@ -17,7 +17,7 @@ import { friendlyRunError } from '@/lib/agent/tool-schema'
 import { AGENTS } from '@/lib/agents-marketing'
 import AgentFace, { FacePicker } from '@/components/agents/AgentFace'
 import AgentShowcase, { GearIcon } from '@/components/agents/AgentShowcase'
-import { faceFor, type AgentFace as Face, type AgentFaces } from '@/lib/agent-faces'
+import { faceFor, agentDisplayName, AGENT_ROLE_NAMES, type AgentFace as Face, type AgentFaces } from '@/lib/agent-faces'
 
 // AI Agents (Phase 1 of the Agent Engine). Every agent run is recorded — what
 // it knew, every action it asked for, the permission decision and why, and the
@@ -242,6 +242,8 @@ export default function AgentsPage() {
   // How each agent looks (lib/agent-faces). Changes show at once and are saved
   // a moment after the last one, so dragging the colour slider is one save.
   const faceOf = (k: string) => faceFor(k, settings?.faces)
+  /** The name the business gave an agent, else its role. */
+  const nameOf = (k: string) => agentDisplayName(k, settings?.faces)
   const [editFace, setEditFace] = useState<{ key: string; el: HTMLElement } | null>(null)
   const closeFace = useCallback(() => setEditFace(null), [])
   const faceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -369,7 +371,7 @@ export default function AgentsPage() {
           {navAgents.map(a => (
             <a key={a.key} href={`#ag-${a.key}`} className={spy === `ag-${a.key}` ? 'on' : ''}>
               <span className="ag-nav-face" aria-hidden="true"><AgentFace face={faceOf(a.key)} size={20} /></span>
-              {a.label}
+              {settings?.faces?.[a.key]?.name || a.label}
               <span className={`ag-nav-state${paused ? ' paused' : a.on ? ' on' : ''}`}>{a.on == null ? '' : paused ? 'Paused' : a.on ? 'On' : 'Off'}</span>
             </a>
           ))}
@@ -436,7 +438,7 @@ export default function AgentsPage() {
               const face = faceOf(a.key)
               return (
                 <div key={a.key} className={`ag-mate ${state}`} style={{ ['--c' as any]: face.color }}>
-                  <a href={`#ag-${a.key}`} className="ag-mate-link" aria-label={`${a.label}: ${a.on == null ? '' : paused ? 'paused' : a.on ? 'working' : 'off'}`} />
+                  <a href={`#ag-${a.key}`} className="ag-mate-link" aria-label={`${settings?.faces?.[a.key]?.name || a.label}: ${a.on == null ? '' : paused ? 'paused' : a.on ? 'working' : 'off'}`} />
                   <span className="ag-mate-face">
                     <AgentFace face={face} size={44} />
                     {settings && (
@@ -444,7 +446,7 @@ export default function AgentsPage() {
                         onClick={e => openFace(a.key)?.(e.currentTarget)}><GearIcon /></button>
                     )}
                   </span>
-                  <b>{a.label}</b>
+                  <b>{settings?.faces?.[a.key]?.name || a.label}</b>
                   <span className="ag-mate-state"><i />{a.on == null ? '…' : paused ? 'Paused' : a.on ? 'Working' : 'Off'}</span>
                   <span className="ag-mate-line" key={last?.id || 'role'}>
                     <span className="t">{last?.summary ? last.summary : meta?.role}</span>
@@ -463,7 +465,7 @@ export default function AgentsPage() {
         {companyId && !needsMigration && <ResultsStrip companyId={companyId} onSettingsChanged={() => { loadSettings() }} />}
 
         {/* The agents, one card each: what it watches for, what it does, the rules it keeps. */}
-        <AgentShowcase id="ag-support" name="Support Agent" face={faceOf('support')} state={agentState(supportOn)}
+        <AgentShowcase id="ag-support" name={nameOf('support')} role={settings?.faces?.support?.name ? 'Support Agent' : undefined} face={faceOf('support')} state={agentState(supportOn)}
           onEditFace={openFace('support')} editing={editFace?.key === 'support'}
           tagline="Answers customers when they get in touch, and checks the facts before it says anything."
           watchTitle="Customers ask"
@@ -487,7 +489,7 @@ export default function AgentsPage() {
           {supportOn && settings && <AutoSendPanel settings={settings} saving={savingSettings} onSave={a => saveSettings({ autoSend: a })} />}
         </AgentShowcase>
 
-        <AgentShowcase id="ag-reception" name="Reception Agent" face={faceOf('reception')} state={agentState(recOn)}
+        <AgentShowcase id="ag-reception" name={nameOf('reception')} role={settings?.faces?.reception?.name ? 'Reception Agent' : undefined} face={faceOf('reception')} state={agentState(recOn)}
           onEditFace={openFace('reception')} editing={editFace?.key === 'reception'}
           tagline="Books, finds and moves appointments by text or chat."
           watchTitle="Customers ask"
@@ -511,7 +513,7 @@ export default function AgentsPage() {
           )}
         </AgentShowcase>
 
-        <AgentShowcase id="ag-reputation" name="Reputation Agent" face={faceOf('reputation')} state={agentState(repOn)}
+        <AgentShowcase id="ag-reputation" name={nameOf('reputation')} role={settings?.faces?.reputation?.name ? 'Reputation Agent' : undefined} face={faceOf('reputation')} state={agentState(repOn)}
           onEditFace={openFace('reputation')} editing={editFace?.key === 'reputation'}
           tagline="Replies to your reviews and comments, in your voice."
           watchTitle="When someone posts"
@@ -533,7 +535,7 @@ export default function AgentsPage() {
           {repOn && settings?.commentAuto && <CommentPanel value={settings.commentAuto} saving={savingSettings} onSave={v => saveSettings({ commentAuto: v })} />}
         </AgentShowcase>
 
-        <AgentShowcase id="ag-sales" name="Sales Agent" face={faceOf('sales')} state={agentState(salesOn)}
+        <AgentShowcase id="ag-sales" name={nameOf('sales')} role={settings?.faces?.sales?.name ? 'Sales Agent' : undefined} face={faceOf('sales')} state={agentState(salesOn)}
           onEditFace={openFace('sales')} editing={editFace?.key === 'sales'}
           tagline="Follows up carts, quotes and enquiries that went quiet. One helpful message, never pushy."
           watchTitle="It notices"
@@ -553,7 +555,7 @@ export default function AgentsPage() {
           {salesOn && settings?.salesFollowup && <FollowupPanel value={settings.salesFollowup} saving={savingSettings} onSave={v => saveSettings({ salesFollowup: v })} />}
         </AgentShowcase>
 
-        <AgentShowcase id="ag-operations" name="Operations Agent" face={faceOf('operations')} state={agentState(opsOn)}
+        <AgentShowcase id="ag-operations" name={nameOf('operations')} role={settings?.faces?.operations?.name ? 'Operations Agent' : undefined} face={faceOf('operations')} state={agentState(opsOn)}
           onEditFace={openFace('operations')} editing={editFace?.key === 'operations'}
           tagline="Catches late, stuck and out-of-stock orders before the customer has to chase you."
           watchTitle="Every few hours it looks for"
@@ -575,7 +577,7 @@ export default function AgentsPage() {
         </AgentShowcase>
 
         {editFace && (
-          <FacePicker key={editFace.key} name={`${navAgents.find(a => a.key === editFace.key)?.label || ''} agent`} face={faceOf(editFace.key)} anchor={editFace.el} companyId={companyId}
+          <FacePicker key={editFace.key} name={nameOf(editFace.key)} roleName={AGENT_ROLE_NAMES[editFace.key]} face={faceOf(editFace.key)} anchor={editFace.el} companyId={companyId}
             onChange={f => changeFace(editFace.key, f)} onReset={() => changeFace(editFace.key, null)} onClose={closeFace} />
         )}
 

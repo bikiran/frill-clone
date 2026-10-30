@@ -36,7 +36,7 @@ import CouponTicket from '@/components/CouponTicket'
 
 export default function ThreadMessages() {
   const {
-    EMOJIS, agentFaceOf, aiTodos, canSeeEmailWhy, chatDraftAnchor, companyId, companyInfo, contact,
+    EMOJIS, agentFaceOf, agentNameOf, aiTodos, canSeeEmailWhy, chatDraftAnchor, companyId, companyInfo, contact,
     contactReviews, convCalls, events, galleryMessages, generateInvoice, isMobile,
     lastThreadScrollTop, latestChat, loadConversationExtras, loadOlderMessages, loadingOlder,
     loadingOlderRef, mComposerOpen, markNotSpam, messages, messagesEndRef, messagesScrollRef,
@@ -252,7 +252,7 @@ export default function ThreadMessages() {
                       ? <AgentFace face={agentFaceOf(roleFromName(ev.actor_name))} size={18} />
                       : <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}><path d="M12 2l1.6 4.6L18 8l-4.4 1.4L12 14l-1.6-4.6L6 8l4.4-1.4L12 2zM19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14zM5 15l.7 1.8L7.5 17l-1.8.7L5 19.5l-.7-1.8L2.5 17l1.8-.7L5 15z"/></svg>}
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.detail || 'Updated by Colvy AI'}</span>
-                    <span style={{ opacity: 0.75, fontWeight: 500 }}>· {ev.metadata?.agent_run_id ? (ev.actor_name || 'Support Agent').replace(/^Colvy /, '') : 'Colvy AI'}</span>
+                    <span style={{ opacity: 0.75, fontWeight: 500 }}>· {ev.metadata?.agent_run_id ? agentNameOf(roleFromName(ev.actor_name)) : 'Colvy AI'}</span>
                     {ev.created_at && <span style={{ opacity: 0.55, fontWeight: 500 }}> · {fmtTime(ev.created_at)}</span>}
                   </span>
                   {ev.metadata?.agent_run_id && <WhyLink companyId={companyId} runId={ev.metadata.agent_run_id} style={{ fontSize: 11.5, flexShrink: 0 }} />}
@@ -456,7 +456,7 @@ export default function ThreadMessages() {
                 // Sent by an agent (Agent Engine): who let it go out, and why.
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: agentFaceOf(roleFromName(msg.metadata.agent_name)).color, fontWeight: 700 }}>
                   <AgentFace face={agentFaceOf(roleFromName(msg.metadata.agent_name))} size={16} />
-                  {msg.metadata.agent_name || 'Support Agent'} · {msg.metadata.approved_by ? `${msg.metadata.edited ? 'edited' : 'approved'} by ${msg.metadata.approved_by}` : 'sent on its own'}
+                  {agentNameOf(roleFromName(msg.metadata.agent_name))} · {msg.metadata.approved_by ? `${msg.metadata.edited ? 'edited' : 'approved'} by ${msg.metadata.approved_by}` : 'sent on its own'}
                   <span aria-hidden="true">·</span>
                   <WhyLink companyId={companyId} runId={msg.metadata.agent_run_id} style={{ color: agentFaceOf(roleFromName(msg.metadata.agent_name)).color }} />
                 </span>

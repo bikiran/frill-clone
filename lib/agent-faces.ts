@@ -1,11 +1,12 @@
-// How each AI agent looks: a face shape and a colour, or a photo. Each
+// How each AI agent looks: a face shape and a colour, or a photo, and the
+// name the business gives it ("Mia" instead of "Support Agent"). Each
 // workspace can change them on the AI agents page; until then every agent has
 // its own default. Shared by the page and /api/agent/settings (pilot.ts), so
 // what's saved is always something the page can draw.
 
 import { BUDDY_SHAPES, type BuddyShape } from '@/lib/buddy-shapes'
 
-export type AgentFace = { shape: BuddyShape; color: string; photo?: string | null }
+export type AgentFace = { shape: BuddyShape; color: string; photo?: string | null; name?: string | null }
 export type AgentFaces = Record<string, AgentFace>
 
 export const AGENT_FACE_KEYS = ['support', 'reception', 'reputation', 'sales', 'operations'] as const
@@ -18,12 +19,22 @@ export const DEFAULT_AGENT_FACES: AgentFaces = {
   operations: { shape: 'pillow', color: '#7c5cff' },
 }
 
+export const AGENT_ROLE_NAMES: Record<string, string> = { support: 'Support Agent', reception: 'Reception Agent', reputation: 'Reputation Agent', sales: 'Sales Agent', operations: 'Operations Agent' }
+
+/** What the business calls the agent: its own name if it has one, else its role. */
+export const agentDisplayName = (key: string, faces?: AgentFaces | null): string =>
+  faces?.[key]?.name || AGENT_ROLE_NAMES[key] || 'Support Agent'
+
+/** A name as typed: one line, no markup, up to 30 characters. */
+export const cleanAgentName = (v: unknown): string =>
+  String(v ?? '').replace(/[\u0000-\u001f<>"`]/g, '').replace(/\s+/g, ' ').trim().slice(0, 30)
+
 export const faceFor = (key: string, faces?: AgentFaces | null): AgentFace =>
   ({ ...(DEFAULT_AGENT_FACES[key] || DEFAULT_AGENT_FACES.support), ...(faces?.[key] || {}) })
 
 const HEX = /^#[0-9a-f]{6}$/i
 
-/** Only known agents, known shapes, #rrggbb colours and https photo links. */
+/** Only known agents, known shapes, #rrggbb colours, https photo links and short plain names. */
 export function cleanFaces(raw: any): AgentFaces {
   const out: AgentFaces = {}
   if (!raw || typeof raw !== 'object') return out
@@ -33,7 +44,8 @@ export function cleanFaces(raw: any): AgentFaces {
     const shape = BUDDY_SHAPES.includes(f.shape) ? f.shape : DEFAULT_AGENT_FACES[k].shape
     const color = HEX.test(String(f.color || '')) ? String(f.color).toLowerCase() : DEFAULT_AGENT_FACES[k].color
     const photo = typeof f.photo === 'string' && /^https:\/\/[^\s"'<>]{4,600}$/.test(f.photo) ? f.photo : null
-    out[k] = photo ? { shape, color, photo } : { shape, color }
+    const name = cleanAgentName(f.name)
+    out[k] = { shape, color, ...(photo ? { photo } : {}), ...(name ? { name } : {}) }
   }
   return out
 }

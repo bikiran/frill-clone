@@ -13,9 +13,11 @@ export type ShowIcon = 'box' | 'truck' | 'alert' | 'stock' | 'clock' | 'chat' | 
 
 export type ShowItem = { icon: ShowIcon; t: string; s?: string }
 
-export default function AgentShowcase({ id, name, tagline, face, state, onEditFace, editing, watchTitle, watches, doesTitle = 'Then it', does, rules, toggle, children }: {
+export default function AgentShowcase({ id, name, role, tagline, face, state, onEditFace, editing, watchTitle, watches, doesTitle = 'Then it', does, rules, toggle, children }: {
   id: string
   name: string
+  /** The agent's role ("Support Agent") when the business has named it. */
+  role?: string
   tagline: string
   face: Face
   /** '' while loading. */
@@ -53,7 +55,7 @@ export default function AgentShowcase({ id, name, tagline, face, state, onEditFa
           )}
         </span>
         <div className="agsc-title">
-          <h3>{name}<span className="agsc-state"><i />{state === 'on' ? 'Working' : state === 'paused' ? 'Paused' : state === 'off' ? 'Off' : '…'}</span></h3>
+          <h3>{name}{role && <span className="agsc-role">{role}</span>}<span className="agsc-state"><i />{state === 'on' ? 'Working' : state === 'paused' ? 'Paused' : state === 'off' ? 'Off' : '…'}</span></h3>
           <p>{tagline}</p>
         </div>
         <div className="agsc-switch">{toggle}</div>
@@ -137,6 +139,7 @@ const AGX_CSS = `
 .agsc-title{flex:1;min-width:0}
 .agsc-title h3{margin:2px 0 0;display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;font-size:18px;font-weight:750;letter-spacing:-.015em;color:var(--ink,#111)}
 .agsc-title p{margin:4px 0 0;font-size:14px;line-height:1.5;color:var(--slate,#52525b);max-width:620px}
+.agsc-role{margin-left:8px;padding:2px 8px;border-radius:999px;background:rgba(0,0,0,.05);font-size:12px;font-weight:600;letter-spacing:0;color:#71717a;vertical-align:3px}
 .agsc-state{display:inline-flex;align-items:center;gap:6px;padding:3px 10px 3px 8px;border-radius:999px;background:#f4f4f5;font-size:12px;font-weight:600;color:#71717a;letter-spacing:0}
 .agsc-state i{position:relative;width:7px;height:7px;border-radius:50%;background:#d4d4d8}
 .agsc.on .agsc-state{background:#ecfdf3;color:#15803d}
