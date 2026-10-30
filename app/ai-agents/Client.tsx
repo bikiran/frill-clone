@@ -165,7 +165,7 @@ export default function AiAgentsPage() {
         <div style={{ maxWidth: 1180, margin: '0 auto' }}>
           <h2 style={{ fontSize: 'clamp(28px, 4vw, 46px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.05, margin: '0 0 12px', maxWidth: 720 }}>Built so you can leave them running</h2>
           <p style={{ fontSize: 17, lineHeight: 1.6, color: muted, margin: '0 0 36px', maxWidth: 620 }}>Your team only hears about the exceptions, and can always see what happened and why.</p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 14 }}>
             {AGENT_PILLARS.map(p => (
               <div key={p.title} style={{ padding: 24, borderRadius: 20, border: `1px solid ${line}`, background: card }}>
                 <FeatureIcon name={p.icon} color={CORAL} size={22} />

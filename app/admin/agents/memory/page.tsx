@@ -590,7 +590,7 @@ textarea.bm-input{min-height:44px}
 @media (min-width:640px){.bm-diff{grid-template-columns:1fr 1fr}}
 .bm-know{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:center;margin-bottom:16px;padding:18px;border-radius:20px;background:#fff;border:1px solid var(--border)}
 @media (min-width:760px){.bm-know{grid-template-columns:minmax(0,1fr) auto;gap:18px 20px;padding:20px 22px}.bm-know-lead{grid-column:1 / -1}}
-@media (min-width:1320px){.bm-know{grid-template-columns:minmax(300px,1fr) auto auto;gap:24px}.bm-know-lead{grid-column:auto}}
+@media (min-width:1320px){.bm-know{grid-template-columns:minmax(min(300px, 100%), 1fr) auto auto;gap:24px}.bm-know-lead{grid-column:auto}}
 .bm-know-lead{display:flex;gap:14px;align-items:flex-start;min-width:0}
 .bm-know-ic{width:46px;height:46px;flex-shrink:0;border-radius:14px;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--coral) 10%,#fff);color:var(--coral)}
 .bm-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}

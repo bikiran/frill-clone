@@ -458,7 +458,7 @@ export default function FeaturePage() {
             <h2 style={{ fontSize: 'clamp(30px, 4.6vw, 52px)', fontWeight: 900, letterSpacing: '-0.03em', margin: '0 0 12px', color: text }}>Everything you need</h2>
             <p style={{ fontSize: 18, color: muted, margin: 0 }}>No compromises. No cobbling tools together.</p>
           </div></Reveal>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))', gap: 20 }}>
             {page.features.map((f: any, i: number) => (
               <Reveal key={f.title} delay={(i % 3) * 0.06}>
                 <div className="fp-card" style={{ padding: 26, borderRadius: 20, background: cardBg, border: `1px solid ${cardBorder}`, height: '100%' }}>

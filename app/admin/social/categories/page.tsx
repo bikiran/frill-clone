@@ -66,7 +66,7 @@ export default function SocialCategoriesPage() {
         .sc-back:hover { background: #ececef; color: #18181b; }
         .sc h1 { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -.025em; line-height: 1.15; }
         .sc-lead { margin: 6px 0 22px; font-size: 14px; color: #71717a; line-height: 1.55; max-width: 720px; }
-        .sc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+        .sc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 14px; }
         .sc-card { background: #fff; border-radius: 20px; padding: 18px 20px; box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 1px 2px rgba(16,24,40,.04); transition: box-shadow .16s ease; }
         .sc-card:hover { box-shadow: 0 0 0 1px rgba(0,0,0,.07), 0 10px 24px -14px rgba(0,0,0,.3); }
         .sc-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }

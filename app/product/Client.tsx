@@ -173,7 +173,7 @@ export default function ProductPage() {
           <h2 style={{ fontSize: 'clamp(24px, 3.4vw, 38px)', fontWeight: 900, letterSpacing: '-0.02em', textAlign: 'center', margin: '0 0 8px' }}>One app for <span style={{ color: ACCENT }}>every customer conversation</span></h2>
           <p style={{ fontSize: 16, color: muted, maxWidth: 600, margin: '0 auto 30px', lineHeight: 1.55, textAlign: 'center' }}>Replace the inbox, phone system, CRM and feedback tools you’re juggling with one place your whole team works from.</p>
         </Reveal>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 18 }}>
           {AREAS.map((a, i) => (
             <Reveal key={a.title} delay={(i % 3) * 0.05}>
               <a href={a.href} className="pd-card pd-pillar" style={{ display: 'block', height: '100%', borderRadius: 22, padding: 26, background: cardBg, border: `1px solid ${cardBorder}`, textDecoration: 'none', color: text }}>
@@ -194,7 +194,7 @@ export default function ProductPage() {
           <h2 style={{ fontSize: 'clamp(24px, 3.4vw, 38px)', fontWeight: 900, letterSpacing: '-0.02em', textAlign: 'center', margin: '0 0 8px' }}>Feedback in, <span style={{ color: ACCENT }}>shipped features</span> out</h2>
           <p style={{ fontSize: 16, color: muted, maxWidth: 560, margin: '0 auto 30px', lineHeight: 1.55, textAlign: 'center' }}>Collect ideas, plan a public roadmap and announce what you ship. Every piece feeds the next, so feedback never dead-ends in a spreadsheet.</p>
         </Reveal>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 18 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(240px, 100%), 1fr))', gap: 18 }}>
           {LOOP.map((s, i) => (
             <Reveal key={s.title} delay={i * 0.06}>
               <div style={{ position: 'relative', height: '100%', borderRadius: 20, padding: '26px 22px', background: cardBg, border: `1px solid ${cardBorder}` }}>
@@ -210,7 +210,7 @@ export default function ProductPage() {
 
       {/* PILLARS */}
       <section style={{ maxWidth: 1160, margin: '0 auto', padding: '10px 24px 20px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 18 }}>
           {PILLARS.map((p, i) => (
             <Reveal key={p.title} delay={(i % 2) * 0.06}>
               <a href={p.href} className="pd-card pd-pillar" style={{ display: 'block', height: '100%', borderRadius: 22, padding: 28, background: cardBg, border: `1px solid ${cardBorder}`, textDecoration: 'none', color: text }}>
@@ -259,7 +259,7 @@ export default function ProductPage() {
             <h2 style={{ fontSize: 'clamp(24px, 3.4vw, 38px)', fontWeight: 900, letterSpacing: '-0.02em', textAlign: 'center', margin: '0 0 8px' }}>Everything around the loop</h2>
             <p style={{ fontSize: 16, color: muted, maxWidth: 560, margin: '0 auto 30px', lineHeight: 1.55, textAlign: 'center' }}>The extras that make the suite a complete home for customer feedback.</p>
           </Reveal>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 18 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(280px, 100%), 1fr))', gap: 18 }}>
             {SUITE.map((f, i) => (
               <Reveal key={f.title} delay={(i % 3) * 0.05}>
                 <div className="pd-card" style={{ height: '100%', borderRadius: 20, padding: 26, background: cardBg, border: `1px solid ${cardBorder}` }}>

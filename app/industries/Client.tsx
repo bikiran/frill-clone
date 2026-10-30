@@ -95,7 +95,7 @@ export default function IndustriesHub() {
 
       {/* CARDS */}
       <section style={{ maxWidth: 1160, margin: '0 auto', padding: '20px 24px 60px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 18 }}>
           {CARDS.map((c, i) => (
             <Reveal key={c.title} delay={(i % 3) * 0.05}>
               <a href={c.href} className="hub-card" style={{ display: 'block', height: '100%', borderRadius: 22, padding: 28, background: cardBg, border: `1px solid ${cardBorder}`, textDecoration: 'none', color: text }}>

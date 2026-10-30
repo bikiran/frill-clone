@@ -132,7 +132,7 @@ export default function BlogArticleView({ article, related, recent, url }: { art
       {related.length > 0 && (
         <section style={{ margin: '64px 0 0' }}>
           <h2 style={{ fontSize: 24, fontWeight: 900, letterSpacing: '-0.02em', margin: '0 0 20px' }}>Keep reading</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 24, paddingBottom: 90 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(280px, 100%), 1fr))', gap: 24, paddingBottom: 90 }}>
             {related.map(r => (
               <a key={r.slug} href={`/blog/${r.slug}`} style={{ display: 'flex', flexDirection: 'column', textDecoration: 'none', color: 'inherit', borderRadius: 16, overflow: 'hidden', border: '1px solid var(--blog-border)', background: 'var(--blog-surface)' }}>
                 <div style={{ position: 'relative', height: 160 }}><Cover a={r} /></div>

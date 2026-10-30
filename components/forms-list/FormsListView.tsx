@@ -413,7 +413,7 @@ const CSS = `
 .fl-mobile-meta { display: none; }
 
 /* Grid view: cards fill each row (auto-fit), no empty space on the right. */
-.fl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; width: 100%; }
+.fl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); gap: 14px; width: 100%; }
 .fl-card { position: relative; display: flex; flex-direction: column; min-width: 0; border: none; border-radius: 20px; background: var(--fl-card); box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 1px 2px rgba(16,24,40,.04); transition: box-shadow .2s, transform .2s cubic-bezier(.22,1,.36,1); }
 .fl-card:hover { box-shadow: 0 0 0 1px rgba(0,0,0,.07), 0 12px 28px -14px rgba(0,0,0,.28); transform: translateY(-1px); }
 .fl-card.menu-open { z-index: 3; }

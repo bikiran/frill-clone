@@ -189,7 +189,7 @@ export default function PricingPage() {
 
       {/* TIERS */}
       <section id="plans" style={{ padding: '20px 24px 24px', scrollMarginTop: 80 }}>
-        <div style={{ maxWidth: 1240, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(258px, 1fr))', gap: 20, alignItems: 'start' }}>
+        <div style={{ maxWidth: 1240, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(258px, 100%), 1fr))', gap: 20, alignItems: 'start' }}>
           {TIERS.map((tier, i) => {
             const matched = match === tier.id
             const hi = matched || (!match && !!tier.badge)

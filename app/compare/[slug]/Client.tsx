@@ -321,7 +321,7 @@ export default function ComparePage() {
       <section style={{ maxWidth: 1120, margin: '0 auto', padding: '50px 24px' }}>
         <Reveal><h2 style={{ fontSize: 'clamp(26px, 3.6vw, 42px)', fontWeight: 900, letterSpacing: '-0.02em', textAlign: 'center', margin: '0 0 6px' }}>Where Colvy <span style={{ color: accent }}>wins</span></h2>
           <p style={{ textAlign: 'center', fontSize: 16, color: muted, margin: '0 0 34px' }}>Key areas where Colvy outperforms {c.name} for Australian 🇦🇺 businesses.</p></Reveal>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 18 }}>
           {c.wins.map((w, i) => (
             <Reveal key={w.t} delay={(i % 3) * 0.05}>
               <div className="cmp-card" style={{ height: '100%', borderRadius: 20, padding: 26, background: cardBg, border: `1px solid ${cardBorder}` }}>
@@ -343,7 +343,7 @@ export default function ComparePage() {
           <h2 style={{ fontSize: 'clamp(24px, 3.4vw, 38px)', fontWeight: 900, letterSpacing: '-0.02em', textAlign: 'center', margin: '0 0 6px' }}>Already paid {c.name}? <span style={{ color: accent }}>You won’t lose a cent</span></h2>
           <p style={{ textAlign: 'center', fontSize: 16, color: muted, maxWidth: 620, margin: '0 auto 30px', lineHeight: 1.55 }}>Switching mid-contract shouldn’t cost you. We make the move painless — and free.</p>
         </Reveal>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 18 }}>
           {[
             { icon: 'tag', t: 'We’ll cover your unused balance', d: `On a yearly plan with ${c.name}? Send us proof of payment and we’ll credit the remaining months as free time on Colvy — or carry your subscription over. You don’t pay twice.` },
             { icon: 'bolt', t: 'Free help to switch', d: `Our team helps you move from ${c.name} to Colvy — importing your contacts and setting up your channels and a new Australian number — at no cost.` },
@@ -370,7 +370,7 @@ export default function ComparePage() {
             <p style={{ fontSize: 16.5, color: muted, margin: 0, maxWidth: 620, lineHeight: 1.6 }}>Switching from {c.name} to Colvy means keeping what works and gaining what was missing.</p>
           </Reveal>
           <Reveal delay={0.05}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '12px 28px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: '12px 28px' }}>
               {c.checklist.map(item => (
                 <div key={item} style={{ display: 'flex', alignItems: 'flex-start', gap: 11, fontSize: 15, fontWeight: 600, color: text }}>
                   <span style={{ width: 22, height: 22, borderRadius: '50%', background: accent + '1a', color: accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}><Check c={accent} /></span>{item}

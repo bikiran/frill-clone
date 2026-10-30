@@ -78,7 +78,7 @@ const IG_CSS = `
 .ig-search{flex:1;max-width:420px;display:flex;align-items:center;gap:9px;height:44px;padding:0 15px;border-radius:999px;background:var(--card,#fff);box-shadow:0 0 0 1px rgba(0,0,0,.07);color:var(--soft)}
 .ak .ig-search input{flex:1;min-width:0;height:100%;padding:0;border:none!important;background:transparent!important;box-shadow:none!important;outline:none;font:inherit;font-size:14.5px;color:var(--ink)!important}
 .ig-cats{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}
-.ig-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.ig-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(260px, 100%), 1fr));gap:12px}
 .ig-card{display:flex;flex-direction:column;align-items:flex-start;min-width:0;padding:18px;border:none;border-radius:22px;background:var(--card,#fff);box-shadow:0 0 0 1px rgba(0,0,0,.05),0 1px 2px rgba(16,24,40,.04);font:inherit;text-align:left;cursor:pointer;transition:box-shadow .18s,transform .18s}
 .ig-card:hover{box-shadow:0 0 0 1px rgba(0,0,0,.07),0 12px 28px -14px rgba(16,24,40,.25);transform:translateY(-1px)}
 .ig-card.on{box-shadow:0 0 0 1.5px #22c55e,0 1px 2px rgba(16,24,40,.04)}

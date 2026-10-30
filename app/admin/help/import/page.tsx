@@ -554,7 +554,7 @@ const CSS = `
 .hi-core span{position:absolute;left:-90px;top:-90px;width:180px;height:180px;border-radius:50%;border:1.5px solid color-mix(in srgb,var(--coral) 30%,transparent);animation:hiRing 3s ${EASE} infinite}
 .hi-core span:nth-child(2){animation-delay:1s}.hi-core span:nth-child(3){animation-delay:2s}
 @keyframes hiRing{0%{transform:scale(.3);opacity:.9}100%{transform:scale(2.4);opacity:0}}
-.hi-topics{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+.hi-topics{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(250px, 100%), 1fr));gap:14px}
 .hi-topic{background:#fff;border:1px solid #ececf0;border-radius:18px;padding:14px 16px;box-shadow:0 6px 18px rgba(15,23,42,.05);animation:hiCardIn .55s ${EASE} both}
 .hi-art{display:flex;align-items:center;gap:9px;padding:5px 0;transition:opacity .3s ease}
 .hi-art.writing span:last-child{background:linear-gradient(90deg,var(--ink) 40%,color-mix(in srgb,var(--ink) 35%,transparent) 50%,var(--ink) 60%);background-size:250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent!important;animation:hiShimmer 1.4s linear infinite}

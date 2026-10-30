@@ -18,12 +18,12 @@ export default function PageSkeleton({ variant = 'list' }: { variant?: 'list' | 
             <div style={bar('min(300px, 60%)', 16)} />
             <div style={bar('min(640px, 100%)', 52, { borderRadius: 999, marginTop: 14 })} />
           </div>
-          <div className="colvy-skel" style={{ padding: '28px 24px 48px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
+          <div className="colvy-skel" style={{ padding: '28px 24px 48px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(260px, 100%), 1fr))', gap: 16 }}>
             {Array.from({ length: 6 }, (_, i) => <div key={i} style={bar('100%', 110, { borderRadius: 16 })} />)}
           </div>
         </>
       ) : variant === 'columns' ? (
-        <div className="colvy-skel" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
+        <div className="colvy-skel" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(240px, 100%), 1fr))', gap: 16 }}>
           {Array.from({ length: 4 }, (_, i) => (
             <div key={i} style={{ border: '1px solid var(--border, #ececec)', borderRadius: 16, padding: 14, display: 'flex', flexDirection: 'column', gap: 10, background: '#fff' }}>
               <div style={bar('50%', 16)} />

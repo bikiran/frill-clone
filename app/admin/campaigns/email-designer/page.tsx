@@ -121,7 +121,7 @@ const PAGE_CSS = `
 .edp-link{display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 14px;border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--ink);font-size:13.5px;font-weight:700;text-decoration:none}
 .edp-note{padding:11px 14px;border:1px solid #fedf89;background:#fffaeb;color:#93370d;border-radius:12px;font-size:13.5px;line-height:1.5}
 .edp-note a{color:#93370d;font-weight:700}
-.edp-saved{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
+.edp-saved{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(300px, 100%), 1fr));gap:10px}
 .edp-saved button{display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--border);border-radius:12px;background:#fff;cursor:pointer;text-align:left;font-family:inherit;min-width:0}
 .edp-saved button:hover{border-color:var(--coral)}
 .edp-ic{width:36px;height:36px;border-radius:10px;background:var(--canvas,#f4f4f5);display:flex;align-items:center;justify-content:center;color:var(--ink);flex-shrink:0}

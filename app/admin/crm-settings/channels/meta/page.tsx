@@ -190,7 +190,7 @@ export default function MetaChannelsPage() {
 
       {/* Connect — one card per way to connect. Side by side on desktop, stacked
           on mobile; the button sits at the foot of each card so they align. */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 14, marginBottom: 28 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(260px, 100%), 1fr))', gap: 14, marginBottom: 28 }}>
         {/* Facebook Page (+ linked Instagram) */}
         <div style={{ display: 'flex', flexDirection: 'column', padding: 18, borderRadius: 16, border: '1px solid var(--border)', background: '#fff' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 12 }}>

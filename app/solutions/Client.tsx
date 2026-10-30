@@ -117,7 +117,7 @@ export default function SolutionsHub() {
 
       {/* WHY grid */}
       <section style={{ maxWidth: 1280, margin: '0 auto', padding: '10px 24px 30px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(240px, 100%), 1fr))', gap: 16 }}>
           {WHY.map((f, i) => (
             <Reveal key={f.title} delay={(i % 4) * 0.05}>
               <div className="sol-card" style={{ height: '100%', borderRadius: 18, padding: 22, background: cardBg, border: `1px solid ${cardBorder}` }}>
@@ -136,7 +136,7 @@ export default function SolutionsHub() {
           <h2 style={{ fontSize: 'clamp(26px, 3.8vw, 44px)', fontWeight: 900, letterSpacing: '-0.025em', textAlign: 'center', margin: '0 0 6px' }}>Start with a <span style={{ color: CORAL }}>solution</span></h2>
           <p style={{ textAlign: 'center', fontSize: 16.5, color: muted, maxWidth: 620, margin: '0 auto 36px', lineHeight: 1.55 }}>Each one runs on the same platform — so you can add the next whenever you’re ready, with nothing to re-migrate.</p>
         </Reveal>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(320px, 100%), 1fr))', gap: 20 }}>
           {SOLUTIONS.map((s, i) => (
             // An odd last card spans the row instead of sitting alone.
             <div key={s.slug} style={{ gridColumn: i === SOLUTIONS.length - 1 && SOLUTIONS.length % 2 === 1 ? '1 / -1' : undefined }}>

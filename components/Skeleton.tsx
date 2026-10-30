@@ -28,7 +28,7 @@ export function SkeletonList({ rows = 6 }: { rows?: number }) {
 // A skeleton shaped like a grid of cards.
 export function SkeletonCards({ cards = 6 }: { cards?: number }) {
   return (
-    <div style={{ padding: 20, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 16 }}>
+    <div style={{ padding: 20, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(240px, 100%), 1fr))', gap: 16 }}>
       <style>{`@keyframes colvy-shimmer { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }`}</style>
       {Array.from({ length: cards }).map((_, i) => (
         <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 14, padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>

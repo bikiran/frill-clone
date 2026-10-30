@@ -61,7 +61,7 @@ export default function ContactFormSettings() {
           No forms found. Click &ldquo;Add form&rdquo; above to create your first one.
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 14 }}>
           {forms.map(f => (
             <button key={f.id} onClick={() => router.push(`/admin/crm-settings/contact-form/${f.id}`)}
               style={{ textAlign: 'left', background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: 18, cursor: 'pointer' }}>

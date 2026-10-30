@@ -88,7 +88,7 @@ export default function SecurityPage() {
 
       {/* PRACTICES */}
       <section style={{ maxWidth: 1180, margin: '0 auto', padding: '36px 24px 20px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 18 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 18 }}>
           {PRACTICES.map((p, i) => (
             <Reveal key={p.title} delay={(i % 3) * 0.05}>
               <div className="se-card" style={{ height: '100%', borderRadius: 20, padding: 26, background: cardBg, border: `1px solid ${cardBorder}` }}>
@@ -108,7 +108,7 @@ export default function SecurityPage() {
             <h2 style={{ fontSize: 'clamp(26px, 3.8vw, 42px)', fontWeight: 900, letterSpacing: '-0.025em', textAlign: 'center', margin: '0 0 6px' }}>How we handle <span style={{ color: CORAL }}>your data</span></h2>
             <p style={{ textAlign: 'center', fontSize: 16.5, color: muted, maxWidth: 600, margin: '0 auto 36px', lineHeight: 1.55 }}>The short version — the full detail lives in our <a href="/privacy" style={{ color: CORAL, fontWeight: 700, textDecoration: 'none' }}>Privacy Policy</a>.</p>
           </Reveal>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 18 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(280px, 100%), 1fr))', gap: 18 }}>
             {HANDLING.map((h, i) => (
               <Reveal key={h.t} delay={(i % 3) * 0.05}>
                 <div className="se-card" style={{ height: '100%', borderRadius: 20, padding: 26, background: cardBg, border: `1px solid ${cardBorder}` }}>

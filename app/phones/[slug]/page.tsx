@@ -468,7 +468,7 @@ export default function PhoneFeaturePage() {
 
       {/* FEATURE GRID */}
       <section style={{ maxWidth: 1280, margin: '0 auto', padding: '10px 24px 40px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 18 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(260px, 100%), 1fr))', gap: 18 }}>
           {f.features.map((ft, i) => (
             <Reveal key={ft.title} delay={(i % 4) * 0.05}>
               <div className="pf-card" style={{ height: '100%', borderRadius: 20, padding: 26, background: cardBg, border: `1px solid ${cardBorder}` }}>

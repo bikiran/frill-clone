@@ -788,7 +788,7 @@ export default function GalleryPage() {
            (the action row) widened every column past the screen. */
         .gal-grid > * { min-width: 0; }
         .gal-grid.compact { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
-        .gal-grid.large { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 18px; }
+        .gal-grid.large { grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); gap: 18px; }
         /* Segmented view switcher */
         .gal-viewseg { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border-radius: 999px; background: #f4f4f5; flex-shrink: 0; }
         .gal-viewseg button { display: flex; align-items: center; justify-content: center; width: 34px; height: 32px; border: none; background: transparent; border-radius: 999px; cursor: pointer; color: #71717a; transition: background 0.14s ease, color 0.14s ease; }
