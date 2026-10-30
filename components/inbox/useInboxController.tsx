@@ -40,6 +40,31 @@ import { tagVoice, voiceKind } from '@/lib/voice-typed'
 import { agentChannel, useAgentTeam } from '@/components/agents/useAgentTeam'
 import { Contact, Conversation, Highlight, INBOX_HOUR12, Icon, Message, PAYMENT_SIGNAL_PHRASES, THREAD_PAGE, TeamMember, extractFromText, initialsOf, makeSnippet, parseTs, runPool, sendChannelGlyph, setInboxHour12, threadCacheGet, threadCacheSet, toolBtn, tsOf, videoPoster } from '@/components/inbox/inbox-shared'
 
+// A phone thread (SMS, calls) that started before its contact existed has no
+// contact_id, so the list showed the bare number while the open thread (which
+// matches by phone) showed the name. Match such rows by the number's last 9
+// digits, attach the contact, and save the link in the background. The main
+// list load does the same inline; this is for the rows pulled in by a search
+// or a pin, which skipped it.
+const digitsOf = (p: string) => String(p || '').replace(/\D/g, '')
+async function linkPhoneThreads(companyId: string, rows: any[]): Promise<void> {
+  const unlinked = rows.filter((c: any) => !c.contact_id && digitsOf(c.sms_number || c.phone).length >= 8)
+  if (!unlinked.length) return
+  const tails = Array.from(new Set(unlinked.map((c: any) => digitsOf(c.sms_number || c.phone).slice(-9)))).slice(0, 60)
+  try {
+    const { data: cand } = await (supabase as any).from('contacts').select('id, name, email, phone, relationship_type').eq('company_id', companyId)
+      .or(tails.map(t => `phone.ilike.%${t}%`).join(',')).limit(200)
+    if (!cand?.length) return
+    const linked: { conv: string; contact: string }[] = []
+    for (const c of unlinked) {
+      const tail = digitsOf(c.sms_number || c.phone).slice(-9)
+      const m = cand.find((ct: any) => ct.phone && digitsOf(ct.phone).endsWith(tail))
+      if (m) { c.contacts = m; c.contact_id = m.id; linked.push({ conv: c.id, contact: m.id }) }
+    }
+    if (linked.length) runPool(linked, 4, l => (supabase as any).from('conversations').update({ contact_id: l.contact }).eq('id', l.conv))
+  } catch { /* the number still shows */ }
+}
+
 export function useInboxController() {
   // Seed from the shared identity cache + the last conversation list we rendered
   // so a revisit shows the inbox instantly instead of "Loading inbox…".
@@ -2600,7 +2625,11 @@ export function useInboxController() {
         ;(supabase as any).from('conversations').update({ contact_id: matched.id }).eq('id', conv.id).then(() => {}, () => {})
         ;(conv as any).contact_id = matched.id
         setSelected(s => (s && s.id === conv.id ? ({ ...s, contact_id: matched.id } as any) : s))
-        setConversations(prev => prev.map(c => c.id === conv.id ? ({ ...c, contact_id: matched.id, contacts: matched } as any) : c))
+        const withContact = (c: any) => c.id === conv.id ? ({ ...c, contact_id: matched.id, contacts: matched } as any) : c
+        setConversations(prev => prev.map(withContact))
+        // A row pulled in by a search or a pin lives in its own list.
+        setSearchExtraConvs(prev => prev.map(withContact))
+        setPinnedExtraConvs(prev => prev.map(withContact))
         if ((matched.email || matched.phone)) {
           // Fire-and-forget — keep it off the Order History panel's critical path.
           ;(async () => {
@@ -5219,6 +5248,7 @@ export function useInboxController() {
           for (const ct of cts || []) byId[ct.id] = ct
           for (const r of rows) (r as any).contacts = r.contact_id ? byId[r.contact_id] || null : null
         }
+        await linkPhoneThreads(companyId, rows)
         if (!cancelled) setPinnedExtraConvs(rows)
       } catch { if (!cancelled) setPinnedExtraConvs([]) }
     })()
@@ -6143,9 +6173,20 @@ export function useInboxController() {
         try {
           const safe = q.replace(/[%_]/g, m => '\\' + m).replace(/[(),]/g, ' ')
           const { data: cts } = await (supabase as any).from('contacts')
-            .select('id').eq('company_id', companyId)
+            .select('id, phone').eq('company_id', companyId)
             .or(`name.ilike.%${safe}%,email.ilike.%${safe}%,phone.ilike.%${safe}%`).limit(500)
           const cids = (cts || []).map((c: any) => c.id).filter(Boolean)
+          // Their phone threads that were never linked to them (started before
+          // the contact existed) match by number.
+          const tails = Array.from(new Set((cts || []).map((c: any) => digitsOf(c.phone).slice(-9)).filter((t: string) => t.length >= 8))).slice(0, 40)
+          if (tails.length) {
+            try {
+              const { data: cv } = await (supabase as any).from('conversations')
+                .select('id').eq('company_id', companyId).is('contact_id', null)
+                .or(tails.map(t => `sms_number.ilike.%${t}%`).join(',')).limit(200)
+              for (const r of cv || []) if (r.id) mark(r.id, 'contact', '')
+            } catch { /* skip */ }
+          }
           for (let i = 0; i < cids.length; i += 100) {
             const { data: cv } = await (supabase as any).from('conversations')
               .select('id').eq('company_id', companyId).in('contact_id', cids.slice(i, i + 100)).limit(1000)
@@ -6179,6 +6220,7 @@ export function useInboxController() {
           for (const ct of cts || []) byId[ct.id] = ct
           for (const c of extra) (c as any).contacts = c.contact_id ? byId[c.contact_id] || null : null
         }
+        await linkPhoneThreads(companyId, extra)
         if (!cancelled && extra.length) {
           setSearchExtraConvs(extra)
         }
