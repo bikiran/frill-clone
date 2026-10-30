@@ -5,7 +5,6 @@
 // inbox controller through useInbox().
 
 import AgentBar from '@/components/agents/AgentBar'
-import { agentName } from '@/components/agents/useAgentTeam'
 import TicketComposer, { type TicketPriority } from '@/components/inbox/TicketComposer'
 import EmailComposer from '@/components/EmailComposer'
 import { composerSubject } from '@/lib/email-subject'
@@ -19,7 +18,7 @@ import { useInbox } from '@/components/inbox/InboxContext'
 
 export default function InboxComposer() {
   const {
-    EMOJIS, agentFaceOf, agentTeam, agentTyping, aiDraft, answeringRole, anyExpiring,
+    EMOJIS, agentFaceOf, agentNameOf, agentTeam, agentTyping, aiDraft, answeringRole, anyExpiring,
     applyBulkExpiry, applyMention, applyQuickResponse, assignTo, broadcastAgentTyping,
     bulkCustomDate, bulkExpiryCode, bulkExpiryOpen, channelMenuRef, channelPick, channelResolving,
     companyId, companyInfo, composerDragging, composerH, contact, convHasSale, createTicket,
@@ -51,7 +50,7 @@ export default function InboxComposer() {
           const role = answeringRole(selected)
           if (!role || !selected) return null
           return (
-            <AgentBar face={agentFaceOf(role)} name={agentName(role)} aiOff={(selected as any).ai_enabled === false}
+            <AgentBar face={agentFaceOf(role)} name={agentNameOf(role)} aiOff={(selected as any).ai_enabled === false}
               autoSend={!!agentTeam?.autoSend && role === 'support'}
               members={teamMembers.filter(m => m.name).map(m => ({ user_id: m.user_id, name: m.name }))} assignedTo={(selected as any).assigned_to}
               onTakeControl={takeControl} onHandBack={() => setConvAi(null)} onPause={() => setConvAi(false)}

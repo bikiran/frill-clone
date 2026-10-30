@@ -24,8 +24,10 @@ export default function AgentFace({ face, size = 40 }: { face: Face; size?: numb
  * photo. Opens under the button that opened it (a sheet from the bottom on
  * phones). Every change is handed to onChange straight away; the page saves.
  */
-export function FacePicker({ name, face, anchor, companyId, onChange, onReset, onClose }: {
+export function FacePicker({ name, roleName, face, anchor, companyId, onChange, onReset, onClose }: {
   name: string
+  /** The agent's role ("Support Agent"), shown when it has no name of its own. */
+  roleName?: string
   face: Face
   anchor: HTMLElement | null
   companyId: string | null
@@ -101,11 +103,17 @@ export function FacePicker({ name, face, anchor, companyId, onChange, onReset, o
         style={sheet ? undefined : pos ? { top: pos.top, left: pos.left } : { visibility: 'hidden', top: 0, left: 0 }}>
         <div className="fp-head">
           <span className="fp-preview"><AgentFace face={face} size={44} /></span>
-          <div className="fp-who"><b>{name}</b><span>Shape, colour or a photo</span></div>
+          <div className="fp-who"><b>{face.name || name}</b><span>{face.name && roleName ? roleName : 'Name, shape, colour or a photo'}</span></div>
           <button type="button" className="fp-x" onClick={onClose} aria-label="Close">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
           </button>
         </div>
+
+        <label className="fp-label" htmlFor="fp-name">Name</label>
+        <input id="fp-name" className="fp-name" value={face.name || ''} maxLength={30} placeholder={roleName || name}
+          onChange={e => onChange({ ...face, name: e.target.value.replace(/[<>"`]/g, '').slice(0, 30) })}
+          onBlur={e => { const v = e.target.value.replace(/\s+/g, ' ').trim(); if (v !== (face.name || '')) onChange({ ...face, name: v || null }) }} />
+        <p className="fp-hint">How your team sees it across Colvy.</p>
 
         <p className="fp-label">Shape</p>
         <div className="fp-shapes" role="radiogroup" aria-label="Shape">
@@ -113,7 +121,7 @@ export function FacePicker({ name, face, anchor, companyId, onChange, onReset, o
             const on = !face.photo && face.shape === s
             return (
               <button key={s} type="button" role="radio" aria-checked={on} aria-label={BUDDY_SHAPE_LABEL[s]} className={`fp-shape${on ? ' on' : ''}`}
-                onClick={() => onChange({ shape: s, color: face.color, photo: null })}>
+                onClick={() => onChange({ ...face, shape: s, photo: null })}>
                 <AiBuddy size={40} color={face.color} shape={s} />
               </button>
             )
@@ -129,7 +137,7 @@ export function FacePicker({ name, face, anchor, companyId, onChange, onReset, o
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5" /><path d="M5 15v3a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3v-3" /></svg>
             {uploading ? 'Uploading…' : face.photo ? 'Change photo' : 'Upload photo'}
           </button>
-          {face.photo && <button type="button" className="fp-btn ghost" onClick={() => onChange({ shape: face.shape, color: face.color, photo: null })}>Remove photo</button>}
+          {face.photo && <button type="button" className="fp-btn ghost" onClick={() => onChange({ ...face, photo: null })}>Remove photo</button>}
         </div>
         {err && <p className="fp-err" role="alert">{err}</p>}
         <p className="fp-note">Changes save right away. <button type="button" onClick={onReset}>Reset to default</button></p>
@@ -163,6 +171,12 @@ function HueSlider({ value, onChange }: { value: number; onChange: (hue: number)
 }
 
 const FP_CSS = `
+.fp-name{display:block;width:100%;height:40px;margin:0;padding:0 12px;border:1.5px solid transparent;border-radius:12px;background:#f4f4f5;font:inherit;font-size:14px;color:#111;outline:none;box-sizing:border-box;transition:background .15s,border-color .15s}
+.fp-name:focus{background:#fff;border-color:#e4e4e7}
+.fp-name::placeholder{color:#a1a1aa}
+.fp-hint{margin:6px 2px 0;font-size:11.5px;line-height:1.4;color:#8e8e93}
+[data-theme="dark"] .fp-name{background:#2a2a2e;color:var(--ink)}
+
 .fp{position:fixed;z-index:1200;width:348px;max-width:calc(100vw - 24px);background:#fff;border-radius:22px;padding:16px 18px 14px;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 24px 60px -12px rgba(16,24,40,.28);animation:fpIn .22s cubic-bezier(.22,1,.36,1) both}
 .fp.sheet{left:0;right:0;bottom:0;top:auto;width:auto;max-width:none;border-radius:24px 24px 0 0;padding:18px 18px calc(18px + env(safe-area-inset-bottom));animation:fpUp .3s cubic-bezier(.22,1,.36,1) both}
 .fp-scrim{position:fixed;inset:0;z-index:1199;background:rgba(15,15,20,.32);animation:fpFade .2s ease both}
@@ -174,7 +188,7 @@ const FP_CSS = `
 .fp-who span{font-size:12.5px;color:#8e8e93}
 .fp-x{width:30px;height:30px;border-radius:50%;border:none;background:#f4f4f5;color:#52525b;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
 .fp-x:hover{background:#ececef}
-.fp-label{margin:14px 0 8px;font-size:13.5px;font-weight:650;color:#111}
+.fp-label{display:block;margin:14px 0 8px;font-size:13.5px;font-weight:650;color:#111}
 .fp-shapes{display:grid;grid-template-columns:repeat(6,1fr);gap:4px}
 .fp-shape{aspect-ratio:1;border-radius:14px;border:none;background:transparent;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;transition:background .15s,box-shadow .15s,transform .2s cubic-bezier(.34,1.56,.64,1)}
 .fp-shape:hover{background:#f4f4f5;transform:scale(1.06)}

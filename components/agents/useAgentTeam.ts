@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { authFetch } from '@/lib/auth-fetch'
 import { readStored, writeStored } from '@/lib/client-cache'
-import { faceFor, type AgentFace, type AgentFaces } from '@/lib/agent-faces'
+import { faceFor, agentDisplayName, type AgentFace, type AgentFaces } from '@/lib/agent-faces'
 
 // The workspace's AI team as the inbox needs it: each agent's face (lib/agent-
 // faces), which agents are switched on, the channels Support and Reception
@@ -73,5 +73,7 @@ export function useAgentTeam(companyId: string | null) {
     return () => { live = false }
   }, [companyId])
   const faceOf = (role: string): AgentFace => faceFor(role, team?.faces)
-  return { team, faceOf }
+  /** The name the business gave the agent, else its role ("Support Agent"). */
+  const nameOf = (role: string): string => agentDisplayName(role, team?.faces)
+  return { team, faceOf, nameOf }
 }

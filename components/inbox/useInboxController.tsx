@@ -5982,7 +5982,7 @@ export function useInboxController() {
 
   // The AI team (faces, who's on, which channels): who's answering the open
   // conversation, and each agent's face on what it did.
-  const { team: agentTeam, faceOf: agentFaceOf } = useAgentTeam(companyId)
+  const { team: agentTeam, faceOf: agentFaceOf, nameOf: agentNameOf } = useAgentTeam(companyId)
   // The agent that answers this conversation, or null when none does here.
   const answeringRole = (conv: any): string | null => {
     if (!conv || !agentTeam || agentTeam.paused) return null
@@ -6634,7 +6634,7 @@ export function useInboxController() {
 
   return {
     EMOJIS, abandonedCarts, activeCall, activeChannel, activeFilterCount, activePanel, addrToString,
-    afterOrderRefund, agentFaceOf, agentTeam, agentTyping, aiDraft, aiSavedFields, aiSummary,
+    afterOrderRefund, agentFaceOf, agentNameOf, agentTeam, agentTyping, aiDraft, aiSavedFields, aiSummary,
     aiTodos, answeringRole, anyExpiring, applyBulkExpiry, applyMention, applyQuickResponse,
     assignArrows, assignFilter, assignScrollRef, assignSearch, assignTo, attToken,
     broadcastAgentTyping, bulkCustomDate, bulkExpiryCode, bulkExpiryOpen, canSeeEmailWhy,
