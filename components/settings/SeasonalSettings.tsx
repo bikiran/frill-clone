@@ -87,8 +87,10 @@ function Postcard({ id }: { id: SeasonId }) {
   )
 }
 
-function ThemeCard({ def, prefs, onToggle }: { def: SeasonDef; prefs: SeasonPrefs; onToggle: (on: boolean) => void }) {
-  const st = def.ready ? status(prefs) : null
+function ThemeCard({ def, prefs, onToggle, hiddenHere }: { def: SeasonDef; prefs: SeasonPrefs; onToggle: (on: boolean) => void; hiddenHere: boolean }) {
+  let st = def.ready ? status(prefs) : null
+  // Running, but switched off in this browser ("On this device"): say so, or it looks broken.
+  if (st?.live && hiddenHere) st = { text: `${st.text} · hidden on this device`, live: false }
   return (
     <div className={`sst-card${prefs.on && def.ready ? ' on' : ''}${def.ready ? '' : ' soon'}`}>
       <Postcard id={def.id} />
@@ -119,7 +121,7 @@ export default function SeasonalSettings({ value, onChange }: { value: SeasonalC
     <div className="sst">
       <div className="sst-cards">
         {SEASONS.map(def => (
-          <ThemeCard key={def.id} def={def} prefs={seasonPrefs(value, def.id)}
+          <ThemeCard key={def.id} def={def} prefs={seasonPrefs(value, def.id)} hiddenHere={deviceOff}
             onToggle={on => { set(def.id, { on }); if (on) setEditing(def.id) }} />
         ))}
       </div>

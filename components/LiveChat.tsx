@@ -142,6 +142,7 @@ export default function LiveChat({ slug: slugProp }: { slug?: string } = {}) {
       {/* Floating button - truly fixed to viewport. Hidden while the chat
           fills the screen (the widget has its own close button then). */}
       {size !== 'fullscreen' && <button
+        className="colvy-chat-launcher"
         onClick={() => setOpen(!open)}
         aria-label={open ? 'Close chat' : 'Chat with us'}
         aria-expanded={open}
@@ -181,6 +182,7 @@ export default function LiveChat({ slug: slugProp }: { slug?: string } = {}) {
         <div
           role="dialog"
           aria-label="Chat"
+          data-overlay-ignore
           data-size={size}
           style={{
             position: 'fixed',

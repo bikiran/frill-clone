@@ -2,7 +2,8 @@
 
 import { useEffect } from 'react'
 
-// Keeps the admin's floating bits out of the way of whatever is open on top.
+// Keeps the floating bits (the admin's, and the chat bubble on the public
+// board and help centre) out of the way of whatever is open on top.
 //
 // While any modal, drawer or sheet covers the screen it sets
 // `data-colvy-overlay` on <html>. The rules below then hide the mobile bottom
@@ -71,7 +72,8 @@ export default function OverlayWatch() {
     <style>{`
       html[data-colvy-overlay] .colvy-mobile-nav,
       html[data-colvy-overlay] .colvy-ai-orb-wrap,
-      html[data-colvy-overlay] .colvy-feedback-tab { display: none !important; }
+      html[data-colvy-overlay] .colvy-feedback-tab,
+      html[data-colvy-overlay] .colvy-chat-launcher { display: none !important; }
       @media (max-width: 860px) {
         /* Page bottoms clear the nav bar and the AI orb above it, so the last
            button on a page can always be scrolled clear of both. Full-height

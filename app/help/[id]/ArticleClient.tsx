@@ -52,6 +52,11 @@ const mdLink = (_m: string, text: string, href: string) => {
   const u = safeUrl(href.replace(/&amp;/g, '&'))
   return u ? `<a href="${escapeHtml(u)}" class="underline" style="color:var(--coral)">${text}</a>` : text
 }
+// ![alt](https://…) shows the picture, sized to the column.
+const mdImage = (_m: string, alt: string, src: string) => {
+  const u = safeUrl(src.replace(/&amp;/g, '&'), 'media')
+  return u ? `<img src="${escapeHtml(u)}" alt="${alt}" loading="lazy" style="display:block;max-width:100%;height:auto;margin:8px 0;border-radius:12px">` : alt
+}
 
 function renderContent(content: string) {
   if (!content) return null
@@ -70,7 +75,8 @@ function renderContent(content: string) {
     const rows = dataRows.map(r => r.split('|').map(c => c.trim()).filter(Boolean))
     elements.push(
       <div key={`table-${i}`} className="overflow-x-auto mb-4">
-        <table className="w-full text-sm border-collapse">
+        {/* Words wrap normally; on a phone a wide table scrolls sideways. */}
+        <table className="w-full text-sm border-collapse" style={{ overflowWrap: 'normal', minWidth: 460 }}>
           <thead>
             <tr style={{ background: 'var(--peach)' }}>
               {headers.map((h, j) => <th key={j} className="px-4 py-2 text-left font-semibold border" style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>{h}</th>)}
@@ -94,7 +100,7 @@ function renderContent(content: string) {
     if (line.startsWith('```')) {
       if (!codeBlock) { codeBlock = true; codeLines = []; i++; continue }
       else {
-        elements.push(<pre key={`code-${i}`} className="rounded-xl p-4 mb-4 text-sm max-w-full overflow-x-auto" style={{ background: '#1e1e2e', color: '#cdd6f4', wordBreak: 'break-word', whiteSpace: 'pre-wrap', overflowWrap: 'break-word', fontSize: 'min(14px, 2vw)', lineHeight: 1.5 }}><code style={{ display: 'block', wordBreak: 'break-word', whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>{codeLines.join('\n')}</code></pre>)
+        elements.push(<pre key={`code-${i}`} className="rounded-xl p-4 mb-4 text-sm max-w-full overflow-x-auto" style={{ background: '#1e1e2e', color: '#cdd6f4', wordBreak: 'break-word', whiteSpace: 'pre-wrap', overflowWrap: 'break-word', fontSize: 13, lineHeight: 1.5 }}><code style={{ display: 'block', wordBreak: 'break-word', whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>{codeLines.join('\n')}</code></pre>)
         codeBlock = false; codeLines = []; i++; continue
       }
     }
@@ -139,6 +145,7 @@ function renderContent(content: string) {
       const html = md(line)
         .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
         .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded text-xs font-mono" style="background:#f3f4f6;color:var(--coral)">$1</code>')
+        .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, mdImage)
         .replace(/\[([^\]]+)\]\(([^)]+)\)/g, mdLink)
       elements.push(<p key={i} className="text-sm leading-relaxed mb-3" style={{ color: 'var(--ink)' }} dangerouslySetInnerHTML={{ __html: html }} />)
     }
@@ -490,8 +497,8 @@ export default function HelpArticlePage({ articleId, initial }: { articleId?: st
         )}
       </div>
 
-      <div className="max-w-[1600px] mx-auto px-6 py-10">
-        <div className="grid lg:grid-cols-4 gap-8">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6 sm:py-10">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           {/* On this page — headings pulled from the article, sticky, with the
               section you're currently reading highlighted. */}
           <aside className="hidden lg:block lg:col-span-1">
@@ -527,7 +534,7 @@ export default function HelpArticlePage({ articleId, initial }: { articleId?: st
           </aside>
 
           {/* Main article */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="lg:col-span-2 space-y-6 min-w-0">
             <div className="bg-white rounded-2xl border p-8" style={{ borderColor: 'var(--border)' }}>
               {/* Header */}
               <div className="flex items-start justify-between gap-4 mb-6">
@@ -588,7 +595,8 @@ export default function HelpArticlePage({ articleId, initial }: { articleId?: st
               </div>
 
               {/* Rendered content */}
-              <div className="min-h-48">
+              {/* Long links and emails wrap instead of widening the page on a phone. */}
+              <div className="min-h-48" style={{ overflowWrap: 'anywhere' }}>
                 {renderedContent}
               </div>
 
@@ -641,7 +649,7 @@ export default function HelpArticlePage({ articleId, initial }: { articleId?: st
           </div>
 
           {/* Right sidebar — sticks while the article scrolls */}
-          <aside className="lg:col-span-1">
+          <aside className="lg:col-span-1 min-w-0">
             <div className="help-rail space-y-6">
             {/* Was this article helpful? — the primary feedback card. */}
             <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
