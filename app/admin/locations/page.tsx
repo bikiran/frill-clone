@@ -206,8 +206,8 @@ export default function LocationsPage() {
         // One soft list, a row per location (like Sellio's lists).
         <div style={{ borderRadius: 16, boxShadow: '0 0 0 1px #ececf0', overflow: 'hidden' }}>
           {locations.map((l, i) => (
-            <div key={l.id} style={{ padding: '18px 20px', borderTop: i ? '1px solid #f0f0f2' : 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-              <div>
+            <div key={l.id} style={{ padding: '18px 20px', borderTop: i ? '1px solid #f0f0f2' : 'none', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+              <div style={{ flex: '1 1 220px', minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                   <span style={{ fontSize: 15.5, fontWeight: 700, color: '#111' }}>{l.label || 'Location'}</span>
                   {l.is_primary && <span style={{ fontSize: 11.5, fontWeight: 600, background: '#f4f4f5', color: '#3f3f46', padding: '2px 9px', borderRadius: 999 }}>Primary</span>}

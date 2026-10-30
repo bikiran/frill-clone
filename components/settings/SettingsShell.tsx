@@ -116,17 +116,26 @@ export default function SettingsShell({ children, top }: { children: ReactNode; 
           background-color: #fff !important; border-color: #d4d4d8 !important; outline: none !important; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 16%, transparent) !important;
         }
         .st-main :is(input, textarea)::placeholder { color: #a1a1aa; }
+        /* A field next to a button can shrink, so the row fits a phone. */
+        .st-main :is(input, select, textarea) { min-width: 0; }
         /* Pages with their own sticky header bar sit flat in the white page. */
         .st-main .ph-root { position: static !important; margin: 0 0 22px !important; padding: 0 0 18px !important; background: transparent !important; }
         .st-main .ph-root h1 { font-size: 26px !important; letter-spacing: -0.02em !important; }
         @media (max-width: 860px) {
-          .st-wrap { flex-direction: column; gap: 0; padding: 0; background: #fff; }
+          /* One column, and the page takes the full width (flex-start would
+             shrink it to its content). */
+          .st-wrap { flex-direction: column; align-items: stretch; gap: 0; padding: 0; background: #fff; }
           .st-nav { position: static; width: 100%; max-height: none; border-radius: 0; box-shadow: none; border-bottom: 1px solid #f0f0f2; padding: 10px 12px; }
           .st-nav .st-head, .st-nav .st-body { display: none; }
           .st-nav.open .st-body { display: block; }
           .st-fold { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 6px; border: none; background: none; font: inherit; font-size: 15.5px; font-weight: 650; color: #111; cursor: pointer; text-align: left; }
           .st-fold .st-ic { color: var(--coral); display: flex; }
-          .st-main { border-radius: 0; box-shadow: none; }
+          .st-main { width: 100%; border-radius: 0; box-shadow: none; }
+          /* Tables: long emails and names wrap, and a table that still
+             doesn't fit scrolls sideways instead of running off the page. */
+          .st-main :where(div, section):has(> table) { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+          .st-main td { overflow-wrap: anywhere; }
+          .st-main th { white-space: nowrap; }
         }
       `}</style>
       <nav className={`st-nav${open ? ' open' : ''}`} aria-label="Settings">

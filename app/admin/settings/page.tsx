@@ -1095,7 +1095,7 @@ export default function SettingsPage() {
                   <div className="flex gap-2">
                     <input type="text" value={boardDomain} onChange={e => setBoardDomain(e.target.value.toLowerCase())}
                       placeholder="feedback.yourcompany.com" disabled={!customDomainEntitled}
-                      className="flex-1 px-4 py-2.5 rounded-xl border focus:outline-none text-sm disabled:opacity-60"
+                      className="flex-1 min-w-0 px-4 py-2.5 rounded-xl border focus:outline-none text-sm disabled:opacity-60"
                       style={{ borderColor: domainStatus['board'] === 'verified' ? '#10b981' : domainStatus['board'] === 'error' ? '#ef4444' : 'var(--border)', fontSize: '16px' }} />
                     {customDomainEntitled ? (
                     <button onClick={async () => {
@@ -1141,7 +1141,7 @@ export default function SettingsPage() {
                   <div className="flex gap-2">
                     <input type="text" value={helpDomain} onChange={e => setHelpDomain(e.target.value.toLowerCase())}
                       placeholder="help.yourcompany.com" disabled={!customDomainEntitled}
-                      className="flex-1 px-4 py-2.5 rounded-xl border focus:outline-none text-sm disabled:opacity-60"
+                      className="flex-1 min-w-0 px-4 py-2.5 rounded-xl border focus:outline-none text-sm disabled:opacity-60"
                       style={{ borderColor: domainStatus['help'] === 'verified' ? '#10b981' : domainStatus['help'] === 'error' ? '#ef4444' : 'var(--border)', fontSize: '16px' }} />
                     {customDomainEntitled ? (
                     <button onClick={async () => {

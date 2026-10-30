@@ -1270,7 +1270,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       )}
 
       {/* Main content — offset by sidebar width on desktop, full width on mobile */}
-      <div className={`admin-main ${reportFonts}`} style={{ marginLeft: desktop ? RAIL_W : 0, flex: 1, overflowY: 'auto', minHeight: 'calc(100vh - 56px)', paddingBottom: 'var(--sab-h, 0px)' }}>
+      <div className={`admin-main ${reportFonts}`} style={{ marginLeft: desktop ? RAIL_W : 0, flex: 1, minWidth: 0, overflowY: 'auto', minHeight: 'calc(100vh - 56px)', paddingBottom: 'var(--sab-h, 0px)' }}>
         {/* The banners' total height is published as --admin-banners-h so
             full-height screens (the inbox) can fit below them instead of
             running under the phone's bottom nav. */}

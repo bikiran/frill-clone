@@ -859,6 +859,7 @@ const SU_CSS = `
 .su-seg{display:inline-flex;gap:4px;padding:4px;margin:0 0 16px;border-radius:999px;background:#f4f4f5}
 .su-seg button{display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 16px;border:none;border-radius:999px;background:transparent;font:inherit;font-size:14px;font-weight:600;color:#71717a;cursor:pointer;transition:background-color .2s,color .2s,box-shadow .2s}
 .su-seg button.on{background:#fff;color:#18181b;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+@media (max-width:420px){.su-seg{display:flex}.su-seg button{flex:1;justify-content:center;padding:0 10px;font-size:13px;white-space:nowrap}}
 .su-found-box{align-items:flex-start}
 .su-found-box span{display:flex;flex-direction:column;gap:2px}
 .su-found-box small{font-weight:500;color:#52525b}
