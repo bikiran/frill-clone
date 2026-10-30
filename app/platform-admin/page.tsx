@@ -20,6 +20,7 @@ import { INTEL_VIEWS, prefetchIntel, type IntelView } from './intelligence/data'
 import { NAV_HOME, NAV_GROUPS, groupOf, navItem, searchNav } from './nav'
 import Dashboard from './Dashboard'
 import { trialLeft as trialLeftOf, trialEndsPhrase } from '@/lib/trial'
+import { SaClose, SaRow, SaSection, SaSheet } from '@/components/platform-admin/SaSheet'
 
 // Pages with their own big bundles load when first opened, so the panel
 // itself starts quickly.
@@ -315,7 +316,7 @@ function CopyId({ value }: { value?: string | null }) {
   }
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap', minWidth: 0 }}>
-      <code style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11.5, fontWeight: 600, wordBreak: 'break-all' }}>{value}</code>
+      <code style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11.5, fontWeight: 600, wordBreak: 'break-all', color: 'var(--sa-text)' }}>{value}</code>
       <button type="button" onClick={copy} aria-label="Copy" title="Copy" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 7px', borderRadius: 7, border: '1px solid var(--sa-border)', background: 'transparent', color: copied ? '#059669' : 'var(--sa-muted)', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
         {copied
           ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
@@ -580,58 +581,60 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
   const healthColor = health >= 75 ? '#10b981' : health >= 45 ? '#f59e0b' : '#ef4444'
 
   const catColor: Record<string, string> = { general: '#6366f1', billing: '#10b981', support: '#f59e0b', technical: '#0891b2', risk: '#ef4444' }
-  const Row = ({ k, v }: { k: string; v: any }) => (
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '9px 0', borderBottom: '1px solid var(--sa-border)' }}>
-      <span style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>{k}</span>
-      <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--sa-text)', textAlign: 'right', wordBreak: 'break-word' }}>{v ?? '—'}</span>
-    </div>
-  )
+  const Row = ({ k, v }: { k: string; v: any }) => <SaRow label={k}>{v ?? null}</SaRow>
   const TABS = [['overview', 'Overview'], ['plan', 'Subscription'], ['ent', 'Entitlements'], ['sms', 'SMS billing'], ['invoices', 'Tax invoices'], ['whatsapp', 'WhatsApp'], ['users', `Users${users ? ` (${users.length})` : ''}`], ['notes', `Notes${notes ? ` (${notes.length})` : ''}`], ['danger', 'Danger Zone']]
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 380, display: 'flex', justifyContent: 'flex-end' }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 560, maxWidth: '96vw', height: '100%', background: 'var(--sa-bg)', borderLeft: '1px solid var(--sa-border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* header */}
-        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--sa-border)', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ width: 40, height: 40, borderRadius: 10, background: co.accent_color || '#ff7a6b', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>{co.name?.[0]?.toUpperCase()}</div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ fontSize: 16, fontWeight: 800, color: 'var(--sa-text)', margin: 0 }}>{co.name}</p>
-            <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: 0 }}>{co.slug}.colvy.com · {plan || 'free'}</p>
+    <SaSheet onClose={onClose} label={`Company: ${co.name || co.slug}`} width={620} z={380}>
+        <div className="sas-head">
+          <div className="sas-top">
+            <span className="sas-badge" aria-hidden style={{ background: co.accent_color || '#ff7a6b' }}>{co.name?.[0]?.toUpperCase() || '?'}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h2 className="sas-title">{co.name}</h2>
+              <p className="sas-sub">{co.slug}.colvy.com · {(PLAN_NAMES as any)[plan] || plan || 'free'}</p>
+              <div className="sas-chips">
+                <span title="Account health" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 24, padding: '0 10px', borderRadius: 999, background: `color-mix(in srgb, ${healthColor} 14%, var(--sa-card))`, color: healthColor, fontSize: 12, fontWeight: 750 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: healthColor }} />Health {health}/100
+                </span>
+                {plan === 'suspended' && <span style={{ display: 'inline-flex', alignItems: 'center', height: 24, padding: '0 10px', borderRadius: 999, background: 'color-mix(in srgb, #ef4444 14%, var(--sa-card))', color: '#ef4444', fontSize: 12, fontWeight: 750 }}>Suspended</span>}
+              </div>
+            </div>
+            <SaClose onClick={onClose} />
           </div>
-          <span style={{ fontSize: 12, fontWeight: 800, color: healthColor, padding: '3px 10px', borderRadius: 999, background: healthColor + '22' }}>{health}/100</span>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--sa-muted)', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>×</button>
-        </div>
-        {/* action bar */}
-        <div style={{ display: 'flex', gap: 8, padding: '12px 20px', borderBottom: '1px solid var(--sa-border)', flexWrap: 'wrap' }}>
-          <button onClick={() => onAction('impersonate', co)} style={paBtn('#ff7a6b', true)}>Enter workspace</button>
-          <a href={`https://${co.slug}.colvy.com`} target="_blank" rel="noopener" style={{ ...paBtn(), textDecoration: 'none' }}>View public</a>
-          <button onClick={() => onAction('provision', co)} title={`Add ${co.slug}.colvy.com to Vercel and Cloudflare, then check it`} style={paBtn()}>Set up board address</button>
-          {plan === 'suspended'
-            ? <button onClick={() => onAction('reactivate', co)} style={paBtn()}>Reactivate…</button>
-            : <button onClick={() => onAction('suspend', co)} style={paBtn('#ef4444')}>Suspend…</button>}
-        </div>
-        {/* tabs */}
-        <div style={{ display: 'flex', gap: 4, padding: '10px 16px 0', borderBottom: '1px solid var(--sa-border)', overflowX: 'auto', flexShrink: 0 }}>
-          {TABS.map(([k, l]) => (
-            <button key={k} onClick={() => setTab(k)} style={{ flexShrink: 0, whiteSpace: 'nowrap', padding: '8px 12px', borderRadius: '8px 8px 0 0', border: 'none', borderBottom: tab === k ? '2px solid #ff7a6b' : '2px solid transparent', background: 'transparent', color: tab === k ? 'var(--sa-text)' : 'var(--sa-muted)', fontSize: 13, fontWeight: tab === k ? 700 : 500, cursor: 'pointer' }}>{l}</button>
-          ))}
+          {/* action bar */}
+          <div className="sas-actions">
+            <button className="sas-pill primary" onClick={() => onAction('impersonate', co)}>Enter workspace</button>
+            <a className="sas-pill" href={`https://${co.slug}.colvy.com`} target="_blank" rel="noopener">View public</a>
+            <button className="sas-pill" onClick={() => onAction('provision', co)} title={`Add ${co.slug}.colvy.com to Vercel and Cloudflare, then check it`}>Set up board address</button>
+            {plan === 'suspended'
+              ? <button className="sas-pill" onClick={() => onAction('reactivate', co)}>Reactivate…</button>
+              : <button className="sas-pill danger" onClick={() => onAction('suspend', co)}>Suspend…</button>}
+          </div>
+          {/* tabs */}
+          <div className="sas-tabs" role="tablist" aria-label="Company">
+            {TABS.map(([k, l]) => (
+              <button key={k} role="tab" aria-selected={tab === k} className={`sas-tab${tab === k ? ' on' : ''}`} onClick={() => setTab(k)}
+                style={k === 'danger' && tab !== k ? { color: '#ef4444' } : undefined}>{l}</button>
+            ))}
+          </div>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+        <div className="sas-body pa-sheet-body">
           {tab === 'overview' && (
             <div>
-              <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--sa-border)', background: 'var(--sa-card)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div className="sas-card pad" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 <div style={{ minWidth: 0, flex: '1 1 auto' }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--sa-text)' }}>Company ID</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>For settings that ask for a company (not the owner’s user ID)</div>
+                  <div style={{ fontSize: 14, fontWeight: 650, color: 'var(--sa-text)' }}>Company ID</div>
+                  <div style={{ fontSize: 12.5, color: 'var(--sa-muted)', marginTop: 2 }}>For settings that ask for a company (not the owner’s user ID)</div>
                 </div>
                 <CopyId value={co.id} />
               </div>
-              <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 10, background: healthColor + '18', border: `1px solid ${healthColor}44` }}>
-                <span style={{ fontSize: 12.5, fontWeight: 700, color: healthColor }}>Account health {health}/100</span>
-                <span style={{ fontSize: 11.5, color: 'var(--sa-muted)', marginLeft: 8 }}>{plan === 'suspended' ? 'Suspended' : (users?.length || 0) === 0 ? 'No team members yet' : 'Looking healthy'}</span>
+              <div style={{ marginBottom: 12, padding: '13px 16px', borderRadius: 20, background: `color-mix(in srgb, ${healthColor} 11%, var(--sa-card))`, display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 14, fontWeight: 750, color: healthColor }}>Account health {health}/100</span>
+                <span style={{ fontSize: 13, color: 'var(--sa-muted)' }}>{plan === 'suspended' ? 'Suspended' : (users?.length || 0) === 0 ? 'No team members yet' : 'Looking healthy'}</span>
               </div>
               <CompanyHealthPanel hc={hc} onPause={() => setPauseOpen(true)} onResume={resumeAgents} msg={hcMsg} />
+              <SaSection title="Details">
               <Row k="Business name" v={co.name} />
               <Row k="Slug" v={co.slug} />
               <Row k="Plan" v={(sub.plan || 'free') + (sub.is_complimentary ? ' · complimentary' : '')} />
@@ -643,6 +646,7 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
               <Row k="Website" v={co.website} />
               <Row k="Created" v={co.created_at ? new Date(co.created_at).toLocaleString() : '—'} />
               <Row k="Team members" v={users?.length ?? '…'} />
+              </SaSection>
             </div>
           )}
 
@@ -934,8 +938,7 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </SaSheet>
   )
 }
 

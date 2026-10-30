@@ -10,6 +10,7 @@ import { authFetch } from '@/lib/auth-fetch'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import SignupSmsHealth from '@/components/platform-admin/SignupSmsHealth'
 import { deliveryProblem, explainDeliveryError } from '@/lib/signup-delivery'
+import { SaClose, SaRow, SaSection, SaSheet } from '@/components/platform-admin/SaSheet'
 
 type Filter = 'all' | 'abandoned' | 'suspicious' | 'completed' | 'spam'
 type Range = 'today' | '7d' | '30d' | 'all'
@@ -122,6 +123,8 @@ const btn = (color = 'var(--sa-text)', filled = false): React.CSSProperties => (
 })
 const th: React.CSSProperties = { padding: '11px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap', borderBottom: '1px solid var(--sa-border)' }
 const td: React.CSSProperties = { padding: '12px 12px', fontSize: 12.5, color: 'var(--sa-text)', verticalAlign: 'top', borderBottom: '1px solid var(--sa-border)' }
+// Grey fields inside the sign-up sheet.
+const sheetField: React.CSSProperties = { width: '100%', padding: '11px 13px', borderRadius: 12, border: '1px solid transparent', background: 'var(--sa-field)', color: 'var(--sa-text)', fontSize: 14, boxSizing: 'border-box', fontFamily: 'inherit', outline: 'none' }
 const input: React.CSSProperties = { width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--sa-border)', background: 'var(--sa-bg)', color: 'var(--sa-text)', fontSize: 13.5, boxSizing: 'border-box', fontFamily: 'inherit' }
 
 export default function SignupsPage() {
@@ -360,16 +363,10 @@ export default function SignupsPage() {
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div style={{ display: 'flex', gap: 12, padding: '7px 0', borderBottom: '1px solid var(--sa-border)', minWidth: 0 }}>
-    <span style={{ width: 118, flexShrink: 0, fontSize: 12, color: 'var(--sa-muted)' }}>{label}</span>
-    <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: 'var(--sa-text)', wordBreak: 'break-word' }}>{children || <span style={{ color: 'var(--sa-muted)' }}>—</span>}</span>
-  </div>
+  return <SaRow label={label}>{children || null}</SaRow>
 }
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return <div style={{ marginTop: 18 }}>
-    <p style={{ fontSize: 11, fontWeight: 800, color: 'var(--sa-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 4px' }}>{title}</p>
-    {children}
-  </div>
+function Section({ title, children, pad }: { title: string; children: React.ReactNode; pad?: boolean }) {
+  return <SaSection title={title} pad={pad}>{children}</SaSection>
 }
 
 const HOURS_SOURCE: Record<string, { label: string; color: string }> = {
@@ -383,8 +380,8 @@ const linkStyle: React.CSSProperties = { color: '#ff7a6b', textDecoration: 'none
 /** Everything Colvy learnt about their business (lib/signup-profile presentBusiness). */
 function BusinessSection({ b }: { b: any }) {
   if (!b?.recorded) {
-    return <Section title="Business">
-      <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', margin: '6px 0', lineHeight: 1.5 }}>
+    return <Section title="Business" pad>
+      <p style={{ fontSize: 13, color: 'var(--sa-muted)', margin: 0, lineHeight: 1.5 }}>
         {b?.missing === 'before_recording'
           ? 'Not recorded. This sign-up started before Colvy kept business details, so only the email and mobile were saved.'
           : 'No business details were recorded for this sign-up.'}
@@ -393,12 +390,12 @@ function BusinessSection({ b }: { b: any }) {
   }
   const src = b.hoursSource ? HOURS_SOURCE[b.hoursSource] : null
   return <Section title="Business">
-    <div style={{ marginTop: 6, border: '1px solid var(--sa-border)', borderRadius: 12, padding: '12px 14px 6px', background: 'var(--sa-bg)', minWidth: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0 }}>
-        <span style={{ width: 32, height: 32, borderRadius: 9, background: '#ff7a6b1a', color: '#ff7a6b', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{Ic.building}</span>
+    <div style={{ minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minWidth: 0, padding: '12px 0', boxShadow: '0 1px 0 var(--sa-border)' }}>
+        <span style={{ width: 40, height: 40, borderRadius: 13, background: 'color-mix(in srgb, #ff7a6b 13%, var(--sa-card))', color: '#ff6a4d', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{Ic.building}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px 8px' }}>
-            <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--sa-text)', wordBreak: 'break-word' }}>{b.name || 'No business name'}</span>
+            <span style={{ fontSize: 16, fontWeight: 750, letterSpacing: '-0.01em', color: 'var(--sa-text)', wordBreak: 'break-word' }}>{b.name || 'No business name'}</span>
             {b.verified
               ? <span title={VERIFIED_HINT} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 999, background: '#0596691a', color: '#059669', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{Ic.verified} Verified via Google</span>
               : b.source && <span style={{ display: 'inline-flex', padding: '2px 8px', borderRadius: 999, background: 'var(--sa-hover)', color: 'var(--sa-muted)', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{SOURCE_LABEL[b.source] || b.source}</span>}
@@ -406,7 +403,7 @@ function BusinessSection({ b }: { b: any }) {
           <div style={{ fontSize: 12, color: 'var(--sa-muted)', marginTop: 2, wordBreak: 'break-word' }}>{[b.boardUrl, b.summary].filter(Boolean).join(' · ') || ' '}</div>
         </div>
       </div>
-      <div style={{ marginTop: 8 }}>
+      <div>
         <Field label="Industry">{b.industry || b.category ? <>{b.industry}{b.category ? <span style={{ color: 'var(--sa-muted)' }}>{b.industry ? ' · ' : ''}Google: {b.category}</span> : null}</> : null}</Field>
         <Field label="Address">{b.addressLines?.length ? <>
           {b.addressLines.map((l: string, i: number) => <div key={i}>{l}</div>)}
@@ -480,41 +477,43 @@ export function SignupDrawer({ row: r, workspace, onClose, act }: { row: any; wo
   const utm = r.utm ? Object.entries(r.utm).map(([k, v]) => `${k}: ${v}`).join(' · ') : ''
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(0,0,0,0.35)', display: 'flex', justifyContent: 'flex-end' }}>
-      <aside onClick={e => e.stopPropagation()} role="dialog" aria-label={`Sign-up: ${r.email}`}
-        style={{ width: 'min(580px, 100vw)', height: '100%', overflowY: 'auto', background: 'var(--sa-card)', borderLeft: '1px solid var(--sa-border)', padding: '18px 20px 28px', boxSizing: 'border-box' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+    <SaSheet onClose={onClose} label={`Sign-up: ${r.email}`} width={600} z={80}>
+      <div className="sas-head">
+        <div className="sas-top">
+          <span className="sas-badge" aria-hidden style={{ background: r.spam_at ? '#9ca3af' : '#ff7a6b' }}>{String(r.name || r.email || '?').trim().charAt(0).toUpperCase()}</span>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h2 style={{ fontSize: 18, fontWeight: 800, color: 'var(--sa-text)', margin: 0 }}>{r.name || 'No name yet'}</h2>
-            <p style={{ fontSize: 13, color: 'var(--sa-muted)', margin: '3px 0 8px', wordBreak: 'break-all' }}>{r.email}</p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}><Chip status={r.status} /><RiskBadge risk={r.risk} full /></div>
+            <h2 className="sas-title">{r.name || 'No name yet'}</h2>
+            <p className="sas-sub">{r.email}</p>
+            <div className="sas-chips"><Chip status={r.status} /><RiskBadge risk={r.risk} full /></div>
           </div>
-          <button onClick={onClose} aria-label="Close" style={{ background: 'none', border: '1px solid var(--sa-border)', borderRadius: 9, padding: 6, cursor: 'pointer', color: 'var(--sa-muted)', display: 'flex' }}>{Ic.x}</button>
+          <SaClose onClick={onClose} />
         </div>
 
         {/* Actions */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 14 }}>
-          <button onClick={() => setComposing(c => !c)} disabled={!!r.spam_at} style={{ ...btn('#ff7a6b', true), opacity: r.spam_at ? 0.5 : 1 }}>{Ic.mail} Email them</button>
-          {!r.legacy && <button onClick={spam} disabled={!!busy} style={btn(r.spam_at ? 'var(--sa-text)' : '#6b7280')}>{Ic.ban} {busy === 'spam' ? 'Saving…' : r.spam_at ? 'Not spam' : 'Mark as spam'}</button>}
-          <button onClick={del} disabled={!!busy} style={btn('#dc2626')}>{Ic.trash} {busy === 'delete' ? 'Deleting…' : 'Delete'}</button>
+        <div className="sas-actions">
+          <button className="sas-pill primary" onClick={() => setComposing(c => !c)} disabled={!!r.spam_at} aria-expanded={composing}>{Ic.mail} Email them</button>
+          {!r.legacy && <button className="sas-pill" onClick={spam} disabled={!!busy}>{Ic.ban} {busy === 'spam' ? 'Saving…' : r.spam_at ? 'Not spam' : 'Mark as spam'}</button>}
           {workspace && !r.legacy && !r.spam_at
-            ? <a href={contactUrl || '#'} onClick={openInCrm} aria-disabled={!!busy} style={{ ...btn('var(--sa-text)'), textDecoration: 'none', opacity: busy === 'crm' ? 0.6 : 1 }}>{Ic.external} {busy === 'crm' ? 'Opening…' : contactUrl ? 'Contact in Colvy CRM' : 'Add to Colvy CRM'}</a>
-            : contactUrl && <a href={contactUrl} target="_blank" rel="noopener" style={{ ...btn('var(--sa-text)'), textDecoration: 'none' }}>{Ic.external} Contact in Colvy CRM</a>}
+            ? <a className="sas-pill" href={contactUrl || '#'} onClick={openInCrm} aria-disabled={busy === 'crm'}>{Ic.external} {busy === 'crm' ? 'Opening…' : contactUrl ? 'Contact in Colvy CRM' : 'Add to Colvy CRM'}</a>
+            : contactUrl && <a className="sas-pill" href={contactUrl} target="_blank" rel="noopener">{Ic.external} Contact in Colvy CRM</a>}
+          <button className="sas-pill danger" onClick={del} disabled={!!busy}>{Ic.trash} {busy === 'delete' ? 'Deleting…' : 'Delete'}</button>
         </div>
-        {msg && <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 9, fontSize: 12.5, background: msg.tone === 'ok' ? '#05966914' : '#fee2e2', color: msg.tone === 'ok' ? '#059669' : '#b91c1c' }}>{msg.text}</div>}
+        {msg && <div className={`sas-msg ${msg.tone}`} role="status">{msg.text}</div>}
+      </div>
 
+      <div className="sas-body">
         {composing && (
-          <div style={{ marginTop: 12, padding: 14, border: '1px solid var(--sa-border)', borderRadius: 12, background: 'var(--sa-bg)' }}>
-            <p style={{ fontSize: 12, color: 'var(--sa-muted)', margin: '0 0 8px' }}>A one-off, transactional follow-up about their sign-up. It goes from Colvy’s own email{workspace ? '' : ' (Colvy’s workspace wasn’t found, so use your mail app)'}; replies land in Colvy’s inbox.</p>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--sa-muted)', marginBottom: 4 }}>Subject</label>
-            <input value={subject} onChange={e => setSubject(e.target.value)} style={input} />
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--sa-muted)', margin: '10px 0 4px' }}>Message</label>
-            <textarea value={body} onChange={e => setBody(e.target.value)} rows={9} style={{ ...input, resize: 'vertical', lineHeight: 1.5 }} />
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10, justifyContent: 'flex-end' }}>
-              <a href={mailto} style={{ ...btn('var(--sa-text)'), textDecoration: 'none' }}>Open in mail app</a>
-              <button onClick={send} disabled={!!busy || !workspace || !subject.trim() || !body.trim()} style={{ ...btn('#ff7a6b', true), opacity: busy || !workspace ? 0.6 : 1 }}>{busy === 'email' ? 'Sending…' : 'Send from Colvy'}</button>
+          <SaSection title="Email them" pad>
+            <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', margin: '0 0 10px', lineHeight: 1.5 }}>A one-off, transactional follow-up about their sign-up. It goes from Colvy’s own email{workspace ? '' : ' (Colvy’s workspace wasn’t found, so use your mail app)'}; replies land in Colvy’s inbox.</p>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--sa-text)', marginBottom: 6 }}>Subject</label>
+            <input value={subject} onChange={e => setSubject(e.target.value)} style={sheetField} />
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--sa-text)', margin: '12px 0 6px' }}>Message</label>
+            <textarea value={body} onChange={e => setBody(e.target.value)} rows={9} style={{ ...sheetField, resize: 'vertical', lineHeight: 1.5 }} />
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
+              <a className="sas-pill" href={mailto}>Open in mail app</a>
+              <button className="sas-pill primary" onClick={send} disabled={!!busy || !workspace || !subject.trim() || !body.trim()}>{busy === 'email' ? 'Sending…' : 'Send from Colvy'}</button>
             </div>
-          </div>
+          </SaSection>
         )}
 
         <Section title="About them">
@@ -535,15 +534,15 @@ export function SignupDrawer({ row: r, workspace, onClose, act }: { row: any; wo
           <Field label="Last activity">{`${when(r.last_activity_at)} (${ago(r.last_activity_at)})`}</Field>
         </Section>
 
-        <Section title="Mobile verification">
-          {!r.mobile || r.mobile.sends.length === 0 ? <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', margin: '6px 0' }}>{r.phone ? 'No code has been sent to their mobile yet.' : 'No mobile number yet.'}</p> : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
+        <Section title="Mobile verification" pad>
+          {!r.mobile || r.mobile.sends.length === 0 ? <p style={{ fontSize: 13, color: 'var(--sa-muted)', margin: 0 }}>{r.phone ? 'No code has been sent to their mobile yet.' : 'No mobile number yet.'}</p> : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {r.mobile_verified_at
                 ? <p style={{ fontSize: 12.5, color: '#059669', fontWeight: 600, margin: 0 }}>Mobile verified {when(r.mobile_verified_at)}.</p>
                 : deliveryProblem(r.mobile.state) && r.mobile.who && <p style={{ fontSize: 12.5, color: 'var(--sa-text)', margin: 0 }}>{r.mobile.who === 'person' ? 'Most likely the number itself: they may have mistyped it.' : r.mobile.who === 'colvy' ? 'This is a setting on Colvy’s Twilio account, not something they did.' : 'The phone company stopped it. Usually a sender setting on Colvy’s Twilio account; see below.'}</p>}
               {r.mobile.sends.map((x: any, i: number) => {
                 const c = DELIVERY_COLOR[x.state] || '#6b7280'
-                return <div key={i} style={{ padding: '9px 11px', borderRadius: 10, border: `1px solid ${deliveryProblem(x.state) ? c + '55' : 'var(--sa-border)'}`, background: deliveryProblem(x.state) ? c + '0d' : 'transparent' }}>
+                return <div key={i} style={{ padding: '10px 13px', borderRadius: 14, border: 'none', background: deliveryProblem(x.state) ? c + '14' : 'var(--sa-field)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 12.5, fontWeight: 700, color: c }}>{x.label}</span>
                     <span style={{ fontSize: 11.5, color: 'var(--sa-muted)', whiteSpace: 'nowrap' }}>{x.channel === 'voice' ? 'Call' : 'Text'} · {when(x.at)}</span>
@@ -570,14 +569,14 @@ export function SignupDrawer({ row: r, workspace, onClose, act }: { row: any; wo
           <Field label="User agent"><span style={{ fontSize: 11.5, color: 'var(--sa-muted)' }}>{r.user_agent}</span></Field>
         </Section>
 
-        <Section title="Risk">
-          {(r.risk?.reasons || []).length === 0 ? <p style={{ fontSize: 12.5, color: 'var(--sa-muted)', margin: '6px 0' }}>Nothing unusual.</p>
-          : <ul style={{ margin: '6px 0', paddingLeft: 18 }}>{r.risk.reasons.map((x: string) => <li key={x} style={{ fontSize: 12.5, color: 'var(--sa-text)', marginBottom: 4 }}>{x}</li>)}</ul>}
+        <Section title="Risk" pad>
+          {(r.risk?.reasons || []).length === 0 ? <p style={{ fontSize: 13, color: 'var(--sa-muted)', margin: 0 }}>Nothing unusual.</p>
+          : <ul style={{ margin: 0, paddingLeft: 18 }}>{r.risk.reasons.map((x: string) => <li key={x} style={{ fontSize: 12.5, color: 'var(--sa-text)', marginBottom: 4 }}>{x}</li>)}</ul>}
         </Section>
 
-        <Section title="Timeline">
-          {events.length === 0 ? <p style={{ fontSize: 12.5, color: 'var(--sa-muted)' }}>Nothing recorded.</p> : (
-            <div style={{ position: 'relative', marginTop: 6 }}>
+        <Section title="Timeline" pad>
+          {events.length === 0 ? <p style={{ fontSize: 13, color: 'var(--sa-muted)', margin: 0 }}>Nothing recorded.</p> : (
+            <div style={{ position: 'relative' }}>
               {events.map((e, i) => (
                 <div key={i} style={{ display: 'flex', gap: 10, paddingBottom: 12, position: 'relative' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
@@ -596,9 +595,9 @@ export function SignupDrawer({ row: r, workspace, onClose, act }: { row: any; wo
             </div>
           )}
         </Section>
-        <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', marginTop: 16 }}>Abandoned sign-ups that aren’t suspicious or marked spam are deleted automatically after 180 days. Verification codes are never stored.</p>
-      </aside>
-    </div>
+        <p className="sas-foot-note">Abandoned sign-ups that aren’t suspicious or marked spam are deleted automatically after 180 days. Verification codes are never stored.</p>
+      </div>
+    </SaSheet>
   )
 }
 
