@@ -26,6 +26,7 @@ import MediaGallery, { MediaItem } from '@/components/MediaGallery'
 import { waitlistPreview } from '@/lib/waitlist-ai'
 import { CHANNEL_NAME, IFL_CSS, Icon } from '@/components/inbox/inbox-shared'
 import { useInbox } from '@/components/inbox/InboxContext'
+import { useRef } from 'react'
 
 export default function InboxOverlays() {
   const {
@@ -63,6 +64,10 @@ export default function InboxOverlays() {
     showScheduleMsg, showTimeline, showToast, showTracking, snoozeConv, stageQrMedia,
     stageSelectedMedia, storyView, teamMembers, toast, togglePin, user,
   } = useInbox()
+  // A DOA claim was processed: reload the conversation (its claim note, the
+  // order's new status) once the panel closes. Reloading straight away closed
+  // the panel before its "Claim sorted" screen could show.
+  const doaDone = useRef(false)
   return (
     <>
       {/* Forward media to another contact */}
@@ -823,8 +828,8 @@ export default function InboxOverlays() {
           channel={['widget', 'chat'].includes(outboundChannel) ? null : outboundChannel}
           channelLabel={['widget', 'chat'].includes(outboundChannel) ? null : (CHANNEL_NAME[outboundChannel] || outboundChannel)}
           onDeliver={deliverToCustomer}
-          onClose={() => setShowDoa(false)}
-          onDone={() => { if (selected) selectConversation(selected) }}
+          onClose={() => { setShowDoa(false); if (doaDone.current && selected) { doaDone.current = false; selectConversation(selected) } }}
+          onDone={() => { doaDone.current = true }}
         />
       )}
 

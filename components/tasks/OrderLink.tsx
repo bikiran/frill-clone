@@ -9,6 +9,7 @@
 // else a WooCommerce order (every order linked before Prexty and Shopify could be).
 
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { authFetch } from '@/lib/auth-fetch'
 import { PlatformLogo, platformName } from '@/components/StoreLogo'
 import { SkClose, SkIcon, SkStyle } from '@/components/ui/SheetKit'
@@ -47,7 +48,7 @@ export function LinkedOrderCard({ orderId, orderNumber, customer, total, onRemov
 }
 
 /** Search every connected store's orders (and Prexty sales) and pick one. */
-export function OrderSearchModal({ companyId, onClose, onPick, zIndex = 500 }: {
+export function OrderSearchModal({ companyId, onClose, onPick, zIndex = 10050 }: {
   companyId: string; onClose: () => void; onPick: (o: any) => void; zIndex?: number
 }) {
   const [q, setQ] = useState('')
@@ -73,7 +74,9 @@ export function OrderSearchModal({ companyId, onClose, onPick, zIndex = 500 }: {
   const shown = only === 'all' || !counts[only] ? results : results.filter(o => orderSource(o.order_id, o.source) === only)
   const typed = q.trim().length >= 2
 
-  return (
+  // Drawn on <body>: the task pane slides in with a transform, which would pin
+  // a fixed pop-up inside the pane (clipped, its header scrolled out of view).
+  const modal = (
     <div className="sk-scrim" style={{ '--sk-z': zIndex } as React.CSSProperties} onClick={onClose}>
       <SkStyle />
       <style href="colvy-order-link" precedence="default">{OL_CSS}</style>
@@ -132,6 +135,7 @@ export function OrderSearchModal({ companyId, onClose, onPick, zIndex = 500 }: {
       </div>
     </div>
   )
+  return typeof document === 'undefined' ? modal : createPortal(modal, document.body)
 }
 
 const OL_CSS = `

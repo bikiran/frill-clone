@@ -9,6 +9,7 @@
  */
 
 import { readStoreJson, storeBackoff, storeKey, isStoreResponseError } from '@/lib/store-response'
+import { posColumns } from '@/lib/prexty-pos'
 
 // One order looked up several times a minute (the order drawer's details and
 // notes, packing slips, agents' tracking checks) is fetched once: the same
@@ -602,6 +603,8 @@ export class WooCommerceService {
           shipping_method: (o.shipping_lines || [])[0]?.method_title || null,
           order_key: o.order_key, payment_url: o.payment_url,
           total_refunded: (o.refunds || []).reduce((s: number, r: any) => s + Math.abs(parseFloat(r.total || 0)), 0),
+          // An in-store Prexty POS sale pushed into the store (pos_source 'prexty' + its sale number).
+          ...posColumns(o),
         }))
     } catch { return [] }
   }

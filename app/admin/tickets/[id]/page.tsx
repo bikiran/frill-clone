@@ -112,22 +112,33 @@ export default function TicketDetail() {
     try { const r = await authFetch(`/api/tickets/${ticketId}/reply`); const d = await r.json(); setMessages(d.messages || []) } catch {}
   }
 
+  // The ticket, then everything around it at once (they used to load one after
+  // another). Whatever happens, the page stops saying "Loading…": a failed or
+  // slow extra only leaves its own bit empty.
   useEffect(() => {
+    let live = true
     ;(async () => {
-      const { data } = await (supabase as any).from('support_tickets').select('*').eq('id', ticketId).maybeSingle()
-      setTicket(data)
-      if (data?.contact_id) { try { const { data: c } = await (supabase as any).from('contacts').select('*').eq('id', data.contact_id).maybeSingle(); setContact(c) } catch {} }
-      if (data?.company_id) {
-        try { const { data: co } = await (supabase as any).from('companies').select('id,name,slug,accent_color').eq('id', data.company_id).maybeSingle(); setCompany(co) } catch {}
-        try {
-          const r = await authFetch(`/api/tickets/settings?companyId=${data.company_id}`, { headers: await authed() })
-          if (r.ok) { const d = await r.json(); setSla(resolveSla(d.sla)); setTeam(d.team || []) }
-        } catch {}
-        try { const { data: arts } = await (supabase as any).from('help_articles').select('id,title,slug').eq('company_id', data.company_id).eq('status', 'published').limit(4); setArticles(arts || []) } catch {}
+      try {
+        const { data } = await (supabase as any).from('support_tickets').select('*').eq('id', ticketId).maybeSingle()
+        if (!live) return
+        setTicket(data)
+        await Promise.all([
+          data?.contact_id ? (async () => { try { const { data: c } = await (supabase as any).from('contacts').select('*').eq('id', data.contact_id).maybeSingle(); if (live) setContact(c) } catch {} })() : null,
+          data?.company_id ? (async () => { try { const { data: co } = await (supabase as any).from('companies').select('id,name,slug,accent_color').eq('id', data.company_id).maybeSingle(); if (live) setCompany(co) } catch {} })() : null,
+          data?.company_id ? (async () => {
+            try {
+              const r = await authFetch(`/api/tickets/settings?companyId=${data.company_id}`, { headers: await authed() })
+              if (r.ok && live) { const d = await r.json(); setSla(resolveSla(d.sla)); setTeam(d.team || []) }
+            } catch {}
+          })() : null,
+          data?.company_id ? (async () => { try { const { data: arts } = await (supabase as any).from('help_articles').select('id,title,slug').eq('company_id', data.company_id).eq('status', 'published').limit(4); if (live) setArticles(arts || []) } catch {} })() : null,
+          loadThread(),
+        ])
+      } catch { /* shows "Ticket not found" */ } finally {
+        if (live) setLoading(false)
       }
-      await loadThread()
-      setLoading(false)
     })()
+    return () => { live = false }
   }, [ticketId])
 
   // Poll for the customer's inbound replies (routed in via the email webhook)
@@ -193,7 +204,17 @@ export default function TicketDetail() {
     } catch (e: any) { setToast(e.message) } finally { setSending(false) }
   }
 
-  if (loading) return <div style={{ padding: 40, color: 'var(--slate)' }}>Loading…</div>
+  if (loading) return (
+    <div className="tkd-page" aria-busy="true" aria-label="Loading the ticket">
+      <style>{`.tkd-skel{border-radius:18px;background:linear-gradient(90deg,var(--card,#fff) 25%,color-mix(in srgb,var(--card,#fff) 88%,var(--slate)) 50%,var(--card,#fff) 75%);background-size:200% 100%;animation:tkdShim 1.2s ease-in-out infinite;box-shadow:0 0 0 1px var(--border)}@keyframes tkdShim{from{background-position:200% 0}to{background-position:-200% 0}}@media (prefers-reduced-motion:reduce){.tkd-skel{animation:none}}`}</style>
+      <div className="tkd-skel" style={{ width: 'min(420px, 70%)', height: 34, marginBottom: 20 }} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 320px)', gap: 20 }} className="ticket-grid">
+        <div style={{ display: 'grid', gap: 16 }}><div className="tkd-skel" style={{ height: 180 }} /><div className="tkd-skel" style={{ height: 140 }} /></div>
+        <div className="tkd-skel tkd-desk" style={{ height: 300 }} />
+      </div>
+      <style>{DETAIL_CSS}</style>
+    </div>
+  )
   if (!ticket) return <div style={{ padding: 40, color: 'var(--slate)' }}>Ticket not found.</div>
 
   const from = parseFrom(ticket.description || '')
