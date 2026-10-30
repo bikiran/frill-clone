@@ -1,6 +1,7 @@
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { decodeEntities } from '@/lib/html-entities'
 
 export const dynamic = 'force-dynamic'
 
@@ -98,7 +99,7 @@ export async function GET(req: NextRequest) {
         const b = o.billing || {}
         const name = `${b.first_name || ''} ${b.last_name || ''}`.toLowerCase()
         const items = Array.isArray(o.line_items)
-          ? o.line_items.map((li: any) => (li.name || '')).join(' ').toLowerCase() : ''
+          ? o.line_items.map((li: any) => decodeEntities(li.name || '')).join(' ').toLowerCase() : ''
         if (name.includes(ql) || items.includes(ql)) {
           results.set(String(o.woo_order_id || o.id), o)
         }
@@ -121,7 +122,7 @@ export async function GET(req: NextRequest) {
         total: Number(o.total) || 0,
         status: o.status,
         date: o.order_date,
-        items: Array.isArray(o.line_items) ? o.line_items.map((li: any) => li.name).filter(Boolean).slice(0, 4) : [],
+        items: Array.isArray(o.line_items) ? o.line_items.map((li: any) => decodeEntities(li.name)).filter(Boolean).slice(0, 4) : [],
       }
     })
 
@@ -152,7 +153,7 @@ export async function GET(req: NextRequest) {
         const names = new Map<string, string[]>()
         try {
           const { data: lines } = await db.from('order_items').select('order_id, product_name').in('order_id', ids).limit(400)
-          for (const l of lines || []) { const a = names.get(l.order_id) || []; if (l.product_name && a.length < 4) a.push(l.product_name); names.set(l.order_id, a) }
+          for (const l of lines || []) { const a = names.get(l.order_id) || []; if (l.product_name && a.length < 4) a.push(decodeEntities(l.product_name)); names.set(l.order_id, a) }
         } catch { /* items are optional */ }
         for (const o of shop.values()) {
           orders.push({
