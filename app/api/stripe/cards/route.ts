@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import Stripe from 'stripe'
 import { stripeSecretFor } from '@/lib/company-secrets'
+import { audit } from '@/lib/activity-logging'
 
 export const dynamic = 'force-dynamic'
 
@@ -183,6 +184,7 @@ export async function POST(req: NextRequest) {
         metadata: { charge: true, payment_id: pay?.id, status: intent.status },
       })
 
+      await audit(req, db, companyId, 'card_charged', `Charged $${(cents / 100).toFixed(2)} to a saved card${succeeded ? '' : ' (pending)'}${description ? ` — ${String(description).slice(0, 120)}` : ''}`, { conversation_id: conversationId || null, payment_intent: intent.id })
       return NextResponse.json({ ok: true, status: intent.status, paid: succeeded })
     }
 

@@ -7,6 +7,7 @@ import { createClient } from '@supabase/supabase-js'
 import { createChatCheckoutSession } from '@/lib/chat-checkout'
 import { stripeSecretFor } from '@/lib/company-secrets'
 import { payLinkCollect } from '@/lib/paylink-capture'
+import { audit } from '@/lib/activity-logging'
 
 function admin() {
   return createClient(
@@ -119,6 +120,7 @@ export async function POST(req: NextRequest) {
       last_message_at: new Date().toISOString(),
     }).eq('id', conversationId)
 
+    await audit(req, db, companyId, 'payment_requested', `Sent a $${(cents / 100).toFixed(2)} payment link${description ? ` — ${String(description).slice(0, 120)}` : ''}`, { conversation_id: conversationId, order_id: orderId || null })
     return NextResponse.json({ ok: true, checkoutUrl: custLink, fullUrl: payUrl, messageId: msg?.id })
   } catch (err: any) {
     console.error('Chat payment error:', err)

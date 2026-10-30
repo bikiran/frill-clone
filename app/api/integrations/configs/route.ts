@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { adminDb, destinationProblem, generalIntegration, integrationAccess, maskSecret, secretReuseProblem } from '@/lib/integration-access'
 import { normaliseEvents } from '@/lib/integrations-catalog'
 import { checkPublicUrl } from '@/lib/integration-events'
+import { audit } from '@/lib/activity-logging'
 
 export const dynamic = 'force-dynamic'
 
@@ -84,6 +85,10 @@ export async function POST(req: NextRequest) {
     const migration = /company_id|no unique|ON CONFLICT/i.test(error.message)
     return NextResponse.json({ error: migration ? NEEDS_MIGRATION : 'Could not save the settings.' }, { status: migration ? 503 : 500 })
   }
+  const name = def.name || def.id
+  const was = !!existing
+  await audit(req, db, companyId, enabled && !was ? 'integration_added' : 'settings_updated',
+    !was ? `Set up ${name}${enabled ? '' : ' (off)'}` : `${enabled ? 'Updated' : 'Switched off'} ${name}`, { integration: def.id, enabled })
   const secrets: Record<string, string> = {}
   for (const f of def.fields || []) if (f.secret && config[f.key]) secrets[f.key] = maskSecret(config[f.key])
   return NextResponse.json({ ok: true, secrets })

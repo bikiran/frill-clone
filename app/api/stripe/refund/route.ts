@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 import { stripeSecretFor } from '@/lib/company-secrets'
+import { audit } from '@/lib/activity-logging'
 
 function admin() {
   return createClient(
@@ -126,6 +127,7 @@ export async function POST(req: NextRequest) {
       } catch {}
     }
 
+    await audit(req, db, companyId, 'refund_issued', `Refunded ${amtStr} on a card payment${full ? '' : ' (partial)'}`, { payment_id: pay.id, amount_cents: refundedCents, conversation_id: pay.conversation_id || null })
     return NextResponse.json({ ok: true, refundId: refund.id, refundedCents, totalRefunded, full })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Refund failed' }, { status: 500 })

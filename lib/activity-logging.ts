@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+import { verifyToken } from '@/lib/company-access'
 
 export type ActivityType = 
   | 'form_created'
@@ -19,6 +19,17 @@ export type ActivityType =
   | 'team_member_updated'
   | 'settings_updated'
   | 'integration_added'
+  | 'integration_removed'
+  | 'refund_issued'
+  | 'coupon_sent'
+  | 'order_created'
+  | 'order_updated'
+  | 'card_charged'
+  | 'payment_requested'
+  | 'doa_resolved'
+  | 'ai_agent_updated'
+  | 'phone_number_updated'
+  | 'phone_number_removed'
 
 interface ActivityLog {
   company_id: string
@@ -56,6 +67,36 @@ export async function logActivity(
     console.error('Failed to log activity:', error)
     // Don't throw - activity logging shouldn't break the main operation
   }
+}
+
+/**
+ * Logs what someone just did from an API route that has already checked their
+ * access. The person is the one behind the request's sign-in token (checked
+ * again here, so the entry can't name anyone else; the check is cached for a
+ * few seconds, so it costs nothing after the route's own). A call from Colvy
+ * itself (an AI agent, an automation) has no token and is logged as Colvy.
+ * Never throws.
+ */
+export async function audit(
+  req: Request,
+  db: any,
+  companyId: string | null | undefined,
+  type: ActivityType,
+  description: string,
+  metadata?: Record<string, any>,
+) {
+  if (!companyId) return
+  try {
+    const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '')
+    const user = token ? await verifyToken(db, token).catch(() => null) : null
+    await logActivity(db, {
+      company_id: companyId,
+      ...(user?.id ? { user_id: user.id } : {}),
+      activity_type: type,
+      description: description.slice(0, 500),
+      metadata: { ...(metadata || {}), ...(user?.email ? { actor_email: user.email } : { actor: 'colvy' }) },
+    }, req)
+  } catch { /* the log never breaks the action */ }
 }
 
 // Helper functions for common activities
