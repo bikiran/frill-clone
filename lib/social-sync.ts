@@ -236,7 +236,8 @@ async function syncInstagramChannel(db: any, companyId: string, channel: any, to
     const postRow = {
       company_id: companyId, meta_channel_id: channel.id, platform: 'instagram',
       external_post_id: m.id, permalink: m.permalink || null, message: m.caption || null,
-      media_url: m.media_url || m.thumbnail_url || null,
+      // A video's media_url is the .mp4 itself; its picture is thumbnail_url.
+      media_url: /video|reel/i.test(m.media_type || '') ? (m.thumbnail_url || m.media_url || null) : (m.media_url || m.thumbnail_url || null),
       post_type: /video|reel/i.test(m.media_type || '') ? 'reel' : 'post',
       posted_at: m.timestamp || null, raw: m,
     }

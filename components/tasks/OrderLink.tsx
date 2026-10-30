@@ -236,14 +236,20 @@ export function OrderViewSheet({ companyId, orderId, orderNumber, customer, onCl
 
               {/* Payment and delivery */}
               <div className="ov-grid">
-                <div className="sk-card">
-                  <span className="ov-k">Payment</span>
-                  <p className="ov-v">{decodeEntities(order.payment_method_title || pPay || order.payment_method || (src === 'prexty' ? 'In store' : '—'))}</p>
-                  {src === 'prexty' && !order.payment_method_title && !pPay && <p className="ov-s">Prexty didn&rsquo;t send how it was paid</p>}
-                  {pServed && <p className="ov-s">Served by {pServed}</p>}
-                  {order.date_paid && <p className="ov-s">Paid {when(order.date_paid)}</p>}
-                  {order.transaction_id && <p className="ov-s" style={{ overflowWrap: 'anywhere' }}>Ref {order.transaction_id}</p>}
-                </div>
+                {(() => {
+                  // How it was paid, only when the store or Prexty says; else just when.
+                  const how = decodeEntities(order.payment_method_title || pPay || order.payment_method || '')
+                  if (!how && !order.date_paid && !pServed) return null
+                  return (
+                    <div className="sk-card">
+                      <span className="ov-k">Payment</span>
+                      {how ? <p className="ov-v">{how}</p> : order.date_paid ? <p className="ov-v">Paid {when(order.date_paid)}</p> : null}
+                      {pServed && <p className="ov-s">Served by {pServed}</p>}
+                      {how && order.date_paid && <p className="ov-s">Paid {when(order.date_paid)}</p>}
+                      {order.transaction_id && <p className="ov-s" style={{ overflowWrap: 'anywhere' }}>Ref {order.transaction_id}</p>}
+                    </div>
+                  )
+                })()}
                 <div className="sk-card">
                   <span className="ov-k">{ship.length ? 'Delivers to' : 'Delivery'}</span>
                   {ship.length ? ship.map((l, i) => <p key={i} className={i ? 'ov-s' : 'ov-v'}>{l}</p>) : <p className="ov-v">{order.shipping_method || (src === 'prexty' ? 'Taken in store' : 'No delivery address')}</p>}
