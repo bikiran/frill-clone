@@ -85,8 +85,8 @@ export default function PaymentMethodPicker({
   return (
     <div ref={wrapRef} style={{ position: 'relative' }}>
       {/* Trigger */}
-      <button type="button" onClick={() => { setOpen(o => !o); setQuery('') }}
-        style={{ ...input, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, cursor: 'pointer', textAlign: 'left', background: '#fff', borderColor: open ? accent : 'var(--border)' }}>
+      <button type="button" className="pmp-trigger" onClick={() => { setOpen(o => !o); setQuery('') }}
+        style={{ ...input, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, cursor: 'pointer', textAlign: 'left', background: 'var(--card, #fff)', borderColor: open ? accent : 'var(--border)' }}>
         <span style={{ color: value ? 'var(--ink)' : 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {value || 'Select or type a new method'}
         </span>

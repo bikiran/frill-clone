@@ -8,6 +8,7 @@ import { useState } from 'react'
 const PLATFORM: Record<string, { src: string; name: string }> = {
   woocommerce: { src: '/logos/woocommerce.svg', name: 'WooCommerce' },
   shopify: { src: '/logos/shopify.svg', name: 'Shopify' },
+  prexty: { src: '/logos/prexty.svg', name: 'Prexty' },
 }
 
 export const platformName = (p?: string | null) => PLATFORM[String(p || '')]?.name || ''

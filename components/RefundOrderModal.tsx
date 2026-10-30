@@ -2,6 +2,7 @@
 
 import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useState } from 'react'
+import { SkClose, SkIcon, SkStyle } from '@/components/ui/SheetKit'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { refundedByLine, type OrderRefund } from '@/lib/order-refunds'
 
@@ -154,99 +155,109 @@ export default function RefundOrderModal({
     }
   }
 
-  const box: React.CSSProperties = { width: 460, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', background: 'var(--card,#fff)', borderRadius: 16, padding: 22 }
-
   return (
-    <div onClick={() => !busy && onClose()} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 6400, padding: 20 }}>
-      <div onClick={e => e.stopPropagation()} style={box}>
-        <h3 style={{ margin: '0 0 3px', fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>Refund order #{order.order_number}</h3>
-        <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>Refund the whole order, or choose items and shipping. Restock is optional.</p>
+    <div className="sk-scrim" style={{ '--sk-z': 6400 } as React.CSSProperties} onClick={() => !busy && onClose()}>
+      <SkStyle />
+      <div className="sk" role="dialog" aria-modal="true" aria-labelledby="rf-title" onClick={e => e.stopPropagation()} onKeyDown={e => { if (e.key === 'Escape' && !busy) onClose() }}>
+        <div className="sk-head">
+          <span className="sk-badge" aria-hidden>{SkIcon.refund}</span>
+          <div style={{ minWidth: 0 }}>
+            <h3 id="rf-title">Refund order #{order.order_number}</h3>
+            <p className="sk-sub">The whole order, or pick items and shipping. Restocking is up to you.</p>
+          </div>
+          <SkClose onClick={() => !busy && onClose()} />
+        </div>
 
         {loading ? (
-          <p style={{ padding: '28px 0', textAlign: 'center', color: 'var(--slate)', fontSize: 13 }}>Loading order…</p>
+          <p className="sk-note" style={{ padding: '28px 0', textAlign: 'center' }}>Loading order…</p>
         ) : (
           <>
             {fullyRefunded && (
-              <div role="status" style={{ marginTop: 14, padding: '10px 12px', borderRadius: 11, background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#047857', fontSize: 13, fontWeight: 700 }}>
+              <p role="status" className="sk-card" style={{ margin: '14px 0 0', background: '#ecfdf5', color: '#047857', fontSize: 13.5, fontWeight: 650 }}>
                 This order has already been refunded in full ({money(alreadyRefunded)}).
-              </div>
+              </p>
             )}
             {canChooseAll && !fullyRefunded && (
-              <button type="button" onClick={chooseEverything} disabled={allChosen}
-                style={{ marginTop: 14, width: '100%', padding: '10px 12px', borderRadius: 11, border: `1.5px solid ${accent}`, background: allChosen ? accent : 'var(--card,#fff)', color: allChosen ? '#fff' : accent, fontSize: 13.5, fontWeight: 800, cursor: allChosen ? 'default' : 'pointer' }}>
-                {allChosen ? `✓ Everything selected · ${money(total)}` : `Refund everything · ${money(available)}`}
+              <button type="button" className={`rf-all${allChosen ? ' on' : ''}`} onClick={chooseEverything} disabled={allChosen}>
+                <span className="rf-all-ic" aria-hidden>{allChosen ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg> : SkIcon.refund}</span>
+                <span className="rf-all-t">{allChosen ? 'Everything selected' : 'Refund everything'}<small>{allChosen ? 'Every item and the shipping' : 'Every item and the shipping'}</small></span>
+                <b>{money(allChosen ? total : available)}</b>
               </button>
             )}
-            {noItems && !fullyRefunded && <p style={{ margin: '14px 0 0', fontSize: 13, color: 'var(--slate)' }}>No line items found — a refund of {money(available)} (what&rsquo;s left on the order) will be issued.</p>}
-            <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {items.map((it, idx) => {
-                const done = it.max <= 0
-                return (
-                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', borderRadius: 11, border: '1px solid var(--border)', opacity: done ? 0.55 : 1 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.name}</p>
-                    <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)' }}>
-                      {money(it.unit)} each · qty {it.qty}
-                      {it.refunded > 0 && <span style={{ color: '#b45309', fontWeight: 700 }}> · {done ? 'refunded' : `${it.refunded} already refunded`}</span>}
-                    </p>
-                  </div>
-                  {done ? (
-                    <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, color: '#b45309', background: '#fef3c7', padding: '3px 9px', borderRadius: 20 }}>Refunded</span>
-                  ) : (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                    <button type="button" aria-label={`One fewer ${it.name}`} onClick={() => setQty(idx, -1)} style={{ width: 26, height: 26, borderRadius: 7, border: '1px solid var(--border)', background: 'var(--card,#fff)', cursor: 'pointer', fontSize: 15, lineHeight: 1 }}>−</button>
-                    <span style={{ width: 22, textAlign: 'center', fontSize: 13, fontWeight: 700 }}>{it.refundQty}</span>
-                    <button type="button" aria-label={`One more ${it.name}`} onClick={() => setQty(idx, +1)} disabled={it.refundQty >= it.max} style={{ width: 26, height: 26, borderRadius: 7, border: '1px solid var(--border)', background: 'var(--card,#fff)', cursor: it.refundQty >= it.max ? 'default' : 'pointer', opacity: it.refundQty >= it.max ? 0.4 : 1, fontSize: 15, lineHeight: 1 }}>+</button>
-                  </div>
-                  )}
-                  <span style={{ width: 66, textAlign: 'right', fontSize: 13, fontWeight: 700, color: it.refundQty > 0 ? 'var(--ink)' : 'var(--slate)' }}>{money(it.unit * it.refundQty)}</span>
-                </div>
-                )
-              })}
-            </div>
+            {noItems && !fullyRefunded && <p className="sk-note">No line items found. A refund of {money(available)} (what&rsquo;s left on the order) will be issued.</p>}
 
-            {shipping > 0 && shippingLeft <= 0 && (
-              <p style={{ margin: '10px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>Shipping ({money(shipping)}) has already been refunded.</p>
-            )}
+            {items.length > 0 && <span className="sk-lbl">Items</span>}
+            {items.map((it, idx) => {
+              const done = it.max <= 0
+              return (
+                <div key={idx} className="sk-item" style={{ opacity: done ? 0.55 : 1 }}>
+                  <span className="sk-item-t">
+                    <b>{it.name}</b>
+                    <small>
+                      {money(it.unit)} each · qty {it.qty}
+                      {it.refunded > 0 && <span style={{ color: '#b45309', fontWeight: 650 }}> · {done ? 'refunded' : `${it.refunded} already refunded`}</span>}
+                    </small>
+                  </span>
+                  {done ? (
+                    <span className="rf-tag">Refunded</span>
+                  ) : (
+                    <span className="sk-stepper">
+                      <button type="button" aria-label={`One fewer ${it.name}`} onClick={() => setQty(idx, -1)} disabled={it.refundQty <= 0}>−</button>
+                      <span>{it.refundQty}</span>
+                      <button type="button" aria-label={`One more ${it.name}`} onClick={() => setQty(idx, +1)} disabled={it.refundQty >= it.max}>+</button>
+                    </span>
+                  )}
+                  <span className="sk-amt" style={{ minWidth: 62, textAlign: 'right', color: it.refundQty > 0 ? 'var(--ink)' : 'var(--sk-muted)' }}>{money(it.unit * it.refundQty)}</span>
+                </div>
+              )
+            })}
+
+            {shipping > 0 && shippingLeft <= 0 && <p className="sk-note">Shipping ({money(shipping)}) has already been refunded.</p>}
             {shippingLeft > 0 && (
-              <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10, padding: '9px 11px', borderRadius: 11, border: '1px solid var(--border)', cursor: 'pointer' }}>
-                <input type="checkbox" checked={refundShipping} onChange={e => setRefundShipping(e.target.checked)} style={{ accentColor: accent }} />
-                <span style={{ flex: 1, fontSize: 13.5, color: 'var(--ink)' }}>Refund shipping{shippingMethod ? ` (${shippingMethod})` : ''}{shippingRefunded > 0 ? ' · rest of it' : ''}</span>
-                <span style={{ fontSize: 13, fontWeight: 700 }}>{money(shippingLeft)}</span>
+              <label className="sk-check box">
+                <input type="checkbox" checked={refundShipping} onChange={e => setRefundShipping(e.target.checked)} />
+                <span style={{ flex: 1, minWidth: 0 }}>Refund shipping{shippingMethod ? <span style={{ color: 'var(--sk-muted)' }}> · {shippingMethod}</span> : ''}{shippingRefunded > 0 ? ' · rest of it' : ''}</span>
+                <span className="sk-amt">{money(shippingLeft)}</span>
               </label>
             )}
 
-            <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, cursor: 'pointer' }}>
-              <input type="checkbox" checked={restock} onChange={e => setRestock(e.target.checked)} style={{ accentColor: accent }} />
-              <span style={{ fontSize: 13.5, color: 'var(--ink)' }}>Restock refunded items</span>
+            <label className="sk-check">
+              <input type="checkbox" checked={restock} onChange={e => setRestock(e.target.checked)} />
+              <span>Put refunded items back in stock</span>
             </label>
 
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--slate)', margin: '14px 0 6px' }}>Reason (optional)</label>
-            <input value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Damaged in transit"
-              style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, outline: 'none' }} />
+            <label className="sk-lbl" htmlFor="rf-reason">Reason <span className="sk-opt">optional</span></label>
+            <input id="rf-reason" className="sk-in" value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Damaged in transit" />
 
-            <div style={{ marginTop: 14, padding: '10px 12px', borderRadius: 11, background: 'var(--canvas)', fontSize: 12.5 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--slate)' }}>
-                <span>Available to refund{alreadyRefunded > 0 ? ` (already ${money(alreadyRefunded)})` : ''}</span>
-                <span style={{ fontWeight: 600, color: 'var(--ink)' }}>{money(available)}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5, fontSize: 14 }}>
-                <span style={{ fontWeight: 800, color: 'var(--ink)' }}>Refund total</span>
-                <span style={{ fontWeight: 800, color: accent }}>{money(total)}</span>
-              </div>
+            <div className="sk-sum">
+              <div className="sk-sum-r"><span>Available to refund{alreadyRefunded > 0 ? ` (already ${money(alreadyRefunded)})` : ''}</span><b>{money(available)}</b></div>
+              <div className="sk-sum-r total"><span>Refund total</span><b style={{ color: total > 0 ? accent : undefined }}>{money(total)}</b></div>
             </div>
 
-            {error && <p style={{ margin: '10px 0 0', fontSize: 13, color: '#dc2626' }}>{error}</p>}
+            {error && <p className="sk-err" role="alert">{error}</p>}
 
-            <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
-              <button type="button" onClick={onClose} disabled={busy} style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card,#fff)', color: 'var(--slate)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
-              <button type="button" onClick={submit} disabled={busy || fullyRefunded} style={{ flex: 2, padding: '11px 0', borderRadius: 10, border: 'none', background: accent, color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: busy || fullyRefunded ? 'default' : 'pointer', opacity: busy || fullyRefunded ? 0.5 : 1 }}>
-                {busy ? 'Refunding…' : fullyRefunded ? 'Nothing left to refund' : `Issue refund ${total > 0 ? money(total) : ''}`}
+            <div className="sk-actions">
+              <button type="button" className="sk-btn" onClick={onClose} disabled={busy}>Cancel</button>
+              <button type="button" className="sk-btn primary" onClick={submit} disabled={busy || fullyRefunded || total <= 0}>
+                {busy ? 'Refunding…' : fullyRefunded ? 'Nothing left to refund' : total > 0 ? `Refund ${money(total)}` : 'Choose what to refund'}
               </button>
             </div>
           </>
         )}
       </div>
+      <style>{RF_CSS}</style>
     </div>
   )
 }
+
+const RF_CSS = `
+.rf-all{display:flex;align-items:center;gap:12px;width:100%;margin-top:16px;padding:12px 14px;border:none;border-radius:18px;background:var(--peach,#fff4f1);color:var(--ink);font:inherit;text-align:left;cursor:pointer;box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--coral,#ff7a6b) 35%,transparent);transition:box-shadow .15s,background .15s}
+.rf-all:hover:not(:disabled){box-shadow:inset 0 0 0 2px var(--coral,#ff7a6b)}
+.rf-all.on{background:var(--coral,#ff7a6b);color:#fff;box-shadow:none;cursor:default}
+.rf-all-ic{width:36px;height:36px;flex-shrink:0;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;background:var(--card,#fff);color:var(--coral,#ff7a6b)}
+.rf-all.on .rf-all-ic{background:rgba(255,255,255,.22);color:#fff}
+.rf-all-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;font-size:14.5px;font-weight:700}
+.rf-all-t small{font-size:12.5px;font-weight:500;opacity:.75}
+.rf-all b{font-size:16px;font-weight:800;font-variant-numeric:tabular-nums}
+.rf-tag{flex-shrink:0;padding:4px 10px;border-radius:999px;background:#fef3c7;color:#b45309;font-size:11.5px;font-weight:700}
+`
