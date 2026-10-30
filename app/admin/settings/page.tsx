@@ -1506,68 +1506,86 @@ export default function SettingsPage() {
           <div className="space-y-5">
             <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
               <h2 className="font-bold mb-5" style={{ color: 'var(--ink)' }}>Widget Display</h2>
-              <p className="text-sm mb-6" style={{ color: 'var(--slate)' }}>Choose which sections to display in your embedded widget, and drag to set their order.</p>
+              <p className="text-sm mb-6" style={{ color: 'var(--slate)' }}>Choose which sections your website widget shows, and drag them (or use the arrows) to set the order.</p>
 
-              {/* Widget items — draggable + toggleable */}
-              <div className="space-y-2 mb-6">
-                {(() => {
-                  const meta: Record<string, { state: boolean; set: (v: boolean) => void; desc: string }> = {
-                    'Chat': { state: widgetChat, set: setWidgetChat, desc: 'Live chat with your team' },
-                    'Feedback': { state: widgetFeedback, set: setWidgetFeedback, desc: 'Let users submit and vote on ideas' },
-                    'Roadmap': { state: widgetRoadmap, set: setWidgetRoadmap, desc: 'Show your product roadmap' },
-                    'Updates': { state: widgetUpdates, set: setWidgetUpdates, desc: 'Display announcements and changelog' },
-                    'Knowledge Base': { state: widgetKnowledgeBase, set: setWidgetKnowledgeBase, desc: 'Link to help articles and docs' },
-                  }
-                  const labelFor: Record<string, string> = { 'Feedback': 'Feedback Board' }
-                  return widgetOrder.map(label => {
-                    const m = meta[label]
-                    if (!m) return null
-                    return (
-                      <div key={label}
-                        draggable
-                        onDragStart={() => setDragWidgetItem(label)}
-                        onDragOver={e => e.preventDefault()}
-                        onDrop={() => {
-                          if (!dragWidgetItem || dragWidgetItem === label) return
-                          const next = [...widgetOrder]
-                          const from = next.indexOf(dragWidgetItem)
-                          const to = next.indexOf(label)
-                          if (from === -1 || to === -1) return
-                          next.splice(to, 0, next.splice(from, 1)[0])
-                          setWidgetOrder(next)
-                          setDragWidgetItem(null)
-                          handleSave(false, { widgetOrder: next })
-                        }}
-                        className="flex items-center gap-3 p-3 rounded-xl border cursor-move"
-                        style={{ borderColor: 'var(--border)', background: dragWidgetItem === label ? 'var(--peach)' : '#fff', opacity: m.state ? 1 : 0.55 }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0 }}><circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/></svg>
-                        <div style={{ flex: 1 }}>
-                          <p className="text-sm font-medium" style={{ color: 'var(--ink)' }}>{labelFor[label] || label}</p>
-                          <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>{m.desc}</p>
-                        </div>
-                        <input type="checkbox" checked={m.state} onChange={() => { m.set(!m.state); handleSave(false, { [`widget${label.replace(/\s/g, '')}`]: !m.state }) }} className="w-5 h-5 rounded cursor-pointer" style={{ accentColor: 'var(--coral)' }} />
+              {/* Widget items: drag (or the arrows) to order, switch to show. */}
+              {(() => {
+                const meta: Record<string, { state: boolean; set: (v: boolean) => void; desc: string; color: string; icon: React.ReactNode }> = {
+                  'Chat': { state: widgetChat, set: setWidgetChat, desc: 'Live chat with your team', color: '#ff7a6b', icon: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /> },
+                  'Feedback': { state: widgetFeedback, set: setWidgetFeedback, desc: 'Customers suggest and vote on ideas', color: '#f59e0b', icon: <><path d="M9 18h6M10 22h4" /><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2V17h6v-.3c0-.8.4-1.5 1-2A7 7 0 0 0 12 2z" /></> },
+                  'Roadmap': { state: widgetRoadmap, set: setWidgetRoadmap, desc: 'What’s planned, in progress and done', color: '#0ea5e9', icon: <><circle cx="6" cy="19" r="2.5" /><circle cx="18" cy="5" r="2.5" /><path d="M8.5 19H17a3.5 3.5 0 0 0 0-7H7a3.5 3.5 0 0 1 0-7h8.5" /></> },
+                  'Updates': { state: widgetUpdates, set: setWidgetUpdates, desc: 'Your announcements and changelog', color: '#8b5cf6', icon: <><path d="m3 11 18-5v12L3 13v-2z" /><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" /></> },
+                  'Knowledge Base': { state: widgetKnowledgeBase, set: setWidgetKnowledgeBase, desc: 'Your help articles and guides', color: '#10b981', icon: <><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z" /><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5" /></> },
+                }
+                const labelFor: Record<string, string> = { 'Feedback': 'Feedback board' }
+                const reorder = (next: string[]) => { setWidgetOrder(next); handleSave(false, { widgetOrder: next }) }
+                const move = (label: string, by: number) => {
+                  const next = [...widgetOrder]; const i = next.indexOf(label); const j = i + by
+                  if (i < 0 || j < 0 || j >= next.length) return
+                  next.splice(j, 0, next.splice(i, 1)[0]); reorder(next)
+                }
+                const icon = (paths: React.ReactNode) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">{paths}</svg>
+                const shown = widgetOrder.filter(l => meta[l]?.state)
+                return (
+                  <>
+                    <div className="wd-list">
+                      {widgetOrder.map((label, idx) => {
+                        const m = meta[label]
+                        if (!m) return null
+                        return (
+                          <div key={label}
+                            draggable
+                            onDragStart={() => setDragWidgetItem(label)}
+                            onDragEnd={() => setDragWidgetItem(null)}
+                            onDragOver={e => e.preventDefault()}
+                            onDrop={() => {
+                              if (!dragWidgetItem || dragWidgetItem === label) return
+                              const next = [...widgetOrder]
+                              const from = next.indexOf(dragWidgetItem)
+                              const to = next.indexOf(label)
+                              if (from === -1 || to === -1) return
+                              next.splice(to, 0, next.splice(from, 1)[0])
+                              setDragWidgetItem(null)
+                              reorder(next)
+                            }}
+                            className={`wd-item${m.state ? ' on' : ''}${dragWidgetItem === label ? ' drag' : ''}`}>
+                            <svg className="wd-grip" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden><circle cx="9" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>
+                            <span className="wd-ic" style={{ '--c': m.color } as React.CSSProperties} aria-hidden>{icon(m.icon)}</span>
+                            <div className="wd-t">
+                              <b>{labelFor[label] || label}</b>
+                              <small>{m.desc}</small>
+                            </div>
+                            <div className="wd-move">
+                              <button type="button" onClick={() => move(label, -1)} disabled={idx === 0} aria-label={`Move ${labelFor[label] || label} up`}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15" /></svg></button>
+                              <button type="button" onClick={() => move(label, 1)} disabled={idx === widgetOrder.length - 1} aria-label={`Move ${labelFor[label] || label} down`}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg></button>
+                            </div>
+                            <button type="button" role="switch" aria-checked={m.state} aria-label={`Show ${labelFor[label] || label}`} className={`wd-sw${m.state ? ' on' : ''}`}
+                              onClick={() => { m.set(!m.state); handleSave(false, { [`widget${label.replace(/\s/g, '')}`]: !m.state }) }}><span /></button>
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    {/* What the widget's tab bar shows, in order. */}
+                    <div className="wd-pv" aria-label="Widget tabs preview">
+                      <span className="wd-pv-l">In the widget</span>
+                      <div className="wd-pv-bar">
+                        {shown.length === 0
+                          ? <em>Nothing shown — switch a section on</em>
+                          : shown.map(l => (
+                            <span key={l} className="wd-pv-tab" style={{ '--c': meta[l].color } as React.CSSProperties}>{icon(meta[l].icon)}{labelFor[l] || l}</span>
+                          ))}
                       </div>
-                    )
-                  })
-                })()}
-              </div>
-
-              {/* Widget order info */}
-              <div className="p-3 rounded-xl" style={{ background: 'var(--canvas)', borderColor: 'var(--border)' }}>
-                <p className="text-xs font-medium" style={{ color: 'var(--slate)' }}>Shown in the widget, in order: {widgetOrder.filter(s => {
-                  if (s === 'Chat') return widgetChat
-                  if (s === 'Feedback') return widgetFeedback
-                  if (s === 'Roadmap') return widgetRoadmap
-                  if (s === 'Updates') return widgetUpdates
-                  if (s === 'Knowledge Base') return widgetKnowledgeBase
-                  return false
-                }).map(s => s === 'Feedback' ? 'Feedback Board' : s).join(', ') || 'nothing (all sections hidden)'}</p>
-              </div>
+                    </div>
+                    <style>{WD_CSS}</style>
+                  </>
+                )
+              })()}
             </div>
 
             <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
               <h2 className="font-bold mb-1" style={{ color: 'var(--ink)' }}>Feedback Widget</h2>
-              <p className="text-sm mb-5" style={{ color: 'var(--slate)' }}>A floating button on your website that opens a popup with feedback, roadmap, and updates — just like UserJot.</p>
+              <p className="text-sm mb-5" style={{ color: 'var(--slate)' }}>A floating button on your website that opens chat, your feedback board, roadmap and updates in one popup.</p>
 
               {/* Live preview */}
               {company?.slug && (
@@ -2365,3 +2383,44 @@ window.YourApp('container', {
     </>
   )
 }
+
+// Settings → Widget: the sections list (Sellio rows with a coloured mark, an
+// on/off switch and arrows) and the tab-bar preview under it.
+const WD_CSS = `
+.wd-list{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+.wd-item{display:flex;align-items:center;gap:12px;padding:12px 14px 12px 10px;border-radius:18px;background:var(--card,#fff);box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04);cursor:grab;transition:box-shadow .2s,transform .2s,opacity .2s}
+.wd-item:hover{box-shadow:0 0 0 1px rgba(0,0,0,.08),0 8px 20px -12px rgba(16,24,40,.25)}
+.wd-item.drag{opacity:.5;transform:scale(.99)}
+.wd-item:active{cursor:grabbing}
+.wd-grip{flex-shrink:0;color:#c4c4c8}
+.wd-ic{width:38px;height:38px;flex-shrink:0;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;color:#fff;background:linear-gradient(140deg,color-mix(in srgb,var(--c) 78%,#fff),var(--c));box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 6px 14px -8px var(--c);transition:filter .2s,opacity .2s}
+.wd-ic svg{width:18px;height:18px}
+.wd-item:not(.on) .wd-ic{filter:saturate(0);opacity:.45}
+.wd-t{flex:1;min-width:0}
+.wd-t b{display:block;font-size:14.5px;font-weight:650;color:var(--ink)}
+.wd-t small{display:block;margin-top:1px;font-size:12.5px;color:var(--slate)}
+.wd-item:not(.on) .wd-t b{color:var(--slate)}
+.wd-move{display:flex;gap:2px;opacity:0;transition:opacity .15s}
+.wd-item:hover .wd-move,.wd-move:focus-within{opacity:1}
+@media (hover:none){.wd-move{opacity:1}}
+.wd-move button{width:28px;height:28px;padding:0;border:none;border-radius:50%;background:transparent;color:var(--slate);display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.wd-move button:hover:not(:disabled){background:#f4f4f5;color:var(--ink)}
+.wd-move button:disabled{opacity:.3;cursor:default}
+.wd-move button::before,.wd-sw::before{display:none!important}
+.wd-sw{position:relative;width:44px;height:26px;flex-shrink:0;padding:0;border:none;border-radius:999px;background:#d4d4d8;cursor:pointer;transition:background .18s}
+.wd-sw span{position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .2s cubic-bezier(.22,1,.36,1)}
+.wd-sw.on{background:#22c55e}
+.wd-sw.on span{transform:translateX(18px)}
+.wd-pv{padding:14px;border-radius:18px;background:#f4f4f5}
+.wd-pv-l{display:block;margin:0 0 8px 2px;font-size:12px;font-weight:650;color:var(--slate)}
+.wd-pv-bar{display:flex;flex-wrap:wrap;gap:6px}
+.wd-pv-bar em{font-size:13px;font-style:normal;color:var(--slate)}
+.wd-pv-tab{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px 0 10px;border-radius:999px;background:var(--card,#fff);box-shadow:0 1px 2px rgba(16,24,40,.08);font-size:13px;font-weight:600;color:var(--ink);animation:wdIn .3s cubic-bezier(.22,1,.36,1) both}
+.wd-pv-tab svg{width:15px;height:15px;color:var(--c)}
+.wd-pv-tab:first-child{background:var(--ink);color:var(--card,#fff)}
+.wd-pv-tab:first-child svg{color:inherit}
+@keyframes wdIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+[data-theme="dark"] .wd-pv{background:#2a2a2e}
+[data-theme="dark"] .wd-move button:hover:not(:disabled){background:#333337}
+@media (max-width:560px){.wd-t small{display:none}}
+`
