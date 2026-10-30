@@ -32,6 +32,7 @@ import AgentSuggestion from '@/components/AgentSuggestion'
 import { AiSparkIcon, Icon, LifecycleIcon, ReviewCard, dayLabel, fmtReceipt, fmtTime, initialsOf, isEmailWithoutChannel, mergeEvents, receiptChannel, timeAgo, tsOf, videoPoster } from '@/components/inbox/inbox-shared'
 import { THREAD_MESSAGES_CSS } from '@/components/inbox/inbox-css'
 import { useInbox } from '@/components/inbox/InboxContext'
+import CouponTicket from '@/components/CouponTicket'
 
 export default function ThreadMessages() {
   const {
@@ -577,7 +578,7 @@ export default function ThreadMessages() {
                   </div>
                 )}
 
-                <div className="msg-bubble" style={{
+                <div className="msg-bubble" style={msg.message_type === 'coupon' && msg.message_payload ? { padding: 0, background: 'transparent', boxShadow: 'none', border: 'none', position: 'relative' } : {
                   padding: (() => {
                     const hasMedia = atts.some((a: any) => a.kind === 'image' || a.kind === 'video')
                     // A media-only message shows the collage flush to the
@@ -859,7 +860,7 @@ export default function ThreadMessages() {
                       <div style={{ marginTop: 10, maxWidth: 320, marginLeft: 'auto', marginRight: 'auto', fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{renderTextWithLinks(msg.content)}</div>
                     </div>
                   ) : (
-                    msg.content && (() => {
+                    msg.content && !(msg.message_type === 'coupon' && msg.message_payload) && (() => {
                       // Non-English inbound message → show the English
                       // translation by default, with a "View original" toggle.
                       const tLang = (msg as any).content_lang
@@ -961,12 +962,10 @@ export default function ThreadMessages() {
                       Interactive {msg.message_type} sent — the customer can respond in the widget.
                     </div>
                   )}
+                  {/* The coupon as a ticket (the bubble steps aside for it; its
+                      text is what the customer got by SMS or email). */}
                   {msg.message_type === 'coupon' && msg.message_payload && (
-                    <div style={{ marginTop: 6, padding: '14px 16px', borderRadius: 12, background: 'linear-gradient(135deg, #fff4f1, #fff)', border: '1.5px dashed var(--coral)', color: 'var(--ink)' }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--coral)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'flex', alignItems: 'center', gap: 5 }}>{Icon.coupon(13)} Coupon sent</div>
-                      <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: 1, margin: '4px 0' }}>{msg.message_payload.code}</div>
-                      <div style={{ fontSize: 13, color: 'var(--slate)' }}>{msg.message_payload.display_amount}{msg.message_payload.expires ? ` · expires ${msg.message_payload.expires}` : ''}</div>
-                    </div>
+                    <CouponTicket payload={msg.message_payload} accent="var(--coral)" label="Coupon sent" onCopied={() => showToast('Coupon code copied')} />
                   )}
                   {msg.message_type === 'media_request' && msg.message_payload && (
                     <div style={{ marginTop: 6, padding: '12px 14px', borderRadius: 12, background: '#fff', border: '1px solid var(--border)' }}>
