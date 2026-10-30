@@ -576,6 +576,9 @@ export function useInboxController() {
   const [productSearching, setProductSearching] = useState(false)
   const [productSent, setProductSent] = useState<string>('')
   const [productError, setProductError] = useState('')
+  // The query the shown results belong to, so the panel can tell "no match"
+  // apart from "still waiting for the search to start".
+  const [productSearchedFor, setProductSearchedFor] = useState('')
 
   // ── Schedule a delivery from the chat ────────────────────────────────────
   // Books it into the team calendar so every outlet can see the run, and tells
@@ -950,6 +953,7 @@ export function useInboxController() {
   const searchProducts = async () => {
     if (!companyId || !productQuery.trim()) return
     if (productQuery.trim().length < 2) { setProductError('Type at least 2 characters.'); return }
+    const asked = productQuery.trim()
     setProductSearching(true)
     setProductError('')
     try {
@@ -968,7 +972,7 @@ export function useInboxController() {
       setProductError('Could not reach the store: ' + (e?.message || 'network error'))
       setProducts([])
     }
-    finally { setProductSearching(false) }
+    finally { setProductSearching(false); setProductSearchedFor(asked) }
   }
 
   // Live search — run the lookup as the agent types (debounced), so results
@@ -6666,7 +6670,7 @@ export function useInboxController() {
     openScheduleMsg, openTicket, orderBilling, orderDateFrom, orderDateTo, orderGallery,
     orderPrefillCart, orderSearch, outboundChannel, outlets, outletsForSchedule, payAddress,
     payAmount, payDesc, paySending, paymentSignal, pickerItems, pickupModal, pickupSending,
-    pinnedIds, podFiles, podNote, podSending, prextyCustomer, productError, productQuery,
+    pinnedIds, podFiles, podNote, podSending, prextyCustomer, productError, productQuery, productSearchedFor,
     productSearching, productSent, products, protectionBusy, quickIndex, quickMatches, quickMenuRef,
     quickMrBusy, reactToMessage, recSeconds, recording, refundOrder, reloadThread, renderLinkTools,
     renderModeHead, renderNotesSection, renderSendMenu, renderTasksSection, renderTextWithLinks,
