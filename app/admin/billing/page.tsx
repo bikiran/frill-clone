@@ -15,6 +15,7 @@ import { fmtAud } from '@/lib/tax-invoice-core'
 import { noteLabel } from '@/lib/tax-credit-note-core'
 import { soonLabel } from '@/lib/feature-availability'
 import { AdminPage, Panel } from '@/components/ui/AdminKit'
+import ContactSalesModal from '@/components/ContactSalesModal'
 
 // Mirrors the modular plans on /pricing and /upgrade. Each id is a Stripe checkout
 // tier (see lib/billing-config.ts). Prices are the Australian dollar amounts
@@ -33,7 +34,7 @@ const PLANS = [
     features: ['Live chat inbox', 'Contacts & CRM', 'SMS & voice calls', soonLabel('WhatsApp', 'whatsapp'), '3,000 SMS / month included', 'WooCommerce sync', 'Unlimited team members'],
   },
   {
-    id: 'everything', name: 'Everything', monthly: 259, annual: 2508, color: 'var(--coral)', highlighted: true,
+    id: 'everything', name: 'Everything', monthly: 259, annual: 2508, color: '#ff6a4d', highlighted: true,
     desc: 'The full Colvy platform',
     features: ['Feedback suite + Inbox', 'White-label & custom domain', 'Advanced analytics', 'AI writing assistant', 'Unlimited team members', 'Priority support'],
   },
@@ -46,6 +47,59 @@ const CheckIcon = () => (
 const ShopifyBagIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M5 8h14l-1.2 11.2a2 2 0 0 1-2 1.8H8.2a2 2 0 0 1-2-1.8L5 8z"/><path d="M9 10V6a3 3 0 0 1 6 0v4"/></svg>
 )
+
+// Each plan's mark: a glossy tile in its colour, like Sellio's plan icons.
+const MARKS: Record<string, { from: string; to: string; d: React.ReactNode }> = {
+  feedback: { from: '#a78bfa', to: '#6d28d9', d: <><path d="M9 18h6M10 22h4" /><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2V17h6v-.3c0-.8.4-1.5 1-2A7 7 0 0 0 12 2z" /></> },
+  omnichannel: { from: '#60a5fa', to: '#1d4ed8', d: <><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.8-.9L3 20.5l1.6-4.7A8.4 8.4 0 1 1 21 11.5z" /><path d="M8 11h.01M12 11h.01M16 11h.01" /></> },
+  everything: { from: '#ffb37a', to: '#ff5a3c', d: <path d="M3 8l4 4 5-7 5 7 4-4-2 11H5z" /> },
+  enterprise: { from: '#52525b', to: '#18181b', d: <><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M9 7h1M14 7h1M9 11h1M14 11h1M9 15h1M14 15h1M10 21v-3h4v3" /></> },
+  trial: { from: '#ffa68a', to: '#ff6a4d', d: <><circle cx="12" cy="13" r="8" /><path d="M12 9v4l2.5 1.5M9 2h6" /></> },
+  free: { from: '#6ee7b7', to: '#059669', d: <><path d="M12 20v-8" /><path d="M12 12c0-4 3-7 8-7 0 4-3 7-8 7z" /><path d="M12 14c0-3-2.5-5.5-7-5.5 0 3 2.5 5.5 7 5.5z" /></> },
+}
+const PlanMark = ({ id, size = 48 }: { id: string; size?: number }) => {
+  const m = MARKS[id] || MARKS[id === 'pro' ? 'everything' : 'free']
+  return (
+    <span className="bl-mark" style={{ width: size, height: size, '--a': m.from, '--b': m.to } as React.CSSProperties} aria-hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{m.d}</svg>
+    </span>
+  )
+}
+// One line of what a plan gives you, under its name in the summary.
+const FACTS: Record<string, string> = {
+  feedback: 'Ideas & voting · Roadmaps · Help centre · Unlimited team',
+  omnichannel: 'Live chat · SMS & calls · 3,000 SMS a month · Unlimited team',
+  everything: 'Feedback + Inbox · White-label · AI assistant · Unlimited team',
+  pro: 'Feedback + Inbox · White-label · AI assistant · Unlimited team',
+  enterprise: 'All of Colvy · Set up with the Colvy team · Unlimited team',
+  trial: 'Everything unlocked while you try Colvy',
+  free: 'Feedback board · Roadmap · Changelog · 2 team members',
+}
+const ENTERPRISE_FEATS = ['White-label branding', 'Roles & permissions', 'Audit logs', 'Dedicated onboarding', 'Dedicated support', 'Custom contracts', 'High-volume usage & rates']
+// The little "+ ◇ +" rule between a plan's button and its features.
+const Rule = () => (
+  <div className="bl-rule" aria-hidden><i /><svg width="34" height="12" viewBox="0 0 34 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2 6h6M5 3v6M26 6h6M29 3v6" /><path d="M17 1.5 21.5 6 17 10.5 12.5 6z" /></svg><i /></div>
+)
+const BuildingIcon = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M20 6 9 17l-5-5" /></svg>
+
+/** The Enterprise strip under the plan cards. */
+function EnterpriseCard({ current, onContact }: { current: boolean; onContact: () => void }) {
+  return (
+    <section className={`bl-ent${current ? ' current' : ''}`}>
+      <div className="bl-ent-l">
+        <PlanMark id="enterprise" size={44} />
+        <div>
+          <h3>Enterprise {current && <span className="ak-tag green">Your plan</span>}</h3>
+          <p>For teams that need compliance, control and scale beyond the plans above.</p>
+        </div>
+      </div>
+      <ul className="bl-ent-f">
+        {ENTERPRISE_FEATS.map(f => <li key={f}><BuildingIcon />{f}</li>)}
+      </ul>
+      <button type="button" className="ak-btn bl-ent-go" onClick={onContact}>{current ? 'Talk to us' : 'Contact us'}</button>
+    </section>
+  )
+}
 
 const PLAN_LABEL: Record<string, string> = { free: 'Free', trial: '14-day trial', feedback: 'Feedback', omnichannel: 'Inbox', everything: 'Everything', pro: 'Everything', enterprise: 'Enterprise' }
 const fmtDate = (d?: string | null) => (d ? new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '')
@@ -95,70 +149,92 @@ function ShopifyBilling({ info }: { info: any }) {
     : sub.cancel_at_end ? `Ends on ${fmtDate(sub.period_end)}.`
     : `${price ? `${price}. ` : ''}${sub.period_end ? `Renews ${fmtDate(sub.period_end)}.` : ''}`
   const currentShop = comp ? plan : sub?.plan || plan
+  const [contact, setContact] = useState(false)
+  const shownPlan = comp ? plan : sub?.plan || plan
   return (
     <AdminPage width="md" title="Billing" sub={<>You’re on the <b style={{ color: 'var(--ink)' }}>{PLAN_LABEL[plan] || plan}</b> plan.</>}>
       {returned === 'updated' && <p role="status" className="ak-note good">Your plan is updated.</p>}
       {returned === 'pending' && <p role="status" className="ak-note">Shopify is still confirming your plan. It shows here within a few minutes.</p>}
       {info.note && <p className="ak-note">{info.note}</p>}
 
-      <section className="bl-hero">
-        <div className="bl-hero-top">
-          <span className="bl-hero-ic shop" aria-hidden><ShopifyBagIcon /></span>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <p className="bl-eyebrow">{managed ? 'Managed by Colvy' : comp ? 'Complimentary, no charge' : 'Billed through Shopify'}</p>
-            <h2>{comp ? (PLAN_LABEL[plan] || plan) : (sub?.name || PLAN_LABEL[sub?.plan || plan] || plan)}</h2>
-            <p className={paidInShopify ? 'bad' : ''}>{status}</p>
+      <section className="bl-sum">
+        <div className="bl-sum-top">
+          <PlanMark id={shownPlan} />
+          <div className="bl-sum-t">
+            <h2>{comp ? (PLAN_LABEL[plan] || plan) : (sub?.name || PLAN_LABEL[sub?.plan || plan] || plan)} <span className="bl-chip">Your plan</span></h2>
+            <p>{FACTS[shownPlan] || FACTS.free}</p>
           </div>
+          {!(comp && !paidInShopify) && info.planUrl && info.store?.active && (
+            <a href={info.planUrl} target="_top" rel="noopener" className="ak-btn bl-shopify cv-shine">
+              <span>{paidInShopify ? 'Change to Free in Shopify' : sub?.plan ? 'Change plan' : 'Choose a plan'}</span>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M7 17 17 7M8 7h9v9"/></svg>
+            </a>
+          )}
         </div>
-        <p className="bl-hero-sub">
-          {managed
-            ? <>Your plan is arranged with the Colvy team. Anything you add through the app is charged on {info.store?.name ? <b>{info.store.name}</b> : 'your store'}’s Shopify bill.</>
-            : comp
-            ? <>Colvy has given this workspace its plan free of charge. Nothing is added to {info.store?.name ? <b>{info.store.name}</b> : 'your store'}’s Shopify bill.</>
-            : <>Your Colvy plan is charged on {info.store?.name ? <b>{info.store.name}</b> : 'your store'}’s Shopify bill.</>}
-        </p>
-        {comp && !paidInShopify ? null : info.planUrl && info.store?.active ? (
-          <a href={info.planUrl} target="_top" rel="noopener" className="ak-btn bl-shopify">
-            {paidInShopify ? 'Change to Free in Shopify' : sub?.plan ? 'Change plan in Shopify' : 'Choose a plan in Shopify'}
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M7 17 17 7M8 7h9v9"/></svg>
-          </a>
-        ) : (
-          <p className="ak-hint">Reconnect your Shopify store under Integrations → Shopify to change your plan.</p>
+        <div className="bl-sum-row">
+          <span className="bl-row-ic shop" aria-hidden><ShopifyBagIcon /></span>
+          <div className="bl-sum-rt">
+            <b>{managed ? 'Managed by Colvy' : comp ? 'Complimentary, no charge' : 'Billed through Shopify'}</b>
+            <p className={paidInShopify ? 'bad' : ''}>{status}</p>
+            <small>
+              {managed
+                ? <>Anything you add through the app is charged on {info.store?.name ? <b>{info.store.name}</b> : 'your store'}’s Shopify bill.</>
+                : comp
+                ? <>Nothing is added to {info.store?.name ? <b>{info.store.name}</b> : 'your store'}’s Shopify bill.</>
+                : <>Charged on {info.store?.name ? <b>{info.store.name}</b> : 'your store'}’s Shopify bill. Invoices and your payment method are in Shopify under Settings → Billing.</>}
+            </small>
+          </div>
+          {managed && <button type="button" className="ak-btn sm" onClick={() => setContact(true)}>Contact us</button>}
+        </div>
+        {!(comp && !paidInShopify) && !(info.planUrl && info.store?.active) && (
+          <p className="ak-hint bl-sum-hint">Reconnect your Shopify store under Integrations → Shopify to change your plan.</p>
         )}
         {(card || cardMsg) && (
-          <div className="ak-note warn" style={{ margin: '16px 0 0', display: 'block' }}>
+          <div className="ak-note warn bl-sum-note">
             {card ? (
-              <>
-                <p style={{ margin: 0 }}>You still have a Colvy card subscription{card.tier ? ` (${PLAN_LABEL[card.tier] || card.tier})` : ''} from before you connected Shopify. Once your plan in Shopify has started, stop the card subscription so you aren’t charged twice. It runs to the end of the period you’ve paid for.</p>
+              <span>
+                You still have a Colvy card subscription{card.tier ? ` (${PLAN_LABEL[card.tier] || card.tier})` : ''} from before you connected Shopify. Once your plan in Shopify has started, stop the card subscription so you aren’t charged twice. It runs to the end of the period you’ve paid for.
+                <br />
                 <button type="button" onClick={cancelCard} disabled={cancelling} className="ak-btn sm" style={{ marginTop: 10 }}>
                   {cancelling ? 'Stopping…' : 'Stop card subscription'}
                 </button>
-              </>
+              </span>
             ) : null}
-            {cardMsg && <p style={{ margin: card ? '8px 0 0' : 0 }}>{cardMsg}</p>}
+            {cardMsg && <span style={{ display: 'block', marginTop: card ? 8 : 0 }}>{cardMsg}</span>}
           </div>
         )}
         {!comp && (
-          <p className="ak-hint" style={{ marginTop: 14 }}>
-            Plans, invoices and your payment method are in your Shopify admin under Settings → Billing. To cancel, choose the Free plan in Shopify or uninstall Colvy from your store.
-          </p>
+          <p className="ak-hint bl-sum-hint">To cancel, choose the Free plan in Shopify or uninstall Colvy from your store.</p>
         )}
       </section>
 
+      <div className="bl-plans-h"><h2>{comp ? 'What each plan includes' : 'Plans'}</h2></div>
       <div className="bl-plans">
-        {PLANS.map(p => (
-          <div key={p.id} className={`bl-plan${currentShop === p.id ? ' current' : ''}`} style={{ '--pc': p.color } as React.CSSProperties}>
-            <div className="bl-plan-h">
-              <h3>{p.name}</h3>
-              {currentShop === p.id && <span className="ak-tag green">Current</span>}
+        {PLANS.map(p => {
+          const current = currentShop === p.id
+          return (
+            <div key={p.id} className={`bl-plan${current ? ' current' : ''}`} style={{ '--pc': p.color } as React.CSSProperties}>
+              <PlanMark id={p.id} size={46} />
+              <div className="bl-plan-h">
+                <h3>{p.name}</h3>
+                {current && <span className="ak-tag green">Current</span>}
+              </div>
+              <p className="bl-plan-desc">{p.desc}</p>
+              <Rule />
+              <p className="bl-incl-l">Includes</p>
+              <ul className="bl-feats">
+                {p.features.map(f => <li key={f}><span aria-hidden><CheckIcon /></span>{f}</li>)}
+              </ul>
             </div>
-            <p className="bl-plan-desc">{p.desc}</p>
-            <ul className="bl-feats">
-              {p.features.map(f => <li key={f}><span aria-hidden><CheckIcon /></span>{f}</li>)}
-            </ul>
-          </div>
-        ))}
+          )
+        })}
       </div>
+      <EnterpriseCard current={plan === 'enterprise'} onContact={() => setContact(true)} />
+      <p className="bl-foot">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
+        Plans for Shopify stores are billed by Shopify · Change or cancel any time
+      </p>
+      <ContactSalesModal open={contact} onClose={() => setContact(false)} plan="Enterprise" source="billing" />
       <style>{BL_CSS}</style>
     </AdminPage>
   )
@@ -187,6 +263,7 @@ export default function BillingPage() {
   // override in company_entitlements once Stripe confirms the payment.
   const [brandingAddon, setBrandingAddon] = useState(false)
   const [addonPending, setAddonPending] = useState(false)
+  const [contact, setContact] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }: any) => {
@@ -367,59 +444,76 @@ export default function BillingPage() {
   return (
     <AdminPage width="md" title="Billing"
       sub={<>You’re on the <b style={{ color: 'var(--ink)' }}>{planLabel}</b> plan. Prices are in Australian dollars and include GST.</>}
-      actions={isPaid && hasStripe ? (
-        <button type="button" className="ak-btn" onClick={handleManageBilling} disabled={portalLoading}>
-          <CreditCardIcon /> {portalLoading ? 'Opening…' : 'Manage billing'}
-        </button>
-      ) : undefined}>
+      >
 
-      {/* Where you are now */}
-      {(isPaid || onTrial) && (
-        <section className="bl-hero">
-          {onTrial ? (
-            <>
-              <div className="bl-hero-top">
-                <span className="bl-hero-ic" aria-hidden>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg>
-                </span>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <p className="bl-eyebrow">14-day free trial</p>
-                  <h2>{trialInfo?.line || 'Try everything free'}</h2>
-                  <p>Your trial includes unlimited surveys, white labelling and the Privacy add-on.</p>
-                </div>
-                <span className="ak-tag" style={{ background: 'color-mix(in srgb,var(--coral) 14%,var(--card,#fff))', color: 'var(--coral)' }}>Trial</span>
-              </div>
-              {trialInfo && <div className="bl-trial" role="img" aria-label={trialInfo.line}><i style={{ width: `${trialInfo.pct}%` }} /></div>}
-              <div className="bl-incl">
-                {['Unlimited ideas', 'Unlimited surveys', 'Unlimited polls', 'Unlimited help articles'].map(x => (
-                  <span key={x}><CheckIcon />{x}</span>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="bl-hero-top">
-              <span className="bl-hero-ic good" aria-hidden><CheckIcon /></span>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <p className="bl-eyebrow">Your plan</p>
-                <h2>{planLabel}</h2>
-                <p>
-                  {!hasStripe
-                    ? 'Set up and managed by the Colvy team. Contact us for any billing changes.'
-                    : subscription?.status === 'active' ? 'Your subscription is active.' : 'Manage your subscription below.'}
-                  {hasStripe && subscription?.current_period_end && ` Renews ${new Date(subscription.current_period_end * 1000).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}.`}
-                </p>
-              </div>
-              {hasStripe
-                ? <button type="button" className="ak-btn go" onClick={handleManageBilling} disabled={portalLoading}>{portalLoading ? 'Opening…' : 'Manage'}</button>
-                : <span className="ak-tag">Managed by Colvy</span>}
-            </div>
-          )}
-        </section>
-      )}
+      {/* Where you are now: the plan, then the things you can do about it. */}
+      <section className="bl-sum">
+        <div className="bl-sum-top">
+          <PlanMark id={onTrial ? (currentPlanId === 'trial' ? 'trial' : 'free') : currentPlanId} />
+          <div className="bl-sum-t">
+            <h2>{onTrial && currentPlanId === 'trial' ? '14-day trial' : planLabel} <span className="bl-chip">Your plan</span></h2>
+            <p>{FACTS[currentPlanId] || FACTS.free}</p>
+          </div>
+          {isPaid
+            ? (hasStripe
+              ? <button type="button" className="ak-btn" onClick={handleManageBilling} disabled={portalLoading}>{portalLoading ? 'Opening…' : 'Manage'}</button>
+              : <span className="ak-tag">Managed by Colvy</span>)
+            : <a href="#plans" className="ak-btn">See plans</a>}
+        </div>
+
+        {onTrial && trialInfo && (
+          <div className="bl-meter">
+            <div className="bl-meter-l"><span className="bl-meter-ic" aria-hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg></span>Free trial</div>
+            <div className="bl-meter-v">{trialInfo.line}</div>
+            <div className="bl-bar" role="img" aria-label={trialInfo.line}><i style={{ width: `${trialInfo.pct}%` }} /></div>
+          </div>
+        )}
+        {isPaid && hasStripe && subscription?.current_period_end && (
+          <div className="bl-meter">
+            <div className="bl-meter-l"><span className="bl-meter-ic good" aria-hidden><CheckIcon /></span>{subscription?.status === 'active' ? 'Active' : 'Subscription'}</div>
+            <div className="bl-meter-v">Renews {new Date(subscription.current_period_end * 1000).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+          </div>
+        )}
+
+        {/* Remove branding add-on */}
+        <div className="bl-sum-row">
+          <span className="bl-row-ic" aria-hidden><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15.5l-1.9-4.6L5.5 9l4.6-1.4z" /><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z" /></svg></span>
+          <div className="bl-sum-rt">
+            <b>Remove “Powered by Colvy” <span className="ak-tag amber">Add-on</span></b>
+            <p>{brandingIncluded ? `Included free on your ${planLabel} plan.` : brandingAddon ? 'Colvy branding is hidden on your board, help centre, forms and booking pages.' : 'Hide the Colvy footer from your board, help centre, forms and booking pages.'}</p>
+          </div>
+          {brandingIncluded ? <span className="ak-tag green"><CheckIcon />Included</span>
+            : brandingAddon ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <span className="ak-tag green"><CheckIcon />On</span>
+                {hasStripe && <button type="button" className="ak-btn sm" onClick={handleManageBilling} disabled={portalLoading}>{portalLoading ? 'Opening…' : 'Manage'}</button>}
+              </span>
+            ) : addonPending ? (
+              <span className="ak-tag"><span className="bl-spin" aria-hidden />Turning on…</span>
+            ) : (
+              <button type="button" className="ak-btn bl-buy cv-shine" onClick={() => handleUpgrade('branding_removal')} disabled={loading === 'branding_removal'}>
+                <span>{loading === 'branding_removal' ? 'Opening checkout…' : 'Add for A$5/month'}</span>
+              </button>
+            )}
+        </div>
+
+        {/* Manage billing */}
+        <div className="bl-sum-row">
+          <span className="bl-row-ic" aria-hidden><CreditCardIcon /></span>
+          <div className="bl-sum-rt">
+            <b>Manage billing</b>
+            <p>{hasStripe ? 'Invoices, payment method and cancellation.' : isPaid ? 'Your plan is set up by the Colvy team. Talk to us about any change.' : 'Choose a plan below to add a card.'}</p>
+          </div>
+          {hasStripe
+            ? <button type="button" className="ak-btn sm" onClick={handleManageBilling} disabled={portalLoading}>{portalLoading ? 'Opening…' : 'Manage subscription'}</button>
+            : isPaid ? <button type="button" className="ak-btn sm" onClick={() => setContact(true)}>Contact us</button>
+            : <button type="button" className="ak-btn sm" disabled>Manage subscription</button>}
+        </div>
+      </section>
 
       {/* Plans */}
-      <div className="bl-plans-h">
-        <h2>Plans</h2>
+      <div className="bl-plans-h" id="plans">
+        <h2>{isPaid ? 'Plans' : 'Upgrade your plan'}</h2>
         <div className="ak-seg" role="radiogroup" aria-label="Billing period">
           <button type="button" role="radio" aria-checked={billing === 'monthly'} className={billing === 'monthly' ? 'on' : ''} onClick={() => setBilling('monthly')}>Monthly</button>
           <button type="button" role="radio" aria-checked={billing === 'annual'} className={billing === 'annual' ? 'on' : ''} onClick={() => setBilling('annual')}>Yearly <span className="ak-tag green" style={{ height: 20 }}>Save 20%</span></button>
@@ -432,17 +526,20 @@ export default function BillingPage() {
           const best = !!(plan as any).highlighted
           return (
             <div key={plan.id} className={`bl-plan${best ? ' best' : ''}${active ? ' current' : ''}`} style={{ '--pc': plan.color } as React.CSSProperties}>
+              <PlanMark id={plan.id} size={46} />
               <div className="bl-plan-h">
                 <h3>{plan.name}</h3>
                 {active ? <span className="ak-tag green">Current</span> : best ? <span className="bl-best">Best value</span> : null}
               </div>
               <p className="bl-plan-desc">{plan.desc}</p>
-              <p className="bl-price"><b>{formatPrice(price)}</b><span>/month</span></p>
+              <p className="bl-price"><b>{formatPrice(price)}</b><span>per month</span></p>
               <p className="bl-price-sub">{billing === 'annual' ? `${formatPrice(plan.annual)} billed yearly` : 'Billed monthly'}</p>
               <button type="button" onClick={() => handleUpgrade(plan.id)} disabled={active || loading === plan.id}
-                className={`ak-btn${active ? ' ghost' : best ? ' go' : ' dark'}`} style={{ width: '100%' }}>
-                {loading === plan.id ? 'Opening checkout…' : active ? 'Your plan' : `Choose ${plan.name}`}
+                className={`bl-sub${active ? ' on' : ` ${plan.id} cv-shine`}`}>
+                <span>{loading === plan.id ? 'Opening checkout…' : active ? 'Your plan' : 'Subscribe'}</span>
               </button>
+              <Rule />
+              <p className="bl-incl-l">Includes</p>
               <ul className="bl-feats">
                 {plan.features.map(f => <li key={f}><span aria-hidden><CheckIcon /></span>{f}</li>)}
               </ul>
@@ -450,30 +547,11 @@ export default function BillingPage() {
           )
         })}
       </div>
-
-      {/* Remove branding add-on */}
-      <Panel title={<>Remove “Powered by Colvy” <span className="ak-tag amber" style={{ marginLeft: 6, verticalAlign: 2 }}>Add-on</span></>}
-        sub="Hide the Colvy footer from your board, help centre, forms and booking pages. Available on any plan."
-        right={
-          brandingIncluded ? <span className="ak-tag green"><CheckIcon />Included</span>
-          : brandingAddon ? (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              <span className="ak-tag green"><CheckIcon />On</span>
-              {hasStripe && <button type="button" className="ak-btn sm" onClick={handleManageBilling} disabled={portalLoading}>{portalLoading ? 'Opening…' : 'Manage'}</button>}
-            </span>
-          ) : addonPending ? (
-            <span className="ak-tag"><span className="bl-spin" aria-hidden />Turning on…</span>
-          ) : (
-            <button type="button" className="ak-btn go" onClick={() => handleUpgrade('branding_removal')} disabled={loading === 'branding_removal'}>
-              {loading === 'branding_removal' ? 'Opening checkout…' : 'Add for A$5/month'}
-            </button>
-          )
-        }>
-        {brandingIncluded
-          ? <p className="ak-note good" style={{ margin: 0 }}><CheckIcon /> Branding removal is included free on your {planLabel} plan.</p>
-          : brandingAddon ? <p className="ak-note good" style={{ margin: 0 }}><CheckIcon /> Colvy branding is hidden on your board, help centre, forms and booking pages.</p>
-          : null}
-      </Panel>
+      <EnterpriseCard current={currentPlanId === 'enterprise'} onContact={() => setContact(true)} />
+      <p className="bl-foot">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
+        Australian dollars, GST included · Cancel any time
+      </p>
 
       {/* Prepaid SMS credits for texts beyond the monthly allowance */}
       {company?.id && <SmsCreditsCard companyId={company.id} companyName={company.name} />}
@@ -581,49 +659,91 @@ export default function BillingPage() {
           )
         })()}
       </Panel>
+      <ContactSalesModal open={contact} onClose={() => setContact(false)} plan="Enterprise" source="billing" />
       <style>{BL_CSS}</style>
     </AdminPage>
   )
 }
 
 const BL_CSS = `
-.bl-hero{margin-bottom:22px;padding:20px 22px;border-radius:24px;background:linear-gradient(160deg,color-mix(in srgb,var(--coral) 7%,var(--card,#fff)),var(--card,#fff) 65%);box-shadow:0 0 0 1px rgba(0,0,0,.05),0 1px 2px rgba(16,24,40,.04)}
-.bl-hero-top{display:flex;align-items:flex-start;gap:14px}
-.bl-hero-ic{width:44px;height:44px;flex-shrink:0;border-radius:15px;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--coral) 14%,var(--card,#fff));color:var(--coral)}
-.bl-hero-ic.good{background:#dcfce7;color:#15803d}
-.bl-hero-ic.shop{background:#e3f1ec;color:#008060}
-.bl-eyebrow{margin:0;font-size:12.5px;font-weight:650;color:var(--mut)}
-.bl-hero h2{margin:2px 0 0;font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:24px;font-weight:700;letter-spacing:-.035em;color:var(--ink)}
-.bl-hero-top p:not(.bl-eyebrow){margin:4px 0 0;font-size:14px;line-height:1.5;color:var(--mut)}
-.bl-hero-top p.bad{color:#b42318}
-.bl-hero-sub{margin:14px 0 0;font-size:14px;line-height:1.55;color:var(--mut)}
-.bl-hero-sub b{color:var(--ink)}
-.bl-trial{height:8px;margin:16px 0 0;border-radius:999px;background:var(--f);overflow:hidden}
-.bl-trial i{display:block;height:100%;border-radius:999px;background:var(--coral)}
-.bl-incl{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
-.bl-incl span{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:999px;background:var(--card,#fff);box-shadow:0 0 0 1px rgba(0,0,0,.06);font-size:13px;font-weight:600;color:var(--ink)}
-.bl-incl svg{color:#16a34a}
-.ak-btn.bl-shopify{margin-top:16px;background:#008060;color:#fff;box-shadow:none}
+.bl-sum{margin-bottom:26px;border-radius:24px;background:var(--card,#fff);box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04);overflow:hidden}
+.bl-sum-top{display:flex;align-items:center;gap:14px;padding:20px 22px}
+.bl-sum-t{flex:1;min-width:0}
+.bl-sum-t h2{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:0;font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:24px;font-weight:700;letter-spacing:-.035em;color:var(--ink)}
+.bl-sum-t p{margin:4px 0 0;font-size:13.5px;color:var(--mut)}
+.bl-chip{display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:999px;background:var(--f);font-family:inherit;font-size:12px;font-weight:600;letter-spacing:0;color:var(--mut)}
+.bl-mark{position:relative;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;border-radius:30%;color:#fff;background:linear-gradient(145deg,var(--a),var(--b));box-shadow:inset 0 1.5px 0 rgba(255,255,255,.45),inset 0 -2px 0 rgba(0,0,0,.12),0 10px 22px -10px var(--b);overflow:hidden}
+.bl-mark::after{content:'';position:absolute;left:8%;right:8%;top:5%;height:42%;border-radius:40% 40% 50% 50%;background:linear-gradient(rgba(255,255,255,.4),rgba(255,255,255,0))}
+.bl-mark svg{position:relative;z-index:1;width:50%;height:50%;filter:drop-shadow(0 1px 1px rgba(0,0,0,.18))}
+.bl-meter{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:8px 12px;padding:14px 22px;box-shadow:0 -1px 0 var(--line)}
+.bl-meter-l{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:var(--ink)}
+.bl-meter-ic{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--coral) 14%,var(--card,#fff));color:var(--coral)}
+.bl-meter-ic.good{background:#dcfce7;color:#15803d}
+.bl-meter-ic svg{width:13px;height:13px}
+.bl-meter-v{justify-self:end;font-size:13.5px;font-weight:600;color:var(--mut);font-variant-numeric:tabular-nums}
+.bl-bar{grid-column:1/-1;height:6px;border-radius:999px;background:var(--f);overflow:hidden}
+.bl-bar i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#ffa68a,var(--coral))}
+.bl-sum-row{display:flex;align-items:center;gap:14px;padding:16px 22px;box-shadow:0 -1px 0 var(--line)}
+.bl-row-ic{width:36px;height:36px;flex-shrink:0;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;background:var(--f);color:var(--mut)}
+.bl-row-ic.shop{background:#e3f1ec;color:#008060}
+.bl-sum-rt{flex:1;min-width:0}
+.bl-sum-rt b{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:14.5px;font-weight:650;color:var(--ink)}
+.bl-sum-rt p{margin:2px 0 0;font-size:13px;line-height:1.5;color:var(--mut)}
+.bl-sum-rt p.bad{color:#b42318}
+.bl-sum-rt small{display:block;margin-top:4px;font-size:12.5px;line-height:1.5;color:var(--soft)}
+.bl-sum-rt small b{display:inline;color:var(--ink)}
+.bl-sum-hint{margin:0!important;padding:0 22px 16px}
+.bl-sum-note{display:block!important;margin:0 22px 16px!important}
+@media (max-width:640px){.bl-sum-top,.bl-sum-row{flex-wrap:wrap}.bl-sum-row>.ak-btn,.bl-sum-row>.ak-tag,.bl-sum-row>span:last-child{margin-left:50px}.bl-sum-top>.ak-btn,.bl-sum-top>.ak-tag{width:100%}}
+.ak-btn.bl-shopify{background:#008060;color:#fff;box-shadow:none}
 .ak-btn.bl-shopify:hover{background:#008060;filter:brightness(.95)}
-.bl-plans-h{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:6px 0 12px}
-.bl-plans-h h2{margin:0;font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:20px;font-weight:700;letter-spacing:-.03em;color:var(--ink)}
-.bl-plans{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:22px}
+.ak-btn.bl-buy{background:linear-gradient(180deg,#ff8a5c,#ff5a2c);color:#fff;box-shadow:0 8px 20px -10px #ff5a2c,inset 0 1px 0 rgba(255,255,255,.3)}
+.ak-btn.bl-buy:hover{background:linear-gradient(180deg,#ff8a5c,#ff5a2c);filter:brightness(1.04)}
+.bl-plans-h{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:8px 0 14px;scroll-margin-top:90px}
+.bl-plans-h h2{margin:0;font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:24px;font-weight:700;letter-spacing:-.035em;color:var(--ink)}
+.bl-plans{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:14px}
 @media (max-width:900px){.bl-plans{grid-template-columns:minmax(0,1fr)}}
-.bl-plan{display:flex;flex-direction:column;padding:20px;border-radius:22px;background:var(--card,#fff);box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04)}
-.bl-plan.best{box-shadow:0 0 0 2px var(--coral),0 16px 36px -20px color-mix(in srgb,var(--coral) 60%,transparent)}
+.bl-plan{display:flex;flex-direction:column;padding:22px;border-radius:26px;background:var(--card,#fff);box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04);transition:transform .25s cubic-bezier(.22,1,.36,1),box-shadow .25s}
+.bl-plan:hover{transform:translateY(-3px);box-shadow:0 0 0 1px rgba(0,0,0,.07),0 22px 44px -24px rgba(16,24,40,.28)}
+.bl-plan.best{box-shadow:0 0 0 2px #ff6a4d,0 22px 44px -24px rgba(255,106,77,.7)}
 .bl-plan.current{box-shadow:0 0 0 2px #22c55e}
-.bl-plan-h{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.bl-plan-h h3{margin:0;font-size:17px;font-weight:700;letter-spacing:-.02em;color:var(--ink)}
-.bl-best{height:22px;padding:0 9px;border-radius:999px;display:inline-flex;align-items:center;background:var(--coral);color:#fff;font-size:11.5px;font-weight:700}
-.bl-plan-desc{margin:3px 0 0;font-size:13px;color:var(--mut)}
-.bl-price{display:flex;align-items:baseline;gap:4px;margin:16px 0 0}
-.bl-price b{font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:38px;font-weight:700;letter-spacing:-.045em;line-height:1;color:var(--ink);font-variant-numeric:tabular-nums}
+.bl-plan-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:16px}
+.bl-plan-h h3{margin:0;font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:28px;font-weight:700;letter-spacing:-.04em;line-height:1.1;color:var(--ink)}
+.bl-best{height:24px;padding:0 10px;border-radius:999px;display:inline-flex;align-items:center;background:#ff6a4d;color:#fff;font-size:11.5px;font-weight:700}
+.bl-plan-desc{margin:6px 0 0;font-size:13.5px;line-height:1.5;color:var(--mut)}
+.bl-price{display:flex;align-items:baseline;gap:6px;margin:20px 0 0}
+.bl-price b{font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:44px;font-weight:700;letter-spacing:-.05em;line-height:1;color:var(--ink);font-variant-numeric:tabular-nums}
 .bl-price span{font-size:14px;color:var(--mut)}
-.bl-price-sub{margin:6px 0 16px;font-size:12.5px;color:var(--soft)}
-.bl-feats{list-style:none;margin:18px 0 0;padding:0;display:flex;flex-direction:column;gap:9px}
-.bl-feats li{display:flex;align-items:flex-start;gap:9px;font-size:13.5px;line-height:1.4;color:var(--ink)}
+.bl-price-sub{margin:8px 0 18px;font-size:12.5px;color:var(--soft)}
+.bl-sub{width:100%;height:50px;border:none;border-radius:999px;font:inherit;font-size:15px;font-weight:700;cursor:pointer;transition:transform .15s,filter .2s,box-shadow .2s}
+.bl-sub::before{display:none!important}
+.bl-sub:active{transform:scale(.98)}
+.bl-sub:disabled{cursor:default}
+.bl-sub.feedback{background:var(--card,#fff);color:var(--ink);box-shadow:inset 0 0 0 1.5px rgba(0,0,0,.12),0 2px 6px -2px rgba(16,24,40,.12);--shine-c:139,92,246}
+.bl-sub.feedback::after{opacity:.4}
+.bl-sub.omnichannel{color:#fff;background:linear-gradient(180deg,#5b8cff,#2b59ff);box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 12px 26px -12px #2b59ff}
+.bl-sub.everything{color:#fff;background:linear-gradient(180deg,#ff8f5e,#ff5a2c);box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 12px 26px -12px #ff5a2c}
+.bl-sub:not(.on):hover{filter:brightness(1.05)}
+.bl-sub.on{background:var(--f);color:var(--mut)}
+.bl-rule{display:flex;align-items:center;gap:6px;margin:20px 0 14px;color:#d4d4d8}
+.bl-rule i{flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--line) 30%,var(--line) 70%,transparent)}
+.bl-incl-l{margin:0 0 10px;font-size:12.5px;font-weight:650;color:var(--soft)}
+.bl-feats{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.bl-feats li{display:flex;align-items:flex-start;gap:10px;font-size:14px;line-height:1.4;color:var(--ink)}
 .bl-feats li span{flex-shrink:0;width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--pc) 14%,var(--card,#fff));color:var(--pc)}
 .bl-feats li span svg{width:12px;height:12px}
+.bl-ent{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1.5fr) auto;align-items:center;gap:20px;margin-bottom:14px;padding:22px;border-radius:26px;background:var(--card,#fff);box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04)}
+.bl-ent.current{box-shadow:0 0 0 2px #22c55e}
+.bl-ent-l{display:flex;align-items:flex-start;gap:14px;min-width:0}
+.bl-ent h3{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0;font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:22px;font-weight:700;letter-spacing:-.035em;color:var(--ink)}
+.bl-ent-l p{margin:4px 0 0;font-size:13.5px;line-height:1.5;color:var(--mut)}
+.bl-ent-f{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 14px;margin:0;padding:0;list-style:none}
+.bl-ent-f li{display:flex;align-items:center;gap:7px;font-size:13.5px;color:var(--ink)}
+.bl-ent-f svg{flex-shrink:0;color:#16a34a}
+.ak-btn.bl-ent-go{height:46px;padding:0 24px}
+@media (max-width:980px){.bl-ent{grid-template-columns:minmax(0,1fr)}.ak-btn.bl-ent-go{justify-self:start}}
+@media (max-width:480px){.bl-ent-f{grid-template-columns:minmax(0,1fr)}}
+.bl-foot{display:flex;align-items:center;justify-content:center;gap:7px;margin:4px 0 28px;font-size:13px;color:var(--soft)}
 .bl-card{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:16px;background:var(--f)}
 .bl-card-ic{width:44px;height:32px;flex-shrink:0;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;background:var(--card,#fff);color:var(--mut);box-shadow:0 0 0 1px rgba(0,0,0,.06)}
 .bl-card.muted .ak-row-t b{color:var(--mut)}

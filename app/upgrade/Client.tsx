@@ -226,7 +226,7 @@ export default function UpgradePage() {
                 </div>
 
                 <button onClick={() => handleUpgrade(tier)} disabled={isCurrent || isLoading}
-                  className="w-full py-3 rounded-xl text-sm font-semibold cursor-pointer disabled:opacity-70 mb-6 transition-all active:scale-95"
+                  className={`w-full py-3 rounded-xl text-sm font-semibold cursor-pointer disabled:opacity-70 mb-6 transition-all active:scale-95${!isCurrent && tier.id !== 'free' ? ' cv-shine' : ''}`}
                   style={{
                     background: isCurrent ? 'var(--border)' : tier.highlighted ? 'var(--coral)' : tier.id === 'enterprise' ? 'var(--ink)' : 'var(--canvas)',
                     color: isCurrent ? 'var(--slate)' : tier.id === 'free' ? 'var(--ink)' : 'white',

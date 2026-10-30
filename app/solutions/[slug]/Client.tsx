@@ -318,7 +318,7 @@ export default function SolutionPage() {
           <div style={{ maxWidth: 720, margin: '0 auto' }}>
             <h2 style={{ fontSize: 'clamp(30px, 5vw, 54px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.05, color: '#fff', margin: '0 0 14px' }}>{page.cta.title}</h2>
             <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.9)', margin: '0 0 30px' }}>{page.cta.sub}</p>
-            <button onClick={go} className="sol-btn" style={{ padding: '16px 38px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 17, border: 'none', cursor: 'pointer', boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>Get started — it’s free</button>
+            <button onClick={go} className="sol-btn cv-shine tint" style={{ padding: '16px 38px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 17, border: 'none', cursor: 'pointer', boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>Get started — it’s free</button>
           </div>
         </Reveal>
       </section>

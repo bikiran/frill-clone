@@ -214,7 +214,7 @@ export default function PlanFinder({ dark, annual, setAnnual, tiers, onChoose, o
           {price === 0 ? 'No card, no time limit.' : 'Inc. GST · 14-day free trial, no card.'}
           {overage && (rec.plan === 'omnichannel' || rec.plan === 'everything') && <> Plus about {aud(overage.cost)}/mo in SMS credits at {a.texts.toLocaleString('en-AU')} texts.</>}
         </div>
-        <InviteCta onClick={() => tier && onChoose(tier.id)} className="pf-go" style={{ marginTop: 20, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '16px 0', borderRadius: 999, border: 'none', background: CORAL, color: '#fff', fontFamily: 'inherit', fontSize: 16, fontWeight: 800, cursor: 'pointer', boxShadow: '0 14px 34px rgba(255,106,77,0.3)' }}>{tier?.cta || 'Get started'}</InviteCta>
+        <InviteCta onClick={() => tier && onChoose(tier.id)} className="pf-go cv-shine" style={{ marginTop: 20, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '16px 0', borderRadius: 999, border: 'none', background: CORAL, color: '#fff', fontFamily: 'inherit', fontSize: 16, fontWeight: 800, cursor: 'pointer', boxShadow: '0 14px 34px rgba(255,106,77,0.3)' }}>{tier?.cta || 'Get started'}</InviteCta>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 18, fontSize: 14 }}>
         <button type="button" onClick={restart} style={{ background: 'none', border: 'none', padding: 0, color: muted, fontFamily: 'inherit', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>↺ Start over</button>

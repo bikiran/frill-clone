@@ -934,6 +934,25 @@ button:hover .action-tooltip,
 @keyframes invRing { 0% { --inv-a: 0deg; opacity: 0 } 12% { opacity: 1 } 85% { opacity: 1 } 100% { --inv-a: 360deg; opacity: 0 } }
 @media (prefers-reduced-motion: reduce) { .cv-inv::before { display: none; } }
 
+/* ── SHINE: a light streak that sweeps across a call-to-action every few
+   seconds and again on hover (pricing and "Get started" buttons). Uses
+   ::after, so it sits with InviteCta's ring (::before). `.tint` is for a
+   white button, where a white streak wouldn't show. ── */
+.cv-shine { position: relative; overflow: hidden; isolation: isolate; --shine-c: 255, 255, 255; }
+.cv-shine.tint { --shine-c: 255, 122, 90; }
+.cv-shine::after {
+  content: ''; position: absolute; z-index: 1; top: -30%; bottom: -30%; left: 0; width: 42%; pointer-events: none;
+  background: linear-gradient(100deg, transparent 0%, rgba(var(--shine-c), 0) 18%, rgba(var(--shine-c), .38) 42%, rgba(var(--shine-c), .75) 50%, rgba(var(--shine-c), .38) 58%, rgba(var(--shine-c), 0) 82%, transparent 100%);
+  transform: translateX(-180%) skewX(-20deg);
+  animation: cvShine 4.6s cubic-bezier(.5, 0, .2, 1) 1.4s infinite;
+}
+.cv-shine.tint::after { opacity: .55; }
+.cv-shine:hover::after, .cv-shine:focus-visible::after { animation: cvShineNow .85s cubic-bezier(.5, 0, .2, 1) forwards; }
+.cv-shine > * { position: relative; z-index: 2; }
+@keyframes cvShine { 0% { transform: translateX(-180%) skewX(-20deg); } 30%, 100% { transform: translateX(360%) skewX(-20deg); } }
+@keyframes cvShineNow { from { transform: translateX(-180%) skewX(-20deg); } to { transform: translateX(360%) skewX(-20deg); } }
+@media (prefers-reduced-motion: reduce) { .cv-shine::after { animation: none; display: none; } }
+
 /* ── Touch response ─────────────────────────────────────────────────────────
    Every button gives a little under your finger, like a physical key.
    components/PressFeedback marks a button on pointer-down and sizes the press
