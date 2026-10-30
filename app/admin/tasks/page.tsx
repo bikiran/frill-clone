@@ -2488,7 +2488,7 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
         }} />
       <p style={L}>Linked order</p>
       {task.order_number ? (
-        <LinkedOrderCard orderId={task.order_id} orderNumber={task.order_number} customer={task.order_customer} total={task.order_total} removeClassName="tl-pill"
+        <LinkedOrderCard companyId={companyId} orderId={task.order_id} orderNumber={task.order_number} customer={task.order_customer} total={task.order_total} removeClassName="tl-pill"
           onRemove={() => patch({ order_id: null, order_number: null, order_customer: null, order_total: null })} />
       ) : (
         <button className="tl-pill" onClick={() => setShowOrderSearch(true)} style={{ height: 36 }}>
