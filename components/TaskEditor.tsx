@@ -311,7 +311,7 @@ export default function TaskEditor({ companyId, team, outlets = [], me, userId, 
       <AssigneePicker members={team} value={assignees} onChange={setAssignees} />
       <p style={L}>Linked order</p>
       {order ? (
-        <LinkedOrderCard orderId={order.order_id} orderNumber={order.order_number} customer={order.customer} total={order.total} removeClassName="te-pill" onRemove={() => setOrder(null)} />
+        <LinkedOrderCard companyId={companyId} orderId={order.order_id} orderNumber={order.order_number} customer={order.customer} total={order.total} removeClassName="te-pill" onRemove={() => setOrder(null)} />
       ) : (
         <button type="button" className="te-pill" onClick={() => setShowOrderSearch(true)}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
