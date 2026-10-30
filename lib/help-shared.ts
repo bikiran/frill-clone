@@ -53,3 +53,23 @@ export function toListItems(rows: any[] | null | undefined): HelpListItem[] {
     created_at: a.created_at ?? null, excerpt: helpExcerpt(a.content),
   }))
 }
+
+/** "equipment,-setup-&-troubleshooting" → "Equipment, setup & troubleshooting". */
+export function humaniseSlug(slug: string | null | undefined): string {
+  const t = String(slug || '').replace(/,-/g, ', ').replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim()
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : 'Other'
+}
+
+/** A category's readable name: its own name from Settings, else the slug made readable. */
+export function helpCatName(slug: string | null | undefined, catMap?: HelpCatMap | null): string {
+  return (slug && catMap?.[slug]?.name) || humaniseSlug(slug)
+}
+
+const CAT_COLOURS = ['#ff6a4d', '#0ea5e9', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899', '#14b8a6', '#6366f1', '#ef4444', '#84cc16']
+/** A steady colour for a category, the same everywhere it shows. */
+export function helpCatColor(slug: string | null | undefined): string {
+  const s = String(slug || 'other')
+  let h = 0
+  for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0
+  return CAT_COLOURS[h % CAT_COLOURS.length]
+}

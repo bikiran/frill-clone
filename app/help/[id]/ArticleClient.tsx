@@ -7,7 +7,8 @@ import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { confirmDialog } from '@/components/ConfirmDialog'
-import { toCatMap } from '@/lib/help-shared'
+import { toCatMap, helpCatName, helpCatColor } from '@/lib/help-shared'
+import HelpCatMark from '@/components/help/HelpCatMark'
 import type { HelpArticleData } from '@/lib/help-public'
 import { escapeHtml, safeUrl } from '@/lib/safe-html'
 
@@ -17,11 +18,6 @@ const DEMO_ARTICLES: Record<string, any> = {
   'demo-1': { id: 'demo-1', title: 'Getting started with Colvy', content: `# Getting started with Colvy\n\nWelcome to Colvy! This guide will help you set up your feedback board in minutes.\n\n## Step 1: Create your board\n\nAfter signing up, your feedback board is automatically created. You can customize it from the Admin panel.\n\nVisit **Admin → Settings** to:\n- Set your board name and logo\n- Choose your brand colors\n- Configure navigation items\n\n## Step 2: Invite your team\n\nGo to **Admin → Team Members** to invite colleagues. You can assign roles:\n\n- **Admin** — full access to all settings\n- **Editor** — can manage ideas, announcements\n- **Viewer** — read-only access\n\n## Step 3: Collect feedback\n\nShare your board URL with customers and start collecting ideas. You can also embed a widget on your website.\n\n## Step 4: Manage ideas\n\nAs ideas come in, update their status to keep customers informed. Ideas move through:\n\n1. Under Review\n2. Planned\n3. In Development\n4. Shipped\n\n---\n\nNeed help? Contact our support team below.`, category: 'Getting Started', status: 'published', featured: true, views: 142, likes: 28, created_at: new Date().toISOString() },
   'demo-5': { id: 'demo-5', title: 'Embedding the Colvy widget', content: `# Embedding the Colvy widget\n\nAdd Colvy directly to your app with a few lines of code.\n\n## Installation\n\nPaste this snippet before the closing \`</body>\` tag:\n\n\`\`\`html\n<script>\n  window.ColvyConfig = {\n    key: 'YOUR_WIDGET_KEY',\n    // optional: pre-fill user info\n    user: {\n      email: 'user@example.com',\n      name: 'John Doe'\n    }\n  }\n</script>\n<script async src="https://widget.colvy.com/v2/widget.js"></script>\n\`\`\`\n\n## Configuration options\n\n| Option | Type | Description |\n|--------|------|-------------|\n| key | string | Your widget key (required) |\n| user.email | string | Pre-fill user email |\n| user.name | string | Pre-fill user name |\n| position | string | 'bottom-right' or 'bottom-left' |\n| color | string | Hex color for widget button |\n\n## React / Next.js\n\nFor Next.js, add to your layout:\n\n\`\`\`tsx\nuseEffect(() => {\n  window.ColvyConfig = { key: 'YOUR_KEY' }\n  const script = document.createElement('script')\n  script.src = 'https://widget.colvy.com/v2/widget.js'\n  script.async = true\n  document.body.appendChild(script)\n}, [])\n\`\`\``, category: 'Integrations', status: 'published', featured: true, views: 203, likes: 41, created_at: new Date().toISOString() },
   'demo-9': { id: 'demo-9', title: 'REST API overview', content: `# REST API overview\n\nColvy provides a REST API for programmatic access to your feedback data.\n\n## Authentication\n\nAll API requests require your API key in the Authorization header:\n\n\`\`\`\nAuthorization: Bearer YOUR_API_KEY\n\`\`\`\n\nGenerate API keys in **Admin → Settings → API**.\n\n## Base URL\n\n\`\`\`\nhttps://yourboard.colvy.com/api/v1\n\`\`\`\n\n## Endpoints\n\n### Ideas\n\n\`\`\`\nGET    /ideas         List all ideas\nPOST   /ideas         Create an idea\nGET    /ideas/:id     Get a single idea\nPATCH  /ideas/:id     Update an idea\nDELETE /ideas/:id     Delete an idea\n\`\`\`\n\n### Announcements\n\n\`\`\`\nGET    /announcements        List announcements\nPOST   /announcements        Create announcement\n\`\`\`\n\n## Rate limiting\n\nRequests are limited to **1,000 per hour** per API key. Rate limit headers are included in every response:\n\n\`\`\`\nX-RateLimit-Limit: 1000\nX-RateLimit-Remaining: 999\nX-RateLimit-Reset: 1704067200\n\`\`\`\n\n## Example request\n\n\`\`\`bash\ncurl -H "Authorization: Bearer YOUR_KEY" \\\n  https://yourboard.colvy.com/api/v1/ideas\n\`\`\``, category: 'API', status: 'published', featured: false, views: 123, likes: 22, created_at: new Date().toISOString() },
-}
-
-const CATEGORY_ICONS: Record<string, string> = {
-  'Getting Started': '🚀', 'Features': '✨', 'Billing': '💳',
-  'Integrations': '🔗', 'Troubleshooting': '🔧', 'API': '⚡', 'Other': '📁',
 }
 
 // Stable id for a heading so the "On this page" links and the rendered headings
@@ -56,6 +52,29 @@ const mdLink = (_m: string, text: string, href: string) => {
 const mdImage = (_m: string, alt: string, src: string) => {
   const u = safeUrl(src.replace(/&amp;/g, '&'), 'media')
   return u ? `<img src="${escapeHtml(u)}" alt="${alt}" loading="lazy" style="display:block;max-width:100%;height:auto;margin:8px 0;border-radius:12px">` : alt
+}
+
+// Bold, italic, code, pictures and links inside a line (escaped first).
+const inline = (s: string) => md(s)
+  .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+  .replace(/(^|[^*\w])\*([^*\s][^*]*?)\*(?!\*)/g, '$1<em>$2</em>')
+  .replace(/`([^`]+)`/g, '<code class="ha-code">$1</code>')
+  .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, mdImage)
+  .replace(/\[([^\]]+)\]\(([^)]+)\)/g, mdLink)
+
+// "> **Safety warning:** …" becomes a callout; its first bold words pick the
+// tone (warning / note / tip), anything else is a plain quote.
+function calloutTone(text: string): 'warn' | 'info' | 'tip' | 'quote' {
+  const lead = (text.match(/^\s*\**([^*:]{2,40})[:*]/)?.[1] || '').toLowerCase()
+  if (/warn|safety|caution|danger|important|do not|don'?t/.test(lead)) return 'warn'
+  if (/tip|hint|pro tip|good to know/.test(lead)) return 'tip'
+  if (/note|info|remember|please/.test(lead)) return 'info'
+  return 'quote'
+}
+const CALLOUT_ICON: Record<string, JSX.Element> = {
+  warn: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9v4M12 17h.01" /></svg>,
+  info: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg>,
+  tip: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18h6M10 22h4" /><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2V17h6v-.3c0-.8.4-1.5 1-2A7 7 0 0 0 12 2z" /></svg>,
 }
 
 function renderContent(content: string) {
@@ -100,7 +119,7 @@ function renderContent(content: string) {
     if (line.startsWith('```')) {
       if (!codeBlock) { codeBlock = true; codeLines = []; i++; continue }
       else {
-        elements.push(<pre key={`code-${i}`} className="rounded-xl p-4 mb-4 text-sm max-w-full overflow-x-auto" style={{ background: '#1e1e2e', color: '#cdd6f4', wordBreak: 'break-word', whiteSpace: 'pre-wrap', overflowWrap: 'break-word', fontSize: 13, lineHeight: 1.5 }}><code style={{ display: 'block', wordBreak: 'break-word', whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>{codeLines.join('\n')}</code></pre>)
+        elements.push(<pre key={`code-${i}`} className="ha-pre rounded-2xl p-4 mb-5 text-sm max-w-full overflow-x-auto" style={{ background: '#16161d', color: '#cdd6f4', wordBreak: 'break-word', whiteSpace: 'pre-wrap', overflowWrap: 'break-word', fontSize: 13, lineHeight: 1.6 }}><code style={{ display: 'block', wordBreak: 'break-word', whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>{codeLines.join('\n')}</code></pre>)
         codeBlock = false; codeLines = []; i++; continue
       }
     }
@@ -109,24 +128,34 @@ function renderContent(content: string) {
       inTable = true; tableLines.push(line); i++; continue
     }
     if (inTable) flushTable()
-    if (!line.trim()) { elements.push(<br key={`br-${i}`} />); i++; continue }
+    if (!line.trim()) { i++; continue }
+    if (/^\s*>/.test(line)) {
+      const quote: string[] = []
+      while (i < lines.length && /^\s*>/.test(lines[i])) { quote.push(lines[i].replace(/^\s*>\s?/, '')); i++ }
+      const text = quote.join('\n').trim()
+      const tone = calloutTone(text)
+      elements.push(
+        <div key={`q-${i}`} className={`ha-callout ${tone}`}>
+          {tone !== 'quote' && <span className="ha-callout-ic" aria-hidden>{CALLOUT_ICON[tone]}</span>}
+          <div>{text.split('\n').filter(Boolean).map((l, k) => <p key={k} dangerouslySetInnerHTML={{ __html: inline(l) }} />)}</div>
+        </div>
+      )
+      continue
+    }
     if (line.startsWith('# ')) {
-      elements.push(<h1 key={i} className="text-2xl font-black mb-4 mt-6" style={{ color: 'var(--ink)' }}>{line.slice(2)}</h1>)
+      elements.push(<h2 key={i} className="ha-h2">{line.slice(2)}</h2>)
     } else if (line.startsWith('## ')) {
-      elements.push(<h2 id={headingId(line.slice(3))} key={i} className="text-lg font-bold mb-3 mt-6 pb-2 border-b" style={{ color: 'var(--ink)', borderColor: 'var(--border)', scrollMarginTop: 90 }}>{line.slice(3)}</h2>)
+      elements.push(<h2 id={headingId(line.slice(3))} key={i} className="ha-h2">{line.slice(3)}</h2>)
     } else if (line.startsWith('### ')) {
-      elements.push(<h3 id={headingId(line.slice(4))} key={i} className="text-base font-bold mb-2 mt-4" style={{ color: 'var(--ink)', scrollMarginTop: 90 }}>{line.slice(4)}</h3>)
+      elements.push(<h3 id={headingId(line.slice(4))} key={i} className="ha-h3">{line.slice(4)}</h3>)
     } else if (line.startsWith('- ') || line.startsWith('* ')) {
       const items = []
       while (i < lines.length && (lines[i].startsWith('- ') || lines[i].startsWith('* '))) {
         items.push(lines[i].slice(2))
         i++
       }
-      elements.push(<ul key={`ul-${i}`} className="mb-4 space-y-1 ml-4">{items.map((item, j) => (
-        <li key={j} className="text-sm flex items-start gap-2" style={{ color: 'var(--ink)' }}>
-          <span style={{ color: 'var(--coral)', marginTop: 2 }}>•</span>
-          <span dangerouslySetInnerHTML={{ __html: md(item).replace(/`([^`]+)`/g, '<code class="px-1 py-0.5 rounded text-xs" style="background:#f3f4f6;color:var(--ink);font-family:monospace">$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>') }} />
-        </li>
+      elements.push(<ul key={`ul-${i}`} className="ha-ul">{items.map((item, j) => (
+        <li key={j} dangerouslySetInnerHTML={{ __html: inline(item) }} />
       ))}</ul>)
       continue
     } else if (/^\d+\. /.test(line)) {
@@ -135,19 +164,14 @@ function renderContent(content: string) {
         items.push(lines[i].replace(/^\d+\. /, ''))
         i++
       }
-      elements.push(<ol key={`ol-${i}`} className="mb-4 space-y-1 ml-4 list-decimal">{items.map((item, j) => (
-        <li key={j} className="text-sm" style={{ color: 'var(--ink)' }} dangerouslySetInnerHTML={{ __html: md(item).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>') }} />
+      elements.push(<ol key={`ol-${i}`} className="ha-ol">{items.map((item, j) => (
+        <li key={j}><span className="ha-num" aria-hidden>{j + 1}</span><span dangerouslySetInnerHTML={{ __html: inline(item) }} /></li>
       ))}</ol>)
       continue
     } else if (line === '---') {
-      elements.push(<hr key={i} className="my-6" style={{ borderColor: 'var(--border)' }} />)
+      elements.push(<hr key={i} className="ha-hr" />)
     } else {
-      const html = md(line)
-        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-        .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded text-xs font-mono" style="background:#f3f4f6;color:var(--coral)">$1</code>')
-        .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, mdImage)
-        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, mdLink)
-      elements.push(<p key={i} className="text-sm leading-relaxed mb-3" style={{ color: 'var(--ink)' }} dangerouslySetInnerHTML={{ __html: html }} />)
+      elements.push(<p key={i} className="ha-p" dangerouslySetInnerHTML={{ __html: inline(line) }} />)
     }
     i++
   }
@@ -426,6 +450,7 @@ export default function HelpArticlePage({ articleId, initial }: { articleId?: st
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--canvas)' }}>
+      <style>{HA_CSS}</style>
       {/* Breadcrumb */}
       <div className="help-topbar border-b bg-white" style={{ borderColor: 'var(--border)' }}>
         <div className="max-w-[1600px] mx-auto px-6 py-3 flex items-center justify-between gap-3">
@@ -437,7 +462,7 @@ export default function HelpArticlePage({ articleId, initial }: { articleId?: st
             <span>/</span>
             <Link href="/help" className="hover:underline" style={{ color: 'var(--slate)' }}>Help Centre</Link>
             <span>/</span>
-            <span style={{ color: 'var(--coral)' }}>{catMap[article.category]?.name || article.category}</span>
+            <span style={{ color: 'var(--coral)' }}>{helpCatName(article.category, catMap)}</span>
             <span>/</span>
             <span className="truncate max-w-48" style={{ color: 'var(--ink)' }}>{article.title}</span>
           </div>
@@ -505,8 +530,9 @@ export default function HelpArticlePage({ articleId, initial }: { articleId?: st
             {/* The nav scrolls on its own once the heading list outgrows the
                 viewport, instead of running off the bottom of the page. */}
             {toc.length > 0 && (
-              <nav className="help-rail bg-white rounded-2xl border p-4" style={{ borderColor: 'var(--border)' }}>
-                <p className="font-bold mb-3" style={{ fontSize: 14.5, color: 'var(--ink)' }}>
+              <nav className="help-rail ha-toc">
+                <p className="ha-toc-h">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></svg>
                   On this page
                 </p>
                 <ul className="space-y-0.5">
@@ -535,21 +561,18 @@ export default function HelpArticlePage({ articleId, initial }: { articleId?: st
 
           {/* Main article */}
           <div className="lg:col-span-2 space-y-6 min-w-0">
-            <div className="bg-white rounded-2xl border p-8" style={{ borderColor: 'var(--border)' }}>
+            <div className="ha-card">
               {/* Header */}
               <div className="flex items-start justify-between gap-4 mb-6">
                 <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-2xl">
-                      {catMap[article.category]?.icon || CATEGORY_ICONS[article.category] || '📄'}
-                    </span>
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: 'var(--peach)', color: 'var(--coral)' }}>
-                      {catMap[article.category]?.name || article.category}
-                    </span>
+                  <div className="flex items-center gap-2.5 mb-4">
+                    <HelpCatMark cat={article.category} catMap={catMap} size={34} />
+                    <span className="ha-tag" style={{ '--c': helpCatColor(article.category) } as React.CSSProperties}>{helpCatName(article.category, catMap)}</span>
                   </div>
-                  <h1 className="text-2xl font-bold" style={{ color: 'var(--ink)' }}>{article.title}</h1>
-                  <p className="text-sm mt-1" style={{ color: 'var(--slate)' }}>
-                    {article.views || 0} views · {article.likes || 0} found helpful · Updated recently
+                  <h1 className="ha-title">{article.title}</h1>
+                  <p className="ha-meta">
+                    <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" /></svg>{(article.views || 0).toLocaleString('en-AU')} views</span>
+                    <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3z" /></svg>{article.likes || 0} found it helpful</span>
                   </p>
                 </div>
                 {/* 3-dot menu */}
@@ -596,7 +619,7 @@ export default function HelpArticlePage({ articleId, initial }: { articleId?: st
 
               {/* Rendered content */}
               {/* Long links and emails wrap instead of widening the page on a phone. */}
-              <div className="min-h-48" style={{ overflowWrap: 'anywhere' }}>
+              <div className="ha-body min-h-48" style={{ overflowWrap: 'anywhere' }}>
                 {renderedContent}
               </div>
 
@@ -604,10 +627,10 @@ export default function HelpArticlePage({ articleId, initial }: { articleId?: st
 
 
             {/* Submit a Ticket */}
-            <div className="bg-white rounded-2xl border p-6" style={{ borderColor: 'var(--border)' }}>
+            <div className="ha-side lg">
               <div className="flex items-center justify-between mb-3">
                 <div>
-                  <h3 className="font-bold" style={{ color: 'var(--ink)' }}>🎫 Still need help?</h3>
+                  <h3 className="ha-side-h">Still need help?</h3>
                   <p className="text-sm mt-0.5" style={{ color: 'var(--slate)' }}>Submit a support ticket and we'll get back to you.</p>
                 </div>
                 <button onClick={() => setShowTicketForm(!showTicketForm)}
@@ -652,7 +675,7 @@ export default function HelpArticlePage({ articleId, initial }: { articleId?: st
           <aside className="lg:col-span-1 min-w-0">
             <div className="help-rail space-y-6">
             {/* Was this article helpful? — the primary feedback card. */}
-            <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
+            <div className="ha-side">
               <div className="flex items-center gap-2 mb-1">
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="var(--coral)" stroke="var(--coral)" strokeWidth="1.5" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
                 <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Was this article helpful?</span>
@@ -726,7 +749,7 @@ export default function HelpArticlePage({ articleId, initial }: { articleId?: st
             </div>
 
             {/* Search help articles */}
-            <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
+            <div className="ha-side">
               <div className="flex items-center gap-2 mb-3">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                 <span style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}>Search help articles</span>
@@ -745,7 +768,7 @@ export default function HelpArticlePage({ articleId, initial }: { articleId?: st
 
             {/* Related articles */}
             {related.length > 0 && (
-              <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
+              <div className="ha-side">
                 <div className="flex items-center gap-2 mb-3">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                   <span style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}>Related articles</span>
@@ -763,7 +786,7 @@ export default function HelpArticlePage({ articleId, initial }: { articleId?: st
             )}
 
             {/* Contact options */}
-            <div className="bg-white rounded-2xl border p-5" style={{ borderColor: 'var(--border)' }}>
+            <div className="ha-side">
               <div className="flex items-center gap-2 mb-3">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                 <span style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}>Contact options</span>
@@ -806,3 +829,45 @@ export default function HelpArticlePage({ articleId, initial }: { articleId?: st
     </div>
   )
 }
+
+// The article in the Sellio style: a display-type title, roomy body text,
+// numbered steps, callouts for "> Warning:" / "> Note:" / "> Tip:" lines.
+const HA_CSS = `
+.ha-card{padding:clamp(22px,3.2vw,40px);border-radius:26px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04)}
+.ha-tag{display:inline-flex;align-items:center;height:26px;padding:0 11px;border-radius:999px;background:color-mix(in srgb,var(--c) 12%,#fff);color:color-mix(in srgb,var(--c) 80%,#000);font-size:12.5px;font-weight:650}
+.ha-title{margin:0;font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:clamp(26px,3.2vw,36px);font-weight:700;letter-spacing:-.035em;line-height:1.12;color:var(--ink)}
+.ha-meta{display:flex;flex-wrap:wrap;gap:6px 16px;margin:12px 0 0;font-size:13.5px;color:var(--slate)}
+.ha-meta span{display:inline-flex;align-items:center;gap:6px}
+.ha-body{margin-top:26px;padding-top:24px;border-top:1px solid #f0f0f2;font-size:15.5px;line-height:1.75;color:#27272a}
+.ha-p{margin:0 0 14px}
+.ha-p strong,.ha-ul strong,.ha-ol strong,.ha-callout strong{color:var(--ink);font-weight:650}
+.ha-body a{color:var(--coral);font-weight:550;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px}
+.ha-h2{margin:34px 0 12px;font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:22px;font-weight:700;letter-spacing:-.025em;line-height:1.25;color:var(--ink);scroll-margin-top:96px}
+.ha-body>.ha-h2:first-child{margin-top:0}
+.ha-h3{margin:24px 0 8px;font-size:17px;font-weight:700;letter-spacing:-.01em;color:var(--ink);scroll-margin-top:96px}
+.ha-ul{margin:0 0 16px;padding:0;list-style:none}
+.ha-ul li{position:relative;margin:0 0 8px;padding-left:22px}
+.ha-ul li::before{content:'';position:absolute;left:4px;top:.72em;width:7px;height:7px;border-radius:50%;background:var(--coral);opacity:.8}
+.ha-ol{margin:0 0 18px;padding:0;list-style:none;counter-reset:none}
+.ha-ol li{display:flex;gap:12px;margin:0 0 10px}
+.ha-num{width:26px;height:26px;flex-shrink:0;margin-top:1px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--coral) 12%,#fff);color:var(--coral);font-size:13px;font-weight:700;line-height:1}
+.ha-code{padding:2px 6px;border-radius:6px;background:#f4f4f5;color:var(--ink);font:500 .88em ui-monospace,SFMono-Regular,Menlo,monospace}
+.ha-hr{margin:28px 0;border:none;border-top:1px solid #f0f0f2}
+.ha-callout{display:flex;gap:12px;margin:0 0 18px;padding:14px 16px;border-radius:18px;background:#f7f7f8;color:#3f3f46}
+.ha-callout p{margin:0}
+.ha-callout p+p{margin-top:6px}
+.ha-callout-ic{flex-shrink:0;margin-top:3px;display:inline-flex}
+.ha-callout.quote{border-left:3px solid #e4e4e7;border-radius:4px 18px 18px 4px}
+.ha-callout.warn{background:#fff7ed;color:#7c2d12}
+.ha-callout.warn .ha-callout-ic,.ha-callout.warn strong{color:#c2410c}
+.ha-callout.info{background:#eff6ff;color:#1e3a8a}
+.ha-callout.info .ha-callout-ic,.ha-callout.info strong{color:#1d4ed8}
+.ha-callout.tip{background:#ecfdf5;color:#064e3b}
+.ha-callout.tip .ha-callout-ic,.ha-callout.tip strong{color:#047857}
+.ha-side{padding:20px;border-radius:24px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04)}
+.ha-side.lg{padding:22px 24px}
+.ha-side-h{margin:0;font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:18px;font-weight:700;letter-spacing:-.02em;color:var(--ink)}
+.ha-toc{padding:16px 10px 12px;border-radius:24px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04)}
+.ha-toc-h{display:flex;align-items:center;gap:8px;margin:0 0 8px;padding:0 10px;font-size:13px;font-weight:650;color:var(--slate)}
+@media (max-width:640px){.ha-body{font-size:15px;line-height:1.7}.ha-h2{font-size:20px}}
+`
