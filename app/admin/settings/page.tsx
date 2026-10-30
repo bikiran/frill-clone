@@ -12,7 +12,7 @@ import { confirmDialog } from '@/components/ConfirmDialog'
 import TerminologySettings from '@/components/TerminologySettings'
 import { cleanTerms } from '@/lib/terminology'
 import { WP_PLUGIN_VERSION } from '@/lib/wp-plugin'
-import SeasonalSettings from '@/components/settings/SeasonalSettings'
+import ThemeSettings from '@/components/settings/ThemeSettings'
 import { setAppearance, type SeasonalConfig } from '@/lib/seasonal-themes'
 
 // Colvy-branded CNAME target shown to customers for custom domains — a
@@ -209,9 +209,6 @@ export default function SettingsPage() {
     window.addEventListener('hashchange', handleHashChange)
     return () => window.removeEventListener('hashchange', handleHashChange)
   }, [])
-  const logoFileRef = useRef<HTMLInputElement>(null)
-  const faviconFileRef = useRef<HTMLInputElement>(null)
-  const ogFileRef = useRef<HTMLInputElement>(null)
 
   // (Widget auto-save is handled by the main debounced auto-save effect below,
   //  which includes all widget deps and has proper first-render/loaded guards.)
@@ -395,6 +392,13 @@ export default function SettingsPage() {
   useEffect(() => {
     if (settingsLoadedRef.current) setAppearance({ themeMode, seasonal })
   }, [themeMode, seasonal])
+  // So does the brand colour (the admin wears it too).
+  useEffect(() => {
+    if (!settingsLoadedRef.current || !/^#[0-9a-f]{6}$/i.test(accentColor)) return
+    const n = parseInt(accentColor.slice(1), 16)
+    document.documentElement.style.setProperty('--coral', accentColor)
+    document.documentElement.style.setProperty('--peach', `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, 0.1)`)
+  }, [accentColor])
   const isFirstRender = useRef(true)
   useEffect(() => {
     // Skip auto-save on initial mount (before data loads)
@@ -927,7 +931,7 @@ export default function SettingsPage() {
         <p className="mb-6 text-sm" style={{ color: 'var(--slate)' }}>
           {activeSettingsTab === 'overview' && 'How your team is performing across chat, customers and conversions.'}
           {activeSettingsTab === 'general' && 'Manage your company settings.'}
-          {activeSettingsTab === 'theme' && 'Customize the look and feel of your board.'}
+          {activeSettingsTab === 'theme' && 'How your board and help centre look to customers, and how Colvy dresses up for the holidays.'}
           {activeSettingsTab === 'emails' && 'Configure outgoing email settings.'}
           {activeSettingsTab === 'whitelabel' && 'Remove Colvy branding and use your own domain.'}
           {activeSettingsTab === 'auth' && 'Configure authentication and access settings.'}
@@ -1800,48 +1804,38 @@ export default function SettingsPage() {
           <OverviewMetrics overview={overview} days={overviewDays} onDays={setOverviewDays} loading={overviewLoading} />
         )}
 
-        {(activeSettingsTab === 'general' || activeSettingsTab === 'theme' || activeSettingsTab === 'emails') && (<>
+        {/* Theme: logo and icons, colour, corners, appearance, seasonal theme, with a live preview */}
+        {activeSettingsTab === 'theme' && (
+          <ThemeSettings
+            companyName={companyName}
+            host={boardDomain || (company?.slug ? `${company.slug}.colvy.com` : 'yourboard.colvy.com')}
+            logoUrl={logoUrl} faviconUrl={faviconUrl} ogImageUrl={ogImageUrl}
+            onLogoFile={handleLogoUpload} onFaviconFile={handleFaviconUpload} onOgFile={handleOgUpload}
+            onLogoRemove={() => setLogoUrl('')} onFaviconRemove={() => setFaviconUrl('')} onOgRemove={() => setOgImageUrl('')}
+            accent={accentColor} setAccent={setAccentColor}
+            suggested={suggestedColor}
+            onSuggested={use => { if (use && suggestedColor) setAccentColor(suggestedColor); setSuggestedColor(null) }}
+            onMatchLogo={async () => { if (!logoUrl) return; const c = await extractDominantColor(logoUrl); if (c) setAccentColor(c); else showToast('Couldn\u2019t read a colour from the logo', 'info', 2500) }}
+            themeMode={themeMode} setThemeMode={setThemeMode}
+            radius={borderRadius} setRadius={setBorderRadius}
+            seasonal={seasonal} setSeasonal={setSeasonal}
+          />
+        )}
+
+        {(activeSettingsTab === 'general' || activeSettingsTab === 'emails') && (<>
 
           {/* Company section */}
+          {activeSettingsTab === 'general' && (
           <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
             <h2 className="text-lg font-bold mb-6" style={{ color: 'var(--ink)' }}>Company</h2>
 
-            {/* Logo */}
-            <div className="mb-6">
-              <label className="text-sm font-semibold block mb-2" style={{ color: 'var(--ink)' }}>Company Logo</label>
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={() => logoFileRef.current?.click()}
-                  className="w-16 h-16 rounded-xl border-2 border-dashed flex items-center justify-center cursor-pointer hover:bg-gray-50 transition-smooth"
-                  style={{ borderColor: 'var(--border)' }}>
-                  {logoUrl ? (
-                    <img src={logoUrl} alt="Logo" className="w-full h-full object-cover rounded-[9px]" />
-                  ) : (
-                    <span className="text-2xl font-bold" style={{ color: 'var(--coral)' }}>A</span>
-                  )}
-                </button>
-                <input ref={logoFileRef} type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
-                <div>
-                  <p className="text-sm font-medium" style={{ color: 'var(--ink)' }}>Light theme</p>
-                  <p className="text-xs" style={{ color: 'var(--slate)' }}>Recommended size: 256 × 256px.</p>
-                {suggestedColor && (
-                  <div className="mt-2 flex items-center gap-2 p-2 rounded-lg border" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
-                    <div style={{ width: 20, height: 20, borderRadius: 5, background: suggestedColor, flexShrink: 0, border: '1px solid rgba(0,0,0,0.1)' }} />
-                    <span className="text-xs" style={{ color: 'var(--slate)' }}>Brand color detected: <strong style={{ color: suggestedColor }}>{suggestedColor}</strong></span>
-                    <button onClick={() => { setAccentColor(suggestedColor); setSuggestedColor(null) }}
-                      className="text-xs px-2 py-0.5 rounded-md font-semibold ml-auto cursor-pointer"
-                      style={{ background: suggestedColor, color: '#fff', border: 'none' }}>
-                      Use this
-                    </button>
-                    <button onClick={() => setSuggestedColor(null)}
-                      className="text-xs cursor-pointer" style={{ color: 'var(--slate)', background: 'none', border: 'none' }}>
-                      Dismiss
-                    </button>
-                  </div>
-                )}
-                </div>
-              </div>
-            </div>
+            {/* Logo, favicon and share image live in Theme now. */}
+            <Link href="/admin/settings#theme" className="st-theme-hint">
+              <span className="st-theme-hint-logo" style={{ background: logoUrl ? '#fff' : accentColor }}>{logoUrl ? <img src={logoUrl} alt="" /> : (companyName || 'Y').charAt(0).toUpperCase()}</span>
+              <span><b>Logo, colours and icons</b><small>Change how your board looks in Theme</small></span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="m9 6 6 6-6 6" /></svg>
+            </Link>
+            <style>{`.st-theme-hint{display:flex;align-items:center;gap:12px;margin-bottom:24px;padding:12px 14px;border-radius:16px;background:#f7f7f8;color:#18181b;text-decoration:none;transition:background .15s ease}.st-theme-hint:hover{background:#f1f1f3}.st-theme-hint b{display:block;font-size:14px;font-weight:650}.st-theme-hint small{font-size:12.5px;color:#71717a}.st-theme-hint svg{margin-left:auto;color:#a1a1aa}.st-theme-hint-logo{width:40px;height:40px;flex-shrink:0;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;color:#fff;font-weight:800;box-shadow:inset 0 0 0 1px rgba(0,0,0,.06)}.st-theme-hint-logo img{width:100%;height:100%;object-fit:contain}[data-theme="dark"] .st-theme-hint{background:#1c1c1f;color:#ededf0}[data-theme="dark"] .st-theme-hint:hover{background:#232326}`}</style>
 
             {/* Company name */}
             <div className="mb-6">
@@ -1912,193 +1906,8 @@ export default function SettingsPage() {
                 style={{ borderColor: 'var(--border)', fontSize: '16px' }}
               />
             </div>
-
-            {/* Favicon */}
-            <div className="mb-6">
-              <label className="text-sm font-semibold block mb-2" style={{ color: 'var(--ink)' }}>Favicon</label>
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={() => faviconFileRef.current?.click()}
-                  className="w-12 h-12 rounded-lg border-2 border-dashed flex items-center justify-center cursor-pointer hover:bg-gray-50 transition-smooth"
-                  style={{ borderColor: 'var(--border)' }}>
-                  {faviconUrl ? (
-                    <img src={faviconUrl} alt="Favicon" className="w-full h-full object-cover rounded-[6px]" />
-                  ) : (
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" style={{ color: 'var(--slate)', opacity: 0.4 }}><rect x="3" y="3" width="18" height="18" rx="3"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="12" y1="8" x2="12" y2="16"/></svg>
-                  )}
-                </button>
-                {faviconUrl && (
-                  <button onClick={() => setFaviconUrl('')}
-                    className="w-6 h-6 rounded-full flex items-center justify-center cursor-pointer hover:bg-red-100 transition-all"
-                    style={{ background: '#fee2e2', color: '#dc2626', border: 'none' }}
-                    title="Remove favicon">
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                  </button>
-                )}
-                <input ref={faviconFileRef} type="file" accept="image/png,image/ico,image/x-icon" className="hidden" onChange={handleFaviconUpload} />
-                <p className="text-xs" style={{ color: 'var(--slate)' }}>Recommended size: 96×96 (png only)</p>
-              </div>
-            </div>
-
-            {/* Open Graph image */}
-            <div>
-              <label className="text-sm font-semibold block mb-2" style={{ color: 'var(--ink)' }}>Open Graph image</label>
-              <button
-                onClick={() => ogFileRef.current?.click()}
-                className="w-64 h-36 rounded-lg border-2 border-dashed flex items-center justify-center cursor-pointer hover:bg-gray-50 transition-smooth"
-                style={{ borderColor: 'var(--border)' }}>
-                {ogImageUrl ? (
-                  <img src={ogImageUrl} alt="OG Image" className="w-full h-full object-cover rounded-[6px]" />
-                ) : (
-                  <span className="text-2xl" style={{ color: 'var(--slate)' }}>↑</span>
-                )}
-              </button>
-              <input ref={ogFileRef} type="file" accept="image/*" className="hidden" onChange={handleOgUpload} />
-              <p className="text-xs mt-1" style={{ color: 'var(--slate)' }}>Recommended size: 1200×630</p>
-            </div>
           </div>
-
-          {/* Styling / Theme */}
-          <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
-            <h2 className="text-lg font-bold mb-1" style={{ color: 'var(--ink)' }}>Styling</h2>
-            <p className="text-sm mb-5" style={{ color: 'var(--slate)' }}>
-              Customize the look and feel of your feedback board.
-            </p>
-
-            {/* Theme Mode */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--ink)' }}>Theme appearance</label>
-              <div className="grid grid-cols-3 gap-3">
-                {([
-                  { key: 'light', label: 'Light', svg: <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg> },
-                  { key: 'dark', label: 'Dark', svg: <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg> },
-                  { key: 'auto', label: 'Auto', svg: <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20"></path><path d="M2 12h20"></path><circle cx="12" cy="12" r="10"></circle><path d="M12 12c3 0 5-1.5 5-5s-2-5-5-5-5 1.5-5 5 2 5 5 5z"></path></svg> },
-                ] as const).map(t => (
-                  <button
-                    key={t.key}
-                    onClick={() => setThemeMode(t.key)}
-                    className="p-4 rounded-xl border-2 transition-smooth cursor-pointer hover:shadow-md text-center"
-                    style={{
-                      borderColor: themeMode === t.key ? 'var(--coral)' : 'var(--border)',
-                      background: themeMode === t.key ? 'var(--peach)' : 'white',
-                    }}>
-                    <div className="mb-2 flex justify-center" style={{ color: themeMode === t.key ? 'var(--coral)' : 'var(--slate)' }}>{t.svg}</div>
-                    <div className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{t.label}</div>
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs mt-2" style={{ color: 'var(--slate)' }}>
-                Auto follows the user's system preference.
-              </p>
-            </div>
-
-            {/* Seasonal theme: Halloween now, more to come */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium mb-1" style={{ color: 'var(--ink)' }}>Seasonal theme</label>
-              <p className="text-xs mb-3" style={{ color: 'var(--slate)' }}>
-                Dress Colvy up for the holidays, with your team and, if you like, your customers.
-              </p>
-              <SeasonalSettings value={seasonal} onChange={setSeasonal} />
-            </div>
-
-            {/* Accent Color */}
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium" style={{ color: 'var(--ink)' }}>Brand color</label>
-                {logoUrl && (
-                  <button onClick={() => {
-                    try {
-                      const img = new Image()
-                      img.crossOrigin = 'anonymous'
-                      img.onload = () => {
-                        const canvas = document.createElement('canvas')
-                        canvas.width = 50; canvas.height = 50
-                        const ctx = canvas.getContext('2d')
-                        if (!ctx) return
-                        ctx.drawImage(img, 0, 0, 50, 50)
-                        const d = ctx.getImageData(0, 0, 50, 50).data
-                        let r = 0, g = 0, b = 0, count = 0
-                        for (let i = 0; i < d.length; i += 4) {
-                          if (d[i+3] > 128) { r += d[i]; g += d[i+1]; b += d[i+2]; count++ }
-                        }
-                        if (count > 0) {
-                          const hex = '#' + [Math.round(r/count), Math.round(g/count), Math.round(b/count)].map(v => v.toString(16).padStart(2,'0')).join('')
-                          setAccentColor(hex)
-                        }
-                      }
-                      img.src = logoUrl
-                    } catch {}
-                  }}
-                  className="text-xs px-2.5 py-1 rounded-lg cursor-pointer hover:opacity-80"
-                  style={{ background: 'var(--peach)', color: 'var(--coral)' }}>
-                    🎨 Extract from logo
-                  </button>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-2 mb-3">
-                {[
-                  '#ff7a6b', '#f97316', '#eab308', '#84cc16',
-                  '#10b981', '#06b6d4', '#3b82f6', '#7c3aed',
-                  '#ec4899', '#ef4444', '#6366f1', '#14b8a6',
-                ].map(color => (
-                  <button
-                    key={color}
-                    onClick={() => setAccentColor(color)}
-                    className="w-10 h-10 rounded-full transition-all cursor-pointer hover:scale-110"
-                    style={{
-                      background: color,
-                      boxShadow: accentColor === color ? `0 0 0 3px white, 0 0 0 5px ${color}` : '0 2px 4px rgba(0,0,0,0.1)',
-                    }}
-                    title={color}
-                  />
-                ))}
-              </div>
-              <div className="flex items-center gap-3">
-                <input
-                  type="color"
-                  value={accentColor}
-                  onChange={(e) => setAccentColor(e.target.value)}
-                  className="w-12 h-10 rounded cursor-pointer border"
-                  style={{ borderColor: 'var(--border)' }}
-                />
-                <input
-                  type="text"
-                  value={accentColor}
-                  onChange={(e) => setAccentColor(e.target.value)}
-                  className="px-3 py-2 rounded-lg border text-sm font-mono"
-                  style={{ borderColor: 'var(--border)', fontSize: '14px' }}
-                />
-                <div className="flex-1 h-10 rounded-lg flex items-center justify-center text-white text-sm font-semibold" style={{ background: accentColor }}>
-                  Preview button
-                </div>
-              </div>
-            </div>
-
-            {/* Border Radius */}
-            <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--ink)' }}>Corner style</label>
-              <div className="grid grid-cols-3 gap-3">
-                {([
-                  { key: 'sharp', label: 'Sharp', radius: '4px' },
-                  { key: 'soft', label: 'Soft', radius: '12px' },
-                  { key: 'rounded', label: 'Rounded', radius: '24px' },
-                ] as const).map(t => (
-                  <button
-                    key={t.key}
-                    onClick={() => setBorderRadius(t.key)}
-                    className="p-4 border-2 transition-smooth cursor-pointer hover:shadow-md"
-                    style={{
-                      borderColor: borderRadius === t.key ? 'var(--coral)' : 'var(--border)',
-                      background: borderRadius === t.key ? 'var(--peach)' : 'white',
-                      borderRadius: t.radius,
-                    }}>
-                    <div className="w-full h-8 mb-2 mx-auto" style={{ background: accentColor, borderRadius: t.radius }} />
-                    <div className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{t.label}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
+          )}
 
           {/* Email Customization */}
           <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
@@ -2172,6 +1981,7 @@ export default function SettingsPage() {
             </div>
           </div>
 
+          {activeSettingsTab === 'general' && (<>
           {/* White Labelling */}
           <div className="st-sec" style={{ borderColor: 'var(--border)' }}>
             <div className="flex items-start justify-between mb-1">
@@ -2532,6 +2342,8 @@ window.YourApp('container', {
               }}
             />
           </div>
+
+          </>)}
 
           {/* Save */}
           <div className="flex items-center justify-end gap-3">
