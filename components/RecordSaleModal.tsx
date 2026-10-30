@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { track } from '@/lib/analytics'
+import { SkClose, SkIcon, SkStyle } from '@/components/ui/SheetKit'
 import PaymentMethodPicker from '@/components/PaymentMethodPicker'
 
 // Records a sale attributed to this conversation — the revenue Colvy helped
@@ -139,72 +140,64 @@ export default function RecordSaleModal({
     try { await (supabase as any).from('conversation_sales').delete().eq('id', id); await load(); onSaved?.() } catch {}
   }
 
-  const input: React.CSSProperties = { width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, outline: 'none', boxSizing: 'border-box' }
-  const label: React.CSSProperties = { display: 'block', fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', margin: '0 0 5px', textTransform: 'uppercase', letterSpacing: '0.03em' }
-
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div onClick={e => e.stopPropagation()} style={{ maxWidth: 460, width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: 16, boxShadow: '0 24px 64px rgba(0,0,0,0.3)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px', borderBottom: '1px solid var(--border)' }}>
-          <div>
-            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>Record a sale</h2>
-            <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--slate)' }}>Credited to {contact?.name || 'this conversation'}{total > 0 ? ` · ${fmt(total)} logged` : ''}</p>
+    <div className="sk-scrim" onClick={onClose}>
+      <SkStyle />
+      <div className="sk" role="dialog" aria-modal="true" aria-labelledby="rs-title" onClick={e => e.stopPropagation()} onKeyDown={e => { if (e.key === 'Escape') onClose() }}>
+        <div className="sk-head">
+          <span className="sk-badge" aria-hidden>{SkIcon.sale}</span>
+          <div style={{ minWidth: 0 }}>
+            <h3 id="rs-title">{editing ? 'Edit sale' : 'Record a sale'}</h3>
+            <p className="sk-sub">Credited to {contact?.name || 'this conversation'}{total > 0 ? ` · ${fmt(total)} logged so far` : ''}</p>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--slate)', display: 'flex', padding: 4 }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          <SkClose onClick={onClose} />
+        </div>
+
+        <label className="sk-lbl" htmlFor="rs-amount">Amount</label>
+        <span className="sk-field">
+          <span className="sk-pre">{currency === 'AUD' || currency === 'USD' || currency === 'NZD' || currency === 'CAD' ? '$' : currency}</span>
+          <input id="rs-amount" type="number" inputMode="decimal" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" autoFocus />
+          <span className="sk-opt">{currency}</span>
+        </span>
+
+        <span className="sk-lbl">Payment method</span>
+        <PaymentMethodPicker companyId={companyId} value={method} onChange={setMethod} />
+
+        <label className="sk-lbl" htmlFor="rs-by">Sale credited to</label>
+        <select id="rs-by" className="sk-in" value={soldBy} onChange={e => setSoldBy(e.target.value)}>
+          {meId && <option value={`me:${meId}`}>{meName} (you)</option>}
+          {teamMembers.filter(m => m.id !== meId).map(m => <option key={m.id} value={m.id}>{m.name || 'Team member'}</option>)}
+        </select>
+
+        <label className="sk-lbl" htmlFor="rs-note">Note <span className="sk-opt">optional</span></label>
+        <input id="rs-note" className="sk-in" value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. paid by bank transfer, invoice #123" />
+
+        {err && <p className="sk-err" role="alert">{err}</p>}
+
+        <div className="sk-actions">
+          {editing ? <button type="button" className="sk-btn" onClick={resetForm}>Cancel edit</button> : <button type="button" className="sk-btn" onClick={onClose}>Cancel</button>}
+          <button type="button" className="sk-btn primary" onClick={save} disabled={saving}>
+            {saving ? 'Saving…' : editing ? 'Update sale' : 'Record sale'}
           </button>
         </div>
 
-        <div style={{ padding: 18 }}>
-          {err && <div style={{ marginBottom: 12, padding: '9px 12px', borderRadius: 9, background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', fontSize: 12.5 }}>{err}</div>}
-
-          <div style={{ marginBottom: 12 }}>
-            <label style={label}>Amount ({currency})</label>
-            <input type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" autoFocus style={input} />
-          </div>
-          <div style={{ marginBottom: 12 }}>
-            <label style={label}>Payment method</label>
-            <PaymentMethodPicker companyId={companyId} value={method} onChange={setMethod} />
-          </div>
-          <div style={{ marginBottom: 12 }}>
-            <label style={label}>Sale credited to</label>
-            <select value={soldBy} onChange={e => setSoldBy(e.target.value)} style={{ ...input, cursor: 'pointer' }}>
-              {meId && <option value={`me:${meId}`}>{meName} (you)</option>}
-              {teamMembers.filter(m => m.id !== meId).map(m => <option key={m.id} value={m.id}>{m.name || 'Team member'}</option>)}
-            </select>
-          </div>
-          <div style={{ marginBottom: 14 }}>
-            <label style={label}>Note (optional)</label>
-            <input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. paid by bank transfer, invoice #123" style={input} />
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {editing && <button type="button" onClick={resetForm} style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>Cancel edit</button>}
-            <button type="button" onClick={save} disabled={saving} style={{ flex: 1, padding: '10px 14px', borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13.5, fontWeight: 800, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
-              {saving ? 'Saving…' : editing ? 'Update sale' : 'Record sale'}
-            </button>
-          </div>
-
-          {/* Existing sales on this conversation */}
-          {sales && sales.length > 0 && (
-            <div style={{ marginTop: 18, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-              <p style={{ margin: '0 0 8px', fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Recorded sales</p>
-              {sales.map(s => (
-                <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{fmt(Number(s.amount) || 0, s.currency)} <span style={{ fontWeight: 500, color: 'var(--slate)' }}>{s.payment_method ? `· ${s.payment_method}` : ''}</span></p>
-                    <p style={{ margin: '1px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>{s.sold_by_name || '—'} · {new Date(s.sale_at || s.created_at).toLocaleDateString()}{s.note ? ` · ${s.note}` : ''}</p>
-                  </div>
-                  <button type="button" onClick={() => startEdit(s)} title="Edit" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--slate)', padding: 4 }}>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
-                  </button>
-                  <button type="button" onClick={() => del(s.id)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 4 }}>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* Sales already recorded on this conversation */}
+        {sales && sales.length > 0 && (
+          <>
+            <div className="sk-sep" />
+            <span className="sk-lbl">Recorded sales</span>
+            {sales.map(s => (
+              <div key={s.id} className="sk-item">
+                <span className="sk-item-t">
+                  <b>{fmt(Number(s.amount) || 0, s.currency)}{s.payment_method ? <span style={{ fontWeight: 500, color: 'var(--sk-muted)' }}> · {s.payment_method}</span> : null}</b>
+                  <small>{s.sold_by_name || '—'} · {new Date(s.sale_at || s.created_at).toLocaleDateString()}{s.note ? ` · ${s.note}` : ''}</small>
+                </span>
+                <button type="button" className="sk-icon-btn" onClick={() => startEdit(s)} title="Edit" aria-label="Edit sale">{SkIcon.edit}</button>
+                <button type="button" className="sk-icon-btn danger" onClick={() => del(s.id)} title="Delete" aria-label="Delete sale">{SkIcon.trash}</button>
+              </div>
+            ))}
+          </>
+        )}
       </div>
     </div>
   )

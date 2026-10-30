@@ -4485,57 +4485,38 @@ export function useInboxController() {
                       style={toolBtn(showSendMenu)}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     </button>
-                    <Popover open={showSendMenu} onClose={() => setShowSendMenu(false)} anchorRef={sendMenuRef} width={220} prefer="top" label="More actions" role="menu" padding={0}>
-                      <div className="cmp-send-menu" style={{ padding: '4px 0' }}>
-                        {[['poll', Icon.poll(), 'Send Poll'], ['survey', Icon.survey(), 'Send Survey'], ['form', Icon.form(), 'Send Form']].map(([k, icon, label]: any) => (
-                          <button key={k} type="button" role="menuitem" data-pop-item onClick={() => { pickerInsertRef.current = insert || null; openPicker(k as any) }}
-                            style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}><span style={{ color: 'var(--slate)', display: 'inline-flex' }}>{icon}</span>{label}</button>
+                    <Popover open={showSendMenu} onClose={() => setShowSendMenu(false)} anchorRef={sendMenuRef} width={264} prefer="top" label="More actions" role="menu" padding={6} radius={20}>
+                      <div className="cmp-send-menu">
+                        {([
+                          ['Send to the customer', [
+                            { key: 'poll', label: 'Send a poll', tint: '#8b5cf6', icon: Icon.poll(), run: () => { pickerInsertRef.current = insert || null; openPicker('poll' as any) } },
+                            { key: 'survey', label: 'Send a survey', tint: '#3b82f6', icon: Icon.survey(), run: () => { pickerInsertRef.current = insert || null; openPicker('survey' as any) } },
+                            { key: 'form', label: 'Send a form', tint: '#14b8a6', icon: Icon.form(), run: () => { pickerInsertRef.current = insert || null; openPicker('form' as any) } },
+                            { key: 'media', label: 'Request photos or video', tint: '#ec4899', icon: Icon.media(16), run: () => { setShowSendMenu(false); setShowMediaRequest(true) } },
+                          ]],
+                          ['Payments', [
+                            { key: 'payment', label: 'Send a payment link', tint: '#10b981', icon: Icon.payment(), run: () => { pickerInsertRef.current = insert || null; openPicker('payment' as any) } },
+                            { key: 'charge', label: 'Charge a saved card', tint: 'var(--coral,#ff7a6b)', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>, run: () => { setShowSendMenu(false); setShowChargeCard(true); if (!cardsByConv.current.has(selected?.id || '')) loadSavedCards() } },
+                            { key: 'save', label: 'Save a card', tint: '#f59e0b', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/><path d="M16 15h3"/></svg>, run: () => { setShowSendMenu(false); saveCard() } },
+                          ]],
+                          ['More', [
+                            { key: 'delivery', label: 'Schedule delivery', tint: '#0ea5e9', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>, run: () => { setShowSendMenu(false); openSchedule() } },
+                            ...(!forEmail ? [
+                              { key: 'voice', label: 'Record a voice note', tint: '#ef4444', disabled: voiceUploading || recording, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3.5"/></svg>, run: () => { setShowSendMenu(false); if (!voiceUploading) startVoiceNote() } },
+                              { key: 'phone', label: 'Upload from your phone', tint: '#64748b', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M11 18h2"/></svg>, run: () => { setShowSendMenu(false); setShowInboxQR(true) } },
+                            ] : []),
+                          ]],
+                        ] as [string, { key: string; label: string; tint: string; icon: React.ReactNode; run: () => void; disabled?: boolean }[]][]).map(([group, rows]) => (
+                          <div key={group} className="cmp-plus-group" role="group" aria-label={group}>
+                            <p className="cmp-plus-head" aria-hidden>{group}</p>
+                            {rows.map(r => (
+                              <button key={r.key} type="button" role="menuitem" data-pop-item className="cmp-plus-item" onClick={r.run} disabled={r.disabled}
+                                style={{ '--tint': r.tint } as React.CSSProperties}>
+                                <span className="cmp-plus-ic" aria-hidden>{r.icon}</span>{r.label}
+                              </button>
+                            ))}
+                          </div>
                         ))}
-
-                        <div style={{ borderTop: '1px solid var(--border)' }} />
-
-                        <button type="button" role="menuitem" data-pop-item onClick={() => { pickerInsertRef.current = insert || null; openPicker('payment' as any) }}
-                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
-                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>{Icon.payment()}</span>Send Payment Link
-                        </button>
-
-                        <button type="button" role="menuitem" data-pop-item onClick={() => { setShowSendMenu(false); setShowChargeCard(true); if (!cardsByConv.current.has(selected?.id || '')) loadSavedCards() }}
-                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
-                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-                          </span>Charge Card
-                        </button>
-
-                        <button type="button" role="menuitem" data-pop-item onClick={() => { setShowSendMenu(false); openSchedule() }}
-                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
-                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="2"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
-                          </span>Schedule delivery
-                        </button>
-
-                        <button type="button" role="menuitem" data-pop-item onClick={() => { setShowSendMenu(false); saveCard() }}
-                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
-                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/><path d="M16 15h3"/></svg>
-                          </span>Save Card
-                        </button>
-
-                        <div style={{ borderTop: '1px solid var(--border)' }} />
-
-                        {!forEmail && (<>
-                        <button type="button" role="menuitem" data-pop-item onClick={() => { setShowSendMenu(false); if (!voiceUploading) startVoiceNote() }} disabled={voiceUploading || recording}
-                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
-                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></svg></span>Record voice note
-                        </button>
-                        <button type="button" role="menuitem" data-pop-item onClick={() => { setShowSendMenu(false); setShowInboxQR(true) }}
-                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
-                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M11 18h2"/></svg></span>Upload from your phone
-                        </button>
-                        </>)}
-                        <button type="button" role="menuitem" data-pop-item onClick={() => { setShowSendMenu(false); setShowMediaRequest(true) }}
-                          style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
-                          <span style={{ color: 'var(--slate)', display: 'inline-flex' }}>{Icon.media(15)}</span>Request Media
-                        </button>
                       </div>
                     </Popover>
                   </div>
@@ -4555,24 +4536,27 @@ export function useInboxController() {
                       style={toolBtn(showShortener)}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                     </button>
-                    <Popover open={showShortener} onClose={() => { setShowShortener(false); setShortenError('') }} anchorRef={shortenerAnchorRef} width={320} prefer="top" label="Create short URL" padding={12}>
-                        <p style={{ margin: '0 0 8px', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)' }}>Create short URL</p>
-                        <p style={{ margin: '0 0 8px', fontSize: 11.5, color: 'var(--slate)', lineHeight: 1.4 }}>
-                          Paste a long URL — it becomes a short link on your own domain and records clicks.
-                        </p>
+                    <Popover open={showShortener} onClose={() => { setShowShortener(false); setShortenError('') }} anchorRef={shortenerAnchorRef} width={340} prefer="top" label="Create a short link" padding={16} radius={22}>
+                          <div className="cmp-pop-head">
+                          <span className="cmp-pop-badge" aria-hidden>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                          </span>
+                          <span style={{ minWidth: 0 }}>
+                            <b>Create a short link</b>
+                            <small>Paste a long URL. It becomes a short link on your own domain that counts clicks.</small>
+                          </span>
+                        </div>
                         <input value={shortenInput} onChange={e => setShortenInput(e.target.value)}
                           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); shortenIntoReply(insert) } }}
-                          placeholder="https://roxyaquarium.com.au/..." data-autofocus
-                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12.5, boxSizing: 'border-box' }} />
-                        {shortenError && <p style={{ margin: '6px 0 0', fontSize: 11.5, color: '#dc2626' }}>{shortenError}</p>}
-                        <div style={{ display: 'flex', gap: 6, marginTop: 9 }}>
-                          <button type="button" onClick={() => shortenIntoReply(insert)} disabled={shortenBusy || !shortenInput.trim()}
-                            style={{ flex: 1, padding: '7px 12px', borderRadius: 8, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', opacity: shortenBusy || !shortenInput.trim() ? 0.5 : 1 }}>
-                            {shortenBusy ? 'Shortening…' : 'Shorten & insert'}
-                          </button>
-                          <button type="button" onClick={() => { setShowShortener(false); setShortenInput(''); setShortenError('') }}
-                            style={{ padding: '7px 12px', borderRadius: 8, background: '#fff', border: '1px solid var(--border)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', color: 'var(--slate)' }}>
+                          placeholder="https://roxyaquarium.com.au/..." data-autofocus aria-label="Long URL" inputMode="url"
+                          className="cmp-pop-in" />
+                        {shortenError && <p className="cmp-pop-err" role="alert">{shortenError}</p>}
+                        <div className="cmp-pop-acts">
+                          <button type="button" className="cmp-pop-btn" onClick={() => { setShowShortener(false); setShortenInput(''); setShortenError('') }}>
                             Cancel
+                          </button>
+                          <button type="button" className="cmp-pop-btn primary" onClick={() => shortenIntoReply(insert)} disabled={shortenBusy || !shortenInput.trim()}>
+                            {shortenBusy ? 'Shortening…' : 'Shorten & insert'}
                           </button>
                         </div>
                     </Popover>

@@ -9,7 +9,7 @@
 import { toPublicUrl } from '@/lib/storage-url'
 import ResilientImage from '@/components/ResilientImage'
 import RefundOrderModal from '@/components/RefundOrderModal'
-import FilePickerButton from '@/components/FilePickerButton'
+import { SkClose, SkFiles, SkIcon, SkStyle } from '@/components/ui/SheetKit'
 import DeliveryPanel from '@/components/DeliveryPanel'
 import ContactTimeline from '@/components/ContactTimeline'
 import { supabase } from '@/lib/supabase'
@@ -36,7 +36,7 @@ export default function InboxOverlays() {
     editOrderLoading, editOrderSaving, editingScheduled, emailGalleryMedia, filteredConvs, filters,
     filtersCustomDates, folderBtnInbox, forwardBusy, forwardPicked, forwardResults, forwardSearch,
     forwardTo, forwarding, galleryFolder, galleryFolders, galleryIndex, galleryItems, gallerySearch,
-    gallerySelected, inp, invoicePreview, invoiceSending, loadConversationExtras, loadConversations,
+    gallerySelected, invoicePreview, invoiceSending, loadConversationExtras, loadConversations,
     loadGalleryFolder, markRead, mergeConversation, mrAccept, mrExpiry, mrMaxFiles, mrPrompt,
     mrSaving, myName, orderGallery, orderPrefillCart, outboundChannel, outlets, outletsForSchedule,
     payAddress, payAmount, payDesc, paySending, pickerItems, pickupModal, pickupSending, pinnedIds,
@@ -369,32 +369,34 @@ export default function InboxOverlays() {
         const first = contact?.name ? String(contact.name).split(' ')[0] : ''
         const preview = `Hi${first ? ' ' + first : ''}, your order #${orderNo} is ready to be collected at: ${locName}. See you soon!`
         return (
-          <div onClick={() => !pickupSending && setPickupModal(null)}
-            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-            <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 14, width: 'min(440px, 96vw)', padding: 22 }}>
-              <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>Ready for pickup</h3>
-              <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--slate)' }}>Confirm the collection location, then send the customer an SMS.</p>
-              <label style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Pickup location</label>
+          <div className="sk-scrim" style={{ '--sk-z': 1000 } as React.CSSProperties} onClick={() => !pickupSending && setPickupModal(null)}>
+            <SkStyle />
+            <div className="sk" role="dialog" aria-modal="true" aria-labelledby="pk-title" onClick={e => e.stopPropagation()} onKeyDown={e => { if (e.key === 'Escape' && !pickupSending) setPickupModal(null) }}>
+              <div className="sk-head">
+                <span className="sk-badge" aria-hidden>{SkIcon.box}</span>
+                <div style={{ minWidth: 0 }}>
+                  <h3 id="pk-title">Ready for pickup</h3>
+                  <p className="sk-sub">Confirm where they collect it, then text the customer.</p>
+                </div>
+                <SkClose onClick={() => !pickupSending && setPickupModal(null)} />
+              </div>
+              <label className="sk-lbl" htmlFor="pk-loc">Pickup location</label>
               {outlets.length > 0 ? (
-                <select value={pickupModal.locationId} onChange={e => setPickupModal(m => m ? { ...m, locationId: e.target.value } : m)}
-                  style={{ width: '100%', marginTop: 6, marginBottom: 14, padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, background: '#fff' }}>
+                <select id="pk-loc" className="sk-in" value={pickupModal.locationId} onChange={e => setPickupModal(m => m ? { ...m, locationId: e.target.value } : m)}>
                   {outlets.map(o => <option key={o.id} value={o.id}>{[o.label, o.suburb].filter(Boolean).join(' · ')}{o.is_primary ? ' (default)' : ''}</option>)}
                 </select>
               ) : (
-                <p style={{ margin: '6px 0 14px', fontSize: 12.5, color: '#b45309' }}>No store locations set up yet — add one in Settings to name the pickup spot. The message will say "our store".</p>
+                <p className="sk-card" style={{ margin: 0, fontSize: 13, color: '#b45309', background: '#fffbeb' }}>No store locations set up yet. Add one in Settings to name the pickup spot; until then the message says &ldquo;our store&rdquo;.</p>
               )}
-              <div style={{ background: 'var(--peach)', borderRadius: 10, padding: '11px 13px', marginBottom: 16 }}>
-                <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', marginBottom: 4 }}>Message preview</div>
-                <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)', lineHeight: 1.5 }}>{preview}</p>
-              </div>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button type="button" onClick={() => setPickupModal(null)} disabled={pickupSending}
-                  style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
-                <button type="button" onClick={sendPickupReady} disabled={pickupSending}
-                  style={{ flex: 2, padding: '11px 0', borderRadius: 10, border: 'none', background: '#0891b2', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', opacity: pickupSending ? 0.6 : 1 }}>
+              <span className="sk-lbl">Message preview</span>
+              <div className="sk-card pk-bubble">{preview}</div>
+              <div className="sk-actions">
+                <button type="button" className="sk-btn" onClick={() => setPickupModal(null)} disabled={pickupSending}>Cancel</button>
+                <button type="button" className="sk-btn primary" onClick={sendPickupReady} disabled={pickupSending}>
                   {pickupSending ? 'Sending…' : 'Send SMS'}
                 </button>
               </div>
+              <style>{`.pk-bubble{position:relative;border-radius:20px 20px 6px 20px;background:var(--peach,#fff4f1);font-size:14px;line-height:1.5;color:var(--ink)}`}</style>
             </div>
           </div>
         )
@@ -468,66 +470,45 @@ export default function InboxOverlays() {
       )}
 
       {showPod && (
-        <div onClick={() => setShowPod(false)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 320, padding: 20 }}>
-          <div onClick={e => e.stopPropagation()}
-            style={{ width: 460, maxWidth: '95vw', maxHeight: '88vh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: 22 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                {Icon.box(17)} Proof of Delivery
-              </h2>
-              <button type="button" onClick={() => setShowPod(false)}
-                style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer', color: 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
+        <div className="sk-scrim" style={{ '--sk-z': 320 } as React.CSSProperties} onClick={() => !podSending && setShowPod(false)}>
+          <SkStyle />
+          <div className="sk" role="dialog" aria-modal="true" aria-labelledby="pod-title" style={{ '--sk-w': '480px' } as React.CSSProperties} onClick={e => e.stopPropagation()} onKeyDown={e => { if (e.key === 'Escape' && !podSending) setShowPod(false) }}>
+            <div className="sk-head">
+              <span className="sk-badge" aria-hidden>{SkIcon.box}</span>
+              <div style={{ minWidth: 0 }}>
+                <h3 id="pod-title">Proof of delivery</h3>
+                <p className="sk-sub">Send a photo of the delivered parcel. It&rsquo;s marked as delivered too.</p>
+              </div>
+              <SkClose onClick={() => !podSending && setShowPod(false)} />
             </div>
 
-            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--slate)', marginBottom: 6 }}>Delivery photo(s)</label>
-            <FilePickerButton
-              accept="image/*,video/*"
-              label={podFiles.length ? `${podFiles.length} file${podFiles.length === 1 ? '' : 's'} selected — add more` : 'Choose photos or video'}
-              onFiles={files => setPodFiles(prev => [...prev, ...files])}
-            />
-            {podFiles.length > 0 && (
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '8px 0 12px' }}>
-                {podFiles.map((f, i) => (
-                  <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 600, padding: '4px 9px', borderRadius: 7, background: 'var(--peach)', color: 'var(--coral)' }}>
-                    {f.name}
-                    <button type="button" onClick={() => setPodFiles(prev => prev.filter((_, j) => j !== i))}
-                      style={{ border: 'none', background: 'none', padding: 0, color: 'var(--coral)', cursor: 'pointer', display: 'flex' }}>
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
+            <span className="sk-lbl">Delivery photos</span>
+            <SkFiles files={podFiles} accept="image/*,video/*" label="Add photos or video" hint="Tap to choose, or drop them here"
+              onAdd={files => setPodFiles(prev => [...prev, ...files])}
+              onRemove={i => setPodFiles(prev => prev.filter((_, j) => j !== i))} />
 
-            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--slate)', margin: '10px 0 6px' }}>Message to the customer</label>
-            {/* Pre-written openers — tap Insert to drop one in, then edit. */}
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+            <label className="sk-lbl" htmlFor="pod-note">Message to the customer</label>
+            {/* Pre-written openers: tap one to drop it in, then edit. */}
+            <div className="sk-chips" style={{ marginBottom: 10 }}>
               {[
-                'Your order has been delivered. Attached is the proof of delivery — thank you!',
-                'Hi! Your parcel has just been delivered and left in a safe spot. Photo attached.',
-                'Delivery complete 🐟 Here\u2019s a photo for your records. Reply here if anything\u2019s not right.',
-                'Your order arrived today — see the attached photo. Thanks for shopping with us!',
-              ].map((tpl, i) => (
-                <button key={i} type="button"
-                  onClick={() => setPodNote(tpl)}
-                  title={tpl}
-                  style={{ fontSize: 11.5, fontWeight: 600, padding: '5px 10px', borderRadius: 20, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', cursor: 'pointer', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  Insert: {tpl.slice(0, 22)}…
-                </button>
+                ['Delivered', 'Your order has been delivered. Attached is the proof of delivery. Thank you!'],
+                ['Safe spot', 'Hi! Your parcel has just been delivered and left in a safe spot. Photo attached.'],
+                ['For your records', 'Delivery complete 🐟 Here\u2019s a photo for your records. Reply here if anything\u2019s not right.'],
+                ['Arrived today', 'Your order arrived today. See the attached photo. Thanks for shopping with us!'],
+              ].map(([name, tpl]) => (
+                <button key={name} type="button" className={`sk-chip${podNote === tpl ? ' on' : ''}`} onClick={() => setPodNote(tpl)} title={tpl}><span>{name}</span></button>
               ))}
             </div>
-            <textarea value={podNote} onChange={e => setPodNote(e.target.value)} rows={4}
-              placeholder="Your order has been delivered. Attached is the proof of delivery — thank you!"
-              style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13.5, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', resize: 'vertical' }} />
+            <textarea id="pod-note" className="sk-in" value={podNote} onChange={e => setPodNote(e.target.value)} rows={4}
+              placeholder="Your order has been delivered. Attached is the proof of delivery. Thank you!" />
 
-            <button type="button" onClick={sendProofOfDelivery} disabled={podSending}
-              style={{ width: '100%', marginTop: 14, padding: 12, borderRadius: 10, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: podSending ? 'wait' : 'pointer' }}>
-              {podSending ? 'Sending…' : 'Send proof of delivery'}
-            </button>
-            <p style={{ fontSize: 11.5, color: 'var(--slate)', marginTop: 9, lineHeight: 1.5 }}>
+            <div className="sk-actions">
+              <button type="button" className="sk-btn" onClick={() => setShowPod(false)} disabled={podSending}>Cancel</button>
+              <button type="button" className="sk-btn primary" onClick={sendProofOfDelivery} disabled={podSending}>
+                {podSending ? 'Sending…' : 'Send proof of delivery'}
+              </button>
+            </div>
+            <p className="sk-note" style={{ textAlign: 'center' }}>
               Sent in the chat, texted to their mobile if we have one, and the delivery is marked as delivered.
             </p>
           </div>
@@ -764,64 +745,71 @@ export default function InboxOverlays() {
 
       {/* Charge a saved card */}
       {showChargeCard && selected && (
-        <div onClick={() => setShowChargeCard(false)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
-          <div onClick={e => e.stopPropagation()}
-            style={{ width: 380, maxWidth: '92vw', background: '#fff', borderRadius: 16, padding: 22 }}>
-            <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>Charge saved card</h3>
-            <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--slate)' }}>Charges the customer&rsquo;s card on file. They won&rsquo;t need to do anything.</p>
+        <div className="sk-scrim" style={{ '--sk-z': 200 } as React.CSSProperties} onClick={() => !charging && setShowChargeCard(false)}>
+          <SkStyle />
+          <div className="sk" role="dialog" aria-modal="true" aria-labelledby="cc-title" style={{ '--sk-w': '440px' } as React.CSSProperties} onClick={e => e.stopPropagation()} onKeyDown={e => { if (e.key === 'Escape' && !charging) setShowChargeCard(false) }}>
+            <div className="sk-head">
+              <span className="sk-badge" aria-hidden>
+                <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+              </span>
+              <div style={{ minWidth: 0 }}>
+                <h3 id="cc-title">Charge a saved card</h3>
+                <p className="sk-sub">Charges the card they have on file. They don&rsquo;t need to do anything.</p>
+              </div>
+              <SkClose onClick={() => !charging && setShowChargeCard(false)} />
+            </div>
 
             {savedCards === null ? (
-              <div aria-busy="true" style={{ padding: '6px 0 4px' }}>
-                <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>Card</div>
-                <div className="cc-skel" style={{ height: 40, borderRadius: 9, marginBottom: 10 }} />
-                <p style={{ margin: 0, fontSize: 12.5, color: 'var(--slate)' }}>Loading saved cards…</p>
-                <style>{'.cc-skel{background:linear-gradient(90deg,#f1f1f3 25%,#e7e7ea 37%,#f1f1f3 63%);background-size:400% 100%;animation:ccSk 1.2s ease infinite}@keyframes ccSk{0%{background-position:100% 50%}100%{background-position:0 50%}}@media (prefers-reduced-motion: reduce){.cc-skel{animation:none}}'}</style>
+              <div aria-busy="true">
+                <span className="sk-lbl">Card</span>
+                <div className="cc-skel" style={{ height: 50, borderRadius: 16 }} />
+                <p className="sk-note">Loading saved cards…</p>
+                <style>{'.cc-skel{background:linear-gradient(90deg,var(--sk-fill) 25%,var(--sk-fill-2) 37%,var(--sk-fill) 63%);background-size:400% 100%;animation:ccSk 1.2s ease infinite}@keyframes ccSk{0%{background-position:100% 50%}100%{background-position:0 50%}}@media (prefers-reduced-motion: reduce){.cc-skel{animation:none}}'}</style>
               </div>
             ) : savedCards.length === 0 ? (
               <>
-                <div style={{ padding: 14, borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)', marginBottom: 14 }}>
-                  <p style={{ margin: 0, fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>
-                    No saved card for this customer yet. Use <strong>Save Card</strong> to send them a secure Stripe link first.
+                <div className="sk-card" style={{ marginTop: 14 }}>
+                  <p style={{ margin: 0, fontSize: 14, color: 'var(--ink)', lineHeight: 1.5 }}>
+                    No saved card for this customer yet. Send them a secure Stripe link to save one first.
                   </p>
                 </div>
-                <button type="button" onClick={() => { setShowChargeCard(false); saveCard() }}
-                  style={{ width: '100%', padding: '11px 0', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-                  Send &ldquo;Save Card&rdquo; link
-                </button>
+                <div className="sk-actions">
+                  <button type="button" className="sk-btn" onClick={() => setShowChargeCard(false)}>Cancel</button>
+                  <button type="button" className="sk-btn primary" onClick={() => { setShowChargeCard(false); saveCard() }}>Send a save-card link</button>
+                </div>
               </>
             ) : (
               <>
-                <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>Card</label>
-                <select value={chargeCardId} onChange={e => setChargeCardId(e.target.value)}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, marginBottom: 14, boxSizing: 'border-box' }}>
+                <span className="sk-lbl">Card</span>
+                <div className="cc-cards" role="radiogroup" aria-label="Card">
                   {savedCards.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {(c.brand || 'card').toUpperCase()} •••• {c.last4} — expires {String(c.exp_month).padStart(2, '0')}/{c.exp_year}
-                    </option>
+                    <button key={c.id} type="button" role="radio" aria-checked={chargeCardId === c.id} className={`cc-card${chargeCardId === c.id ? ' on' : ''}`} onClick={() => setChargeCardId(c.id)}>
+                      <span className="cc-brand">{String(c.brand || 'card').toUpperCase()}</span>
+                      <span className="sk-item-t"><b>•••• {c.last4}</b><small>Expires {String(c.exp_month).padStart(2, '0')}/{String(c.exp_year).slice(-2)}</small></span>
+                      <span className="cc-radio" aria-hidden />
+                    </button>
                   ))}
-                </select>
+                </div>
 
-                <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>Amount (AUD)</label>
-                <input type="number" min="1" step="0.01" value={chargeAmount} onChange={e => setChargeAmount(e.target.value)}
-                  placeholder="49.95"
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, marginBottom: 14, boxSizing: 'border-box' }} />
+                <label className="sk-lbl" htmlFor="cc-amt">Amount</label>
+                <div className="sk-field">
+                  <span className="sk-pre">$</span>
+                  <input id="cc-amt" type="number" min="1" step="0.01" value={chargeAmount} onChange={e => setChargeAmount(e.target.value)} placeholder="49.95" inputMode="decimal" />
+                  <span className="sk-pre" style={{ fontSize: 13 }}>AUD</span>
+                </div>
 
-                <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>What&rsquo;s this for?</label>
-                <input value={chargeDesc} onChange={e => setChargeDesc(e.target.value)}
-                  placeholder="Replacement part"
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, marginBottom: 18, boxSizing: 'border-box' }} />
+                <label className="sk-lbl" htmlFor="cc-desc">What&rsquo;s this for?</label>
+                <input id="cc-desc" className="sk-in" value={chargeDesc} onChange={e => setChargeDesc(e.target.value)} placeholder="Replacement part" />
 
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button type="button" onClick={() => setShowChargeCard(false)}
-                    style={{ flex: 1, padding: '11px 0', borderRadius: 10, background: '#fff', color: 'var(--slate)', border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
-                  <button type="button" onClick={chargeCard} disabled={!chargeAmount || charging}
-                    style={{ flex: 2, padding: '11px 0', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', opacity: (!chargeAmount || charging) ? 0.6 : 1 }}>
+                <div className="sk-actions">
+                  <button type="button" className="sk-btn" onClick={() => setShowChargeCard(false)} disabled={charging}>Cancel</button>
+                  <button type="button" className="sk-btn primary" onClick={chargeCard} disabled={!chargeAmount || charging}>
                     {charging ? 'Charging…' : `Charge $${chargeAmount || '0'}`}
                   </button>
                 </div>
               </>
             )}
+            <style>{`.cc-cards{display:flex;flex-direction:column;gap:8px}.cc-card{display:flex;align-items:center;gap:12px;width:100%;padding:11px 14px;border:none;border-radius:18px;background:var(--sk-fill);font:inherit;text-align:left;cursor:pointer;box-shadow:inset 0 0 0 1.5px transparent;transition:box-shadow .15s,background .15s}.cc-card.on{background:var(--card,#fff);box-shadow:inset 0 0 0 2px var(--coral,#ff7a6b)}.cc-brand{flex-shrink:0;min-width:46px;height:30px;padding:0 6px;border-radius:8px;background:var(--ink);color:var(--card,#fff);font-size:10px;font-weight:800;letter-spacing:.06em;display:inline-flex;align-items:center;justify-content:center}.cc-radio{width:20px;height:20px;flex-shrink:0;border-radius:50%;box-shadow:inset 0 0 0 2px var(--sk-fill-2);transition:box-shadow .15s}.cc-card.on .cc-radio{box-shadow:inset 0 0 0 6px var(--coral,#ff7a6b)}`}</style>
           </div>
         </div>
       )}
@@ -997,53 +985,57 @@ export default function InboxOverlays() {
         />
       )}
       {showMediaRequest && selected && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => setShowMediaRequest(false)}>
-          <div onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: '100%', background: '#fff', borderRadius: 16, overflow: 'hidden', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ color: 'var(--coral)', display: 'inline-flex' }}>{Icon.media(17)}</span> Request Media</h2>
-              <button onClick={() => setShowMediaRequest(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--slate)' }}>✕</button>
+        <div className="sk-scrim" style={{ '--sk-z': 10000 } as React.CSSProperties} onClick={() => setShowMediaRequest(false)}>
+          <SkStyle />
+          <div className="sk" role="dialog" aria-modal="true" aria-labelledby="mr-title" style={{ '--sk-w': '480px' } as React.CSSProperties} onClick={e => e.stopPropagation()} onKeyDown={e => { if (e.key === 'Escape') setShowMediaRequest(false) }}>
+            <div className="sk-head">
+              <span className="sk-badge" aria-hidden>{Icon.media(20)}</span>
+              <div style={{ minWidth: 0 }}>
+                <h3 id="mr-title">Request photos or video</h3>
+                <p className="sk-sub">A private upload link. They send photos, videos or PDFs at full quality, with no MMS squashing.</p>
+              </div>
+              <SkClose onClick={() => setShowMediaRequest(false)} />
             </div>
-            <div style={{ padding: 20 }}>
-              <p style={{ fontSize: 12.5, color: 'var(--slate)', margin: '0 0 16px', lineHeight: 1.5 }}>Send a private upload link. The customer can upload photos, videos, or PDFs at full quality — no MMS compression.</p>
 
-              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 5 }}>What do you need?</label>
-              <textarea value={mrPrompt} onChange={e => setMrPrompt(e.target.value)} rows={2} placeholder="e.g. Please upload clear photos of the damaged item and the box."
-                style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit', marginBottom: 16 }} />
+            <label className="sk-lbl" htmlFor="mr-prompt">What do you need?</label>
+            <textarea id="mr-prompt" className="sk-in" value={mrPrompt} onChange={e => setMrPrompt(e.target.value)} rows={2} style={{ minHeight: 80 }} placeholder="e.g. Please upload clear photos of the damaged item and the box." />
 
-              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }}>Accept file types</label>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-                {[['image', 'Photos'], ['video', 'Videos'], ['pdf', 'PDFs'], ['audio', 'Audio']].map(([k, label]) => {
-                  const on = mrAccept.includes(k)
-                  return (
-                    <button key={k} onClick={() => setMrAccept(prev => on ? prev.filter(x => x !== k) : [...prev, k])}
-                      style={{ padding: '8px 14px', borderRadius: 9, border: on ? '2px solid var(--coral)' : '1px solid var(--border)', background: on ? 'var(--peach)' : '#fff', color: on ? 'var(--coral)' : 'var(--slate)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{label}</button>
-                  )
-                })}
-              </div>
+            <span className="sk-lbl">They can send</span>
+            <div className="sk-chips" role="group" aria-label="Accepted file types">
+              {[['image', 'Photos'], ['video', 'Videos'], ['pdf', 'PDFs'], ['audio', 'Audio']].map(([k, label]) => {
+                const on = mrAccept.includes(k)
+                return (
+                  <button key={k} type="button" className={`sk-chip${on ? ' on' : ''}`} aria-pressed={on} onClick={() => setMrAccept(prev => on ? prev.filter(x => x !== k) : [...prev, k])}>
+                    {on && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="20 6 9 17 4 12" /></svg>}
+                    <span>{label}</span>
+                  </button>
+                )
+              })}
+            </div>
 
-              <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 5 }}>Maximum files</label>
-                  <input type="number" min={1} value={mrMaxFiles} onChange={e => setMrMaxFiles(e.target.value)}
-                    style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box' }} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 5 }}>Link expires in</label>
-                  <select value={mrExpiry} onChange={e => setMrExpiry(e.target.value)}
-                    style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box' }}>
-                    <option value="24">24 hours</option>
-                    <option value="72">3 days</option>
-                    <option value="168">7 days</option>
-                    <option value="720">30 days</option>
-                    <option value="">Never</option>
-                  </select>
+            <div className="sk-row">
+              <div>
+                <label className="sk-lbl" htmlFor="mr-max">Up to</label>
+                <div className="sk-field">
+                  <input id="mr-max" type="number" min={1} value={mrMaxFiles} onChange={e => setMrMaxFiles(e.target.value)} inputMode="numeric" />
+                  <span className="sk-pre" style={{ fontSize: 13.5 }}>files</span>
                 </div>
               </div>
-
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => setShowMediaRequest(false)} style={{ flex: 1, padding: '11px', borderRadius: 10, background: '#fff', color: 'var(--slate)', border: '1px solid var(--border)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-                <button onClick={sendMediaRequest} disabled={mrSaving || mrAccept.length === 0} style={{ flex: 2, padding: '11px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', opacity: mrAccept.length === 0 ? 0.6 : 1 }}>{mrSaving ? 'Sending…' : 'Send Request'}</button>
+              <div>
+                <label className="sk-lbl" htmlFor="mr-exp">Link expires</label>
+                <select id="mr-exp" className="sk-in" value={mrExpiry} onChange={e => setMrExpiry(e.target.value)}>
+                  <option value="24">In 24 hours</option>
+                  <option value="72">In 3 days</option>
+                  <option value="168">In 7 days</option>
+                  <option value="720">In 30 days</option>
+                  <option value="">Never</option>
+                </select>
               </div>
+            </div>
+
+            <div className="sk-actions">
+              <button type="button" className="sk-btn" onClick={() => setShowMediaRequest(false)}>Cancel</button>
+              <button type="button" className="sk-btn primary" onClick={sendMediaRequest} disabled={mrSaving || mrAccept.length === 0}>{mrSaving ? 'Sending…' : 'Send request'}</button>
             </div>
           </div>
         </div>
@@ -1051,42 +1043,71 @@ export default function InboxOverlays() {
 
       {/* Send coupon panel */}
       {showCoupon && selected && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', justifyContent: 'flex-end' }} onClick={() => setShowCoupon(false)}>
-          <div onClick={e => e.stopPropagation()} style={{ width: 400, maxWidth: '100%', height: '100%', background: '#fff', overflowY: 'auto', boxShadow: '-8px 0 32px rgba(0,0,0,0.2)' }}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--ink)' }}>Send a coupon</h2>
-              <button onClick={() => setShowCoupon(false)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--slate)' }}>✕</button>
+        <div className="sk-scrim side" style={{ '--sk-z': 10000 } as React.CSSProperties} onClick={() => setShowCoupon(false)}>
+          <SkStyle />
+          <div className="sk side" role="dialog" aria-modal="true" aria-labelledby="cp-title" style={{ '--sk-w': '440px' } as React.CSSProperties} onClick={e => e.stopPropagation()} onKeyDown={e => { if (e.key === 'Escape') setShowCoupon(false) }}>
+            <div className="sk-head">
+              <span className="sk-badge" aria-hidden>{SkIcon.coupon}</span>
+              <div style={{ minWidth: 0 }}>
+                <h2 id="cp-title">Send a coupon</h2>
+                <p className="sk-sub">Made in your store and sent in this chat.</p>
+              </div>
+              <SkClose onClick={() => setShowCoupon(false)} />
             </div>
-            <div style={{ padding: 20 }}>
-              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 5 }}>Discount</label>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-                <select value={couponType} onChange={e => setCouponType(e.target.value as any)} style={{ padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, width: 90 }}>
-                  <option value="fixed">$ off</option>
-                  <option value="percent">% off</option>
-                </select>
-                <input value={couponAmount} onChange={e => setCouponAmount(e.target.value)} placeholder={couponType === 'percent' ? '10' : '20.00'} autoFocus
-                  style={{ flex: 1, padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5 }} />
+            <div className="sk-body">
+              {(() => {
+                const amt = couponAmount.trim()
+                const off = amt ? (couponType === 'percent' ? `${amt}% off` : `$${amt} off`) : couponType === 'percent' ? '10% off' : '$20 off'
+                return (
+                  <div className={`cp-ticket${amt ? '' : ' empty'}`} aria-hidden>
+                    <span className="cp-ticket-off">{off}</span>
+                    <span className="cp-ticket-code">{couponCode.trim() || 'AUTO-CODE'}</span>
+                    <span className="cp-ticket-meta">{couponExpiry ? `Expires in ${couponExpiry} day${couponExpiry === '1' ? '' : 's'}` : 'No expiry'}{couponOneTime ? ' · one use' : ''}</span>
+                  </div>
+                )
+              })()}
+
+              <span className="sk-lbl">Discount</span>
+              <div className="sk-row cp-disc">
+                <div className="sk-seg" role="group" aria-label="Discount type">
+                  <button type="button" className={couponType === 'fixed' ? 'on' : ''} aria-pressed={couponType === 'fixed'} onClick={() => setCouponType('fixed' as any)}>$ off</button>
+                  <button type="button" className={couponType === 'percent' ? 'on' : ''} aria-pressed={couponType === 'percent'} onClick={() => setCouponType('percent' as any)}>% off</button>
+                </div>
+                <div className="sk-field">
+                  <span className="sk-pre">{couponType === 'percent' ? '%' : '$'}</span>
+                  <input value={couponAmount} onChange={e => setCouponAmount(e.target.value)} placeholder={couponType === 'percent' ? '10' : '20.00'} autoFocus inputMode="decimal" aria-label="Discount amount" />
+                </div>
               </div>
 
-              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 5 }}>Code (leave blank to auto-generate)</label>
-              <input value={couponCode} onChange={e => setCouponCode(e.target.value.toUpperCase())} placeholder="e.g. WELCOME10"
-                style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box', marginBottom: 14 }} />
+              <label className="sk-lbl" htmlFor="cp-code">Code <span className="sk-opt">leave blank to make one up</span></label>
+              <input id="cp-code" className="sk-in" value={couponCode} onChange={e => setCouponCode(e.target.value.toUpperCase())} placeholder="e.g. WELCOME10" style={{ letterSpacing: '.04em', fontWeight: 600 }} />
 
-              <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', marginBottom: 5 }}>Expires in (days, optional)</label>
-              <input value={couponExpiry} onChange={e => setCouponExpiry(e.target.value)} placeholder="e.g. 30" type="number"
-                style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box', marginBottom: 14 }} />
+              <span className="sk-lbl">Expires <span className="sk-opt">optional</span></span>
+              <div className="sk-chips">
+                {[['', 'Never'], ['7', '7 days'], ['14', '14 days'], ['30', '30 days']].map(([v, label]) => (
+                  <button key={label} type="button" className={`sk-chip${couponExpiry === v ? ' on' : ''}`} aria-pressed={couponExpiry === v} onClick={() => setCouponExpiry(v)}><span>{label}</span></button>
+                ))}
+                <span className="sk-field cp-days">
+                  <input value={['', '7', '14', '30'].includes(couponExpiry) ? '' : couponExpiry} onChange={e => setCouponExpiry(e.target.value.replace(/\D/g, ''))} placeholder="Other" inputMode="numeric" aria-label="Expires in days" />
+                  <span className="sk-pre" style={{ fontSize: 13 }}>days</span>
+                </span>
+              </div>
 
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 8 }}>
+              <label className="sk-check box" style={{ marginTop: 16 }}>
                 <input type="checkbox" checked={couponOneTime} onChange={e => setCouponOneTime(e.target.checked)} />
-                One-time use{contact?.email ? `, restricted to ${contact.email}` : ''}
+                <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>One-time use{contact?.email ? <span style={{ color: 'var(--sk-muted)' }}>, only for {contact.email}</span> : ''}</span>
               </label>
-              {!contact?.email && <p style={{ fontSize: 11.5, color: 'var(--slate)', marginBottom: 12 }}>No email on this contact — the coupon won't be email-restricted.</p>}
-
-              <button onClick={sendCoupon} disabled={couponSaving || !couponAmount.trim()}
-                style={{ width: '100%', padding: '12px', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: couponAmount.trim() ? 'pointer' : 'not-allowed', opacity: couponAmount.trim() ? 1 : 0.6, marginTop: 8 }}>
-                {couponSaving ? 'Creating…' : 'Create & send coupon'}
-              </button>
+              {!contact?.email && <p className="sk-note">No email on this contact, so the coupon can&rsquo;t be tied to them.</p>}
             </div>
+            <div className="sk-foot">
+              <div className="sk-actions" style={{ marginTop: 0 }}>
+                <button type="button" className="sk-btn" onClick={() => setShowCoupon(false)}>Cancel</button>
+                <button type="button" className="sk-btn primary" onClick={sendCoupon} disabled={couponSaving || !couponAmount.trim()}>
+                  {couponSaving ? 'Creating…' : 'Create & send coupon'}
+                </button>
+              </div>
+            </div>
+            <style>{CP_CSS}</style>
           </div>
         </div>
       )}
@@ -1140,67 +1161,93 @@ export default function InboxOverlays() {
       )}
 
       {/* Interactive send picker modal */}
-      {sendPicker && (
-        <div onClick={() => setSendPicker(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-          <div onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: '100%', maxHeight: '80vh', overflowY: 'auto', background: '#fff', borderRadius: 16, padding: 22, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--ink)', textTransform: 'capitalize' }}>
-                {sendPicker === 'payment' ? 'Request Payment' : `Send ${sendPicker}`}
-              </h3>
-              <button type="button" onClick={() => setSendPicker(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: 'var(--slate)' }}>×</button>
+      {sendPicker && (() => {
+        const what = sendPicker === 'payment' ? null : sendPicker
+        const icon = sendPicker === 'payment' ? Icon.payment() : sendPicker === 'poll' ? Icon.poll() : sendPicker === 'survey' ? Icon.survey() : Icon.form()
+        return (
+        <div className="sk-scrim" style={{ '--sk-z': 200 } as React.CSSProperties} onClick={() => setSendPicker(null)}>
+          <SkStyle />
+          <div className="sk" role="dialog" aria-modal="true" aria-labelledby="sp-title" style={{ '--sk-w': '460px' } as React.CSSProperties} onClick={e => e.stopPropagation()} onKeyDown={e => { if (e.key === 'Escape') setSendPicker(null) }}>
+            <div className="sk-head">
+              <span className="sk-badge" aria-hidden>{icon}</span>
+              <div style={{ minWidth: 0 }}>
+                <h3 id="sp-title">{sendPicker === 'payment' ? 'Send a payment link' : `Send a ${what}`}</h3>
+                <p className="sk-sub">{sendPicker === 'payment' ? 'A secure Stripe checkout for any amount.' : `Pick one. It shows up in the chat for them to answer.`}</p>
+              </div>
+              <SkClose onClick={() => setSendPicker(null)} />
             </div>
 
             {sendPicker === 'payment' ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div>
-                  <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', display: 'block', marginBottom: 6 }}>Amount (AUD)</label>
-                  <input type="number" min="1" step="0.01" value={payAmount} onChange={e => setPayAmount(e.target.value)} placeholder="49.00" style={{ ...inp, fontSize: 15 }} />
+              <>
+                <label className="sk-lbl" htmlFor="sp-amt">Amount</label>
+                <div className="sk-field">
+                  <span className="sk-pre">$</span>
+                  <input id="sp-amt" type="number" min="1" step="0.01" value={payAmount} onChange={e => setPayAmount(e.target.value)} placeholder="49.00" inputMode="decimal" autoFocus />
+                  <span className="sk-pre" style={{ fontSize: 13 }}>AUD</span>
                 </div>
-                <div>
-                  <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', display: 'block', marginBottom: 6 }}>Description (optional)</label>
-                  <input value={payDesc} onChange={e => setPayDesc(e.target.value)} placeholder="Deposit for booking" style={inp} />
-                </div>
+                <label className="sk-lbl" htmlFor="sp-desc">What&rsquo;s it for? <span className="sk-opt">optional</span></label>
+                <input id="sp-desc" className="sk-in" value={payDesc} onChange={e => setPayDesc(e.target.value)} placeholder="Deposit for booking" />
                 {(() => {
                   const def = (['none', 'billing', 'shipping'] as const).find(v => v === (companyInfo as any)?.payment_settings?.paylink_address) || 'none'
                   const cur = payAddress || def
                   return (
-                    <div>
-                      <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', display: 'block', marginBottom: 6 }}>Ask for an address</label>
-                      <div role="radiogroup" aria-label="Ask for an address" className="pay-addr">
+                    <>
+                      <span className="sk-lbl">Ask for an address</span>
+                      <div role="radiogroup" aria-label="Ask for an address" className="sk-seg">
                         {([['none', 'No'], ['billing', 'Billing'], ['shipping', 'Delivery']] as const).map(([v, label]) => (
                           <button key={v} type="button" role="radio" aria-checked={cur === v} onClick={() => setPayAddress(v)} className={cur === v ? 'on' : ''}>{label}</button>
                         ))}
                       </div>
-                      <style>{`.pay-addr{display:flex;gap:4px;padding:3px;border-radius:10px;background:var(--canvas)}.pay-addr button{flex:1;padding:7px 0;border:none;border-radius:8px;background:transparent;font-size:12.5px;font-weight:600;color:var(--slate);cursor:pointer;transition:background .2s ease,color .2s ease,box-shadow .2s ease}.pay-addr button.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(15,23,42,.12)}`}</style>
-                      <p style={{ margin: '6px 0 0', fontSize: 11.5, color: 'var(--slate)' }}>{cur === 'none' ? 'Stripe still asks for their email and the name on the card.' : cur === 'billing' ? 'They enter their billing address; it’s saved to their addresses.' : 'They enter where to deliver; it’s saved to their addresses.'}</p>
-                    </div>
+                      <p className="sk-note">{cur === 'none' ? 'Stripe still asks for their email and the name on the card.' : cur === 'billing' ? 'They enter their billing address; it’s saved to their addresses.' : 'They enter where to deliver; it’s saved to their addresses.'}</p>
+                    </>
                   )
                 })()}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--slate)', background: 'var(--canvas)', padding: '8px 12px', borderRadius: 8 }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                  Secure payment via Stripe. Card details are never stored by Colvy.{(companyInfo as any)?.payment_settings?.paylink_fill_contact !== false ? ' Their name and email fill in any blanks on the contact.' : ''}
+                <div className="sk-card" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginTop: 14, fontSize: 12.5, lineHeight: 1.5, color: 'var(--sk-muted)' }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }} aria-hidden><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                  <span>Secure payment via Stripe. Card details are never stored by Colvy.{(companyInfo as any)?.payment_settings?.paylink_fill_contact !== false ? ' Their name and email fill in any blanks on the contact.' : ''}</span>
                 </div>
-                <button type="button" onClick={sendPayment} disabled={!payAmount || paySending} style={{ padding: '11px 0', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: (!payAmount || paySending) ? 'default' : 'pointer', opacity: paySending ? 0.7 : 1 }}>
-                  {(() => { const v = composeChannel(); const chat = v === 'widget' || v === 'chat'; return paySending ? (chat ? 'Sending…' : 'Making the link…') : chat ? 'Send payment request' : 'Add to reply' })()}
-                </button>
-              </div>
+                <div className="sk-actions">
+                  <button type="button" className="sk-btn" onClick={() => setSendPicker(null)}>Cancel</button>
+                  <button type="button" className="sk-btn primary" onClick={sendPayment} disabled={!payAmount || paySending}>
+                    {(() => { const v = composeChannel(); const chat = v === 'widget' || v === 'chat'; return paySending ? (chat ? 'Sending…' : 'Making the link…') : chat ? 'Send payment request' : 'Add to reply' })()}
+                  </button>
+                </div>
+              </>
             ) : pickerItems.length === 0 ? (
-              <p style={{ fontSize: 13.5, color: 'var(--slate)', textAlign: 'center', padding: '24px 0' }}>
-                No {sendPicker}s found. Create one in the {sendPicker === 'poll' ? 'Polls' : sendPicker === 'survey' ? 'Surveys' : 'Forms'} section first.
-              </p>
+              <div className="sk-card" style={{ marginTop: 14, textAlign: 'center', padding: '24px 18px' }}>
+                <p style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>No {what}s yet</p>
+                <p className="sk-note" style={{ margin: '6px 0 0' }}>Make one in {sendPicker === 'poll' ? 'Polls' : sendPicker === 'survey' ? 'Surveys' : 'Forms'} first, then send it from here.</p>
+              </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
                 {pickerItems.map(item => (
-                  <button key={item.id} type="button" onClick={() => sendInteractive(sendPicker as any, item)}
-                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '12px 14px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', cursor: 'pointer' }}>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{item.question || item.title || item.name || 'Untitled'}</span>
+                  <button key={item.id} type="button" className="sp-row" onClick={() => sendInteractive(sendPicker as any, item)}>
+                    <span className="sp-row-ic" aria-hidden>{icon}</span>
+                    <span className="sk-item-t"><b style={{ whiteSpace: 'normal' }}>{item.question || item.title || item.name || 'Untitled'}</b></span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: 'var(--sk-muted)' }} aria-hidden><path d="m9 6 6 6-6 6" /></svg>
                   </button>
                 ))}
               </div>
             )}
+            <style>{`.sp-row{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;border:none;border-radius:18px;background:var(--sk-fill);font:inherit;text-align:left;cursor:pointer;color:var(--ink);transition:background .15s,transform .12s}.sp-row:hover{background:var(--sk-fill-2)}.sp-row:active{transform:scale(.99)}.sp-row-ic{width:36px;height:36px;flex-shrink:0;border-radius:12px;background:var(--card,#fff);color:var(--coral,#ff7a6b);display:inline-flex;align-items:center;justify-content:center}`}</style>
           </div>
         </div>
-      )}
+        )
+      })()}
     </>
   )
 }
+
+const CP_CSS = `
+.cp-ticket{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;margin:10px 0 2px;padding:22px 18px 18px;border-radius:22px;background:linear-gradient(135deg,color-mix(in srgb,var(--coral,#ff7a6b) 88%,#fff),color-mix(in srgb,var(--coral,#ff7a6b) 80%,#000));color:#fff;text-align:center;overflow:hidden;transition:opacity .2s}
+.cp-ticket.empty{opacity:.55}
+.cp-ticket::before,.cp-ticket::after{content:'';position:absolute;top:50%;width:22px;height:22px;margin-top:-11px;border-radius:50%;background:var(--card,#fff)}
+.cp-ticket::before{left:-11px}.cp-ticket::after{right:-11px}
+.cp-ticket-off{font-family:var(--font-display),-apple-system,sans-serif;font-size:30px;font-weight:800;letter-spacing:-.03em;line-height:1.05}
+.cp-ticket-code{margin-top:4px;padding:5px 14px;border-radius:999px;border:1.5px dashed rgba(255,255,255,.7);font-size:13px;font-weight:700;letter-spacing:.08em;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cp-ticket-meta{font-size:12px;font-weight:600;opacity:.9}
+.cp-disc .sk-seg{flex:0 0 150px;height:50px;box-sizing:border-box}
+.cp-disc .sk-seg button{height:42px}
+.cp-days{height:36px;width:112px;padding:0 12px;border-radius:999px}
+.sk .cp-days input{font-size:13.5px}
+`

@@ -13,6 +13,7 @@ import AttachmentUploader, { isMediaAttachment } from '@/components/AttachmentUp
 import MentionInput, { resolveMentions } from '@/components/MentionInput'
 import { useDraft } from '@/lib/drafts'
 import { notifyIntegrations } from '@/lib/integrations-notify'
+import { LinkedOrderCard, OrderSearchModal } from '@/components/tasks/OrderLink'
 
 const PRIORITY = {
   high: { label: 'High', color: '#dc2626', bg: '#fef2f2' },
@@ -67,44 +68,6 @@ function recurrenceDates(base: Date, rec: Recurrence): Date[] {
   return out.slice(0, count)
 }
 
-function OrderSearchModal({ companyId, onClose, onPick }: any) {
-  const [q, setQ] = useState('')
-  const [results, setResults] = useState<any[]>([])
-  const [loading, setLoading] = useState(false)
-  useEffect(() => {
-    if (q.trim().length < 2) { setResults([]); return }
-    const t = setTimeout(async () => {
-      setLoading(true)
-      try { const res = await authFetch(`/api/orders/search?companyId=${companyId}&q=${encodeURIComponent(q.trim())}`); const d = await res.json(); setResults(d.orders || []) }
-      catch { setResults([]) } finally { setLoading(false) }
-    }, 300)
-    return () => clearTimeout(t)
-  }, [q, companyId])
-  return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 500, padding: 20 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 460, maxWidth: '95vw', maxHeight: '80vh', display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: 16, overflow: 'hidden' }}>
-        <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
-          <h3 style={{ margin: '0 0 10px', fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>Link to order</h3>
-          <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Order #, customer name, phone, email or item…" style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box' }} />
-        </div>
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {loading && <p style={{ padding: 16, fontSize: 13, color: 'var(--slate)' }}>Searching…</p>}
-          {!loading && q.trim().length >= 2 && results.length === 0 && <p style={{ padding: 16, fontSize: 13, color: 'var(--slate)' }}>No orders match “{q}”.</p>}
-          {results.map(o => (
-            <button key={o.order_id} onClick={() => onPick(o)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '12px 16px', border: 'none', borderBottom: '1px solid var(--border)', background: '#fff', cursor: 'pointer' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-                <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>#{o.order_number}</span>
-                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--coral)' }}>${o.total.toFixed(2)}</span>
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--slate)', marginTop: 2 }}>{o.customer}{o.status ? ` · ${o.status}` : ''}</div>
-              {o.items?.length > 0 && <div style={{ fontSize: 11.5, color: '#9ca3af', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.items.join(', ')}</div>}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
 
 const TE_CSS = `
   .te-seg { display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: #f4f4f5; }
@@ -348,13 +311,7 @@ export default function TaskEditor({ companyId, team, outlets = [], me, userId, 
       <AssigneePicker members={team} value={assignees} onChange={setAssignees} />
       <p style={L}>Linked order</p>
       {order ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 12px 12px 14px', borderRadius: 16, background: '#fafafa', boxShadow: '0 0 0 1px rgba(0,0,0,.05)' }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>Order #{order.order_number}</div>
-            <div style={{ fontSize: 12.5, color: '#8e8e93', marginTop: 1 }}>{order.customer} · ${order.total.toFixed(2)}</div>
-          </div>
-          <button type="button" className="te-pill" onClick={() => setOrder(null)} style={{ color: '#dc2626', height: 30 }}>Remove</button>
-        </div>
+        <LinkedOrderCard orderId={order.order_id} orderNumber={order.order_number} customer={order.customer} total={order.total} removeClassName="te-pill" onRemove={() => setOrder(null)} />
       ) : (
         <button type="button" className="te-pill" onClick={() => setShowOrderSearch(true)}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>

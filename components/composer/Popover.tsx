@@ -70,6 +70,31 @@ export const POPOVER_CSS = `
 .cpop-item:disabled{opacity:.55;cursor:default}
 .cpop [role=menuitem][data-pop-item]:hover,.cpop [data-pop-item]:focus-visible{background:var(--canvas,#f5f6f8)!important;outline:none}
 .cpop-head{margin:2px 8px 6px;font-size:11px;font-weight:800;letter-spacing:.04em;color:var(--slate);text-transform:uppercase}
+/* Sellio menu rows (the composer + menu, booking links): a tinted icon tile and a label, in labelled groups. */
+.cpop .cmp-plus-item::before,.cpop .cmp-pop-btn::before{display:none}
+.cmp-plus-group+.cmp-plus-group{margin-top:4px;padding-top:4px;border-top:1px solid color-mix(in srgb,var(--border,#e5e7eb) 70%,transparent)}
+.cmp-plus-head{margin:6px 10px 4px;font-size:11.5px;font-weight:600;color:var(--slate)}
+.cmp-plus-item{--tint:var(--slate);display:flex;align-items:center;gap:11px;width:100%;min-height:42px;padding:5px 8px;border:none;border-radius:13px;background:none;font:inherit;font-size:13.5px;font-weight:550;color:var(--ink);text-align:left;cursor:pointer;transition:background .12s}
+.cpop .cmp-plus-item:hover,.cpop .cmp-plus-item:focus-visible{background:color-mix(in srgb,var(--slate,#64748b) 8%,transparent)!important;outline:none}
+.cmp-plus-item:disabled{opacity:.5;cursor:default}
+.cmp-plus-ic{width:32px;height:32px;flex-shrink:0;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;color:var(--tint);background:color-mix(in srgb,var(--tint) 13%,transparent)}
+.cmp-plus-item b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmp-plus-item small{display:block;margin-top:1px;font-size:12px;font-weight:450;color:var(--slate);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmp-pop-head{display:flex;gap:12px;align-items:flex-start;margin-bottom:14px}
+.cmp-pop-head b{display:block;font-family:var(--font-display),-apple-system,sans-serif;font-size:17px;font-weight:700;letter-spacing:-.02em;color:var(--ink)}
+.cmp-pop-head small{display:block;margin-top:3px;font-size:12.5px;line-height:1.45;color:var(--slate)}
+.cmp-pop-badge{width:38px;height:38px;flex-shrink:0;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;background:var(--peach,#fff4f1);color:var(--coral,#ff7a6b)}
+.cmp-pop-in{width:100%;box-sizing:border-box;height:46px;padding:0 14px;border-radius:14px;border:1.5px solid transparent;background:color-mix(in srgb,var(--slate,#64748b) 8%,var(--card,#fff));font:inherit;font-size:14px;color:var(--ink);outline:none;transition:background .15s,box-shadow .15s}
+.cmp-pop-in:focus{background:var(--card,#fff);border-color:color-mix(in srgb,var(--slate,#64748b) 14%,transparent);box-shadow:0 0 0 3px color-mix(in srgb,var(--coral,#ff7a6b) 14%,transparent)}
+[data-theme="dark"] .cmp-pop-in{background:#2a2a2e!important;border-color:transparent!important}
+[data-theme="dark"] .cmp-pop-in:focus{background:#333337!important}
+.cmp-pop-err{margin:8px 2px 0;font-size:12.5px;font-weight:600;color:#dc2626}
+.cmp-pop-acts{display:flex;gap:8px;margin-top:12px}
+.cmp-pop-btn{flex:1;height:42px;padding:0 16px;border:none;border-radius:999px;background:color-mix(in srgb,var(--slate,#64748b) 9%,var(--card,#fff));color:var(--ink);font:inherit;font-size:13.5px;font-weight:650;cursor:pointer;white-space:nowrap;transition:filter .15s,background .15s}
+.cmp-pop-btn:hover{background:color-mix(in srgb,var(--slate,#64748b) 14%,var(--card,#fff))}
+.cmp-pop-btn.primary{flex:1.6;background:var(--coral,#ff7a6b);color:#fff}
+.cmp-pop-btn.primary:hover{filter:brightness(.95)}
+.cmp-pop-btn:disabled{opacity:.45;cursor:not-allowed;filter:none}
 @media (prefers-reduced-motion:reduce){.cpop{animation:none}}
 `
 
