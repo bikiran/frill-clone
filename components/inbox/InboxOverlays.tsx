@@ -41,7 +41,7 @@ export default function InboxOverlays() {
     loadGalleryFolder, markRead, mergeConversation, mrAccept, mrExpiry, mrMaxFiles, mrPrompt,
     mrSaving, myName, orderGallery, orderPrefillCart, outboundChannel, outlets, outletsForSchedule,
     payAddress, payAmount, payDesc, paySending, pickerItems, pickupModal, pickupSending, pinnedIds,
-    podFiles, podNote, podSending, productError, productQuery, productSearching, productSent,
+    podFiles, podNote, podSending, productError, productQuery, productSearchedFor, productSearching, productSent,
     products, refundOrder, reopenConv, reply, resetFilters, saveCard, saveOrderEdit, saveSchedule,
     saveScheduledEdit, savedCards, schedule, scheduleMessage, scheduleMsgAt, scheduledBusy,
     scheduling, schedulingMsg, searchForwardTargets, searchProducts, selectConversation, selected,
@@ -268,103 +268,135 @@ export default function InboxOverlays() {
         </div>
       )}
 
-      {/* Product search — look a product up and send its price or buy link */}
-      {showProducts && selected && (
-        <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 420, maxWidth: '95vw', background: '#fff', borderLeft: '1px solid var(--border)', boxShadow: '-8px 0 32px rgba(0,0,0,0.10)', zIndex: 250, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px', borderBottom: '1px solid var(--border)' }}>
-            <div>
-              <p style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--ink)' }}>Product search</p>
-              <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--slate)' }}>Send a price or a buy link without leaving the chat.</p>
-            </div>
-            <button onClick={() => setShowProducts(false)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--slate)', display: 'flex', padding: 4 }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-          </div>
-
-          <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8 }}>
-            <input autoFocus value={productQuery} onChange={e => setProductQuery(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') searchProducts() }}
-              placeholder="Search by name or SKU…"
-              style={{ flex: 1, padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5 }} />
-            <button onClick={searchProducts} disabled={productSearching || !productQuery.trim()}
-              style={{ padding: '10px 16px', borderRadius: 9, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-              {productSearching ? '…' : 'Search'}
-            </button>
-          </div>
-
-          <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
-            {productError && (
-              <div style={{ padding: '10px 12px', borderRadius: 9, background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', fontSize: 12.5, marginBottom: 12, lineHeight: 1.45 }}>
-                {productError}
+      {/* Product search — look a product up and send its price or buy link.
+          No scrim: the chat stays usable beside it. Above the Feedback tab and
+          Colvy orb; the toast (same layer, later in the page) still shows on top. */}
+      {showProducts && selected && (() => {
+        const q = productQuery.trim()
+        const pending = q.length >= 2 && productSearchedFor !== q && !productError
+        const noMatch = q.length >= 2 && !pending && !productSearching && !productError && products.length === 0
+        // WooCommerce returns prices like "17.9500" — show 2 decimals ($17.95).
+        const fmtPrice = (v: any) => { const n = parseFloat(v); return isNaN(n) ? (v ?? '') : n.toFixed(2) }
+        return (
+          <div className="sk-scrim side ps-dock" style={{ '--sk-z': 9999 } as React.CSSProperties}>
+            <SkStyle />
+            <div className="sk side ps" role="dialog" aria-labelledby="ps-title" style={{ '--sk-w': '440px' } as React.CSSProperties}
+              onKeyDown={e => { if (e.key === 'Escape') setShowProducts(false) }}>
+              <div className="sk-head">
+                <span className="sk-badge" aria-hidden>{PS_ICON.tag}</span>
+                <div style={{ minWidth: 0 }}>
+                  <h2 id="ps-title">Product search</h2>
+                  <p className="sk-sub">Send a price or a buy link without leaving the chat.</p>
+                </div>
+                <SkClose onClick={() => setShowProducts(false)} />
               </div>
-            )}
 
-            {products.length === 0 && !productSearching && !productError && (
-              <p style={{ fontSize: 13.5, color: 'var(--slate)', textAlign: 'center', padding: 30 }}>
-                {productQuery ? 'No products matched that search.' : 'Search your WooCommerce catalogue.'}
-              </p>
-            )}
+              <div className="ps-search">
+                <label className="sk-field">
+                  {productSearching ? <span className="ps-spin" aria-hidden /> : SkIcon.search}
+                  <input autoFocus value={productQuery} onChange={e => setProductQuery(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') searchProducts() }}
+                    placeholder="Product name or SKU" aria-label="Search products" enterKeyHint="search" />
+                  {productQuery && (
+                    <button type="button" className="ps-clear" onClick={() => setProductQuery('')} aria-label="Clear search">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden><path d="M18 6 6 18M6 6l12 12" /></svg>
+                    </button>
+                  )}
+                </label>
+              </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {products.map(p => {
-                const onSale = p.on_sale && p.sale_price
-                const price = onSale ? p.sale_price : (p.price || p.regular_price)
-                // WooCommerce returns prices like "17.9500" — show 2 decimals ($17.95).
-                const fmtPrice = (v: any) => { const n = parseFloat(v); return isNaN(n) ? (v ?? '') : n.toFixed(2) }
-                const inStock = p.stock_status === 'instock'
-                return (
-                  <div key={p.id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 12, background: '#fff' }}>
-                    <div style={{ display: 'flex', gap: 11, marginBottom: 10 }}>
-                      {p.image
-                        ? <img src={p.image} alt="" style={{ width: 54, height: 54, borderRadius: 9, objectFit: 'cover', flexShrink: 0, border: '1px solid var(--border)' }} />
-                        : <div style={{ width: 54, height: 54, borderRadius: 9, background: 'var(--canvas)', flexShrink: 0 }} />}
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.35 }}>{p.name}</p>
-                        <p style={{ margin: '3px 0 0', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>${fmtPrice(price)}</span>
-                          {onSale && <span style={{ fontSize: 11.5, color: '#9ca3af', textDecoration: 'line-through' }}>${fmtPrice(p.regular_price)}</span>}
-                          <span style={{ fontSize: 10.5, fontWeight: 700, padding: '1px 6px', borderRadius: 5, background: inStock ? '#dcfce7' : '#fee2e2', color: inStock ? '#15803d' : '#dc2626' }}>
-                            {inStock ? (p.manage_stock && p.stock_quantity != null ? `${p.stock_quantity} in stock` : 'In stock') : 'Out of stock'}
-                          </span>
-                        </p>
-                        {p.sku && <p style={{ margin: '3px 0 0', fontSize: 11, color: 'var(--slate)' }}>SKU: {p.sku}</p>}
-                        {Array.isArray(p.stores) && p.stores.length > 0 && (
-                          <div aria-label="Stock by store" style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5 }}>
-                            {p.stores.map((s: any) => (
-                              <span key={s.store} title={`${s.available > 0 ? s.available : 'None'} at ${s.store}`}
-                                style={{ fontSize: 10.5, fontWeight: 600, padding: '1px 6px', borderRadius: 5, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', background: s.available > 0 ? '#ecfdf3' : 'var(--canvas)', color: s.available > 0 ? '#15803d' : 'var(--slate)', border: '1px solid var(--border)' }}>
-                                {s.store} · {s.available > 0 ? s.available : 'none'}
-                              </span>
-                            ))}
-                          </div>
-                        )}
+              <div className="sk-body" aria-live="polite" aria-busy={productSearching || pending}>
+                {productError && <p className="sk-err" role="alert" style={{ marginTop: 0 }}>{productError}</p>}
+
+                {products.length === 0 && (productSearching || pending) && (
+                  <div className="ps-list" aria-hidden>
+                    {[0, 1, 2].map(i => (
+                      <div key={i} className="ps-card ps-skel">
+                        <div className="ps-top"><span className="ps-img" /><div className="ps-info"><i style={{ width: '70%' }} /><i style={{ width: '35%', height: 16 }} /><i style={{ width: '50%' }} /></div></div>
                       </div>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button onClick={() => sendProductMessage(p, 'price')}
-                        style={{ flex: 1, padding: '7px 0', borderRadius: 8, background: productSent === `${p.id}-price` ? '#dcfce7' : 'var(--coral)', color: productSent === `${p.id}-price` ? '#15803d' : '#fff', border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
-                        {productSent === `${p.id}-price` ? 'Sent ✓' : 'Send price'}
-                      </button>
-                      <button onClick={() => sendProductMessage(p, 'link')} disabled={!p.permalink}
-                        title={p.permalink ? 'Send a link they can buy from' : 'No product URL available'}
-                        style={{ flex: 1, padding: '7px 0', borderRadius: 8, background: productSent === `${p.id}-link` ? '#dcfce7' : 'var(--peach)', color: productSent === `${p.id}-link` ? '#15803d' : 'var(--coral)', border: '1px solid var(--coral)', fontSize: 12.5, fontWeight: 700, cursor: p.permalink ? 'pointer' : 'not-allowed', opacity: p.permalink ? 1 : 0.5 }}>
-                        {productSent === `${p.id}-link` ? 'Sent ✓' : 'Send link'}
-                      </button>
-                      <button onClick={() => sendProductMessage(p, 'both')} disabled={!p.permalink}
-                        title="Send the price and a buy link together"
-                        style={{ padding: '7px 12px', borderRadius: 8, background: '#fff', color: 'var(--ink)', border: '1px solid var(--border)', fontSize: 12.5, fontWeight: 700, cursor: p.permalink ? 'pointer' : 'not-allowed', opacity: p.permalink ? 1 : 0.5 }}>
-                        Both
-                      </button>
-                    </div>
+                    ))}
                   </div>
-                )
-              })}
+                )}
+
+                {products.length === 0 && !productSearching && !pending && !productError && (
+                  <div className="ps-empty">
+                    <span className="ps-empty-ic" aria-hidden>{noMatch ? SkIcon.search : PS_ICON.box}</span>
+                    <b>{noMatch ? <>Nothing matched &ldquo;{q}&rdquo;</> : 'Find a product'}</b>
+                    <span>{noMatch ? 'Try fewer words, or search by SKU.' : 'Type a name or SKU. Results show up as you type.'}</span>
+                  </div>
+                )}
+
+                {products.length > 0 && (
+                  <>
+                    <p className="ps-count">
+                      {products.length >= 20 ? 'Top 20 matches' : `${products.length} ${products.length === 1 ? 'match' : 'matches'}`}
+                      {productSearchedFor && <> for <b>&ldquo;{productSearchedFor}&rdquo;</b></>}
+                    </p>
+                    <div className={`ps-list${productSearching || pending ? ' stale' : ''}`}>
+                      {products.map(p => {
+                        const onSale = p.on_sale && p.sale_price
+                        const price = onSale ? p.sale_price : (p.price || p.regular_price)
+                        const stock = p.stock_status === 'instock' ? 'in' : p.stock_status === 'onbackorder' ? 'back' : 'out'
+                        const stockLabel = stock === 'in'
+                          ? (p.manage_stock && p.stock_quantity != null ? `${p.stock_quantity} in stock` : 'In stock')
+                          : stock === 'back' ? 'On backorder' : 'Out of stock'
+                        const sent = (kind: string) => productSent === `${p.id}-${kind}`
+                        return (
+                          <div key={p.id} className={`ps-card${stock === 'out' ? ' out' : ''}`}>
+                            <div className="ps-top">
+                              <span className="ps-img">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                {p.image ? <img src={p.image} alt="" loading="lazy" /> : PS_ICON.box}
+                              </span>
+                              <div className="ps-info">
+                                <b className="ps-name">{dec(p.name)}</b>
+                                <div className="ps-price">
+                                  <span className="ps-amt">${fmtPrice(price)}</span>
+                                  {onSale && <s>${fmtPrice(p.regular_price)}</s>}
+                                  {onSale && <span className="ps-sale">Sale</span>}
+                                </div>
+                                <div className="ps-meta">
+                                  <span className={`ps-stock ${stock}`}><i aria-hidden />{stockLabel}</span>
+                                  {p.sku && <span className="ps-sku">SKU {p.sku}</span>}
+                                </div>
+                              </div>
+                            </div>
+
+                            {Array.isArray(p.stores) && p.stores.length > 0 && (
+                              <div className="ps-stores" aria-label="Stock by store">
+                                {p.stores.map((s: any) => (
+                                  <span key={s.store} className={s.available > 0 ? 'has' : ''} title={`${s.available > 0 ? s.available : 'None'} at ${s.store}`}>
+                                    <i aria-hidden /><em>{s.store}</em><b>{s.available > 0 ? s.available : 0}</b>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+
+                            <div className="ps-acts">
+                              <button type="button" className={`ps-act${sent('price') ? ' sent' : ''}`} onClick={() => sendProductMessage(p, 'price')}>
+                                {sent('price') ? PS_ICON.check : PS_ICON.tag}{sent('price') ? 'Sent' : 'Send price'}
+                              </button>
+                              <button type="button" className={`ps-act${sent('link') ? ' sent' : ''}`} onClick={() => sendProductMessage(p, 'link')} disabled={!p.permalink}
+                                title={p.permalink ? 'Send a link they can buy from' : 'No product URL available'}>
+                                {sent('link') ? PS_ICON.check : PS_ICON.link}{sent('link') ? 'Sent' : 'Send link'}
+                              </button>
+                              <button type="button" className={`ps-act${sent('both') ? ' sent' : ''}`} onClick={() => sendProductMessage(p, 'both')} disabled={!p.permalink}
+                                title={p.permalink ? 'Send the price and a buy link together' : 'No product URL available'}>
+                                {sent('both') ? PS_ICON.check : null}{sent('both') ? 'Sent' : 'Both'}
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+              <style>{PS_CSS}</style>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* Proof of Delivery panel */}
       {pickupModal && (() => {
@@ -1255,4 +1287,76 @@ const CP_CSS = `
 .cp-disc .sk-seg button{height:42px}
 .cp-days{height:36px;width:112px;padding:0 12px;border-radius:999px}
 .sk .cp-days input{font-size:13.5px}
+`
+
+const PS_ICON = {
+  tag: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z" /><circle cx="7.5" cy="7.5" r="1.3" /></svg>,
+  link: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" /><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" /></svg>,
+  box: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M21 8 12 3 3 8v8l9 5 9-5z" /><path d="m3 8 9 5 9-5M12 13v8" /></svg>,
+  check: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M20 6 9 17l-5-5" /></svg>,
+}
+
+const PS_CSS = `
+.ps-dock{background:transparent;pointer-events:none;animation:none}
+.ps-dock>.sk{pointer-events:auto}
+.ps-search{flex-shrink:0;padding:2px 24px 14px}
+.ps .sk-field{height:52px;color:var(--sk-muted)}
+.ps-clear{width:24px;height:24px;flex-shrink:0;padding:0;border:none;border-radius:50%;background:var(--sk-fill-2);color:var(--sk-muted);display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.ps-clear:hover{color:var(--ink)}
+.ps-spin{width:16px;height:16px;flex-shrink:0;box-sizing:border-box;border-radius:50%;border:2px solid var(--sk-fill-2);border-top-color:var(--coral,#ff7a6b);animation:psSpin .7s linear infinite}
+.ps-count{margin:2px 4px 10px;font-size:12.5px;color:var(--sk-muted)}
+.ps-count b{font-weight:600;color:var(--ink)}
+.ps-list{display:flex;flex-direction:column;gap:10px;transition:opacity .15s}
+.ps-list.stale{opacity:.55}
+.ps-card{padding:12px;border-radius:22px;background:var(--sk-fill)}
+.ps-top{display:flex;align-items:flex-start;gap:13px}
+.ps-img{width:68px;height:68px;flex-shrink:0;border-radius:16px;overflow:hidden;background:var(--card,#fff);color:var(--sk-muted);display:inline-flex;align-items:center;justify-content:center}
+.ps-img img{width:100%;height:100%;object-fit:cover;display:block}
+.ps-card.out .ps-img img{filter:grayscale(.6);opacity:.7}
+.ps-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;padding-top:2px}
+.ps-name{font-size:14.5px;font-weight:650;line-height:1.3;color:var(--ink);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ps-price{display:flex;align-items:baseline;flex-wrap:wrap;gap:7px}
+.ps-amt{font-family:var(--font-display),-apple-system,sans-serif;font-size:19px;font-weight:700;letter-spacing:-.02em;color:var(--ink);font-variant-numeric:tabular-nums}
+.ps-price s{font-size:13px;color:var(--sk-muted)}
+.ps-sale{align-self:center;padding:2px 8px;border-radius:999px;background:var(--coral,#ff7a6b);color:#fff;font-size:11px;font-weight:700}
+.ps-meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px}
+.ps-stock{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600}
+.ps-stock i{width:7px;height:7px;border-radius:50%;background:currentColor}
+.ps-stock.in{color:#15803d}.ps-stock.back{color:#b45309}.ps-stock.out{color:#dc2626}
+.ps-sku{font-size:12px;color:var(--sk-muted);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.ps-stores{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.ps-stores span{display:inline-flex;align-items:center;gap:6px;max-width:100%;height:28px;padding:0 11px;border-radius:999px;background:var(--card,#fff);font-size:12px;color:var(--sk-muted)}
+.ps-stores i{width:6px;height:6px;flex-shrink:0;border-radius:50%;background:var(--sk-fill-2)}
+.ps-stores .has i{background:#22c55e}
+.ps-stores em{font-style:normal;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ps-stores b{font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
+.ps-acts{display:flex;gap:6px;margin-top:12px}
+.ps-act{flex:1;min-width:0;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:40px;padding:0 12px;border:none;border-radius:999px;background:var(--card,#fff);color:var(--ink);font:inherit;font-size:13.5px;font-weight:650;white-space:nowrap;cursor:pointer;box-shadow:0 1px 2px rgba(16,24,40,.06);transition:background .15s,color .15s,transform .12s}
+.ps-act svg{color:var(--coral,#ff7a6b);flex-shrink:0}
+.ps-act:last-child{flex:0 0 auto;padding:0 16px}
+.ps-act:hover:not(:disabled){background:var(--peach,#fff4f1);color:var(--coral,#ff7a6b)}
+.ps-act:active:not(:disabled){transform:scale(.97)}
+.ps-act:disabled{opacity:.45;cursor:not-allowed}
+.ps-act.sent,.ps-act.sent:hover{background:#dcfce7;color:#15803d}
+.ps-act.sent svg{color:currentColor}
+.ps-empty{display:flex;flex-direction:column;align-items:center;gap:6px;padding:52px 20px;text-align:center}
+.ps-empty-ic{width:56px;height:56px;margin-bottom:8px;border-radius:18px;background:var(--sk-fill);color:var(--sk-muted);display:inline-flex;align-items:center;justify-content:center}
+.ps-empty b{font-size:16px;font-weight:650;color:var(--ink);overflow-wrap:anywhere}
+.ps-empty span{max-width:260px;font-size:13.5px;line-height:1.45;color:var(--sk-muted)}
+.ps-skel .ps-img,.ps-skel i{background:linear-gradient(90deg,var(--sk-fill-2) 25%,var(--card,#fff) 50%,var(--sk-fill-2) 75%);background-size:200% 100%;animation:psShimmer 1.3s ease-in-out infinite}
+.ps-skel i{display:block;height:12px;border-radius:6px}
+.ps-skel .ps-info{gap:9px;padding-top:6px}
+[data-theme="dark"] .ps-stock.in{color:#4ade80}
+[data-theme="dark"] .ps-stock.back{color:#fbbf24}
+[data-theme="dark"] .ps-stock.out{color:#f87171}
+[data-theme="dark"] .ps-act:hover:not(:disabled){background:color-mix(in srgb,var(--coral,#ff7a6b) 16%,transparent)}
+[data-theme="dark"] .ps-act.sent,[data-theme="dark"] .ps-act.sent:hover{background:rgba(34,197,94,.16);color:#4ade80}
+@keyframes psSpin{to{transform:rotate(360deg)}}
+@keyframes psShimmer{from{background-position:100% 0}to{background-position:-100% 0}}
+@media (max-width:560px){
+  .ps.sk.side{height:88vh}
+  .ps-search{padding:0 18px 12px}
+  .ps-img{width:60px;height:60px;border-radius:14px}
+}
+@media (prefers-reduced-motion:reduce){.ps-spin,.ps-skel .ps-img,.ps-skel i{animation:none}}
 `
