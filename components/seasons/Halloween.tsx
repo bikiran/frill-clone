@@ -13,7 +13,8 @@
 // two soft pulses, well under the three-flashes-a-second limit.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { usePathname } from 'next/navigation'
+import { rnd, useLater, useSceneFrame } from './kit'
+import { takePreview } from '@/lib/seasonal-themes'
 
 type BatSpec = { y: number; size: number; dur: number; delay: number; amp: number; bob: number; flap: number }
 type Fx =
@@ -23,7 +24,6 @@ type Fx =
   | { id: number; kind: 'bolt'; x: number; main: string; branch: string }
 type Kind = 'lightning' | 'bats' | 'ghost' | 'witch'
 
-const rnd = (a: number, b: number) => a + Math.random() * (b - a)
 const WEIGHTS: [Kind, number][] = [['lightning', 3], ['bats', 3], ['ghost', 2], ['witch', 1.4]]
 
 /** A jagged bolt (and a fork) in a 120×400 box. */
@@ -146,22 +146,15 @@ function Pumpkin() {
 }
 
 export default function Halloween({ calm }: { calm: boolean }) {
-  const pathname = usePathname()
   const [fx, setFx] = useState<Fx[]>([])
   const [flash, setFlash] = useState<{ n: number; x: number }>({ n: 0, x: 50 })
   const [spider, setSpider] = useState<'up' | 'down'>('up')
-  const [frame, setFrame] = useState({ top: 56, left: 0 })
+  const frame = useSceneFrame()
   const [spot] = useState(() => ({ x: rnd(56, 74), drop: rnd(60, 130) }))
-  const timers = useRef(new Set<number>())
   const ids = useRef(0)
   const last = useRef<Kind | null>(null)
 
-  const later = useCallback((fn: () => void, ms: number) => {
-    const t = window.setTimeout(() => { timers.current.delete(t); fn() }, ms)
-    timers.current.add(t)
-    return t
-  }, [])
-  useEffect(() => { const set = timers.current; return () => { set.forEach(clearTimeout); set.clear() } }, [])
+  const later = useLater()
 
   const spawn = useCallback((f: Fx, life: number) => {
     setFx(list => [...list, f])
@@ -237,7 +230,7 @@ export default function Halloween({ calm }: { calm: boolean }) {
 
   // Settings → Preview plays a bit of everything.
   useEffect(() => {
-    const onPreview = () => {
+    const run = () => {
       play('lightning')
       later(() => setSpider('down'), 500)
       later(() => play('bats'), 1100)
@@ -245,24 +238,11 @@ export default function Halloween({ calm }: { calm: boolean }) {
       later(() => play('witch'), 3800)
       spiderGo.current('up', 12000)
     }
+    const onPreview = () => { if (takePreview('halloween')) run() }
+    onPreview()
     window.addEventListener('colvy-season-preview', onPreview)
     return () => window.removeEventListener('colvy-season-preview', onPreview)
   }, [later, play])
-
-  // The scene starts under the app bar and beside the admin rail.
-  useEffect(() => {
-    const measure = () => {
-      const h = document.querySelector('header.cv-app-header')
-      const main = document.querySelector('.admin-main')
-      const top = Math.round(h ? Math.max(0, h.getBoundingClientRect().bottom) : 0)
-      const left = Math.round(main ? Math.max(0, main.getBoundingClientRect().left) : 0)
-      setFrame(f => (f.top === top && f.left === left ? f : { top, left }))
-    }
-    measure()
-    const t = later(measure, 900)
-    window.addEventListener('resize', measure)
-    return () => { clearTimeout(t); window.removeEventListener('resize', measure) }
-  }, [pathname, later])
 
   const vars = { '--hw-top': `${frame.top}px`, '--hw-left': `${frame.left}px` } as React.CSSProperties
 
