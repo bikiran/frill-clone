@@ -1,11 +1,11 @@
 'use client'
 
-// Settings → Theme → Seasonal theme: pick a theme (Halloween now, Christmas
-// next), run it always or between two dates every year, and preview it. The
-// choice is saved with the workspace's look; "On this device" is each person's
+// Settings → Theme → Seasonal theme: turn on Halloween, Christmas or both,
+// each always or between two dates every year (so October and December look
+// after themselves), and preview them. The choice is saved with the workspace's look; "On this device" is each person's
 // own (lib/seasonal-themes).
 
-import { useSyncExternalStore } from 'react'
+import { useState, useSyncExternalStore } from 'react'
 import {
   SEASONS, deviceSeasonOff, inWindow, nextStart, previewSeason, runEnd, seasonPrefs, setDeviceSeasonOff, subscribeAppearance,
   type SeasonDef, type SeasonId, type SeasonPrefs, type SeasonalConfig,
@@ -107,10 +107,12 @@ function ThemeCard({ def, prefs, onToggle }: { def: SeasonDef; prefs: SeasonPref
 export default function SeasonalSettings({ value, onChange }: { value: SeasonalConfig; onChange: (v: SeasonalConfig) => void }) {
   const deviceOff = useSyncExternalStore(subscribeAppearance, deviceSeasonOff, () => false)
 
+  const [editing, setEditing] = useState<SeasonId | null>(null)
   const set = (id: SeasonId, patch: Partial<SeasonPrefs>) => onChange({ ...value, [id]: { ...seasonPrefs(value, id), ...patch } })
   const ready = SEASONS.filter(s => s.ready)
-  // The options of the theme that's on (or the first one, to preview).
-  const open = ready.find(s => seasonPrefs(value, s.id).on)
+  const onList = ready.filter(s => seasonPrefs(value, s.id).on)
+  // The options shown: the theme picked in the tabs, else the first one that's on.
+  const open = onList.find(s => s.id === editing) || onList[0]
   const p = open ? seasonPrefs(value, open.id) : null
 
   return (
@@ -118,17 +120,20 @@ export default function SeasonalSettings({ value, onChange }: { value: SeasonalC
       <div className="sst-cards">
         {SEASONS.map(def => (
           <ThemeCard key={def.id} def={def} prefs={seasonPrefs(value, def.id)}
-            onToggle={on => {
-              // One theme at a time: turning one on turns the others off.
-              const next: SeasonalConfig = { ...value }
-              for (const s of ready) next[s.id] = { ...seasonPrefs(value, s.id), on: s.id === def.id ? on : false }
-              onChange(next)
-            }} />
+            onToggle={on => { set(def.id, { on }); if (on) setEditing(def.id) }} />
         ))}
       </div>
 
       {open && p && (
         <div className="sst-opts">
+          {onList.length > 1 && (
+            <div className="sst-row sst-which">
+              <div className="sst-seg" role="tablist" aria-label="Theme options">
+                {onList.map(s => <button key={s.id} type="button" role="tab" aria-selected={s.id === open.id} className={s.id === open.id ? 'on' : ''} onClick={() => setEditing(s.id)}>{s.name}</button>)}
+              </div>
+              <span className="sst-note">Each runs on its own dates. If they overlap, {onList[0].name} shows.</span>
+            </div>
+          )}
           <div className="sst-row">
             <span className="sst-k">When</span>
             <div className="sst-seg" role="radiogroup" aria-label="When it runs">
@@ -148,7 +153,7 @@ export default function SeasonalSettings({ value, onChange }: { value: SeasonalC
             </div>
           )}
           <div className="sst-row">
-            <span className="sst-k">Night mode<small>Switch to dark mode while it runs, for the full spooky look.</small></span>
+            <span className="sst-k">Night mode<small>{open.id === 'halloween' ? 'Switch to dark mode while it runs, for the full spooky look.' : 'Switch to dark mode while it runs: a snowy night with the northern lights.'}</small></span>
             <Switch on={p.night} onChange={v => set(open.id, { night: v })} label="Night mode" />
           </div>
           <div className="sst-row">
@@ -163,10 +168,12 @@ export default function SeasonalSettings({ value, onChange }: { value: SeasonalC
       )}
 
       <div className="sst-foot">
-        <button type="button" className="sst-preview" onClick={() => previewSeason((open || ready[0]).id)}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z" /></svg>
-          Preview {(open || ready[0]).name}
-        </button>
+        {(open ? [open] : ready).map(s => (
+          <button key={s.id} type="button" className="sst-preview" onClick={() => previewSeason(s.id)}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z" /></svg>
+            Preview {s.name}
+          </button>
+        ))}
         <span>Plays the effects here for 20 seconds.</span>
       </div>
 
@@ -199,6 +206,7 @@ const CSS = `
 .sst-opts{display:flex;flex-direction:column;border-radius:16px;background:#f7f7f8;padding:4px 16px}
 .sst-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;min-height:56px}
 .sst-row+.sst-row{border-top:1px solid rgba(0,0,0,.06)}
+.sst-which{justify-content:flex-start;flex-wrap:wrap;gap:10px 14px}
 .sst-k{display:flex;flex-direction:column;gap:2px;font-size:14px;font-weight:600;color:var(--ink)}
 .sst-k small{font-size:12.5px;font-weight:400;color:var(--slate);line-height:1.35}
 .sst-seg{display:inline-flex;padding:3px;border-radius:999px;background:#ececee}

@@ -9,6 +9,7 @@ import { usePathname } from 'next/navigation'
 import { currentSeason, setAppearance, subscribeAppearance, type SeasonId } from '@/lib/seasonal-themes'
 
 const Halloween = dynamic(() => import('./Halloween'), { ssr: false })
+const Christmas = dynamic(() => import('./Christmas'), { ssr: false })
 
 export default function SeasonalTheme() {
   const pathname = usePathname() || '/'
@@ -33,5 +34,6 @@ export default function SeasonalTheme() {
   }, [])
 
   if (season === 'halloween') return <Halloween calm={calm} />
+  if (season === 'christmas') return <Christmas calm={calm} />
   return null
 }

@@ -1,5 +1,5 @@
-// Seasonal themes (Settings → Theme → Seasonal themes): Halloween now,
-// Christmas next. A theme dresses the app up (components/seasons) while it's
+// Seasonal themes (Settings → Theme → Seasonal theme): Halloween and
+// Christmas, each on its own dates. A theme dresses the app up (components/seasons) while it's
 // on: always, or between two dates every year. The workspace's choice is saved
 // with the rest of its look (site_settings 'general' → seasonal); anyone can
 // still turn the effects off on their own device.
@@ -26,7 +26,7 @@ export type SeasonDef = {
 
 export const SEASONS: SeasonDef[] = [
   { id: 'halloween', name: 'Halloween', blurb: 'Lightning, bats, fog and glowing jack-o’-lanterns.', from: '10-15', to: '11-01', night: true, ready: true },
-  { id: 'christmas', name: 'Christmas', blurb: 'Falling snow, fairy lights and a cosy glow.', from: '12-01', to: '12-26', night: false, ready: false },
+  { id: 'christmas', name: 'Christmas', blurb: 'Falling snow, fairy lights, Santa’s sleigh and a snowy village.', from: '12-01', to: '12-31', night: false, ready: true },
 ]
 
 export type SeasonPrefs = {
@@ -146,8 +146,17 @@ export function setAppearance(next: Partial<Appearance>) {
 
 /** Play the theme for a little while (Settings → Preview), even if it's off. */
 let previewTimer: ReturnType<typeof setTimeout> | null = null
+let pendingPreview: { id: SeasonId; at: number } | null = null
+/** A theme asks, when it starts or hears the preview event, whether to play its preview now (once). */
+export function takePreview(id: SeasonId) {
+  if (!pendingPreview || pendingPreview.id !== id || Date.now() - pendingPreview.at > 8000) return false
+  pendingPreview = null
+  return true
+}
 export function previewSeason(id: SeasonId, ms = 20000) {
   if (previewTimer) clearTimeout(previewTimer)
+  // The theme may still be loading when the event fires; it picks this up when it starts.
+  pendingPreview = { id, at: Date.now() }
   setAppearance({ preview: id })
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('colvy-season-preview', { detail: id }))
   previewTimer = setTimeout(() => { previewTimer = null; setAppearance({ preview: null }) }, ms)

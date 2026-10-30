@@ -95,6 +95,16 @@ function Board({ name, logo, accent, dark, radius, season }: { name: string; log
           <svg className="thp-pk" viewBox="0 0 100 90" aria-hidden><ellipse cx="30" cy="55" rx="24" ry="30" fill="#c2410c" /><ellipse cx="70" cy="55" rx="24" ry="30" fill="#c2410c" /><ellipse cx="50" cy="55" rx="27" ry="33" fill="#f97316" /><path d="M29 47 40 38l2 12zM71 47 60 38l-2 12zM27 64c8 11 38 11 46 0l-6 2-4-4-4 5-6-4-5 4-5-4-4 4z" fill="#ffd166" /><path d="M50 20c-4-8-2-14 6-17" stroke="#4d5b1f" strokeWidth="5" fill="none" strokeLinecap="round" /></svg>
         </>
       )}
+      {season === 'christmas' && (
+        <>
+          <svg className="thp-lights" viewBox="0 0 300 14" preserveAspectRatio="none" aria-hidden>
+            <path d="M0 2Q37 12 75 2T150 2T225 2T300 2" fill="none" stroke="#2f3d33" strokeWidth="1" />
+            {Array.from({ length: 12 }, (_, i) => <circle key={i} className="thp-bulb" cx={12 + i * 25} cy={i % 3 === 1 ? 9 : 7} r="2.6" fill={['#ff4d4f', '#ffcc33', '#33d17a', '#3ea6ff'][i % 4]} style={{ animationDelay: `${-i * 0.3}s` }} />)}
+          </svg>
+          <span className="thp-snow" />
+          <svg className="thp-tree" viewBox="0 0 40 52" aria-hidden><path d="M20 14 34 40H6zM20 4l10 18H10z" fill="#2f7a55" /><rect x="17" y="40" width="6" height="8" fill="#6b4226" /><circle cx="20" cy="4" r="2.6" fill="#ffd43b" /><circle cx="15" cy="30" r="1.8" fill="#e03131" /><circle cx="25" cy="34" r="1.8" fill="#ffd43b" /><circle cx="22" cy="20" r="1.6" fill="#3b82f6" /></svg>
+        </>
+      )}
     </div>
   )
 }
@@ -443,6 +453,14 @@ const ART_CSS = `
 [data-theme="dark"] .ths-share-txt{background:#27272a}
 [data-theme="dark"] .ths-share-txt small{color:#a1a1aa}
 [data-theme="dark"] .ths-share-txt b{color:#ededf0}
+/* Christmas in the preview: lights under the bar, a little snow, a tree. */
+.thp-lights{position:absolute;left:0;right:0;top:44px;width:100%;height:14px}
+.thp-bulb{animation:thp-bulb 1.4s ease-in-out infinite alternate}
+.thp-snow{position:absolute;inset:48px 0 0;pointer-events:none;background-image:radial-gradient(circle,#fff 0 1.4px,transparent 2px),radial-gradient(circle,#fff 0 1px,transparent 1.6px);background-size:60px 60px,38px 38px;background-position:0 0,19px 11px;opacity:.85;animation:thp-snow 6s linear infinite}
+.thp-board:not(.dark) .thp-snow{background-image:radial-gradient(circle,#b8cbe3 0 1.4px,transparent 2px),radial-gradient(circle,#c9d8eb 0 1px,transparent 1.6px)}
+.thp-tree{position:absolute;right:12px;bottom:6px;width:30px}
+@keyframes thp-bulb{from{opacity:.45}to{opacity:1}}
+@keyframes thp-snow{to{background-position:0 60px,19px 49px}}
 @keyframes thp-pulse{50%{box-shadow:0 0 0 6px rgba(34,197,94,0)}}
 @keyframes thp-bat{from{transform:translate(0,0)}to{transform:translate(-14px,6px)}}
 @media (max-width:640px){.thp{padding:10px;border-radius:18px}.thp-nav{display:none}.thp-name{max-width:110px}.thp-hero small{display:none}}
