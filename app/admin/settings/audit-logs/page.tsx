@@ -41,6 +41,23 @@ function getActivityIcon(type: string) {
       return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
     case 'settings_updated':
       return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+    case 'refund_issued':
+      return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
+    case 'coupon_sent':
+      return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9a3 3 0 0 0 0 6v3a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3a3 3 0 0 0 0-6V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2z"/><path d="m9 15 6-6"/></svg>
+    case 'order_created':
+    case 'order_updated':
+      return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+    case 'card_charged':
+    case 'payment_requested':
+      return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+    case 'doa_resolved':
+      return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/></svg>
+    case 'ai_agent_updated':
+      return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4M9 14h.01M15 14h.01"/></svg>
+    case 'phone_number_updated':
+    case 'phone_number_removed':
+      return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
     case 'integration_added':
       return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="12" r="8"/></svg>
     default:
@@ -124,8 +141,12 @@ export default function AuditLogsPage() {
     }
   }
 
-  const label = (t: string) => { const x = String(t || '').replace(/_/g, ' '); return x.charAt(0).toUpperCase() + x.slice(1) }
-  const tone = (t: string) => /deleted|removed/.test(t) ? '#ef4444' : /created|added|invited|published/.test(t) ? '#16a34a' : /team_member/.test(t) ? '#6366f1' : /settings|integration/.test(t) ? '#0ea5e9' : /response|announcement/.test(t) ? '#f59e0b' : '#71717a'
+  const typeName = (t: string) => { const x = String(t || '').replace(/_/g, ' '); return x.charAt(0).toUpperCase() + x.slice(1) }
+  const label = (t: string) => LABELS[t] || typeName(t)
+  const tone = (t: string) => /refund/.test(t) ? '#f97316' : /coupon/.test(t) ? '#ec4899' : /card_charged|payment/.test(t) ? '#059669' : /doa/.test(t) ? '#b45309' : /ai_agent/.test(t) ? '#8b5cf6' : /deleted|removed/.test(t) ? '#ef4444' : /created|added|invited|published/.test(t) ? '#16a34a' : /team_member/.test(t) ? '#6366f1' : /settings|integration|phone/.test(t) ? '#0ea5e9' : /response|announcement/.test(t) ? '#f59e0b' : '#71717a'
+  // Who did it: the person's name or email; Colvy itself (an AI agent, an
+  // automation) has no person.
+  const who = (log: any) => users.get(log.user_id) || log.metadata?.actor_email || (log.metadata?.actor === 'colvy' || !log.user_id ? 'Colvy' : 'Someone')
   const dayOf = (d: Date) => {
     const today = new Date(); today.setHours(0, 0, 0, 0)
     const x = new Date(d); x.setHours(0, 0, 0, 0)
@@ -141,11 +162,11 @@ export default function AuditLogsPage() {
   const people = Array.from(users.entries())
 
   return (
-    <AdminPage width="md" title="Activity log" sub="What your team changed in Colvy, newest first. The last 100 entries are shown.">
+    <AdminPage width="md" title="Activity log" sub="Who did what in Colvy: refunds, coupons, orders, payments, settings and team changes. Newest first; the last 100 entries.">
       <div className="al-filters">
         <select className="ak-select" value={filterType || ''} onChange={e => setFilterType(e.target.value || null)} aria-label="Activity">
           <option value="">All activity</option>
-          {allTypes.map(t => <option key={t} value={t}>{label(t)}</option>)}
+          {allTypes.map(t => <option key={t} value={t}>{typeName(t)}</option>)}
         </select>
         {people.length > 0 && (
           <select className="ak-select" value={filterUser || ''} onChange={e => setFilterUser(e.target.value || null)} aria-label="Person">
@@ -161,7 +182,7 @@ export default function AuditLogsPage() {
       ) : logs.length === 0 ? (
         <Panel>
           <EmptyScroll kinds={['note', 'contact', 'task']} title={filterType || filterUser ? 'Nothing matches' : 'No activity yet'}
-            line={filterType || filterUser ? 'Try another filter, or clear it.' : 'What your team changes shows up here as they use Colvy.'} />
+            line={filterType || filterUser ? 'Try another filter, or clear it.' : 'Refunds, coupons, orders, card charges, payment links, DOA claims, AI agent changes, integrations, phone numbers and team changes show up here as they happen.'} />
         </Panel>
       ) : groups.map(g => (
         <Panel key={g.day} title={g.day} flush>
@@ -174,7 +195,7 @@ export default function AuditLogsPage() {
                   <div className="al-t">
                     <p>{log.description}</p>
                     <small>
-                      <b>{users.get(log.user_id) || 'System'}</b>
+                      <b>{who(log)}</b>
                       <span>{t.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })}</span>
                       {log.ip_address && log.ip_address !== 'unknown' && <span>IP {log.ip_address}</span>}
                     </small>
@@ -189,6 +210,15 @@ export default function AuditLogsPage() {
       <style>{AL_CSS}</style>
     </AdminPage>
   )
+}
+
+const LABELS: Record<string, string> = {
+  refund_issued: 'Refund', coupon_sent: 'Coupon', order_created: 'Order', order_updated: 'Order',
+  card_charged: 'Card charge', payment_requested: 'Payment link', doa_resolved: 'DOA claim',
+  ai_agent_updated: 'AI agents', phone_number_updated: 'Phone number', phone_number_removed: 'Phone number',
+  integration_added: 'Integration', integration_removed: 'Integration', settings_updated: 'Settings',
+  team_member_invited: 'Team', team_member_invite_resent: 'Team', team_member_added: 'Team', team_member_removed: 'Team',
+  team_member_role_changed: 'Team', team_member_permissions_changed: 'Team', team_member_updated: 'Team',
 }
 
 const AL_CSS = `

@@ -6,6 +6,7 @@ import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib
 import { internalHeaders } from '@/lib/internal-call'
 import { shopifyCreateDiscountCode, shopifyStoreFor, ShopifyCreateError } from '@/lib/shopify-create'
 import { readStoreJson } from '@/lib/store-response'
+import { audit } from '@/lib/activity-logging'
 
 function admin() {
   return createClient(
@@ -179,6 +180,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    await audit(req, db, companyId, 'coupon_sent', `Sent a ${dt === 'percent' ? `${amount}%` : `$${amount}`} off coupon (${finalCode})${email ? ` to ${email}` : ''}`, { code: finalCode, conversation_id: conversationId })
     return NextResponse.json({ ok: true, code: finalCode, coupon: { id: coupon.id, amount, discount_type: dt }, ...(deliver ? { delivered, deliveryError, optedOut } : {}) })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })

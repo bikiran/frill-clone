@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
 import { resolveShopifyOrderRef, shopifyRefund } from '@/lib/shopify-order-actions'
 import { shopifyCreateDiscountCode } from '@/lib/shopify-create'
+import { audit } from '@/lib/activity-logging'
 
 function admin() {
   return createClient(
@@ -138,6 +139,7 @@ export async function POST(req: NextRequest) {
       } catch {}
     }
 
+    await audit(req, db, companyId, 'doa_resolved', `Sorted a DOA claim on order #${order.order_number || order.order_id}: ${resultMessage.replace(/\*/g, '').replace(/^\W+/, '').slice(0, 160)}`, { claim_id: claimId || null, resolution, conversation_id: conversationId || null })
     return NextResponse.json({ ok: true, claimId, message: resultMessage, coupon: updatePatch.coupon_code || null, code: updatePatch.coupon_code || null, shop_url: shop ? `https://${shop.integ.store_domain}` : (integ?.store_url || null) })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })

@@ -1,6 +1,7 @@
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { audit } from '@/lib/activity-logging'
 
 function getDb() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -98,6 +99,7 @@ export async function POST(req: NextRequest) {
     }
 
     console.log('[SETTINGS API POST] ✅ Verified save via', saveMethod, '— row id:', verifyRows[0].id)
+    await audit(req, supabase, company_id, 'settings_updated', 'Updated the public site settings (name, logo, scripts)')
     return NextResponse.json({ ok: true, method: saveMethod, settings: verifyRows[0] })
   } catch (e: any) {
     console.error('[SETTINGS API POST] Exception:', e.message)

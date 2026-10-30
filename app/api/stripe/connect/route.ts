@@ -2,6 +2,7 @@ import { requireCompanyAccess, requireCompanyAdmin } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
+import { audit } from '@/lib/activity-logging'
 
 function admin() {
   return createClient(
@@ -55,6 +56,7 @@ export async function POST(req: NextRequest) {
       type: 'account_onboarding',
     })
 
+    await audit(req, db, companyId, 'integration_added', company?.stripe_account_id ? 'Opened Stripe set-up to finish connecting payments' : 'Started connecting Stripe for payments')
     return NextResponse.json({ url: link.url })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })

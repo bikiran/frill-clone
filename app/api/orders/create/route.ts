@@ -5,6 +5,7 @@ import { WooCommerceService } from '@/lib/woocommerce-service'
 import { notifyCompany } from '@/lib/notify'
 import { shortenUrl } from '@/lib/short-link'
 import { shopifyCreateOrder, shopifyStoreFor, ShopifyCreateError } from '@/lib/shopify-create'
+import { audit } from '@/lib/activity-logging'
 
 function admin() {
   return createClient(
@@ -67,6 +68,7 @@ export async function POST(req: NextRequest) {
           await db.from('conversations').update({ last_message: `🛒 ${noun} #${o.number} created`, last_message_at: new Date().toISOString() }).eq('id', conversationId)
         } catch {}
       }
+      await audit(req, db, companyId, 'order_created', `Created ${isQuote ? 'a quote' : o.draft ? 'a draft order' : 'order'} #${o.number} on Shopify — ${o.currency} $${o.total}`, { order_id: String(o.id), conversation_id: conversationId || null })
       return NextResponse.json({ ok: true, order: { ...o, pay_link: payLink } })
     }
 
@@ -223,6 +225,7 @@ export async function POST(req: NextRequest) {
       } catch {}
     }
 
+    await audit(req, db, companyId, 'order_created', `Created ${isQuote ? 'a quote' : 'order'} #${order.number || order.id} — ${order.currency || 'AUD'} $${order.total}`, { order_id: String(order.id), conversation_id: conversationId || null })
     return NextResponse.json({ ok: true, order: { id: order.id, number: order.number || order.id, total: order.total, currency: order.currency, status: order.status, pay_link: payLink } })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })

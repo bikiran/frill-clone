@@ -6,6 +6,7 @@ import { deliverAutomatedMessage } from '@/lib/channel-fallback'
 import { resolveShopifyOrderRef, shopifyRefund, ShopifyActionError } from '@/lib/shopify-order-actions'
 import { readStoreJson } from '@/lib/store-response'
 import { forgetWooOrders } from '@/lib/woocommerce-service'
+import { audit } from '@/lib/activity-logging'
 
 export const dynamic = 'force-dynamic'
 
@@ -292,6 +293,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    await audit(req, db, companyId, 'refund_issued', `Refunded ${refundAmount ? `$${refundAmount}` : 'an amount'} on ${shop ? 'Shopify ' : ''}order #${orderLabel}${reason ? ` — ${String(reason).slice(0, 120)}` : ''}`, { order_id: String(orderId), amount: refundAmount, conversation_id: conversationId || null })
     return NextResponse.json({ ok: true, refund: data, amount: refundAmount })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })

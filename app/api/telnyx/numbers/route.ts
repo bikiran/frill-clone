@@ -1,6 +1,7 @@
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { audit } from '@/lib/activity-logging'
 
 function admin() {
   return createClient(
@@ -55,6 +56,9 @@ export async function PATCH(req: NextRequest) {
       if (locationId) await db.from('company_locations').update({ phone_number_id: numberId }).eq('id', locationId).eq('company_id', companyId)
     }
 
+    const { data: n } = await db.from('phone_numbers').select('phone_number').eq('id', numberId).maybeSingle()
+    const what = [isPrimary === true && 'made it the main number', label !== undefined && `labelled it "${label}"`, locationId !== undefined && (locationId ? 'moved it to a location' : 'took it off its location')].filter(Boolean).join(', ')
+    await audit(req, db, companyId, 'phone_number_updated', `Changed the number ${n?.phone_number || ''}${what ? `: ${what}` : ''}`.replace('number :', 'number:'), { number_id: numberId })
     return NextResponse.json({ ok: true })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
@@ -72,6 +76,8 @@ export async function DELETE(req: NextRequest) {
     if (!num || !(await requireCompanyAccess(req, db, num.company_id)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     await db.from('phone_numbers').update({ status: 'released', is_primary: false, updated_at: new Date().toISOString() }).eq('id', numberId)
     await db.from('company_locations').update({ phone_number_id: null }).eq('phone_number_id', numberId)
+    const { data: n } = await db.from('phone_numbers').select('phone_number').eq('id', numberId).maybeSingle()
+    await audit(req, db, num.company_id, 'phone_number_removed', `Released the number ${n?.phone_number || ''}`.trim(), { number_id: numberId })
     return NextResponse.json({ ok: true })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })

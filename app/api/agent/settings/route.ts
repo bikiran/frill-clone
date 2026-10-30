@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { agentAccess, missingAgentTables, staffName } from '@/lib/agent/access'
 import { AUTO_TOPICS, agentsPaused, autoSentToday, getAutoSend, setAutoSend, setPaused, getReviewAuto, setReviewAuto, getSalesAuto, setSalesAuto, getOpsAuto, setOpsAuto, getAgentChannels, setAgentChannels, AGENT_CHANNEL_OPTIONS, getCommentAuto, setCommentAuto, getSalesFollowup, setSalesFollowup, getAgentFaces, setAgentFaces } from '@/lib/agent/pilot'
+import { audit } from '@/lib/activity-logging'
 
 export const dynamic = 'force-dynamic'
 
@@ -77,6 +78,23 @@ export async function POST(req: NextRequest) {
     }
     if (body.faces && typeof body.faces === 'object') {
       await setAgentFaces(db, body.companyId, body.faces, userId || null)
+    }
+    // The activity log: what changed, in words.
+    const changed = [
+      typeof body.paused === 'boolean' && (body.paused ? 'paused the AI agents' : 'turned the AI agents back on'),
+      body.autoSend && 'changed what the support agent sends on its own',
+      body.receptionAuto && 'changed what the receptionist sends on its own',
+      body.salesAuto && 'changed the sales agent’s settings',
+      Array.isArray(body.channels) && 'changed which channels the agents answer',
+      body.salesFollowup && 'changed sales follow-ups',
+      body.opsAuto && 'changed the operations agent’s settings',
+      body.commentAuto && 'changed comment replies',
+      body.reviewAuto && 'changed review replies',
+      body.faces && 'changed how the agents look',
+    ].filter(Boolean) as string[]
+    if (changed.length) {
+      const text = changed.join(', ')
+      await audit(req, db, body.companyId, 'ai_agent_updated', text.charAt(0).toUpperCase() + text.slice(1))
     }
     return NextResponse.json(await state(db, body.companyId))
   } catch (e: any) {
