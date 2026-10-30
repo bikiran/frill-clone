@@ -1041,7 +1041,7 @@ export default function AppChrome({
                   {!isSubdomain && <Link
                     href="/signup"
                     onClick={() => setShowDrawer(false)}
-                    className="hidden md:inline-flex px-3 py-1.5 md:px-5 md:py-2.5 rounded-lg text-xs md:text-sm font-semibold text-white transition-smooth press-effect cursor-pointer"
+                    className="hidden md:inline-flex px-3 py-1.5 md:px-5 md:py-2.5 rounded-lg text-xs md:text-sm font-semibold text-white transition-smooth press-effect cursor-pointer cv-shine"
                     style={{ background: 'var(--coral)' }}>
                     Get started
                   </Link>}
@@ -1130,7 +1130,7 @@ export default function AppChrome({
                       Sign in
                     </Link>
                     {!isSubdomain && <Link href="/signup" onClick={() => setShowDrawer(false)}
-                      className="block px-4 py-3 rounded-lg text-sm font-semibold text-white text-center cursor-pointer"
+                      className="block px-4 py-3 rounded-lg text-sm font-semibold text-white text-center cursor-pointer cv-shine"
                       style={{ background: 'var(--coral)' }}>
                       Get started
                     </Link>}
