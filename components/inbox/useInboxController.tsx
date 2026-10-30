@@ -40,6 +40,38 @@ import { tagVoice, voiceKind } from '@/lib/voice-typed'
 import { agentChannel, useAgentTeam } from '@/components/agents/useAgentTeam'
 import { Contact, Conversation, Highlight, INBOX_HOUR12, Icon, Message, PAYMENT_SIGNAL_PHRASES, THREAD_PAGE, TeamMember, extractFromText, initialsOf, makeSnippet, parseTs, runPool, sendChannelGlyph, setInboxHour12, threadCacheGet, threadCacheSet, toolBtn, tsOf, videoPoster } from '@/components/inbox/inbox-shared'
 
+// The contacts behind the list's rows, by id. One failed query used to blank
+// every name in the inbox (the rows fell back to their phone numbers): a column
+// the database doesn't have yet (avatar_url, prexty_customer_id), a contact_id
+// that isn't a uuid, or too many ids for one URL after "Load more". So: asked
+// in batches, malformed ids left out, and the extra columns dropped if the
+// database refuses them (remembered, so it isn't asked again).
+const CONTACT_COLS = ['id, name, email, phone, relationship_type, prexty_customer_id, avatar_url', 'id, name, email, phone, relationship_type', 'id, name, email, phone']
+let contactColsAt = 0
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+async function contactsByIds(ids: string[]): Promise<Record<string, any>> {
+  const byId: Record<string, any> = {}
+  const list = Array.from(new Set(ids.filter(Boolean)))
+  for (let i = 0; i < list.length; i += 80) {
+    const chunk = list.slice(i, i + 80)
+    let rows: any[] | null = null
+    for (let at = contactColsAt; at < CONTACT_COLS.length && rows === null; at++) {
+      try {
+        const r = await (supabase as any).from('contacts').select(CONTACT_COLS[at]).in('id', chunk)
+        if (!r.error) { rows = r.data || []; contactColsAt = at; break }
+        // A bad id fails the whole batch: retry this batch with only real ones.
+        if (/uuid/i.test(String(r.error.message || ''))) {
+          const ok = chunk.filter(x => UUID_RE.test(x))
+          const r2 = ok.length ? await (supabase as any).from('contacts').select(CONTACT_COLS[at]).in('id', ok) : { data: [], error: null }
+          if (!r2.error) { rows = r2.data || []; contactColsAt = at; break }
+        }
+      } catch { /* try fewer columns */ }
+    }
+    for (const ct of rows || []) byId[ct.id] = ct
+  }
+  return byId
+}
+
 // A phone thread (SMS, calls) that started before its contact existed has no
 // contact_id, so the list showed the bare number while the open thread (which
 // matches by phone) showed the name. Match such rows by the number's last 9
@@ -1997,10 +2029,8 @@ export function useInboxController() {
       }))
     }
 
-    const [ctsRes, candRes] = await Promise.all([
-      contactIds.length
-        ? (supabase as any).from('contacts').select('id, name, email, phone, relationship_type, prexty_customer_id, avatar_url').in('id', contactIds)
-        : Promise.resolve(null),
+    const [ctsById, candRes] = await Promise.all([
+      contactIds.length ? contactsByIds(contactIds as string[]) : Promise.resolve({} as Record<string, any>),
       unlinked.length
         ? (supabase as any).from('contacts').select('id, name, email, phone, relationship_type').eq('company_id', id)
             .or(tails.map((t: string) => `phone.ilike.%${t}%`).join(',')).limit(200)
@@ -2008,9 +2038,8 @@ export function useInboxController() {
     ])
 
     if (contactIds.length) {
-      const byId: Record<string, any> = {}
-      for (const ct of ctsRes?.data || []) byId[ct.id] = ct
-      for (const c of convs) (c as any).contacts = c.contact_id ? byId[c.contact_id] || null : null
+      // Keep what a row was showing if its contact couldn't be read this time.
+      for (const c of convs) (c as any).contacts = c.contact_id ? ctsById[c.contact_id] || known.get(c.contact_id) || null : null
     }
 
     const cand = candRes?.data
@@ -2097,7 +2126,7 @@ export function useInboxController() {
         return
       }
       if (conv.contact_id) {
-        const { data: ct } = await (supabase as any).from('contacts').select('id, name, email, phone, relationship_type, prexty_customer_id').eq('id', conv.contact_id).maybeSingle()
+        const { data: ct } = await (supabase as any).from('contacts').select('*').eq('id', conv.contact_id).maybeSingle()
         if (ct) (conv as any).contacts = ct
       }
       setConversations(prev => prev.some(c => c.id === conv.id) ? prev : [conv, ...prev])
@@ -2120,7 +2149,7 @@ export function useInboxController() {
       // This workspace's contact only (never another workspace's, which would
       // start a conversation here with someone else's customer).
       const { data: ct } = await (supabase as any).from('contacts')
-        .select('id, name, email, phone, relationship_type, prexty_customer_id').eq('id', contactId).eq('company_id', companyId).maybeSingle()
+        .select('*').eq('id', contactId).eq('company_id', companyId).maybeSingle()
       if (!ct) { deepContactRef.current = null; return }
       // Find-or-create a conversation for this contact.
       const { data: existing } = await (supabase as any).from('conversations')
@@ -5242,10 +5271,7 @@ export function useInboxController() {
         }
         const cids = Array.from(new Set(rows.map((r: any) => r.contact_id).filter(Boolean)))
         if (cids.length) {
-          const { data: cts } = await (supabase as any).from('contacts')
-            .select('id, name, email, phone, relationship_type').in('id', cids)
-          const byId: Record<string, any> = {}
-          for (const ct of cts || []) byId[ct.id] = ct
+          const byId = await contactsByIds(cids as string[])
           for (const r of rows) (r as any).contacts = r.contact_id ? byId[r.contact_id] || null : null
         }
         await linkPhoneThreads(companyId, rows)
@@ -6214,10 +6240,7 @@ export function useInboxController() {
         // Attach contacts for the newly pulled conversations.
         const cids = Array.from(new Set(extra.map((c: any) => c.contact_id).filter(Boolean)))
         if (cids.length) {
-          const { data: cts } = await (supabase as any).from('contacts')
-            .select('id, name, email, phone').in('id', cids)
-          const byId: Record<string, any> = {}
-          for (const ct of cts || []) byId[ct.id] = ct
+          const byId = await contactsByIds(cids as string[])
           for (const c of extra) (c as any).contacts = c.contact_id ? byId[c.contact_id] || null : null
         }
         await linkPhoneThreads(companyId, extra)
