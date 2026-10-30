@@ -94,7 +94,7 @@ type Entry = {
   ip?: string | null
 }
 
-const CATS = ['Orders & money', 'Conversations', 'Tasks', 'Team', 'AI agents', 'Settings']
+const CATS = ['Conversations', 'Tasks', 'AI agents', 'Orders & money', 'Team', 'Settings']
 
 // activity_logs (what Colvy's server records) → filter group.
 const logCat = (t: string) =>
@@ -134,6 +134,10 @@ export default function AuditLogsPage() {
   const [loading, setLoading] = useState(true)
   const [filterCat, setFilterCat] = useState<string | null>(null)
   const [filterUser, setFilterUser] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+  const [limit, setLimit] = useState(40)
+  const [open, setOpen] = useState<Set<string>>(new Set())
+  const toggle = (id: string) => setOpen(o => { const n = new Set(o); if (n.has(id)) n.delete(id); else n.add(id); return n })
 
   useEffect(() => { loadData() }, [])
 
@@ -152,9 +156,9 @@ export default function AuditLogsPage() {
       if (!companyId) return
       const read = async (q: () => PromiseLike<any>) => { try { const { data, error } = await q(); return error ? [] : (data || []) } catch { return [] } }
       const [logsData, convData, taskData] = await Promise.all([
-        read(() => (supabase as any).from('activity_logs').select('*').eq('company_id', companyId).order('created_at', { ascending: false }).limit(100)),
-        read(() => (supabase as any).from('conversation_events').select('id, conversation_id, event_type, actor_name, detail, created_at').eq('company_id', companyId).order('created_at', { ascending: false }).limit(150)),
-        read(() => (supabase as any).from('task_activity').select('id, task_id, actor_id, actor_name, kind, detail, created_at').eq('company_id', companyId).order('created_at', { ascending: false }).limit(100)),
+        read(() => (supabase as any).from('activity_logs').select('*').eq('company_id', companyId).order('created_at', { ascending: false }).limit(200)),
+        read(() => (supabase as any).from('conversation_events').select('id, conversation_id, event_type, actor_name, detail, created_at').eq('company_id', companyId).order('created_at', { ascending: false }).limit(400)),
+        read(() => (supabase as any).from('task_activity').select('id, task_id, actor_id, actor_name, kind, detail, created_at').eq('company_id', companyId).order('created_at', { ascending: false }).limit(300)),
       ])
 
       // Names for the people in activity_logs. supabase.auth.admin needs the
@@ -173,11 +177,11 @@ export default function AuditLogsPage() {
       const convIds = [...new Set(convData.map((e: any) => e.conversation_id).filter(Boolean))] as string[]
       const taskIds = [...new Set(taskData.map((e: any) => e.task_id).filter(Boolean))] as string[]
       const [convs, tasks] = await Promise.all([
-        convIds.length ? read(() => (supabase as any).from('conversations').select('id, contact_id, customer_name, customer_email, sms_number, subject').in('id', convIds.slice(0, 150))) : [],
-        taskIds.length ? read(() => (supabase as any).from('tasks').select('id, title, text').in('id', taskIds.slice(0, 100))) : [],
+        convIds.length ? read(() => (supabase as any).from('conversations').select('id, contact_id, customer_name, customer_email, sms_number, subject').in('id', convIds.slice(0, 300))) : [],
+        taskIds.length ? read(() => (supabase as any).from('conversation_tasks').select('*').in('id', taskIds.slice(0, 200))) : [],
       ])
       const contactIds = [...new Set(convs.map((c: any) => c.contact_id).filter(Boolean))] as string[]
-      const contacts = contactIds.length ? await read(() => (supabase as any).from('contacts').select('id, name, email, phone').in('id', contactIds.slice(0, 150))) : []
+      const contacts = contactIds.length ? await read(() => (supabase as any).from('contacts').select('id, name, email, phone').in('id', contactIds.slice(0, 300))) : []
       const contactName = new Map<string, string>(contacts.map((c: any) => [c.id, c.name || c.email || c.phone]))
       const convName = new Map<string, string>(convs.map((c: any) => [c.id, contactName.get(c.contact_id) || c.customer_name || c.customer_email || c.sms_number || c.subject || 'a customer']))
       const taskTitle = new Map<string, string>(tasks.map((t: any) => [String(t.id), String(t.title || t.text || 'a task').slice(0, 80)]))
@@ -214,7 +218,7 @@ export default function AuditLogsPage() {
         })
       }
       out.sort((a, b) => b.at.getTime() - a.at.getTime())
-      setEntries(out.slice(0, 200))
+      setEntries(out.slice(0, 900))
     } catch (error) {
       console.error('Failed to load audit logs:', error)
     } finally {
@@ -229,63 +233,132 @@ export default function AuditLogsPage() {
     const diff = Math.round((today.getTime() - x.getTime()) / 86400000)
     return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : d.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', year: today.getFullYear() === d.getFullYear() ? undefined : 'numeric' })
   }
-  const shown = entries.filter(e => (!filterCat || e.cat === filterCat) && (!filterUser || e.who === filterUser))
-  const groups: { day: string; items: Entry[] }[] = []
+  const q = query.trim().toLowerCase()
+  const matches = (e: Entry) => (!filterCat || e.cat === filterCat) && (!filterUser || e.who === filterUser)
+    && (!q || e.text.toLowerCase().includes(q) || e.who.toLowerCase().includes(q) || (e.ctx?.label || '').toLowerCase().includes(q))
+  const shown = entries.filter(matches)
+
+  // Runs of the same thing by the same person (a task edited six times, the
+  // AI handing a dozen chats over) fold into one row you can open.
+  type Group = { id: string; items: Entry[]; day: string }
+  const groupsAll: Group[] = []
+  const openRuns = new Map<string, Group>()
   for (const e of shown) {
     const day = dayOf(e.at)
-    const g = groups[groups.length - 1]
-    if (g && g.day === day) g.items.push(e); else groups.push({ day, items: [e] })
+    // Same person, same kind (and for tasks, the same task), the same day,
+    // within 90 minutes of the run's latest entry, even with other things
+    // in between.
+    const key = `${day}|${e.who}|${e.tag}|${e.cat === 'Tasks' ? e.ctx?.href || '' : ''}`
+    const g = openRuns.get(key)
+    if (g && (g.items[0].at.getTime() - e.at.getTime()) < 90 * 60000) g.items.push(e)
+    else { const n = { id: e.id, items: [e], day }; groupsAll.push(n); openRuns.set(key, n) }
   }
-  const cats = CATS.filter(c => entries.some(e => e.cat === c))
+  const groups = groupsAll.slice(0, limit)
+  const counts = new Map<string, number>()
+  for (const e of entries) if ((!filterUser || e.who === filterUser)) counts.set(e.cat, (counts.get(e.cat) || 0) + 1)
+  const cats = CATS.filter(c => counts.get(c))
   const people = [...new Set(entries.map(e => e.who))].sort((a, b) => a.localeCompare(b))
+  const isAi = (who: string) => /colvy|agent|\bai\b/i.test(who)
+  const initials = (who: string) => who.replace(/@.*/, '').split(/[\s._-]+/).filter(Boolean).slice(0, 2).map(w => w[0]?.toUpperCase()).join('') || '?'
+  const hue = (who: string) => ['#ff7a6b', '#f59e0b', '#10b981', '#0ea5e9', '#6366f1', '#ec4899', '#14b8a6'][[...who].reduce((a, c) => a + c.charCodeAt(0), 0) % 7]
+  const time = (d: Date) => d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })
+  const titleOf = (g: Group) => {
+    const n = g.items.length
+    if (n === 1) return g.items[0].text
+    const lead = (t: string) => t.split(' — ')[0].split(': ')[0]
+    const l = lead(g.items[0].text)
+    if (g.items.every(i => lead(i.text) === l) && l.length < 60) return `${l} ×${n}`
+    if (g.items[0].cat === 'Tasks' && g.items[0].ctx) return `${n} changes to “${g.items[0].ctx.label === 'Open task' ? 'a task' : g.items[0].ctx.label}”`
+    return `${n} ${g.items[0].tag.toLowerCase()} updates`
+  }
+  let lastDay = ''
 
   return (
-    <AdminPage width="md" title="Activity log" sub="Who did what in Colvy: conversations, refunds, coupons, orders, tasks, settings and team changes. Newest first.">
-      <div className="al-filters">
-        <select className="ak-select" value={filterCat || ''} onChange={e => setFilterCat(e.target.value || null)} aria-label="Activity">
-          <option value="">All activity</option>
-          {cats.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
+    <AdminPage width="md" title="Activity log" sub="Who did what in Colvy, newest first. Repeats are folded together; open one to see each step.">
+      <div className="al-chips" role="tablist" aria-label="Kind of activity">
+        <button type="button" role="tab" aria-selected={!filterCat} className={`al-chip${!filterCat ? ' on' : ''}`} onClick={() => { setFilterCat(null); setLimit(40) }}>All <b>{[...counts.values()].reduce((a, b) => a + b, 0)}</b></button>
+        {cats.map(c => (
+          <button key={c} type="button" role="tab" aria-selected={filterCat === c} className={`al-chip${filterCat === c ? ' on' : ''}`} style={{ '--t': CAT_TONE[c] } as React.CSSProperties} onClick={() => { setFilterCat(filterCat === c ? null : c); setLimit(40) }}>
+            <i />{c} <b>{counts.get(c)}</b>
+          </button>
+        ))}
+      </div>
+      <div className="al-tools">
+        <label className="al-search">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+          <input className="ak-field" value={query} onChange={e => { setQuery(e.target.value); setLimit(40) }} placeholder="Search activity, people or customers" aria-label="Search activity" />
+        </label>
         {people.length > 1 && (
-          <select className="ak-select" value={filterUser || ''} onChange={e => setFilterUser(e.target.value || null)} aria-label="Person">
+          <select className="ak-select" value={filterUser || ''} onChange={e => { setFilterUser(e.target.value || null); setLimit(40) }} aria-label="Person">
             <option value="">Everyone</option>
             {people.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
         )}
-        {(filterCat || filterUser) && <button type="button" className="ak-btn ghost" onClick={() => { setFilterCat(null); setFilterUser(null) }}>Clear</button>}
       </div>
 
       {loading ? (
         <Panel><div className="al-skel">{[0, 1, 2, 3, 4].map(i => <span key={i} />)}</div></Panel>
-      ) : shown.length === 0 ? (
+      ) : groups.length === 0 ? (
         <Panel>
-          <EmptyScroll kinds={['note', 'contact', 'task']} title={filterCat || filterUser ? 'Nothing matches' : 'No activity yet'}
-            line={filterCat || filterUser ? 'Try another filter, or clear it.' : 'Conversations, refunds, coupons, orders, tasks and settings changes show up here as your team works.'} />
+          <EmptyScroll kinds={['note', 'contact', 'task']} title={filterCat || filterUser || q ? 'Nothing matches' : 'No activity yet'}
+            line={filterCat || filterUser || q ? 'Try another filter or search, or clear them.' : 'Conversations, refunds, coupons, orders, tasks and settings changes show up here as your team works.'} />
         </Panel>
-      ) : groups.map(g => (
-        <Panel key={g.day} title={g.day} flush>
-          <ul className="al-list">
-            {g.items.map(e => (
-              <li key={e.id}>
-                <span className="al-ic" style={{ '--t': tone(e.kind) } as React.CSSProperties} aria-hidden>{getActivityIcon(e.kind)}</span>
-                <div className="al-t">
-                  <p>{e.text}</p>
-                  <small>
-                    <b>{e.who}</b>
-                    <span>{e.at.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })}</span>
-                    {e.ctx && <a href={e.ctx.href} className="al-ctx">{e.ctx.label}</a>}
-                    {e.ip && e.ip !== 'unknown' && <span>IP {e.ip}</span>}
-                  </small>
-                </div>
-                <span className="ak-tag al-type">{e.tag}</span>
-              </li>
-            ))}
+      ) : (
+        <Panel flush>
+          <ul className="al-feed">
+            {groups.map(g => {
+              const e = g.items[0]
+              const many = g.items.length > 1
+              const isOpen = open.has(g.id)
+              const showDay = g.day !== lastDay
+              lastDay = g.day
+              return (
+                <li key={g.id} className={isOpen ? 'open' : ''}>
+                  {showDay && <h3 className="al-day">{g.day}</h3>}
+                  <div className="al-row" role={many ? 'button' : undefined} tabIndex={many ? 0 : undefined} aria-expanded={many ? isOpen : undefined}
+                    onClick={() => many && toggle(g.id)} onKeyDown={ev => { if (many && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); toggle(g.id) } }}>
+                    <span className={`al-av${isAi(e.who) ? ' ai' : ''}`} style={{ '--h': hue(e.who) } as React.CSSProperties} aria-hidden>{isAi(e.who) ? <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.2 5.8L20 10l-5.8 2.2L12 18l-2.2-5.8L4 10l5.8-2.2z" /></svg> : initials(e.who)}</span>
+                    <div className="al-body">
+                      <p className="al-line"><b>{e.who}</b> <span className="al-txt">{titleOf(g)}</span></p>
+                      <div className="al-meta">
+                        <span className="al-tag" style={{ '--t': tone(e.kind) } as React.CSSProperties}>{e.tag}</span>
+                        {e.ctx && (!many || g.items.every(x => x.ctx?.href === e.ctx?.href)) && <a href={e.ctx.href} className="al-ctx" onClick={ev => ev.stopPropagation()}>{e.ctx.label}</a>}
+                        {many && <span className="al-more">{isOpen ? 'Hide' : `Show all ${g.items.length}`}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="6 9 12 15 18 9" /></svg></span>}
+                        {!many && e.ip && e.ip !== 'unknown' && <span>IP {e.ip}</span>}
+                      </div>
+                    </div>
+                    <time className="al-time">{many && <span className="al-t0">{time(g.items[g.items.length - 1].at)}–</span>}{time(e.at)}</time>
+                  </div>
+                  {many && isOpen && (
+                    <ul className="al-sub">
+                      {g.items.map(i => (
+                        <li key={i.id}>
+                          <span className="al-dot" style={{ '--t': tone(i.kind) } as React.CSSProperties} aria-hidden />
+                          <p>{i.text}</p>
+                          {i.ctx && !g.items.every(x => x.ctx?.href === i.ctx?.href) && <a href={i.ctx.href} className="al-ctx">{i.ctx.label}</a>}
+                          <time>{time(i.at)}</time>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              )
+            })}
           </ul>
+          {groupsAll.length > limit && (
+            <div className="al-foot">
+              <button type="button" className="ak-btn" onClick={() => setLimit(l => l + 40)}>Show more <span className="al-foot-n">{groupsAll.length - limit} left</span></button>
+            </div>
+          )}
         </Panel>
-      ))}
+      )}
       <style>{AL_CSS}</style>
     </AdminPage>
   )
+}
+
+const CAT_TONE: Record<string, string> = {
+  'Orders & money': '#f97316', Conversations: '#0ea5e9', Tasks: '#10b981', Team: '#6366f1', 'AI agents': '#8b5cf6', Settings: '#71717a',
 }
 
 const LABELS: Record<string, string> = {
@@ -298,21 +371,50 @@ const LABELS: Record<string, string> = {
 }
 
 const AL_CSS = `
-.al-filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
-.al-filters .ak-select{width:auto;min-width:190px}
-.al-list{list-style:none;margin:0;padding:0 8px 8px}
-.al-list li{display:flex;align-items:flex-start;gap:12px;padding:11px 12px;border-radius:14px}
-.al-list li+li{box-shadow:0 -1px 0 var(--line)}
-.al-ic{width:34px;height:34px;flex-shrink:0;border-radius:11px;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--t) 12%,var(--card,#fff));color:var(--t)}
-.al-ic svg{width:16px;height:16px}
-.al-t{flex:1;min-width:0}
-.al-t p{margin:2px 0 0;font-size:14px;font-weight:550;line-height:1.45;color:var(--ink);overflow-wrap:anywhere}
-.al-t small{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:3px;font-size:12.5px;color:var(--soft)}
-.al-t small b{font-weight:600;color:var(--mut)}
-.al-type{flex-shrink:0;margin-top:4px}
-.al-ctx{color:var(--coral);font-weight:600;text-decoration:none;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.al-chips{display:flex;gap:6px;margin-bottom:12px;overflow-x:auto;scrollbar-width:none;padding:2px}
+.al-chips::-webkit-scrollbar{display:none}
+.al-chip{flex-shrink:0;display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 14px;border:none;border-radius:999px;background:var(--card,#fff);box-shadow:0 0 0 1px rgba(0,0,0,.07);font:inherit;font-size:13.5px;font-weight:600;color:var(--ink);cursor:pointer;white-space:nowrap;transition:background .15s,color .15s,box-shadow .15s}
+.al-chip:hover{background:var(--f)}
+.al-chip i{width:8px;height:8px;border-radius:50%;background:var(--t)}
+.al-chip b{font-weight:650;color:var(--soft);font-variant-numeric:tabular-nums}
+.al-chip.on{background:var(--ink);color:var(--card,#fff);box-shadow:none}
+.al-chip.on b{color:inherit;opacity:.65}
+.al-tools{display:flex;gap:8px;margin-bottom:14px}
+.al-search{position:relative;flex:1;min-width:0}
+.al-search svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--soft);pointer-events:none;z-index:1}
+.ak .al-search .ak-field{padding-left:38px}
+.al-tools .ak-select{width:auto;min-width:170px}
+@media (max-width:560px){.al-tools{flex-direction:column}.al-tools .ak-select{width:100%}}
+.al-feed{list-style:none;margin:0;padding:4px 8px 8px}
+.al-day{position:sticky;top:0;z-index:2;margin:0;padding:14px 12px 6px;background:var(--card,#fff);font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;font-weight:700;letter-spacing:-.01em;color:var(--ink)}
+.al-row{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:14px;transition:background .15s}
+.al-row:hover{background:color-mix(in srgb,var(--f) 70%,transparent)}
+.al-row[role=button]{cursor:pointer}
+.al-feed>li.open>.al-row{background:var(--f)}
+.al-av{width:30px;height:30px;flex-shrink:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--h) 16%,var(--card,#fff));color:color-mix(in srgb,var(--h) 80%,#000);font-size:11.5px;font-weight:700}
+.al-av.ai{background:linear-gradient(140deg,#c4b5fd,#8b5cf6);color:#fff}
+.al-body{flex:1;min-width:0}
+.al-line{margin:0;font-size:14px;line-height:1.4;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.al-line b{font-weight:650;color:var(--ink)}
+.al-txt{color:var(--ink)}
+.al-meta{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;margin-top:2px;font-size:12px;color:var(--soft)}
+.al-tag{display:inline-flex;align-items:center;gap:5px;font-weight:600;color:color-mix(in srgb,var(--t) 85%,var(--ink))}
+.al-tag::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--t)}
+.al-ctx{color:var(--coral);font-weight:600;text-decoration:none;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .al-ctx:hover{text-decoration:underline}
-@media (max-width:640px){.al-type{display:none}}
+.al-more{display:inline-flex;align-items:center;gap:3px;font-weight:650;color:var(--ink)}
+.al-feed>li.open .al-more svg{transform:rotate(180deg)}
+.al-time{flex-shrink:0;font-size:12px;color:var(--soft);font-variant-numeric:tabular-nums;white-space:nowrap}
+.al-sub{list-style:none;margin:2px 0 8px 54px;padding:4px 0 4px 14px;border-left:2px solid var(--line);animation:alIn .25s cubic-bezier(.22,1,.36,1) both}
+.al-sub li{display:flex;align-items:baseline;gap:8px;padding:5px 8px;border-radius:10px;font-size:13px;line-height:1.45}
+.al-sub li:hover{background:color-mix(in srgb,var(--f) 60%,transparent)}
+.al-sub p{flex:1;min-width:0;margin:0;color:var(--ink);overflow-wrap:anywhere}
+.al-sub time{flex-shrink:0;font-size:11.5px;color:var(--soft);font-variant-numeric:tabular-nums}
+.al-dot{width:6px;height:6px;flex-shrink:0;border-radius:50%;background:var(--t);transform:translateY(-1px)}
+@keyframes alIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+@media (max-width:560px){.al-sub{margin-left:20px}.al-sub li{flex-wrap:wrap}.al-time{align-self:flex-start;margin-top:3px}.al-t0{display:none}.al-row{align-items:flex-start}.al-line{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}}
+.al-foot{display:flex;justify-content:center;padding:6px 0 16px}
+.al-foot-n{margin-left:4px;font-weight:500;color:var(--soft)}
 .al-skel{display:flex;flex-direction:column;gap:10px}
 .al-skel span{height:44px;border-radius:12px;background:linear-gradient(90deg,var(--f) 25%,var(--f2) 37%,var(--f) 63%);background-size:400% 100%;animation:alSk 1.2s ease infinite}
 @keyframes alSk{0%{background-position:100% 50%}100%{background-position:0 50%}}
