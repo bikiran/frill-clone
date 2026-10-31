@@ -31,6 +31,19 @@ const P: Record<string, string> = {
   link: 'M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1 1 M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1-1',
   close: 'M6 6l12 12 M18 6L6 18',
   back: 'M15 18l-6-6 6-6',
+  columns: 'M4 5h7v14H4z M13 5h7v14h-7z',
+  video: 'M4 6h16v12H4z M10 9.5v5l4.5-2.5z',
+  menu: 'M4 12h3 M10.5 12h3 M17 12h3 M4 7h16 M4 17h16',
+  grip: 'M9 6h.01 M15 6h.01 M9 12h.01 M15 12h.01 M9 18h.01 M15 18h.01',
+  undo: 'M9 14L4 9l5-5 M4 9h10.5a5.5 5.5 0 0 1 0 11H11',
+  redo: 'M15 14l5-5-5-5 M20 9H9.5a5.5 5.5 0 0 0 0 11H13',
+  palette: 'M12 3a9 9 0 0 0 0 18c1 0 1.5-.8 1.5-1.5 0-1-.8-1.4-.8-2.3 0-.8.6-1.2 1.5-1.2H16a5 5 0 0 0 5-5c0-4.4-4-8-9-8z M7.5 11h.01 M10 7.5h.01 M14.5 7.5h.01 M17 11h.01',
+  checks: 'M9 6h11 M9 12h11 M9 18h11 M4 6l1 1 2-2 M4 12l1 1 2-2 M4 18l1 1 2-2',
+  layers: 'M12 3l9 5-9 5-9-5z M3 13l9 5 9-5',
+  template: 'M4 4h16v6H4z M4 14h7v6H4z M14 14h6v6h-6z',
+  emoji: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18 M8.5 14.5s1.3 1.8 3.5 1.8 3.5-1.8 3.5-1.8 M9 9.5h.01 M15 9.5h.01',
+  inbox: 'M3 13h5l2 3h4l2-3h5 M5 5h14l2 8v6H3v-6z',
+  sparkle: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z',
 }
 
 export function DIcon({ name, size = 16 }: { name: BlockType | keyof typeof P | string; size?: number }) {

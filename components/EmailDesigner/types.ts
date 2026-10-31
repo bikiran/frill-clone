@@ -19,6 +19,15 @@ export type Align = 'left' | 'center'
 
 export type ProductItem = { name: string; price?: string; image?: string; url?: string }
 export type SocialLink = { network: 'facebook' | 'instagram' | 'tiktok' | 'youtube' | 'website' | 'x' | 'linkedin'; url: string }
+/** One side of a two-column block: any of a picture, title, text and button. */
+export type ColumnItem = { image?: string; alt?: string; title?: string; text?: string; label?: string; url?: string }
+export type MenuLink = { label: string; url: string }
+
+/** The look of the whole email (Design tab). Fonts are email-safe stacks, never web fonts. */
+export type FontChoice = 'modern' | 'classic' | 'friendly' | 'clean'
+export type Corners = 'sharp' | 'soft' | 'round'
+export type ButtonStyle = 'filled' | 'outline'
+export type ButtonShape = 'rounded' | 'pill'
 
 export type Block =
   | { id: string; type: 'header'; showLogo?: boolean; showName?: boolean; align?: Align }
@@ -32,6 +41,10 @@ export type Block =
   | { id: string; type: 'divider' }
   | { id: string; type: 'spacer'; height?: number }
   | { id: string; type: 'social'; links: SocialLink[] }
+  | { id: string; type: 'columns'; items: ColumnItem[] }
+  /** A picture that opens the video (email can't play video): YouTube links get their thumbnail automatically. */
+  | { id: string; type: 'video'; url: string; thumbnail?: string; label?: string }
+  | { id: string; type: 'menu'; links: MenuLink[] }
   | { id: string; type: 'footer'; address?: string; note?: string }
 
 export type BlockType = Block['type']
@@ -42,6 +55,10 @@ export type EmailDesign = {
   background?: string
   /** Accent override (else the brand's). */
   accent?: string
+  font?: FontChoice
+  corners?: Corners
+  buttonStyle?: ButtonStyle
+  buttonShape?: ButtonShape
   blocks: Block[]
 }
 
