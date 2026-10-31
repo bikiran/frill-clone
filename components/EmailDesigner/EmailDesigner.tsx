@@ -160,7 +160,63 @@ export default function EmailDesigner({ companyId, brand, sender, initial, campa
   const [drag, setDragState] = useState<{ id: string; over?: string; after?: boolean } | null>(null)
   // The drag also lives in a ref: dragover/drop can arrive before React re-renders.
   const dragRef = useRef<{ id: string; over?: string; after?: boolean } | null>(null)
-  const setDrag = (d: { id: string; over?: string; after?: boolean } | null) => { dragRef.current = d; setDragState(d) }
+  const setDrag = (d: { id: string; over?: string; after?: boolean } | null) => {
+    dragRef.current = d; setDragState(d)
+    if (!d) stopAutoScroll()
+    else if (!autoScroll.current) startAutoScroll()
+  }
+
+  // While a block is being dragged, holding it near the top or bottom edge of the
+  // list scrolls the list (or the page, when the editor isn't side by side), faster
+  // the closer to the edge, so a block can travel any distance in one drag.
+  const paneRef = useRef<HTMLDivElement>(null)
+  const autoScroll = useRef<{ x: number; y: number; raf: number; t: number; acc: number; onOver: (e: DragEvent) => void; onLeave: (e: DragEvent) => void } | null>(null)
+  const stopAutoScroll = () => {
+    const a = autoScroll.current
+    if (!a) return
+    cancelAnimationFrame(a.raf)
+    document.removeEventListener('dragover', a.onOver, true)
+    document.removeEventListener('dragleave', a.onLeave, true)
+    autoScroll.current = null
+  }
+  const startAutoScroll = () => {
+    stopAutoScroll()
+    const a = {
+      x: -1, y: -1, raf: 0, t: 0, acc: 0,
+      onOver: (e: DragEvent) => { a.x = e.clientX; a.y = e.clientY },
+      // Left the window (or went into the preview's frame): stop until it's back.
+      onLeave: (e: DragEvent) => { if (!e.relatedTarget) a.y = -1 },
+    }
+    autoScroll.current = a
+    document.addEventListener('dragover', a.onOver, true)
+    document.addEventListener('dragleave', a.onLeave, true)
+    const tick = (now: number) => {
+      if (autoScroll.current !== a) return
+      // Speed in pixels per second, so it feels the same on 60 Hz and 120 Hz screens.
+      const dt = a.t ? Math.min(50, now - a.t) : 16
+      a.t = now
+      if (a.y >= 0) {
+        const pane = paneRef.current
+        const inner = !!pane && pane.scrollHeight > pane.clientHeight + 1 && /(auto|scroll)/.test(getComputedStyle(pane).overflowY)
+        const r = inner ? pane!.getBoundingClientRect() : { top: 0, bottom: window.innerHeight }
+        // The page case has fixed bars at the top and bottom on phones, so give it a deeper edge.
+        const zone = Math.min(inner ? 80 : 120, (r.bottom - r.top) / 3)
+        const beside = inner && (a.x < (r as DOMRect).left || a.x > (r as DOMRect).right)
+        const pull = beside ? 0 : a.y < r.top + zone ? -Math.min(1, (r.top + zone - a.y) / zone) : a.y > r.bottom - zone ? Math.min(1, (a.y - (r.bottom - zone)) / zone) : 0
+        if (!pull) a.acc = 0
+        else {
+          // Whole pixels only (carrying the rest), so slow speeds still move on every screen.
+          a.acc += Math.sign(pull) * (180 + pull * pull * 1200) * dt / 1000
+          const step = Math.trunc(a.acc)
+          a.acc -= step
+          if (step) { if (inner) pane!.scrollTop += step; else window.scrollBy(0, step) }
+        }
+      }
+      a.raf = requestAnimationFrame(tick)
+    }
+    a.raf = requestAnimationFrame(tick)
+  }
+  useEffect(() => () => stopAutoScroll(), [])
   const lastField = useRef<{ el: HTMLInputElement | HTMLTextAreaElement; set: (v: string) => void } | null>(null)
   const subjectRef = useRef<HTMLInputElement>(null)
 
@@ -393,7 +449,7 @@ export default function EmailDesigner({ companyId, brand, sender, initial, campa
             <button type="button" role="tab" aria-selected={tab === 'checks'} className={tab === 'checks' ? 'on' : ''} onClick={() => setTab('checks')}><DIcon name="checks" size={15} />Checks{issues > 0 ? <span className="ed-badge">{issues}</span> : <span className="ed-badge ok"><DIcon name="check" size={11} /></span>}</button>
           </div>
 
-          <div className="ed-pane">
+          <div className="ed-pane" ref={paneRef}>
           {tab === 'content' && (<>
             <div className="ed-card">
               <label className="ed-label" htmlFor="ed-subject" style={{ marginTop: 0 }}>Subject line</label>
