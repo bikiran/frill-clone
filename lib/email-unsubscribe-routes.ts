@@ -20,7 +20,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { emailAdminDb } from '@/lib/email-db'
 import { readUnsubToken, type UnsubToken } from '@/lib/email-tokens'
 import { loadEmailBrand } from '@/lib/email-brand'
-import { applyPreferences, maskEmail, preferencePage, preferenceState, setEmailMarketing, type PageView } from '@/lib/email-preferences'
+import { applyPreferences, maskEmail, preferencePage, preferenceState, setEmailMarketing, type PageView, type PrefState } from '@/lib/email-preferences'
 
 const HTML_HEADERS = { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex', 'Referrer-Policy': 'no-referrer' }
 
@@ -36,6 +36,16 @@ async function load(db: any, tok: UnsubToken | null) {
   ])
   if (!loaded) return null
   return { contact: contact || null, brand: loaded.brand }
+}
+
+// Test emails. Old ones carry the placeholder "test"; newer ones a signed
+// preview token, which opens the real pages (branded, with sample settings)
+// and never changes anything.
+const OLD_TEST = 'test'
+const SAMPLE: PrefState = { email: true, sms: true, emailCanTurnOn: true, everythingOff: false }
+async function previewBrand(db: any, tok: UnsubToken) {
+  const loaded = await loadEmailBrand(db, tok.co).catch(() => null)
+  return loaded?.brand || null
 }
 
 /** The token from the query string or a posted form. */
@@ -59,8 +69,10 @@ async function tokenOf(req: NextRequest): Promise<{ t: string; form: Record<stri
 
 export async function unsubscribeGet(req: NextRequest) {
   const t = req.nextUrl.searchParams.get('t') || ''
+  if (t === OLD_TEST) return html(preferencePage(null, { kind: 'test' }))
   const tok = readUnsubToken(t)
   const db = emailAdminDb()
+  if (tok?.preview) return html(preferencePage(await previewBrand(db, tok), { kind: 'confirm', token: t }, '', { preview: true }))
   const r = await load(db, tok).catch(() => null)
   if (!tok || !r) return html(preferencePage(null, { kind: 'expired' }), tok ? 200 : 400)
   if (r.contact && (r.contact.email_marketing_opt_out_at || r.contact.unsubscribed_at)) return html(preferencePage(r.brand, { kind: 'done', what: r.contact.unsubscribed_at ? 'everything' : 'email' }))
@@ -69,8 +81,10 @@ export async function unsubscribeGet(req: NextRequest) {
 
 export async function unsubscribePost(req: NextRequest) {
   const { t, oneClick } = await tokenOf(req)
+  if (t === OLD_TEST) return oneClick ? new NextResponse('Test email: nothing changed', { status: 200 }) : html(preferencePage(null, { kind: 'test' }))
   const tok = readUnsubToken(t)
   const db = emailAdminDb()
+  if (tok?.preview) return oneClick ? new NextResponse('Test email: nothing changed', { status: 200 }) : html(preferencePage(await previewBrand(db, tok), { kind: 'done', what: 'email' }, '', { preview: true }))
   const r = await load(db, tok).catch(() => null)
   if (!tok || !r) {
     return oneClick ? new NextResponse('Unknown link', { status: 400 }) : html(preferencePage(null, { kind: 'expired' }), 400)
@@ -88,8 +102,10 @@ export async function unsubscribePost(req: NextRequest) {
 
 export async function preferencesGet(req: NextRequest) {
   const t = req.nextUrl.searchParams.get('t') || ''
+  if (t === OLD_TEST) return html(preferencePage(null, { kind: 'test' }))
   const tok = readUnsubToken(t)
   const db = emailAdminDb()
+  if (tok?.preview) return html(preferencePage(await previewBrand(db, tok), { kind: 'prefs', token: t, state: SAMPLE }, '', { preview: true }))
   const r = await load(db, tok).catch(() => null)
   if (!tok || !r || !r.contact) return html(preferencePage(r?.brand || null, { kind: 'expired' }), tok ? 200 : 400)
   const view: PageView = { kind: 'prefs', token: t, state: await preferenceState(db, tok.co, r.contact), maskedEmail: maskEmail(r.contact.email || '') }
@@ -98,8 +114,16 @@ export async function preferencesGet(req: NextRequest) {
 
 export async function preferencesPost(req: NextRequest) {
   const { t, form } = await tokenOf(req)
+  if (t === OLD_TEST) return html(preferencePage(null, { kind: 'test' }))
   const tok = readUnsubToken(t)
   const db = emailAdminDb()
+  if (tok?.preview) {
+    // Show what the customer would see after saving; nothing is stored.
+    const brand = await previewBrand(db, tok)
+    if (form.everything === '1') return html(preferencePage(brand, { kind: 'done', what: 'everything' }, '', { preview: true }))
+    const state: PrefState = { ...SAMPLE, email: form.email === '1', sms: form.sms_shown === '1' ? form.sms === '1' : null }
+    return html(preferencePage(brand, { kind: 'prefs', token: t, state, saved: true }, '', { preview: true }))
+  }
   const r = await load(db, tok).catch(() => null)
   if (!tok || !r || !r.contact) return html(preferencePage(r?.brand || null, { kind: 'expired' }), 400)
   const source = 'Email preference page'

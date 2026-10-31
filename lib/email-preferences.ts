@@ -227,6 +227,7 @@ async function reload(db: any, companyId: string, contact: any): Promise<PrefSta
 
 export type PageView =
   | { kind: 'expired' }
+  | { kind: 'test' }                                          // an old test email's placeholder link
   | { kind: 'confirm'; token: string }                       // the unsubscribe link: one button
   | { kind: 'done'; what: 'email' | 'everything' }
   | { kind: 'prefs'; token: string; state: PrefState; saved?: boolean; error?: string; maskedEmail?: string }
@@ -237,14 +238,20 @@ export function maskEmail(e: string): string {
   return `${u.slice(0, 2)}${'•'.repeat(Math.max(1, Math.min(6, u.length - 2)))}@${d}`
 }
 
-/** The public page, in the business's branding. Works without JavaScript. */
-export function preferencePage(brand: EmailBrand | null, view: PageView, base = ''): string {
+/**
+ * The public page, in the business's branding. Works without JavaScript.
+ * `preview`: opened from a test email, so it says so and nothing is changed.
+ */
+export function preferencePage(brand: EmailBrand | null, view: PageView, base = '', opts: { preview?: boolean } = {}): string {
   const accent = /^#[0-9a-f]{6}$/i.test(brand?.accent || '') ? brand!.accent! : '#18181b'
   const name = escapeHtml(brand?.name || 'this business')
   const logo = brand?.logoUrl && /^https:\/\//i.test(brand.logoUrl) ? `<img src="${escapeHtml(brand.logoUrl)}" alt="${name}" class="logo">` : `<div class="mark" style="background:${accent}">${escapeHtml((brand?.name || '?').trim().charAt(0).toUpperCase())}</div>`
   const prefsUrl = (t: string) => `${base}/api/email/preferences?t=${encodeURIComponent(t)}`
   let title = '', body = ''
-  if (view.kind === 'expired') {
+  if (view.kind === 'test') {
+    title = 'This was a test email'
+    body = `<p>Links in test emails don’t unsubscribe anyone. Send a new test email to see the page your customers get when they unsubscribe or change their preferences.</p>`
+  } else if (view.kind === 'expired') {
     title = 'This link doesn’t work'
     body = `<p>It may have been copied incompletely. Reply to any email from ${name} and ask them to stop sending you emails, and they’ll take you off their list.</p>`
   } else if (view.kind === 'confirm') {
@@ -291,5 +298,6 @@ h1{font-size:21px;line-height:1.3;margin:0 0 10px}p{font-size:15px;line-height:1
 .all{margin:14px 0 0;text-align:center}.link{background:none;border:none;color:#52525b;text-decoration:underline;font-size:14px;cursor:pointer;padding:8px}
 .ok{background:#ecfdf3;border:1px solid #abefc6;color:#067647;border-radius:10px;padding:10px 12px;font-size:14px}
 .err{background:#fef3f2;border:1px solid #fecdca;color:#b42318;border-radius:10px;padding:10px 12px;font-size:14px}
-</style></head><body><main><div class="card"><div class="brand">${logo}<b>${name}</b></div><h1>${escapeHtml(title)}</h1>${body}</div></main></body></html>`
+.pv{display:flex;gap:10px;align-items:flex-start;background:#fffaeb;border:1px solid #fedf89;color:#93370d;border-radius:12px;padding:11px 13px;font-size:13.5px;line-height:1.5;margin:0 0 18px}.pv b{font-weight:700}
+</style></head><body><main>${opts.preview ? `<p class="pv"><span><b>Preview from a test email.</b> This is the page your customers see. Nothing you do here changes anything.</span></p>` : ''}<div class="card">${brand ? `<div class="brand">${logo}<b>${name}</b></div>` : ''}<h1>${escapeHtml(title)}</h1>${body}</div></main></body></html>`
 }
