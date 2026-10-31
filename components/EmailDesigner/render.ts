@@ -180,9 +180,17 @@ function blockHtml(b: Block, ctx: Ctx): string {
       const logo = b.showLogo !== false ? safeImage(brand.logoUrl) : ''
       const align = alignOf(b.align || 'center')
       const showName = b.showName !== false || !logo
-      const name = showName ? `<p style="margin:${logo ? '10px' : '0'} 0 0;font-family:${ctx.font};font-size:${logo ? 15 : 22}px;line-height:1.3;font-weight:800;color:${logo ? C.ink : accent}">${escapeHtml(brand.name)}</p>` : ''
-      const img = logo ? `<img src="${escapeHtml(logo)}" alt="${escapeHtml(brand.name)}" height="48" style="display:${align === 'center' ? 'block;margin:0 auto' : 'block'};height:48px;width:auto;max-width:220px;border:0">` : ''
-      return row(`<div style="text-align:${align}">${img}${name}</div>`, '32px 40px 8px')
+      const name = showName ? `<p style="margin:${logo ? '6px' : '0'} 0 0;font-family:${ctx.font};font-size:${logo ? 15 : 22}px;line-height:1.3;font-weight:800;color:${logo ? C.ink : accent}">${escapeHtml(brand.name)}</p>` : ''
+      // The logo sits on a white tile. On the white card it can't be seen, but
+      // when an inbox darkens the email (Gmail's app in dark mode turns light
+      // backgrounds dark and leaves pictures alone) a dark logo would vanish
+      // into the black. Gmail doesn't touch background images, so the tile is
+      // painted white twice: the colour, and a white gradient over it.
+      // The tile's padding comes out of the header's, so nothing moves.
+      const img = logo ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0"${align === 'center' ? ' align="center"' : ''} style="${align === 'center' ? 'margin:0 auto' : 'margin-left:-12px'}"><tr><td bgcolor="#ffffff" style="background-color:#ffffff;background-image:linear-gradient(#ffffff,#ffffff);border-radius:14px;padding:8px 12px 6px;line-height:0;font-size:0">
+<img src="${escapeHtml(logo)}" alt="${escapeHtml(brand.name)}" height="48" style="display:block;height:48px;width:auto;max-width:220px;border:0">
+</td></tr></table>` : ''
+      return row(`<div style="text-align:${align}">${img}${name}</div>`, logo ? '24px 40px 8px' : '32px 40px 8px')
     }
     case 'heading': {
       const size = b.size === 'md' ? 20 : 28
