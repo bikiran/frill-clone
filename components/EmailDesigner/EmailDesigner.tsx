@@ -834,7 +834,12 @@ function BlockFields({ b, brand, companyId, update, field, wrap }: { b: Block; b
         <input className="ed-input" value={b.title || ''} placeholder="Coupon" onChange={e => update({ title: e.target.value })} />
         <label className="ed-label">Small print</label>
         <input className="ed-input" value={b.note || ''} placeholder="Ends Sunday. One per customer." onChange={e => update({ note: e.target.value })} />
-        <p className="ed-hint">Use the Coupon code tag to give each customer the code from the campaign.</p>
+        <div className="ed-row2">
+          <div><label className="ed-label">Button text</label><input className="ed-input" value={b.label || ''} placeholder="Shop now" maxLength={40} onChange={e => update({ label: e.target.value })} /></div>
+          <div><label className="ed-label">Button link</label><input className="ed-input" value={b.url || ''} placeholder={brand.website ? brand.website.replace(/^https?:\/\//i, '').replace(/\/$/, '') : 'https://'} onChange={e => update({ url: e.target.value })} /></div>
+        </div>
+        {urlWarn(b.url)}
+        <p className="ed-hint">{brand.website ? 'Leave the link empty to send people to your website. ' : ''}Clear the button text for no button. Use the Coupon code tag to give each customer the code from the campaign.</p>
       </>)
     case 'divider':
       return <p className="ed-hint">A thin line to separate sections.</p>

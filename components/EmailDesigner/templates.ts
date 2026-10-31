@@ -37,8 +37,7 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
       header(),
       B({ type: 'heading', text: 'This week only: 20% off', align: 'center' }),
       B({ type: 'text', text: 'Hi {{first_name|there}}, our biggest sale of the season is on now, in store and online. Use the code below at checkout.', align: 'center' }),
-      B({ type: 'coupon', code: 'SAVE20', offer: '20% off', title: 'This week only', note: 'Ends Sunday at midnight.' }),
-      B({ type: 'button', label: 'Shop the sale', url: '', align: 'center' }),
+      B({ type: 'coupon', code: 'SAVE20', offer: '20% off', title: 'This week only', note: 'Ends Sunday at midnight.', label: 'Shop the sale', url: '' }),
       B({ type: 'image', src: '', alt: 'Sale items' }),
       footer(),
     ] }),
@@ -81,8 +80,7 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
       header(),
       B({ type: 'heading', text: 'It’s been a while', align: 'center' }),
       B({ type: 'text', text: 'Hi {{first_name|there}}, we haven’t seen you at {{store_name}} for a little while, and we’d love to welcome you back. Here’s 15% off your next visit.', align: 'center' }),
-      B({ type: 'coupon', code: '{{coupon_code|WELCOME15}}', offer: '15% off', title: 'Welcome back', note: 'Valid for 30 days, in store and online.' }),
-      B({ type: 'button', label: 'Come back and shop', url: '', align: 'center' }),
+      B({ type: 'coupon', code: '{{coupon_code|WELCOME15}}', offer: '15% off', title: 'Welcome back', note: 'Valid for 30 days, in store and online.', label: 'Come back and shop', url: '' }),
       B({ type: 'products', items: [{ name: '' }, { name: '' }], buttonLabel: 'Have a look' }),
       footer(),
     ] }),
@@ -111,7 +109,7 @@ export function blankBlock(type: Block['type']): Block {
     case 'image': return B({ type: 'image', src: '', alt: '' })
     case 'button': return B({ type: 'button', label: 'Shop now', url: '', align: 'left' })
     case 'products': return B({ type: 'products', items: [], buttonLabel: 'Shop now' })
-    case 'coupon': return B({ type: 'coupon', code: '', offer: '10% off', title: 'Coupon' })
+    case 'coupon': return B({ type: 'coupon', code: '', offer: '10% off', title: 'Coupon', label: 'Shop now', url: '' })
     case 'divider': return B({ type: 'divider' })
     case 'spacer': return B({ type: 'spacer', height: 24 })
     case 'social': return B({ type: 'social', links: [] })

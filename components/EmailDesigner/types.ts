@@ -37,7 +37,7 @@ export type Block =
   | { id: string; type: 'image'; src: string; alt: string; url?: string; width?: number }
   | { id: string; type: 'button'; label: string; url: string; color?: string; align?: Align }
   | { id: string; type: 'products'; items: ProductItem[]; buttonLabel?: string }
-  | { id: string; type: 'coupon'; code: string; offer?: string; title?: string; note?: string }
+  | { id: string; type: 'coupon'; code: string; offer?: string; title?: string; note?: string; label?: string; url?: string }
   | { id: string; type: 'divider' }
   | { id: string; type: 'spacer'; height?: number }
   | { id: string; type: 'social'; links: SocialLink[] }
