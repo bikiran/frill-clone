@@ -51,7 +51,7 @@ function summary(b: Block): string {
     case 'image': return b.src ? (b.alt || 'Picture') : 'No picture yet'
     case 'button': return b.label ? `${b.label}${b.url ? '' : ' (no link yet)'}` : 'No label yet'
     case 'products': return b.items.filter(p => p.name).length ? `${b.items.filter(p => p.name).length} product${b.items.filter(p => p.name).length === 1 ? '' : 's'}` : 'No products yet'
-    case 'coupon': return b.code || 'No code yet'
+    case 'coupon': return [b.offer, b.code || 'No code yet'].filter(Boolean).join(' · ')
     case 'social': return b.links.length ? b.links.map(l => NETWORK_LABEL[l.network]).join(', ') : 'No links yet'
     case 'spacer': return `${b.height || 24}px`
     case 'columns': return (b.items || []).map(c => c?.title || (c?.image ? 'Picture' : '')).filter(Boolean).join(' · ') || 'Empty columns'
@@ -827,9 +827,11 @@ function BlockFields({ b, brand, companyId, update, field, wrap }: { b: Block; b
     case 'coupon':
       return (<>
         <div className="ed-row2">
+          <div><label className="ed-label">Offer</label><input className="ed-input" value={b.offer || ''} placeholder="20% off" maxLength={40} onChange={e => update({ offer: e.target.value })} /></div>
           <div><label className="ed-label">Code</label><input className="ed-input" value={b.code} placeholder="SAVE20" {...field(v => update({ code: v }))} onChange={e => update({ code: e.target.value })} /></div>
-          <div><label className="ed-label">Title</label><input className="ed-input" value={b.title || ''} onChange={e => update({ title: e.target.value })} /></div>
         </div>
+        <label className="ed-label">Label above the offer</label>
+        <input className="ed-input" value={b.title || ''} placeholder="Coupon" onChange={e => update({ title: e.target.value })} />
         <label className="ed-label">Small print</label>
         <input className="ed-input" value={b.note || ''} placeholder="Ends Sunday. One per customer." onChange={e => update({ note: e.target.value })} />
         <p className="ed-hint">Use the Coupon code tag to give each customer the code from the campaign.</p>

@@ -18,7 +18,7 @@ function blockText(b: Block): string {
   switch (b.type) {
     case 'heading': case 'text': return b.text || ''
     case 'columns': return (b.items || []).map(c => `${c?.title || ''}\n${c?.text || ''}`).join('\n')
-    case 'coupon': return `${b.title || ''} ${b.note || ''}`
+    case 'coupon': return `${b.offer || ''} ${b.title || ''} ${b.note || ''}`
     default: return ''
   }
 }

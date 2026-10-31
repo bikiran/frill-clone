@@ -63,6 +63,13 @@ export const safeImage = (raw: unknown) => safeUrl(raw, false)
 
 const hex = (v: unknown, fallback: string) => (HEX.test(String(v || '')) ? String(v) : fallback)
 
+/** Blend two #rrggbb colours: t = how much of `to` (0..1). Email can't use color-mix(). */
+function mixHex(from: string, to: string, t: number): string {
+  const p = (h: string) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16))
+  const x = p(hex(from, DEFAULT_ACCENT)), y = p(hex(to, '#ffffff'))
+  return '#' + x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, '0')).join('')
+}
+
 /** White or near-black text, whichever reads better on this colour. */
 export function textOn(bg: string): string {
   const h = hex(bg, DEFAULT_ACCENT).slice(1)
@@ -212,13 +219,40 @@ function blockHtml(b: Block, ctx: Ctx): string {
       return row(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:6px 0 4px">${rows}</table>`)
     }
     case 'coupon': {
+      // A ticket, like the coupon in chat: the offer on a coloured top, notches
+      // and a dashed tear line, then the code. Tables only: the notches are
+      // quarter circles in the card's colour either side of the tear line.
       const code = String(b.code || '').trim()
       if (!code && !preview) return ''
-      return row(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 22px"><tr><td align="center" bgcolor="${C.soft}" style="background-color:${C.soft};border:2px dashed ${accent};border-radius:${ctx.r + 2}px;padding:20px 16px">
-${b.title ? `<p style="margin:0 0 8px;font-family:${ctx.font};font-size:14px;font-weight:700;color:${C.body}">${escapeHtml(b.title)}</p>` : ''}
-<p style="margin:0;font-family:${MONO};font-size:26px;line-height:1.2;font-weight:700;letter-spacing:3px;color:${C.ink}">${escapeHtml(code || 'CODE')}</p>
-${b.note ? `<p style="margin:8px 0 0;font-family:${ctx.font};font-size:13px;color:${C.muted}">${escapeHtml(b.note)}</p>` : ''}
-</td></tr></table>`)
+      const offer = String(b.offer || '').trim()
+      const label = offer ? String(b.title || '').trim() || 'Coupon' : 'Coupon'
+      const headline = offer || String(b.title || '').trim() || 'Your code'
+      const split = /^([$€£]?\d[\d.,]*%?)\s+(.{1,30})$/.exec(headline)
+      const on = textOn(accent)
+      const light = mixHex(accent, '#ffffff', 0.14), dark = mixHex(accent, '#000000', 0.2)
+      const tint = mixHex(accent, '#ffffff', 0.92), dash = mixHex(accent, '#ffffff', 0.55)
+      const R = Math.round(ctx.r * 1.25), N = 12
+      const notch = (radius: string) => `<div style="width:${N}px;height:${N}px;background-color:${C.card};${radius};font-size:0;line-height:0">&nbsp;</div>`
+      const cell = (inner: string) => `<td width="${N}" style="width:${N}px;padding:0;font-size:0;line-height:0">${inner}</td>`
+      const big = split
+        ? `${escapeHtml(split[1])}<span style="font-size:16px;font-weight:600;letter-spacing:0;padding-left:6px">${escapeHtml(split[2])}</span>`
+        : escapeHtml(headline)
+      return row(`<table role="presentation" width="100%" align="center" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:340px;margin:8px auto 24px;border-collapse:separate">
+<tr><td bgcolor="${accent}" style="background-color:${accent};background-image:linear-gradient(135deg,${light},${dark});border-radius:${R}px ${R}px 0 0;padding:0;color:${on}">
+<div style="padding:18px 22px 10px">
+<p style="margin:0;font-family:${ctx.font};font-size:12px;line-height:1.3;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${on};opacity:.92">${escapeHtml(label)}</p>
+<p style="margin:6px 0 0;font-family:${ctx.font};font-size:34px;line-height:1.05;font-weight:800;letter-spacing:-.5px;color:${on}">${big}</p>
+</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${cell(notch(`border-top-right-radius:${N}px`))}<td style="font-size:0;line-height:0">&nbsp;</td>${cell(notch(`border-top-left-radius:${N}px`))}</tr></table>
+</td></tr>
+<tr><td bgcolor="${tint}" style="background-color:${tint};border-radius:0 0 ${R}px ${R}px;padding:0">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${cell(notch(`border-bottom-right-radius:${N}px`))}<td style="padding:0 6px;font-size:0;line-height:0;vertical-align:top"><div style="border-top:2px dashed ${dash};font-size:0;line-height:0;height:0">&nbsp;</div></td>${cell(notch(`border-bottom-left-radius:${N}px`))}</tr></table>
+<div style="padding:4px 22px 18px">
+<p style="margin:0;font-family:${MONO};font-size:24px;line-height:1.25;font-weight:800;letter-spacing:3px;color:${C.ink};word-break:break-all">${escapeHtml(code || 'CODE')}</p>
+${b.note ? `<p style="margin:6px 0 0;font-family:${ctx.font};font-size:13px;line-height:1.45;color:${C.muted}">${escapeHtml(b.note)}</p>` : ''}
+</div>
+</td></tr>
+</table>`)
     }
     case 'divider':
       return row(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:12px 0 20px"><tr><td style="border-top:1px solid ${C.border};font-size:0;line-height:0;height:1px">&nbsp;</td></tr></table>`)
@@ -281,7 +315,7 @@ function blockText(b: Block, brand: EmailBrand): string {
     case 'image': { const u = safeUrl(b.url, false); return u && b.alt ? `${b.alt}: ${u}` : '' }
     case 'button': { const u = safeUrl(b.url); return u && b.label ? `${b.label}: ${u}` : '' }
     case 'products': return (b.items || []).filter(p => p?.name).map(p => [p.name + (p.price ? ` (${p.price})` : ''), safeUrl(p.url, false)].filter(Boolean).join('\n')).join('\n\n')
-    case 'coupon': return b.code ? `${b.title ? b.title + ': ' : 'Code: '}${b.code}${b.note ? `\n${b.note}` : ''}` : ''
+    case 'coupon': return b.code ? `${b.offer ? `${b.offer}\n` : ''}${b.title ? b.title + ': ' : 'Code: '}${b.code}${b.note ? `\n${b.note}` : ''}` : ''
     case 'divider': return '----------'
     case 'spacer': return ''
     case 'social': return (b.links || []).map(l => { const u = safeUrl(l.url, false); return u ? `${SOCIAL_LABEL[l.network] || 'Link'}: ${u}` : '' }).filter(Boolean).join('\n')
