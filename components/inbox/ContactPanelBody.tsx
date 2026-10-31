@@ -18,7 +18,7 @@ import { decodeEntities as dec } from '@/lib/decode-entities'
 import { emailAttachmentKind, emailAttachmentUrl } from '@/components/EmailMessage'
 import { sizedImageFallback, sizedImageUrl, toPublicUrl } from '@/lib/storage-url'
 import ReviewRequestButton from '@/components/composer/ReviewRequestButton'
-import { posSaleInfo, prextySpendIncGst } from '@/lib/prexty-pos'
+import { posSaleInfo, prextyInStore } from '@/lib/prexty-pos'
 import PrextyMark from '@/components/PrextyMark'
 import ResilientImage from '@/components/ResilientImage'
 import { AiSparkIcon, CHANNEL_ICON, CHANNEL_NAME, Highlight, Icon, STATUS_COLOR, STATUS_ICON, VideoTileMark, fmtDateTime, fmtTime, timeOpts, videoPoster } from '@/components/inbox/inbox-shared'
@@ -876,18 +876,21 @@ export default function ContactPanelBody() {
             })()}
 
             {/* Prexty POS customer — a compact strip rather than a big tinted
-                block, so the order history below stays the focus. */}
-            {prextyCustomer && (() => {
+                block, so the order history below stays the focus. Only their
+                in-store side: Prexty also holds the store's web orders, so an
+                online-only customer is in Prexty too (lib/prexty-pos). Waits
+                for the orders, which it needs to tell the two apart. */}
+            {prextyCustomer && !wooOrdersLoading && (() => {
               const money = (n: any) => `$${Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              const inStore = prextyInStore(prextyCustomer, wooOrders)
               const stats = [
-                // Including GST, like every other price in Colvy (Prexty's own figure is before GST).
-                { label: 'Spent inc GST', value: prextyCustomer.totalSpent > 0 || prextyCustomer.totalSpentIncTax > 0
-                  ? money(prextySpendIncGst(prextyCustomer, wooOrders.filter((o: any) => o.pos_source === 'prexty' || posSaleInfo(o).isPos)))
-                  : '—' },
-                { label: prextyCustomer.totalOrders === 1 ? 'Sale' : 'Sales', value: String(prextyCustomer.totalOrders || 0) },
+                // Including GST, like every other price in Colvy.
+                ...(inStore && inStore.spend != null ? [{ label: 'Spent in store', value: money(inStore.spend) }] : []),
+                ...(inStore ? [{ label: inStore.sales === 1 ? 'In-store sale' : 'In-store sales', value: String(inStore.sales) }] : []),
                 ...(prextyCustomer.loyaltyPoints > 0 ? [{ label: 'Points', value: String(prextyCustomer.loyaltyPoints) }] : []),
                 ...(prextyCustomer.storeCredit > 0 ? [{ label: 'Credit', value: money(prextyCustomer.storeCredit) }] : []),
               ]
+              if (!stats.length) return null
               const where = [prextyCustomer.city, prextyCustomer.state].filter(Boolean).join(', ')
               const since = prextyCustomer.memberSince ? new Date(prextyCustomer.memberSince).toLocaleDateString('en-AU', { month: 'short', year: 'numeric' }) : ''
               return (
@@ -897,7 +900,8 @@ export default function ContactPanelBody() {
                     <b>Prexty POS</b>
                     {(since || where) && <small>{since ? `Since ${since}` : where}</small>}
                   </div>
-                  <div className={`pt-stats n${stats.length}`}>
+                  {/* Two columns, so the labels fit; with three tiles the spend takes the first row. */}
+                  <div className={`pt-stats ${['n1', 'px2', 'px3', 'n4'][stats.length - 1]}`}>
                     {stats.map(st => (
                       <div key={st.label}><span title={st.value}>{st.value}</span><small title={st.label}>{st.label}</small></div>
                     ))}
