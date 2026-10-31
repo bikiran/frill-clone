@@ -14,6 +14,7 @@
 // pass campaignId and it saves the design against that campaign.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import TickSlider from '@/components/TickSlider'
 import EmojiPicker from '@/components/EmojiPicker'
 import { authFetch } from '@/lib/auth-fetch'
@@ -209,7 +210,7 @@ export default function EmailDesigner({ companyId, brand, sender, initial, campa
           a.acc += Math.sign(pull) * (180 + pull * pull * 1200) * dt / 1000
           const step = Math.trunc(a.acc)
           a.acc -= step
-          if (step) { if (inner) pane!.scrollTop += step; else window.scrollBy(0, step) }
+          if (step) { if (inner) pane!.scrollTop += step; else window.scrollBy(0, step); if (touchRef.current?.live) retarget() }
         }
       }
       a.raf = requestAnimationFrame(tick)
@@ -217,6 +218,101 @@ export default function EmailDesigner({ companyId, brand, sender, initial, campa
     a.raf = requestAnimationFrame(tick)
   }
   useEffect(() => () => stopAutoScroll(), [])
+
+  // Phones and tablets: their browsers don't do drag-and-drop, so blocks move by
+  // touch instead. Grab the dots to drag straight away, or press and hold a
+  // block's header. A lifted copy follows the finger; the drop line and the edge
+  // scrolling are the same as with a mouse.
+  type TouchDrag = {
+    id: string; pid: number; el: HTMLElement
+    x: number; y: number; x0: number; y0: number
+    hx: number; grabY: number; live: boolean; timer: number; off: () => void
+  }
+  const touchRef = useRef<TouchDrag | null>(null)
+  const ghostRef = useRef<HTMLDivElement>(null)
+  const [ghost, setGhost] = useState<{ id: string; left: number; width: number; top: number } | null>(null)
+  const lastTouchDrop = useRef(0)
+  const [touchUI, setTouchUI] = useState(false)
+  useEffect(() => {
+    // No hover = a touch screen: skip the browser's own drag (it can cancel ours).
+    try { setTouchUI(window.matchMedia('(hover: none)').matches) } catch {}
+    // Mobile browsers only let a page stop the scroll if a non-passive touchmove
+    // listener is already there when the finger lands, so it stays for the editor's life.
+    const noScroll = (e: TouchEvent) => { if (touchRef.current?.live && e.cancelable) e.preventDefault() }
+    document.addEventListener('touchmove', noScroll, { passive: false })
+    return () => { document.removeEventListener('touchmove', noScroll); touchRef.current?.off() }
+  }, [])
+  const placeGhost = () => {
+    const t = touchRef.current, g = ghostRef.current
+    if (t?.live && g) g.style.transform = `translate3d(0,${Math.round(t.y - t.grabY)}px,0)`
+  }
+  // Which block is under the finger, and which half of it.
+  const retarget = () => {
+    const t = touchRef.current
+    if (!t?.live) return
+    const el = (document.elementFromPoint(t.hx, t.y) as HTMLElement | null)?.closest<HTMLElement>('.ed-block')
+    if (!el || !el.id.startsWith('ed-b-')) return
+    const id = el.id.slice(5), r = el.getBoundingClientRect(), after = t.y > r.top + r.height / 2
+    const d = dragRef.current
+    if (d && (d.over !== id || d.after !== after)) setDrag({ ...d, over: id, after })
+  }
+  const beginTouch = () => {
+    const t = touchRef.current
+    if (!t || t.live) return
+    t.live = true
+    const r = t.el.getBoundingClientRect()
+    t.grabY = t.y - r.top
+    t.hx = r.left + Math.min(90, r.width / 2)
+    setGhost({ id: t.id, left: r.left, width: r.width, top: r.top })
+    setDrag({ id: t.id })
+    const a = autoScroll.current
+    if (a) { a.x = t.x; a.y = t.y }
+    try { navigator.vibrate?.(12) } catch {}
+  }
+  const touchStart = (e: React.PointerEvent, id: string) => {
+    if (e.pointerType === 'mouse' || touchRef.current || e.button > 0) return
+    if ((e.target as HTMLElement).closest('.ed-block-actions')) return
+    const el = (e.currentTarget as HTMLElement).closest<HTMLElement>('.ed-block')
+    if (!el) return
+    const t: TouchDrag = { id, pid: e.pointerId, el, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, hx: 0, grabY: 0, live: false, timer: 0, off: () => {} }
+    const finish = (drop: boolean) => {
+      window.clearTimeout(t.timer)
+      t.off()
+      if (touchRef.current === t) touchRef.current = null
+      if (!t.live) return
+      const d = dragRef.current
+      if (drop && d?.over && d.over !== d.id) moveTo(d.id, d.over, !!d.after)
+      lastTouchDrop.current = Date.now()
+      setGhost(null)
+      setDrag(null)
+    }
+    const onMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== t.pid) return
+      t.x = ev.clientX; t.y = ev.clientY
+      if (!t.live) {
+        // Moved before the hold finished: they're scrolling, not dragging.
+        if (Math.hypot(t.x - t.x0, t.y - t.y0) > 10) finish(false)
+        return
+      }
+      const a = autoScroll.current
+      if (a) { a.x = t.x; a.y = t.y }
+      placeGhost()
+      retarget()
+    }
+    const onUp = (ev: PointerEvent) => { if (ev.pointerId === t.pid) finish(true) }
+    const onCancel = (ev: PointerEvent) => { if (ev.pointerId === t.pid) finish(false) }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onCancel)
+    t.off = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onCancel)
+    }
+    touchRef.current = t
+    if ((e.target as HTMLElement).closest('.ed-grip')) beginTouch()
+    else t.timer = window.setTimeout(beginTouch, 380)
+  }
   const lastField = useRef<{ el: HTMLInputElement | HTMLTextAreaElement; set: (v: string) => void } | null>(null)
   const subjectRef = useRef<HTMLInputElement>(null)
 
@@ -473,7 +569,7 @@ export default function EmailDesigner({ companyId, brand, sender, initial, campa
               <p className="ed-hint">Tags are filled in for each customer. Add a fallback after a bar: {'{{first_name|there}}'}.</p>
             </div>
 
-            <div className="ed-sec-h"><span>Blocks</span><small>Drag to reorder, or click a block in the preview to edit it.</small></div>
+            <div className="ed-sec-h"><span>Blocks</span><small>Drag to reorder (on a phone, hold a block or grab its dots), or click a block in the preview to edit it.</small></div>
             <div className="ed-blocks">
               {blocks.map((b, i) => {
                 const open = selected === b.id
@@ -499,9 +595,12 @@ export default function EmailDesigner({ companyId, brand, sender, initial, campa
                       }
                       setDrag(null)
                     }}>
-                    <div className="ed-block-head" onClick={() => setSelected(open ? null : b.id)} role="button" tabIndex={0}
+                    <div className="ed-block-head" onClick={() => { if (Date.now() - lastTouchDrop.current > 500) setSelected(open ? null : b.id) }} role="button" tabIndex={0}
                       onKeyDown={e => { if (e.key === 'Enter') setSelected(open ? null : b.id) }} aria-expanded={open}
-                      draggable={!isFooter} onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', b.id); setDrag({ id: b.id }) }} onDragEnd={() => setDrag(null)}>
+                      onPointerDown={isFooter ? undefined : e => touchStart(e, b.id)}
+                      onContextMenu={e => { if (touchRef.current) e.preventDefault() }}
+                      draggable={!isFooter && !touchUI}
+                      onDragStart={e => { if (touchRef.current) { e.preventDefault(); return } e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', b.id); setDrag({ id: b.id }) }} onDragEnd={() => { if (!touchRef.current) setDrag(null) }}>
                       {!isFooter ? <span className="ed-grip" aria-hidden><DIcon name="grip" size={16} /></span> : <span className="ed-grip" aria-hidden />}
                       <span className="ed-block-ic"><DIcon name={b.type} /></span>
                       <span className="ed-block-title"><b>{BLOCK_LABEL[b.type]}</b><small>{summary(b)}</small></span>
@@ -641,6 +740,24 @@ export default function EmailDesigner({ companyId, brand, sender, initial, campa
           </div>
         </div>
       )}
+
+      {ghost && typeof document !== 'undefined' && (() => {
+        const gb = blocks.find(x => x.id === ghost.id)
+        if (!gb) return null
+        // At the page root (outside any transformed parent) so position:fixed follows the finger.
+        return createPortal(
+          <div className="ed ed-lift" ref={ghostRef} aria-hidden style={{ left: ghost.left, width: ghost.width, transform: `translate3d(0,${Math.round(ghost.top)}px,0)` }}>
+            <div className="ed-block ed-lift-card">
+              <div className="ed-block-head">
+                <span className="ed-grip"><DIcon name="grip" size={16} /></span>
+                <span className="ed-block-ic"><DIcon name={gb.type} /></span>
+                <span className="ed-block-title"><b>{BLOCK_LABEL[gb.type]}</b><small>{summary(gb)}</small></span>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )
+      })()}
     </div>
   )
 }
@@ -921,6 +1038,17 @@ textarea.ed-input{resize:vertical;line-height:1.55}
 .ed-block-head{display:flex;align-items:center;gap:10px;min-width:0;padding:10px 12px 10px 6px;cursor:pointer}
 .ed-grip{width:18px;flex-shrink:0;color:#c4c4c8;cursor:grab;display:inline-flex;justify-content:center}
 .ed-block-head[draggable="true"]:active .ed-grip{cursor:grabbing}
+/* Touch dragging: the lifted copy that follows the finger. */
+.ed-lift{position:fixed;top:0;z-index:700;margin:0;gap:0;pointer-events:none;will-change:transform}
+.ed-lift-card{background:var(--ed-card,#fff);box-shadow:0 0 0 1.5px var(--coral),0 22px 44px -14px rgba(16,24,40,.38)!important;animation:edLift .18s cubic-bezier(.22,1,.36,1) both}
+.ed-lift-card .ed-grip{color:var(--coral)}
+@keyframes edLift{from{transform:scale(1)}to{transform:scale(1.03) rotate(-.6deg)}}
+@media (pointer:coarse){
+  /* A bigger grip to grab with a thumb; it never scrolls the page. */
+  .ed-grip{width:34px;align-self:stretch;align-items:center;margin:-10px -4px -10px -6px;color:#a1a1aa;touch-action:none}
+  .ed-block-head{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+}
+@media (prefers-reduced-motion:reduce){.ed-lift-card{animation:none}}
 .ed-block-ic{width:36px;height:36px;flex-shrink:0;border-radius:12px;background:var(--ed-fill);color:var(--ink);display:flex;align-items:center;justify-content:center}
 .ed-block.open .ed-block-ic{background:color-mix(in srgb,var(--coral) 13%,var(--ed-card));color:var(--coral)}
 .ed-block-title{display:flex;flex-direction:column;flex:1;min-width:0}
