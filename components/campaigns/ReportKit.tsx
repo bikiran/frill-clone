@@ -185,7 +185,7 @@ a.rk-row:hover{background:#fafafa}
 .rk-chart .s1{background:var(--s1)}.rk-chart .s2{background:var(--s2)}
 .rk-plot{position:relative;height:150px;padding-left:22px;border-bottom:1px solid #e4e4e7}
 .rk-ymax{position:absolute;left:0;top:-6px;font-size:11px;color:#a1a1aa;font-variant-numeric:tabular-nums}
-.rk-plot::before{content:'';position:absolute;left:22px;right:0;top:0;border-top:1px dashed #ececef}
+.rk-plot::before{content:'';position:absolute;left:22px;right:0;top:0;border-top:1px solid #f0f0f2}
 .rk-bars{position:relative;display:flex;align-items:stretch;gap:4px;height:100%}
 .rk-day{position:relative;flex:1;min-width:0;display:flex;align-items:flex-end;justify-content:center;border-radius:6px;outline:none;cursor:default}
 .rk-day.on,.rk-day:focus-visible{background:#f4f4f5}
