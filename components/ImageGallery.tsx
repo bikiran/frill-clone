@@ -2,7 +2,7 @@
 
 import { useState, useRef } from 'react'
 import { uploadIdeaImage, deleteIdeaImage, reorderIdeaImages } from '@/lib/imageGallery'
-import { confirmDialog } from '@/components/ConfirmDialog'
+import { alertDialog, confirmDialog } from '@/components/ConfirmDialog'
 
 export default function ImageGallery({ ideaId, images, onUpdate, isAdmin }: {
   ideaId: string
@@ -24,7 +24,7 @@ export default function ImageGallery({ ideaId, images, onUpdate, isAdmin }: {
       onUpdate()
       setGallery(prev => [...prev])
     } catch (err: any) {
-      alert('Upload failed: ' + err.message)
+      alertDialog('Upload failed: ' + err.message)
     }
     setUploading(false)
     if (fileRef.current) fileRef.current.value = ''
@@ -36,7 +36,7 @@ export default function ImageGallery({ ideaId, images, onUpdate, isAdmin }: {
       await deleteIdeaImage(imageId)
       onUpdate()
     } catch (err: any) {
-      alert('Delete failed: ' + err.message)
+      alertDialog('Delete failed: ' + err.message)
     }
   }
 

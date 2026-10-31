@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { IconEdit, IconLink, IconView, IconDelete } from '@/components/SvgIcons'
-import { confirmDialog } from '@/components/ConfirmDialog'
+import { alertDialog, confirmDialog } from '@/components/ConfirmDialog'
 import { peekCompanyUser, resolveCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import { readLocal, writeLocal } from '@/lib/local-cache'
 import { HELP_LIST_COLUMNS } from '@/lib/help-shared'
@@ -128,7 +128,7 @@ export default function HelpAdminPage() {
       await fetchArticles()
       refreshPublicHelp(companyId)
     } catch (err: any) {
-      alert('Seed failed: ' + err.message)
+      alertDialog('Seed failed: ' + err.message)
     }
     setSeeding(false)
   }
@@ -145,7 +145,7 @@ export default function HelpAdminPage() {
 
   const copyLink = (id: string) => {
     navigator.clipboard.writeText(`${window.location.origin}/help/${id}`)
-    alert('Link copied!')
+    alertDialog('Link copied!')
     setOpenMenuId(null)
   }
 

@@ -9,7 +9,7 @@ import { extractDominantColor } from '@/lib/extract-color'
 import Link from 'next/link'
 import FormAiChat, { FormSnapshot, AiSpark } from '@/components/FormAiChat'
 import FormLogicModal from '@/components/FormLogicModal'
-import { confirmDialog } from '@/components/ConfirmDialog'
+import { alertDialog, confirmDialog } from '@/components/ConfirmDialog'
 import {
   readFormLogic, resolveWelcome, estimateMinutes, validateLogic, countRules, countAllRules, findReferences,
   type FormQuestion, type FormVariable, type WelcomeSettings,
@@ -462,7 +462,7 @@ export default function FormBuilder() {
       const { data: { publicUrl } } = supabase.storage.from(uploadBucket).getPublicUrl(data.path)
       return { url: publicUrl, mediaType: file.type.startsWith('video') ? 'video' : 'image' }
     } catch (e: any) {
-      alert('Media upload failed: ' + e.message)
+      alertDialog('Media upload failed: ' + e.message)
       return null
     } finally {
       setMediaUploading(k => (k === key ? '' : k))
@@ -494,7 +494,7 @@ export default function FormBuilder() {
         return { ...q, optionImages: imgs }
       }))
     } catch (e: any) {
-      alert('Image upload failed: ' + e.message)
+      alertDialog('Image upload failed: ' + e.message)
     }
     setMediaUploading('')
   }

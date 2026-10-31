@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { alertDialog } from '@/components/ConfirmDialog'
 
 // Single-origin Google Drive picker.
 //
@@ -58,7 +59,7 @@ export function useGoogleDrivePicker(onPicked: (files: DrivePickedFile[]) => voi
     const left = typeof window !== 'undefined' ? window.screenX + (window.outerWidth - w) / 2 : 0
     const top = typeof window !== 'undefined' ? window.screenY + (window.outerHeight - h) / 2 : 0
     popupRef.current = window.open(url, 'colvy-drive', `width=${w},height=${h},left=${left},top=${top}`)
-    if (!popupRef.current) { setLoading(false); alert('Please allow pop-ups to import from Google Drive.') }
+    if (!popupRef.current) { setLoading(false); alertDialog('Please allow pop-ups to import from Google Drive.') }
   }, [])
 
   return { configured, ready, loading, openPicker }

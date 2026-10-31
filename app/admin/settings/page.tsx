@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useToast, ToastContainer } from '@/lib/toast'
 import { useEntitlements } from '@/lib/entitlements-client'
-import { confirmDialog } from '@/components/ConfirmDialog'
+import { alertDialog, confirmDialog } from '@/components/ConfirmDialog'
 import TerminologySettings from '@/components/TerminologySettings'
 import { cleanTerms } from '@/lib/terminology'
 import { WP_PLUGIN_VERSION } from '@/lib/wp-plugin'
@@ -649,7 +649,7 @@ export default function SettingsPage() {
         }
       } catch {}
     } catch (err: any) {
-      alert('Upload failed: ' + err.message + '\n\nMake sure a "settings" or "idea-images" storage bucket exists in Supabase with public access.')
+      alertDialog('Upload failed: ' + err.message + '\n\nMake sure a "settings" or "idea-images" storage bucket exists in Supabase with public access.')
     }
   }
 
@@ -872,7 +872,7 @@ export default function SettingsPage() {
                   <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Delete all Ideas</p>
                   <p className="text-xs mt-0.5" style={{ color: 'var(--slate)' }}>Once you delete Ideas, there is no going back so please be certain.</p>
                 </div>
-                <button onClick={async () => { if (await confirmDialog('Delete ALL ideas? This cannot be undone!')) alert('Contact support to delete all ideas.') }}
+                <button onClick={async () => { if (await confirmDialog('Delete ALL ideas? This cannot be undone!')) alertDialog('Contact support to delete all ideas.') }}
                   className="px-4 py-2 rounded-xl border text-sm font-semibold cursor-pointer"
                   style={{ borderColor: '#fca5a5', color: '#dc2626' }}>
                   Delete all Ideas
@@ -889,7 +889,7 @@ export default function SettingsPage() {
                   if (String(typed || '').trim().toUpperCase() !== 'DELETE') return
                   const res = await authFetch('/api/account/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: 'DELETE' }) })
                   const d = await res.json().catch(() => ({}))
-                  if (!res.ok) { alert(d?.error || 'Couldn’t delete the account.'); return }
+                  if (!res.ok) { alertDialog(d?.error || 'Couldn’t delete the account.'); return }
                   try { await supabase.auth.signOut({ scope: 'local' }) } catch {}
                   window.location.href = '/'
                 }}
@@ -2307,7 +2307,7 @@ window.YourApp('container', {
                   onClick={() => {
                     const code = `<!-- YourApp Widget Script -->\n<script>(function(t,r){function s(){var a=r.getElementsByTagName("script")[0],e=r.createElement("script");e.type="text/javascript",e.async=!0,e.src="${window.location.origin}/widget.js";a.parentNode.insertBefore(e,a)}if(!t.YourApp){var o=0,i={};t.YourApp=function(e,p){var n,l=o++,c=new Promise(function(v,d){i[l]={params:[e,p],resolve:function(f){n=f,v(f)},reject:d}});return c.destroy=function(){delete i[l],n&&n.destroy()},c},t.YourApp.q=i;}r.readyState==="complete"||r.readyState==="interactive"?s():r.addEventListener("DOMContentLoaded",s)})(window,document);\nwindow.YourApp('container', { key: 'container_${user?.id?.slice(0, 12) || 'YOUR_KEY_HERE'}' });\n</script>\n<!-- End YourApp Script -->`
                     navigator.clipboard.writeText(code)
-                    alert('Code copied to clipboard!')
+                    alertDialog('Code copied to clipboard!')
                   }}
                   className="absolute top-2 right-2 px-3 py-1.5 rounded-md text-xs font-medium bg-white/10 hover:bg-white/20 transition-smooth cursor-pointer flex items-center gap-1"
                   style={{ color: '#cdd6f4' }}>
@@ -2333,7 +2333,7 @@ window.YourApp('container', {
             <div>
               <p className="text-sm font-semibold mb-2" style={{ color: 'var(--ink)' }}>3. Test the script</p>
               <button 
-                onClick={() => alert('Add the snippet to your website, then click here to verify installation.')}
+                onClick={() => alertDialog('Add the snippet to your website, then click here to verify installation.')}
                 className="px-4 py-2 rounded-lg text-sm font-medium border transition-smooth cursor-pointer hover:bg-gray-50"
                 style={{ borderColor: 'var(--coral)', color: 'var(--coral)' }}>
                 Test installation

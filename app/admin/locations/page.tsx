@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
 import PageHeader from '@/components/PageHeader'
-import { confirmDialog } from '@/components/ConfirmDialog'
+import { alertDialog, confirmDialog } from '@/components/ConfirmDialog'
 import EmptyScroll from '@/components/EmptyScroll'
 
 const AU_STATES = ['ACT', 'NSW', 'NT', 'QLD', 'SA', 'TAS', 'VIC', 'WA']
@@ -24,13 +24,13 @@ export default function LocationsPage() {
       })
       const data = await res.json()
       if (data.ok) {
-        alert(`Geocoded ${data.geocoded} outlet(s). Victorian visitors will now be auto-assigned to the nearest one.`)
+        alertDialog(`Geocoded ${data.geocoded} outlet(s). Victorian visitors will now be auto-assigned to the nearest one.`)
         await loadLocations(companyId)
       } else {
-        alert('Geocoding failed: ' + (data.error || 'unknown error'))
+        alertDialog('Geocoding failed: ' + (data.error || 'unknown error'))
       }
     } catch (e: any) {
-      alert('Geocoding failed: ' + e.message)
+      alertDialog('Geocoding failed: ' + e.message)
     } finally {
       setGeocoding(false)
     }
@@ -97,7 +97,7 @@ export default function LocationsPage() {
       }
       await loadLocations(companyId)
       setEditing(null)
-    } catch (e: any) { alert('Error: ' + e.message) }
+    } catch (e: any) { alertDialog('Error: ' + e.message) }
     setSaving(false)
   }
 

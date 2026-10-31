@@ -12,7 +12,7 @@ import VideoTrimmer from '@/components/VideoTrimmer'
 import MentionInput, { resolveMentions } from '@/components/MentionInput'
 import { useGoogleDrivePicker } from '@/components/GoogleDrivePicker'
 import PhoneUploadQR from '@/components/PhoneUploadQR'
-import { confirmDialog } from '@/components/ConfirmDialog'
+import { alertDialog, confirmDialog } from '@/components/ConfirmDialog'
 import { authFetch } from '@/lib/auth-fetch'
 import { loadStaffRows } from '@/lib/team-list'
 import EmptyScroll from '@/components/EmptyScroll'
@@ -108,7 +108,7 @@ export default function GalleryPage() {
       await catApi({ action: 'create', name: newCatName.trim() })
       setNewCatName('')
       await loadCategories()
-    } catch (e: any) { alert(e.message) }
+    } catch (e: any) { alertDialog({ title: 'Couldn’t add the category', message: e.message }) }
   }
 
   const toggleItemCategory = async (itemId: string, catId: string) => {
@@ -116,7 +116,7 @@ export default function GalleryPage() {
     const next = current.includes(catId) ? current.filter(c => c !== catId) : [...current, catId]
     setItemCats(prev => ({ ...prev, [itemId]: next }))   // optimistic
     try { await catApi({ action: 'set_item', itemId, categoryIds: next }) }
-    catch (e: any) { alert(e.message); await loadCategories() }
+    catch (e: any) { alertDialog({ title: 'Couldn’t change the photo’s category', message: e.message }); await loadCategories() }
   }
 
   // Create a category AND put this photo in it, without leaving the card.
@@ -129,7 +129,7 @@ export default function GalleryPage() {
       const created = d.category || d.categories?.find((c: any) => c.name === name)
       await loadCategories()
       if (created?.id) await toggleItemCategory(itemId, created.id)
-    } catch (e: any) { alert(e.message) }
+    } catch (e: any) { alertDialog({ title: 'Couldn’t add the category', message: e.message }) }
   }
 
   // Close the category picker when clicking elsewhere.
@@ -147,7 +147,7 @@ export default function GalleryPage() {
       await catApi({ action: 'bulk_add', itemIds: Array.from(selected), categoryId: catId })
       clearSelection()
       await loadCategories()
-    } catch (e: any) { alert(e.message) }
+    } catch (e: any) { alertDialog({ title: 'Couldn’t add the photos to that category', message: e.message }) }
   }
 
   // ── Bulk selection ────────────────────────────────────────────────────────
@@ -178,7 +178,7 @@ export default function GalleryPage() {
           clearSelection()
           await load()
         } catch (e: any) {
-          alert('Could not delete: ' + e.message)
+          alertDialog('Could not delete: ' + e.message)
         } finally { setBulkBusy(false) }
       },
     })
@@ -192,7 +192,7 @@ export default function GalleryPage() {
       clearSelection()
       await load()
     } catch (e: any) {
-      alert('Could not move: ' + e.message)
+      alertDialog('Could not move: ' + e.message)
     } finally { setBulkBusy(false) }
   }
 
@@ -676,11 +676,11 @@ export default function GalleryPage() {
 
   const connectSource = (source: 'google_drive' | 'canva') => {
     if (source === 'google_drive') {
-      if (!driveConfigured) { alert('Google Drive import needs to be configured first (Google API key + OAuth client ID). Once those are set, this button opens your Drive to pick files.'); return }
+      if (!driveConfigured) { alertDialog('Google Drive import needs to be configured first (Google API key + OAuth client ID). Once those are set, this button opens your Drive to pick files.'); return }
       openPicker()
       return
     }
-    alert("Canva import isn't connected yet. Once we set up the Canva app, you'll be able to pick designs here. For now, export from Canva and use Upload media.")
+    alertDialog("Canva import isn't connected yet. Once we set up the Canva app, you'll be able to pick designs here. For now, export from Canva and use Upload media.")
   }
 
   // Delete → Trash (soft). Optimistic: drop it from the grid immediately.
@@ -1460,7 +1460,7 @@ export default function GalleryPage() {
                           message: `Delete the “${c.name}” category? Your photos aren't deleted — they just leave this category.`,
                           confirmLabel: 'Delete category', danger: true,
                           onConfirm: async () => {
-                            try { await catApi({ action: 'delete', id: c.id }); await loadCategories() } catch (err: any) { alert(err.message) }
+                            try { await catApi({ action: 'delete', id: c.id }); await loadCategories() } catch (err: any) { alertDialog({ title: 'Couldn’t delete the category', message: err.message }) }
                           },
                         })
                       }}
@@ -1773,7 +1773,7 @@ function MediaDetailsPanel({ item, folders, categories, itemCats, companyId, use
     const { data, error } = await (supabase as any).from('media_item_notes').insert(row).select().maybeSingle()
     if (error) {
       if (/does not exist|schema cache/i.test(error.message)) setNotesMissing(true)
-      else alert(`Could not save the note: ${error.message}`)
+      else alertDialog(`Could not save the note: ${error.message}`)
       setPosting(false)
       return
     }

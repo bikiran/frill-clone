@@ -5,6 +5,7 @@
 // components/engage/data.ts as the signed-in member.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { alertDialog } from '@/components/ConfirmDialog'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { resolveCompanyUser } from '@/lib/client-cache'
@@ -106,7 +107,7 @@ export default function EngageListPage({ kind }: { kind: EngageKind }) {
   const underCap = () => {
     const limit = limitOf(kind === 'poll' ? 'polls' : 'surveys')
     if (typeof limit === 'number' && isFinite(limit) && items.length >= limit) {
-      alert(limit === 0
+      alertDialog(limit === 0
         ? `${kind === 'poll' ? 'Polls' : 'Surveys'} aren’t included in your plan. Upgrade to the Feedback or Everything plan to create them.`
         : `You’ve reached your plan’s limit of ${limit} ${noun}${limit === 1 ? '' : 's'}. Upgrade to add more.`)
       return false

@@ -1,5 +1,6 @@
 'use client'
 import { authFetch } from '@/lib/auth-fetch'
+import { alertDialog } from '@/components/ConfirmDialog'
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -342,7 +343,7 @@ export default function SocialEngagementPage() {
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Action failed')
       return d
-    } catch (e: any) { alert(e.message); throw e }
+    } catch (e: any) { alertDialog({ title: 'Couldn’t update that comment', message: e.message }); throw e }
   }
 
   const doReply = async () => {
