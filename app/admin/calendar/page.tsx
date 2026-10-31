@@ -207,9 +207,6 @@ const CAL_CSS = `
   .cl-muted { margin: 18px 0 4px; font-size: 13.5px; color: #8e8e93; }
   .cl-results { margin: 0; padding: 16px 20px 0; font-size: 13.5px; font-weight: 500; color: #71717a; }
 
-  .cl-note { display: flex; gap: 10px; align-items: flex-start; margin-top: 16px; padding: 12px 14px; border-radius: 16px; background: #fafafa; font-size: 13px; color: #71717a; line-height: 1.5; }
-  .cl-note > svg { flex-shrink: 0; margin-top: 2px; color: #a1a1aa; }
-  .cl-note b { color: #3f3f46; font-weight: 600; }
 
   .cl-scrim { position: fixed; inset: 0; z-index: 4000; background: rgba(15,15,20,.3); animation: clFade .2s ease; }
   .cl-panel { position: fixed; top: 8px; right: 8px; bottom: 8px; width: 440px; max-width: calc(100vw - 16px); z-index: 4001; display: flex; flex-direction: column; background: #f4f4f5; border-radius: 24px; overflow: hidden; box-shadow: 0 24px 64px rgba(0,0,0,.22), 0 0 0 1px rgba(0,0,0,.05); animation: clIn .32s cubic-bezier(.22,1,.36,1); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); }
@@ -1059,11 +1056,6 @@ export default function CalendarPage() {
           </div>
         </div>
       )}
-
-      <div className="cl-note">
-        <Ic n="info" s={15} />
-        <span><b>Prexty sync isn’t available yet.</b> Prexty POS doesn’t offer an API we can use, so everything here is Colvy’s own calendar. When Prexty is ready, your existing events will sync without re-entering anything.</span>
-      </div>
 
       {/* A day's events, or one event, in a panel that floats in from the right. */}
       {(dayOpen || selectedEvent) && (

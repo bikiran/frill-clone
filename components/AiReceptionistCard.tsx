@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { authFetch } from '@/lib/auth-fetch'
+import { CK_ICON, CkHead, CkOption, CkSave, CkStyle, CkToggle } from '@/components/calls/CallKit'
 import {
   PHONE_MODES, PHONE_SKILLS, DUE_HOURS, MAX_GREETING, MAX_NEVER_LINES, defaultGreeting, greetingSaysAi, receptionistSummary,
   type PhoneMode, type PhoneSkill, type PhoneSkills,
@@ -33,12 +34,6 @@ const toForm = (x: Data): Form => ({
   mode: x.mode || 'test', alsoNoAnswer: !!x.alsoNoAnswer, greeting: x.greeting || '', skills: { ...x.skills }, never: (x.neverDiscuss || []).join('\n'),
   assigneeId: x.tasks?.assigneeId || '', urgentPriority: x.tasks?.urgentPriority === 'normal' ? 'normal' : 'high', dueHours: x.tasks?.dueHours ? String(x.tasks.dueHours) : '',
 })
-
-const Info = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }}>
-    <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
-  </svg>
-)
 
 export default function AiReceptionistCard({ companyId }: { companyId: string }) {
   const [d, setD] = useState<Data | null>(null)
@@ -87,152 +82,143 @@ export default function AiReceptionistCard({ companyId }: { companyId: string })
     } catch { setMsg({ ok: false, text: 'Could not reach Colvy. Try again.' }) } finally { setBusy(false) }
   }
 
-  const label: React.CSSProperties = { display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }
-  const hint: React.CSSProperties = { margin: '0 0 14px', fontSize: 12, color: 'var(--slate)', lineHeight: 1.45 }
-  const warn: React.CSSProperties = { display: 'flex', gap: 7, margin: '0 0 12px', fontSize: 12.5, color: '#b45309', lineHeight: 1.45 }
-  const field: React.CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, background: '#fff', fontFamily: 'inherit' }
-  const section: React.CSSProperties = { margin: '18px 0 8px', paddingTop: 14, borderTop: '1px solid var(--border)', fontSize: 13, fontWeight: 800, color: 'var(--ink)' }
-  const check = (on: boolean, onChange: (v: boolean) => void, text: React.ReactNode, sub?: React.ReactNode, disabled?: boolean) => (
-    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 9, fontSize: 13.5, color: 'var(--ink)', marginBottom: 10, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.6 : 1 }}>
-      <input type="checkbox" checked={on} disabled={disabled} onChange={e => onChange(e.target.checked)} style={{ width: 16, height: 16, marginTop: 2, flexShrink: 0, accentColor: 'var(--coral)' }} />
-      <span style={{ minWidth: 0 }}>{text}{sub ? <span style={{ display: 'block', fontSize: 12, color: 'var(--slate)', marginTop: 2, lineHeight: 1.4 }}>{sub}</span> : null}</span>
-    </label>
-  )
+  const note = (text: React.ReactNode) => <p className="ck-note">{CK_ICON.warn}<span>{text}</span></p>
 
   return (
-    <div className="arc" style={{ border: '1px solid var(--border)', background: '#fff', borderRadius: 14, padding: 16, marginBottom: 18 }}>
-      <style>{`
-        .arc-modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; margin-bottom: 12px; }
-        .arc-mode { display: flex; gap: 9px; align-items: flex-start; border: 1px solid var(--border); border-radius: 11px; padding: 11px 12px; cursor: pointer; background: #fff; min-width: 0; }
-        .arc-mode.on { border-color: var(--coral); background: var(--peach, #fff7f3); }
-        .arc-mode input { accent-color: var(--coral); margin-top: 2px; flex-shrink: 0; }
-        .arc-rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 6px; }
-      `}</style>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-        <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>AI receptionist</p>
-        <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: status.c, background: status.b, borderRadius: 6, padding: '2px 7px' }}>{status.t}</span>
-      </div>
-      <p style={{ margin: '0 0 14px', fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.45 }}>
-        Answers the phone, says it&rsquo;s an AI, and helps with opening hours, orders, stock, bookings and your AI Knowledge. If it can&rsquo;t help it takes a message and creates a call-back task. {d.voicemailEnabled ? 'Callers can press 0 for voicemail.' : 'Voicemail is off, so a caller who presses 0 is asked to call back.'} The full conversation is saved as a note in the caller&rsquo;s conversation.
-      </p>
+    <section className="ck-card arc">
+      <CkStyle />
+      <style>{ARC_CSS}</style>
+      <CkHead icon={CK_ICON.sparkle} tone="#db2777" title="AI receptionist"
+        badge={<span className="ck-badge" style={{ color: status.c, background: status.b }}><i aria-hidden />{status.t}</span>}>
+        Answers the phone, says it&rsquo;s an AI, and helps with opening hours, orders, stock, bookings and your AI Knowledge. If it can&rsquo;t help it takes a message and creates a call-back task. {d.voicemailEnabled ? 'Callers can press 0 for voicemail. ' : 'Voicemail is off, so a caller who presses 0 is asked to call back. '}The full conversation is saved as a note in the caller&rsquo;s conversation.
+      </CkHead>
       {!d.supported ? (
-        <p style={{ margin: 0, fontSize: 12.5, color: '#b45309' }}>The AI receptionist works with Twilio numbers for now. Your calls carry on as they do today.</p>
+        <p className="ck-note" style={{ marginTop: 0 }}>{CK_ICON.info}<span>The AI receptionist works with Twilio numbers for now. Your calls carry on as they do today.</span></p>
       ) : (
         <>
-          {check(f.enabled, v => set({ enabled: v }), <strong style={{ fontWeight: 700 }}>Turn on the AI receptionist</strong>)}
+          <CkToggle on={f.enabled} onChange={v => set({ enabled: v })} title="Turn on the AI receptionist" sub={f.enabled ? undefined : 'Off: your calls ring as they do now.'} />
 
-          <p style={{ ...label, marginTop: 4 }} id="arc-when">When the AI answers</p>
-          <div className="arc-modes" role="radiogroup" aria-labelledby="arc-when">
+          <span className="ck-lbl" id="arc-when" style={{ marginTop: 18 }}>When the AI answers</span>
+          <div className="ck-opts" role="radiogroup" aria-labelledby="arc-when">
             {PHONE_MODES.map(m => (
-              <label key={m.id} className={`arc-mode${f.mode === m.id ? ' on' : ''}`}>
-                <input type="radio" name="arc-mode" value={m.id} checked={f.mode === m.id} onChange={() => set({ mode: m.id })} />
-                <span style={{ minWidth: 0 }}>
-                  <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{m.label}</span>
-                  <span style={{ display: 'block', fontSize: 12, color: 'var(--slate)', lineHeight: 1.4, marginTop: 2 }}>{m.about}</span>
-                </span>
-              </label>
+              <CkOption key={m.id} name="arc-mode" checked={f.mode === m.id} onChange={() => set({ mode: m.id })} title={m.label} sub={m.about} />
             ))}
           </div>
-          {f.mode === 'after_hours' && check(f.alsoNoAnswer, v => set({ alsoNoAnswer: v }), `Also answer during opening hours when nobody picks up within ${d.ringSeconds || 25} seconds`)}
-          {f.mode === 'after_hours' && !d.hoursKnown && (
-            <p style={warn}><Info /><span>We can&rsquo;t tell your opening hours right now, so the AI won&rsquo;t know when you&rsquo;re closed. Connect Google Business Profile so it has your hours.</span></p>
+          {f.mode === 'after_hours' && (
+            <div style={{ marginTop: 8 }}>
+              <CkToggle plain on={f.alsoNoAnswer} onChange={v => set({ alsoNoAnswer: v })} title={`Also answer during opening hours when nobody picks up within ${d.ringSeconds || 25} seconds`} />
+            </div>
           )}
-          {f.mode === 'always' && <p style={warn}><Info /><span>Your team&rsquo;s phones won&rsquo;t ring at all while this is on.</span></p>}
-          {d.paused && f.mode !== 'test' && <p style={warn}><Info /><span>All agents are paused, so only your test numbers get the AI until you resume them.</span></p>}
+          {f.mode === 'after_hours' && !d.hoursKnown && note(<>We can&rsquo;t tell your opening hours right now, so the AI won&rsquo;t know when you&rsquo;re closed. Connect Google Business Profile so it has your hours.</>)}
+          {f.mode === 'always' && note(<>Your team&rsquo;s phones won&rsquo;t ring at all while this is on.</>)}
+          {d.paused && f.mode !== 'test' && note(<>All agents are paused, so only your test numbers get the AI until you resume them.</>)}
 
-          <div role="status" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', background: '#f8fafc', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', margin: '2px 0 14px', fontSize: 13, color: 'var(--ink)', lineHeight: 1.45 }}>
-            <Info /><span>{summary}</span>
+          <div role="status" className="ck-summary">{CK_ICON.info}<span>{summary}</span></div>
+
+          <div className="ck-gap" />
+          <label htmlFor="arc-nums" className="ck-lbl">Test numbers</label>
+          <input id="arc-nums" className="ck-in" value={f.numbers} onChange={e => set({ numbers: e.target.value })} placeholder="0412 345 678" />
+          <p className="ck-hint">Calls from these numbers always get the AI straight away, whatever you pick above. Up to {d.maxTestNumbers}, separated by commas.</p>
+
+          <div className="ck-sec">
+            <p className="ck-sec-t">What it says and does</p>
+            <label htmlFor="arc-greet" className="ck-lbl">Greeting</label>
+            <textarea id="arc-greet" className="ck-in" value={f.greeting} onChange={e => set({ greeting: e.target.value })} maxLength={MAX_GREETING} rows={3} placeholder={standard} />
+            <p className="ck-hint">Leave it blank for the standard greeting (shown in grey, it changes with when the AI answers). Write {'{business}'} for your business name.</p>
+            {f.greeting.trim() && !greetingSaysAi(f.greeting) && note(<>Tip: say it&rsquo;s an AI assistant, so callers know who they&rsquo;re talking to.</>)}
+
+            <span className="ck-lbl" style={{ marginTop: 18 }}>It can help with</span>
+            <div className="arc-skills">
+              {PHONE_SKILLS.map(sk => (
+                <CkToggle key={sk.id} on={f.skills[sk.id]} onChange={v => set({ skills: { ...f.skills, [sk.id as PhoneSkill]: v } })} title={sk.label}
+                  sub={sk.id === 'booking' && !d.bookable ? `${sk.about} Add an active service in Bookings first.` : sk.about} />
+              ))}
+            </div>
+
+            <label htmlFor="arc-never" className="ck-lbl" style={{ marginTop: 18 }}>Never discuss</label>
+            <textarea id="arc-never" className="ck-in" value={f.never} onChange={e => set({ never: e.target.value })} rows={3}
+              placeholder={'Wholesale prices\nStaff rosters\nOther shops’ prices'} />
+            <p className="ck-hint">One per line, up to {MAX_NEVER_LINES}. The AI politely says it can&rsquo;t help with these on the phone. Your rules and facts in Business Memory already apply.</p>
           </div>
 
-          <label htmlFor="arc-nums" style={label}>Test numbers</label>
-          <input id="arc-nums" value={f.numbers} onChange={e => set({ numbers: e.target.value })} placeholder="0412 345 678" style={{ ...field, marginBottom: 4 }} />
-          <p style={hint}>Calls from these numbers always get the AI straight away, whatever you pick above. Up to {d.maxTestNumbers}, separated by commas.</p>
-
-          <p style={section}>What it says and does</p>
-          <label htmlFor="arc-greet" style={label}>Greeting</label>
-          <textarea id="arc-greet" value={f.greeting} onChange={e => set({ greeting: e.target.value })} maxLength={MAX_GREETING} rows={3} placeholder={standard}
-            style={{ ...field, lineHeight: 1.5, resize: 'vertical', marginBottom: 4 }} />
-          <p style={hint}>Leave it blank for the standard greeting (shown in grey, it changes with when the AI answers). Write {'{business}'} for your business name.</p>
-          {f.greeting.trim() && !greetingSaysAi(f.greeting) && (
-            <p style={warn}><Info /><span>Tip: say it&rsquo;s an AI assistant, so callers know who they&rsquo;re talking to.</span></p>
-          )}
-
-          <p style={label}>It can help with</p>
-          {PHONE_SKILLS.map(s => (
-            <div key={s.id}>
-              {check(f.skills[s.id], v => set({ skills: { ...f.skills, [s.id as PhoneSkill]: v } }), s.label,
-                s.id === 'booking' && !d.bookable ? `${s.about} Add an active service in Bookings first.` : s.about)}
+          <div className="ck-sec">
+            <p className="ck-sec-t">Call-back tasks</p>
+            {!f.skills.message && <div style={{ marginBottom: 12 }}>{note(<>Taking messages is off, so the AI won&rsquo;t create call-back tasks.</>)}</div>}
+            <div className="arc-rules">
+              <div>
+                <label htmlFor="arc-assign" className="ck-lbl">Assign to</label>
+                <select id="arc-assign" className="ck-in" value={f.assigneeId} onChange={e => set({ assigneeId: e.target.value })}>
+                  <option value="">Nobody (the whole team sees it)</option>
+                  {(d.team || []).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="arc-urgent" className="ck-lbl">Urgent messages</label>
+                <select id="arc-urgent" className="ck-in" value={f.urgentPriority} onChange={e => set({ urgentPriority: e.target.value === 'normal' ? 'normal' : 'high' })}>
+                  <option value="high">High priority</option>
+                  <option value="normal">Normal priority</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="arc-due" className="ck-lbl">Due</label>
+                <select id="arc-due" className="ck-in" value={f.dueHours} onChange={e => set({ dueHours: e.target.value })}>
+                  <option value="">No due time</option>
+                  {DUE_HOURS.map(h => <option key={h} value={String(h)}>Within {h} hour{h === 1 ? '' : 's'} of the call</option>)}
+                </select>
+              </div>
             </div>
-          ))}
-
-          <label htmlFor="arc-never" style={{ ...label, marginTop: 6 }}>Never discuss</label>
-          <textarea id="arc-never" value={f.never} onChange={e => set({ never: e.target.value })} rows={3}
-            placeholder={'Wholesale prices\nStaff rosters\nOther shops’ prices'}
-            style={{ ...field, lineHeight: 1.5, resize: 'vertical', marginBottom: 4 }} />
-          <p style={hint}>One per line, up to {MAX_NEVER_LINES}. The AI politely says it can&rsquo;t help with these on the phone. Your rules and facts in Business Memory already apply.</p>
-
-          <p style={section}>Call-back tasks</p>
-          {!f.skills.message && <p style={warn}><Info /><span>Taking messages is off, so the AI won&rsquo;t create call-back tasks.</span></p>}
-          <div className="arc-rules">
-            <div>
-              <label htmlFor="arc-assign" style={label}>Assign to</label>
-              <select id="arc-assign" value={f.assigneeId} onChange={e => set({ assigneeId: e.target.value })} style={field}>
-                <option value="">Nobody (the whole team sees it)</option>
-                {(d.team || []).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="arc-urgent" style={label}>Urgent messages</label>
-              <select id="arc-urgent" value={f.urgentPriority} onChange={e => set({ urgentPriority: e.target.value === 'normal' ? 'normal' : 'high' })} style={field}>
-                <option value="high">High priority</option>
-                <option value="normal">Normal priority</option>
-              </select>
-            </div>
-            <div>
-              <label htmlFor="arc-due" style={label}>Due</label>
-              <select id="arc-due" value={f.dueHours} onChange={e => set({ dueHours: e.target.value })} style={field}>
-                <option value="">No due time</option>
-                {DUE_HOURS.map(h => <option key={h} value={String(h)}>Within {h} hour{h === 1 ? '' : 's'} of the call</option>)}
-              </select>
-            </div>
+            <p className="ck-hint">Every message also alerts the team, as it does now.</p>
           </div>
-          <p style={hint}>Every message also alerts the team, as it does now.</p>
 
-          <p style={section}>Voice</p>
-          <label htmlFor="arc-voice" style={label}>Voice</label>
-          <select id="arc-voice" value={f.voice} onChange={e => set({ voice: e.target.value })} style={{ ...field, width: 'auto', maxWidth: '100%', marginBottom: 14 }}>
-            {(d.voices || []).map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
-          </select>
-          {d.realtime && (d.sttOptions || []).length ? (
-            <>
-              <label htmlFor="arc-stt" style={label}>Speech recognition</label>
-              <select id="arc-stt" value={f.stt} onChange={e => set({ stt: e.target.value })} style={{ ...field, width: 'auto', maxWidth: '100%', marginBottom: 4 }}>
-                {(d.sttOptions || []).map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-              </select>
-              <p style={hint}>
+          <div className="ck-sec">
+            <p className="ck-sec-t">Voice</p>
+            <div className="arc-rules">
+              <div>
+                <label htmlFor="arc-voice" className="ck-lbl">Voice</label>
+                <select id="arc-voice" className="ck-in" value={f.voice} onChange={e => set({ voice: e.target.value })}>
+                  {(d.voices || []).map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
+                </select>
+              </div>
+              {d.realtime && (d.sttOptions || []).length ? (
+                <div>
+                  <label htmlFor="arc-stt" className="ck-lbl">Speech recognition</label>
+                  <select id="arc-stt" className="ck-in" value={f.stt} onChange={e => set({ stt: e.target.value })}>
+                    {(d.sttOptions || []).map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+                  </select>
+                </div>
+              ) : null}
+            </div>
+            {d.realtime && (d.sttOptions || []).length ? (
+              <p className="ck-hint">
                 {f.stt === 'google'
                   ? 'Doesn’t know your product names, so it can mishear them.'
                   : d.productNames
                     ? `Knows ${d.productNames.toLocaleString()} of your product names, so it hears and finds them. If a test call ends with “an application error”, switch to another option.`
                     : 'Your product names load when you save (from your connected store), so the AI can hear and find them.'}
               </p>
-            </>
-          ) : null}
-          <p style={{ margin: '0 0 12px', fontSize: 12.5, color: d.realtime ? '#15803d' : 'var(--slate)' }}>
-            {d.realtime
-              ? 'Real-time: on. Replies start speaking as they’re written, and callers can talk over the AI.'
-              : 'Real-time: off. Replies take a few seconds each. Real-time needs the voice relay server set up (see voice-server/README.md).'}
-          </p>
-          <p style={{ ...hint, marginBottom: 12 }}>Works with Twilio numbers. Calls to Telnyx numbers carry on as they do today.</p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <button type="button" onClick={save} disabled={!dirty || busy}
-              style={{ padding: '8px 16px', borderRadius: 9, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: dirty && !busy ? 'pointer' : 'default', opacity: dirty && !busy ? 1 : 0.55 }}>
-              {busy ? 'Saving…' : 'Save'}
-            </button>
-            {msg && <span role="status" style={{ fontSize: 12.5, color: msg.ok ? '#15803d' : '#b42318' }}>{msg.text}</span>}
+            ) : null}
+            <p className={`arc-rt${d.realtime ? ' on' : ''}`}><i aria-hidden />
+              {d.realtime
+                ? 'Real-time is on. Replies start speaking as they’re written, and callers can talk over the AI.'
+                : 'Real-time is off. Replies take a few seconds each. Real-time needs the voice relay server set up (see voice-server/README.md).'}
+            </p>
+            <p className="ck-hint">Works with Twilio numbers. Calls to Telnyx numbers carry on as they do today.</p>
           </div>
+
+          <CkSave dirty={dirty} busy={busy} onSave={save} msg={msg} />
         </>
       )}
-    </div>
+    </section>
   )
 }
+
+const ARC_CSS = `
+.arc-skills{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px}
+.arc-skills .ck-row+.ck-row{margin-top:0}
+.arc-rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.arc-rt{display:flex;align-items:center;gap:8px;margin:14px 0 0;font-size:13px;font-weight:500;color:var(--ck-muted)}
+.arc-rt i{width:8px;height:8px;flex-shrink:0;border-radius:50%;background:#a1a1aa}
+.arc-rt.on{color:#15803d}
+.arc-rt.on i{background:#22c55e;box-shadow:0 0 0 3px color-mix(in srgb,#22c55e 22%,transparent)}
+[data-theme="dark"] .arc-rt.on{color:#4ade80}
+`

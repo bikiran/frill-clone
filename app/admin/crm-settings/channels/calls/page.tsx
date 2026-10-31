@@ -310,13 +310,14 @@ export default function TelnyxIntegration() {
           }}
         />
       )}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        <BrandLogo brand="calls" size={48} />
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)', margin: 0 }}>Calls & SMS</h1>
-          <p style={{ fontSize: 13.5, color: 'var(--slate)', margin: '2px 0 0' }}>Call customers from your browser and text them from the inbox.</p>
+      <style>{CS_CSS}</style>
+      <div className="cs-head">
+        <BrandLogo brand="calls" size={52} />
+        <div className="cs-head-t">
+          <h1>Calls &amp; SMS</h1>
+          <p>Call customers from your browser and text them from the inbox.</p>
         </div>
-        {hasNumber && <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 600, background: '#dcfce7', color: '#15803d', padding: '3px 10px', borderRadius: 20 }}><Icon name="check" size={12} /> Active</span>}
+        {hasNumber && <span className="cs-live"><i aria-hidden />Active</span>}
       </div>
 
       {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '11px 15px', margin: '16px 0', fontSize: 13, color: '#dc2626' }}>{error}</div>}
@@ -357,63 +358,82 @@ export default function TelnyxIntegration() {
           </div>
           )}
 
+          {/* The numbers come first: they're what this page is about. */}
+          <section className="cs-nums">
+            <div className="cs-sec-h">
+              <div>
+                <h2>Your numbers</h2>
+                <p>Calls and texts to these land in your inbox.</p>
+              </div>
+              <button type="button" className="cs-add" onClick={() => { setAddingNumber(true); setAvailable([]); setAssignLocationId('') }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden><path d="M12 5v14M5 12h14" /></svg>
+                Add another number
+              </button>
+            </div>
+
+            <div className="cs-num-list">
+              {(numbers.length > 0 ? numbers : [{ id: 'legacy', phone_number: integration.phone_number, is_primary: true, monthly_cost: integration.monthly_cost || 15, location_id: null }]).map((n: any) => {
+                // Older rows have no type: an AU mobile starts +614, a 1800 number +611800.
+                const pn = String(n.phone_number || '')
+                const kind = n.number_type === 'tollfree' || pn.startsWith('+611800') ? 'tollfree' : n.number_type === 'mobile' || pn.startsWith('+614') ? 'mobile' : 'local'
+                return (
+                  <div key={n.id} className={`cs-num${n.is_primary ? ' primary' : ''}`}>
+                    <div className="cs-num-row">
+                      <span className={`cs-num-ic ${kind}`} aria-hidden>{NUM_ICON[kind]}</span>
+                      <div className="cs-num-main">
+                        <div className="cs-num-top">
+                          <b>{fmtNumber(n.phone_number)}</b>
+                          {n.is_primary && <span className="cs-chip green">Primary</span>}
+                          <span className="cs-chip">{kind === 'mobile' ? 'Mobile' : kind === 'tollfree' ? '1800' : 'Landline'}</span>
+                        </div>
+                        <div className="cs-num-meta">
+                          <span><Icon name="check" size={12} /> {kind === 'tollfree' ? 'Calls only' : kind === 'mobile' ? 'Calls & SMS' : 'Calls'}</span>
+                          {n.provisioned_by_colvy && <span>${n.monthly_cost || 15}/month</span>}
+                        </div>
+                      </div>
+                      {!n.is_primary && n.id !== 'legacy' && (
+                        <button type="button" className="cs-ghost" onClick={() => makePrimary(n.id)}>Make primary</button>
+                      )}
+                    </div>
+
+                    {/* Location assignment (only if the company has locations) */}
+                    {locations.length > 0 && n.id !== 'legacy' && (
+                      <label className="cs-loc">
+                        <span><Icon name="pin" size={13} /> Location</span>
+                        <select value={n.location_id || ''} onChange={e => assignNumberToLocation(n.id, e.target.value)}>
+                          <option value="">Unassigned (company-wide)</option>
+                          {locations.map((loc: any) => (
+                            <option key={loc.id} value={loc.id}>{loc.label || loc.suburb || 'Location'}{loc.state ? ` — ${loc.state}` : ''}</option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+
+            {locations.length === 0 && numbers.length > 0 && (
+              <p className="cs-hint">
+                <Icon name="info" size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />Add <a href="/admin/locations">business locations</a> to assign specific numbers to each.
+              </p>
+            )}
+          </section>
+
+          {/* Move an existing number to Colvy: a request our team handles with the
+              carriers (Twilio boards; ported numbers land on the platform account). */}
+          {companyId && numProvider === 'twilio' && <NumberPortingCard companyId={companyId} />}
+
+          <div className="cs-sec-h cs-sec-gap">
+            <div>
+              <h2>How calls are handled</h2>
+              <p>Who rings, what happens when nobody answers, and the AI receptionist.</p>
+            </div>
+          </div>
           {companyId && <CallAnswerSettings companyId={companyId} />}
           {companyId && <CallRoutingSettings companyId={companyId} />}
           {companyId && <CallLanguageSettings companyId={companyId} />}
           {companyId && <AiReceptionistCard companyId={companyId} />}
-
-          {/* All numbers this company owns */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase' }}>Your numbers</p>
-            <button onClick={() => { setAddingNumber(true); setAvailable([]); setAssignLocationId('') }}
-              style={{ padding: '7px 14px', borderRadius: 999, border: '1px solid var(--coral)', background: 'var(--peach)', color: 'var(--coral)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-              + Add another number
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {(numbers.length > 0 ? numbers : [{ id: 'legacy', phone_number: integration.phone_number, is_primary: true, monthly_cost: integration.monthly_cost || 15, location_id: null }]).map((n: any) => (
-              <div key={n.id} style={{ border: '1px solid var(--border)', borderRadius: 14, padding: 18, background: '#fff' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <p style={{ margin: 0, fontSize: 22, fontWeight: 800, color: 'var(--ink)' }}>{fmtNumber(n.phone_number)}</p>
-                      {n.is_primary && <span style={{ fontSize: 10, fontWeight: 700, background: '#dcfce7', color: '#059669', padding: '2px 8px', borderRadius: 20 }}>PRIMARY</span>}
-                      {n.number_type === 'mobile' && <span style={{ fontSize: 10, fontWeight: 700, background: '#eef2ff', color: '#4f46e5', padding: '2px 8px', borderRadius: 20 }}>MOBILE</span>}
-                      {n.number_type === 'tollfree' && <span style={{ fontSize: 10, fontWeight: 700, background: '#ecfeff', color: '#0e7490', padding: '2px 8px', borderRadius: 20 }}>1800</span>}
-                    </div>
-                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12, color: 'var(--slate)', marginTop: 6 }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="check" size={12} /> {n.number_type === 'tollfree' ? 'Calls only' : 'Calls & SMS'}</span>
-                      {n.provisioned_by_colvy && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="card" size={12} /> ${n.monthly_cost || 15}/mo</span>}
-                    </div>
-                  </div>
-                  {!n.is_primary && n.id !== 'legacy' && (
-                    <button onClick={() => makePrimary(n.id)} style={{ fontSize: 12, fontWeight: 600, color: 'var(--coral)', background: 'none', border: 'none', cursor: 'pointer' }}>Make primary</button>
-                  )}
-                </div>
-
-                {/* Location assignment (only if the company has locations) */}
-                {locations.length > 0 && n.id !== 'legacy' && (
-                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 12.5, color: 'var(--slate)', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="pin" size={13} /> Location:</span>
-                    <select value={n.location_id || ''} onChange={e => assignNumberToLocation(n.id, e.target.value)}
-                      style={{ flex: 1, maxWidth: 260, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, background: '#fff' }}>
-                      <option value="">Unassigned (company-wide)</option>
-                      {locations.map((loc: any) => (
-                        <option key={loc.id} value={loc.id}>{loc.label || loc.suburb || 'Location'}{loc.state ? ` — ${loc.state}` : ''}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-
-          {locations.length === 0 && numbers.length > 0 && (
-            <p style={{ margin: '14px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>
-              <Icon name="info" size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />Add <a href="/admin/locations" style={{ color: 'var(--coral)', fontWeight: 600 }}>business locations</a> to assign specific numbers to each.
-            </p>
-          )}
         </div>
       ) : (
         <div className="bn">
@@ -527,9 +547,8 @@ export default function TelnyxIntegration() {
         </div>
       )}
 
-      {/* Move an existing number to Colvy: a request our team handles with the
-          carriers (Twilio boards; ported numbers land on the platform account). */}
-      {companyId && numProvider === 'twilio' && <NumberPortingCard companyId={companyId} />}
+      {/* Without a number yet (or while adding one), moving one in is the other way to start. */}
+      {(!(numbers.length > 0 || hasNumber) || addingNumber) && companyId && numProvider === 'twilio' && <div className="cs-port-after"><NumberPortingCard companyId={companyId} /></div>}
 
       {/* BYO Telnyx is only meaningful for Telnyx-backed boards. Twilio boards are
           fully platform-managed and must never see a competing carrier's name. */}
@@ -557,6 +576,58 @@ export default function TelnyxIntegration() {
     </div>
   )
 }
+
+const NUM_ICON: Record<'mobile' | 'local' | 'tollfree', React.ReactNode> = {
+  mobile: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="2" width="12" height="20" rx="3" /><path d="M11 18h2" /></svg>,
+  local: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z" /></svg>,
+  tollfree: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z" /></svg>,
+}
+
+const CS_CSS = `
+.cs-head{display:flex;align-items:center;gap:16px;margin-bottom:26px}
+.cs-head-t{flex:1;min-width:0}
+.cs-head h1{margin:0;font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:clamp(26px,3vw,32px);font-weight:700;letter-spacing:-.04em;line-height:1.1;color:var(--ink)}
+.cs-head p{margin:5px 0 0;font-size:14.5px;line-height:1.5;color:#71717a}
+.cs-live{display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:999px;background:#dcfce7;color:#15803d;font-size:13px;font-weight:650;white-space:nowrap}
+.cs-live i{width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px color-mix(in srgb,#22c55e 25%,transparent)}
+.cs-sec-h{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.cs-sec-h h2{margin:0;font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:21px;font-weight:700;letter-spacing:-.03em;color:var(--ink)}
+.cs-sec-h p{margin:3px 0 0;font-size:13.5px;color:#71717a}
+.cs-sec-gap{margin-top:34px}
+.cs-nums{margin-bottom:16px}
+.cs-add{display:inline-flex;align-items:center;gap:7px;height:40px;padding:0 18px;border:0;border-radius:999px;background:var(--ink);color:var(--card,#fff);font:inherit;font-size:13.5px;font-weight:650;cursor:pointer;transition:transform .12s,filter .15s}
+.cs-add:hover{filter:brightness(1.15)}
+.cs-add:active{transform:scale(.98)}
+.cs-add::before,.cs-ghost::before{display:none!important}
+.cs-num-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,360px),1fr));gap:12px}
+.cs-num{display:flex;flex-direction:column;gap:14px;min-width:0;padding:20px;border-radius:24px;background:var(--card,#fff);box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04)}
+.cs-num.primary{box-shadow:0 0 0 1.5px color-mix(in srgb,#22c55e 45%,transparent),0 10px 30px -18px rgba(34,197,94,.55)}
+.cs-num-row{display:flex;align-items:center;gap:14px;min-width:0}
+.cs-num-ic{width:48px;height:48px;flex-shrink:0;border-radius:16px;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--coral) 13%,var(--card,#fff));color:var(--coral)}
+.cs-num-ic.local{background:#eff6ff;color:#2563eb}
+.cs-num-ic.tollfree{background:#ecfeff;color:#0e7490}
+.cs-num-main{flex:1;min-width:0}
+.cs-num-top{display:flex;align-items:center;flex-wrap:wrap;gap:7px}
+.cs-num-top b{font-family:var(--font-display),-apple-system,sans-serif;font-size:22px;font-weight:700;letter-spacing:-.02em;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.cs-chip{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;background:#f4f4f5;font-size:12px;font-weight:650;color:#52525b}
+.cs-chip.green{background:#dcfce7;color:#15803d}
+.cs-num-meta{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:5px;font-size:13px;color:#71717a}
+.cs-num-meta span{display:inline-flex;align-items:center;gap:5px}
+.cs-ghost{height:34px;padding:0 14px;border:0;border-radius:999px;background:#f4f4f5;font:inherit;font-size:13px;font-weight:650;color:var(--ink);cursor:pointer;white-space:nowrap}
+.cs-ghost:hover{background:#ececef}
+.cs-loc{display:flex;align-items:center;gap:10px;padding:8px 8px 8px 14px;border-radius:16px;background:#f7f7f8}
+.cs-loc span{display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:600;color:#71717a;white-space:nowrap}
+.cs-nums .cs-num .cs-loc select{flex:1;min-width:0;height:38px;padding:0 12px;border:0!important;border-radius:12px!important;background-color:var(--card,#fff)!important;font:inherit;font-size:13.5px;color:var(--ink);cursor:pointer}
+.cs-hint{margin:12px 2px 0;font-size:13px;color:#71717a}
+.cs-hint a{color:var(--coral);font-weight:600}
+.cs-port-after{margin-top:16px}
+[data-theme="dark"] .cs-chip,[data-theme="dark"] .cs-ghost{background:#2a2a2e;color:#d4d4d8}
+[data-theme="dark"] .cs-loc{background:#242428}
+[data-theme="dark"] .cs-num-ic.local{background:rgba(37,99,235,.16);color:#93c5fd}
+[data-theme="dark"] .cs-num-ic.tollfree{background:rgba(14,116,144,.2);color:#67e8f9}
+[data-theme="dark"] .cs-head p,[data-theme="dark"] .cs-sec-h p{color:#a1a1aa}
+@media (max-width:560px){.cs-head{gap:12px}.cs-num{padding:16px;border-radius:20px}.cs-num-top b{font-size:19px}.cs-sec-h h2{font-size:19px}}
+`
 
 const BN_CSS = `
 .bn{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:20px;padding:22px;border-radius:22px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 1px 2px rgba(16,24,40,.04);container-type:inline-size}
