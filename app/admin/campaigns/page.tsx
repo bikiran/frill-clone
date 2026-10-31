@@ -291,6 +291,9 @@ export default function CampaignsPage() {
           <p>Send texts and designed emails to the right group of customers.</p>
         </div>
         <div className="cp-head-acts">
+          <button type="button" className="cp-pill" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} onClick={() => router.push('/admin/campaigns/insights')}>
+            {I(<><path d="M3 3v18h18" /><path d="m7 15 4-4 3 3 5-6" /></>, 15)} Insights
+          </button>
           <button type="button" className="cp-pill" onClick={() => router.push('/admin/campaigns/templates')}>Templates</button>
           <button type="button" className="cp-pill cp-hide-sm" onClick={() => router.push('/admin/contacts?import=1')}>Import contacts</button>
           <button type="button" className="cv-btn cv-btn-primary" onClick={() => setShowNew(true)}>
