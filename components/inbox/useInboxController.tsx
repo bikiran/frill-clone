@@ -20,7 +20,7 @@ import { useAiDraft } from '@/components/AiDraft'
 import { useReplyTranslate } from '@/components/inbox/ReplyTranslate'
 import { useDraft } from '@/lib/drafts'
 import { ColvyChatRow, useColvySummary } from '@/components/inbox/ColvyChat'
-import { confirmDialog } from '@/components/ConfirmDialog'
+import { alertDialog, confirmDialog } from '@/components/ConfirmDialog'
 import { fillTemplateVars, type TemplateVars } from '@/lib/composer-templates'
 import { readJsonSafe, uploadAttachment } from '@/lib/upload-attachment'
 import { boardUrl } from '@/lib/redirect'
@@ -4455,7 +4455,7 @@ export function useInboxController() {
       showToast(`Order #${payload.order_number || orderId} marked completed`)
       if (selected) { loadWooData(contact?.id || null, contact?.email, contact?.phone); loadConversationExtras(selected.id) }
     } catch (e: any) {
-      alert('Could not mark the order completed: ' + e.message)
+      alertDialog('Could not mark the order completed: ' + e.message)
     }
   }
 
@@ -5139,9 +5139,9 @@ export function useInboxController() {
         body: JSON.stringify({ companyId, conversationId: selected.id, amount: payAmount, description: payDesc, senderName, channel: isWidgetActive ? 'chat' : via, draft: !isWidgetActive, ...(payAddress ? { collectAddress: payAddress } : {}) }),
       })
       const data = await res.json()
-      if (!res.ok) { alert(data.error || 'Could not create payment'); return }
+      if (!res.ok) { alertDialog(data.error || 'Could not create payment'); return }
       if (!isWidgetActive) {
-        if (!data.checkoutUrl) { alert('Could not make the payment link'); return }
+        if (!data.checkoutUrl) { alertDialog('Could not make the payment link'); return }
         const text = `Payment request: $${parseFloat(payAmount).toFixed(2)} AUD${payDesc ? ` — ${payDesc}` : ''}\nPay securely: ${data.checkoutUrl}`
         const insert = pickerInsertRef.current
         if (insert) insert(text)
@@ -5151,7 +5151,7 @@ export function useInboxController() {
       }
       setSendPicker(null); setPayAmount(''); setPayDesc(''); setPayAddress(null)
       if (isWidgetActive && await reloadThread(selected.id)) scrollBottom()
-    } catch (e: any) { alert('Payment error: ' + e.message) }
+    } catch (e: any) { alertDialog('Payment error: ' + e.message) }
     finally { paySendingRef.current = false; setPaySending(false) }
   }
 
@@ -5558,7 +5558,7 @@ export function useInboxController() {
         scrollBottom()
       } catch (e: any) {
         setSending(false)
-        alert('Could not save the internal note: ' + e.message)
+        alertDialog('Could not save the internal note: ' + e.message)
       }
       return
     }
@@ -5582,7 +5582,7 @@ export function useInboxController() {
     // inbox only): the answer goes back into that chat in the app, never by
     // email or text, whatever the contact has on file. Text only there.
     if (String((selected as any).channel || '') === 'colvy') {
-      if (stagedMedia.length) { setSending(false); alert('Files can’t be sent in the Colvy chat yet. Paste a link instead.'); return }
+      if (stagedMedia.length) { setSending(false); alertDialog('Files can’t be sent in the Colvy chat yet. Paste a link instead.'); return }
       await deliverChat(content, senderName)
       return
     }
@@ -5601,7 +5601,7 @@ export function useInboxController() {
         scrollBottom()
       } catch (e: any) {
         setSending(false)
-        alert('Could not send: ' + e.message)
+        alertDialog('Could not send: ' + e.message)
       }
       return
     }
@@ -5643,7 +5643,7 @@ export function useInboxController() {
         scrollBottom()
       } catch (e: any) {
         setSending(false)
-        alert('Could not send the email: ' + e.message)
+        alertDialog('Could not send the email: ' + e.message)
       }
       return
     }

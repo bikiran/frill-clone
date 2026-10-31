@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { alertDialog } from '@/components/ConfirmDialog'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -154,13 +155,13 @@ export default function NewHelpArticlePage() {
     console.log('[HELP PUBLISH] company?.id:', company?.id)
     
     if (!title.trim()) { 
-      alert('Title is required')
+      alertDialog('Title is required')
       console.log('[HELP PUBLISH] Failed: No title')
       return 
     }
     
     if (!company?.id) { 
-      alert('Company not loaded. Please refresh the page.')
+      alertDialog('Company not loaded. Please refresh the page.')
       console.log('[HELP PUBLISH] Failed: No company loaded')
       return 
     }
@@ -193,7 +194,7 @@ export default function NewHelpArticlePage() {
           const { count } = await (supabase as any).from('help_articles').select('id', { count: 'exact', head: true }).eq('company_id', company.id)
           if ((count || 0) >= limit) {
             setSaving(false)
-            alert(limit === 0
+            alertDialog(limit === 0
               ? 'Help center articles aren’t included in your plan. Upgrade to the Feedback or Everything plan.'
               : `You’ve reached your plan’s limit of ${limit} help article${limit === 1 ? '' : 's'}. Upgrade to add more.`)
             return
@@ -208,11 +209,11 @@ export default function NewHelpArticlePage() {
       // Refresh the public help centre's cache so the change is live right away.
       refreshPublicHelp(company.id, editId && !editId.startsWith('demo-') ? [editId] : [])
       console.log('[HELP PUBLISH] ✅ Successfully saved!')
-      alert('Help article published successfully!')
+      alertDialog('Help article published successfully!')
       router.push('/admin/help')
     } catch (err: any) { 
       console.error('[HELP PUBLISH] ❌ Error:', err)
-      alert('Error: ' + err.message) 
+      alertDialog('Error: ' + err.message) 
     }
     setSaving(false)
   }
@@ -234,7 +235,7 @@ export default function NewHelpArticlePage() {
       const isImage = file.type.startsWith('image/')
       const isVideo = file.type.startsWith('video/')
       const isGif = file.type === 'image/gif'
-      if (!isImage && !isVideo) { alert(`${file.name} is not a supported format`); continue }
+      if (!isImage && !isVideo) { alertDialog(`${file.name} is not a supported format`); continue }
       const reader = new FileReader()
       reader.onload = (ev) => {
         const src = ev.target?.result as string

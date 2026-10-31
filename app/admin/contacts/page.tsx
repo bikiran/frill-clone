@@ -12,7 +12,7 @@ import EmptyScroll from '@/components/EmptyScroll'
 import { findMatchingContacts, applyRelationship } from '@/lib/contact-matching'
 import { SegmentationService } from '@/lib/segmentation-service'
 import AddressAutocomplete from '@/components/AddressAutocomplete'
-import { confirmDialog } from '@/components/ConfirmDialog'
+import { alertDialog, confirmDialog } from '@/components/ConfirmDialog'
 import { contactMessageHref } from '@/lib/channel-choice'
 import CustomerTimeline from '@/components/CustomerTimeline'
 
@@ -229,11 +229,11 @@ export default function ContactsPage() {
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Link failed')
-      alert(d.linkedGroups
+      alertDialog(d.linkedGroups
         ? `Linked ${d.linkedContacts} contacts into ${d.linkedGroups} people across their channels.`
         : 'No cross-channel matches found — everyone is already distinct.')
     } catch (e: any) {
-      alert(e.message || 'Could not link channels')
+      alertDialog({ title: 'Couldn’t link contacts’ channels', message: e.message || 'Please try again.' })
     } finally { setLinkBusy(false) }
   }
 
@@ -245,7 +245,7 @@ export default function ContactsPage() {
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Could not check')
       setDupGroups(d.groups || [])
-    } catch (e: any) { alert(e.message) }
+    } catch (e: any) { alertDialog({ title: 'Couldn’t check for duplicates', message: e.message }) }
     finally { setDupBusy(false) }
   }
 
@@ -263,7 +263,7 @@ export default function ContactsPage() {
       if (!res.ok) throw new Error(d.error || 'Merge failed')
       await findDuplicates()
       if (companyId) await loadContacts(companyId)
-    } catch (e: any) { alert(e.message) }
+    } catch (e: any) { alertDialog({ title: 'Couldn’t merge those contacts', message: e.message }) }
     finally { setDupBusy(false) }
   }
   const [loading, setLoading] = useState(true)
@@ -929,7 +929,7 @@ export default function ContactsPage() {
                         const { error } = await (supabase as any).from('contacts')
                           .update({ relationship_type: rt, ...(isCustomer ? {} : { subscribed_to_marketing: false }) })
                           .eq('id', selected.id)
-                        if (error) { alert('Could not save: ' + error.message); return }
+                        if (error) { alertDialog('Could not save: ' + error.message); return }
                         setContacts(cs => cs.map(c => c.id === selected.id ? { ...c, relationship_type: rt } : c))
 
                         // The same person is often in the list more than once
@@ -1025,7 +1025,7 @@ export default function ContactsPage() {
           onClose={() => setPendingMatches(null)}
           onApply={async (ids) => {
             const res = await applyRelationship(ids, pendingMatches.relationship)
-            if (res.error) { alert('Could not update: ' + res.error); return }
+            if (res.error) { alertDialog('Could not update: ' + res.error); return }
             const set = new Set(ids)
             setContacts(cs => cs.map(c => set.has(c.id)
               ? { ...c, relationship_type: pendingMatches.relationship,

@@ -11,7 +11,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth-fetch'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
-import { confirmDialog } from '@/components/ConfirmDialog'
+import { alertDialog, confirmDialog } from '@/components/ConfirmDialog'
 import EmptyScroll from '@/components/EmptyScroll'
 
 // Default event types. Colours are fixed; the label and whether a type is shown
@@ -377,7 +377,7 @@ export default function CalendarPage() {
     try {
       await persistCalendarSettings({})
       setShowReminders(false)
-    } catch (e: any) { alert(e.message) }
+    } catch (e: any) { alertDialog({ title: 'Couldn’t save your reminders', message: e.message }) }
     finally { setSavingRem(false) }
   }
 
@@ -387,7 +387,7 @@ export default function CalendarPage() {
     try {
       await persistCalendarSettings({ event_types: typeCfg })
       setShowTypes(false)
-    } catch (e: any) { alert(e.message) }
+    } catch (e: any) { alertDialog({ title: 'Couldn’t save your booking types', message: e.message }) }
     finally { setSavingTypes(false) }
   }
 
@@ -657,7 +657,7 @@ export default function CalendarPage() {
       }),
     })
     const d = await res.json()
-    if (!res.ok) { alert(d.error || 'Could not save'); return }
+    if (!res.ok) { alertDialog(d.error || 'Could not save'); return }
     setEditing(null)
     await load()
   }

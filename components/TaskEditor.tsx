@@ -6,6 +6,7 @@
 // conversation_tasks so a task created anywhere shows up everywhere.
 
 import { authFetch } from '@/lib/auth-fetch'
+import { alertDialog } from '@/components/ConfirmDialog'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import AssigneePicker from '@/components/AssigneePicker'
@@ -210,7 +211,7 @@ export default function TaskEditor({ companyId, team, outlets = [], me, userId, 
       await notifyMembers(Array.from(mentionedIds), `${me} mentioned you in a task`, 'task_mention')
       await draft.discard()
       onSaved()
-    } catch (e: any) { console.error('[task create] payload was', row); alert('Could not create task: ' + e.message); setSaving(false) }
+    } catch (e: any) { console.error('[task create] payload was', row); alertDialog('Could not create task: ' + e.message); setSaving(false) }
   }
   // Section headings and the soft grey field every input uses.
   const L: React.CSSProperties = { fontSize: 14, fontWeight: 700, color: 'var(--ink)', margin: '22px 0 10px' }

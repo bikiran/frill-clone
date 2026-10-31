@@ -1,6 +1,7 @@
 'use client'
 
 import { withConnectTicket } from '@/lib/oauth-ticket-client'
+import { alertDialog } from '@/components/ConfirmDialog'
 import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -117,7 +118,7 @@ export default function GoogleReviewsPage() {
     const returnTo = window.location.href.split('?')[0]
     try {
       window.location.href = await withConnectTicket(`https://colvy.com/api/google/reviews/start?companyId=${companyId}&returnTo=${encodeURIComponent(returnTo)}`, companyId, 'google_reviews')
-    } catch (e: any) { alert(e.message) }
+    } catch (e: any) { alertDialog({ title: 'Couldn’t connect Google', message: e.message }) }
   }
 
   const loadLocations = async () => {

@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth-fetch'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
-import { confirmDialog } from '@/components/ConfirmDialog'
+import { alertDialog, confirmDialog } from '@/components/ConfirmDialog'
 import { campaignControls, unscheduleFlow, rescheduleFlow, stopSendingFlow, type ActionOutcome } from '@/components/campaigns/CampaignActions'
 import EmptyScroll from '@/components/EmptyScroll'
 
@@ -215,12 +215,12 @@ export default function CampaignsPage() {
       // Straight into the builder rather than leaving them on the list.
       if (data?.id) router.push(`/admin/campaigns/${data.id}`)
     } catch (e: any) {
-      alert('Could not create the campaign: ' + e.message)
+      alertDialog('Could not create the campaign: ' + e.message)
     } finally { setCreating(false) }
   }
 
   const deleteCampaign = async (c: Campaign) => {
-    if (c.status !== 'draft') { alert('Only draft campaigns can be deleted.'); return }
+    if (c.status !== 'draft') { alertDialog('Only draft campaigns can be deleted.'); return }
     if (!await confirmDialog(`Delete the draft “${c.name}”?`)) return
     try {
       // Through the server, so any SMS credit held for it is given back.
@@ -231,7 +231,7 @@ export default function CampaignsPage() {
       const d = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(d.error || 'Could not delete the campaign')
       setCampaigns(list => list.filter(x => x.id !== c.id))
-    } catch (e: any) { alert('Could not delete: ' + e.message) }
+    } catch (e: any) { alertDialog('Could not delete: ' + e.message) }
   }
 
   // Unschedule / Reschedule / Stop sending, as on the campaign page (SMS and

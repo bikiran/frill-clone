@@ -14,7 +14,7 @@ import SmsLowBalanceBanner from '@/components/billing/SmsLowBalanceBanner'
 import { fmtCents, fmtRate } from '@/lib/sms-credits-core'
 import { EmailDesignStep, EmailTestCard, EmailReviewCard, type EmailInfo } from './EmailParts'
 import { calculateCost, DEFAULT_PRICING, SmsPricing, aud, audRate, resolveSmsPricing } from '@/lib/sms-pricing'
-import { confirmDialog } from '@/components/ConfirmDialog'
+import { alertDialog, confirmDialog } from '@/components/ConfirmDialog'
 import { campaignControls, unscheduleFlow, rescheduleFlow, stopSendingFlow, type ActionOutcome } from '@/components/campaigns/CampaignActions'
 import { authFetch } from '@/lib/auth-fetch'
 
@@ -444,7 +444,7 @@ export default function CampaignEditorPage() {
       if (!res.ok || !out) throw new Error(d.error || 'AI is not configured')
       setMessage(String(out).trim())
     } catch (e: any) {
-      alert('Could not rewrite the message: ' + e.message)
+      alertDialog('Could not rewrite the message: ' + e.message)
     } finally { setAiBusy(false) }
   }
 
@@ -459,7 +459,7 @@ export default function CampaignEditorPage() {
         updated_at: new Date().toISOString(),
       }).eq('id', campaignId)
       setSavedAt(new Date().toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }))
-    } catch (e: any) { alert('Could not save: ' + e.message) }
+    } catch (e: any) { alertDialog('Could not save: ' + e.message) }
     finally { setSaving(false) }
   }
 
@@ -524,7 +524,7 @@ export default function CampaignEditorPage() {
         // Nudge the code into the message — a coupon nobody can see is useless.
         setMessage(m => m.trim() ? `${m.trimEnd()} Use code {{coupon_code}}.` : 'Use code {{coupon_code}}.')
       }
-    } catch (e: any) { alert(e.message) }
+    } catch (e: any) { alertDialog({ title: 'Couldn’t create the coupon', message: e.message }) }
     finally { setCouponBusy(false) }
   }
 
@@ -541,7 +541,7 @@ export default function CampaignEditorPage() {
         updated_at: new Date().toISOString(),
       }).eq('id', campaignId)
       setSavedAt(new Date().toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }))
-    } catch (e: any) { alert('Could not save: ' + e.message) }
+    } catch (e: any) { alertDialog('Could not save: ' + e.message) }
     finally { setSaving(false) }
   }
 
@@ -600,7 +600,7 @@ export default function CampaignEditorPage() {
         updated_at: new Date().toISOString(),
       }).eq('id', campaignId)
       setSavedAt(new Date().toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }))
-    } catch (e: any) { alert('Could not save: ' + e.message) }
+    } catch (e: any) { alertDialog('Could not save: ' + e.message) }
     finally { setSaving(false) }
   }
 

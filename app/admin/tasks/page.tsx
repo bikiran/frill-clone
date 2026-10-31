@@ -17,7 +17,7 @@ import { useDraft } from '@/lib/drafts'
 import PageGreeting from '@/components/PageGreeting'
 import { peekCompanyUser, resolveCompanyUser, readCache, writeCache } from '@/lib/client-cache'
 import { readLocal, writeLocal } from '@/lib/local-cache'
-import { confirmDialog } from '@/components/ConfirmDialog'
+import { alertDialog, confirmDialog } from '@/components/ConfirmDialog'
 import { foldRepeats } from '@/lib/task-fold'
 import { beginWrite, endWrite, overlayPending, inOrder, type PendingWrites, type WriteChains } from '@/lib/task-pending'
 import { checklistActivity } from '@/lib/task-checklist'
@@ -836,7 +836,7 @@ export default function TasksPage() {
         ok = r.ok
         if (!ok) {
           endWrite(pendingRef.current, id, false)
-          alert('Could not save this change.')
+          alertDialog('Could not save this change.')
           if (companyId) loadTasks(companyId)
         }
       } else {
@@ -860,7 +860,7 @@ export default function TasksPage() {
         if (error) {
           console.error('[task update] failed', error, fields)
           endWrite(pendingRef.current, id, false)
-          alert(`Could not save: ${error.message}`)
+          alertDialog(`Could not save: ${error.message}`)
           if (companyId) loadTasks(companyId)
         }
       }
@@ -968,7 +968,7 @@ export default function TasksPage() {
     const ids = realSelectedIds()
     if (!ids.length) return
     if (!await confirmDialog(`Delete ${ids.length} task${ids.length === 1 ? '' : 's'}? This can't be undone.`)) return
-    try { await (supabase as any).from('conversation_tasks').delete().in('id', ids) } catch (e: any) { alert('Could not delete: ' + e.message); return }
+    try { await (supabase as any).from('conversation_tasks').delete().in('id', ids) } catch (e: any) { alertDialog('Could not delete: ' + e.message); return }
     if (selectedId && ids.includes(selectedId)) setSelectedId(null)
     exitSelect()
     if (companyId) loadTasks(companyId)
@@ -976,7 +976,7 @@ export default function TasksPage() {
   const bulkStatus = async (status: string) => {
     const ids = realSelectedIds()
     if (!ids.length) return
-    try { await (supabase as any).from('conversation_tasks').update({ status, done: status === 'done', completed_at: status === 'done' ? new Date().toISOString() : null }).in('id', ids) } catch (e: any) { alert('Could not update: ' + e.message); return }
+    try { await (supabase as any).from('conversation_tasks').update({ status, done: status === 'done', completed_at: status === 'done' ? new Date().toISOString() : null }).in('id', ids) } catch (e: any) { alertDialog('Could not update: ' + e.message); return }
     ids.forEach(id => logActivity(id, [{ kind: 'status', detail: status === 'done' ? 'completed this task' : `moved this to ${ACT_LABEL[status] || status}` }]))
     if (status === 'done') ids.forEach(id => { const t = tasks.find(x => x.id === id); if (t && statusOf(t) !== 'done') announceCompletion(t) })
     exitSelect()
@@ -985,7 +985,7 @@ export default function TasksPage() {
   const bulkPriority = async (priority: string) => {
     const ids = realSelectedIds()
     if (!ids.length) return
-    try { await (supabase as any).from('conversation_tasks').update({ priority }).in('id', ids) } catch (e: any) { alert('Could not update: ' + e.message); return }
+    try { await (supabase as any).from('conversation_tasks').update({ priority }).in('id', ids) } catch (e: any) { alertDialog('Could not update: ' + e.message); return }
     ids.forEach(id => logActivity(id, [{ kind: 'priority', detail: priority ? `set the priority to ${cap(priority)}` : 'cleared the priority' }]))
     exitSelect()
     if (companyId) loadTasks(companyId)
@@ -1061,14 +1061,14 @@ export default function TasksPage() {
     const ids = fold.missedOf.get(t.id) || []
     if (!ids.length) return
     if (!await confirmDialog({ title: 'Clear missed copies?', message: `Remove ${ids.length} missed ${ids.length === 1 ? 'copy' : 'copies'} of “${t.title || t.text}”? It keeps repeating — only past copies nobody ticked off are removed.`, confirmLabel: 'Clear', tone: 'danger' })) return
-    try { await removeTaskIds(ids) } catch (e: any) { alert('Could not clear: ' + (e?.message || e)) }
+    try { await removeTaskIds(ids) } catch (e: any) { alertDialog('Could not clear: ' + (e?.message || e)) }
   }
   const clearAllMissed = async () => {
     const q = search.trim().toLowerCase()
     const ids = tasks.filter(t => fold.missedHidden.has(t.id) && passesFilters(t, q, dateRange)).map(t => t.id)
     if (!ids.length) return
     if (!await confirmDialog({ title: 'Clear all missed copies?', message: `Remove ${ids.length} missed ${ids.length === 1 ? 'copy' : 'copies'} of repeating tasks? Each task keeps repeating, and its latest copy stays — only older copies nobody ticked off are removed.`, confirmLabel: 'Clear all', tone: 'danger' })) return
-    try { await removeTaskIds(ids) } catch (e: any) { alert('Could not clear: ' + (e?.message || e)) }
+    try { await removeTaskIds(ids) } catch (e: any) { alertDialog('Could not clear: ' + (e?.message || e)) }
   }
 
   // Delete a task, or a scoped slice of its series.
@@ -2248,7 +2248,7 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
     const { data, error } = await (supabase as any).from('task_comments').insert(row).select().maybeSingle()
     if (error) {
       console.error('[task comment] failed', error)
-      alert(/does not exist|schema cache/i.test(error.message)
+      alertDialog(/does not exist|schema cache/i.test(error.message)
         ? 'Could not save the comment — the task_comments table is missing. Run the COLVY_V203_TASK_BOARD.sql migration.'
         : `Could not save the comment: ${error.message}`)
       return

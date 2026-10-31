@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
 import ConfirmModal from '@/components/ConfirmModal'
 import { SkeletonList } from '@/components/Skeleton'
-import { confirmDialog } from '@/components/ConfirmDialog'
+import { alertDialog, confirmDialog } from '@/components/ConfirmDialog'
 import { PERMISSION_SUITES, ALL_FEATURE_KEYS, restrictedDefault } from '@/lib/permissions'
 import { loadTeamList, loadMoreViewers, mergeTeam, isViewerRow, VIEWER_PAGE } from '@/lib/team-list'
 import EmptyScroll from '@/components/EmptyScroll'
@@ -360,7 +360,7 @@ export default function TeamPage() {
       setShowCreate(false)
       fetchMembers()
     } catch (err: any) {
-      alert('Failed to create user: ' + err.message)
+      alertDialog('Failed to create user: ' + err.message)
     }
     setWorking(false)
   }

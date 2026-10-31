@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { SkeletonList } from '@/components/Skeleton'
 import EmptyScroll from '@/components/EmptyScroll'
-import { confirmDialog } from '@/components/ConfirmDialog'
+import { alertDialog, confirmDialog } from '@/components/ConfirmDialog'
 
 const TYPES = [
   ['promotion', 'Promotion'], ['new_arrivals', 'New arrivals'], ['product_launch', 'Product launch'],
@@ -74,7 +74,7 @@ export default function CampaignTemplatesPage() {
       if (error) throw error
       setTemplates(t => [data, ...t])
       setName(''); setMessage(''); setShowNew(false)
-    } catch (e: any) { alert('Could not save: ' + e.message) }
+    } catch (e: any) { alertDialog('Could not save: ' + e.message) }
     finally { setSaving(false) }
   }
 

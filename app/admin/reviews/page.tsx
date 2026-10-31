@@ -1,5 +1,6 @@
 'use client'
 import { authFetch } from '@/lib/auth-fetch'
+import { alertDialog } from '@/components/ConfirmDialog'
 import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, readCache, writeCache } from '@/lib/client-cache'
@@ -549,7 +550,7 @@ export default function ReviewsPage() {
       setReplyingTo(review.id)
       setReplyText(d.reply || d.draft || '')
     } catch (e: any) {
-      alert(e.message)
+      alertDialog({ title: 'Couldn’t draft a reply', message: e.message })
     } finally { setDrafting(null) }
   }
 
@@ -566,7 +567,7 @@ export default function ReviewsPage() {
       setReviews(rs => rs.map(r => r.id === review.id ? { ...r, reply_comment: replyText.trim() } : r))
       setReplyingTo(null); setReplyText('')
     } catch (e: any) {
-      alert(e.message)
+      alertDialog({ title: 'Couldn’t post your reply', message: e.message })
     } finally { setPosting(false) }
   }
 

@@ -503,7 +503,7 @@ export default function IdeaDetailModal({ idea, onClose, showActivity = true }: 
 
   // Real merge: moves this idea's comments/votes/subscriptions into the target,
   // combines vote counters (deduping users who voted on both), records the merge,
-  // and archives this idea. Previously this was only an alert() — nothing happened.
+  // and archives this idea. Previously this was only an alertDialog() — nothing happened.
   const performMerge = async (target: any) => {
     if (!await confirmDialog(`Merge "${idea.title}" into "${target.title}"?\n\nComments and votes will move to "${target.title}" and this idea will be archived.`)) return
     try {

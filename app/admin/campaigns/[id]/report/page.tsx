@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import { alertDialog } from '@/components/ConfirmDialog'
 import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, resolveCompanyUser } from '@/lib/client-cache'
@@ -248,7 +249,7 @@ export default function CampaignReportPage() {
       }).select().maybeSingle()
       if (error) throw error
       router.push(`/admin/campaigns/${data.id}`)
-    } catch (e: any) { alert('Could not create the follow-up campaign: ' + e.message) }
+    } catch (e: any) { alertDialog('Could not create the follow-up campaign: ' + e.message) }
     finally { setCreatingSegment(false) }
   }
 

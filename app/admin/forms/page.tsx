@@ -10,7 +10,7 @@ import { supabase } from '@/lib/supabase'
 import { resolveCompanyUser } from '@/lib/client-cache'
 import { authFetch } from '@/lib/auth-fetch'
 import ConfirmModal from '@/components/ConfirmModal'
-import { confirmDialog } from '@/components/ConfirmDialog'
+import { alertDialog, confirmDialog } from '@/components/ConfirmDialog'
 import { fetchStats } from '@/components/form-results/data'
 import FormsListView, { Icon, type FormAction } from '@/components/forms-list/FormsListView'
 import {
@@ -137,7 +137,7 @@ export default function FormsAdmin() {
     try {
       // Forms belong to the workspace; only its staff may create one (V375).
       const { companyId } = await resolveCompanyUser()
-      if (!companyId) { alert('Failed to create form: no workspace found for this account.'); return }
+      if (!companyId) { alertDialog('Failed to create form: no workspace found for this account.'); return }
       const { data, error } = await db.from('forms').insert({
         title: 'Untitled Form',
         company_id: companyId,
@@ -145,7 +145,7 @@ export default function FormsAdmin() {
         theme: { color: '#ff7a6b', background: '#ffffff' },
         is_published: false,
       }).select().single()
-      if (error) { alert('Failed to create form: ' + error.message); return }
+      if (error) { alertDialog('Failed to create form: ' + error.message); return }
       // The builder opens Colvy AI straight away for ?ai=1.
       router.push(`/admin/forms/${data.id}${withAi ? '?ai=1' : ''}`)
     } finally {
