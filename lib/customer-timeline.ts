@@ -31,7 +31,7 @@ export const KIND_GROUP: Record<string, TimelineGroup> = {
   review: 'reviews',
   payment: 'payments', sale: 'payments',
   task: 'tasks', note: 'tasks', ticket: 'tasks',
-  link: 'other', agent: 'other', audit: 'other',
+  link: 'other', agent: 'other', audit: 'other', campaign: 'other',
 }
 
 export type TimelineEvent = {

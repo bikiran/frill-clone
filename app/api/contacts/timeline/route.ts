@@ -59,6 +59,7 @@ const NEEDS: Record<string, string[]> = {
   message: ['inbox'], form: ['inbox'], media: ['inbox'],
   order: ['orders'], sale: ['payments'], payment: ['payments'], call: ['calls'], booking: ['bookings'],
   ticket: ['tickets'], review: ['reviews'], comment: ['social'], agent: ['agents'], link: ['links', 'link_reports'],
+  campaign: ['campaigns'],
 }
 
 // What this member may see, from their Team permissions. Owners, admins and
@@ -294,7 +295,7 @@ export async function GET(req: NextRequest) {
   const [
     msgRows, orderRows, wooEmailRows, wooPhoneRows, bookingRows, taskRows, convNoteRows, custNoteRows,
     callRows, ticketRows, formRows, saleRows, payRows, linkClicks, mediaRows, agentRows,
-    reviewRows, gReviewRows, commentRows, auditRows,
+    reviewRows, gReviewRows, commentRows, auditRows, emailSentRows, emailEventRows,
   ] = await Promise.all([
     readMsgs || readTeamNotes ? pull('messages', 'created_at', MSG_LIMIT, [
       // is_internal (V188) marks a team-only note the customer never got;
@@ -363,6 +364,9 @@ export async function GET(req: NextRequest) {
     want('review') ? pull('google_reviews', 'review_created_at', EVENT_LIMIT, [['id, star_rating, comment, review_created_at']], q => q.eq('company_id', companyId).in('contact_id', contactIds)) : none,
     want('comment') ? pull('social_comments', 'commented_at', EVENT_LIMIT, [['id, platform, message, commented_at']], q => q.eq('company_id', companyId).in('contact_id', contactIds)) : none,
     want('audit') ? pull('customer_identity_audit', 'created_at', EVENT_LIMIT, [['id, action, detail, actor_name, created_at']], q => q.eq('company_id', companyId).in('contact_id', contactIds)) : none,
+    // Campaign emails they were sent, and what they did with them (V396).
+    want('campaign') ? pull('email_campaign_recipients', 'sent_at', EVENT_LIMIT, [['id, campaign_id, sent_at']], q => q.eq('company_id', companyId).in('contact_id', contactIds).eq('status', 'sent')) : none,
+    want('campaign') ? pull('email_events', 'occurred_at', EVENT_LIMIT, [['id, campaign_id, type, link, occurred_at']], q => q.eq('company_id', companyId).in('contact_id', contactIds).in('type', ['opened', 'clicked', 'unsubscribed', 'complained', 'bounced'])) : none,
   ])
 
   // ── Messages ───────────────────────────────────────────────────────────────
@@ -546,6 +550,31 @@ export async function GET(req: NextRequest) {
     push({ id: 'click-' + c.id, kind: 'link', source: 'Link', date: iso(c.clicked_at),
       title: kind === 'payment' ? 'Opened a payment link' : kind === 'media' || kind === 'file' ? 'Opened shared files' : 'Clicked a link',
       detail: [l.label || hostOf(l.target_url), where].filter(Boolean).join(' · ') || undefined, link: linkClickHref })
+  }
+  if ((emailSentRows as Row[]).length || (emailEventRows as Row[]).length) {
+    const ids = uniq([...(emailSentRows as Row[]), ...(emailEventRows as Row[])].map(r => r.campaign_id).filter(Boolean))
+    const names: Record<string, string> = {}
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data } = await db.from('campaigns').select('id, name').eq('company_id', companyId).in('id', ids.slice(i, i + 200))
+      for (const c of (data || []) as Row[]) names[c.id] = c.name
+    }
+    const called = (id: string) => `“${clip(names[id] || 'a campaign email', 60)}”`
+    const report = (id: string) => (id ? `/admin/campaigns/${id}/report` : undefined)
+    for (const r of emailSentRows as Row[]) push({ id: 'esent-' + r.id, kind: 'campaign', source: 'Email campaign', date: iso(r.sent_at), title: `Sent ${called(r.campaign_id)}`, link: report(r.campaign_id) })
+    // Opens: one card per email, at the first open, with how many times.
+    const opens: Record<string, Row[]> = {}
+    for (const e of emailEventRows as Row[]) {
+      const cid = String(e.campaign_id || '')
+      if (e.type === 'opened') { (opens[cid] ||= []).push(e); continue }
+      if (e.type === 'clicked') push({ id: 'eclick-' + e.id, kind: 'campaign', source: 'Email campaign', date: iso(e.occurred_at), title: `Clicked a link in ${called(cid)}`, detail: e.link ? clip(String(e.link).replace(/^https?:\/\/(www\.)?/i, ''), 120) : undefined, link: report(cid), tone: 'good' })
+      else if (e.type === 'unsubscribed') push({ id: 'eunsub-' + e.id, kind: 'campaign', source: 'Email campaign', date: iso(e.occurred_at), title: 'Unsubscribed from marketing emails', detail: `From ${called(cid)}`, link: report(cid), tone: 'warn' })
+      else if (e.type === 'complained') push({ id: 'espam-' + e.id, kind: 'campaign', source: 'Email campaign', date: iso(e.occurred_at), title: `Marked ${called(cid)} as spam`, detail: 'They won’t get marketing emails again.', link: report(cid), tone: 'bad' })
+      else if (e.type === 'bounced') push({ id: 'ebounce-' + e.id, kind: 'campaign', source: 'Email campaign', date: iso(e.occurred_at), title: `${called(cid)} bounced`, detail: 'The email address didn’t accept it.', link: report(cid), tone: 'warn' })
+    }
+    for (const [cid, list] of Object.entries(opens)) {
+      const first = list.reduce((a, b) => (toMs(b.occurred_at) < toMs(a.occurred_at) ? b : a))
+      push({ id: 'eopen-' + first.id, kind: 'campaign', source: 'Email campaign', date: iso(first.occurred_at), title: `Opened ${called(cid)}`, detail: list.length > 1 ? `Opened ${list.length} times` : undefined, link: report(cid) })
+    }
   }
   for (const m of mediaRows as Row[]) {
     const st = String(m.status || 'open').toLowerCase()

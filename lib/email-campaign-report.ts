@@ -73,7 +73,7 @@ export function computeEmailReport(recipients: { status: string }[], events: { t
   }
 }
 
-async function readAll(build: () => any, cap = 50000): Promise<any[]> {
+export async function readAll(build: () => any, cap = 50000): Promise<any[]> {
   const out: any[] = []
   for (let from = 0; from < cap; from += 1000) {
     const { data, error } = await build().range(from, from + 999)

@@ -103,6 +103,7 @@ const ACT: Record<string, { icon: string; color: string }> = {
   ticket:  { icon: 'ticket',  color: '#e11d48' },
   form:    { icon: 'form',    color: '#4f46e5' },
   link:    { icon: 'link',    color: '#0284c7' },
+  campaign: { icon: 'email',  color: '#4f46e5' },
   media:   { icon: 'media',   color: '#0d9488' },
   agent:   { icon: 'agent',   color: 'var(--coral)' },
   audit:   { icon: 'audit',   color: '#6b7280' },
