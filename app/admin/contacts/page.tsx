@@ -218,22 +218,41 @@ export default function ContactsPage() {
   const [dupGroups, setDupGroups] = useState<any[] | null>(null)
   const [dupBusy, setDupBusy] = useState(false)
   const [linkBusy, setLinkBusy] = useState(false)
+  const [linkPct, setLinkPct] = useState(0)
 
+  // The server links a batch per call (as much as fits in its time limit) and
+  // says how much is left, so keep calling until nothing is. Each batch is
+  // saved as it goes: stopping half way loses nothing.
   const linkChannels = async () => {
     if (!companyId) return
-    setLinkBusy(true)
+    setLinkBusy(true); setLinkPct(0)
+    let groups = 0, linked = 0, people = 0, todo = 0, left = Infinity, round = 0
     try {
-      const res = await authFetch('/api/contacts/backfill-identity', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId }),
-      })
-      const d = await res.json()
-      if (!res.ok) throw new Error(d.error || 'Link failed')
-      alertDialog(d.linkedGroups
-        ? `Linked ${d.linkedContacts} contacts into ${d.linkedGroups} people across their channels.`
-        : 'No cross-channel matches found — everyone is already distinct.')
+      for (; round < 100 && left > 0; round++) {
+        const res = await authFetch('/api/contacts/backfill-identity', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ companyId }),
+        })
+        const d = await res.json()
+        if (!res.ok) throw new Error(d.error || 'Link failed')
+        groups += d.linkedGroups || 0
+        linked += d.linkedContacts || 0
+        people = d.people || 0
+        if (round === 0) todo = d.todo || 0
+        const now = d.remaining || 0
+        if (now > 0 && now >= left) throw new Error('Linking stopped making progress.')
+        left = now
+        setLinkPct(todo ? Math.round(100 * (todo - left) / todo) : 100)
+      }
+      if (left > 0) alertDialog({ title: 'Linked part of your contacts', message: 'Click Link channels again to finish the rest.' })
+      else if (groups) alertDialog({ title: 'Channels linked', message: `Linked ${linked.toLocaleString()} contacts into ${groups.toLocaleString()} ${groups === 1 ? 'person' : 'people'} across their channels.` })
+      else if (people) alertDialog({ title: 'Already linked', message: `All ${people.toLocaleString()} ${people === 1 ? 'person who uses' : 'people who use'} more than one channel are already linked.` })
+      else alertDialog('No cross-channel matches found — everyone is already distinct.')
     } catch (e: any) {
-      alertDialog({ title: 'Couldn’t link contacts’ channels', message: e.message || 'Please try again.' })
+      alertDialog({
+        title: round ? 'Couldn’t finish linking channels' : 'Couldn’t link contacts’ channels',
+        message: (e.message || 'Please try again.') + (round ? '\n\nWhat was linked so far is kept. Click Link channels again to finish.' : ''),
+      })
     } finally { setLinkBusy(false) }
   }
 
@@ -524,7 +543,7 @@ export default function ContactsPage() {
             <button type="button" className="cv-btn ct-hbtn" onClick={linkChannels} disabled={linkBusy}
               title="Link the same person across live chat, SMS, Messenger, Instagram and WooCommerce by shared email/phone">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-              <span>{linkBusy ? 'Linking…' : 'Link channels'}</span>
+              <span>{linkBusy ? (linkPct ? `Linking… ${linkPct}%` : 'Linking…') : 'Link channels'}</span>
             </button>
             <button type="button" className="cv-btn cv-btn-primary" onClick={() => setShowAddContact(true)}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
