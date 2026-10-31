@@ -17,6 +17,9 @@ import { calculateCost, DEFAULT_PRICING, SmsPricing, aud, audRate, resolveSmsPri
 import { alertDialog, confirmDialog } from '@/components/ConfirmDialog'
 import { campaignControls, unscheduleFlow, rescheduleFlow, stopSendingFlow, type ActionOutcome } from '@/components/campaigns/CampaignActions'
 import { authFetch } from '@/lib/auth-fetch'
+import { MessagesPhone, DEVICES_CSS } from '@/components/EmailDesigner/Devices'
+import SmsChecksCard from '@/components/campaigns/SmsChecksCard'
+import { runSmsChecks } from '@/lib/sms-checks'
 
 const AUDIENCE_TYPES: [string, string, string][] = [
   ['all_subscribed', 'All subscribed contacts', 'Everyone with marketing consent'],
@@ -410,6 +413,7 @@ export default function CampaignEditorPage() {
     .filter(w => w.length >= 3 && !['the', 'and', 'pty', 'ltd', 'co', 'inc', 'shop', 'store'].includes(w))
   const hasSender = /\{\{\s*store_name\s*\}\}/.test(message) || !nameWords.length
     || nameWords.some(w => message.toLowerCase().includes(w))
+  const smsChecks = runSmsChecks({ message, rendered: renderedSms, hasOptOut, hasSender })
 
   const insertAtCursor = (text: string) => {
     const el = msgRef.current
@@ -1758,42 +1762,17 @@ export default function CampaignEditorPage() {
 
           {step === 3 && (
             <>
-              {/* Phone preview — updates as you type */}
-              <div style={{ ...card, padding: 16, background: '#f4f4f5', boxShadow: 'none' }}>
-                <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 10 }}>
-                  Preview
-                </div>
-                <div style={{ background: '#fff', borderRadius: 18, border: 'none', boxShadow: '0 1px 2px rgba(0,0,0,.05)', padding: 14, minHeight: 130 }}>
-                  <div style={{ fontSize: 11, color: '#9ca3af', textAlign: 'center', marginBottom: 10 }}>
-                    {campaign.sender_name || 'Roxy Aquarium'}
-                  </div>
-                  {previewText.trim() ? (
-                    <div style={{ background: '#e9e9eb', color: '#1a1a1a', borderRadius: 16, padding: '10px 13px', fontSize: 13.5, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                      {previewText}
-                    </div>
-                  ) : (
-                    <p style={{ fontSize: 12.5, color: '#9ca3af', textAlign: 'center', margin: '24px 0' }}>
-                      Your message will appear here.
-                    </p>
-                  )}
-                </div>
-                <p style={{ margin: '8px 0 0', fontSize: 11, color: 'var(--slate)' }}>
-                  Shown with example values — each recipient sees their own details.
+              {/* The text as it arrives, in a phone, updating as you type */}
+              <style>{DEVICES_CSS}</style>
+              <div style={{ ...card, padding: '14px 10px 10px', background: 'linear-gradient(180deg,#f7f7f8,#f1f1f3)', boxShadow: 'none' }}>
+                <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)', margin: '0 6px 8px' }}>Preview</div>
+                <MessagesPhone name={companyName || campaign.sender_name || 'Your business'} text={previewText} accent="var(--coral)" height={540} />
+                <p style={{ margin: '6px 6px 0', fontSize: 11, color: 'var(--slate)' }}>
+                  Shown with example values. Each person sees their own name and link.
                 </p>
               </div>
 
-              {/* Compliance */}
-              <div style={{ ...card, borderColor: hasOptOut && hasSender ? '#bbf7d0' : '#fde68a', background: hasOptOut && hasSender ? '#f0fdf4' : '#fffbeb' }}>
-                <div style={{ fontSize: 14.5, fontWeight: 700, marginBottom: 8, color: hasOptOut && hasSender ? '#15803d' : '#b45309' }}>
-                  Compliance
-                </div>
-                <p style={{ margin: '0 0 5px', fontSize: 12.5, color: hasOptOut ? '#166534' : '#78350f' }}>
-                  {hasOptOut ? '✓' : '!'} Unsubscribe instructions {hasOptOut ? 'included' : 'missing'}
-                </p>
-                <p style={{ margin: 0, fontSize: 12.5, color: hasSender ? '#166534' : '#78350f' }}>
-                  {hasSender ? '✓' : '!'} Sender identified {hasSender ? '' : '— name the business in the message'}
-                </p>
-              </div>
+              <SmsChecksCard checks={smsChecks} />
 
               <button onClick={saveMessage} disabled={saving}
                 style={{ padding: '11px 16px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
