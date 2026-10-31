@@ -28,7 +28,7 @@ export function cleanDesign(raw: any): EmailDesign {
       case 'image': blocks.push({ id, type: 'image', src: s(b.src, 2000), alt: s(b.alt, 200), url: s(b.url, 2000), width: Number(b.width) || undefined }); break
       case 'button': blocks.push({ id, type: 'button', label: s(b.label, 80), url: s(b.url, 2000), color: /^#[0-9a-f]{6}$/i.test(b.color || '') ? b.color : undefined, align }); break
       case 'products': blocks.push({ id, type: 'products', buttonLabel: s(b.buttonLabel || 'Shop now', 40), items: (Array.isArray(b.items) ? b.items : []).slice(0, 8).map((p: any) => ({ name: s(p?.name, 120), price: s(p?.price, 40), image: s(p?.image, 2000), url: s(p?.url, 2000) })) }); break
-      case 'coupon': blocks.push({ id, type: 'coupon', code: s(b.code, 60), offer: s(b.offer, 40), title: s(b.title, 100), note: s(b.note, 200) }); break
+      case 'coupon': blocks.push({ id, type: 'coupon', code: s(b.code, 60), offer: s(b.offer, 40), title: s(b.title, 100), note: s(b.note, 200), label: s(b.label, 40), url: s(b.url, 2000) }); break
       case 'divider': blocks.push({ id, type: 'divider' }); break
       case 'spacer': blocks.push({ id, type: 'spacer', height: Math.max(8, Math.min(80, Number(b.height) || 24)) }); break
       case 'social': blocks.push({ id, type: 'social', links: (Array.isArray(b.links) ? b.links : []).slice(0, 8).map((l: any) => ({ network: s(l?.network, 20) as any, url: s(l?.url, 2000) })) }); break

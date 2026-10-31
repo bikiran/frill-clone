@@ -234,6 +234,13 @@ function blockHtml(b: Block, ctx: Ctx): string {
       const R = Math.round(ctx.r * 1.25), N = 12
       const notch = (radius: string) => `<div style="width:${N}px;height:${N}px;background-color:${C.card};${radius};font-size:0;line-height:0">&nbsp;</div>`
       const cell = (inner: string) => `<td width="${N}" style="width:${N}px;padding:0;font-size:0;line-height:0">${inner}</td>`
+      // The button: its own link, or the business's website when that's empty.
+      // No text, no button.
+      const shopLabel = String(b.label || '').trim()
+      const shopUrl = safeUrl(b.url) || safeUrl(ctx.brand.website)
+      const shop = !shopLabel ? ''
+        : shopUrl ? `<div style="margin-top:12px;overflow:hidden">${button(shopLabel, shopUrl, accent, ctx, 'left', true)}</div>`
+        : preview ? `<div style="margin-top:14px">${placeholder(`Add a link for “${shopLabel}”`, 38)}</div>` : ''
       const big = split
         ? `${escapeHtml(split[1])}<span style="font-size:16px;font-weight:600;letter-spacing:0;padding-left:6px">${escapeHtml(split[2])}</span>`
         : escapeHtml(headline)
@@ -250,6 +257,7 @@ function blockHtml(b: Block, ctx: Ctx): string {
 <div style="padding:4px 22px 18px">
 <p style="margin:0;font-family:${MONO};font-size:24px;line-height:1.25;font-weight:800;letter-spacing:3px;color:${C.ink};word-break:break-all">${escapeHtml(code || 'CODE')}</p>
 ${b.note ? `<p style="margin:6px 0 0;font-family:${ctx.font};font-size:13px;line-height:1.45;color:${C.muted}">${escapeHtml(b.note)}</p>` : ''}
+${shop}
 </div>
 </td></tr>
 </table>`)
@@ -315,7 +323,11 @@ function blockText(b: Block, brand: EmailBrand): string {
     case 'image': { const u = safeUrl(b.url, false); return u && b.alt ? `${b.alt}: ${u}` : '' }
     case 'button': { const u = safeUrl(b.url); return u && b.label ? `${b.label}: ${u}` : '' }
     case 'products': return (b.items || []).filter(p => p?.name).map(p => [p.name + (p.price ? ` (${p.price})` : ''), safeUrl(p.url, false)].filter(Boolean).join('\n')).join('\n\n')
-    case 'coupon': return b.code ? `${b.offer ? `${b.offer}\n` : ''}${b.title ? b.title + ': ' : 'Code: '}${b.code}${b.note ? `\n${b.note}` : ''}` : ''
+    case 'coupon': {
+      if (!b.code) return ''
+      const u = String(b.label || '').trim() ? safeUrl(b.url) || safeUrl(brand.website) : ''
+      return `${b.offer ? `${b.offer}\n` : ''}${b.title ? b.title + ': ' : 'Code: '}${b.code}${b.note ? `\n${b.note}` : ''}${u ? `\n${String(b.label).trim()}: ${u}` : ''}`
+    }
     case 'divider': return '----------'
     case 'spacer': return ''
     case 'social': return (b.links || []).map(l => { const u = safeUrl(l.url, false); return u ? `${SOCIAL_LABEL[l.network] || 'Link'}: ${u}` : '' }).filter(Boolean).join('\n')
@@ -350,7 +362,11 @@ export function renderEmail(design: EmailDesign, brand: EmailBrand, opts: Render
   const body = blocks.filter(b => b.type !== 'footer').map(b => tag(blockHtml(b, ctx), b.id)).join('\n')
   const pre = String(opts.previewText || '').replace(/\s+/g, ' ').trim()
   // Padding after the preheader stops inboxes pulling body text into the preview.
-  const preheader = pre ? `<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all">${escapeHtml(pre)}${'&#8204;&nbsp;'.repeat(60)}</div>` : ''
+  // Gmail collapses plain spacer runs (its thread view then showed the logo
+  // name after the preview text), so each step mixes a figure space, a
+  // combining grapheme joiner, a zero-width non-joiner and a no-break space,
+  // and there are enough of them to fill the longest snippet.
+  const preheader = pre ? `<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all">${escapeHtml(pre)}${'&#8199;&#847;&zwnj;&nbsp;'.repeat(150)}</div>` : ''
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="x-apple-disable-message-reformatting"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light">
 <title>${escapeHtml(opts.subject || ctx.brand.name)}</title>
