@@ -7,6 +7,12 @@ import { resolveAutomatedSmsSender } from '@/lib/sms-consent'
 import { companyFlagEnabled } from '@/lib/feature-flags'
 import { shortenUrl } from '@/lib/short-link'
 import { recordLinkClick } from '@/lib/link-click'
+import { replyLineFor } from '@/lib/location-lines'
+import { businessNumbers } from '@/lib/business-numbers'
+import { phoneKey } from '@/lib/phone'
+import { canTextFrom } from '@/lib/missed-call-text-settings'
+import { isFromNumberRejection } from '@/lib/missed-call-text'
+import { toE164 } from '@/lib/telnyx-service'
 
 function admin() {
   return createClient(
@@ -85,6 +91,9 @@ export async function POST(req: NextRequest) {
     let smsError: string | null = null
     // Not texted because the number being texted (or the contact) opted out.
     let optedOut = false
+    // The provider's id for the text, kept on the thread message like any
+    // other SMS reply so a delivery receipt can be matched to it.
+    let providerId: string | null = null
     // The channel the caller asked for. An email, Messenger or Instagram link is
     // sent by the caller on that channel, so it isn't texted here as well (the
     // customer got it twice).
@@ -119,7 +128,33 @@ export async function POST(req: NextRequest) {
           // The opt-out guard checks the number actually texted — the thread's
           // number can be someone else's than the sender's — and the contact.
           const sender = await resolveAutomatedSmsSender(db, companyId, { contactId: contactId || conv?.contact_id || null })
-          if (sender) { await sender.send({ to, text: smsText }); texted = true }
+          if (sender) {
+            // Send it from the line this conversation's replies go out on (the
+            // number the customer texted, or their shop's own), as a typed
+            // reply does. From the workspace's usual number it reached a
+            // customer of another shop as a text from a number they didn't
+            // know, in a different thread on their phone, and read as never
+            // having arrived ("I need the link to send you pics").
+            let fromLine: string | undefined
+            try {
+              const line = await replyLineFor(db, companyId, conversationId)
+              const f = line ? toE164(line) : null
+              if (f && canTextFrom(f) && phoneKey(f) !== phoneKey(sender.from) && (await businessNumbers(db, companyId)).lines.has(phoneKey(f))) fromLine = f
+            } catch {}
+            const statusCallback = sender.provider === 'twilio'
+              ? `${(process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com').replace(/\/$/, '')}/api/twilio/webhook`
+              : undefined
+            let r: any
+            try {
+              r = await sender.send({ to, text: smsText, statusCallback, ...(fromLine ? { from: fromLine } : {}) })
+            } catch (e) {
+              // That line can't text after all: the usual number instead.
+              if (!fromLine || !isFromNumberRejection(e)) throw e
+              r = await sender.send({ to, text: smsText, statusCallback })
+            }
+            providerId = r?.id || null
+            texted = true
+          }
           else smsError = 'No SMS number is set up for this workspace.'
         } else if (!to) {
           console.warn('[media-requests] no SMS recipient resolved for conversation', conversationId)
@@ -148,6 +183,7 @@ export async function POST(req: NextRequest) {
         content: smsText,
         message_type: 'media_request',
         delivery_channel: channel,
+        ...(providerId ? { telnyx_message_id: providerId } : {}),
         message_payload: { kind: 'media_request', token, prompt: request.prompt, accept: request.accept, max_files: request.max_files, expires_at, link },
       })
       await db.from('conversations').update({ last_message: 'Requested media upload', last_message_at: new Date().toISOString() }).eq('id', conversationId)
