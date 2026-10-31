@@ -5,6 +5,7 @@ import { loadEmailBrand } from '@/lib/email-brand'
 import { cleanDesign } from '@/lib/email-design-store'
 import { senderFor } from '@/lib/email-domains'
 import { emailLinkBase } from '@/lib/email-campaign-sender'
+import { signUnsubToken } from '@/lib/email-tokens'
 import { fillSubject, fillTemplate, renderEmail } from '@/components/EmailDesigner/render'
 import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE } from '@/lib/demo-guard'
 
@@ -43,10 +44,13 @@ export async function POST(req: NextRequest) {
   const subject = String(body.subject || '').trim() || `A test from ${brand.name}`
   const { html, text } = renderEmail(cleanDesign(body.design), brand, { subject, previewText: String(body.previewText || '') })
   const firstName = String(user?.email || '').split('@')[0].split(/[._-]/)[0]
+  // Signed preview links: the real unsubscribe and preference pages, in this
+  // business's branding, marked as a preview, and nothing changes.
+  const pv = encodeURIComponent(signUnsubToken({ co: companyId, c: 'preview', preview: true }))
   const vars = {
     first_name: firstName ? firstName.charAt(0).toUpperCase() + firstName.slice(1) : 'there',
     store_name: brand.name, outlet: '', coupon_code: '',
-    unsubscribe_url: `${base}/api/email/unsubscribe?t=test`, preferences_url: `${base}/api/email/preferences?t=test`, open_pixel_url: '',
+    unsubscribe_url: `${base}/api/email/unsubscribe?t=${pv}`, preferences_url: `${base}/api/email/preferences?t=${pv}`, open_pixel_url: '',
   }
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',

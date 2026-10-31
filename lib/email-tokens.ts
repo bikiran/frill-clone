@@ -31,14 +31,19 @@ function same(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y)
 }
 
-export type UnsubToken = { co: string; c: string; cam?: string | null; legacy?: boolean }
+export type UnsubToken = { co: string; c: string; cam?: string | null; legacy?: boolean; preview?: boolean }
 
 const UUIDISH = /^[A-Za-z0-9-]{1,64}$/
 
-/** Token for one contact's unsubscribe / preference links. */
-export function signUnsubToken(t: { co: string; c: string; cam?: string | null }): string {
+/**
+ * Token for one contact's unsubscribe / preference links. `preview` is for test
+ * emails: the links open the real pages in the business's branding, but
+ * nothing is changed (there's no customer behind them).
+ */
+export function signUnsubToken(t: { co: string; c: string; cam?: string | null; preview?: boolean }): string {
   const data: Record<string, string> = { k: 'u', co: t.co, c: t.c }
   if (t.cam) data.cam = t.cam
+  if (t.preview) data.pv = '1'
   const body = Buffer.from(JSON.stringify(data)).toString('base64url')
   return `${body}.${mac('unsub', body, 18)}`
 }
@@ -52,7 +57,7 @@ export function readUnsubToken(token: string | null | undefined): UnsubToken | n
     if (sig && same(sig, mac('unsub', body, 18))) {
       const d = JSON.parse(Buffer.from(body, 'base64url').toString())
       if (d?.k !== 'u' || !UUIDISH.test(String(d.co || '')) || !UUIDISH.test(String(d.c || ''))) return null
-      return { co: d.co, c: d.c, cam: d.cam && UUIDISH.test(String(d.cam)) ? d.cam : null }
+      return { co: d.co, c: d.c, cam: d.cam && UUIDISH.test(String(d.cam)) ? d.cam : null, ...(d.pv === '1' ? { preview: true } : {}) }
     }
   } catch { return null }
   // Announcement emails sent before this module (lib/announcement-notify).
