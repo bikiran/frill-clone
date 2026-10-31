@@ -38,7 +38,7 @@ function StatusBar() {
 }
 
 /** A phone body that scales to fit its box. */
-function Phone({ children }: { children: React.ReactNode }) {
+export function Phone({ children }: { children: React.ReactNode }) {
   const box = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
   useEffect(() => {
@@ -152,7 +152,58 @@ export function InboxPreview({ from, subject, previewText, accent }: FrameProps)
   )
 }
 
+const LINKISH = /(https?:\/\/[^\s]+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)+\/[^\s]*)/gi
+
+/**
+ * A text message as it arrives on a phone: the Messages app with the business
+ * at the top and the text in a grey bubble (links in blue). For SMS campaigns.
+ */
+export function MessagesPhone({ name, text, accent, height = 560 }: { name: string; text: string; accent: string; height?: number }) {
+  const parts = String(text || '').split(LINKISH)
+  return (
+    <div className="dv-sms-wrap" style={{ height }}>
+      <Phone>
+        <div className="dv-sms">
+          <div className="dv-sms-head">
+            <span className="dv-sms-back" aria-hidden><svg width="12" height="20" viewBox="0 0 12 20" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M10 2 2 10l8 8" /></svg></span>
+            <div className="dv-sms-who">
+              <span className="dv-sms-av" style={{ background: accent }}>{initial(name)}</span>
+              <b>{name}<svg width="7" height="11" viewBox="0 0 7 11" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="m1.5 1.5 4 4-4 4" /></svg></b>
+            </div>
+          </div>
+          <div className="dv-sms-body">
+            <div className="dv-sms-meta">Text Message<br /><b>Today</b> 9:41</div>
+            {String(text || '').trim()
+              ? <div className="dv-sms-bubble">{parts.map((p, i) => (i % 2 ? <span key={i} className="dv-sms-link">{p}</span> : <span key={i}>{p}</span>))}</div>
+              : <p className="dv-sms-empty">Your message will appear here.</p>}
+          </div>
+          <div className="dv-sms-compose" aria-hidden>
+            <span className="dv-sms-plus">+</span>
+            <span className="dv-sms-field">Text Message</span>
+          </div>
+        </div>
+      </Phone>
+    </div>
+  )
+}
+
 export const DEVICES_CSS = `
+/* The phone keeps its full-size layout box while drawn smaller; size containment stops that widening whatever column it's in (the height is always set). */
+.dv-sms-wrap{display:flex;flex-direction:column;min-height:0;min-width:0;width:100%;overflow:hidden;contain:size}
+.dv-sms{flex:1;min-height:0;display:flex;flex-direction:column;background:#fff;color:#111}
+.dv-sms-head{position:relative;display:flex;justify-content:center;padding:6px 18px 12px;border-bottom:1px solid #ececef;background:#f7f7f8}
+.dv-sms-back{position:absolute;left:18px;top:22px;color:#0a84ff}
+.dv-sms-who{display:flex;flex-direction:column;align-items:center;gap:5px}
+.dv-sms-av{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:700}
+.dv-sms-who b{display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:500;color:#111}.dv-sms-who b svg{color:#8e8e93}
+.dv-sms-body{flex:1;min-height:0;overflow:hidden;padding:14px 16px}
+.dv-sms-meta{margin:2px 0 12px;text-align:center;font-size:12px;line-height:1.35;color:#8e8e93}.dv-sms-meta b{font-weight:600}
+.dv-sms-bubble{max-width:80%;padding:10px 14px;border-radius:20px 20px 20px 6px;background:#e9e9eb;font-size:17px;line-height:1.32;white-space:pre-wrap;word-break:break-word;color:#111}
+.dv-sms-link{color:#0a6cdf;text-decoration:underline}
+.dv-sms-empty{margin:48px 0;text-align:center;font-size:15px;color:#a1a1aa}
+.dv-sms-compose{display:flex;align-items:center;gap:10px;padding:10px 14px 34px}
+.dv-sms-plus{width:34px;height:34px;flex-shrink:0;border-radius:50%;background:#ececef;color:#8e8e93;font-size:24px;line-height:34px;text-align:center}
+.dv-sms-field{flex:1;height:36px;padding:0 14px;border:1px solid #d4d4d8;border-radius:18px;font-size:16px;line-height:34px;color:#a1a1aa}
 .dv-fit{position:relative;flex:1;min-height:0;display:flex;align-items:flex-start;justify-content:center;overflow:hidden}
 .dv-phone{position:relative;flex-shrink:0;width:400px;height:836px;padding:11px;border-radius:64px;transform-origin:top center;
   background:linear-gradient(150deg,#e7e4df 0%,#a19d97 18%,#d9d5cf 38%,#7d7a74 62%,#c8c4be 82%,#8e8a84 100%);

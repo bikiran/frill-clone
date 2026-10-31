@@ -295,7 +295,7 @@ export async function GET(req: NextRequest) {
   const [
     msgRows, orderRows, wooEmailRows, wooPhoneRows, bookingRows, taskRows, convNoteRows, custNoteRows,
     callRows, ticketRows, formRows, saleRows, payRows, linkClicks, mediaRows, agentRows,
-    reviewRows, gReviewRows, commentRows, auditRows, emailSentRows, emailEventRows,
+    reviewRows, gReviewRows, commentRows, auditRows, emailSentRows, emailEventRows, smsCampaignRows,
   ] = await Promise.all([
     readMsgs || readTeamNotes ? pull('messages', 'created_at', MSG_LIMIT, [
       // is_internal (V188) marks a team-only note the customer never got;
@@ -367,6 +367,8 @@ export async function GET(req: NextRequest) {
     // Campaign emails they were sent, and what they did with them (V396).
     want('campaign') ? pull('email_campaign_recipients', 'sent_at', EVENT_LIMIT, [['id, campaign_id, sent_at']], q => q.eq('company_id', companyId).in('contact_id', contactIds).eq('status', 'sent')) : none,
     want('campaign') ? pull('email_events', 'occurred_at', EVENT_LIMIT, [['id, campaign_id, type, link, occurred_at']], q => q.eq('company_id', companyId).in('contact_id', contactIds).in('type', ['opened', 'clicked', 'unsubscribed', 'complained', 'bounced'])) : none,
+    // Campaign texts (their clicks show as link clicks: each text has its own link).
+    want('campaign') ? pull('campaign_recipients', 'sent_at', EVENT_LIMIT, [['id, campaign_id, status, error, sent_at']], q => q.eq('company_id', companyId).in('contact_id', contactIds).in('status', ['sent', 'delivered', 'failed'])) : none,
   ])
 
   // ── Messages ───────────────────────────────────────────────────────────────
@@ -551,8 +553,8 @@ export async function GET(req: NextRequest) {
       title: kind === 'payment' ? 'Opened a payment link' : kind === 'media' || kind === 'file' ? 'Opened shared files' : 'Clicked a link',
       detail: [l.label || hostOf(l.target_url), where].filter(Boolean).join(' · ') || undefined, link: linkClickHref })
   }
-  if ((emailSentRows as Row[]).length || (emailEventRows as Row[]).length) {
-    const ids = uniq([...(emailSentRows as Row[]), ...(emailEventRows as Row[])].map(r => r.campaign_id).filter(Boolean))
+  if ((emailSentRows as Row[]).length || (emailEventRows as Row[]).length || (smsCampaignRows as Row[]).length) {
+    const ids = uniq([...(emailSentRows as Row[]), ...(emailEventRows as Row[]), ...(smsCampaignRows as Row[])].map(r => r.campaign_id).filter(Boolean))
     const names: Record<string, string> = {}
     for (let i = 0; i < ids.length; i += 200) {
       const { data } = await db.from('campaigns').select('id, name').eq('company_id', companyId).in('id', ids.slice(i, i + 200))
@@ -561,6 +563,10 @@ export async function GET(req: NextRequest) {
     const called = (id: string) => `“${clip(names[id] || 'a campaign email', 60)}”`
     const report = (id: string) => (id ? `/admin/campaigns/${id}/report` : undefined)
     for (const r of emailSentRows as Row[]) push({ id: 'esent-' + r.id, kind: 'campaign', source: 'Email campaign', date: iso(r.sent_at), title: `Sent ${called(r.campaign_id)}`, link: report(r.campaign_id) })
+    for (const r of smsCampaignRows as Row[]) {
+      const failed = r.status === 'failed'
+      push({ id: 'ssent-' + r.id, kind: 'campaign', source: 'SMS campaign', date: iso(r.sent_at), title: failed ? `${called(r.campaign_id)} didn’t deliver` : `Texted ${called(r.campaign_id)}`, detail: failed ? clip(r.error || 'The text wasn’t accepted.', 120) : r.status === 'delivered' ? 'Delivered' : undefined, link: report(r.campaign_id), tone: failed ? 'bad' : undefined })
+    }
     // Opens: one card per email, at the first open, with how many times.
     const opens: Record<string, Row[]> = {}
     for (const e of emailEventRows as Row[]) {
