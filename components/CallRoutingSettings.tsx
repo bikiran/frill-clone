@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { authFetch } from '@/lib/auth-fetch'
+import { CK_ICON, CkHead, CkOption, CkSave, CkStyle, CkToggle } from '@/components/calls/CallKit'
 import {
   STRATEGIES, MENU_ACTIONS, MENU_KEYS, MAX_ORDER_STEPS, MAX_GREETING, MAX_LABEL, MAX_MESSAGE, STEP_SECONDS, MENU_TIMEOUT,
   auForwardNumber, formatAu, defaultForward, defaultOrder, defaultMenu, menuSpeech, routingSummary, validateRouting,
@@ -42,22 +43,17 @@ const Speaker = () => (
   </svg>
 )
 
-const label: React.CSSProperties = { display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }
-const hint: React.CSSProperties = { margin: '0 0 12px', fontSize: 12, color: 'var(--slate)', lineHeight: 1.45 }
-const warn: React.CSSProperties = { display: 'flex', gap: 7, margin: '0 0 12px', fontSize: 12.5, color: '#b45309', lineHeight: 1.45 }
-const field: React.CSSProperties = { width: '100%', boxSizing: 'border-box', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, background: '#fff', fontFamily: 'inherit', minWidth: 0 }
-const small: React.CSSProperties = { ...field, width: 'auto', padding: '7px 10px', fontSize: 13 }
-const iconBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', cursor: 'pointer', flexShrink: 0, padding: 0 }
-const addBtn: React.CSSProperties = { padding: '7px 12px', borderRadius: 9, border: '1px dashed var(--coral)', background: '#fff', color: 'var(--coral)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }
-const box: React.CSSProperties = { border: '1px solid var(--border)', borderRadius: 11, padding: 12, marginBottom: 10, background: '#fff', minWidth: 0 }
+// Sellio look (components/calls/CallKit): the --ck-* colours come from the card.
+const label: React.CSSProperties = { display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 8 }
+const hint: React.CSSProperties = { margin: '0 0 12px', fontSize: 12.5, color: 'var(--ck-muted)', lineHeight: 1.5 }
+const field: React.CSSProperties = { width: '100%', boxSizing: 'border-box', minHeight: 44, padding: '10px 14px', borderRadius: 14, border: 0, fontSize: 14, background: 'var(--ck-fill)', color: 'var(--ink)', fontFamily: 'inherit', minWidth: 0 }
+const small: React.CSSProperties = { ...field, width: 'auto', minHeight: 38, padding: '7px 12px', fontSize: 13.5, borderRadius: 12 }
+const iconBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: 999, border: 0, background: 'var(--ck-fill)', color: 'var(--ink)', cursor: 'pointer', flexShrink: 0, padding: 0 }
+const addBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, height: 36, padding: '0 15px', borderRadius: 999, border: '1.5px dashed var(--ck-fill-2)', background: 'var(--card, #fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 650, cursor: 'pointer' }
+const box: React.CSSProperties = { borderRadius: 18, padding: 14, marginBottom: 10, background: 'var(--card, #fff)', boxShadow: '0 0 0 1px var(--ck-fill-2)', minWidth: 0 }
 
 function Check({ on, onChange, text, sub, disabled }: { on: boolean; onChange: (v: boolean) => void; text: React.ReactNode; sub?: React.ReactNode; disabled?: boolean }) {
-  return (
-    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 9, fontSize: 13.5, color: 'var(--ink)', marginBottom: 10, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.6 : 1 }}>
-      <input type="checkbox" checked={on} disabled={disabled} onChange={e => onChange(e.target.checked)} style={{ width: 16, height: 16, marginTop: 2, flexShrink: 0, accentColor: 'var(--coral)' }} />
-      <span style={{ minWidth: 0 }}>{text}{sub ? <span style={{ display: 'block', fontSize: 12, color: 'var(--slate)', marginTop: 2, lineHeight: 1.4 }}>{sub}</span> : null}</span>
-    </label>
-  )
+  return <div className="crs-check"><CkToggle plain on={on} onChange={onChange} title={text} sub={sub} disabled={disabled} /></div>
 }
 
 function SecondsSelect({ value, onChange, id, aria }: { value: number; onChange: (n: number) => void; id?: string; aria?: string }) {
@@ -88,14 +84,14 @@ function ForwardFields({ value, onChange, idp, when, onWhen, hoursKnown }: {
           <label htmlFor={`${idp}-num`} style={label}>Australian mobile or landline</label>
           <input id={`${idp}-num`} value={text} inputMode="tel" placeholder="0412 345 678" autoComplete="off"
             onChange={e => { setText(e.target.value); onChange({ ...value, number: auForwardNumber(e.target.value) || '' }) }}
-            aria-invalid={!!text && !parsed} style={{ ...field, borderColor: text && !parsed ? '#f59e0b' : 'var(--border)' }} />
+            aria-invalid={!!text && !parsed} style={{ ...field, boxShadow: text && !parsed ? '0 0 0 1.5px #f59e0b' : undefined }} />
         </div>
         <div>
           <label htmlFor={`${idp}-sec`} style={label}>Ring for</label>
           <SecondsSelect id={`${idp}-sec`} value={value.seconds} onChange={n => onChange({ ...value, seconds: n })} />
         </div>
       </div>
-      <p style={{ ...hint, color: text && !parsed ? '#b45309' : 'var(--slate)', marginTop: 4 }}>
+      <p style={{ ...hint, color: text && !parsed ? '#b45309' : 'var(--ck-muted)', marginTop: 6 }}>
         {!text ? 'Not 13, 1300 or 1800 numbers, and not overseas.' : parsed ? `Calls go to ${formatAu(parsed)}.` : 'Enter an Australian mobile (04…) or landline with its area code (02, 03, 07, 08). Not 13, 1300, 1800 or overseas numbers.'}
       </p>
       <Check on={value.screen} onChange={v => onChange({ ...value, screen: v })}
@@ -110,15 +106,10 @@ function ForwardFields({ value, onChange, idp, when, onWhen, hoursKnown }: {
       {when && onWhen && (
         <>
           <p style={label}>Forward</p>
-          <div role="radiogroup" aria-label="When to forward" className="crs-choices">
-            <label className={`crs-choice${when === 'always' ? ' on' : ''}`}>
-              <input type="radio" name={`${idp}-when`} checked={when === 'always'} onChange={() => onWhen('always')} />
-              <span><b>Every call</b><span>Your team’s phones don’t ring.</span></span>
-            </label>
-            <label className={`crs-choice${when === 'closed' ? ' on' : ''}`} style={!hoursKnown && when !== 'closed' ? { opacity: 0.6 } : undefined}>
-              <input type="radio" name={`${idp}-when`} checked={when === 'closed'} disabled={!hoursKnown && when !== 'closed'} onChange={() => onWhen('closed')} />
-              <span><b>Only when you’re closed</b><span>{hoursKnown ? 'By your opening hours (Google Business Profile first). While you’re open, everyone rings at once.' : 'We can’t find your opening hours. Connect Google Business Profile to use this.'}</span></span>
-            </label>
+          <div role="radiogroup" aria-label="When to forward" className="ck-opts crs-choices">
+            <CkOption name={`${idp}-when`} checked={when === 'always'} onChange={() => onWhen('always')} title="Every call" sub="Your team’s phones don’t ring." />
+            <CkOption name={`${idp}-when`} checked={when === 'closed'} disabled={!hoursKnown && when !== 'closed'} onChange={() => onWhen('closed')} title="Only when you’re closed"
+              sub={hoursKnown ? 'By your opening hours (Google Business Profile first). While you’re open, everyone rings at once.' : 'We can’t find your opening hours. Connect Google Business Profile to use this.'} />
           </div>
         </>
       )}
@@ -164,7 +155,7 @@ function OrderEditor({ value, onChange, team, idp, forwardAllowed, allowForward 
       {next && value.steps.length < MAX_ORDER_STEPS && (
         <button type="button" style={{ ...addBtn, marginBottom: 12 }} onClick={() => onChange({ ...value, steps: [...value.steps, { userId: next.id, seconds: STEP_SECONDS.def }] })}>+ Add a person</button>
       )}
-      {!team.length && <p style={warn}><Info /><span>Nobody on your team can take calls yet. Check Team permissions.</span></p>}
+      {!team.length && <p className="ck-note crs-note"><Info /><span>Nobody on your team can take calls yet. Check Team permissions.</span></p>}
       <p style={hint}>Anyone offline or already on a call is skipped. Each person’s browser and the Colvy app ring together.</p>
       <div className="crs-row" style={{ alignItems: 'flex-start' }}>
         <Check on={value.thenAll} onChange={v => onChange({ ...value, thenAll: v })} text="Then ring everyone at once" />
@@ -175,7 +166,7 @@ function OrderEditor({ value, onChange, team, idp, forwardAllowed, allowForward 
           <Check on={!!value.thenForward} disabled={!forwardAllowed && !value.thenForward} onChange={v => onChange({ ...value, thenForward: v ? defaultForward() : null })}
             text="Then forward to an outside number" sub={!forwardAllowed ? 'Call forwarding isn’t available on your plan.' : undefined} />
           {value.thenForward && (
-            <div style={{ ...box, marginLeft: 25 }}>
+            <div style={{ ...box, marginTop: 6 }}>
               <ForwardFields idp={`${idp}-tf`} value={value.thenForward} onChange={v => onChange({ ...value, thenForward: v })} />
             </div>
           )}
@@ -264,15 +255,13 @@ function MenuEditor({ value, onChange, idp, d }: { value: Menu; onChange: (m: Me
         placeholder="Thanks for calling {business}." style={{ ...field, lineHeight: 1.5, resize: 'vertical', marginBottom: 4 }} />
       <p style={hint}>Read aloud in the same voice as your voicemail greeting. {'{business}'} becomes {d.businessName || 'your business name'}.</p>
       <Check on={value.announce} onChange={v => onChange({ ...value, announce: v })} text="Read out the options after the greeting" sub="“For Sales, press 1.” Turn off if your greeting already says them." />
-      <div style={{ background: 'var(--canvas, #f8fafc)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
-        <p style={{ margin: '0 0 6px', fontSize: 11.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Callers hear</p>
-        <p style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--ink)', lineHeight: 1.5, overflowWrap: 'anywhere' }}>{speech || 'Nothing yet.'}</p>
+      <div className="crs-hear">
+        <p className="crs-hear-t">Callers hear</p>
+        <p className="crs-hear-q">{speech || 'Nothing yet.'}</p>
         {canSpeak && speech && (
-          <button type="button" onClick={preview} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
-            <Speaker /> {speaking ? 'Stop' : 'Preview'}
-          </button>
+          <button type="button" onClick={preview} className="ck-btn ghost sm"><Speaker /> {speaking ? 'Stop' : 'Preview'}</button>
         )}
-        {canSpeak && <span style={{ marginLeft: 8, fontSize: 11.5, color: 'var(--slate)' }}>Approximate: your browser’s voice, not the phone’s.</span>}
+        {canSpeak && <span className="crs-hear-n">Approximate: your browser’s voice, not the phone’s.</span>}
       </div>
 
       <p style={label}>Options</p>
@@ -374,27 +363,30 @@ export default function CallRoutingSettings({ companyId }: { companyId: string }
   }
 
   return (
-    <div className="crs" style={{ border: '1px solid var(--border)', background: '#fff', borderRadius: 14, padding: 16, marginBottom: 18, minWidth: 0 }}>
+    <section className="ck-card crs">
+      <CkStyle />
       <style>{`
-        .crs-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
-        .crs-tab { padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-size: 12.5px; font-weight: 700; color: var(--ink); cursor: pointer; }
-        .crs-tab.on { border-color: var(--coral); background: var(--peach, #fff7f3); color: var(--coral); }
-        .crs-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; margin-bottom: 14px; }
-        .crs-choice { display: flex; gap: 9px; align-items: flex-start; border: 1px solid var(--border); border-radius: 11px; padding: 11px 12px; cursor: pointer; background: #fff; min-width: 0; }
-        .crs-choice.on { border-color: var(--coral); background: var(--peach, #fff7f3); }
-        .crs-choice input { accent-color: var(--coral); margin-top: 2px; flex-shrink: 0; }
-        .crs-choice > span { min-width: 0; }
-        .crs-choice b { display: block; font-size: 13.5px; font-weight: 700; color: var(--ink); }
-        .crs-choice > span > span { display: block; font-size: 12px; color: var(--slate); line-height: 1.4; margin-top: 2px; }
+        .crs-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+        .crs-tab { min-height: 36px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--ck-fill); font: inherit; font-size: 13.5px; font-weight: 600; color: var(--ink); cursor: pointer; font-variant-numeric: tabular-nums; }
+        .crs-tab.on { background: var(--ink); color: var(--card, #fff); }
+        .crs-choices { margin-bottom: 16px; }
         .crs-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
-        .crs-step { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
-        .crs-num { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--peach, #fff7f3); color: var(--coral); font-size: 12px; font-weight: 800; flex-shrink: 0; }
+        .crs-step { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 16px; background: var(--ck-soft); }
+        .crs-step + .crs-step { margin-top: 6px; }
+        .crs-num { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: color-mix(in srgb, var(--coral) 14%, var(--card, #fff)); color: var(--coral); font-size: 12.5px; font-weight: 800; flex-shrink: 0; }
+        .ck-card.crs .crs-step select { background-color: var(--card, #fff) !important; }
+        .crs-check { margin-bottom: 6px; }
+        .crs-row > .crs-check { flex: 1 1 240px; }
+        .crs-note { margin: 0 0 12px; }
+        .crs-hear { margin-bottom: 14px; padding: 14px 16px; border-radius: 18px; background: var(--ck-soft); }
+        .crs-hear-t { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--ck-muted); }
+        .crs-hear-q { margin: 0 0 10px; font-size: 14px; line-height: 1.55; color: var(--ink); overflow-wrap: anywhere; }
+        .crs-hear-n { margin-left: 10px; font-size: 12px; color: var(--ck-muted); }
         .crs button:disabled { opacity: .45; cursor: default; }
       `}</style>
-      <p style={{ margin: '0 0 3px', fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>Call routing</p>
-      <p style={{ margin: '0 0 14px', fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.45 }}>
-        Who an incoming call rings first. When nothing here answers, your &ldquo;When nobody answers&rdquo; settings above take over (voicemail, the missed-call text{aiNoAnswer ? ', the AI receptionist' : ''}).
-      </p>
+      <CkHead icon={CK_ICON.route} tone="#2563eb" title="Call routing">
+        Who an incoming call rings first. When nothing here answers, your &ldquo;When nobody answers&rdquo; settings take over (voicemail, the missed-call text{aiNoAnswer ? ', the AI receptionist' : ''}).
+      </CkHead>
 
       {d.numbers.length > 1 && (
         <div className="crs-tabs" role="tablist" aria-label="Your numbers">
@@ -408,22 +400,20 @@ export default function CallRoutingSettings({ companyId }: { companyId: string }
       )}
 
       {!num.supported ? (
-        <p style={warn}><Info /><span>{formatAu(num.phoneNumber)} is on Colvy’s older voice network, so its calls ring everyone at once. Ring order, forwarding and phone menus work on numbers on Colvy’s main voice network (every number Colvy sells now). Contact Colvy to move this number across.</span></p>
+        <p className="ck-note crs-note"><Info /><span>{formatAu(num.phoneNumber)} is on Colvy’s older voice network, so its calls ring everyone at once. Ring order, forwarding and phone menus work on numbers on Colvy’s main voice network (every number Colvy sells now). Contact Colvy to move this number across.</span></p>
       ) : (
         <>
-          {!d.available && <p style={warn}><Info /><span>Call routing needs a quick database update before it can be saved (COLVY_V399_CALL_ROUTING.sql). Until then, calls ring everyone at once.</span></p>}
-          {d.available && !d.canEdit && <p style={warn}><Info /><span>Only the owner or an admin can change call routing.</span></p>}
+          {!d.available && <p className="ck-note crs-note"><Info /><span>Call routing needs a quick database update before it can be saved (COLVY_V399_CALL_ROUTING.sql). Until then, calls ring everyone at once.</span></p>}
+          {d.available && !d.canEdit && <p className="ck-note crs-note"><Info /><span>Only the owner or an admin can change call routing.</span></p>}
 
           <fieldset disabled={!editable} style={{ border: 'none', margin: 0, padding: 0, minWidth: 0 }}>
             <legend style={{ ...label, padding: 0 }}>When someone calls {formatAu(num.phoneNumber)}</legend>
-            <div className="crs-choices" role="radiogroup">
+            <div className="ck-opts crs-choices" role="radiogroup">
               {STRATEGIES.map(s => {
                 const off = s.id === 'forward' && !d.forwardAllowed && c.strategy !== 'forward'
                 return (
-                  <label key={s.id} className={`crs-choice${c.strategy === s.id ? ' on' : ''}`} style={off ? { opacity: 0.6, cursor: 'default' } : undefined}>
-                    <input type="radio" name={`crs-strategy-${num.phoneNumber}`} checked={c.strategy === s.id} disabled={off} onChange={() => set({ strategy: s.id as RingStrategy })} />
-                    <span><b>{s.label}{s.id === 'simultaneous' ? ' (default)' : ''}</b><span>{off ? 'Call forwarding isn’t available on your plan.' : s.about}</span></span>
-                  </label>
+                  <CkOption key={s.id} name={`crs-strategy-${num.phoneNumber}`} checked={c.strategy === s.id} disabled={off} onChange={() => set({ strategy: s.id as RingStrategy })}
+                    title={`${s.label}${s.id === 'simultaneous' ? ' (default)' : ''}`} sub={off ? 'Call forwarding isn’t available on your plan.' : s.about} />
                 )
               })}
             </div>
@@ -438,13 +428,13 @@ export default function CallRoutingSettings({ companyId }: { companyId: string }
             {c.strategy === 'menu' && (
               <>
                 {d.ai.enabled && (
-                  <p style={warn}><Info /><span>
+                  <p className="ck-note crs-note"><Info /><span>
                     Your phone menu plays first, even when the AI receptionist is set to answer every call: add &ldquo;AI receptionist&rdquo; as an option to reach it.
-                    {d.ai.mode === 'after_hours' ? ' Out of hours, the AI answers instead, unless you add an after-hours menu below.' : ''} Your test numbers still get the AI straight away.
+                    {d.ai.mode === 'after_hours' ? ' Out of hours, the AI answers instead, unless you add an after-hours menu below. ' : ' '}Your test numbers still get the AI straight away.
                   </span></p>
                 )}
                 <MenuEditor idp="crs-menu" value={c.menu} onChange={m => set({ menu: m })} d={d} />
-                <div style={{ borderTop: '1px solid var(--border)', margin: '14px -16px 12px', padding: '14px 16px 0' }}>
+                <div className="ck-sec">
                   <Check on={c.afterHours.enabled} disabled={!d.hoursKnown && !c.afterHours.enabled}
                     onChange={v => set({ afterHours: { enabled: v, menu: c.afterHours.menu.options.length ? c.afterHours.menu : { ...defaultMenu(), greeting: 'Thanks for calling {business}. We’re closed right now.', defaultAction: { type: 'voicemail' } } } })}
                     text={<strong style={{ fontWeight: 700 }}>A different menu when you’re closed</strong>}
@@ -454,36 +444,30 @@ export default function CallRoutingSettings({ companyId }: { companyId: string }
               </>
             )}
             {(c.strategy === 'in_order' || c.strategy === 'forward') && d.ai.enabled && d.ai.mode === 'always' && !d.ai.paused && (
-              <p style={warn}><Info /><span>The AI receptionist is set to answer every call, so this won&rsquo;t be used until you change that below.</span></p>
+              <p className="ck-note crs-note"><Info /><span>The AI receptionist is set to answer every call, so this won&rsquo;t be used until you change that below.</span></p>
             )}
             {(c.strategy === 'in_order' || c.strategy === 'forward') && d.ai.enabled && d.ai.mode === 'after_hours' && (
-              <p style={warn}><Info /><span>Out of hours the AI receptionist answers first, as it does now.</span></p>
+              <p className="ck-note crs-note"><Info /><span>Out of hours the AI receptionist answers first, as it does now.</span></p>
             )}
           </fieldset>
 
-          <div role="status" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', background: '#f8fafc', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', margin: '6px 0 14px', fontSize: 13, color: 'var(--ink)', lineHeight: 1.45, overflowWrap: 'anywhere' }}>
-            <Info /><span>{summary}</span>
+          <div role="status" className="ck-summary" style={{ marginBottom: 12 }}>
+            {CK_ICON.info}<span>{summary}</span>
           </div>
           {(c.strategy === 'forward' || (c.strategy === 'in_order' && c.order.thenForward)) && (
             <p style={hint}>Forwarded calls are recorded and summarised like any other call, and the forwarded minutes show on each call.</p>
           )}
 
           {editable && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <button type="button" onClick={save} disabled={!dirty || busy}
-                style={{ padding: '8px 16px', borderRadius: 9, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: dirty && !busy ? 'pointer' : 'default', opacity: dirty && !busy ? 1 : 0.55 }}>
-                {busy ? 'Saving…' : 'Save'}
-              </button>
-              {dirty && <button type="button" onClick={() => { setDrafts({ ...drafts, [num.phoneNumber]: JSON.parse(saved[num.phoneNumber]) }); setMsg(null) }}
-                style={{ padding: '8px 12px', borderRadius: 9, border: '1px solid var(--border)', background: '#fff', color: 'var(--ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Undo changes</button>}
-              {msg && <span role="status" style={{ fontSize: 12.5, color: msg.ok ? '#15803d' : '#b42318' }}>{msg.text}</span>}
-            </div>
+            <CkSave dirty={dirty} busy={busy} onSave={save} msg={msg}>
+              {dirty && <button type="button" className="ck-btn ghost" onClick={() => { setDrafts({ ...drafts, [num.phoneNumber]: JSON.parse(saved[num.phoneNumber]) }); setMsg(null) }}>Undo changes</button>}
+            </CkSave>
           )}
           {msg && !msg.ok && msg.list?.length ? (
-            <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12.5, color: '#b42318', lineHeight: 1.5 }}>{msg.list.map((p, i) => <li key={i}>{p}</li>)}</ul>
+            <ul className="ck-msg bad" style={{ margin: '8px 0 0', paddingLeft: 18, lineHeight: 1.5 }}>{msg.list.map((p, i) => <li key={i}>{p}</li>)}</ul>
           ) : null}
         </>
       )}
-    </div>
+    </section>
   )
 }

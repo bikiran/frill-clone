@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { authFetch } from '@/lib/auth-fetch'
+import { CK_ICON, CkHead, CkSave, CkStyle } from '@/components/calls/CallKit'
 import { CALL_LANGUAGES, summaryOptions, type CallLanguageCode, type SummaryLanguage, type TranscriptView } from '@/lib/call-languages'
 
 type Saved = { languages: CallLanguageCode[]; summary: SummaryLanguage; view: TranscriptView }
@@ -47,8 +48,6 @@ export default function CallLanguageSettings({ companyId }: { companyId: string 
     } catch { setMsg({ ok: false, text: 'Could not reach Colvy. Try again.' }) } finally { setBusy(false) }
   }
 
-  const label: React.CSSProperties = { display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }
-  const chip = (on: boolean): React.CSSProperties => ({ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 10, border: `1px solid ${on ? 'var(--coral)' : 'var(--border)'}`, background: on ? 'var(--peach)' : '#fff', cursor: 'pointer', fontSize: 13.5, color: 'var(--ink)' })
   const summaryOpts = summaryOptions(f.languages)
   const chosen = f.languages.map(c => CALL_LANGUAGES.find(l => l.code === c)!).filter(Boolean)
   const romanOnes = chosen.filter(l => l.roman)
@@ -60,63 +59,60 @@ export default function CallLanguageSettings({ companyId }: { companyId: string 
   const addable = CALL_LANGUAGES.filter(l => !f.languages.includes(l.code))
 
   return (
-    <div style={{ border: '1px solid var(--border)', background: '#fff', borderRadius: 14, padding: 16, marginBottom: 18 }}>
-      <p style={{ margin: '0 0 3px', fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>Call languages</p>
-      <p style={{ margin: '0 0 14px', fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.45 }}>
-        Recorded calls are transcribed and summarised in any language, even when people switch between English and another language mid-sentence. Calls that aren&rsquo;t all English are shown three ways: the language as spoken, in Roman letters, and in English.
-      </p>
+    <section className="ck-card">
+      <CkStyle />
+      <style>{CLS_CSS}</style>
+      <CkHead icon={CK_ICON.globe} tone="#0891b2" title="Call languages">
+        Calls are transcribed and summarised in any language, even when people switch between English and another language mid-sentence. Calls that aren&rsquo;t all English are shown three ways: as spoken, in Roman letters, and in English.
+      </CkHead>
 
-      <span style={label}>Languages spoken on your calls</span>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-        <span style={{ ...chip(true), cursor: 'default', opacity: 0.75 }}>✓ English</span>
+      <span className="ck-lbl">Languages spoken on your calls</span>
+      <div className="ck-chips">
+        <span className="ck-chip on static">English</span>
         {chosen.map(l => (
-          <span key={l.code} style={chip(true)}>
-            {l.name}{l.native !== l.name && <span style={{ color: 'var(--slate)' }}>{l.native}</span>}
-            <button type="button" onClick={() => toggle(l.code)} aria-label={`Remove ${l.name}`}
-              style={{ border: 'none', background: 'none', padding: '0 0 0 2px', cursor: 'pointer', color: 'var(--slate)', fontSize: 15, lineHeight: 1 }}>×</button>
+          <span key={l.code} className="ck-chip on static">
+            {l.name}{l.native !== l.name && <small>{l.native}</small>}
+            <button type="button" className="ck-chip-x" onClick={() => toggle(l.code)} aria-label={`Remove ${l.name}`}>{CK_ICON.x}</button>
           </span>
         ))}
         {addable.length > 0 && (
-          <select aria-label="Add a language" value="" onChange={e => { if (e.target.value) toggle(e.target.value) }}
-            style={{ padding: '8px 12px', borderRadius: 10, border: '1px dashed var(--border)', fontSize: 13.5, background: '#fff', color: 'var(--ink)', cursor: 'pointer' }}>
+          <select aria-label="Add a language" className="cls-add" value="" onChange={e => { if (e.target.value) toggle(e.target.value) }}>
             <option value="">+ Add a language</option>
             {addable.map(l => <option key={l.code} value={l.code}>{l.name}{l.native !== l.name ? ` · ${l.native}` : ''}</option>)}
           </select>
         )}
       </div>
-      <p style={{ margin: '0 0 14px', fontSize: 12, color: 'var(--slate)', lineHeight: 1.45 }}>Calls in other languages are still transcribed and translated. Adding one helps Colvy hear it accurately, lets you get summaries in it and, for languages people type in English letters, adds a Roman-letters version.</p>
+      <p className="ck-hint">Calls in other languages are still transcribed and translated. Adding one helps Colvy hear it accurately, lets you get summaries in it and, for languages people type in English letters, adds a Roman-letters version.</p>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 12 }}>
-        <div style={{ flex: '1 1 220px', minWidth: 0 }}>
-          <label htmlFor="cls-summary" style={label}>Write call summaries and action items in</label>
-          <select id="cls-summary" value={f.summary} onChange={e => setF({ ...f, summary: e.target.value as SummaryLanguage })}
-            style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, background: '#fff' }}>
-            {summaryOpts.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+      <div className="cls-grid">
+        <div>
+          <label htmlFor="cls-summary" className="ck-lbl">Write call summaries and action items in</label>
+          <select id="cls-summary" className="ck-in" value={f.summary} onChange={e => setF({ ...f, summary: e.target.value as SummaryLanguage })}>
+            {summaryOpts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
-        <div style={{ flex: '1 1 220px', minWidth: 0 }}>
-          <label htmlFor="cls-view" style={label}>Show translated transcripts in</label>
-          <select id="cls-view" value={views.some(v => v.value === f.view) ? f.view : 'en'} onChange={e => setF({ ...f, view: e.target.value as TranscriptView })}
-            style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, background: '#fff' }}>
+        <div>
+          <label htmlFor="cls-view" className="ck-lbl">Show translated transcripts in</label>
+          <select id="cls-view" className="ck-in" value={views.some(v => v.value === f.view) ? f.view : 'en'} onChange={e => setF({ ...f, view: e.target.value as TranscriptView })}>
             {views.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
           </select>
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--slate)' }}>Anyone can switch on the call; their choice is remembered.</p>
+          <p className="ck-hint">Anyone can switch on the call; their choice is remembered.</p>
         </div>
       </div>
 
       {engine !== 'gemini' && f.languages.length > 0 && (
-        <p role="note" style={{ margin: '0 0 12px', fontSize: 12.5, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 9, padding: '8px 11px', lineHeight: 1.45 }}>
+        <p role="note" className="ck-note">{CK_ICON.warn}<span>
           {engine ? 'Calls are transcribed with a service that only partly understands these languages, and mixed English may be missed. Ask Colvy support to turn on multilingual transcription.' : 'Call transcription isn’t set up yet.'}
-        </p>
+        </span></p>
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <button onClick={save} disabled={!dirty || busy}
-          style={{ padding: '9px 18px', borderRadius: 9, border: 'none', background: dirty ? 'var(--coral)' : '#e5e7eb', color: dirty ? '#fff' : '#6b7280', fontSize: 13.5, fontWeight: 700, cursor: dirty && !busy ? 'pointer' : 'default' }}>
-          {busy ? 'Saving…' : 'Save'}
-        </button>
-        {msg && <span role={msg.ok ? 'status' : 'alert'} style={{ fontSize: 12.5, color: msg.ok ? '#15803d' : '#dc2626' }}>{msg.text}</span>}
-      </div>
-    </div>
+      <CkSave dirty={dirty} busy={busy} onSave={save} msg={msg} />
+    </section>
   )
 }
+
+const CLS_CSS = `
+.ck-card .ck-chips select.cls-add{min-height:36px;padding:0 14px;border:1.5px dashed var(--ck-fill-2)!important;border-radius:999px!important;background-color:var(--card,#fff)!important;font:inherit;font-size:13.5px;font-weight:600;color:var(--ink);cursor:pointer}
+.cls-grid{display:flex;flex-wrap:wrap;gap:16px;margin-top:18px}
+.cls-grid>div{flex:1 1 240px;min-width:0}
+`

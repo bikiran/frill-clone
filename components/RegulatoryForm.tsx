@@ -178,7 +178,8 @@ export default function RegulatoryForm({ companyId, numberType, provider = 'teln
   )
 }
 
-const RGF_CSS = `
+// Shared with the port request pop-up (NumberPortingCard), so the two match.
+export const RGF_CSS = `
 .rgf-back{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(17,17,20,.45);animation:rgfFade .2s ease both}
 .rgf{display:flex;flex-direction:column;width:100%;max-width:540px;max-height:min(760px,92vh);background:#fff;border-radius:24px;box-shadow:0 30px 80px -20px rgba(0,0,0,.35);overflow:hidden;animation:rgfIn .35s cubic-bezier(.22,1,.36,1) both}
 .rgf button::before{display:none!important}
@@ -229,10 +230,12 @@ const RGF_CSS = `
 // click-or-drag dropzone with an explicit Browse button, the picked file's name
 // and size, a preview thumbnail for images, and a clear/remove control. Falls
 // back to "already on file" state when a document was uploaded previously.
-function FileDrop({ file, existingUrl, onPick }: {
+export function FileDrop({ file, existingUrl, onPick, accept = 'image/*,application/pdf', hint = 'PNG, JPG or PDF · max ~10\u00a0MB' }: {
   file: File | null
   existingUrl?: string
   onPick: (f: File | null) => void
+  accept?: string
+  hint?: string
 }) {
   const [dragOver, setDragOver] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -250,7 +253,7 @@ function FileDrop({ file, existingUrl, onPick }: {
   if (file || (existingUrl && !file)) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--canvas, #fafafa)' }}>
-        <input ref={inputRef} type="file" accept="image/*,application/pdf" onChange={e => onPick(e.target.files?.[0] || null)} style={{ display: 'none' }} />
+        <input ref={inputRef} type="file" accept={accept} onChange={e => onPick(e.target.files?.[0] || null)} style={{ display: 'none' }} />
         <div style={{ width: 44, height: 44, borderRadius: 9, flexShrink: 0, background: thumb ? `center/cover no-repeat url(${thumb})` : '#eef2f7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>
           {!thumb && (file ? '📄' : '✓')}
         </div>
@@ -284,12 +287,12 @@ function FileDrop({ file, existingUrl, onPick }: {
         transition: 'border-color .15s, background .15s',
       }}
     >
-      <input ref={inputRef} type="file" accept="image/*,application/pdf" onChange={e => onPick(e.target.files?.[0] || null)} style={{ display: 'none' }} />
+      <input ref={inputRef} type="file" accept={accept} onChange={e => onPick(e.target.files?.[0] || null)} style={{ display: 'none' }} />
       <div style={{ fontSize: 22, lineHeight: 1 }}>📎</div>
       <p style={{ margin: 0, fontSize: 13.5, color: 'var(--ink)' }}>
         <span style={{ color: 'var(--coral)', fontWeight: 700 }}>Click to upload</span>{' '}or drag &amp; drop
       </p>
-      <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)' }}>PNG, JPG or PDF · max ~10&nbsp;MB</p>
+      <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)' }}>{hint}</p>
     </div>
   )
 }
