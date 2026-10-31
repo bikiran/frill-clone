@@ -1,70 +1,24 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
-import { alertDialog } from '@/components/ConfirmDialog'
+import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser, resolveCompanyUser } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
 import EmailReport from './EmailReport'
-import EmptyScroll from '@/components/EmptyScroll'
-import { aud } from '@/lib/sms-pricing'
-import { isBookingPayment, linkFunnel } from '@/lib/link-channels'
+import SmsReport from './SmsReport'
 
-function parseTs(d: string | null | undefined): Date | null {
-  if (!d) return null
-  let s = String(d).trim()
-  if (!s) return null
-  s = s.replace(' ', 'T').replace(/([+-]\d{2})$/, '$1:00')
-  if (!/(Z|[+-]\d{2}:?\d{2})$/.test(s)) s += 'Z'
-  const p = new Date(s)
-  return isNaN(p.getTime()) ? null : p
-}
-const fmt = (d: string | null | undefined) => {
-  const p = parseTs(d)
-  return p ? p.toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '—'
-}
-
-const SKIP_LABEL: Record<string, string> = {
-  unsubscribed: 'Unsubscribed', no_consent: 'No marketing consent', blocked: 'Blocked',
-  invalid_number: 'No valid mobile', duplicate: 'Duplicate contact',
-  unverified: 'Opt-out couldn’t be checked',
-}
-
-// Every recipient row, skipped ones included. A single request stops at the
-// API's 1,000-row cap whatever .limit() says, which made a 9,000-text campaign
-// report on its first 1,000. Pages are fetched a few at a time.
-async function allRecipients(campaignId: string): Promise<{ data: any[] }> {
-  const page = 1000
-  const get = (from: number) => (supabase as any).from('campaign_recipients').select('*')
-    .eq('campaign_id', campaignId).order('id', { ascending: true }).range(from, from + page - 1)
-    .then((r: any) => r.data || [], () => [])
-  const out: any[] = await get(0)
-  if (out.length < page) return { data: out }
-  for (let from = page; from < 100000; from += page * 4) {
-    const pages: any[][] = await Promise.all([0, 1, 2, 3].map(i => get(from + i * page)))
-    let short = false
-    for (const p of pages) { out.push(...p); if (p.length < page) { short = true; break } }
-    if (short) break
-  }
-  return { data: out }
-}
+// A campaign's report. The numbers come from the server (an email campaign's
+// from /api/email-campaigns/*, an SMS campaign's from /api/campaigns/report);
+// this page finds the business and the campaign and shows the right one.
 
 export default function CampaignReportPage() {
   const router = useRouter()
   const params = useParams()
   const campaignId = params?.id as string
-
   const [loading, setLoading] = useState(true)
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [campaign, setCampaign] = useState<any>(null)
-  const [recipients, setRecipients] = useState<any[]>([])
-  const [links, setLinks] = useState<any[]>([])
-  const [clicks, setClicks] = useState<any[]>([])
-  const [conversions, setConversions] = useState<any[]>([])
-  const [contacts, setContacts] = useState<Record<string, any>>({})
-  const [outlets, setOutlets] = useState<Record<string, string>>({})
-  const [creatingSegment, setCreatingSegment] = useState(false)
 
   useEffect(() => {
     ;(async () => {
@@ -90,352 +44,22 @@ export default function CampaignReportPage() {
             }
           }
         }
-        if (!cid) { setLoading(false); return }
+        if (!cid) return
         setCompanyId(cid)
-
-        // The campaign, who it went to, its links and the outlets — side by side.
-        const [{ data: c }, { data: rs }, { data: ls }, { data: outs }] = await Promise.all([
-          (supabase as any).from('campaigns').select('*').eq('id', campaignId).maybeSingle(),
-          allRecipients(campaignId),
-          (supabase as any).from('short_links').select('*').eq('campaign_id', campaignId),
-          (supabase as any).from('company_locations').select('id, label, suburb').eq('company_id', cid),
-        ])
+        const { data: c } = await (supabase as any).from('campaigns').select('*').eq('id', campaignId).maybeSingle()
         setCampaign(c)
-        setRecipients(rs || [])
-        setLinks(ls || [])
-        const om: Record<string, string> = {}
-        for (const o of (outs || [])) om[o.id] = o.label || o.suburb || 'Outlet'
-        setOutlets(om)
-
-        // Then clicks, conversions and the recipients' names, also side by side
-        // (names in batches of 200, a few batches at a time).
-        const linkIds = (ls || []).map((l: any) => l.id).slice(0, 200)
-        const ids = Array.from(new Set((rs || []).map((r: any) => r.contact_id).filter(Boolean))) as string[]
-        const batches: string[][] = []
-        for (let i = 0; i < ids.length; i += 200) batches.push(ids.slice(i, i + 200))
-        const m: Record<string, any> = {}
-        const loadNames = async () => {
-          for (let i = 0; i < batches.length; i += 6) {
-            const rows = await Promise.all(batches.slice(i, i + 6).map(b => (supabase as any).from('contacts')
-              .select('id, name, phone, email, location_id').in('id', b).then((r: any) => r.data || [])))
-            for (const x of rows.flat()) m[x.id] = x
-          }
-          if (batches.length) setContacts({ ...m })
-        }
-        await Promise.all([
-          linkIds.length ? (supabase as any).from('link_clicks').select('*').in('link_id', linkIds).then(({ data: cl }: any) => setClicks(cl || [])) : null,
-          linkIds.length ? (supabase as any).from('link_conversions').select('*').in('link_id', linkIds).then(({ data: cv }: any) => setConversions(cv || [])) : null,
-          loadNames(),
-        ])
       } finally { setLoading(false) }
     })()
   }, [campaignId])
 
-  // ── Metrics ───────────────────────────────────────────────────────────────
-  const sent = recipients.filter(r => ['sent', 'delivered'].includes(r.status)).length
-  const delivered = recipients.filter(r => r.status === 'delivered').length
-  const failed = recipients.filter(r => r.status === 'failed').length
-  const skipped = recipients.filter(r => r.status === 'skipped')
-  // Not sent because the campaign was stopped part-way (Stop sending).
-  const cancelledCount = recipients.filter(r => r.status === 'cancelled').length
-
-  const clickedContacts = useMemo(
-    () => new Set(clicks.map(c => c.contact_id).filter(Boolean)), [clicks])
-  const uniqueClicks = clickedContacts.size
-  const clickRate = delivered ? (uniqueClicks / delivered) * 100 : 0
-
-  const paid = conversions.filter(c => c.stage === 'paid')
-  // A paid booking (book_<id>) is revenue but not an order — the same rule as
-  // Link Reports, so both pages count the same orders.
-  const orders = new Set(paid.filter(c => !isBookingPayment(c)).map(c => c.order_id ?? c.id)).size
-  // Bookings made through the campaign's links, counted as Link Reports does.
-  const bookings = linkFunnel([], conversions).bookings
-  const revenue = paid.reduce((s, c) => s + (Number(c.revenue) || 0), 0)
-  const purchasers = new Set(paid.map(c => c.contact_id).filter(Boolean))
-  // A booking is a result too, so a "book now" campaign doesn't read as 0%.
-  const conversionRate = uniqueClicks ? ((orders + bookings) / uniqueClicks) * 100 : 0
-
-  const cost = Number(campaign?.actual_cost) || Number(campaign?.estimated_cost) || 0
-  const roi = cost > 0 ? ((revenue - cost) / cost) * 100 : 0
-
-  // Unsubscribes attributable to this campaign — anyone who opted out after it
-  // went out. Approximate by design, and labelled as such.
-  const sentAt = parseTs(campaign?.sent_at)
-  const unsubscribed = useMemo(() => {
-    if (!sentAt) return 0
-    return recipients.filter(r => {
-      const ct = contacts[r.contact_id]
-      const u = ct?.unsubscribed_at ? parseTs(ct.unsubscribed_at) : null
-      return u && u >= sentAt
-    }).length
-  }, [recipients, contacts, sentAt])
-
-  /** Clicked but never ordered — the useful follow-up group. */
-  const clickedNotPurchased = useMemo(
-    () => Array.from(clickedContacts).filter(id => !purchasers.has(id)),
-    [clickedContacts, purchasers])
-
-  const failureReasons = useMemo(() => {
-    const m: Record<string, number> = {}
-    for (const r of recipients.filter(x => x.status === 'failed')) {
-      const k = r.error || 'Unknown error'
-      m[k] = (m[k] || 0) + 1
-    }
-    return Object.entries(m).sort((a, b) => b[1] - a[1])
-  }, [recipients])
-
-  const skipReasons = useMemo(() => {
-    const m: Record<string, number> = {}
-    for (const r of skipped) {
-      const k = r.skip_reason || 'other'
-      m[k] = (m[k] || 0) + 1
-    }
-    return Object.entries(m).sort((a, b) => b[1] - a[1])
-  }, [skipped])
-
-  const byOutlet = useMemo(() => {
-    const m: Record<string, { sent: number; clicks: number; revenue: number }> = {}
-    for (const r of recipients) {
-      const ct = contacts[r.contact_id]
-      const key = ct?.location_id ? (outlets[ct.location_id] || 'Unknown outlet') : 'Online store'
-      m[key] ||= { sent: 0, clicks: 0, revenue: 0 }
-      if (['sent', 'delivered'].includes(r.status)) m[key].sent++
-      if (clickedContacts.has(r.contact_id)) m[key].clicks++
-    }
-    for (const c of paid) {
-      const ct = contacts[c.contact_id]
-      const key = ct?.location_id ? (outlets[ct.location_id] || 'Unknown outlet') : 'Online store'
-      m[key] ||= { sent: 0, clicks: 0, revenue: 0 }
-      m[key].revenue += Number(c.revenue) || 0
-    }
-    return Object.entries(m).sort((a, b) => b[1].sent - a[1].sent)
-  }, [recipients, contacts, outlets, clickedContacts, paid])
-
-  const topLinks = useMemo(() => {
-    const m: Record<string, number> = {}
-    for (const c of clicks) m[c.link_id] = (m[c.link_id] || 0) + 1
-    return links
-      .map(l => ({ ...l, clickCount: m[l.id] || 0 }))
-      .sort((a, b) => b.clickCount - a.clickCount)
-  }, [links, clicks])
-
-  const clicksOverTime = useMemo(() => {
-    const m: Record<string, number> = {}
-    for (const c of clicks) {
-      const p = parseTs(c.clicked_at)
-      if (p) {
-        const k = p.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
-        m[k] = (m[k] || 0) + 1
-      }
-    }
-    return Object.entries(m)
-  }, [clicks])
-
-  const createFollowUpSegment = async () => {
-    if (!companyId || clickedNotPurchased.length === 0) return
-    setCreatingSegment(true)
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const { data, error } = await (supabase as any).from('campaigns').insert({
-        company_id: companyId,
-        name: `Follow-up: ${campaign?.name || 'campaign'} (clicked, no order)`,
-        channel: campaign?.channel || 'sms',
-        status: 'draft',
-        audience_type: 'manual',
-        audience_filter: { type: 'manual', contactIds: clickedNotPurchased },
-        audience_count: clickedNotPurchased.length,
-        created_by: session?.user?.email?.split('@')[0] || null,
-        created_by_id: session?.user?.id || null,
-      }).select().maybeSingle()
-      if (error) throw error
-      router.push(`/admin/campaigns/${data.id}`)
-    } catch (e: any) { alertDialog('Could not create the follow-up campaign: ' + e.message) }
-    finally { setCreatingSegment(false) }
-  }
-
-  // White rounded cards with a soft ring; normal-case labels over big numbers.
-  const card: React.CSSProperties = { border: '1px solid transparent', borderRadius: 20, background: '#fff', padding: 18, boxShadow: '0 0 0 1px rgba(0,0,0,.06), 0 1px 2px rgba(16,24,40,.04)', minWidth: 0 }
-  const statNum: React.CSSProperties = { fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--ink)', margin: '6px 0 0', fontVariantNumeric: 'tabular-nums' }
-  const statLbl: React.CSSProperties = { fontSize: 13.5, fontWeight: 600, color: '#71717a' }
-  const th: React.CSSProperties = { padding: '10px 11px', fontSize: 12.5, fontWeight: 600, color: '#8e8e93', textAlign: 'left', whiteSpace: 'nowrap' }
-  const td: React.CSSProperties = { padding: '10px 11px', color: '#52525b' }
-
   if (loading) return <SkeletonList rows={6} />
-  if (!campaign) return (
+  if (!campaign || !companyId) return (
     <div style={{ padding: 40, textAlign: 'center', color: 'var(--slate)' }}>
       Campaign not found. <a href="/admin/campaigns" style={{ color: 'var(--coral)' }}>Back to campaigns</a>
     </div>
   )
-
-  // Email campaigns have their own numbers (email_campaign_recipients / email_events).
-  if (campaign.channel === 'email' && companyId) {
-    return <EmailReport campaign={campaign} companyId={companyId} onBack={() => router.push('/admin/campaigns')} />
-  }
-
-  const notSentYet = !['sent', 'sending', 'cancelled'].includes(campaign.status)
-
-  return (
-    <div className="cr-page" style={{ padding: '24px 28px 48px', boxSizing: 'border-box', width: '100%', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
-      <style>{`.cr-page button::before{display:none}.cr-back{display:inline-flex;align-items:center;gap:4px;height:32px;padding:0 14px 0 10px;margin-bottom:14px;border:none;border-radius:999px;background:#f4f4f5;color:#3f3f46;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer}.cr-back:hover{background:#ececef;color:#18181b}@media(max-width:560px){.cr-page{padding:16px 14px 36px!important}}`}</style>
-      <button onClick={() => router.push('/admin/campaigns')} className="cr-back">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
-        Campaigns
-      </button>
-      <div style={{ marginBottom: 20 }}>
-        <h1 style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.025em', lineHeight: 1.15, color: 'var(--ink)', margin: 0 }}>{campaign.name}</h1>
-        <p style={{ color: '#71717a', fontSize: 14, margin: '6px 0 0' }}>
-          {campaign.status === 'sent' ? `Sent ${fmt(campaign.sent_at)}` : campaign.status === 'cancelled' ? `Stopped part-way ${fmt(campaign.completed_at)}` : `Status: ${campaign.status}`}
-          {(campaign.status === 'paused' || campaign.status === 'cancelled') && campaign.status_reason ? ` \u00b7 ${campaign.status_reason}` : ''}
-          {' · '}{String(campaign.channel || 'sms').toUpperCase()}
-        </p>
-      </div>
-
-      {notSentYet && (
-        <div style={{ ...card, borderColor: '#fde68a', background: '#fffbeb', marginBottom: 16 }}>
-          <p style={{ margin: 0, fontSize: 13, color: '#78350f' }}>
-            This campaign hasn't been sent, so there are no delivery figures yet. Anything below reflects
-            what's been recorded so far.
-          </p>
-        </div>
-      )}
-
-      {/* Headline metrics */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 12 }}>
-        <div style={card}><div style={statLbl}>Sent</div><p style={statNum}>{sent.toLocaleString()}</p>
-          {cancelledCount > 0 && <p style={{ margin: '2px 0 0', fontSize: 12.5, color: '#8e8e93' }}>{cancelledCount.toLocaleString()} not sent (stopped)</p>}</div>
-        <div style={card}><div style={statLbl}>Delivered</div><p style={statNum}>{delivered.toLocaleString()}</p></div>
-        <div style={card}><div style={statLbl}>Failed</div>
-          <p style={{ ...statNum, color: failed ? '#dc2626' : 'var(--ink)' }}>{failed.toLocaleString()}</p></div>
-        <div style={card}><div style={statLbl}>Clicked</div><p style={statNum}>{uniqueClicks.toLocaleString()}</p>
-          <p style={{ margin: '2px 0 0', fontSize: 12.5, color: '#8e8e93' }}>{clickRate.toFixed(1)}% of delivered</p></div>
-        <div style={card}><div style={statLbl}>Unsubscribed</div>
-          <p style={{ ...statNum, color: unsubscribed ? '#b45309' : 'var(--ink)' }}>{unsubscribed.toLocaleString()}</p></div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 18 }}>
-        <div style={card}><div style={statLbl}>Orders</div><p style={statNum}>{orders.toLocaleString()}</p></div>
-        {bookings > 0 && <div style={card}><div style={statLbl}>Bookings</div><p style={statNum}>{bookings.toLocaleString()}</p></div>}
-        <div style={card}><div style={statLbl}>Revenue</div>
-          <p style={{ ...statNum, color: revenue > 0 ? '#15803d' : 'var(--ink)' }}>{aud(revenue)}</p>
-          <p style={{ margin: '2px 0 0', fontSize: 12.5, color: '#8e8e93' }}>influenced</p></div>
-        <div style={card}><div style={statLbl}>Conversion rate</div><p style={statNum}>{conversionRate.toFixed(1)}%</p>
-          <p style={{ margin: '2px 0 0', fontSize: 12.5, color: '#8e8e93' }}>{bookings > 0 ? 'ordered or booked, of those who clicked' : 'of those who clicked'}</p></div>
-        <div style={card}><div style={statLbl}>Cost</div><p style={statNum}>{aud(cost)}</p></div>
-        <div style={card}><div style={statLbl}>Return on spend</div>
-          <p style={{ ...statNum, color: roi > 0 ? '#15803d' : roi < 0 ? '#dc2626' : 'var(--ink)' }}>
-            {cost > 0 ? `${roi > 0 ? '+' : ''}${roi.toFixed(0)}%` : '—'}
-          </p></div>
-      </div>
-
-      {/* Follow-up action */}
-      {clickedNotPurchased.length > 0 && (
-        <div style={{ ...card, background: 'color-mix(in srgb, var(--coral) 7%, #fff)', boxShadow: '0 0 0 1px color-mix(in srgb, var(--coral) 22%, transparent)', marginBottom: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <div>
-              <strong style={{ fontSize: 14, color: 'var(--ink)' }}>
-                {clickedNotPurchased.length} clicked but didn't order
-              </strong>
-              <p style={{ margin: '4px 0 0', fontSize: 12.5, color: 'var(--slate)' }}>
-                They showed interest — a follow-up usually converts better than a fresh send.
-              </p>
-            </div>
-            <button onClick={createFollowUpSegment} disabled={creatingSegment}
-              style={{ padding: '10px 18px', borderRadius: 999, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', opacity: creatingSegment ? 0.6 : 1 }}>
-              {creatingSegment ? 'Creating…' : 'Create follow-up campaign'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 12 }}>
-        {/* Excluded */}
-        {skipReasons.length > 0 && (
-          <div style={card}>
-            <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Excluded before sending</h3>
-            {skipReasons.map(([r, n]) => (
-              <div key={r} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '4px 0', color: 'var(--slate)' }}>
-                <span>{SKIP_LABEL[r] || r}</span><strong style={{ color: 'var(--ink)' }}>{n}</strong>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Failures */}
-        {failureReasons.length > 0 && (
-          <div style={card}>
-            <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Delivery failures</h3>
-            {failureReasons.map(([r, n]) => (
-              <div key={r} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5, padding: '4px 0', color: 'var(--slate)' }}>
-                <span style={{ flex: 1 }}>{r}</span><strong style={{ color: '#dc2626' }}>{n}</strong>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Outlets */}
-        {byOutlet.length > 0 && (
-          <div style={{ ...card, gridColumn: byOutlet.length > 2 ? 'span 2' : 'auto' }}>
-            <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>By outlet</h3>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-              <thead><tr style={{ color: 'var(--slate)', textAlign: 'left' }}>
-                <th style={th}>Outlet</th><th style={th}>Sent</th><th style={th}>Clicks</th><th style={th}>Revenue</th>
-              </tr></thead>
-              <tbody>
-                {byOutlet.map(([name, v]) => (
-                  <tr key={name} style={{ borderTop: '1px solid #f0f0f2' }}>
-                    <td style={{ ...td, color: 'var(--ink)', fontWeight: 600 }}>{name}</td>
-                    <td style={td}>{v.sent}</td>
-                    <td style={td}>{v.clicks}</td>
-                    <td style={{ ...td, color: v.revenue > 0 ? '#15803d' : 'var(--slate)', fontWeight: v.revenue > 0 ? 700 : 400 }}>
-                      {aud(v.revenue)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Top links */}
-        {topLinks.length > 0 && (
-          <div style={card}>
-            <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Top clicked links</h3>
-            {topLinks.map(l => (
-              <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5, padding: '5px 0', borderTop: '1px solid #f0f0f2' }}>
-                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--ink)' }}>
-                  {l.label || l.target_url}
-                </span>
-                <strong style={{ color: l.clickCount ? '#059669' : 'var(--slate)' }}>{l.clickCount}</strong>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Clicks over time */}
-        {clicksOverTime.length > 0 && (
-          <div style={card}>
-            <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Clicks over time</h3>
-            {(() => {
-              const max = Math.max(...clicksOverTime.map(e => e[1]), 1)
-              return (
-                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 90 }}>
-                  {clicksOverTime.map(([d, n]) => (
-                    <div key={d} title={`${d} — ${n}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%' }}>
-                      <div style={{ height: `${(n / max) * 100}%`, minHeight: 3, background: 'var(--coral)', opacity: 0.85, borderRadius: 5 }} />
-                    </div>
-                  ))}
-                </div>
-              )
-            })()}
-          </div>
-        )}
-      </div>
-
-      {recipients.length === 0 && (
-        <div style={{ ...card, padding: '18px 12px', marginTop: 12 }}>
-          <EmptyScroll kinds={['campaign', 'sms']} compact title="No recipient records yet" line="Once the campaign sends, each text shows up here." />
-        </div>
-      )}
-    </div>
-  )
+  const back = () => router.push('/admin/campaigns')
+  return campaign.channel === 'email'
+    ? <EmailReport campaign={campaign} companyId={companyId} onBack={back} />
+    : <SmsReport campaign={campaign} companyId={companyId} onBack={back} />
 }
