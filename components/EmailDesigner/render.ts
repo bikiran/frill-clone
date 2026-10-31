@@ -22,9 +22,17 @@
 // design has none.
 
 import { escapeHtml } from '@/lib/safe-html'
-import type { Align, Block, EmailBrand, EmailDesign, ProductItem } from './types'
+import type { Align, Block, ColumnItem, EmailBrand, EmailDesign, FontChoice, ProductItem } from './types'
 
 const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
+/** The Design tab's fonts: stacks every inbox already has (no web fonts). */
+export const FONTS: Record<FontChoice, { label: string; stack: string }> = {
+  modern: { label: 'Modern', stack: FONT },
+  classic: { label: 'Classic', stack: "Georgia,'Times New Roman',Times,serif" },
+  friendly: { label: 'Friendly', stack: "'Trebuchet MS','Lucida Grande','Lucida Sans Unicode',Verdana,sans-serif" },
+  clean: { label: 'Clean', stack: 'Helvetica,Arial,sans-serif' },
+}
+const CORNER_PX = { sharp: 0, soft: 8, round: 16 } as const
 const MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,'Courier New',monospace"
 const C = { ink: '#18181b', body: '#3f3f46', muted: '#71717a', border: '#e4e4e7', canvas: '#f4f4f5', card: '#ffffff', soft: '#fafafa' }
 const WIDTH = 600
@@ -100,15 +108,19 @@ const paragraphs = (s: string) => String(s ?? '').replace(/\r\n?/g, '\n').split(
 const row = (inner: string, pad = '0 40px') => `<tr><td class="px" style="padding:${pad}">${inner}</td></tr>`
 const alignOf = (a?: Align) => (a === 'center' ? 'center' : 'left')
 
-function button(label: string, url: string, color: string, align: Align = 'left', small = false): string {
+function button(label: string, url: string, color: string, ctx: Ctx, align: Align = 'left', small = false): string {
   const href = safeUrl(url)
   if (!href || !String(label || '').trim()) return ''
-  const fg = textOn(color)
+  const outline = ctx.buttonStyle === 'outline'
+  const fg = outline ? color : textOn(color)
   const pad = small ? '9px 16px' : '14px 28px'
   const size = small ? 14 : 16
+  const r = ctx.buttonShape === 'pill' ? 999 : ctx.r
+  const bg = outline ? '' : ` bgcolor="${color}"`
+  const fill = outline ? 'background-color:transparent' : `background-color:${color}`
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="${alignOf(align)}" style="margin:${small ? '4px 0 0' : '6px 0 22px'}${align === 'center' ? ';margin-left:auto;margin-right:auto' : ''}">
-<tr><td align="center" bgcolor="${color}" style="background-color:${color};border-radius:8px">
-<a href="${escapeHtml(href)}" target="_blank" style="display:inline-block;padding:${pad};font-family:${FONT};font-size:${size}px;font-weight:700;line-height:20px;color:${fg};text-decoration:none;border-radius:8px;border:1px solid ${color}">${escapeHtml(label)}</a>
+<tr><td align="center"${bg} style="${fill};border-radius:${r}px">
+<a href="${escapeHtml(href)}" target="_blank" style="display:inline-block;padding:${pad};font-family:${ctx.font};font-size:${size}px;font-weight:700;line-height:20px;color:${fg};text-decoration:none;border-radius:${r}px;border:${outline ? 2 : 1}px solid ${color}">${escapeHtml(label)}</a>
 </td></tr></table>`
 }
 
@@ -116,23 +128,43 @@ function placeholder(label: string, height: number): string {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="${height}" align="center" bgcolor="${C.soft}" style="height:${height}px;background-color:${C.soft};border:1px dashed #d4d4d8;border-radius:8px;font-family:${FONT};font-size:13px;color:${C.muted}">${escapeHtml(label)}</td></tr></table>`
 }
 
-function productCell(p: ProductItem, accent: string, buttonLabel: string, preview: boolean): string {
+function productCell(p: ProductItem, accent: string, buttonLabel: string, preview: boolean, ctx: Ctx): string {
   const img = safeImage(p.image)
   const url = safeUrl(p.url, false)
   const name = String(p.name || '').trim()
   if (!name && !img && !preview) return ''
   const pic = img
-    ? `<img src="${escapeHtml(img)}" alt="${escapeHtml(name)}" width="240" style="display:block;width:100%;max-width:240px;height:auto;border:0;border-radius:8px;margin:0 0 10px">`
+    ? `<img src="${escapeHtml(img)}" alt="${escapeHtml(name)}" width="240" style="display:block;width:100%;max-width:240px;height:auto;border:0;border-radius:${ctx.r}px;margin:0 0 10px">`
     : preview ? `<div style="margin:0 0 10px">${placeholder('Product picture', 150)}</div>` : ''
   const picLinked = pic && url ? `<a href="${escapeHtml(url)}" target="_blank" style="text-decoration:none">${pic}</a>` : pic
-  const title = name ? `<p style="margin:0 0 4px;font-family:${FONT};font-size:15px;line-height:1.35;font-weight:700;color:${C.ink}">${url ? `<a href="${escapeHtml(url)}" target="_blank" style="color:${C.ink};text-decoration:none">${escapeHtml(name)}</a>` : escapeHtml(name)}</p>` : ''
-  const price = p.price ? `<p style="margin:0 0 6px;font-family:${FONT};font-size:14px;color:${C.body}">${escapeHtml(String(p.price))}</p>` : ''
-  return `${picLinked}${title}${price}${url ? button(buttonLabel, url, accent, 'left', true) : ''}`
+  const title = name ? `<p style="margin:0 0 4px;font-family:${ctx.font};font-size:15px;line-height:1.35;font-weight:700;color:${C.ink}">${url ? `<a href="${escapeHtml(url)}" target="_blank" style="color:${C.ink};text-decoration:none">${escapeHtml(name)}</a>` : escapeHtml(name)}</p>` : ''
+  const price = p.price ? `<p style="margin:0 0 6px;font-family:${ctx.font};font-size:14px;color:${C.body}">${escapeHtml(String(p.price))}</p>` : ''
+  return `${picLinked}${title}${price}${url ? button(buttonLabel, url, accent, ctx, 'left', true) : ''}`
+}
+
+function columnCell(c: ColumnItem, ctx: Ctx): string {
+  const img = safeImage(c.image)
+  const url = safeUrl(c.url, false)
+  const title = String(c.title || '').trim()
+  const pic = img
+    ? `<img src="${escapeHtml(img)}" alt="${escapeHtml(c.alt || title)}" width="250" style="display:block;width:100%;max-width:250px;height:auto;border:0;border-radius:${ctx.r}px;margin:0 0 12px">`
+    : ''
+  const picLinked = pic && url ? `<a href="${escapeHtml(url)}" target="_blank" style="text-decoration:none">${pic}</a>` : pic
+  const head = title ? `<p style="margin:0 0 6px;font-family:${ctx.font};font-size:17px;line-height:1.3;font-weight:800;color:${C.ink}">${inlineHtml(title, ctx.accent)}</p>` : ''
+  const body = paragraphs(c.text || '').map(p => `<p style="margin:0 0 10px;font-family:${ctx.font};font-size:15px;line-height:1.55;color:${C.body}">${inlineHtml(p, ctx.accent).replace(/\n/g, '<br>')}</p>`).join('')
+  return `${picLinked}${head}${body}${url ? button(String(c.label || 'Find out more'), url, ctx.accent, ctx, 'left', true) : ''}`
+}
+
+/** A YouTube link's thumbnail (https), or ''. */
+export function videoThumb(raw: unknown): string {
+  const s = String(raw ?? '')
+  const m = s.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/))([A-Za-z0-9_-]{11})/)
+  return m ? `https://i.ytimg.com/vi/${m[1]}/hqdefault.jpg` : ''
 }
 
 const SOCIAL_LABEL: Record<string, string> = { facebook: 'Facebook', instagram: 'Instagram', tiktok: 'TikTok', youtube: 'YouTube', website: 'Website', x: 'X', linkedin: 'LinkedIn' }
 
-type Ctx = { brand: EmailBrand; accent: string; preview: boolean }
+type Ctx = { brand: EmailBrand; accent: string; preview: boolean; font: string; r: number; buttonStyle: 'filled' | 'outline'; buttonShape: 'rounded' | 'pill' }
 
 function blockHtml(b: Block, ctx: Ctx): string {
   const { brand, accent, preview } = ctx
@@ -141,30 +173,30 @@ function blockHtml(b: Block, ctx: Ctx): string {
       const logo = b.showLogo !== false ? safeImage(brand.logoUrl) : ''
       const align = alignOf(b.align || 'center')
       const showName = b.showName !== false || !logo
-      const name = showName ? `<p style="margin:${logo ? '10px' : '0'} 0 0;font-family:${FONT};font-size:${logo ? 15 : 22}px;line-height:1.3;font-weight:800;color:${logo ? C.ink : accent}">${escapeHtml(brand.name)}</p>` : ''
+      const name = showName ? `<p style="margin:${logo ? '10px' : '0'} 0 0;font-family:${ctx.font};font-size:${logo ? 15 : 22}px;line-height:1.3;font-weight:800;color:${logo ? C.ink : accent}">${escapeHtml(brand.name)}</p>` : ''
       const img = logo ? `<img src="${escapeHtml(logo)}" alt="${escapeHtml(brand.name)}" height="48" style="display:${align === 'center' ? 'block;margin:0 auto' : 'block'};height:48px;width:auto;max-width:220px;border:0">` : ''
       return row(`<div style="text-align:${align}">${img}${name}</div>`, '32px 40px 8px')
     }
     case 'heading': {
       const size = b.size === 'md' ? 20 : 28
-      return row(`<h${b.size === 'md' ? 2 : 1} style="margin:18px 0 12px;font-family:${FONT};font-size:${size}px;line-height:1.25;font-weight:800;color:${C.ink};text-align:${alignOf(b.align)}">${inlineHtml(b.text, accent)}</h${b.size === 'md' ? 2 : 1}>`)
+      return row(`<h${b.size === 'md' ? 2 : 1} style="margin:18px 0 12px;font-family:${ctx.font};font-size:${size}px;line-height:1.25;font-weight:800;color:${C.ink};text-align:${alignOf(b.align)}">${inlineHtml(b.text, accent)}</h${b.size === 'md' ? 2 : 1}>`)
     }
     case 'text': {
       const ps = paragraphs(b.text)
       if (!ps.length) return ''
-      return row(ps.map(p => `<p style="margin:0 0 16px;font-family:${FONT};font-size:16px;line-height:1.6;color:${C.body};text-align:${alignOf(b.align)}">${inlineHtml(p, accent).replace(/\n/g, '<br>')}</p>`).join(''))
+      return row(ps.map(p => `<p style="margin:0 0 16px;font-family:${ctx.font};font-size:16px;line-height:1.6;color:${C.body};text-align:${alignOf(b.align)}">${inlineHtml(p, accent).replace(/\n/g, '<br>')}</p>`).join(''))
     }
     case 'image': {
       const src = safeImage(b.src)
       if (!src) return preview ? row(`<div style="margin:8px 0 18px">${placeholder('Add a picture', 200)}</div>`) : ''
       const w = Math.max(80, Math.min(INNER, Number(b.width) || INNER))
-      const img = `<img src="${escapeHtml(src)}" alt="${escapeHtml(b.alt || '')}" width="${w}" style="display:block;width:100%;max-width:${w}px;height:auto;border:0;border-radius:8px;margin:0 auto">`
+      const img = `<img src="${escapeHtml(src)}" alt="${escapeHtml(b.alt || '')}" width="${w}" style="display:block;width:100%;max-width:${w}px;height:auto;border:0;border-radius:${ctx.r}px;margin:0 auto">`
       const url = safeUrl(b.url, false)
       return row(`<div style="margin:8px 0 18px">${url ? `<a href="${escapeHtml(url)}" target="_blank" style="text-decoration:none">${img}</a>` : img}</div>`)
     }
     case 'button': {
       const color = hex(b.color, accent)
-      const html = button(b.label, b.url, color, b.align || 'left')
+      const html = button(b.label, b.url, color, ctx, b.align || 'left')
       return html ? row(html) : (preview ? row(`<div style="margin:6px 0 22px">${placeholder('Add the button’s label and link', 48)}</div>`) : '')
     }
     case 'products': {
@@ -174,7 +206,7 @@ function blockHtml(b: Block, ctx: Ctx): string {
       const label = String(b.buttonLabel || 'Shop now')
       let rows = ''
       for (let i = 0; i < list.length; i += 2) {
-        const cells = [list[i], list[i + 1]].map((p, j) => `<td class="col" width="50%" valign="top" style="width:50%;padding:${j === 0 ? '0 10px 18px 0' : '0 0 18px 10px'}">${p ? productCell(p, accent, label, preview) : ''}</td>`).join('')
+        const cells = [list[i], list[i + 1]].map((p, j) => `<td class="col" width="50%" valign="top" style="width:50%;padding:${j === 0 ? '0 10px 18px 0' : '0 0 18px 10px'}">${p ? productCell(p, accent, label, preview, ctx) : ''}</td>`).join('')
         rows += `<tr>${cells}</tr>`
       }
       return row(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:6px 0 4px">${rows}</table>`)
@@ -182,10 +214,10 @@ function blockHtml(b: Block, ctx: Ctx): string {
     case 'coupon': {
       const code = String(b.code || '').trim()
       if (!code && !preview) return ''
-      return row(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 22px"><tr><td align="center" bgcolor="${C.soft}" style="background-color:${C.soft};border:2px dashed ${accent};border-radius:10px;padding:20px 16px">
-${b.title ? `<p style="margin:0 0 8px;font-family:${FONT};font-size:14px;font-weight:700;color:${C.body}">${escapeHtml(b.title)}</p>` : ''}
+      return row(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 22px"><tr><td align="center" bgcolor="${C.soft}" style="background-color:${C.soft};border:2px dashed ${accent};border-radius:${ctx.r + 2}px;padding:20px 16px">
+${b.title ? `<p style="margin:0 0 8px;font-family:${ctx.font};font-size:14px;font-weight:700;color:${C.body}">${escapeHtml(b.title)}</p>` : ''}
 <p style="margin:0;font-family:${MONO};font-size:26px;line-height:1.2;font-weight:700;letter-spacing:3px;color:${C.ink}">${escapeHtml(code || 'CODE')}</p>
-${b.note ? `<p style="margin:8px 0 0;font-family:${FONT};font-size:13px;color:${C.muted}">${escapeHtml(b.note)}</p>` : ''}
+${b.note ? `<p style="margin:8px 0 0;font-family:${ctx.font};font-size:13px;color:${C.muted}">${escapeHtml(b.note)}</p>` : ''}
 </td></tr></table>`)
     }
     case 'divider':
@@ -197,8 +229,30 @@ ${b.note ? `<p style="margin:8px 0 0;font-family:${FONT};font-size:13px;color:${
     case 'social': {
       const links = (b.links || []).map(l => ({ label: SOCIAL_LABEL[l.network] || 'Link', url: safeUrl(l.url, false) })).filter(l => l.url)
       if (!links.length) return preview ? row(`<div style="margin:4px 0 18px">${placeholder('Add your social links', 40)}</div>`) : ''
-      const cells = links.map(l => `<td style="padding:0 4px 8px"><a href="${escapeHtml(l.url)}" target="_blank" style="display:inline-block;padding:7px 14px;border:1px solid ${C.border};border-radius:999px;font-family:${FONT};font-size:13px;font-weight:600;color:${C.ink};text-decoration:none">${escapeHtml(l.label)}</a></td>`).join('')
+      const cells = links.map(l => `<td style="padding:0 4px 8px"><a href="${escapeHtml(l.url)}" target="_blank" style="display:inline-block;padding:7px 14px;border:1px solid ${C.border};border-radius:999px;font-family:${ctx.font};font-size:13px;font-weight:600;color:${C.ink};text-decoration:none">${escapeHtml(l.label)}</a></td>`).join('')
       return row(`<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:4px auto 14px"><tr>${cells}</tr></table>`)
+    }
+    case 'columns': {
+      const items = (b.items || []).slice(0, 2)
+      const has = items.some(c => safeImage(c?.image) || String(c?.title || '').trim() || String(c?.text || '').trim())
+      if (!has) return preview ? row(`<div style="margin:6px 0 18px">${placeholder('Add a picture, title or text to each column', 90)}</div>`) : ''
+      const cells = [items[0] || {}, items[1] || {}].map((c, j) => `<td class="col" width="50%" valign="top" style="width:50%;padding:${j === 0 ? '0 12px 18px 0' : '0 0 18px 12px'}">${columnCell(c, ctx)}</td>`).join('')
+      return row(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:6px 0 6px"><tr>${cells}</tr></table>`)
+    }
+    case 'video': {
+      const url = safeUrl(b.url, false)
+      const thumb = safeImage(b.thumbnail) || videoThumb(b.url)
+      if (!url) return preview ? row(`<div style="margin:8px 0 18px">${placeholder('Add a video link (YouTube or any https link)', 180)}</div>`) : ''
+      const pic = thumb
+        ? `<a href="${escapeHtml(url)}" target="_blank" style="text-decoration:none"><img src="${escapeHtml(thumb)}" alt="${escapeHtml(b.label || 'Watch the video')}" width="${INNER}" style="display:block;width:100%;max-width:${INNER}px;height:auto;border:0;border-radius:${ctx.r}px;margin:0 auto"></a>`
+        : ''
+      return row(`<div style="margin:8px 0 6px">${pic}</div>${button(`\u25B6  ${String(b.label || 'Watch the video')}`, url, accent, ctx, 'center')}`)
+    }
+    case 'menu': {
+      const links = (b.links || []).map(l => ({ label: String(l?.label || '').trim(), url: safeUrl(l?.url, false) })).filter(l => l.label && l.url)
+      if (!links.length) return preview ? row(`<div style="margin:4px 0 14px">${placeholder('Add menu links', 40)}</div>`) : ''
+      const items = links.map(l => `<a href="${escapeHtml(l.url)}" target="_blank" style="font-family:${ctx.font};font-size:14px;font-weight:700;color:${C.ink};text-decoration:none">${escapeHtml(l.label)}</a>`).join(`<span style="font-family:${ctx.font};font-size:14px;color:${C.muted}">&nbsp;&nbsp;&middot;&nbsp;&nbsp;</span>`)
+      return row(`<p style="margin:6px 0 16px;text-align:center;line-height:1.8">${items}</p>`)
     }
     case 'footer':
       return footerHtml(b, ctx)
@@ -210,7 +264,7 @@ function footerHtml(b: Extract<Block, { type: 'footer' }> | null, ctx: Ctx): str
   const { brand } = ctx
   const address = String(b?.address ?? brand.address ?? '').trim()
   const note = String(b?.note || '').trim() || `You’re getting this because you agreed to hear from ${brand.name}.`
-  const small = `font-family:${FONT};font-size:12px;line-height:1.6;color:${C.muted}`
+  const small = `font-family:${ctx.font};font-size:12px;line-height:1.6;color:${C.muted}`
   return `<tr><td class="px" style="padding:22px 40px 30px;border-top:1px solid ${C.border}" align="center">
 <p style="margin:0 0 4px;${small};font-weight:700;color:${C.body}">${escapeHtml(brand.name)}</p>
 ${address ? `<p style="margin:0 0 10px;${small}">${escapeHtml(address)}</p>` : ''}
@@ -231,6 +285,9 @@ function blockText(b: Block, brand: EmailBrand): string {
     case 'divider': return '----------'
     case 'spacer': return ''
     case 'social': return (b.links || []).map(l => { const u = safeUrl(l.url, false); return u ? `${SOCIAL_LABEL[l.network] || 'Link'}: ${u}` : '' }).filter(Boolean).join('\n')
+    case 'columns': return (b.items || []).map(c => [c?.title, c?.text ? paragraphs(c.text).map(inlineText).join('\n') : '', safeUrl(c?.url, false) ? `${c?.label || 'Find out more'}: ${safeUrl(c?.url, false)}` : ''].filter(Boolean).join('\n')).filter(Boolean).join('\n\n')
+    case 'video': { const u = safeUrl(b.url, false); return u ? `${b.label || 'Watch the video'}: ${u}` : '' }
+    case 'menu': return (b.links || []).map(l => { const u = safeUrl(l?.url, false); return u && l?.label ? `${l.label}: ${u}` : '' }).filter(Boolean).join('\n')
     case 'footer': return ''
   }
   return ''
@@ -246,24 +303,31 @@ function footerText(b: Extract<Block, { type: 'footer' }> | null, brand: EmailBr
 export function renderEmail(design: EmailDesign, brand: EmailBrand, opts: RenderOptions = {}): RenderedEmail {
   const accent = hex(design?.accent, hex(brand.accent, DEFAULT_ACCENT))
   const bg = hex(design?.background, C.canvas)
-  const ctx: Ctx = { brand: { ...brand, name: String(brand.name || 'Our store').slice(0, 120) }, accent, preview: !!opts.preview }
+  const font = FONTS[design?.font as FontChoice]?.stack || FONT
+  const r = CORNER_PX[(design?.corners as keyof typeof CORNER_PX)] ?? CORNER_PX.soft
+  const ctx: Ctx = {
+    brand: { ...brand, name: String(brand.name || 'Our store').slice(0, 120) }, accent, preview: !!opts.preview,
+    font, r, buttonStyle: design?.buttonStyle === 'outline' ? 'outline' : 'filled', buttonShape: design?.buttonShape === 'pill' ? 'pill' : 'rounded',
+  }
+  // The designer's preview marks each block's row so a click can select it.
+  const tag = (h: string, id: string) => (opts.preview && h ? h.replace(/^<tr\b/, `<tr data-bid="${escapeHtml(String(id))}"`) : h)
   const blocks = Array.isArray(design?.blocks) ? design.blocks.filter(b => b && typeof b === 'object' && typeof (b as any).type === 'string') : []
   const footer = (blocks.find(b => b.type === 'footer') as Extract<Block, { type: 'footer' }> | undefined) || null
-  const body = blocks.filter(b => b.type !== 'footer').map(b => blockHtml(b, ctx)).join('\n')
+  const body = blocks.filter(b => b.type !== 'footer').map(b => tag(blockHtml(b, ctx), b.id)).join('\n')
   const pre = String(opts.previewText || '').replace(/\s+/g, ' ').trim()
   // Padding after the preheader stops inboxes pulling body text into the preview.
   const preheader = pre ? `<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all">${escapeHtml(pre)}${'&#8204;&nbsp;'.repeat(60)}</div>` : ''
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="x-apple-disable-message-reformatting"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light">
 <title>${escapeHtml(opts.subject || ctx.brand.name)}</title>
-<style>@media only screen and (max-width:620px){.wrap{width:100%!important}.px{padding-left:20px!important;padding-right:20px!important}.col{display:block!important;width:100%!important;padding-left:0!important;padding-right:0!important}}</style>
+<style>@media only screen and (max-width:620px){.wrap{width:100%!important}.px{padding-left:20px!important;padding-right:20px!important}.col{display:block!important;width:100%!important;padding-left:0!important;padding-right:0!important}}${opts.preview ? `[data-bid]{cursor:pointer}[data-bid]:hover>td{box-shadow:inset 0 0 0 2px ${accent}55}[data-sel]>td{box-shadow:inset 0 0 0 2px ${accent}}` : ''}</style>
 </head>
 <body style="margin:0;padding:0;background-color:${bg}">
 ${preheader}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${bg}" style="background-color:${bg}"><tr><td align="center" style="padding:24px 10px">
-<table role="presentation" class="wrap" width="${WIDTH}" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.card}" style="width:${WIDTH}px;max-width:${WIDTH}px;background-color:${C.card};border:1px solid ${C.border};border-radius:12px">
+<table role="presentation" class="wrap" width="${WIDTH}" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.card}" style="width:${WIDTH}px;max-width:${WIDTH}px;background-color:${C.card};border:1px solid ${C.border};border-radius:${ctx.r ? ctx.r + 4 : 0}px">
 ${body}
-${footerHtml(footer, ctx)}
+${tag(footerHtml(footer, ctx), footer?.id || 'footer')}
 </table>
 </td></tr></table>
 ${opts.preview ? '' : '<img src="{{open_pixel_url}}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0">'}

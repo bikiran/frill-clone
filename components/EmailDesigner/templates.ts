@@ -115,6 +115,9 @@ export function blankBlock(type: Block['type']): Block {
     case 'divider': return B({ type: 'divider' })
     case 'spacer': return B({ type: 'spacer', height: 24 })
     case 'social': return B({ type: 'social', links: [] })
+    case 'columns': return B({ type: 'columns', items: [{ title: 'Left column', text: 'A short line about this.' }, { title: 'Right column', text: 'A short line about this.' }] })
+    case 'video': return B({ type: 'video', url: '', label: 'Watch the video' })
+    case 'menu': return B({ type: 'menu', links: [{ label: 'Shop', url: '' }, { label: 'New in', url: '' }, { label: 'Sale', url: '' }] })
     case 'footer': return footer()
   }
 }

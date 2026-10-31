@@ -8,7 +8,7 @@ import type { Block, EmailDesign } from '@/components/EmailDesigner/types'
 import { isMissingTable } from '@/lib/email-db'
 import { loadEmailBrand } from '@/lib/email-brand'
 
-const TYPES = new Set(['header', 'heading', 'text', 'image', 'button', 'products', 'coupon', 'divider', 'spacer', 'social', 'footer'])
+const TYPES = new Set(['header', 'heading', 'text', 'image', 'button', 'products', 'coupon', 'divider', 'spacer', 'social', 'columns', 'video', 'menu', 'footer'])
 export const MAX_BLOCKS = 60
 export const MAX_DESIGN_BYTES = 200_000
 
@@ -32,10 +32,23 @@ export function cleanDesign(raw: any): EmailDesign {
       case 'divider': blocks.push({ id, type: 'divider' }); break
       case 'spacer': blocks.push({ id, type: 'spacer', height: Math.max(8, Math.min(80, Number(b.height) || 24)) }); break
       case 'social': blocks.push({ id, type: 'social', links: (Array.isArray(b.links) ? b.links : []).slice(0, 8).map((l: any) => ({ network: s(l?.network, 20) as any, url: s(l?.url, 2000) })) }); break
+      case 'columns': blocks.push({ id, type: 'columns', items: (Array.isArray(b.items) ? b.items : []).slice(0, 2).map((c: any) => ({ image: s(c?.image, 2000), alt: s(c?.alt, 200), title: s(c?.title, 120), text: s(c?.text, 1200), label: s(c?.label, 60), url: s(c?.url, 2000) })) }); break
+      case 'video': blocks.push({ id, type: 'video', url: s(b.url, 2000), thumbnail: s(b.thumbnail, 2000), label: s(b.label, 60) }); break
+      case 'menu': blocks.push({ id, type: 'menu', links: (Array.isArray(b.links) ? b.links : []).slice(0, 6).map((l: any) => ({ label: s(l?.label, 40), url: s(l?.url, 2000) })) }); break
       case 'footer': blocks.push({ id, type: 'footer', address: b.address == null ? undefined : s(b.address, 300), note: s(b.note, 400) }); break
     }
   }
-  return { version: 1, accent: /^#[0-9a-f]{6}$/i.test(raw?.accent || '') ? raw.accent : undefined, background: /^#[0-9a-f]{6}$/i.test(raw?.background || '') ? raw.background : undefined, blocks }
+  const one = <T extends string>(v: any, allowed: readonly T[]): T | undefined => (allowed.includes(v) ? v : undefined)
+  return {
+    version: 1,
+    accent: /^#[0-9a-f]{6}$/i.test(raw?.accent || '') ? raw.accent : undefined,
+    background: /^#[0-9a-f]{6}$/i.test(raw?.background || '') ? raw.background : undefined,
+    font: one(raw?.font, ['modern', 'classic', 'friendly', 'clean'] as const),
+    corners: one(raw?.corners, ['sharp', 'soft', 'round'] as const),
+    buttonStyle: one(raw?.buttonStyle, ['filled', 'outline'] as const),
+    buttonShape: one(raw?.buttonShape, ['rounded', 'pill'] as const),
+    blocks,
+  }
 }
 
 export type SaveInput = { id?: string | null; campaignId?: string | null; name?: string; subject?: string; previewText?: string; design: any; userId?: string | null }
