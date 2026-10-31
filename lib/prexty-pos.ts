@@ -94,3 +94,28 @@ export function prextySpendIncGst(
   const ex = Number(customer.totalSpent) || 0
   return Math.round(ex * 110) / 100
 }
+
+/**
+ * A Prexty customer's in-store sales, for the inbox card, or null when they
+ * have none. Prexty also pulls in the store's WooCommerce web orders (to keep
+ * stock in step), so its customer totals count online orders as sales too: a
+ * customer who has only ever ordered online still has a Prexty profile with
+ * that order in it. `orders` is the contact's WooCommerce orders as the panel
+ * shows them; in-store ones are those Prexty tagged `_prexty_source = pos`.
+ *   - Every Prexty sale is one of their online orders → null.
+ *   - Colvy has all their in-store sales → those, exact and GST-inclusive.
+ *   - Otherwise the count Prexty knows beyond their online orders. The spend
+ *     is only given when none of Prexty's sales are online (spend is null when
+ *     Prexty's total mixes the two and can't be split).
+ */
+export function prextyInStore(
+  customer: { totalSpent?: number | null; totalSpentIncTax?: number | null; totalOrders?: number | null },
+  orders: any[],
+): { sales: number; spend: number | null } | null {
+  const pos = orders.filter(o => o?.pos_source === 'prexty' || posSaleInfo(o).isPos)
+  const online = orders.length - pos.length
+  const sales = Math.max(pos.length, (Number(customer.totalOrders) || 0) - online)
+  if (sales <= 0) return null
+  if (pos.length >= sales) return { sales, spend: Math.round(pos.reduce((t, o) => t + (parseFloat(o.total) || 0), 0) * 100) / 100 }
+  return { sales, spend: online === 0 && (Number(customer.totalSpent) > 0 || Number(customer.totalSpentIncTax) > 0) ? prextySpendIncGst(customer, pos) : null }
+}

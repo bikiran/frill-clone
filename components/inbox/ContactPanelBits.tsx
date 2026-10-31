@@ -151,6 +151,8 @@ export const PT_CSS = `
 .pt-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(78px,1fr));gap:6px}
 .pt-stats.n3{grid-template-columns:repeat(3,minmax(0,1fr))}
 .pt-stats.n4{grid-template-columns:repeat(2,minmax(0,1fr))}
+.pt-stats.px2,.pt-stats.px3{grid-template-columns:repeat(2,minmax(0,1fr))}
+.pt-stats.px3>div:first-child{grid-column:1/-1}
 .pt-stats.n3 span{font-size:15px}
 .pt-stats>div{min-width:0;padding:9px 10px;border-radius:12px;background:var(--card,#fff);display:flex;flex-direction:column;gap:1px}
 .pt-stats span{font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:17px;font-weight:700;letter-spacing:-.03em;color:var(--pt-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
