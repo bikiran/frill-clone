@@ -1,7 +1,8 @@
 import { internalHeaders } from '@/lib/internal-call'
 import { mapWooStatus, mapWooPayment, wooDateToISO, variationFromMeta, statusMeta } from '@/lib/orders'
 import { emitIntegrationEvent } from '@/lib/integration-events'
-import { inStoreLabel, wooPos, wooPushIcon } from '@/lib/order-alerts'
+import { claimOrderAnnouncement, inStoreLabel, wooPos, wooPushIcon } from '@/lib/order-alerts'
+import { locationForOutlet, locationName, outletRouting } from '@/lib/prexty-outlets'
 
 // The shipping method name from a woocommerce_orders row or a raw Woo order.
 function shippingMethodOf(o: any): string | null {
@@ -137,7 +138,7 @@ export function notifyNewOrder(companyId: string, src: any, alert?: { title: str
     const base = String(process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/$/, '')
     if (!base) return
     const num = src.order_number ? `#${src.order_number}` : ''
-    const money = src.total != null ? ` · ${new Intl.NumberFormat('en-AU', { style: 'currency', currency: src.currency || 'AUD' }).format(Number(src.total))}` : ''
+    const amount = src.total != null ? new Intl.NumberFormat('en-AU', { style: 'currency', currency: src.currency || 'AUD' }).format(Number(src.total)) : ''
     const who = src.customer_name || 'A customer'
     void fetch(`${base}/api/push/send`, {
       method: 'POST',
@@ -145,7 +146,9 @@ export function notifyNewOrder(companyId: string, src: any, alert?: { title: str
       body: JSON.stringify({
         companyId,
         title: alert ? `${alert.title}${num ? ` ${num}` : ''}` : 'New order',
-        body: alert ? `${who}${money}` : `${num ? num + ' · ' : ''}${who}${money}`,
+        // Worded like the webhook's alert ("John Scharl — $558.95"), so the
+        // same order reads the same whichever path announced it.
+        body: alert ? `${who}${amount ? ` — ${amount}` : ''}` : `${num ? num + ' · ' : ''}${who}${amount ? ` · ${amount}` : ''}`,
         channelId: 'orders',
         route: '/orders',
         ...(alert?.icon ? { icon: alert.icon } : {}),
@@ -154,10 +157,26 @@ export function notifyNewOrder(companyId: string, src: any, alert?: { title: str
   } catch {}
 }
 
-/** How a WooCommerce order's push is titled: an in-store sale, or an online order with the Woo logo. */
-export function wooOrderAlert(o: any): { title: string; icon?: string } {
+/**
+ * How a WooCommerce order's push is titled: an in-store sale (at the shop's
+ * Colvy name when known, as the webhook says it), or an online order with the
+ * Woo logo.
+ */
+export function wooOrderAlert(o: any, shop?: string | null): { title: string; icon?: string } {
   const pos = wooPos(o)
-  return pos.isPos ? { title: `${inStoreLabel(pos)} ·` } : { title: 'Online order', icon: wooPushIcon() }
+  return pos.isPos ? { title: `${inStoreLabel(pos, shop)} ·` } : { title: 'Online order', icon: wooPushIcon() }
+}
+
+/** The Colvy shop a Prexty sale was rung up at ("Roxy Aquarium Somerton"), looked up once per sync. */
+function shopNamer(db: any, companyId: string) {
+  let routing: Promise<{ locations: any[]; map: any } | null> | null = null
+  return async (o: any): Promise<string | null> => {
+    const pos = wooPos(o)
+    if (!pos.isPos || !pos.outlet) return null
+    routing = routing || outletRouting(db, companyId).catch(() => null)
+    const r = await routing
+    return r ? locationName(locationForOutlet(pos.outlet, r.locations, r.map), r.locations) : null
+  }
 }
 
 function itemRows(companyId: string, orderId: string, o: any) {
@@ -332,12 +351,15 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[], 
     const RECENT_MS = 24 * 60 * 60 * 1000
     const now = Date.now()
     let sent = 0
+    const shopOf = shopNamer(db, companyId)
     for (let i = 0; i < fresh.length && sent < 10; i++) {
       if (!idByExt.get(String(fresh[i].woo_order_id))) continue
       const src = rows[i]
       const t = src.order_date ? new Date(src.order_date).getTime() : 0
       if (!t || now - t > RECENT_MS) continue
-      notifyNewOrder(companyId, src, wooOrderAlert(fresh[i]))
+      // The webhook (or another sync) may already have announced it.
+      if (!(await claimOrderAnnouncement(db, companyId, fresh[i].woo_order_id))) continue
+      notifyNewOrder(companyId, src, wooOrderAlert(fresh[i], await shopOf(fresh[i])))
       sent++
     }
   }
@@ -431,7 +453,7 @@ export async function upsertWooOrder(db: any, companyId: string, o: any, contact
     // A brand-new order just landed — ping the team's phones the way a new chat
     // does, so the Orders tab badge and a push both fire. Best-effort; never
     // block the sync on it. (Only on INSERT, so a status refresh doesn't re-alert.)
-    if (!opts?.quiet) notifyNewOrder(companyId, src, wooOrderAlert(o))
+    if (!opts?.quiet && await claimOrderAnnouncement(db, companyId, o.woo_order_id)) notifyNewOrder(companyId, src, wooOrderAlert(o, await shopNamer(db, companyId)(o)))
     emitIntegrationEvent(companyId, 'order.created', {
       ...orderEvent(src, orderId, `New order #${src.order_number}${src.total ? ` · $${Number(src.total).toFixed(2)}` : ''} · ${src.customer_name}`, { Status: statusMeta(st).label }, Array.isArray(o.line_items) ? o.line_items : []),
       dedupeKey: `order.created:${orderId}`,
