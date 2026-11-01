@@ -694,4 +694,14 @@ export const THREAD_MESSAGES_CSS = `
                 .inbox-composer .cmp-tools .cmp-tool{width:32px!important;min-width:32px!important;height:32px!important;min-height:32px!important}
               }
               @media (prefers-reduced-motion:reduce){.cmp-mode-thumb,.cmp-tool{transition:none}}
-            `
+            
+/* A scheduled delivery in the thread: the phone app's card. */
+.tm-dlv{display:flex;align-items:flex-start;gap:10px;max-width:min(560px,100%);padding:11px 16px 12px 12px;border-radius:18px;background:color-mix(in srgb,#059669 8%,var(--card,#fff));box-shadow:inset 0 0 0 1.5px color-mix(in srgb,#059669 28%,transparent);color:#047857}
+.tm-dlv-i{width:30px;height:30px;flex-shrink:0;border-radius:10px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,#059669 14%,transparent);color:#059669}
+.tm-dlv-t{display:flex;flex-direction:column;gap:3px;min-width:0;padding-top:5px}
+.tm-dlv-t b{font-size:13.5px;font-weight:750;line-height:1.35;color:#047857}
+.tm-dlv-t b span{font-weight:650}
+.tm-dlv-t small{font-size:12.5px;line-height:1.45;color:color-mix(in srgb,#047857 85%,var(--ink));overflow-wrap:anywhere}
+[data-theme="dark"] .tm-dlv{background:color-mix(in srgb,#10b981 10%,#1c1c1f);color:#6ee7b7}
+[data-theme="dark"] .tm-dlv-t b{color:#6ee7b7}[data-theme="dark"] .tm-dlv-t small{color:#a7f3d0}
+`

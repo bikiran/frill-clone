@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import EmptyScroll from '@/components/EmptyScroll'
 
@@ -165,6 +166,29 @@ const SOUND_KEY = 'colvy-notif-sound'
 const BANNER_KEY = 'colvy-notif-alerts-banner-off'
 export const notificationSoundOn = () => { try { return localStorage.getItem(SOUND_KEY) !== '0' } catch { return true } }
 
+// ── Deliveries ─────────────────────────────────────────────────────────────
+// The team's scheduled deliveries (calendar events of type delivery), one tap
+// from the bell: anything overdue and not yet delivered, then today, tomorrow
+// and the coming weeks. A row opens the customer's conversation (where the
+// "Delivery scheduled" card is), or the calendar when there isn't one.
+const DLV_DONE = /^(delivered|cancelled|failed)$/i
+const DLV_STATUS: Record<string, string> = { pending: 'Pending', scheduled: 'Scheduled', out_for_delivery: 'Out for delivery', delivered: 'Delivered', failed: 'Failed', cancelled: 'Cancelled' }
+const dayStart = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x }
+function deliveryGroups(list: any[]): { label: string; rows: any[] }[] {
+  const today = dayStart(new Date()).getTime()
+  const out: { label: string; rows: any[] }[] = []
+  const push = (label: string, r: any) => { let g = out.find(x => x.label === label); if (!g) { g = { label, rows: [] }; out.push(g) } g.rows.push(r) }
+  for (const r of list) {
+    const t = dayStart(new Date(r.starts_at)).getTime()
+    if (t < today) { if (!DLV_DONE.test(String(r.status || ''))) push('Overdue', r); continue }
+    const days = Math.round((t - today) / 864e5)
+    push(days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : new Date(r.starts_at).toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'short' }), r)
+  }
+  return out
+}
+// "John Scharl · #126730" from "Delivery — John Scharl · #126730".
+const deliveryWho = (r: any) => String(r.title || 'Delivery').replace(/^\s*delivery\s*[—–-]\s*/i, '') || 'Delivery'
+
 const CSS = `
   .np { display: flex; flex-direction: column; width: min(420px, calc(100vw - 24px)); max-height: min(680px, calc(100vh - 80px)); background: #fff; border-radius: 22px; box-shadow: 0 24px 64px rgba(0,0,0,.18), 0 0 0 1px rgba(0,0,0,.05); overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; animation: npIn .2s cubic-bezier(.22,1,.36,1); transform-origin: top right; }
   @keyframes npIn { from { opacity: 0; transform: translateY(-6px) scale(.98); } to { opacity: 1; transform: none; } }
@@ -188,6 +212,20 @@ const CSS = `
   .np-chip:hover { background: #ececef; color: #18181b; }
   .np-chip.on { background: #18181b; color: #fff; }
   .np-chip .d { width: 6px; height: 6px; border-radius: 50%; background: var(--coral); }
+  .np-chip .n { min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 999px; background: #059669; color: #fff; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+  .np-chip-dlv:not(.on) { color: #047857; background: color-mix(in srgb, #059669 10%, #fff); }
+  .np-chip-dlv:not(.on):hover { background: color-mix(in srgb, #059669 16%, #fff); color: #065f46; }
+  .np-day.late { color: #dc2626; }
+  .np-dlv.done { opacity: .6; }
+  .np-dlv-st { font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; color: #047857; background: color-mix(in srgb, #059669 12%, transparent); }
+  .np-dlv-st.s-out_for_delivery { color: #1d4ed8; background: color-mix(in srgb, #2563eb 12%, transparent); }
+  .np-dlv-st.s-pending { color: #b45309; background: color-mix(in srgb, #d97706 13%, transparent); }
+  .np-dlv-st.s-failed, .np-dlv-st.s-cancelled { color: #b42318; background: color-mix(in srgb, #dc2626 11%, transparent); }
+  .np-dlv-st.s-delivered { color: #52525b; background: #f4f4f5; }
+  [data-theme="dark"] .np-chip-dlv:not(.on) { color: #6ee7b7; background: color-mix(in srgb, #10b981 16%, #1c1c1f); }
+  [data-theme="dark"] .np-dlv-st { color: #6ee7b7; }
+  [data-theme="dark"] .np-dlv-st.s-out_for_delivery { color: #93c5fd; } [data-theme="dark"] .np-dlv-st.s-pending { color: #fcd34d; }
+  [data-theme="dark"] .np-dlv-st.s-failed, [data-theme="dark"] .np-dlv-st.s-cancelled { color: #fda29b; } [data-theme="dark"] .np-dlv-st.s-delivered { color: #a1a1aa; background: #2a2a2e; }
   .np-list { flex: 1; overflow-y: auto; padding: 4px 8px 8px; overscroll-behavior: contain; }
   .np-day { position: sticky; top: 0; z-index: 1; padding: 12px 12px 6px; font-size: 12.5px; font-weight: 600; color: #8e8e93; background: rgba(255,255,255,.94); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
   .np-item { position: relative; display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 10px 12px; margin-bottom: 2px; border: none; border-radius: 16px; background: transparent; text-align: left; font: inherit; cursor: pointer; transition: background .12s ease; }
@@ -271,6 +309,31 @@ export default function NotificationsPanel({ userId, companyId = null, unreadCou
   const [sound, setSound] = useState(true)
   const [perm, setPerm] = useState<string>('granted')
   const [bannerOff, setBannerOff] = useState(true)
+  const [deliveries, setDeliveries] = useState<any[]>([])
+  const [view, setView] = useState<'notifications' | 'deliveries'>('notifications')
+  const router = useRouter()
+
+  // Scheduled deliveries: the last week (anything still not delivered shows as
+  // overdue) through the next month.
+  useEffect(() => {
+    if (!companyId) { setDeliveries([]); return }
+    let live = true
+    const from = dayStart(new Date(Date.now() - 7 * 864e5)).toISOString()
+    const to = new Date(Date.now() + 31 * 864e5).toISOString()
+    ;(supabase as any).from('calendar_events')
+      .select('id, title, starts_at, time_window, address, status, conversation_id, order_id')
+      .eq('company_id', companyId).eq('event_type', 'delivery')
+      .gte('starts_at', from).lte('starts_at', to).order('starts_at', { ascending: true }).limit(150)
+      .then(({ data }: any) => { if (live) setDeliveries(data || []) }, () => {})
+    return () => { live = false }
+  }, [companyId])
+  const deliveryList = useMemo(() => deliveryGroups(deliveries), [deliveries])
+  const deliveryCount = deliveryList.reduce((n, g) => n + g.rows.length, 0)
+  const dueToday = deliveryList.filter(g => g.label === 'Overdue' || g.label === 'Today').reduce((n, g) => n + g.rows.length, 0)
+  const openDelivery = (r: any) => {
+    onClose()
+    router.push(r.conversation_id ? `/admin/inbox?conversation=${r.conversation_id}` : '/admin/calendar')
+  }
 
   useEffect(() => {
     setSound(notificationSoundOn())
@@ -445,11 +508,17 @@ export default function NotificationsPanel({ userId, companyId = null, unreadCou
             Unread {unreadCount > 0 && <span className="c">{unreadCount > 99 ? '99+' : unreadCount}</span>}
           </button>
         </div>
-        {presentCats.length > 1 && (
+        {(presentCats.length > 1 || deliveryCount > 0) && (
           <div className="np-chips" aria-label="What it’s about">
-            <button type="button" className={`np-chip${cat === 'all' ? ' on' : ''}`} onClick={() => setCat('all')}>Everything</button>
-            {presentCats.map(c => (
-              <button key={c.key} type="button" className={`np-chip${cat === c.key ? ' on' : ''}`} onClick={() => setCat(cat === c.key ? 'all' : c.key)}>
+            <button type="button" className={`np-chip${view === 'notifications' && cat === 'all' ? ' on' : ''}`} onClick={() => { setView('notifications'); setCat('all') }}>Everything</button>
+            {deliveryCount > 0 && (
+              <button type="button" className={`np-chip np-chip-dlv${view === 'deliveries' ? ' on' : ''}`} aria-pressed={view === 'deliveries'} onClick={() => setView(view === 'deliveries' ? 'notifications' : 'deliveries')}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5z" /><path d="M3 8l9 5 9-5M12 13v8" /></svg>
+                Deliveries{dueToday > 0 && <span className="n">{dueToday}</span>}
+              </button>
+            )}
+            {presentCats.length > 1 && presentCats.map(c => (
+              <button key={c.key} type="button" className={`np-chip${view === 'notifications' && cat === c.key ? ' on' : ''}`} onClick={() => { setView('notifications'); setCat(view === 'notifications' && cat === c.key ? 'all' : c.key) }}>
                 {c.label}{(catCounts.get(c.key)?.unread || 0) > 0 && <span className="d" aria-label="has unread" />}
               </button>
             ))}
@@ -471,7 +540,41 @@ export default function NotificationsPanel({ userId, companyId = null, unreadCou
       )}
 
       <div className="np-list">
-        {loading ? (
+        {view === 'deliveries' ? (
+          <>
+            {deliveryList.map(g => (
+              <div key={g.label}>
+                <div className={`np-day${g.label === 'Overdue' ? ' late' : ''}`}>{g.label}</div>
+                {g.rows.map(r => {
+                  const done = DLV_DONE.test(String(r.status || ''))
+                  return (
+                    <div key={r.id} role="button" tabIndex={0} className={`np-item np-dlv${done ? ' done' : ''}`}
+                      onClick={() => openDelivery(r)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDelivery(r) } }}>
+                      <span className="np-tile" style={{ ['--k' as any]: g.label === 'Overdue' ? '#dc2626' : '#059669' }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z" /><path d="M3 8l9 5 9-5M12 13v8" /></svg>
+                      </span>
+                      <div className="np-body">
+                        <div className="np-top">
+                          <span className="np-title">{deliveryWho(r)}</span>
+                          {r.time_window && <span className="np-time">{r.time_window}</span>}
+                        </div>
+                        {r.address && <div className="np-detail">{r.address}</div>}
+                        <div className="np-meta">
+                          <span className={`np-dlv-st s-${String(r.status || 'scheduled')}`}>{DLV_STATUS[String(r.status || 'scheduled')] || r.status}</span>
+                          {g.label === 'Overdue' && <span className="np-actor">{new Date(r.starts_at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })}</span>}
+                          {r.conversation_id && <span className="np-actor">Open chat</span>}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            ))}
+            <div className="np-more">
+              <button type="button" className="np-btn" onClick={() => { onClose(); router.push('/admin/calendar') }}>Open the calendar</button>
+            </div>
+          </>
+        ) : loading ? (
           <div style={{ padding: 28, textAlign: 'center', fontSize: 13.5, color: '#8e8e93' }}>Loading…</div>
         ) : groups.length === 0 ? (
           <div style={{ padding: '18px 0 10px' }}>
