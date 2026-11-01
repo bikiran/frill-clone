@@ -363,7 +363,9 @@ export default function ThreadMessages() {
             const sm: any = (msg as any).metadata || {}
             const orderStatus = String(sm.status || sm.order_automation || '').toLowerCase()
             let kind = '', accent = '', title = ''
-            if (sm.sale_event) { kind = 'sale'; accent = '#16a34a'; title = 'Sale recorded' }
+            // A delivery booked from the phone app: when, where and the order.
+            if (sm.kind === 'delivery_scheduled') { kind = 'delivery'; accent = '#059669'; title = 'Delivery scheduled' }
+            else if (sm.sale_event) { kind = 'sale'; accent = '#16a34a'; title = 'Sale recorded' }
             else if (sm.abandoned_cart) { kind = 'cart'; accent = '#d97706'; title = 'Abandoned cart' }
             else if (sm.cart_recovered) { kind = 'recovered'; accent = '#16a34a'; title = 'Cart recovered' }
             else if (sm.order_event || sm.order_id || sm.order_automation) {
@@ -415,7 +417,9 @@ export default function ThreadMessages() {
             const raw = String(msg.content || '')
             const urlMatch = raw.match(/https?:\/\/\S+/)
             const link = urlMatch ? urlMatch[0] : null
-            let detail = posLine ?? raw
+            let detail = kind === 'delivery'
+              ? raw.replace(/^\s*🚚\s*delivery scheduled\s*·?\s*/i, '').split('\n').map(l => l.trim()).filter(Boolean).join(' · ')
+              : posLine ?? raw
               .replace(link || '', '')
               .replace(/^[^\p{L}\p{N}#$]+/u, '')          // leading emoji / arrows
               .replace(new RegExp(`^\\s*${title}\\s*[—:\\-]*`, 'i'), '') // redundant title
