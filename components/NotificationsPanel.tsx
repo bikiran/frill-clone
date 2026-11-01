@@ -341,6 +341,12 @@ export default function NotificationsPanel({ userId, companyId = null, unreadCou
     onClose()
     router.push(`/admin/inbox?conversation=${r.conversation_id}`)
   }
+  // `at` makes a second click on the same order a new link, even on the Orders page.
+  const goToOrder = (ref: string) => {
+    setOpenDelivery(null)
+    onClose()
+    router.push(`/admin/orders?order=${encodeURIComponent(ref)}&at=${Date.now()}`)
+  }
 
   useEffect(() => {
     setSound(notificationSoundOn())
@@ -613,6 +619,7 @@ export default function NotificationsPanel({ userId, companyId = null, unreadCou
           companyId={companyId}
           eventId={openDelivery.id}
           onClose={() => setOpenDelivery(null)}
+          onOpenOrder={goToOrder}
           onOpenChat={openDelivery.conversation_id ? () => goToChat(openDelivery) : undefined}
           onChanged={() => { loadDeliveries() }}
         />,
