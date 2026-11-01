@@ -508,6 +508,8 @@ export const SDS_CSS = `
 .sds-btn.wide{width:100%}
 .sds-btn.primary{background:#059669;color:#fff}.sds-btn.primary:hover:not(:disabled){background:#047857}
 .sds-btn.danger{background:#fdecec;color:#dc2626}.sds-btn.danger:hover:not(:disabled){background:#fbdcdc}
+.sds-chat{display:inline-flex;align-items:center;justify-content:center;gap:7px;align-self:center;height:36px;padding:0 14px;border:0;border-radius:999px;background:none;color:var(--coral,#ff7a6b);font:inherit;font-size:14px;font-weight:700;cursor:pointer}
+.sds-chat:hover{background:color-mix(in srgb,var(--coral,#ff7a6b) 9%,transparent)}
 .sds-confirm{display:flex;flex-direction:column;gap:4px;padding:12px;border-radius:18px;background:#fef2f2;font-size:13.5px;font-weight:600;color:#b42318}
 @keyframes sdsFade{from{opacity:0}to{opacity:1}}
 @keyframes sdsUp{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}

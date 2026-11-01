@@ -29,7 +29,7 @@ export const isDelivered = (s: unknown) => /^(completed|delivered)$/i.test(Strin
 
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
-export default function DeliveryDetailsSheet({ companyId, eventId, fallback, senderName, onClose, onOpenOrder, onChanged }: {
+export default function DeliveryDetailsSheet({ companyId, eventId, fallback, senderName, onClose, onOpenOrder, onOpenChat, onChanged }: {
   companyId: string
   /** The calendar event; when missing, the delivery is looked up by contact and day. */
   eventId?: string | null
@@ -38,6 +38,8 @@ export default function DeliveryDetailsSheet({ companyId, eventId, fallback, sen
   onClose: () => void
   /** Show the customer's orders (the contact panel's Orders tab). */
   onOpenOrder?: (orderRef: string) => void
+  /** Go to the customer's conversation (from the bell, where there's no thread open). */
+  onOpenChat?: () => void
   /** After a change, with the contact fields to keep in step. */
   onChanged?: (contactPatch: Record<string, any> | null) => void
 }) {
@@ -50,10 +52,12 @@ export default function DeliveryDetailsSheet({ companyId, eventId, fallback, sen
   const [date, setDate] = useState('')
   const [win, setWin] = useState('')
 
+  // Escape closes this sheet only (caught before a menu behind it, like the
+  // bell, would close too).
   useEffect(() => {
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) onClose() }
-    document.addEventListener('keydown', key)
-    return () => document.removeEventListener('keydown', key)
+    const key = (e: KeyboardEvent) => { if (e.key !== 'Escape') return; e.stopPropagation(); if (!busy) onClose() }
+    document.addEventListener('keydown', key, true)
+    return () => document.removeEventListener('keydown', key, true)
   }, [onClose, busy])
 
   useEffect(() => {
@@ -131,7 +135,7 @@ export default function DeliveryDetailsSheet({ companyId, eventId, fallback, sen
   }), [])
 
   return (
-    <div className="sds-scrim" onClick={() => { if (!busy) onClose() }}>
+    <div className="sds-scrim" data-keeps-menus="" onClick={() => { if (!busy) onClose() }}>
       <style href="colvy-schedule-delivery" precedence="default">{SDS_CSS}</style>
       <div className="sds sds-detail" role="dialog" aria-modal="true" aria-labelledby="sdd-title" onClick={e => e.stopPropagation()}>
         <span className="sds-grab" aria-hidden="true" />
@@ -266,6 +270,12 @@ export default function DeliveryDetailsSheet({ companyId, eventId, fallback, sen
                     </div>
                   )}
                 </div>
+              )}
+              {onOpenChat && !resched && (
+                <button type="button" className="sds-chat" onClick={onOpenChat}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-12.4 7.4L3 21l2.1-5.6A8.4 8.4 0 1 1 21 11.5z" /></svg>
+                  Open conversation
+                </button>
               )}
               {err && <p className="sds-err" role="alert">{err}</p>}
             </>
