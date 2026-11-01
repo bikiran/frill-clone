@@ -12,6 +12,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import DateTimeField from '@/components/ui/DateTimeField'
 import { deliveryLine } from '@/lib/delivery-line'
 import { DELIVERY_WINDOWS, SDS_CSS } from '@/components/ScheduleDeliverySheet'
 
@@ -55,7 +56,8 @@ export default function DeliveryDetailsSheet({ companyId, eventId, fallback, sen
   // Escape closes this sheet only (caught before a menu behind it, like the
   // bell, would close too).
   useEffect(() => {
-    const key = (e: KeyboardEvent) => { if (e.key !== 'Escape') return; e.stopPropagation(); if (!busy) onClose() }
+    // (Not while its calendar is open: Escape closes that.)
+    const key = (e: KeyboardEvent) => { if (e.key !== 'Escape' || document.querySelector('.dtf-pop')) return; e.stopPropagation(); if (!busy) onClose() }
     document.addEventListener('keydown', key, true)
     return () => document.removeEventListener('keydown', key, true)
   }, [onClose, busy])
@@ -178,12 +180,9 @@ export default function DeliveryDetailsSheet({ companyId, eventId, fallback, sen
                       <button key={q.label} type="button" className={`sds-chip${date === q.value ? ' on' : ''}`} aria-pressed={date === q.value} onClick={() => setDate(q.value)}>{q.label}</button>
                     ))}
                   </div>
-                  <label className="sds-field sds-date">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4.5" width="18" height="16.5" rx="3" /><path d="M3 9.5h18M8 2.5v4M16 2.5v4" /></svg>
-                    <input type="date" value={date} onChange={e => setDate(e.target.value)} aria-label="New date"
-                      onClick={e => { try { (e.target as HTMLInputElement).showPicker?.() } catch {} }} />
-                    <span className="sds-date-l">{date ? new Date(`${date}T12:00:00`).toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' }) : 'Pick a date'}</span>
-                  </label>
+                  <div className="sds-dtf">
+                    <DateTimeField mode="date" label="New date" value={date} min={ymd(new Date())} clearable={false} onChange={setDate} />
+                  </div>
                   <div className="sds-chips" style={{ marginTop: 10 }}>
                     {DELIVERY_WINDOWS.map(w => (
                       <button key={w} type="button" className={`sds-chip${win === w ? ' on' : ''}`} aria-pressed={win === w} onClick={() => setWin(win === w ? '' : w)}>{w}</button>

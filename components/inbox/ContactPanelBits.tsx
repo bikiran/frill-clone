@@ -177,3 +177,63 @@ export const PT_CSS = `
 .pt-ship{margin:8px 0 0;display:flex;align-items:center;gap:7px;font-size:12px;color:var(--pt-muted)}
 .pt-orders{display:flex;flex-direction:column}
 `
+
+// The contact panel's Notes and Tasks (Information and Timeline tabs): Sellio
+// cards, round checks, quiet copy / edit / delete, grey-fill composers.
+export const NT_CSS = `
+.cpn{--cpn-fill:#f4f4f5;--cpn-soft:#71717a;margin-bottom:18px}
+[data-theme="dark"] .cpn{--cpn-fill:#2a2a2e;--cpn-soft:#a1a1aa}
+.cpn-h{display:flex;align-items:center;gap:8px;width:100%;margin:0 0 10px;padding:0;border:none;background:none;cursor:pointer;text-align:left;font:inherit;color:var(--ink)}
+.cpn-h h3{margin:0;font-size:14px;font-weight:650;color:var(--ink)}
+.cpn-count{min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--cpn-fill);color:var(--cpn-soft);font-size:11.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box}
+.cpn-fold{margin-left:auto;width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:var(--cpn-soft)}
+.cpn-h:hover .cpn-fold{background:var(--cpn-fill);color:var(--ink)}
+.cpn-note,.cpn-task{margin-bottom:8px;padding:12px 12px 8px 14px;border-radius:16px}
+.cpn-note{background:#fff8e6}
+[data-theme="dark"] .cpn-note{background:color-mix(in srgb,#f59e0b 12%,var(--card,#1c1c1f))}
+.cpn-task{background:var(--cpn-fill)}
+.cpn-text{margin:0;flex:1;min-width:0;font-size:13.5px;line-height:1.5;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere}
+.cpn-task-top{display:flex;gap:10px;align-items:flex-start}
+.cpn-check{flex-shrink:0;width:20px;height:20px;margin-top:1px;border-radius:50%;border:none;background:var(--card,#fff);box-shadow:inset 0 0 0 1.75px #c4c4cc;color:#fff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;transition:background .15s,box-shadow .15s}
+.cpn-check:hover{box-shadow:inset 0 0 0 1.75px var(--coral)}
+.cpn-check.on{background:var(--coral);box-shadow:none}
+.cpn-task.done{background:color-mix(in srgb,var(--cpn-fill) 55%,transparent)}
+.cpn-task.done .cpn-text{color:var(--cpn-soft);text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--cpn-soft) 55%,transparent);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.cpn-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;min-width:0}
+.cpn-task .cpn-foot{padding-left:30px}
+.cpn-by{display:inline-flex;align-items:center;gap:7px;min-width:0}
+.cpn-by-t{font-size:12px;color:var(--cpn-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.cpn-av{width:20px;height:20px;border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:10.5px;font-weight:700}
+.cpn-av.sm{width:18px;height:18px;font-size:10px}
+.cpn-av.none{background:none;color:var(--cpn-soft);box-shadow:inset 0 0 0 1.5px currentColor}
+.cpn-chips{display:flex;flex-wrap:wrap;gap:5px;min-width:0;flex:1}
+.cpn-chip{display:inline-flex;align-items:center;gap:5px;max-width:100%;height:24px;padding:0 9px 0 4px;border-radius:999px;background:var(--card,#fff);color:var(--ink);font-size:11.5px;font-weight:650;white-space:nowrap;box-sizing:border-box}
+.cpn-chip>span:last-child{overflow:hidden;text-overflow:ellipsis}
+.cpn-chip.ai{padding-left:8px;background:#f3e8ff;color:#7c3aed}
+[data-theme="dark"] .cpn-chip.ai{background:rgba(124,58,237,.18);color:#c4b5fd}
+.cpn-acts{display:flex;gap:2px;flex-shrink:0;margin-left:auto}
+.cpn-act{width:28px;height:28px;border-radius:50%;border:none;background:transparent;color:var(--cpn-soft);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+.cpn-act:hover{background:color-mix(in srgb,var(--cpn-soft) 14%,transparent);color:var(--ink)}
+.cpn-act.del:hover{color:#dc2626;background:color-mix(in srgb,#dc2626 10%,transparent)}
+.cpn-act.ok{color:#059669}
+/* With a mouse: copy / edit / delete float in the corner on hover, so the
+   author and date get the row (the panel is narrow). Touch keeps them inline. */
+@media (hover:hover){
+  .cpn-note,.cpn-task{position:relative}
+  .cpn-note .cpn-acts,.cpn-task .cpn-acts{position:absolute;top:6px;right:6px;padding:2px;border-radius:999px;background:var(--card,#fff);box-shadow:0 0 0 1px color-mix(in srgb,var(--cpn-soft) 18%,transparent),0 4px 12px -4px rgba(16,24,40,.18);opacity:0;pointer-events:none;transition:opacity .12s}
+  .cpn-note:hover .cpn-acts,.cpn-note:focus-within .cpn-acts,.cpn-task:hover .cpn-acts,.cpn-task:focus-within .cpn-acts{opacity:1;pointer-events:auto}
+}
+.cpn-cmp{position:relative;margin-top:2px}
+.cpn-cmp textarea:focus,.cpn-cmp input:focus,.cpn-edit textarea:focus{outline:none;box-shadow:0 0 0 2px color-mix(in srgb,var(--coral) 40%,transparent)}
+.cpn-in::placeholder{color:var(--cpn-soft)}
+.cpn-send{position:absolute;right:7px;bottom:7px;width:32px;height:32px;border-radius:50%;border:none;background:color-mix(in srgb,var(--cpn-soft) 16%,transparent);color:var(--cpn-soft);display:inline-flex;align-items:center;justify-content:center;cursor:default;padding:0;transition:background .15s,color .15s}
+.cpn-send.on{background:var(--coral);color:#fff;cursor:pointer}
+.cpn-asg{display:inline-flex;align-items:center;gap:7px;height:34px;max-width:100%;margin-top:8px;padding:0 12px 0 8px;border:none;border-radius:999px;background:var(--cpn-fill);color:var(--ink);font:inherit;font-size:13px;font-weight:650;cursor:pointer;box-sizing:border-box}
+.cpn-asg>span:nth-child(2){overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.cpn-asg>svg{color:var(--cpn-soft);flex-shrink:0}
+.cpn-asg:hover{filter:brightness(.97)}
+.cpn-edit{display:flex;flex-direction:column;gap:8px}
+.cpn-edit-acts{display:flex;justify-content:flex-end;gap:6px}
+.cpn-pill{height:32px;padding:0 14px;border:none;border-radius:999px;background:var(--card,#fff);color:var(--ink);font:inherit;font-size:12.5px;font-weight:650;cursor:pointer}
+.cpn-pill.primary{background:var(--coral);color:#fff}
+`

@@ -3,7 +3,9 @@
 // A date and time, Sellio style: a grey field that opens a calendar (quick
 // picks, a month grid, a time row) instead of the browser's datetime-local
 // box. The value is the same local "YYYY-MM-DDTHH:mm" string datetime-local
-// uses, so it drops in where one of those was.
+// uses, so it drops in where one of those was. mode="date" is a day alone
+// ("YYYY-MM-DD", like <input type="date">): no time row, and picking a day
+// closes it.
 
 import { useMemo, useRef, useState } from 'react'
 import Popover from '@/components/composer/Popover'
@@ -11,15 +13,15 @@ import Popover from '@/components/composer/Popover'
 const pad = (n: number) => String(n).padStart(2, '0')
 export const toLocalValue = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 const parse = (v?: string | null) => {
-  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(v || '')
-  return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : null
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/.exec(v || '')
+  return m ? new Date(+m[1], +m[2] - 1, +m[3], m[4] ? +m[4] : 12, m[5] ? +m[5] : 0) : null
 }
 const dayKey = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 const WEEK = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 
 export type QuickPick = { label: string; at: () => Date }
 
-export default function DateTimeField({ id, label, value, onChange, min, disabled, placeholder = 'Pick a date and time', defaultTime = '09:00', quick = [] }: {
+export default function DateTimeField({ id, label, value, onChange, min, disabled, placeholder, defaultTime = '09:00', quick = [], mode = 'datetime', clearable = true }: {
   id?: string
   /** What it is, for screen readers ("Goes live", "Ends"). */
   label: string
@@ -32,7 +34,12 @@ export default function DateTimeField({ id, label, value, onChange, min, disable
   /** The time a newly picked day starts with, "HH:mm". */
   defaultTime?: string
   quick?: QuickPick[]
+  /** 'date': a day alone, "YYYY-MM-DD". */
+  mode?: 'datetime' | 'date'
+  /** An × in the field and Clear in the calendar (off for a required date). */
+  clearable?: boolean
 }) {
+  const dateOnly = mode === 'date'
   const btnRef = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
   const cur = parse(value)
@@ -43,8 +50,8 @@ export default function DateTimeField({ id, label, value, onChange, min, disable
   const [dh, dm] = defaultTime.split(':').map(n => Number(n) || 0)
   const h24 = cur ? cur.getHours() : dh
   const mi = cur ? cur.getMinutes() : dm
-  const emit = (d: Date) => onChange(toLocalValue(d))
-  const pickDay = (day: Date) => emit(new Date(day.getFullYear(), day.getMonth(), day.getDate(), h24, mi))
+  const emit = (d: Date) => onChange(dateOnly ? dayKey(d) : toLocalValue(d))
+  const pickDay = (day: Date) => { emit(new Date(day.getFullYear(), day.getMonth(), day.getDate(), h24, mi)); if (dateOnly) setOpen(false) }
   const setTime = (h: number, m: number) => {
     const base = cur || new Date()
     emit(new Date(base.getFullYear(), base.getMonth(), base.getDate(), h, m))
@@ -65,9 +72,9 @@ export default function DateTimeField({ id, label, value, onChange, min, disable
   const canPrev = new Date(view.getFullYear(), view.getMonth() - 1, 1).getTime() >= minMonth
 
   const thisYear = new Date().getFullYear()
-  const shown = cur ? cur.toLocaleString(undefined, {
-    weekday: 'short', day: 'numeric', month: 'short', ...(cur.getFullYear() !== thisYear ? { year: 'numeric' } : {}), hour: 'numeric', minute: '2-digit',
-  }) : ''
+  const shown = !cur ? ''
+    : dateOnly ? cur.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', ...(cur.getFullYear() !== thisYear ? { year: 'numeric' } : {}) })
+      : cur.toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', ...(cur.getFullYear() !== thisYear ? { year: 'numeric' } : {}), hour: 'numeric', minute: '2-digit' })
   const h12 = h24 % 12 || 12
   const pm = h24 >= 12
   const minutes = Array.from({ length: 12 }, (_, i) => i * 5)
@@ -79,22 +86,23 @@ export default function DateTimeField({ id, label, value, onChange, min, disable
       <button id={id} ref={btnRef} type="button" className="dtf-field" disabled={disabled} aria-haspopup="dialog" aria-expanded={open}
         aria-label={`${label}: ${shown || 'not set'}`} onClick={() => (open ? setOpen(false) : openIt())}>
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="3" y="4.5" width="18" height="16.5" rx="3" /><path d="M16 2.5v4M8 2.5v4M3 10h18" /></svg>
-        <span className={shown ? 'dtf-v' : 'dtf-ph'}>{shown || placeholder}</span>
+        <span className={shown ? 'dtf-v' : 'dtf-ph'}>{shown || placeholder || (dateOnly ? 'Pick a date' : 'Pick a date and time')}</span>
       </button>
-      {value && !disabled && (
+      {clearable && value && !disabled && (
         <button type="button" className="dtf-x" aria-label={`Clear ${label.toLowerCase()}`} title="Clear" onClick={() => onChange('')}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden><path d="M18 6 6 18M6 6l12 12" /></svg>
         </button>
       )}
       <Popover open={open} onClose={() => setOpen(false)} anchorRef={btnRef} width={316} padding={14} radius={22} align="start" label={label}>
-        <div className="dtf-pop">
+        {/* data-keeps-menus: a menu behind it (the bell) stays open while a day is picked. */}
+        <div className="dtf-pop" data-keeps-menus="">
           {quick.length > 0 && (
             <div className="dtf-quick">
               {quick.map(q => {
                 const at = q.at()
-                const off = !!minD && at < minD
-                const on = !!cur && toLocalValue(at) === value
-                return <button key={q.label} type="button" className={`dtf-chip${on ? ' on' : ''}`} disabled={off} onClick={() => { emit(at); setView(new Date(at.getFullYear(), at.getMonth(), 1)) }}>{q.label}</button>
+                const off = !!minD && (dateOnly ? dayKey(at) < minKey : at < minD)
+                const on = !!cur && (dateOnly ? dayKey(at) : toLocalValue(at)) === value
+                return <button key={q.label} type="button" className={`dtf-chip${on ? ' on' : ''}`} disabled={off} onClick={() => { emit(at); setView(new Date(at.getFullYear(), at.getMonth(), 1)); if (dateOnly) setOpen(false) }}>{q.label}</button>
               })}
             </div>
           )}
@@ -125,7 +133,7 @@ export default function DateTimeField({ id, label, value, onChange, min, disable
               )
             })}
           </div>
-          <div className="dtf-time">
+          {!dateOnly && <div className="dtf-time">
             <span className="dtf-time-l">Time</span>
             <select className="dtf-sel" aria-label="Hour" value={h12} onChange={e => { const h = Number(e.target.value) % 12; setTime(pm ? h + 12 : h, mi) }}>
               {Array.from({ length: 12 }, (_, i) => i + 1).map(h => <option key={h} value={h}>{h}</option>)}
@@ -138,9 +146,9 @@ export default function DateTimeField({ id, label, value, onChange, min, disable
               <button type="button" aria-pressed={!pm} onClick={() => pm && setTime(h24 - 12, mi)}>am</button>
               <button type="button" aria-pressed={pm} onClick={() => !pm && setTime(h24 + 12, mi)}>pm</button>
             </div>
-          </div>
+          </div>}
           <div className="dtf-foot">
-            {value ? <button type="button" className="dtf-clear" onClick={() => { onChange(''); setOpen(false) }}>Clear</button> : <span />}
+            {clearable && value ? <button type="button" className="dtf-clear" onClick={() => { onChange(''); setOpen(false) }}>Clear</button> : <span />}
             <button type="button" className="dtf-done" onClick={() => setOpen(false)}>Done</button>
           </div>
         </div>
@@ -161,7 +169,8 @@ const DTF_CSS = `
 .dtf-ph{color:var(--dtf-soft);font-weight:500}
 .dtf-x{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;border:none;border-radius:50%;background:transparent;color:var(--dtf-soft);cursor:pointer;padding:0}
 .dtf-x:hover{background:color-mix(in srgb,var(--dtf-soft) 16%,transparent);color:var(--ink)}
-.dtf-pop{--dtf-fill:#f4f4f5;--dtf-soft:#71717a;color:var(--ink)}
+/* Covers the popover's padding too, so every click inside is inside it. */
+.dtf-pop{--dtf-fill:#f4f4f5;--dtf-soft:#71717a;color:var(--ink);margin:-14px;padding:14px}
 .dtf-quick{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
 .dtf-chip{height:32px;padding:0 12px;border:none;border-radius:999px;background:var(--dtf-fill);color:var(--ink);font:inherit;font-size:13px;font-weight:650;cursor:pointer;white-space:nowrap}
 .dtf-chip:hover{filter:brightness(.97)}

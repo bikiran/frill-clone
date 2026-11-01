@@ -28,6 +28,8 @@ import { enrichNames } from '@/lib/team-names'
 import { broadcastMessage } from '@/lib/chat-broadcast'
 import { uploadQueue } from '@/lib/upload-queue'
 import MentionInput, { resolveMentions as resolveTeamMentions } from '@/components/MentionInput'
+import { SelectPopover, MenuAvatar } from '@/components/ui/SelectMenu'
+import { NT_CSS } from '@/components/inbox/ContactPanelBits'
 import { notifyIntegrations } from '@/lib/integrations-notify'
 import { REVIEW_REQUEST_SUBJECT, pickReviewChannel, type ReviewChannel } from '@/lib/review-request'
 import { latestChatMs, todosGeneratedAt } from '@/lib/task-dedupe'
@@ -1702,6 +1704,9 @@ export function useInboxController() {
   const [copiedTaskId, setCopiedTaskId] = useState<string | null>(null)
   const [newTask, setNewTask] = useState('')
   const [newTaskAssignee, setNewTaskAssignee] = useState('')
+  // The new task's assignee menu (a Sellio menu, not a native select).
+  const [taskAsgOpen, setTaskAsgOpen] = useState(false)
+  const taskAsgRef = useRef<HTMLButtonElement>(null)
   const [refundOrder, setRefundOrder] = useState<any>(null)
   const [orderGallery, setOrderGallery] = useState<{ images: { src: string; name: string }[]; index: number } | null>(null)
   const [invoicePreview, setInvoicePreview] = useState<{ doc: any; url: string; fileName: string; orderNumber: string } | null>(null)
@@ -3661,39 +3666,62 @@ export function useInboxController() {
   // @mention on add/edit and per-note copy / edit / delete.
   // Contact-card-style icon buttons (copy / edit / delete) shared by notes and
   // tasks so the two read identically.
+  // Copy / edit / delete on a note or task: quiet round buttons that fill in
+  // on hover.
   const rowActions = (o: { onCopy: () => void; onEdit: () => void; onDelete: () => void; copied?: boolean }) => (
-    <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-      <button type="button" title="Copy" onClick={o.onCopy} style={fieldBtn(o.copied ? '#059669' : 'var(--slate)')}>
+    <div className="cpn-acts">
+      <button type="button" className={`cpn-act${o.copied ? ' ok' : ''}`} title="Copy" aria-label="Copy" onClick={o.onCopy}>
         {o.copied
-          ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-          : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>}
+          ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>}
       </button>
-      <button type="button" title="Edit" onClick={o.onEdit} style={fieldBtn('var(--slate)')}>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      <button type="button" className="cpn-act" title="Edit" aria-label="Edit" onClick={o.onEdit}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
       </button>
-      <button type="button" title="Delete" onClick={o.onDelete} style={fieldBtn('#dc2626')}>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+      <button type="button" className="cpn-act del" title="Delete" aria-label="Delete" onClick={o.onDelete}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
       </button>
     </div>
   )
 
-  // A composer with a round submit button tucked into the corner (Coax-style),
-  // replacing the separate Add button. Enter submits single-line composers.
+  // A grey-fill composer with a round send button tucked into the corner.
+  // Enter submits single-line composers.
   const composerBox = (o: { value: string; onChange: (v: string) => void; onSubmit: () => void; placeholder: string; multiline?: boolean; rows?: number }) => {
     const active = !!o.value.trim()
     return (
-    <div style={{ position: 'relative' }}>
+    <div className="cpn-cmp">
       <MentionInput value={o.value} onChange={o.onChange} team={teamMembers as any}
-        multiline={o.multiline} rows={o.rows} placeholder={o.placeholder} onSubmit={o.onSubmit}
-        style={{ padding: '11px 46px 11px 13px', fontSize: 13, lineHeight: 1.5, borderRadius: 12 }} />
-      <button type="button" onClick={o.onSubmit} title="Send" disabled={!active}
-        style={{ position: 'absolute', right: 8, bottom: 8, width: 30, height: 30, borderRadius: '50%', border: 'none', background: active ? 'var(--coral)' : '#eef0f2', color: active ? '#fff' : '#9aa1ab', cursor: active ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, transition: 'all 0.14s', boxShadow: active ? '0 1px 4px rgba(255,122,107,0.4)' : 'none' }}>
-        {/* Return/enter arrow — matches the Coax composer affordance. */}
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></svg>
+        multiline={o.multiline} rows={o.rows} placeholder={o.placeholder} onSubmit={o.onSubmit} className="cpn-in"
+        style={{ padding: '12px 48px 12px 14px', fontSize: 13.5, lineHeight: 1.5, borderRadius: 16, border: 'none', background: 'var(--cpn-fill)', color: 'var(--ink)' }} />
+      <button type="button" className={`cpn-send${active ? ' on' : ''}`} onClick={o.onSubmit} title="Add" aria-label="Add" disabled={!active}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
       </button>
     </div>
     )
   }
+  // A steady colour per name, for a person's initial.
+  const ntColor = (name: string) => ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#14b8a6', '#ef4444'][[...String(name || '?')].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7) % 8]
+  const ntWhen = (d: string) => { const t = new Date(d); return Number.isFinite(t.getTime()) ? t.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '' }
+  // Notes / Tasks heading: the name, a count, and a round chevron that folds it.
+  const ntHead = (label: string, count: number, open: boolean, toggle: () => void) => (
+    <button type="button" className="cpn-h" onClick={toggle} aria-expanded={open}>
+      <h3>{label}</h3>
+      {count > 0 && <span className="cpn-count">{count}</span>}
+      <span className="cpn-fold" aria-hidden>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ transform: open ? 'none' : 'rotate(-90deg)', transition: 'transform .18s ease' }}><polyline points="6 9 12 15 18 9" /></svg>
+      </span>
+    </button>
+  )
+  const ntEditBox = (value: string, onChange: (v: string) => void, onSave: () => void, onCancel: () => void, rows: number, placeholder: string) => (
+    <div className="cpn-edit">
+      <MentionInput value={value} onChange={onChange} team={teamMembers as any} multiline rows={rows} placeholder={placeholder} onSubmit={onSave}
+        style={{ padding: '10px 12px', fontSize: 13.5, lineHeight: 1.5, borderRadius: 14, border: 'none', background: 'var(--card, #fff)', color: 'var(--ink)' }} />
+      <div className="cpn-edit-acts">
+        <button type="button" className="cpn-pill" onClick={onCancel}>Cancel</button>
+        <button type="button" className="cpn-pill primary" onClick={onSave}>Save</button>
+      </div>
+    </div>
+  )
 
   // Render plain message text with any URLs turned into clickable, selectable
   // links. Admin chat used to show tracking/short links as dead text that you
@@ -3718,38 +3746,29 @@ export function useInboxController() {
   }
 
   const renderNotesSection = () => (
-    <div style={{ marginBottom: 18 }}>
-      <button type="button" onClick={() => setNotesOpen(v => !v)} aria-expanded={notesOpen}
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', margin: '0 0 8px', padding: 0, background: 'none', border: 'none', cursor: 'pointer' }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Notes</span>
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6, transform: notesOpen ? 'none' : 'rotate(-90deg)', transition: 'transform 0.18s ease' }}><polyline points="6 9 12 15 18 9" /></svg>
-      </button>
+    <div className="cpn">
+      <style href="colvy-inbox-notes" precedence="default">{NT_CSS}</style>
+      {ntHead('Notes', notes.length, notesOpen, () => setNotesOpen(v => !v))}
       {notesOpen && <>
       {notes.map(n => (
-        <div key={n.id} style={{ padding: '10px 12px', borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a', marginBottom: 8 }}>
-          {editingNoteId === n.id ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <MentionInput value={editNoteText} onChange={setEditNoteText} team={teamMembers as any} multiline rows={3}
-                placeholder="Edit note…" onSubmit={() => saveNoteEdit(n.id)} style={{ padding: '9px 11px', fontSize: 13, lineHeight: 1.5 }} />
-              <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
-                <button type="button" onClick={() => setEditingNoteId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: 'var(--slate)' }}>Cancel</button>
-                <button type="button" onClick={() => saveNoteEdit(n.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 800, color: '#059669' }}>Save</button>
-              </div>
-            </div>
-          ) : (
+        <div key={n.id} className="cpn-note">
+          {editingNoteId === n.id
+            ? ntEditBox(editNoteText, setEditNoteText, () => saveNoteEdit(n.id), () => setEditingNoteId(null), 3, 'Edit note…')
+            : (
             <>
-              <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{n.content}</p>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, gap: 8 }}>
-                <p style={{ margin: 0, fontSize: 10.5, color: '#9ca3af' }}>{n.author_name} · {new Date(n.created_at).toLocaleDateString()}</p>
+              <p className="cpn-text">{n.content}</p>
+              <div className="cpn-foot">
+                <span className="cpn-by">
+                  <span className="cpn-av" style={{ background: ntColor(n.author_name || '?') }} aria-hidden>{String(n.author_name || '?').charAt(0).toUpperCase()}</span>
+                  <span className="cpn-by-t" title={`${n.author_name || ''} · ${new Date(n.created_at).toLocaleString()}`}>{n.author_name}<span aria-hidden> · </span>{ntWhen(n.created_at)}</span>
+                </span>
                 {rowActions({ onCopy: () => copyNote(n.content, n.id), onEdit: () => { setEditingNoteId(n.id); setEditNoteText(n.content) }, onDelete: () => deleteNote(n.id), copied: copiedNoteId === n.id })}
               </div>
             </>
           )}
         </div>
       ))}
-      <div style={{ marginTop: 6 }}>
-        {composerBox({ value: newNote, onChange: (v) => setNewNote(v), onSubmit: addNote, placeholder: 'Add a note… use @ to mention someone', multiline: true, rows: 2 })}
-      </div>
+      {composerBox({ value: newNote, onChange: (v) => setNewNote(v), onSubmit: addNote, placeholder: 'Add a note… use @ to mention someone', multiline: true, rows: 2 })}
       </>}
     </div>
   )
@@ -3840,45 +3859,48 @@ export function useInboxController() {
 
   // One Tasks section, rendered in both the Information and Timeline tabs — same
   // conversation_tasks store, with assignment, @mention and copy/edit/delete.
-  const renderTasksSection = () => (
-    <div style={{ marginBottom: 18 }}>
-      <button type="button" onClick={() => setTasksOpen(v => !v)} aria-expanded={tasksOpen}
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', margin: '0 0 8px', padding: 0, background: 'none', border: 'none', cursor: 'pointer' }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Tasks</span>
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6, transform: tasksOpen ? 'none' : 'rotate(-90deg)', transition: 'transform 0.18s ease' }}><polyline points="6 9 12 15 18 9" /></svg>
-      </button>
+  const renderTasksSection = () => {
+    const asg = teamMembers.find((m: any) => m.id === newTaskAssignee) as any
+    const asgOptions = [
+      { value: '', label: 'Unassigned', icon: <span className="cpn-av none" aria-hidden>?</span> },
+      ...teamMembers.map((m: any) => ({ value: m.id, label: m.name, icon: <MenuAvatar name={m.name} color={ntColor(m.name)} /> })),
+    ]
+    const open = tasks.filter(t => !taskDone(t)).length
+    return (
+    <div className="cpn">
+      <style href="colvy-inbox-notes" precedence="default">{NT_CSS}</style>
+      {ntHead('Tasks', open, tasksOpen, () => setTasksOpen(v => !v))}
       {tasksOpen && <>
-      {tasks.map(t => (
-        <div key={t.id} style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)', marginBottom: 8 }}>
-          {editingTaskId === t.id ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <MentionInput value={editTaskText} onChange={setEditTaskText} team={teamMembers as any} multiline rows={2}
-                placeholder="Edit task…" onSubmit={() => saveTaskEdit(t.id)} style={{ padding: '9px 11px', fontSize: 13, lineHeight: 1.5 }} />
-              <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
-                <button type="button" onClick={() => setEditingTaskId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: 'var(--slate)' }}>Cancel</button>
-                <button type="button" onClick={() => saveTaskEdit(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 800, color: '#059669' }}>Save</button>
-              </div>
-            </div>
-          ) : (
-            // Like a note: the task gets the card's full width; the labels and
-            // copy/edit/delete share a row underneath (side by side, the three
-            // buttons squeezed the text and the labels into a narrow column).
+      {tasks.map(t => {
+        const done = taskDone(t)
+        return (
+        <div key={t.id} className={`cpn-task${done ? ' done' : ''}`}>
+          {editingTaskId === t.id
+            ? ntEditBox(editTaskText, setEditTaskText, () => saveTaskEdit(t.id), () => setEditingTaskId(null), 2, 'Edit task…')
+            : (
+            // The task gets the card's width; its labels and copy/edit/delete
+            // share a row underneath. A done task is cut to three lines (the
+            // whole text is in its tooltip and the edit box).
             <>
-              <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
-                <input type="checkbox" checked={taskDone(t)} onChange={() => toggleTask(t)} style={{ marginTop: 3, cursor: 'pointer', flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0, fontSize: 13, lineHeight: 1.5, textDecoration: taskDone(t) ? 'line-through' : 'none', opacity: taskDone(t) ? 0.55 : 1, color: 'var(--ink)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{t.text}</div>
+              <div className="cpn-task-top">
+                <button type="button" role="checkbox" aria-checked={done} className={`cpn-check${done ? ' on' : ''}`} onClick={() => toggleTask(t)}
+                  aria-label={done ? 'Mark as not done' : 'Mark as done'}>
+                  {done && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
+                </button>
+                <div className="cpn-text" title={done ? t.text : undefined}>{t.text}</div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 8 }}>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, minWidth: 0, flex: 1 }}>
+              <div className="cpn-foot">
+                <div className="cpn-chips">
                   {t.assigned_to && (
-                    <span title={t.assigned_to} style={{ display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '2px 8px', borderRadius: 20, background: 'var(--peach)', color: 'var(--coral)', fontSize: 10.5, fontWeight: 700, lineHeight: 1.5 }}>
-                      {t.assigned_to}
+                    <span className="cpn-chip" title={t.assigned_to}>
+                      <span className="cpn-av sm" style={{ background: ntColor(t.assigned_to) }} aria-hidden>{String(t.assigned_to).charAt(0).toUpperCase()}</span>
+                      <span>{t.assigned_to}</span>
                     </span>
                   )}
                   {(t.source === 'call_summary' || t.source === 'ai_summary') && (
-                    <span title="Drafted from an AI summary by Colvy" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, maxWidth: '100%', whiteSpace: 'nowrap', padding: '2px 8px', borderRadius: 20, background: '#f3e8ff', color: '#7c3aed', fontSize: 10.5, fontWeight: 700, lineHeight: 1.5 }}>
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ flexShrink: 0 }}><path d="M12 2l2.2 6.3L20 10l-5.8 1.7L12 18l-2.2-6.3L4 10l5.8-1.7z"/></svg>
-                      {t.source === 'call_summary' ? 'Call summary' : 'Chat summary'}
+                    <span className="cpn-chip ai" title="Drafted from an AI summary by Colvy">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.2 6.3L20 10l-5.8 1.7L12 18l-2.2-6.3L4 10l5.8-1.7z"/></svg>
+                      <span>{t.source === 'call_summary' ? 'Call summary' : 'Chat summary'}</span>
                     </span>
                   )}
                 </div>
@@ -3887,18 +3909,21 @@ export function useInboxController() {
             </>
           )}
         </div>
-      ))}
-      <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>
-        {composerBox({ value: newTask, onChange: (v) => setNewTask(v), onSubmit: addTask, placeholder: 'Add a task… use @ to mention someone (Enter to add)' })}
-        <select value={newTaskAssignee} onChange={e => setNewTaskAssignee(e.target.value)}
-          style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12, outline: 'none', background: '#fff', color: newTaskAssignee ? 'var(--ink)' : 'var(--slate)' }}>
-          <option value="">Unassigned</option>
-          {teamMembers.map((m: any) => (<option key={m.id} value={m.id}>{m.name}</option>))}
-        </select>
-      </div>
+        )
+      })}
+      {composerBox({ value: newTask, onChange: (v) => setNewTask(v), onSubmit: addTask, placeholder: 'Add a task… use @ to mention someone' })}
+      <button ref={taskAsgRef} type="button" className="cpn-asg" aria-haspopup="listbox" aria-expanded={taskAsgOpen} onClick={() => setTaskAsgOpen(v => !v)}
+        aria-label={`Assign the new task: ${asg?.name || 'Unassigned'}`}>
+        {asg ? <span className="cpn-av sm" style={{ background: ntColor(asg.name) }} aria-hidden>{String(asg.name).charAt(0).toUpperCase()}</span> : <span className="cpn-av sm none" aria-hidden>?</span>}
+        <span>{asg ? asg.name : 'Assign to…'}</span>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="m6 9 6 6 6-6" /></svg>
+      </button>
+      <SelectPopover open={taskAsgOpen} onClose={() => setTaskAsgOpen(false)} anchorRef={taskAsgRef} label="Assign the new task to" value={newTaskAssignee}
+        options={asgOptions} width={240} align="start" onPick={v => setNewTaskAssignee(v)} />
       </>}
     </div>
-  )
+    )
+  }
 
   // ── Sentiment ──────────────────────────────────────────────────────────────
   const setSentiment = async (sentiment: string | null) => {
