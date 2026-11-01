@@ -10,7 +10,7 @@ import { toPublicUrl } from '@/lib/storage-url'
 import ResilientImage from '@/components/ResilientImage'
 import RefundOrderModal from '@/components/RefundOrderModal'
 import { SkClose, SkFiles, SkIcon, SkStyle } from '@/components/ui/SheetKit'
-import DeliveryPanel from '@/components/DeliveryPanel'
+import ScheduleDeliverySheet from '@/components/ScheduleDeliverySheet'
 import ContactTimeline from '@/components/ContactTimeline'
 import { supabase } from '@/lib/supabase'
 import Dialer from '@/components/Dialer'
@@ -37,14 +37,12 @@ export default function InboxOverlays() {
     editOrderLoading, editOrderSaving, editingScheduled, emailGalleryMedia, filteredConvs, filters,
     filtersCustomDates, folderBtnInbox, forwardBusy, forwardPicked, forwardResults, forwardSearch,
     forwardTo, forwarding, galleryFolder, galleryFolders, galleryIndex, galleryItems, gallerySearch,
-    gallerySelected, invoicePreview, invoiceSending, loadConversationExtras, loadConversations,
+    gallerySelected, invoicePreview, invoiceSending, loadConversationExtras, reloadThread, scrollBottom, loadConversations,
     loadGalleryFolder, markRead, mergeConversation, mrAccept, mrExpiry, mrMaxFiles, mrPrompt,
-    mrSaving, myName, orderGallery, orderPrefillCart, outboundChannel, outlets, outletsForSchedule,
-    payAddress, payAmount, payDesc, paySending, pickerItems, pickupModal, pickupSending, pinnedIds,
+    mrSaving, myName, orderGallery, orderPrefillCart, outboundChannel, outlets, payAddress, payAmount, payDesc, paySending, pickerItems, pickupModal, pickupSending, pinnedIds,
     podFiles, podNote, podSending, productError, productQuery, productSearchedFor, productSearching, productSent,
-    products, refundOrder, reopenConv, reply, resetFilters, saveCard, saveOrderEdit, saveSchedule,
-    saveScheduledEdit, savedCards, schedule, scheduleMessage, scheduleMsgAt, scheduledBusy,
-    scheduling, schedulingMsg, searchForwardTargets, searchProducts, selectConversation, selected,
+    products, refundOrder, reopenConv, reply, resetFilters, saveCard, saveOrderEdit, saveScheduledEdit, savedCards, scheduleMessage, scheduleMsgAt, scheduledBusy,
+    schedulingMsg, searchForwardTargets, searchProducts, selectConversation, selected,
     sendCoupon, sendInteractive, sendInvoiceInChat, sendMediaRequest, sendPayment, sendPicker,
     sendPickupReady, sendProductMessage, sendProofOfDelivery, sendTrackingMessage,
     setAbandonedCarts, setChargeAmount, setChargeCardId, setChargeDesc, setContact, setConvHasSale,
@@ -53,7 +51,7 @@ export default function InboxOverlays() {
     setForwardPicked, setForwarding, setGalleryIndex, setGallerySearch, setGallerySelected,
     setInvoicePreview, setMrAccept, setMrExpiry, setMrMaxFiles, setMrPrompt, setOrderGallery,
     setOrderPrefillCart, setPayAddress, setPayAmount, setPayDesc, setPickupModal, setPodFiles,
-    setPodNote, setProductQuery, setRefundOrder, setSchedule, setScheduleMsgAt, setSendPicker,
+    setPodNote, setProductQuery, setRefundOrder, setScheduleMsgAt, setSendPicker,
     setShowAddContact, setShowChargeCard, setShowCompose, setShowCoupon, setShowCreateOrder,
     setShowDeliveryPanel, setShowDialer, setShowDoa, setShowFilters, setShowInboxQR,
     setShowMediaPicker, setShowMediaRequest, setShowMergePicker, setShowPod, setShowProducts,
@@ -199,73 +197,25 @@ export default function InboxOverlays() {
         </div>
       )}
 
-      {showSchedule && selected && (
-        <div onClick={() => setShowSchedule(false)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 320, padding: 20 }}>
-          <div onClick={e => e.stopPropagation()}
-            style={{ width: 440, maxWidth: '95vw', maxHeight: '88vh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: 24 }}>
-            <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 800, color: 'var(--ink)' }}>Schedule delivery</h3>
-            <p style={{ margin: '0 0 18px', fontSize: 13, color: 'var(--slate)', lineHeight: 1.5 }}>
-              Books it into the team calendar so every outlet can see the run{contact?.name ? `, for ${contact.name}` : ''}.
-            </p>
-
-            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>Date</label>
-            <input type="date" value={schedule.date}
-              onChange={e => setSchedule({ ...schedule, date: e.target.value })}
-              style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, marginBottom: 14, boxSizing: 'border-box' }} />
-
-            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>Time window</label>
-            <div style={{ display: 'flex', gap: 5, marginBottom: 10, flexWrap: 'wrap' }}>
-              {['9am – 12pm', '12pm – 3pm', '3pm – 6pm', 'Anytime'].map(w => (
-                <button key={w} type="button" onClick={() => setSchedule({ ...schedule, time_window: w })}
-                  style={{ padding: '6px 12px', borderRadius: 8, border: `1px solid ${schedule.time_window === w ? 'var(--coral)' : 'var(--border)'}`, background: schedule.time_window === w ? 'var(--peach)' : '#fff', color: schedule.time_window === w ? 'var(--coral)' : 'var(--slate)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
-                  {w}
-                </button>
-              ))}
-            </div>
-            <input value={schedule.time_window} placeholder="Or type a custom window"
-              onChange={e => setSchedule({ ...schedule, time_window: e.target.value })}
-              style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, marginBottom: 14, boxSizing: 'border-box' }} />
-
-            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>Delivery address</label>
-            <input value={schedule.address} placeholder="5 Clunes Avenue, Dallas VIC"
-              onChange={e => setSchedule({ ...schedule, address: e.target.value })}
-              style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, marginBottom: 14, boxSizing: 'border-box' }} />
-
-            {outletsForSchedule.length > 0 && (
-              <>
-                <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>Delivering from</label>
-                <select value={schedule.location_id}
-                  onChange={e => setSchedule({ ...schedule, location_id: e.target.value })}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, marginBottom: 14, boxSizing: 'border-box', background: '#fff' }}>
-                  <option value="">Any outlet</option>
-                  {outletsForSchedule.map(o => <option key={o.id} value={o.id}>{o.label || o.suburb}</option>)}
-                </select>
-              </>
-            )}
-
-            <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', marginBottom: 6 }}>Notes for the team</label>
-            <textarea value={schedule.notes} placeholder="Heavy — two people. Gate code 1234."
-              onChange={e => setSchedule({ ...schedule, notes: e.target.value })}
-              style={{ width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 14, minHeight: 64, resize: 'vertical', marginBottom: 14, boxSizing: 'border-box', fontFamily: 'inherit' }} />
-
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 18 }}>
-              <input type="checkbox" checked={schedule.notify}
-                onChange={e => setSchedule({ ...schedule, notify: e.target.checked })}
-                style={{ width: 17, height: 17, accentColor: 'var(--coral)' }} />
-              <span style={{ fontSize: 13.5, color: 'var(--ink)' }}>Tell the customer the date and window</span>
-            </label>
-
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button type="button" onClick={() => setShowSchedule(false)}
-                style={{ flex: 1, padding: '11px 0', borderRadius: 10, background: '#fff', color: 'var(--slate)', border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
-              <button type="button" onClick={saveSchedule} disabled={!schedule.date || scheduling}
-                style={{ flex: 2, padding: '11px 0', borderRadius: 10, background: 'var(--coral)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer', opacity: (!schedule.date || scheduling) ? 0.6 : 1 }}>
-                {scheduling ? 'Scheduling…' : 'Schedule delivery'}
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Schedule a delivery: from the composer's + menu or the contact panel's Delivery row.
+          The same sheet as the phone app (components/ScheduleDeliverySheet). */}
+      {(showSchedule || showDeliveryPanel) && selected && companyId && (
+        <ScheduleDeliverySheet
+          companyId={companyId}
+          contact={contact || { name: (selected as any).subject || '', phone: (selected as any).sms_number || null }}
+          conversationId={selected.id}
+          senderName={myName}
+          defaultLocationId={(selected as any).assigned_location_id || (selected as any).location_id || null}
+          onClose={() => { setShowSchedule(false); setShowDeliveryPanel(false) }}
+          onScheduled={({ _told, ...patch }: any) => {
+            if (contact) setContact((c: any) => ({ ...c, ...patch }))
+            const convId = selected.id
+            reloadThread(convId).then(() => scrollBottom()).catch(() => {})
+            loadConversationExtras(convId)
+            showToast(`Delivery scheduled. It’s on the team calendar${_told ? (/^but /.test(_told) ? `, ${_told}` : ` · ${_told}`) : ''}`)
+          }}
+          tellCustomer={(text: string) => deliverToCustomer({ body: text })}
+        />
       )}
 
       {/* Product search — look a product up and send its price or buy link.
@@ -552,15 +502,6 @@ export default function InboxOverlays() {
         </div>
       )}
 
-      {/* Delivery calendar slide-out */}
-      {showDeliveryPanel && contact && (
-        <DeliveryPanel
-          companyId={companyId}
-          contact={contact}
-          onClose={() => setShowDeliveryPanel(false)}
-          onSaved={(patch: any) => setContact((c: any) => ({ ...c, ...patch }))}
-        />
-      )}
 
       {showTimeline && contact && (
         <ContactTimeline contactId={contact.id} contactName={contact.name || contact.email || undefined}

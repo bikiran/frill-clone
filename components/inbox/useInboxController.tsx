@@ -616,14 +616,9 @@ export function useInboxController() {
   const [productSearchedFor, setProductSearchedFor] = useState('')
 
   // ── Schedule a delivery from the chat ────────────────────────────────────
-  // Books it into the team calendar so every outlet can see the run, and tells
-  // the customer what window to expect.
+  // components/ScheduleDeliverySheet (the phone app's sheet): books it on the
+  // team calendar and drops a "Delivery scheduled" card into the thread.
   const [showSchedule, setShowSchedule] = useState(false)
-  const [scheduling, setScheduling] = useState(false)
-  const [schedule, setSchedule] = useState<any>({
-    date: '', time_window: '', address: '', notes: '', location_id: '', notify: true,
-  })
-  const [outletsForSchedule, setOutletsForSchedule] = useState<any[]>([])
   // "Schedule message" — send the composed reply at a future time (cron delivers).
   const [showScheduleMsg, setShowScheduleMsg] = useState(false)
   const [scheduleMsgAt, setScheduleMsgAt] = useState('')
@@ -788,29 +783,7 @@ export function useInboxController() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id])
 
-  useEffect(() => {
-    if (!companyId) return
-    ;(async () => {
-      const { data } = await (supabase as any).from('company_locations')
-        .select('id, label, suburb, is_primary').eq('company_id', companyId)
-        .order('is_primary', { ascending: false })
-      setOutletsForSchedule(data || [])
-    })()
-  }, [companyId])
-
-  const openSchedule = () => {
-    // Sensible defaults: tomorrow, and the customer's address if we know it.
-    const t = new Date(); t.setDate(t.getDate() + 1)
-    setSchedule({
-      date: t.toISOString().slice(0, 10),
-      time_window: '',
-      address: contact?.address || '',
-      notes: '',
-      location_id: (selected as any)?.assigned_location_id || outletsForSchedule[0]?.id || '',
-      notify: true,
-    })
-    setShowSchedule(true)
-  }
+  const openSchedule = () => setShowSchedule(true)
 
   // Schedule the currently-composed reply to be sent later. Defaults to one hour
   // from now; the /api/cron/send-scheduled worker delivers it on the
@@ -917,72 +890,6 @@ export function useInboxController() {
       showToast('Could not schedule: ' + (e?.message || 'error'))
     } finally {
       setSchedulingMsg(false)
-    }
-  }
-
-  const saveSchedule = async () => {
-    if (!companyId || !selected || !schedule.date) return
-    setScheduling(true)
-    try {
-      const who = contact?.name || contact?.email || 'customer'
-      const res = await authFetch('/api/calendar', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyId,
-          event_type: 'delivery',
-          title: `Delivery — ${who}`,
-          notes: schedule.notes || null,
-          starts_at: new Date(`${schedule.date}T09:00:00`).toISOString(),
-          is_all_day: true,           // the window is what matters, not a clock time
-          time_window: schedule.time_window || null,
-          location_id: schedule.location_id || null,
-          contact_id: contact?.id || null,
-          conversation_id: selected.id,
-          address: schedule.address || null,
-          status: 'scheduled',
-          created_by: user?.id,
-        }),
-      })
-      const d = await res.json()
-      if (!res.ok) throw new Error(d.error || 'Could not schedule')
-
-      // Tell the customer what to expect.
-      if (schedule.notify) {
-        const when = new Date(schedule.date).toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })
-        const text = `Your delivery is booked for ${when}${schedule.time_window ? `, between ${schedule.time_window}` : ''}.${schedule.address ? `\nAddress: ${schedule.address}` : ''}\nWe'll let you know when it's on its way.`
-        const me = myName
-        const smsNumber = smsDestination()
-
-        if (smsNumber) {
-          try {
-            await authFetch('/api/telnyx/sms/send', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text, senderName: me, skipChatMessage: true }),
-            })
-          } catch {}
-        }
-
-        await (supabase as any).from('messages').insert({
-          conversation_id: selected.id, company_id: companyId,
-          sender_type: 'agent', sender_id: user?.id, sender_name: me,
-          content: text, message_type: 'text',
-          metadata: { delivery_scheduled: true },
-          delivery_channel: smsNumber ? 'sms' : 'chat',
-        })
-        await (supabase as any).from('conversations').update({
-          last_message: text.split('\n')[0], last_message_at: new Date().toISOString(),
-        }).eq('id', selected.id)
-      }
-
-      setShowSchedule(false)
-      await reloadThread(selected.id)
-      loadConversationExtras(selected.id)
-      scrollBottom()
-      showToast('Delivery scheduled — it\'s on the team calendar')
-    } catch (e: any) {
-      showToast('Could not schedule: ' + e.message)
-    } finally {
-      setScheduling(false)
     }
   }
 
@@ -6712,7 +6619,7 @@ export function useInboxController() {
     msgSearch, msgSearchIdx, msgrThemeActive, myName, onAiTasksCreated, openChatMedia,
     openEmailMedia, openForward, openMediaPicker, openMobileComposer, openOrderEditor,
     openScheduleMsg, openTicket, orderBilling, orderDateFrom, orderDateTo, orderGallery,
-    orderPrefillCart, orderSearch, outboundChannel, outlets, outletsForSchedule, payAddress,
+    orderPrefillCart, orderSearch, outboundChannel, outlets, payAddress,
     payAmount, payDesc, paySending, paymentSignal, pickerItems, pickupModal, pickupSending,
     pinnedIds, podFiles, podNote, podSending, prextyCustomer, productError, productQuery, productSearchedFor,
     productSearching, productSent, products, protectionBusy, quickIndex, quickMatches, quickMenuRef,
@@ -6720,9 +6627,9 @@ export function useInboxController() {
     renderModeHead, renderNotesSection, renderSendMenu, renderTasksSection, renderTextWithLinks,
     renderWithMentions, reopenConv, reply, replyNow, replyRev, typeReply, flushReply, replyTo, replyTr, reportSpam, requestMediaQuick,
     resetFilters, revealedMsgs, reviewAlready, reviewChannel, saleDismissed, saveCard, saveContact,
-    saveOrderEdit, saveSchedule, saveScheduledEdit, saveSingleField, savedCards, savingContact,
-    schedule, scheduleMessage, scheduleMsgAt, scheduledBusy, scheduledList, scheduledWhen,
-    scheduling, schedulingMsg, scrollBottom, searchForwardTargets, searchMsgHits, searchProducts,
+    saveOrderEdit, saveScheduledEdit, saveSingleField, savedCards, savingContact,
+    scheduleMessage, scheduleMsgAt, scheduledBusy, scheduledList, scheduledWhen,
+    schedulingMsg, scrollBottom, searchForwardTargets, searchMsgHits, searchProducts,
     searchScope, searchTerm, selectConversation, selected, sendAndClose, sendChannel, sendCoupon,
     sendInteractive, sendInvoiceInChat, sendMediaRequest, sendOrderPaymentRequest, sendPayment,
     sendPicker, sendPickupReady, sendProductMessage, sendProofOfDelivery, sendReply,
@@ -6740,7 +6647,7 @@ export function useInboxController() {
     setMsgSearchIdx, setOrderDateFrom, setOrderDateTo, setOrderGallery, setOrderPrefillCart,
     setOrderSearch, setPayAddress, setPayAmount, setPayDesc, setPickupModal, setPodFiles,
     setPodNote, setProductQuery, setQuickIndex, setRefundOrder, setReply, setReplyTo,
-    setRevealedMsgs, setSchedule, setScheduleMsgAt, setSearchScope, setSearchTerm, setSelected,
+    setRevealedMsgs, setScheduleMsgAt, setSearchScope, setSearchTerm, setSelected,
     setSendChannel, setSendPicker, setSentiment, setShowActionMenu, setShowActions,
     setShowAddContact, setShowAssignMenu, setShowCardAssign, setShowCardMore, setShowChannelMenu,
     setShowChargeCard, setShowCompose, setShowContactEdit, setShowCoupon, setShowCreateOrder,

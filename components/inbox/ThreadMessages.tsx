@@ -33,6 +33,7 @@ import { AiSparkIcon, Icon, LifecycleIcon, ReviewCard, dayLabel, fmtReceipt, fmt
 import { THREAD_MESSAGES_CSS } from '@/components/inbox/inbox-css'
 import { useInbox } from '@/components/inbox/InboxContext'
 import CouponTicket from '@/components/CouponTicket'
+import { readDelivery } from '@/lib/delivery-line'
 
 export default function ThreadMessages() {
   const {
@@ -412,14 +413,35 @@ export default function ThreadMessages() {
               )
             }
 
+            // A scheduled delivery: the card the phone app shows (when on the
+            // first line, then where and the order), not the one-line pill.
+            if (kind === 'delivery') {
+              const dl = readDelivery(String(msg.content || ''), sm)
+              const rest = [dl.address, dl.order].filter(Boolean).join(' · ')
+              return (
+                <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
+                  {dateDivider}
+                  <div style={{ display: 'flex', justifyContent: 'center', padding: '6px 0' }}>
+                    <div className="tm-dlv" title={sm.by ? `Scheduled by ${sm.by}` : undefined}>
+                      <span className="tm-dlv-i" aria-hidden="true">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z" /><path d="M3 8l9 5 9-5M12 13v8" /></svg>
+                      </span>
+                      <span className="tm-dlv-t">
+                        <b>Delivery scheduled{dl.when ? <span> · {dl.when}</span> : null}</b>
+                        {rest && <small>{rest}</small>}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )
+            }
+
             // Pull a link out of the body and strip the leading emoji /
             // redundant title so the card reads cleanly.
             const raw = String(msg.content || '')
             const urlMatch = raw.match(/https?:\/\/\S+/)
             const link = urlMatch ? urlMatch[0] : null
-            let detail = kind === 'delivery'
-              ? raw.replace(/^\s*🚚\s*delivery scheduled\s*·?\s*/i, '').split('\n').map(l => l.trim()).filter(Boolean).join(' · ')
-              : posLine ?? raw
+            let detail = posLine ?? raw
               .replace(link || '', '')
               .replace(/^[^\p{L}\p{N}#$]+/u, '')          // leading emoji / arrows
               .replace(new RegExp(`^\\s*${title}\\s*[—:\\-]*`, 'i'), '') // redundant title
