@@ -9,6 +9,7 @@ import { WebhookService } from '@/lib/webhook-service'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { upsertWooOrder } from '@/lib/orders-sync'
+import { inStoreLabel, wooPushIcon } from '@/lib/order-alerts'
 import { wooDateToISO } from '@/lib/orders'
 import { DEFAULT_ORDER_MESSAGES, isStaleOrderMessage, withCompletedFallbacks, isPickupMethod, completedKey, trackingAlreadySent } from '@/lib/order-messages'
 import { findCustomerGoogleReview } from '@/lib/review-match'
@@ -415,16 +416,18 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
         metadata: { order_event: true, order_id: order.id, status: badgeStatus, ...posMeta },
       })
     }
-    // Title the alert by what actually happened. A completed order was arriving
-    // labelled "New order" — the same wording as a fresh order — so the team
-    // couldn't tell a placement from a fulfilment at a glance. Completed orders
-    // now read "Order completed"; everything else stays "New order".
-    const orderVerb = pos.isPos ? `In-store sale${pos.saleId ? ` ${pos.saleId}` : ''}${posShop ? ` at ${posShop}` : ''} ·` : status === 'completed' ? 'Order completed' : 'New order'
+    // Title the alert by what actually happened, so an in-store sale, a
+    // website order and a fulfilment read differently at a glance: "In-store
+    // sale R50270 at Roxy Aquarium Somerton", "Online order" (with the
+    // WooCommerce logo as the picture) or "Order completed".
+    const orderVerb = pos.isPos ? `${inStoreLabel(pos, posShop)} ·` : status === 'completed' ? 'Order completed' : 'Online order'
     try { await notifyCompany({ db, companyId, type: 'order', message: `${orderVerb} #${order.number || order.id} from ${displayName} — $${order.total}`, actorName: displayName, conversationId: conv.id }) } catch {}
     // notifyCompany only writes the in-app bell row — it does NOT push, which is
     // why a new order showed up in Activity and on the web while no phone ever
     // made a sound. Only announce the order once, on the delivery that created
-    // the dedup marker below.
+    // the dedup marker below. This is the order's ONE alert: mirroring it onto
+    // the Orders board below stays quiet (it used to send a second, generic
+    // "New order" push for the same sale).
     try {
       await pushInboundMessage({
         companyId,
@@ -432,6 +435,7 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
         title: `${orderVerb} #${order.number || order.id}`,
         body: `${displayName} — $${order.total}`,
         route: `/conversation/${conv.id}`,
+        ...(pos.isPos ? {} : { icon: wooPushIcon() }),
       })
     } catch {}
     // Record the dedup marker now so repeated webhook deliveries for the same
@@ -734,7 +738,8 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     }
     // Mirror into the operational Orders board so a new/updated order shows up
     // there immediately (and live, via realtime) — no manual sync needed.
-    try { await upsertWooOrder(db, companyId, { ...orderRow, id: sourceRowId, customer_note: order.customer_note || null, shipping_method: order.shipping_lines?.[0]?.method_title || null }, contact?.id || null) } catch (e) { console.error('[orders mirror] failed', e) }
+    // Quiet: this delivery's thread alert above is the order's push.
+    try { await upsertWooOrder(db, companyId, { ...orderRow, id: sourceRowId, customer_note: order.customer_note || null, shipping_method: order.shipping_lines?.[0]?.method_title || null }, contact?.id || null, { quiet: true }) } catch (e) { console.error('[orders mirror] failed', e) }
   } catch (e) { console.error('[order attribution] failed', e) }
 
   // ── Auto review request on completion ─────────────────────────────────────

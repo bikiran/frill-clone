@@ -40,6 +40,8 @@ export async function pushInboundMessage(params: {
   route?: string
   excludeUserId?: string
   baseUrl?: string
+  /** An https picture for the Android large icon, instead of the customer's photo. */
+  icon?: string
 }) {
   try {
     // Conversation protection: nothing for spam or a blocked sender, and a
@@ -58,6 +60,7 @@ export async function pushInboundMessage(params: {
         body,
         route: params.route,
         excludeUserId: params.excludeUserId,
+        ...(params.icon ? { icon: params.icon } : {}),
       }),
     })
   } catch (e) {

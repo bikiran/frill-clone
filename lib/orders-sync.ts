@@ -1,6 +1,7 @@
 import { internalHeaders } from '@/lib/internal-call'
 import { mapWooStatus, mapWooPayment, wooDateToISO, variationFromMeta, statusMeta } from '@/lib/orders'
 import { emitIntegrationEvent } from '@/lib/integration-events'
+import { inStoreLabel, wooPos, wooPushIcon } from '@/lib/order-alerts'
 
 // The shipping method name from a woocommerce_orders row or a raw Woo order.
 function shippingMethodOf(o: any): string | null {
@@ -122,9 +123,14 @@ function isRecentOrder(src: any): boolean {
 }
 
 // Ping the team's phones about a genuinely-new order (Orders tab badge + push).
-// Fire-and-forget; never blocks or throws the sync. Shared by the webhook
-// (upsertWooOrder) and the periodic bulk sync so both paths notify.
-export function notifyNewOrder(companyId: string, src: any): void {
+// Fire-and-forget; never blocks or throws the sync. Used by the periodic bulk
+// sync (the WooCommerce webhook may be down) and Shopify. The WooCommerce
+// webhook sends its own alert for the order, so its copy here is quiet.
+//
+// `alert` names the order: "Online order" for a WooCommerce website order,
+// "In-store sale R50270 at Somerton ·" for a sale Prexty pushed in (see
+// wooOrderAlert). Without it the push reads "New order".
+export function notifyNewOrder(companyId: string, src: any, alert?: { title: string; icon?: string }): void {
   try {
     // Only a genuinely-new order — never an old order first seen on completion.
     if (!isRecentOrder(src)) return
@@ -132,18 +138,26 @@ export function notifyNewOrder(companyId: string, src: any): void {
     if (!base) return
     const num = src.order_number ? `#${src.order_number}` : ''
     const money = src.total != null ? ` · ${new Intl.NumberFormat('en-AU', { style: 'currency', currency: src.currency || 'AUD' }).format(Number(src.total))}` : ''
+    const who = src.customer_name || 'A customer'
     void fetch(`${base}/api/push/send`, {
       method: 'POST',
       headers: internalHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         companyId,
-        title: 'New order',
-        body: `${num ? num + ' · ' : ''}${src.customer_name || 'A customer'}${money}`,
+        title: alert ? `${alert.title}${num ? ` ${num}` : ''}` : 'New order',
+        body: alert ? `${who}${money}` : `${num ? num + ' · ' : ''}${who}${money}`,
         channelId: 'orders',
         route: '/orders',
+        ...(alert?.icon ? { icon: alert.icon } : {}),
       }),
     }).catch(() => {})
   } catch {}
+}
+
+/** How a WooCommerce order's push is titled: an in-store sale, or an online order with the Woo logo. */
+export function wooOrderAlert(o: any): { title: string; icon?: string } {
+  const pos = wooPos(o)
+  return pos.isPos ? { title: `${inStoreLabel(pos)} ·` } : { title: 'Online order', icon: wooPushIcon() }
 }
 
 function itemRows(companyId: string, orderId: string, o: any) {
@@ -323,7 +337,7 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[], 
       const src = rows[i]
       const t = src.order_date ? new Date(src.order_date).getTime() : 0
       if (!t || now - t > RECENT_MS) continue
-      notifyNewOrder(companyId, src)
+      notifyNewOrder(companyId, src, wooOrderAlert(fresh[i]))
       sent++
     }
   }
@@ -353,7 +367,12 @@ export function orderEvent(src: any, orderId: string, title: string, extra: Reco
  * New order → inserted with mapped status; existing → source fields refreshed
  * WITHOUT touching status/assignee/tags/flagged.
  */
-export async function upsertWooOrder(db: any, companyId: string, o: any, contactId?: string | null): Promise<void> {
+/**
+ * Mirror one WooCommerce order onto the Orders board. `quiet` when the caller
+ * already told the team (the webhook's thread alert), so the order gets one
+ * push, not two.
+ */
+export async function upsertWooOrder(db: any, companyId: string, o: any, contactId?: string | null, opts?: { quiet?: boolean }): Promise<void> {
   if (!o?.woo_order_id) return
   const ext = String(o.woo_order_id)
   const cid = contactId ?? (await resolveContacts(db, companyId, [o])).get((o.customer_email || o.billing?.email || '').toLowerCase()) ?? null
@@ -412,7 +431,7 @@ export async function upsertWooOrder(db: any, companyId: string, o: any, contact
     // A brand-new order just landed — ping the team's phones the way a new chat
     // does, so the Orders tab badge and a push both fire. Best-effort; never
     // block the sync on it. (Only on INSERT, so a status refresh doesn't re-alert.)
-    notifyNewOrder(companyId, src)
+    if (!opts?.quiet) notifyNewOrder(companyId, src, wooOrderAlert(o))
     emitIntegrationEvent(companyId, 'order.created', {
       ...orderEvent(src, orderId, `New order #${src.order_number}${src.total ? ` · $${Number(src.total).toFixed(2)}` : ''} · ${src.customer_name}`, { Status: statusMeta(st).label }, Array.isArray(o.line_items) ? o.line_items : []),
       dedupeKey: `order.created:${orderId}`,
