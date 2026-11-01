@@ -94,6 +94,10 @@ export async function POST(req: NextRequest) {
     // The provider's id for the text, kept on the thread message like any
     // other SMS reply so a delivery receipt can be matched to it.
     let providerId: string | null = null
+    // The number texted, and the thread as it was, to turn a live-chat thread
+    // into an SMS one once the link has gone by text.
+    let textedTo: string | null = null
+    let thread: any = null
     // The channel the caller asked for. An email, Messenger or Instagram link is
     // sent by the caller on that channel, so it isn't texted here as well (the
     // customer got it twice).
@@ -107,7 +111,8 @@ export async function POST(req: NextRequest) {
       // by hand. Send it for real over whichever provider owns the number.
       try {
         const { data: conv } = await db.from('conversations')
-          .select('sms_number, sms_enabled, contact_id').eq('id', conversationId).maybeSingle()
+          .select('sms_number, sms_enabled, contact_id, channel').eq('id', conversationId).maybeSingle()
+        thread = conv
         // Recipient: the conversation's SMS number if set, else fall back to the
         // linked contact's phone. Previously only sms_number was used, so a
         // request on a call/mixed thread (no sms_number) recorded the message
@@ -124,7 +129,13 @@ export async function POST(req: NextRequest) {
         // Per-company operational flag (default ON): skip texting the link when
         // media-link SMS is disabled for this company.
         const smsAllowed = await companyFlagEnabled(db, companyId, 'media_sms_fallback')
-        if (to && conv?.sms_enabled !== false && smsAllowed && !byOtherChannel) {
+        // sms_enabled = false only stops a thread with a number of its own (an
+        // SMS thread switched off). On a live-chat thread it's just the column's
+        // default (V115), so a thread opened from a contact or during a call
+        // posted the link as "Live Chat" and the customer, who had no chat
+        // open, never got it. Opt-outs are still checked on every text below.
+        const smsOff = conv?.sms_enabled === false && !!conv?.sms_number
+        if (to && !smsOff && smsAllowed && !byOtherChannel) {
           // The opt-out guard checks the number actually texted — the thread's
           // number can be someone else's than the sender's — and the contact.
           const sender = await resolveAutomatedSmsSender(db, companyId, { contactId: contactId || conv?.contact_id || null })
@@ -154,6 +165,7 @@ export async function POST(req: NextRequest) {
             }
             providerId = r?.id || null
             texted = true
+            textedTo = to
           }
           else smsError = 'No SMS number is set up for this workspace.'
         } else if (!to) {
@@ -186,7 +198,13 @@ export async function POST(req: NextRequest) {
         ...(providerId ? { telnyx_message_id: providerId } : {}),
         message_payload: { kind: 'media_request', token, prompt: request.prompt, accept: request.accept, max_files: request.max_files, expires_at, link },
       })
-      await db.from('conversations').update({ last_message: 'Requested media upload', last_message_at: new Date().toISOString() }).eq('id', conversationId)
+      // Texted on a thread without a number of its own: it's an SMS thread now,
+      // so the customer's reply (and the next message from the inbox) comes
+      // back here, as after a typed SMS reply (/api/telnyx/sms/send).
+      const nowSms = texted && textedTo && !thread?.sms_number
+        ? { sms_number: toE164(textedTo) || textedTo, sms_enabled: true, ...(['chat', 'widget', '', null, undefined].includes(thread?.channel) ? { channel: 'sms' } : {}) }
+        : {}
+      await db.from('conversations').update({ last_message: 'Requested media upload', last_message_at: new Date().toISOString(), ...nowSms }).eq('id', conversationId)
     }
 
     return NextResponse.json({ ok: true, token, link, texted, smsError, optedOut })

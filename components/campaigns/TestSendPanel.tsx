@@ -218,6 +218,8 @@ const TS_CSS = `
 .ts-chip button{flex-shrink:0;width:20px;height:20px;display:flex;align-items:center;justify-content:center;border:none;border-radius:50%;background:transparent;color:#71717a;cursor:pointer;padding:0}
 .ts-chip button:hover{background:#f4f4f5;color:#18181b}
 .ts-field input{flex:1;min-width:150px;height:30px;border:none!important;outline:none!important;box-shadow:none!important;background:transparent!important;border-radius:0;font:inherit;font-size:13.5px;color:var(--ink);padding:0 6px;margin:0}
+/* The global input:focus glow (app/globals.css) mustn't draw a second box inside the field. */
+.ts .ts-field input,.ts .ts-field input:focus,.ts .ts-field input:focus-visible,.ts .ts-field input:hover{border:none!important;border-color:transparent!important;outline:none!important;box-shadow:none!important;background:transparent!important}
 .ts-send{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;gap:7px;height:42px;padding:0 18px;border:none;border-radius:999px;background:var(--ink);color:#fff;font:inherit;font-size:13.5px;font-weight:650;cursor:pointer;white-space:nowrap}
 .ts-send:disabled{opacity:.45;cursor:default}
 .ts-picks{display:flex;flex-wrap:wrap;gap:6px}
