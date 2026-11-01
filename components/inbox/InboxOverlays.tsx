@@ -62,6 +62,7 @@ export default function InboxOverlays() {
     showMediaRequest, showMergePicker, showPod, showProducts, showRecordSale, showSchedule,
     showScheduleMsg, showTimeline, showToast, showTracking, snoozeConv, stageQrMedia,
     stageSelectedMedia, storyView, teamMembers, toast, togglePin, user,
+    setOrderFocus,
   } = useInbox()
   // A DOA claim was processed: reload the conversation (its claim note, the
   // order's new status) once the panel closes. Reloading straight away closed
@@ -228,8 +229,11 @@ export default function InboxOverlays() {
           fallback={{ contactId: deliveryView.contactId || null, date: deliveryView.date || null }}
           senderName={myName}
           onClose={() => setDeliveryView(null)}
-          onOpenOrder={() => {
-            // The customer's orders, as the header's order summary opens them.
+          onOpenOrder={(ref: string) => {
+            // The customer's orders, as the header's order summary opens them,
+            // scrolled to this one (ContactPanelBody); the Orders page if it
+            // isn't one of theirs.
+            setOrderFocus({ ref, convId: selected?.id || null })
             setActivePanel('orders')
             const w = window.innerWidth
             if (w < 768) setMobilePane('contact')

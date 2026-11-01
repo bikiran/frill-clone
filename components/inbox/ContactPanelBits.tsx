@@ -160,6 +160,9 @@ export const PT_CSS = `
 .pt-card-link{display:inline-flex;align-items:center;gap:3px;margin-top:9px;padding:4px 2px;font-size:12.5px;font-weight:600;color:var(--pt-muted);text-decoration:none}
 .pt-card-link:hover{color:var(--pt-ink)}
 .pt-order{padding:12px;border-radius:18px;background:var(--card,#fff);box-shadow:0 0 0 1px var(--pt-line),0 1px 2px rgba(16,24,40,.04)}
+.pt-order.pt-ring{animation:ptRing 2.6s ease}
+@keyframes ptRing{0%,70%{box-shadow:0 0 0 2px var(--coral),0 0 0 6px color-mix(in srgb,var(--coral) 18%,transparent)}100%{box-shadow:0 0 0 1px var(--pt-line),0 1px 2px rgba(16,24,40,.04)}}
+@media (prefers-reduced-motion:reduce){.pt-order.pt-ring{animation:none;box-shadow:0 0 0 2px var(--coral)}}
 .pt-order-n{font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;font-weight:700;letter-spacing:-.02em;color:var(--pt-ink)}
 .pt-status{font-size:11.5px;padding:2px 9px;border-radius:999px;font-weight:650;text-transform:capitalize;white-space:nowrap}
 .pt-order-total{font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;font-weight:700;letter-spacing:-.02em;color:var(--pt-ink);white-space:nowrap;font-variant-numeric:tabular-nums}

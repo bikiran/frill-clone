@@ -24,6 +24,8 @@ import ResilientImage from '@/components/ResilientImage'
 import { AiSparkIcon, CHANNEL_ICON, CHANNEL_NAME, Highlight, Icon, STATUS_COLOR, STATUS_ICON, VideoTileMark, fmtDateTime, fmtTime, timeOpts, videoPoster } from '@/components/inbox/inbox-shared'
 import { ENGAGEMENT_CSS, FacebookComment, GoogleReview, InstagramComment } from '@/components/inbox/EngagementCards'
 import { useInbox } from '@/components/inbox/InboxContext'
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import ContactTags from '@/components/inbox/ContactTags'
 
 export default function ContactPanelBody() {
@@ -44,7 +46,44 @@ export default function ContactPanelBody() {
     setShowOrderSearch, setShowTimeline, setShowTracking, setStatus, showCardAssign, showCardMore,
     showContactEdit, showEmailComposer, showMsgSearch, showOrderSearch, showToast, teamMembers,
     toggleBlockContact, user, wooCustomer, wooOrders, wooOrdersLoading,
+    orderFocus, setOrderFocus,
   } = useInbox()
+  const router = useRouter()
+
+  // A delivery's Order row asked for one order: bring its card into view and
+  // ring it for a moment. The search is cleared so the card is showing. If it
+  // isn't one of this customer's orders (once theirs have loaded, and a beat
+  // for the refresh behind cached ones), open it on the Orders page instead.
+  const [ringOrder, setRingOrder] = useState<string | null>(null)
+  useEffect(() => {
+    if (!orderFocus) return
+    if ((orderFocus.convId && orderFocus.convId !== selected?.id) || activePanel !== 'orders') { setOrderFocus(null); return }
+    const want = String(orderFocus.ref || '').replace(/^#/, '').trim().toLowerCase()
+    if (!want) { setOrderFocus(null); return }
+    const o = wooOrders.find((x: any) => [x.order_number, x.woo_order_id, x.order_id, x.pos_sale_id, x.id]
+      .some(v => v != null && String(v).toLowerCase() === want))
+    if (o) {
+      setOrderFocus(null)
+      setOrderSearch(''); setOrderDateFrom(''); setOrderDateTo('')
+      const key = String(o.order_id || o.woo_order_id || o.id)
+      setRingOrder(key)
+      // Not cancelled on cleanup: clearing the focus above re-runs this effect.
+      setTimeout(() => {
+        const el = document.querySelector(`[data-pt-order="${CSS.escape(key)}"]`) as HTMLElement | null
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }, 140)
+      setTimeout(() => setRingOrder(k => k === key ? null : k), 2600)
+      return
+    }
+    if (wooOrdersLoading) return
+    const t = setTimeout(() => {
+      setOrderFocus(null)
+      router.push(`/admin/orders?order=${encodeURIComponent(want)}&at=${Date.now()}`)
+    }, 1200)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderFocus, activePanel, wooOrders, wooOrdersLoading, selected?.id])
+
   return (
     <>
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 14px' }}>
@@ -981,7 +1020,7 @@ export default function ContactPanelBody() {
                   const onum = o.order_number || o.woo_order_id || o.id
                   const payload = { order_id: oid, order_number: onum, total: o.total, currency: o.currency, status: o.status, pay_link: o.payment_url || (o.store_url && o.order_key ? `${o.store_url}/checkout/order-pay/${oid}/?pay_for_order=true&key=${o.order_key}` : null), store_url: o.store_url, integration_id: o.integration_id }
                   return (
-                  <div key={oid} className="pt-order">
+                  <div key={oid} className={`pt-order${ringOrder === String(oid) ? ' pt-ring' : ''}`} data-pt-order={String(oid)}>
                     {(() => {
                       // Header: number + status on the left, total on the right.
                       // A Prexty in-store sale (V407 columns, or the order's own
