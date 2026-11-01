@@ -13,6 +13,7 @@ import { latestOnly, isAbort } from '@/lib/latest-request'
 import SmsLowBalanceBanner from '@/components/billing/SmsLowBalanceBanner'
 import { fmtCents, fmtRate } from '@/lib/sms-credits-core'
 import { EmailDesignStep, EmailTestCard, EmailReviewCard, type EmailInfo } from './EmailParts'
+import { TestSendPanel, postTest } from '@/components/campaigns/TestSendPanel'
 import { calculateCost, DEFAULT_PRICING, SmsPricing, aud, audRate, resolveSmsPricing } from '@/lib/sms-pricing'
 import { alertDialog, confirmDialog } from '@/components/ConfirmDialog'
 import { campaignControls, unscheduleFlow, rescheduleFlow, stopSendingFlow, type ActionOutcome } from '@/components/campaigns/CampaignActions'
@@ -140,9 +141,6 @@ export default function CampaignEditorPage() {
   const [quietHours, setQuietHours] = useState(true)
   const [localTime, setLocalTime] = useState(false)
   const [ratePerMin, setRatePerMin] = useState(60)
-  const [testNumber, setTestNumber] = useState('')
-  const [testBusy, setTestBusy] = useState(false)
-  const [testResult, setTestResult] = useState('')
   // Review & send (step 6)
   const [sending, setSending] = useState(false)
   const [sendResult, setSendResult] = useState('')
@@ -572,20 +570,6 @@ export default function CampaignEditorPage() {
     return iso ? new Date(iso).getTime() < Date.now() : false
   })()
 
-  const sendTest = async () => {
-    if (!testNumber.trim() || !companyId) return
-    setTestBusy(true); setTestResult('')
-    try {
-      const res = await authFetch('/api/campaigns/test-send', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, campaignId, to: testNumber.trim() }),
-      })
-      const d = await res.json()
-      if (!res.ok) throw new Error(d.error || 'Test failed')
-      setTestResult(`Test sent to ${d.sentTo}`)
-    } catch (e: any) { setTestResult('Could not send: ' + e.message) }
-    finally { setTestBusy(false) }
-  }
 
   const saveSchedule = async () => {
     if (!campaignId) return
@@ -769,6 +753,18 @@ export default function CampaignEditorPage() {
   const stopBtn: React.CSSProperties = { padding: '10px 16px', borderRadius: 999, background: '#fff1f2', color: '#be123c', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }
   const input: React.CSSProperties = { width: '100%', minHeight: 42, padding: '10px 14px', borderRadius: 12, border: '1.5px solid transparent', fontSize: 14, boxSizing: 'border-box', backgroundColor: '#f4f4f5', color: 'var(--ink)' }
   const label: React.CSSProperties = { fontSize: 14.5, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.01em', display: 'block', marginBottom: 10 }
+  // "Send a test" for an SMS campaign: the saved message, to the numbers chosen.
+  const smsTestCard = companyId ? (
+    <div style={card}>
+      <label style={label}>Send a test</label>
+      <p style={{ margin: '0 0 10px', fontSize: 12.5, color: 'var(--slate)' }}>
+        Check how it reads on a real phone: the text with example details and “[TEST]” at the start, to your number or anyone you add.
+      </p>
+      <TestSendPanel kind="sms" companyId={companyId} disabled={!message.trim()} disabledText="Write the message first."
+        note="Up to 5 mobiles. Numbers that replied STOP are skipped. Tests count as normal texts against your SMS allowance or credit. It never touches the campaign audience."
+        send={to => postTest('/api/campaigns/test-send', { companyId, campaignId, to })} />
+    </div>
+  ) : null
 
   if (loading) return <SkeletonList rows={6} />
   if (!campaign) return (
@@ -1357,28 +1353,7 @@ export default function CampaignEditorPage() {
           </div>
 
           {/* Test send */}
-          {isEmail && companyId ? <EmailTestCard companyId={companyId} info={emailInfo} card={card} label={label} /> : (
-          <div style={card}>
-            <label style={label}>Send a test</label>
-            <p style={{ margin: '0 0 10px', fontSize: 12.5, color: 'var(--slate)' }}>
-              Sends one message to a number you choose, so you can check how it reads on a real phone.
-              It never touches the campaign audience.
-            </p>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <input value={testNumber} onChange={e => setTestNumber(e.target.value)}
-                placeholder="04XX XXX XXX" style={{ ...input, flex: 1, minWidth: 180 }} />
-              <button type="button" onClick={sendTest} disabled={testBusy || !testNumber.trim() || !message.trim()}
-                style={{ padding: '9px 18px', borderRadius: 999, background: 'var(--ink)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', opacity: testBusy || !testNumber.trim() || !message.trim() ? 0.5 : 1, whiteSpace: 'nowrap' }}>
-                {testBusy ? 'Sending…' : 'Send test'}
-              </button>
-            </div>
-            {testResult && (
-              <p style={{ margin: '10px 0 0', fontSize: 12.5, color: testResult.startsWith('Test sent') ? '#15803d' : '#dc2626' }}>
-                {testResult}
-              </p>
-            )}
-          </div>
-          )}
+          {isEmail && companyId ? <EmailTestCard companyId={companyId} info={emailInfo} card={card} label={label} /> : smsTestCard}
         </div>
         )}
 
@@ -1476,7 +1451,7 @@ export default function CampaignEditorPage() {
           {isEmail ? (<>
             <EmailReviewCard info={emailInfo} card={card} label={label} onEdit={() => goToStep(3)} />
             {companyId && <EmailTestCard companyId={companyId} info={emailInfo} card={card} label={label} />}
-          </>) : (
+          </>) : (<>
           <div style={card}>
             <label style={label}>Message preview</label>
             <div style={{ background: '#e9e9eb', borderRadius: 14, padding: '11px 14px', fontSize: 13.5, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#1a1a1a' }}>
@@ -1486,7 +1461,8 @@ export default function CampaignEditorPage() {
               Shown with example values. Each recipient gets their own details.
             </p>
           </div>
-          )}
+          {smsTestCard}
+          </>)}
 
           {/* Exclusions, restated before committing (from the saved audience) */}
           {savedReady && saved.excludedTotal > 0 && (
