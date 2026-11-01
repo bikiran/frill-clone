@@ -1,13 +1,12 @@
 'use client'
 
-// The campaign wizard's email pieces: the designer step, the "send a test to
-// yourself" card and the Review step's email summary. The SMS parts of the
+// The campaign wizard's email pieces: the designer step, the "Send a test"
+// card and the Review step's email summary. The SMS parts of the
 // wizard live in page.tsx; an email campaign shows these instead and never
 // shows SMS cost, credit or allowance.
 
-import { useState } from 'react'
 import Link from 'next/link'
-import { authFetch } from '@/lib/auth-fetch'
+import { TestSendPanel, postTest } from '@/components/campaigns/TestSendPanel'
 import { EmailDesigner, blankBlock, type DesignDraft, type EmailBrand, type SenderInfo } from '@/components/EmailDesigner'
 
 export type EmailInfo = {
@@ -30,9 +29,6 @@ export function draftFrom(info: EmailInfo | null, campaignName: string): DesignD
   }
 }
 
-const SendIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/></svg>
-)
 const WarnIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }}><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
 )
@@ -55,40 +51,19 @@ export function EmailDesignStep({ companyId, campaignId, info, campaignName, onS
   )
 }
 
-/** "Send a test to yourself": the saved design, to the signed-in staff member's own address. */
+/** "Send a test": the saved design, to the addresses chosen (yourself to start with). */
 export function EmailTestCard({ companyId, info, card, label }: { companyId: string; info: EmailInfo | null; card: React.CSSProperties; label: React.CSSProperties }) {
-  const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState('')
   const d = info?.design
   const ready = !!d?.design?.blocks?.length
-  const send = async () => {
-    setBusy(true); setResult('')
-    try {
-      const r = await authFetch('/api/email-campaigns/test-send', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, subject: d.subject, previewText: d.preview_text, design: d.design }),
-      })
-      const j = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(j?.error || 'The test didn’t send')
-      setResult(`Test sent to ${j.to}`)
-    } catch (e: any) { setResult('Could not send: ' + e.message) }
-    finally { setBusy(false) }
-  }
   return (
     <div style={card}>
       <label style={label}>Send a test</label>
       <p style={{ margin: '0 0 10px', fontSize: 12.5, color: 'var(--slate)' }}>
-        Sends the email to your own address with example details, so you can check it in your inbox.
-        It never touches the campaign audience.
+        Check it in a real inbox: the email with example details and “[Test]” in the subject, to you or anyone you add.
       </p>
-      <button type="button" onClick={send} disabled={busy || !ready}
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 16px', borderRadius: 999, background: 'var(--ink)', color: '#fff', border: 'none', fontSize: 13.5, fontWeight: 600, cursor: busy || !ready ? 'default' : 'pointer', opacity: busy || !ready ? 0.5 : 1 }}>
-        <SendIcon />{busy ? 'Sending…' : 'Send a test to yourself'}
-      </button>
-      {!ready && <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--slate)' }}>Design and save the email first.</p>}
-      {result && (
-        <p style={{ margin: '10px 0 0', fontSize: 12.5, color: result.startsWith('Test sent') ? '#15803d' : '#dc2626' }}>{result}</p>
-      )}
+      <TestSendPanel kind="email" companyId={companyId} disabled={!ready} disabledText="Design and save the email first."
+        note="Up to 5 addresses. Each gets their own copy. It never touches the campaign audience."
+        send={to => postTest('/api/email-campaigns/test-send', { companyId, subject: d?.subject, previewText: d?.preview_text, design: d?.design, to })} />
     </div>
   )
 }

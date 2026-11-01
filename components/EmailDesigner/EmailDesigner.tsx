@@ -18,6 +18,7 @@ import { createPortal } from 'react-dom'
 import TickSlider from '@/components/TickSlider'
 import EmojiPicker from '@/components/EmojiPicker'
 import { authFetch } from '@/lib/auth-fetch'
+import { TestSendPanel, postTest } from '@/components/campaigns/TestSendPanel'
 import { DEFAULT_ACCENT, FONTS, fillTemplate, renderEmail, sampleVars, safeImage, safeUrl, videoThumb } from './render'
 import { blankBlock, newId, type StarterTemplate } from './templates'
 import { DIcon } from './icons'
@@ -489,16 +490,20 @@ export default function EmailDesigner({ companyId, brand, sender, initial, campa
     } catch (e: any) { setMsg({ text: e.message, tone: 'bad' }) }
     setBusy('')
   }
-  const sendTest = async () => {
-    setBusy('test'); setMsg(null)
-    try {
-      const d = draftRef.current
-      const r = await authFetch('/api/email-campaigns/test-send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, subject: d.subject, previewText: d.previewText, design: d.design }) })
-      const j = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(j?.error || 'The test didn’t send')
-      setMsg({ text: `Test sent to ${j.to}`, tone: 'ok' })
-    } catch (e: any) { setMsg({ text: e.message, tone: 'bad' }) }
-    setBusy('')
+  // "Send test": the email as it stands now (saved or not), to the addresses
+  // chosen in the pop-over (yourself to start with).
+  const [testOpen, setTestOpen] = useState(false)
+  const testWrap = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!testOpen) return
+    const down = (e: MouseEvent | TouchEvent) => { if (testWrap.current && !testWrap.current.contains(e.target as Node)) setTestOpen(false) }
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setTestOpen(false) }
+    document.addEventListener('mousedown', down); document.addEventListener('touchstart', down); document.addEventListener('keydown', key)
+    return () => { document.removeEventListener('mousedown', down); document.removeEventListener('touchstart', down); document.removeEventListener('keydown', key) }
+  }, [testOpen])
+  const sendTest = (to: string[]) => {
+    const d = draftRef.current
+    return postTest('/api/email-campaigns/test-send', { companyId, subject: d.subject, previewText: d.previewText, design: d.design, to })
   }
 
   const sh = hint(draft.subject.length, SUBJECT_HINT, 'a subject line')
@@ -526,7 +531,21 @@ export default function EmailDesigner({ companyId, brand, sender, initial, campa
             <button type="button" className="ed-iconbtn" onClick={redo} disabled={!hist.current.future.length} aria-label="Redo" title="Redo (Ctrl+Shift+Z)"><DIcon name="redo" size={16} /></button>
           </div>
           <button type="button" className="ed-ghost" onClick={() => setShowTemplates(true)}><DIcon name="template" size={15} />Templates</button>
-          <button type="button" className="ed-ghost" onClick={sendTest} disabled={!!busy}><DIcon name="send" size={15} />{busy === 'test' ? 'Sending…' : 'Send test'}</button>
+          <div className="ed-testwrap" ref={testWrap}>
+            <button type="button" className={`ed-ghost${testOpen ? ' on' : ''}`} onClick={() => setTestOpen(o => !o)} aria-expanded={testOpen} aria-haspopup="dialog"><DIcon name="send" size={15} />Send test</button>
+            {testOpen && (
+              <div className="ed-test-pop" role="dialog" aria-label="Send a test email">
+                <div className="ed-test-h">
+                  <b>Send a test</b>
+                  <button type="button" className="ed-iconbtn" onClick={() => setTestOpen(false)} aria-label="Close"><svg width="12" height="12" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 2l6 6M8 2 2 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg></button>
+                </div>
+                <p>The email as it is now, with example details and “[Test]” in the subject.</p>
+                <TestSendPanel kind="email" companyId={companyId} compact autoFocus send={sendTest}
+                  disabled={!draft.design.blocks.length} disabledText="Add a block to the email first."
+                  note="Up to 5 addresses. Each gets their own copy." />
+              </div>
+            )}
+          </div>
           <button type="button" className="ed-primary" onClick={save} disabled={!!busy}><DIcon name="save" size={15} />{busy === 'save' ? 'Saving…' : 'Save'}</button>
         </div>
       </div>
@@ -997,6 +1016,12 @@ const ED_CSS = `
 .ed-primary{background:var(--coral);color:#fff;border:0;box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 1px 2px rgba(16,24,40,.12)}
 .ed-primary:hover:not(:disabled){filter:brightness(.95)}
 .ed-ghost{background:var(--ed-card);color:var(--ink);border:0;box-shadow:0 0 0 1.5px var(--ed-fill-2)}
+.ed-ghost.on{box-shadow:0 0 0 1.5px var(--ink)}
+.ed-testwrap{position:relative;display:inline-flex}
+.ed-test-pop{position:absolute;z-index:40;top:calc(100% + 8px);right:0;width:min(420px,calc(100vw - 32px));box-sizing:border-box;padding:16px;border-radius:20px;background:var(--ed-card);box-shadow:0 0 0 1px rgba(0,0,0,.06),0 18px 40px -12px rgba(16,24,40,.28);text-align:left}
+.ed-test-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px}.ed-test-h b{font-size:15px;color:var(--ink)}
+.ed-test-h .ed-iconbtn{width:30px;height:30px}
+.ed-test-pop>p{margin:0 0 12px;font-size:12.5px;line-height:1.45;color:var(--ed-muted)}
 .ed-ghost:hover:not(:disabled){background:var(--ed-soft)}
 .ed-primary:active:not(:disabled),.ed-ghost:active:not(:disabled){transform:scale(.98)}
 .ed-primary:disabled,.ed-ghost:disabled{opacity:.5;cursor:default}
@@ -1177,6 +1202,6 @@ textarea.ed-input{resize:vertical;line-height:1.55}
   .ed-stage{flex:1;height:auto;min-height:0}
 }
 @media (max-width:1100px){.ed-grid{grid-template-columns:minmax(0,1fr)}.ed-stage{height:860px}}
-@media (max-width:600px){.ed-row2,.ed-cols{grid-template-columns:1fr}.ed-tiles.four{grid-template-columns:repeat(2,minmax(0,1fr))}.ed-top-actions{width:100%}.ed-top-actions .ed-primary,.ed-top-actions .ed-ghost{flex:1}.ed-name{font-size:19px}.ed-stage{height:700px}.ed-tabs button{font-size:12.5px;gap:5px}}
+@media (max-width:600px){.ed-row2,.ed-cols{grid-template-columns:1fr}.ed-tiles.four{grid-template-columns:repeat(2,minmax(0,1fr))}.ed-top-actions{width:100%}.ed-top-actions .ed-primary,.ed-top-actions .ed-ghost{flex:1}.ed-testwrap{flex:1;position:static}.ed-testwrap .ed-ghost{width:100%}.ed-test-pop{position:fixed;z-index:1200;left:12px;right:12px;top:auto;bottom:calc(12px + env(safe-area-inset-bottom,0px));width:auto;max-height:calc(100dvh - 96px);overflow-y:auto}.ed-name{font-size:19px}.ed-stage{height:700px}.ed-tabs button{font-size:12.5px;gap:5px}}
 @media (prefers-reduced-motion:reduce){.ed-modal,.ed-modal-back{animation:none}}
 `

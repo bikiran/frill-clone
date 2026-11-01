@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth-fetch'
@@ -56,6 +56,8 @@ const ChannelIcon = ({ ch, size = 12 }: { ch: string; size?: number }) => ch ===
 // The dot colour on each status tag.
 const STATUS_DOT: Record<string, string> = { draft: '#a1a1aa', scheduled: '#3b82f6', sending: '#f59e0b', sent: '#22c55e', paused: '#f59e0b', cancelled: '#71717a', failed: '#ef4444' }
 const tint = (c: string) => ({ ['--t' as any]: c }) as React.CSSProperties
+type Ins = { all: { clickRate: number; clickers: number; revenue: number }; byId: Record<string, { clickers: number; revenue: number }> }
+const pctText = (n: number) => `${(Math.round((n || 0) * 10) / 10).toLocaleString('en-AU')}%`
 
 export default function CampaignsPage() {
   const router = useRouter()
@@ -63,9 +65,8 @@ export default function CampaignsPage() {
   const [loading, setLoading] = useState(!(seededCid && readCache(`campaigns:${seededCid}`)))
   const [companyId, setCompanyId] = useState<string | null>(seededCid)
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
-  const [links, setLinks] = useState<any[]>([])
-  const [conversions, setConversions] = useState<any[]>([])
-  const [clicks, setClicks] = useState<any[]>([])
+  // Clicks and revenue, the same figures as Campaign insights (all time).
+  const [ins, setIns] = useState<Ins | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [search, setSearch] = useState('')
   const [creating, setCreating] = useState(false)
@@ -108,12 +109,10 @@ export default function CampaignsPage() {
     // Instant paint on revisit: hydrate from the last snapshot we rendered for
     // this company while the fresh data loads in the background.
     const cacheKey = `campaigns:${cid}`
-    const cached = readCache<{ campaigns: Campaign[]; links: any[]; clicks: any[]; conversions: any[] }>(cacheKey)
+    const cached = readCache<{ campaigns: Campaign[]; ins?: Ins | null }>(cacheKey)
     if (cached) {
       setCampaigns(cached.campaigns)
-      setLinks(cached.links)
-      setClicks(cached.clicks)
-      setConversions(cached.conversions)
+      if (cached.ins) setIns(cached.ins)
     }
 
     const { data, error } = await (supabase as any).from('campaigns')
@@ -123,57 +122,27 @@ export default function CampaignsPage() {
     if (error) { setTableMissing(true); return }
     const campaignRows = data || []
     setCampaigns(campaignRows)
+    writeCache(cacheKey, { campaigns: campaignRows, ins: cached?.ins || null })
 
-    // Campaign links drive the click and revenue columns, reusing the tracking
-    // built for Link Reports rather than a second measurement system.
-    let lRows: any[] = [], clRows: any[] = [], cvRows: any[] = []
-    try {
-      const { data: ls } = await (supabase as any).from('short_links')
-        .select('id, campaign_id').eq('company_id', cid).not('campaign_id', 'is', null).limit(2000)
-      lRows = ls || []
-      setLinks(lRows)
-      const ids = lRows.map((l: any) => l.id)
-      if (ids.length) {
-        const { data: cl } = await (supabase as any).from('link_clicks')
-          .select('link_id, contact_id').in('link_id', ids.slice(0, 500))
-        clRows = cl || []
-        setClicks(clRows)
-        const { data: cv } = await (supabase as any).from('link_conversions')
-          .select('link_id, revenue, stage, order_id').in('link_id', ids.slice(0, 500))
-        cvRows = cv || []
-        setConversions(cvRows)
-      }
-    } catch { /* tracking tables are optional here */ }
-
-    writeCache(cacheKey, { campaigns: campaignRows, links: lRows, clicks: clRows, conversions: cvRows })
+    // Who clicked and what sold: from the server, measured exactly as Campaign
+    // insights and each report measure it (people who clicked, of people
+    // reached; paid orders through the campaign's links). Not awaited, so the
+    // list shows straight away.
+    authFetch(`/api/campaigns/insights?companyId=${encodeURIComponent(cid)}&days=0`)
+      .then(r => (r.ok ? r.json() : null))
+      .then((j: any) => {
+        if (!j?.totals?.all) return
+        const next: Ins = {
+          all: { clickRate: j.totals.all.clickRate, clickers: j.totals.all.clickers, revenue: j.totals.all.revenue },
+          byId: Object.fromEntries((j.campaigns || []).map((c: any) => [c.id, { clickers: c.clickers || 0, revenue: c.revenue || 0 }])),
+        }
+        setIns(next)
+        writeCache(cacheKey, { campaigns: campaignRows, ins: next })
+      })
+      .catch(() => {})
   }
 
-  // link_id → campaign_id
-  const linkCampaign = useMemo(() => {
-    const m: Record<string, string> = {}
-    for (const l of links) m[l.id] = l.campaign_id
-    return m
-  }, [links])
-
-  const clicksByCampaign = useMemo(() => {
-    const m: Record<string, number> = {}
-    for (const c of clicks) {
-      const cid = linkCampaign[c.link_id]
-      if (cid) m[cid] = (m[cid] || 0) + 1
-    }
-    return m
-  }, [clicks, linkCampaign])
-
-  const revenueByCampaign = useMemo(() => {
-    const m: Record<string, number> = {}
-    for (const v of conversions) {
-      if (v.stage !== 'paid') continue
-      const cid = linkCampaign[v.link_id]
-      if (cid) m[cid] = (m[cid] || 0) + (Number(v.revenue) || 0)
-    }
-    return m
-  }, [conversions, linkCampaign])
-
+  const byCampaign: Ins['byId'] = ins?.byId || {}
   const visible = campaigns.filter(c => {
     if (statusFilter !== 'all' && c.status !== statusFilter) return false
     if (search && !c.name.toLowerCase().includes(search.toLowerCase())) return false
@@ -189,9 +158,7 @@ export default function CampaignsPage() {
     return c.status === 'sent' && p && p >= startOfMonth
   }).length
   const delivered = campaigns.reduce((s, c) => s + (c.delivered_count || 0), 0)
-  const totalClicks = Object.values(clicksByCampaign).reduce((a, b) => a + b, 0)
-  const clickRate = delivered ? Math.round((totalClicks / delivered) * 100) : 0
-  const totalRevenue = Object.values(revenueByCampaign).reduce((a, b) => a + b, 0)
+  const totalRevenue = ins?.all.revenue || 0
 
   const createDraft = async () => {
     if (!newName.trim() || !companyId) return
@@ -271,13 +238,13 @@ export default function CampaignsPage() {
       </div>
     )
   }
-  const tiles: { key: string; label: string; value: string; sub: string; color: string; icon: React.ReactNode; filter?: string }[] = [
+  const tiles: { key: string; label: string; value: string; sub: string; color: string; icon: React.ReactNode; filter?: string; href?: string }[] = [
     { key: 'draft', label: 'Drafts', value: drafts.toLocaleString(), sub: 'Still being written', color: '#71717a', filter: 'draft', icon: I(<><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></>) },
     { key: 'scheduled', label: 'Scheduled', value: scheduled.toLocaleString(), sub: 'Waiting to go out', color: '#2563eb', filter: 'scheduled', icon: I(<><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></>) },
     { key: 'sent', label: 'Sent this month', value: sentThisMonth.toLocaleString(), sub: 'Campaigns', color: '#16a34a', filter: 'sent', icon: I(<><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></>) },
     { key: 'delivered', label: 'Delivered', value: delivered.toLocaleString(), sub: 'Messages, all time', color: '#0891b2', icon: I(<><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></>) },
-    { key: 'clicks', label: 'Click rate', value: `${clickRate}%`, sub: `${totalClicks.toLocaleString()} click${totalClicks === 1 ? '' : 's'}`, color: '#7c3aed', icon: I(<><path d="m9 9 5 12 1.8-5.2L21 14Z" /><path d="M7.2 2.2 8 5.1" /><path d="m5.1 8-2.9-.8" /><path d="M14 4.1 12 6" /><path d="m6 12-1.9 2" /></>) },
-    { key: 'revenue', label: 'Revenue', value: money(totalRevenue), sub: 'From campaign links', color: '#15803d', icon: I(<><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></>) },
+    { key: 'clicks', label: 'Click rate', value: ins ? pctText(ins.all.clickRate) : '—', sub: ins ? `${ins.all.clickers.toLocaleString()} ${ins.all.clickers === 1 ? 'person' : 'people'} clicked` : 'Working it out…', color: '#7c3aed', href: '/admin/campaigns/insights', icon: I(<><path d="m9 9 5 12 1.8-5.2L21 14Z" /><path d="M7.2 2.2 8 5.1" /><path d="m5.1 8-2.9-.8" /><path d="M14 4.1 12 6" /><path d="m6 12-1.9 2" /></>) },
+    { key: 'revenue', label: 'Revenue', value: ins ? money(totalRevenue) : '—', sub: 'From campaign links', color: '#15803d', href: '/admin/campaigns/insights', icon: I(<><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></>) },
   ]
 
   if (loading) return <div style={{ padding: '24px 28px' }}><SkeletonList rows={6} /></div>
@@ -322,7 +289,9 @@ export default function CampaignsPage() {
           )
           return t.filter
             ? <button key={t.key} type="button" className={`cp-tile${on ? ' on' : ''}`} style={{ ['--t' as any]: t.color }} aria-pressed={on} onClick={() => setStatusFilter(on ? 'all' : t.filter!)}>{body}</button>
-            : <div key={t.key} className="cp-tile static" style={{ ['--t' as any]: t.color }}>{body}</div>
+            : t.href
+              ? <button key={t.key} type="button" className="cp-tile" style={{ ['--t' as any]: t.color }} onClick={() => router.push(t.href!)} title="See Campaign insights">{body}</button>
+              : <div key={t.key} className="cp-tile static" style={{ ['--t' as any]: t.color }}>{body}</div>
         })}
       </div>
 
@@ -356,14 +325,14 @@ export default function CampaignsPage() {
                 <thead>
                   <tr>
                     <th>Campaign</th><th>Audience</th><th>Status</th><th>Date</th>
-                    <th className="r">Sent</th><th className="r">Delivered</th><th className="r">Clicks</th><th className="r">Revenue</th>
+                    <th className="r">Sent</th><th className="r">Delivered</th><th className="r">Clicked</th><th className="r">Revenue</th>
                     <th className="r"><span className="sr">Actions</span></th>
                   </tr>
                 </thead>
                 <tbody>
                   {visible.map(c => {
-                    const clk = clicksByCampaign[c.id] || 0
-                    const rev = revenueByCampaign[c.id] || 0
+                    const clk = byCampaign[c.id]?.clickers || 0
+                    const rev = byCampaign[c.id]?.revenue || 0
                     const badge = CHANNEL_BADGE[c.channel] || CHANNEL_BADGE.sms
                     return (
                       <tr key={c.id} onClick={() => open(c)}>
@@ -400,8 +369,8 @@ export default function CampaignsPage() {
             <div className="cp-mlist">
               {visible.map(c => {
                 const badge = CHANNEL_BADGE[c.channel] || CHANNEL_BADGE.sms
-                const clk = clicksByCampaign[c.id] || 0
-                const rev = revenueByCampaign[c.id] || 0
+                const clk = byCampaign[c.id]?.clickers || 0
+                const rev = byCampaign[c.id]?.revenue || 0
                 const ctl = campaignControls(c)
                 return (
                   <div key={c.id} className="cp-m" role="button" tabIndex={0} onClick={() => open(c)} onKeyDown={e => { if (e.key === 'Enter') open(c) }}>
@@ -412,7 +381,7 @@ export default function CampaignsPage() {
                       {(c.sent_count > 0 || clk > 0 || rev > 0) && (
                         <span className="cp-m-stats">
                           {c.sent_count > 0 && <span><b>{c.sent_count.toLocaleString()}</b> sent</span>}
-                          {clk > 0 && <span><b>{clk.toLocaleString()}</b> clicks</span>}
+                          {clk > 0 && <span><b>{clk.toLocaleString()}</b> clicked</span>}
                           {rev > 0 && <span className="cp-good"><b>{money(rev)}</b></span>}
                         </span>
                       )}
