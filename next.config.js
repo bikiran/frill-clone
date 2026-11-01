@@ -99,6 +99,18 @@ const nextConfig = {
           { key: 'Cache-Control', value: 'public, max-age=300, must-revalidate' },
         ],
       },
+      // The social icons campaign emails show (scripts/gen-social-icons.mjs).
+      // Cached for a week: inboxes fetch them for every open, and the email
+      // designer shows the same pictures in its own panel and in a preview
+      // frame that reloads on each edit. With the default max-age=0 every
+      // reload re-checked them and the next reload cut that check off,
+      // blanking the panel's copies too.
+      {
+        source: '/email/social/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=604800, stale-while-revalidate=86400' },
+        ],
+      },
       // The MCP consent page grants an app access to a business. Framed inside
       // another site, a visitor could be tricked into clicking Approve.
       {

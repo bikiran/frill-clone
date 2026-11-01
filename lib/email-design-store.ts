@@ -7,6 +7,7 @@ import { renderEmail } from '@/components/EmailDesigner/render'
 import type { Block, EmailDesign } from '@/components/EmailDesigner/types'
 import { isMissingTable } from '@/lib/email-db'
 import { loadEmailBrand } from '@/lib/email-brand'
+import { MAX_SOCIAL_LINKS, isNetwork, socialLook } from '@/components/EmailDesigner/social'
 
 const TYPES = new Set(['header', 'heading', 'text', 'image', 'button', 'products', 'coupon', 'divider', 'spacer', 'social', 'columns', 'video', 'menu', 'footer'])
 export const MAX_BLOCKS = 60
@@ -31,7 +32,7 @@ export function cleanDesign(raw: any): EmailDesign {
       case 'coupon': blocks.push({ id, type: 'coupon', code: s(b.code, 60), offer: s(b.offer, 40), title: s(b.title, 100), note: s(b.note, 200), label: s(b.label, 40), url: s(b.url, 2000) }); break
       case 'divider': blocks.push({ id, type: 'divider' }); break
       case 'spacer': blocks.push({ id, type: 'spacer', height: Math.max(8, Math.min(80, Number(b.height) || 24)) }); break
-      case 'social': blocks.push({ id, type: 'social', links: (Array.isArray(b.links) ? b.links : []).slice(0, 8).map((l: any) => ({ network: s(l?.network, 20) as any, url: s(l?.url, 2000) })) }); break
+      case 'social': blocks.push({ id, type: 'social', ...(b.look ? { look: socialLook(b.look) } : {}), links: (Array.isArray(b.links) ? b.links : []).slice(0, MAX_SOCIAL_LINKS).map((l: any) => ({ network: isNetwork(l?.network) ? l.network : 'website', url: s(l?.url, 2000) })) }); break
       case 'columns': blocks.push({ id, type: 'columns', items: (Array.isArray(b.items) ? b.items : []).slice(0, 2).map((c: any) => ({ image: s(c?.image, 2000), alt: s(c?.alt, 200), title: s(c?.title, 120), text: s(c?.text, 1200), label: s(c?.label, 60), url: s(c?.url, 2000) })) }); break
       case 'video': blocks.push({ id, type: 'video', url: s(b.url, 2000), thumbnail: s(b.thumbnail, 2000), label: s(b.label, 60) }); break
       case 'menu': blocks.push({ id, type: 'menu', links: (Array.isArray(b.links) ? b.links : []).slice(0, 6).map((l: any) => ({ label: s(l?.label, 40), url: s(l?.url, 2000) })) }); break

@@ -22,7 +22,8 @@
 // design has none.
 
 import { escapeHtml } from '@/lib/safe-html'
-import type { Align, Block, ColumnItem, EmailBrand, EmailDesign, FontChoice, ProductItem } from './types'
+import type { Align, Block, ColumnItem, EmailBrand, EmailDesign, FontChoice, ProductItem, SocialLink } from './types'
+import { SOCIAL, isNetwork, socialIconPath, socialLook, socialUrl } from './social'
 
 const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
 /** The Design tab's fonts: stacks every inbox already has (no web fonts). */
@@ -169,7 +170,23 @@ export function videoThumb(raw: unknown): string {
   return m ? `https://i.ytimg.com/vi/${m[1]}/hqdefault.jpg` : ''
 }
 
-const SOCIAL_LABEL: Record<string, string> = { facebook: 'Facebook', instagram: 'Instagram', tiktok: 'TikTok', youtube: 'YouTube', website: 'Website', x: 'X', linkedin: 'LinkedIn' }
+/** A social block's links that can go out: each network's https link (handles turned into links). */
+function socialLinks(b: { links?: SocialLink[] }) {
+  return (Array.isArray(b.links) ? b.links : []).map(l => {
+    const network = isNetwork(l?.network) ? l.network : 'website'
+    return { network, label: SOCIAL[network].label, url: socialUrl(network, l?.url) }
+  }).filter(l => l.url)
+}
+
+/**
+ * Where the social icons are: this site in the designer's preview, Colvy's
+ * site (always https) in an email that's sent.
+ */
+function assetBase(preview: boolean): string {
+  if (preview && typeof window !== 'undefined') return window.location.origin
+  const site = String(process.env.NEXT_PUBLIC_SITE_URL || '').trim().replace(/\/+$/, '')
+  return /^https:\/\/[a-z0-9.-]+\.[a-z]{2,}$/i.test(site) ? site : 'https://colvy.com'
+}
 
 type Ctx = { brand: EmailBrand; accent: string; preview: boolean; font: string; r: number; buttonStyle: 'filled' | 'outline'; buttonShape: 'rounded' | 'pill' }
 
@@ -277,10 +294,24 @@ ${shop}
       return `<tr><td height="${h}" style="height:${h}px;font-size:0;line-height:0">&nbsp;</td></tr>`
     }
     case 'social': {
-      const links = (b.links || []).map(l => ({ label: SOCIAL_LABEL[l.network] || 'Link', url: safeUrl(l.url, false) })).filter(l => l.url)
+      const links = socialLinks(b)
       if (!links.length) return preview ? row(`<div style="margin:4px 0 18px">${placeholder('Add your social links', 40)}</div>`) : ''
-      const cells = links.map(l => `<td style="padding:0 4px 8px"><a href="${escapeHtml(l.url)}" target="_blank" style="display:inline-block;padding:7px 14px;border:1px solid ${C.border};border-radius:999px;font-family:${ctx.font};font-size:13px;font-weight:600;color:${C.ink};text-decoration:none">${escapeHtml(l.label)}</a></td>`).join('')
-      return row(`<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:4px auto 14px"><tr>${cells}</tr></table>`)
+      const look = socialLook(b.look)
+      if (look === 'text') {
+        const cells = links.map(l => `<td style="padding:0 4px 8px"><a href="${escapeHtml(l.url)}" target="_blank" style="display:inline-block;padding:7px 14px;border:1px solid ${C.border};border-radius:999px;font-family:${ctx.font};font-size:13px;font-weight:600;color:${C.ink};text-decoration:none">${escapeHtml(l.label)}</a></td>`).join('')
+        return row(`<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:4px auto 14px"><tr>${cells}</tr></table>`)
+      }
+      // Logos: 32px pictures (email can't show SVG), in rows of up to six so
+      // they fit a phone without wrapping (seven become four and three).
+      // The network's name is the alt text, for inboxes that hide pictures.
+      const base = assetBase(preview)
+      const per = links.length <= 6 ? links.length : Math.ceil(links.length / Math.ceil(links.length / 6))
+      const rows: string[] = []
+      for (let i = 0; i < links.length; i += per) {
+        const cells = links.slice(i, i + per).map(l => `<td style="padding:0 5px 10px"><a href="${escapeHtml(l.url)}" target="_blank" style="text-decoration:none"><img src="${escapeHtml(base + socialIconPath(l.network, look))}" width="32" height="32" alt="${escapeHtml(l.label)}" title="${escapeHtml(l.label)}" style="display:block;width:32px;height:32px;border:0;font-family:${ctx.font};font-size:11px;line-height:32px;color:${C.muted}"></a></td>`).join('')
+        rows.push(`<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto"><tr>${cells}</tr></table>`)
+      }
+      return row(`<div style="margin:6px 0 10px">${rows.join('')}</div>`)
     }
     case 'columns': {
       const items = (b.items || []).slice(0, 2)
@@ -338,7 +369,7 @@ function blockText(b: Block, brand: EmailBrand): string {
     }
     case 'divider': return '----------'
     case 'spacer': return ''
-    case 'social': return (b.links || []).map(l => { const u = safeUrl(l.url, false); return u ? `${SOCIAL_LABEL[l.network] || 'Link'}: ${u}` : '' }).filter(Boolean).join('\n')
+    case 'social': return socialLinks(b).map(l => `${l.label}: ${l.url}`).join('\n')
     case 'columns': return (b.items || []).map(c => [c?.title, c?.text ? paragraphs(c.text).map(inlineText).join('\n') : '', safeUrl(c?.url, false) ? `${c?.label || 'Find out more'}: ${safeUrl(c?.url, false)}` : ''].filter(Boolean).join('\n')).filter(Boolean).join('\n\n')
     case 'video': { const u = safeUrl(b.url, false); return u ? `${b.label || 'Watch the video'}: ${u}` : '' }
     case 'menu': return (b.links || []).map(l => { const u = safeUrl(l?.url, false); return u && l?.label ? `${l.label}: ${u}` : '' }).filter(Boolean).join('\n')

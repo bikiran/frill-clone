@@ -25,7 +25,9 @@ import { DIcon } from './icons'
 import { runChecks, openIssues } from './checks'
 import { DesktopPreview, InboxPreview, PhonePreview, DEVICES_CSS } from './Devices'
 import TemplatePicker from './TemplatePicker'
-import { MERGE_TAGS, PREVIEW_HINT, SUBJECT_HINT, type Block, type BlockType, type ColumnItem, type EmailBrand, type EmailDesign, type FontChoice, type ProductItem, type SocialLink } from './types'
+import SocialFields from './SocialFields'
+import { SOCIAL } from './social'
+import { MERGE_TAGS, PREVIEW_HINT, SUBJECT_HINT, type Block, type BlockType, type ColumnItem, type EmailBrand, type EmailDesign, type FontChoice, type ProductItem } from './types'
 
 export type DesignDraft = { id?: string | null; name: string; subject: string; previewText: string; design: EmailDesign }
 export type SenderInfo = { from: string; shared: boolean; replyTo?: string | null } | null
@@ -40,8 +42,6 @@ const ADD_GROUPS: { name: string; types: BlockType[] }[] = [
   { name: 'Layout', types: ['columns', 'divider', 'spacer', 'menu'] },
   { name: 'Selling', types: ['products', 'coupon', 'video', 'social', 'header'] },
 ]
-const NETWORKS: SocialLink['network'][] = ['facebook', 'instagram', 'tiktok', 'youtube', 'x', 'linkedin', 'website']
-const NETWORK_LABEL: Record<string, string> = { facebook: 'Facebook', instagram: 'Instagram', tiktok: 'TikTok', youtube: 'YouTube', x: 'X', linkedin: 'LinkedIn', website: 'Website' }
 
 const BG_SWATCHES = ['#f4f4f5', '#ffffff', '#fbf7f1', '#eef7f2', '#eef3fb', '#f6effa', '#fdf0f0', '#1f2430']
 const ACCENT_SWATCHES = ['#ff7a6b', '#e8590c', '#d6336c', '#7048e8', '#1c7ed6', '#0ca678', '#2b8a3e', '#111827']
@@ -53,7 +53,7 @@ function summary(b: Block): string {
     case 'button': return b.label ? `${b.label}${b.url ? '' : ' (no link yet)'}` : 'No label yet'
     case 'products': return b.items.filter(p => p.name).length ? `${b.items.filter(p => p.name).length} product${b.items.filter(p => p.name).length === 1 ? '' : 's'}` : 'No products yet'
     case 'coupon': return [b.offer, b.code || 'No code yet'].filter(Boolean).join(' · ')
-    case 'social': return b.links.length ? b.links.map(l => NETWORK_LABEL[l.network]).join(', ') : 'No links yet'
+    case 'social': return b.links.length ? b.links.map(l => SOCIAL[l.network]?.label || 'Link').join(', ') : 'No links yet'
     case 'spacer': return `${b.height || 24}px`
     case 'columns': return (b.items || []).map(c => c?.title || (c?.image ? 'Picture' : '')).filter(Boolean).join(' · ') || 'Empty columns'
     case 'video': return b.url ? (videoThumb(b.url) ? 'YouTube video' : 'Video link') : 'No video link yet'
@@ -384,8 +384,11 @@ export default function EmailDesigner({ companyId, brand, sender, initial, campa
   })
   const remove = (id: string) => setBlocks(bs => bs.filter(b => b.id !== id))
   const duplicate = (id: string) => setBlocks(bs => { const i = bs.findIndex(b => b.id === id); if (i < 0) return bs; const c = [...bs]; c.splice(i + 1, 0, { ...JSON.parse(JSON.stringify(bs[i])), id: newId() }); return c })
+  // A new Social links block starts with the business's links (last email,
+  // connected accounts, website); the owner removes any they don't want.
+  const withSocials = (b: Block): Block => (b.type === 'social' && !b.links.length && brand.socials?.length ? { ...b, links: brand.socials.map(l => ({ ...l })) } : b)
   const add = (type: BlockType) => {
-    const b = blankBlock(type)
+    const b = withSocials(blankBlock(type))
     setBlocks(bs => {
       // After the open block, else at the end; never below the footer.
       const f = bs.findIndex(x => x.type === 'footer')
@@ -401,7 +404,8 @@ export default function EmailDesigner({ companyId, brand, sender, initial, campa
   useEffect(() => { if (!blocks.some(b => b.type === 'footer')) setBlocks(bs => [...bs, blankBlock('footer')]) }, [blocks]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const applyTemplate = (t: StarterTemplate | null) => {
-    const design = t ? t.design() : { version: 1 as const, blocks: [blankBlock('header'), blankBlock('heading'), blankBlock('text'), blankBlock('button'), blankBlock('footer')] }
+    const made = t ? t.design() : null
+    const design = made ? { ...made, blocks: made.blocks.map(withSocials) } : { version: 1 as const, blocks: [blankBlock('header'), blankBlock('heading'), blankBlock('text'), blankBlock('button'), blankBlock('footer')] }
     change(d => ({ ...d, subject: t?.subject || d.subject, previewText: t?.previewText || d.previewText, design: { ...design, background: d.design.background, accent: d.design.accent, font: d.design.font, corners: d.design.corners, buttonStyle: d.design.buttonStyle, buttonShape: d.design.buttonShape } }))
     setShowTemplates(false); setSelected(null); setTab('content')
     setMsg({ text: `${t ? t.name : 'Blank'} template applied. Undo to go back.`, tone: 'ok' })
@@ -867,18 +871,7 @@ function BlockFields({ b, brand, companyId, update, field, wrap }: { b: Block; b
         <TickSlider label="Height" min={8} max={80} step={4} ticks={28} value={b.height || 24} onChange={n => update({ height: n })} format={n => `${n}px`} showMax={false} />
       </>)
     case 'social':
-      return (<>
-        {b.links.map((l, i) => (
-          <div key={i} className="ed-row">
-            <select className="ed-input" style={{ maxWidth: 150 }} value={l.network} onChange={e => update({ links: b.links.map((x, j) => (j === i ? { ...x, network: e.target.value as any } : x)) })}>
-              {NETWORKS.map(n => <option key={n} value={n}>{NETWORK_LABEL[n]}</option>)}
-            </select>
-            <input className="ed-input" value={l.url} placeholder="https://" onChange={e => update({ links: b.links.map((x, j) => (j === i ? { ...x, url: e.target.value } : x)) })} />
-            <button type="button" className="ed-ghost ed-iconbtn" aria-label="Remove link" onClick={() => update({ links: b.links.filter((_, j) => j !== i) })}><DIcon name="trash" size={15} /></button>
-          </div>
-        ))}
-        <button type="button" className="ed-ghost" onClick={() => update({ links: [...b.links, { network: NETWORKS[b.links.length % NETWORKS.length], url: '' }] })}><DIcon name="plus" size={15} />Add a link</button>
-      </>)
+      return <SocialFields links={b.links} look={b.look} suggestions={brand.socials} update={p => update(p)} />
     case 'columns': {
       const items = [b.items[0] || {}, b.items[1] || {}]
       const set = (i: number, patch: Partial<ColumnItem>) => update({ items: items.map((x, j) => (j === i ? { ...x, ...patch } : x)) })
