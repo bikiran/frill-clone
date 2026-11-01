@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { useAiDraft, AiDraftButton, AiDraftInfo } from '@/components/AiDraft'
 import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, ClockIcon, ExternalLinkIcon, LockIcon, MailIcon, PaperclipIcon } from '@/components/Icons'
 import { computeSla, clockLabel, CLOCK_COLORS, resolveSla, DEFAULT_SLA, type SlaSettings, type Clock } from '@/lib/ticket-sla'
+import { SelectPopover, MenuAvatar } from '@/components/ui/SelectMenu'
 
 const STATUSES = ['open', 'in_progress', 'resolved', 'closed']
 const STATUS_COLORS: Record<string, { bg: string; c: string }> = {
@@ -21,25 +22,137 @@ const initials = (name: string) => (name || '?').trim().split(/\s+/).map(w => w[
 const parseFrom = (desc: string) => { const m = /From:\s*([^<]+?)\s*<([^>]+)>/i.exec(desc || ''); return m ? { name: m[1].trim(), email: m[2].trim() } : null }
 // The body without the trailing "— From: …" line the help form appends.
 const cleanBody = (desc: string) => String(desc || '').replace(/\n*—?\s*From:\s*[^<]+?<[^>]+>.*$/is, '').trim()
+// A steady colour per teammate, for their initial.
+const AV_COLORS = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#14b8a6', '#ef4444']
+const avColor = (name: string) => AV_COLORS[[...String(name || '?')].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7) % AV_COLORS.length]
+const when = (d: string | null | undefined, withYear = false) => d ? new Date(d).toLocaleString(undefined, { day: 'numeric', month: 'short', ...(withYear ? { year: 'numeric' } : {}), hour: 'numeric', minute: '2-digit' }) : ''
+const Chev = () => <svg className="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="m6 9 6 6 6-6" /></svg>
 
+// Sellio look: soft ringed cards, display-type headings, avatars on every
+// message, pill status tiles and menus, a pill Reply / Internal note switch.
 // One column (<=900px): a compact actions card up top (status, priority,
 // assignee, deadlines) replaces the sidebar's status/priority/assignee
 // controls, which would otherwise sit below the whole thread.
 // Phones (<=767px) also read thread first, like the inbox: the reply box folds
 // to a one-line bar pinned above the bottom nav and opens into the full
 // composer when tapped (the draft is kept while folded).
-// Desktop keeps the two-column layout, now full width.
 const DETAIL_CSS = `
-  .tkd-page { padding: 24px; }
+  .tkd-page { padding: 24px; --tkd-fill: #f4f4f5; --tkd-ring: #ececef; --tkd-soft: #71717a; }
+  [data-theme="dark"] .tkd-page { --tkd-fill: #2a2a2e; --tkd-ring: #2e2e33; --tkd-soft: #a1a1aa; }
   .tkd-phone { display: none; }
-  .tkd-out { margin-left: 40px; }
   .tkd-cmp-bar, .tkd-cmp-collapse { display: none; }
-  /* Buttons size to their labels and share the spare width, so "In progress" isn't cut short. */
-  .tkd-seg { display: flex; gap: 6px; }
-  .tkd-seg button { flex: 1 1 auto; min-width: 0; height: 38px; padding: 0 8px; border-radius: 10px; border: 1px solid var(--border); background: #fff; color: var(--ink); font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; -webkit-tap-highlight-color: transparent; }
-  .tkd-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 11.5px; font-weight: 700; color: var(--slate); text-transform: uppercase; letter-spacing: .03em; }
-  .tkd-field select { width: 100%; min-width: 0; height: 40px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--border); background: #fff; font: inherit; font-size: 16px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--ink); }
-  .tkd-err { margin: 10px 0 0; padding: 8px 10px; border-radius: 9px; background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; font-size: 13px; font-weight: 600; line-height: 1.4; }
+  .tkd-display { font-family: var(--font-display), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+
+  /* Header: round back button, the number and date, the subject big. */
+  .tkd-head { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; min-width: 0; }
+  .tkd-back { width: 42px; height: 42px; flex-shrink: 0; border-radius: 50%; border: none; background: var(--card, #fff); box-shadow: 0 0 0 1px var(--tkd-ring), 0 1px 2px rgba(16,24,40,.05); color: var(--ink); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+  .tkd-back:hover { background: var(--tkd-fill); }
+  .tkd-head-t { flex: 1; min-width: 0; }
+  .tkd-eyebrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--tkd-soft); }
+  .tkd-num { font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .tkd-title { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 3px; min-width: 0; }
+  .tkd-title h1 { margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -.025em; line-height: 1.15; color: var(--ink); overflow-wrap: anywhere; min-width: 0; }
+  .tkd-status { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 13px; border-radius: 999px; background: var(--bg); color: var(--c); font-size: 13px; font-weight: 700; white-space: nowrap; text-transform: capitalize; }
+  .tkd-status i, .tkd-st i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+
+  .ticket-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
+  .tkd-main, .tkd-aside { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+  .tkd-card { background: var(--card, #fff); border-radius: 22px; padding: 18px; box-shadow: 0 0 0 1px var(--tkd-ring), 0 1px 2px rgba(16,24,40,.04); min-width: 0; }
+  .tkd-h { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; font-size: 16px; font-weight: 750; letter-spacing: -.015em; color: var(--ink); }
+  .tkd-h svg { color: var(--tkd-soft); }
+
+  /* The thread */
+  .tkd-msg-h { display: flex; align-items: flex-start; gap: 11px; min-width: 0; }
+  .tkd-av { width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; background: var(--peach); color: var(--coral); }
+  .tkd-av.agent { color: #fff; }
+  .tkd-av.note { background: #fef3c7; color: #b45309; }
+  .tkd-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; padding-top: 1px; }
+  .tkd-who-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+  .tkd-who b { font-size: 14.5px; font-weight: 700; color: var(--ink); }
+  .tkd-who small { font-size: 12.5px; color: var(--tkd-soft); overflow-wrap: anywhere; }
+  .tkd-when { font-size: 12.5px; color: var(--tkd-soft); white-space: nowrap; padding-top: 2px; }
+  .tkd-body { margin: 10px 0 0 51px; font-size: 14.5px; line-height: 1.6; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .tkd-out { margin-left: 40px; }
+  .tkd-card.note { background: #fffbeb; box-shadow: 0 0 0 1px #fde68a; }
+  [data-theme="dark"] .tkd-card.note { background: color-mix(in srgb, #f59e0b 9%, var(--card, #1c1c1f)); box-shadow: 0 0 0 1px color-mix(in srgb, #f59e0b 35%, transparent); }
+  .tkd-badge { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+  .tkd-badge.ok { background: #dcfce7; color: #047857; }
+  .tkd-badge.warn { background: #fef2f2; color: #dc2626; }
+  .tkd-badge.in { background: #dbeafe; color: #1d4ed8; }
+  .tkd-badge.note { background: #fef3c7; color: #b45309; }
+  [data-theme="dark"] .tkd-badge { background: color-mix(in srgb, currentColor 16%, transparent); }
+  .tkd-atts { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0 51px; }
+  .tkd-att-img img { width: 120px; height: 120px; object-fit: cover; border-radius: 14px; display: block; box-shadow: 0 0 0 1px var(--tkd-ring); }
+  .tkd-att-file { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 14px; border-radius: 999px; background: var(--tkd-fill); color: var(--ink); font-size: 13px; font-weight: 600; text-decoration: none; max-width: 100%; box-sizing: border-box; }
+  .tkd-att-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+  /* The reply box */
+  .tkd-cmp-top { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; min-width: 0; }
+  .tkd-switch { display: inline-flex; padding: 4px; gap: 2px; border-radius: 999px; background: var(--tkd-fill); flex-shrink: 0; }
+  .tkd-switch button { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px; border: none; border-radius: 999px; background: none; color: var(--tkd-soft); font: inherit; font-size: 13.5px; font-weight: 650; cursor: pointer; white-space: nowrap; }
+  .tkd-switch button[aria-selected="true"] { background: var(--card, #fff); color: var(--ink); box-shadow: 0 1px 3px rgba(16,24,40,.12); }
+  .tkd-switch button.note[aria-selected="true"] { color: #b45309; }
+  .tkd-cmp-to { flex: 1; min-width: 0; font-size: 12.5px; color: var(--tkd-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tkd-page .tkd-ta { display: block; width: 100%; min-height: 112px; padding: 14px 16px; border: none; border-radius: 16px; background: var(--tkd-fill); color: var(--ink); font: inherit; font-size: 14.5px; line-height: 1.55; resize: vertical; outline: none; box-sizing: border-box; box-shadow: none; }
+  .tkd-page .tkd-ta:focus { box-shadow: 0 0 0 2px color-mix(in srgb, var(--coral) 45%, transparent); }
+  .tkd-page .tkd-ta.note { background: #fffbeb; }
+  .tkd-page .tkd-ta.note:focus { box-shadow: 0 0 0 2px #fcd34d; }
+  [data-theme="dark"] .tkd-page .tkd-ta.note { background: color-mix(in srgb, #f59e0b 9%, var(--tkd-fill)); }
+  .tkd-cmp-msg { margin: 10px 0 0; font-size: 13px; color: var(--tkd-soft); }
+  .tkd-cmp-foot { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 12px; }
+  .tkd-send { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 42px; padding: 0 20px; border: none; border-radius: 999px; background: var(--coral); color: #fff; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 1px 2px rgba(16,24,40,.12); white-space: nowrap; }
+  .tkd-send.note { background: #b45309; }
+  .tkd-send:disabled { opacity: .5; cursor: default; }
+  .tkd-bar-reply { flex: 1; min-width: 0; height: 44px; display: flex; align-items: center; gap: 9px; padding: 0 16px; border: none; border-radius: 999px; background: var(--tkd-fill); font: inherit; font-size: 14.5px; color: var(--tkd-soft); cursor: text; text-align: left; }
+  .tkd-bar-reply.has { color: var(--ink); }
+  .tkd-bar-reply span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tkd-bar-note { height: 44px; display: inline-flex; align-items: center; gap: 6px; padding: 0 14px; border: none; border-radius: 999px; background: #fef3c7; color: #b45309; font: inherit; font-size: 13.5px; font-weight: 700; cursor: pointer; flex-shrink: 0; }
+  .tkd-round { width: 34px; height: 34px; margin-left: auto; align-items: center; justify-content: center; border: none; border-radius: 50%; background: var(--tkd-fill); color: var(--tkd-soft); cursor: pointer; padding: 0; flex-shrink: 0; }
+
+  /* Side cards */
+  .tkd-st-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .tkd-st { --c: var(--ink); --bg: var(--tkd-fill); display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 42px; min-width: 0; padding: 0 10px; border: none; border-radius: 999px; background: var(--tkd-fill); color: var(--ink); font: inherit; font-size: 13.5px; font-weight: 650; cursor: pointer; text-transform: capitalize; white-space: nowrap; -webkit-tap-highlight-color: transparent; }
+  .tkd-st i { background: var(--c); }
+  .tkd-st:hover { filter: brightness(.97); }
+  .tkd-st[aria-pressed="true"] { background: var(--bg); color: var(--c); box-shadow: inset 0 0 0 1.5px var(--c); }
+  [data-theme="dark"] .tkd-st[aria-pressed="true"], [data-theme="dark"] .tkd-status { background: color-mix(in srgb, var(--c) 18%, transparent); }
+  .tkd-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; font-size: 13.5px; min-width: 0; }
+  .tkd-row + .tkd-row { border-top: 1px solid var(--tkd-ring); }
+  .tkd-row > span:first-child { color: var(--tkd-soft); flex-shrink: 0; }
+  .tkd-row > b { font-weight: 650; color: var(--ink); text-align: right; min-width: 0; overflow-wrap: anywhere; }
+  .tkd-dl { padding: 10px 0; }
+  .tkd-dl + .tkd-dl { border-top: 1px solid var(--tkd-ring); }
+  .tkd-dl-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13.5px; }
+  .tkd-dl-top > span:first-child { color: var(--tkd-soft); }
+  .tkd-dl-sub { margin-top: 4px; font-size: 12px; color: var(--tkd-soft); text-align: right; }
+  .tkd-chip { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+  .tkd-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; color: var(--tkd-soft); }
+  .tkd-pick { display: inline-flex; align-items: center; gap: 8px; height: 36px; max-width: 200px; min-width: 0; padding: 0 12px; border: none; border-radius: 999px; background: var(--tkd-fill); color: var(--ink); font: inherit; font-size: 13.5px; font-weight: 650; cursor: pointer; }
+  .tkd-pick > span:not(.tkd-mini-av) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .tkd-pick > i { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .tkd-pick .chev { color: var(--tkd-soft); flex-shrink: 0; }
+  .tkd-pick:hover { filter: brightness(.97); }
+  .tkd-pick.wide { width: 100%; max-width: none; height: 44px; }
+  .tkd-pick.wide .chev { margin-left: auto; }
+  .tkd-mini-av { width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; font-weight: 700; }
+  .tkd-mini-av.none { background: none; color: var(--tkd-soft); box-shadow: inset 0 0 0 1.5px currentColor; }
+  .tkd-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 12.5px; font-weight: 650; color: var(--tkd-soft); }
+  .tkd-cust { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .tkd-cust > div { min-width: 0; }
+  .tkd-cust b { display: block; font-size: 15px; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tkd-cust small { display: block; margin-top: 2px; font-size: 13px; color: var(--tkd-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tkd-btns { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+  .tkd-btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 42px; border: none; border-radius: 999px; background: var(--tkd-fill); color: var(--ink); font: inherit; font-size: 13.5px; font-weight: 650; cursor: pointer; text-decoration: none; }
+  .tkd-btn:hover { filter: brightness(.97); }
+  .tkd-btn.accent { color: var(--coral); }
+  .tkd-art { display: flex; align-items: center; gap: 10px; padding: 10px 0; font-size: 13.5px; font-weight: 600; color: var(--ink); text-decoration: none; }
+  .tkd-art + .tkd-art { border-top: 1px solid var(--tkd-ring); }
+  .tkd-art span { flex: 1; min-width: 0; }
+  .tkd-art svg { color: var(--tkd-soft); flex-shrink: 0; }
+  .tkd-art:hover { color: var(--coral); }
+  .tkd-err { margin: 12px 0 0; padding: 9px 12px; border-radius: 14px; background: #fef2f2; color: #b91c1c; font-size: 13px; font-weight: 600; line-height: 1.4; }
+
   @media (max-width: 900px) {
     .ticket-grid { grid-template-columns: 1fr !important; }
     .tkd-desk { display: none !important; }
@@ -47,19 +160,23 @@ const DETAIL_CSS = `
   }
   @media (max-width: 767px) {
     .tkd-page { padding: 12px 16px 16px; }
-    .tkd-head { margin-bottom: 12px !important; }
-    .tkd-head h1 { font-size: 21px !important; }
+    .tkd-head { margin-bottom: 14px; gap: 10px; }
+    .tkd-back { width: 38px; height: 38px; }
+    .tkd-title h1 { font-size: 22px; }
+    .tkd-status { height: 26px; padding: 0 10px; font-size: 12px; }
     .ticket-grid { gap: 12px !important; }
-    .ticket-grid > div { gap: 12px !important; }
-    .tkd-card { padding: 14px !important; border-radius: 14px !important; }
+    .tkd-main, .tkd-aside { gap: 12px; }
+    .tkd-card { padding: 14px; border-radius: 18px; }
     .tkd-out { margin-left: 18px; }
+    .tkd-body, .tkd-atts { margin-left: 0; }
 
     /* The reply box: folded to a bar above the bottom nav; opens in place. */
-    .tkd-cmp { position: fixed; left: 0; right: 0; bottom: calc(58px + env(safe-area-inset-bottom, 0px)); z-index: 880; padding: 10px 16px !important; border-radius: 16px 16px 0 0 !important; border-width: 1px 0 0 !important; box-shadow: 0 -10px 30px -16px rgba(16,24,40,.25); }
+    .tkd-cmp { position: fixed; left: 0; right: 0; bottom: calc(58px + env(safe-area-inset-bottom, 0px)); z-index: 880; padding: 10px 16px !important; border-radius: 20px 20px 0 0 !important; box-shadow: 0 -1px 0 var(--tkd-ring), 0 -10px 30px -16px rgba(16,24,40,.25) !important; }
     .tkd-cmp.folded .tkd-cmp-body { display: none; }
     .tkd-cmp.folded .tkd-cmp-bar { display: flex; align-items: center; gap: 8px; }
     .tkd-cmp.open { max-height: 55vh; overflow-y: auto; overscroll-behavior: contain; }
     .tkd-cmp-collapse { display: flex; }
+    .tkd-cmp-to { display: none; }
     /* 16px, so iOS doesn't zoom the page when the reply or the AI "Adjust it" box is focused. */
     .tkd-cmp textarea, .tkd-cmp input { font-size: 16px !important; }
     /* Out of the way while the menu drawer, a modal or a sheet is open (as
@@ -98,6 +215,12 @@ export default function TicketDetail() {
   const [patchErr, setPatchErr] = useState('')
   const patchErrTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const textRef = useRef<HTMLTextAreaElement>(null)
+  // The Priority / Assignee menus (the sidebar's, or the phone card's).
+  const [picker, setPicker] = useState<null | 'prio' | 'asg' | 'prio-ph' | 'asg-ph'>(null)
+  const prioRef = useRef<HTMLButtonElement>(null)
+  const asgRef = useRef<HTMLButtonElement>(null)
+  const prioPhRef = useRef<HTMLButtonElement>(null)
+  const asgPhRef = useRef<HTMLButtonElement>(null)
   useEffect(() => () => { if (patchErrTimer.current) clearTimeout(patchErrTimer.current) }, [])
   useEffect(() => { const iv = setInterval(() => setTick(t => t + 1), 60000); return () => clearInterval(iv) }, [])
   // Draft reply: AI writes the next email from the help centre, products and orders.
@@ -226,81 +349,97 @@ export default function TicketDetail() {
   void tick
   const slaNow = sla.enabled ? computeSla(ticket, sla) : null
 
-  const card: React.CSSProperties = { background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: 18 }
-  const sideTitle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.03em', margin: '0 0 12px' }
-  const statusButton = (s: string) => {
-    const on = ticket.status === s
+  const prioLabel = (p: string) => p.charAt(0).toUpperCase() + p.slice(1)
+  const prioOptions = ['urgent', 'high', 'normal', 'low'].map(p => ({ value: p, label: prioLabel(p), dot: PRIORITY_COLORS[p] }))
+  const asgName = ticket.assigned_to ? (team.find(m => m.userId === ticket.assigned_to)?.name || 'Teammate') : ''
+  const asgOptions = [
+    { value: '', label: 'Unassigned', icon: <span className="tkd-mini-av none" aria-hidden>?</span> },
+    ...team.map(m => ({ value: m.userId, label: m.name, icon: <MenuAvatar name={m.name} color={avColor(m.name)} /> })),
+    ...(ticket.assigned_to && !team.some(m => m.userId === ticket.assigned_to) ? [{ value: ticket.assigned_to, label: 'Teammate' }] : []),
+  ]
+  const prioPick = (ref: React.RefObject<HTMLButtonElement | null>, key: 'prio' | 'prio-ph', wide = false) => (
+    <button ref={ref} type="button" className={`tkd-pick${wide ? ' wide' : ''}`} aria-haspopup="listbox" aria-expanded={picker === key} aria-label={`Priority: ${prioLabel(pr)}`}
+      onClick={() => setPicker(picker === key ? null : key)}>
+      <i style={{ background: PRIORITY_COLORS[pr] || '#6b7280' }} /><span>{prioLabel(pr)}</span><Chev />
+    </button>
+  )
+  const asgPick = (ref: React.RefObject<HTMLButtonElement | null>, key: 'asg' | 'asg-ph', wide = false) => (
+    <button ref={ref} type="button" className={`tkd-pick${wide ? ' wide' : ''}`} aria-haspopup="listbox" aria-expanded={picker === key} aria-label={`Assignee: ${asgName || 'Unassigned'}`}
+      onClick={() => setPicker(picker === key ? null : key)}>
+      {asgName ? <span className="tkd-mini-av" style={{ background: avColor(asgName) }} aria-hidden>{asgName.charAt(0).toUpperCase()}</span> : <span className="tkd-mini-av none" aria-hidden>?</span>}
+      <span>{asgName || 'Unassigned'}</span><Chev />
+    </button>
+  )
+  const statusTile = (s: string) => {
     const c = STATUS_COLORS[s]
     return (
-      <button key={s} type="button" aria-pressed={on} onClick={() => updateStatus(s)}
-        style={{ padding: '8px 10px', borderRadius: 10, border: on ? `2px solid ${c.c}` : '1px solid var(--border)', background: on ? c.bg : '#fff', color: on ? c.c : 'var(--ink)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize' }}>
-        {s.replace('_', ' ')}
+      <button key={s} type="button" className="tkd-st" aria-pressed={ticket.status === s} onClick={() => updateStatus(s)}
+        style={{ ['--c' as any]: c.c, ['--bg' as any]: c.bg }}>
+        <i aria-hidden />{s.replace('_', ' ')}
       </button>
     )
   }
-  const prioritySelect = (style?: React.CSSProperties) => (
-    <select value={pr} aria-label="Priority" onChange={e => patchTicket({ priority: e.target.value })}
-      style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '4px 8px', fontSize: 13, fontWeight: 700, color: PRIORITY_COLORS[pr] || '#6b7280', background: '#fff', cursor: 'pointer', textTransform: 'capitalize', fontFamily: 'inherit', ...style }}>
-      {['urgent', 'high', 'normal', 'low'].map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
-    </select>
-  )
-  const assigneeSelect = (style?: React.CSSProperties) => (
-    <select value={ticket.assigned_to || ''} aria-label="Assignee" onChange={e => patchTicket({ assigned_to: e.target.value || null })}
-      style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '4px 8px', fontSize: 13, fontWeight: 600, color: 'var(--ink)', background: '#fff', cursor: 'pointer', maxWidth: 170, fontFamily: 'inherit', ...style }}>
-      <option value="">Unassigned</option>
-      {team.map(m => <option key={m.userId} value={m.userId}>{m.name}</option>)}
-      {ticket.assigned_to && !team.some(m => m.userId === ticket.assigned_to) && <option value={ticket.assigned_to}>Teammate</option>}
-    </select>
-  )
   const clockChip = (c: Clock, what: 'Reply' | 'Resolve') => {
     const col = CLOCK_COLORS[c.state]
-    return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: col.bg, color: col.c, whiteSpace: 'nowrap' }}>{clockLabel(c, what)}</span>
+    return <span className="tkd-chip" style={{ background: col.bg, color: col.c }}>{clockLabel(c, what)}</span>
   }
   const barText = draft.trim() ? draft.trim().replace(/\s+/g, ' ') : toast || `Reply to ${custName}…`
   const patchErrLine = patchErr ? <p role="alert" className="tkd-err">{patchErr}</p> : null
+  const attachments = (list: any[]) => (
+    <div className="tkd-atts">
+      {list.map((a: any, i: number) => {
+        const isImg = /^image\//.test(a.type || '') || /\.(png|jpe?g|gif|webp|avif)$/i.test(a.name || '')
+        return isImg ? (
+          <a key={i} className="tkd-att-img" href={a.url} target="_blank" rel="noreferrer" title={a.name}>
+            <img src={a.url} alt={a.name || 'attachment'} />
+          </a>
+        ) : (
+          <a key={i} className="tkd-att-file" href={a.url} target="_blank" rel="noreferrer" download>
+            <PaperclipIcon size={14} color="var(--slate)" />
+            <span>{a.name || 'attachment'}</span>
+          </a>
+        )
+      })}
+    </div>
+  )
 
   return (
     <div className="tkd-page">
       <style>{DETAIL_CSS}</style>
-      <button type="button" onClick={() => router.push('/admin/tickets')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--slate)', fontSize: 13.5, cursor: 'pointer', marginBottom: 12, padding: '4px 0', fontWeight: 600, marginLeft: -3 }}>
-        <ChevronLeftIcon size={16} /> All tickets
-      </button>
 
       {/* Header */}
-      <div className="tkd-head" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: 'var(--ink)' }}>{ticket.ticket_number}</h1>
-            <span style={{ fontSize: 12, fontWeight: 700, padding: '4px 12px', borderRadius: 20, background: sc.bg, color: sc.c, textTransform: 'capitalize' }}>{String(ticket.status).replace('_', ' ')}</span>
+      <div className="tkd-head">
+        <button type="button" className="tkd-back" onClick={() => router.push('/admin/tickets')} aria-label="All tickets" title="All tickets">
+          <ChevronLeftIcon size={18} />
+        </button>
+        <div className="tkd-head-t">
+          <div className="tkd-eyebrow">
+            <span className="tkd-num">{ticket.ticket_number}</span>
+            <span aria-hidden>·</span>
+            <span>Created {when(ticket.created_at, true)}</span>
           </div>
-          <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--slate)' }}>Created {new Date(ticket.created_at).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+          <div className="tkd-title">
+            <h1 className="tkd-display">{ticket.subject || ticket.ticket_number}</h1>
+            <span className="tkd-status" style={{ ['--c' as any]: sc.c, ['--bg' as any]: sc.bg }}><i aria-hidden />{String(ticket.status).replace('_', ' ')}</span>
+          </div>
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 320px', gap: 20, alignItems: 'start' }} className="ticket-grid">
+      <div className="ticket-grid">
         {/* Main column */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
+        <div className="tkd-main">
           {/* Phones: the ticket's controls in one compact card above the thread. */}
-          <div className="tkd-phone tkd-card" style={card} aria-label="Ticket actions">
-            <div className="tkd-seg" role="group" aria-label="Ticket status">
-              {STATUSES.map(s => {
-                const on = ticket.status === s
-                const c = STATUS_COLORS[s]
-                return (
-                  <button key={s} type="button" aria-pressed={on} onClick={() => updateStatus(s)}
-                    style={on ? { borderColor: c.c, background: c.bg, color: c.c, boxShadow: `inset 0 0 0 1px ${c.c}` } : undefined}>
-                    {s.replace('_', ' ')}
-                  </button>
-                )
-              })}
+          <div className="tkd-phone tkd-card" aria-label="Ticket actions">
+            <div className="tkd-st-grid" role="group" aria-label="Ticket status">
+              {STATUSES.map(statusTile)}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, marginTop: 12 }}>
-              <label className="tkd-field">Priority{prioritySelect({ height: 40, borderRadius: 10, fontSize: 16, maxWidth: 'none', width: '100%' })}</label>
-              <label className="tkd-field">Assignee{assigneeSelect({ height: 40, borderRadius: 10, fontSize: 16, maxWidth: 'none', width: '100%' })}</label>
+              <div className="tkd-field">Priority{prioPick(prioPhRef, 'prio-ph', true)}</div>
+              <div className="tkd-field">Assignee{asgPick(asgPhRef, 'asg-ph', true)}</div>
             </div>
             {slaNow && (slaNow.firstResponse.state !== 'off' || slaNow.resolution.state !== 'off') && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 12 }}>
-                <ClockIcon size={14} color="var(--slate)" />
+              <div className="tkd-chips">
+                <ClockIcon size={14} />
                 {slaNow.firstResponse.state !== 'off' && clockChip(slaNow.firstResponse, 'Reply')}
                 {slaNow.resolution.state !== 'off' && clockChip(slaNow.resolution, 'Resolve')}
               </div>
@@ -309,96 +448,84 @@ export default function TicketDetail() {
           </div>
 
           {/* Original message */}
-          <div className="tkd-card" style={card}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-              <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, flexShrink: 0 }}>{initials(custName)}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
-                  <span style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)' }}>{custName}</span>
-                  {custEmail && <span style={{ fontSize: 12.5, color: 'var(--slate)', minWidth: 0, overflowWrap: 'anywhere' }}>&lt;{custEmail}&gt;</span>}
-                </div>
-                {custEmail && <div style={{ fontSize: 12, color: 'var(--slate)', marginTop: 2, overflowWrap: 'anywhere' }}>to {supportAddr}</div>}
-                <h3 style={{ margin: '12px 0 6px', fontSize: 15, fontWeight: 700, color: 'var(--ink)', overflowWrap: 'anywhere' }}>{ticket.subject}</h3>
-                <p style={{ margin: 0, fontSize: 14, color: 'var(--ink)', lineHeight: 1.6, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{cleanBody(ticket.description) || '(no message)'}</p>
+          <article className="tkd-card">
+            <div className="tkd-msg-h">
+              <span className="tkd-av" aria-hidden>{initials(custName)}</span>
+              <div className="tkd-who">
+                <div className="tkd-who-top"><b>{custName}</b><span className="tkd-badge in">From customer</span></div>
+                {custEmail && <small>{custEmail} · to {supportAddr}</small>}
               </div>
+              <span className="tkd-when">{when(ticket.created_at)}</span>
             </div>
-          </div>
+            <div className="tkd-body">{cleanBody(ticket.description) || '(no message)'}</div>
+          </article>
 
           {/* Reply / note thread */}
           {messages.map(m => {
             const isNote = m.kind === 'note'
             const isInbound = m.direction === 'in'
+            const who = m.author_name || (isInbound ? 'Customer' : 'Agent')
             return (
-              <div key={m.id} className={`tkd-card${(isNote || isInbound) ? '' : ' tkd-out'}`} style={{ ...card, background: isNote ? '#fffdf5' : '#fff', borderColor: isNote ? '#fde68a' : 'var(--border)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>{m.author_name || (isInbound ? 'Customer' : 'Agent')}</span>
+              <article key={m.id} className={`tkd-card${isNote ? ' note' : ''}${(isNote || isInbound) ? '' : ' tkd-out'}`}>
+                <div className="tkd-msg-h">
                   {isNote
-                    ? <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 12, background: '#fef3c7', color: '#b45309', textTransform: 'uppercase' }}>Internal note</span>
+                    ? <span className="tkd-av note" aria-hidden><LockIcon size={15} /></span>
                     : isInbound
-                      ? <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 12, background: '#dbeafe', color: '#2563eb' }}>From customer</span>
-                      : m.emailed
-                        ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 12, background: '#dcfce7', color: '#059669' }}><CheckIcon size={11} /> Emailed to customer</span>
-                        : <span title="This reply was saved but not delivered — no mailbox is connected for this workspace." style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 12, background: '#fef2f2', color: '#dc2626' }}>Saved · not emailed</span>}
-                  <span style={{ fontSize: 12, color: 'var(--slate)', marginLeft: 'auto' }}>{new Date(m.created_at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
-                </div>
-                <p style={{ margin: 0, fontSize: 14, color: 'var(--ink)', lineHeight: 1.6, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{m.body}</p>
-                {Array.isArray(m.attachments) && m.attachments.length > 0 && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
-                    {m.attachments.map((a: any, i: number) => {
-                      const isImg = /^image\//.test(a.type || '') || /\.(png|jpe?g|gif|webp|avif)$/i.test(a.name || '')
-                      return isImg ? (
-                        <a key={i} href={a.url} target="_blank" rel="noreferrer" title={a.name}>
-                          <img src={a.url} alt={a.name || 'attachment'} style={{ maxWidth: 160, maxHeight: 160, borderRadius: 8, border: '1px solid var(--border)', objectFit: 'cover', display: 'block' }} />
-                        </a>
-                      ) : (
-                        <a key={i} href={a.url} target="_blank" rel="noreferrer" download
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--canvas)', fontSize: 13, color: 'var(--ink)', textDecoration: 'none', maxWidth: '100%', boxSizing: 'border-box' }}>
-                          <PaperclipIcon size={14} color="var(--slate)" />
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{a.name || 'attachment'}</span>
-                        </a>
-                      )
-                    })}
+                      ? <span className="tkd-av" aria-hidden>{initials(who)}</span>
+                      : <span className="tkd-av agent" style={{ background: avColor(who) }} aria-hidden>{initials(who)}</span>}
+                  <div className="tkd-who">
+                    <div className="tkd-who-top">
+                      <b>{who}</b>
+                      {isNote
+                        ? <span className="tkd-badge note">Internal note</span>
+                        : isInbound
+                          ? <span className="tkd-badge in">From customer</span>
+                          : m.emailed
+                            ? <span className="tkd-badge ok"><CheckIcon size={11} /> Emailed to customer</span>
+                            : <span className="tkd-badge warn" title="This reply was saved but not delivered — no mailbox is connected for this workspace.">Saved · not emailed</span>}
+                    </div>
                   </div>
-                )}
-              </div>
+                  <span className="tkd-when">{when(m.created_at)}</span>
+                </div>
+                <div className="tkd-body">{m.body}</div>
+                {Array.isArray(m.attachments) && m.attachments.length > 0 && attachments(m.attachments)}
+              </article>
             )
           })}
 
           {/* Composer. On phones it's pinned above the bottom nav and folds to a bar. */}
-          <div className={`tkd-cmp ${cmpOpen ? 'open' : 'folded'}`} style={card}>
+          <div className={`tkd-card tkd-cmp ${cmpOpen ? 'open' : 'folded'}`}>
             <div className="tkd-cmp-bar">
-              <button type="button" onClick={() => openComposer('reply')} aria-label={`Reply to ${custName}`}
-                style={{ flex: 1, minWidth: 0, height: 42, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--canvas)', font: 'inherit', fontSize: 14, color: draft.trim() || toast ? 'var(--ink)' : 'var(--slate)', cursor: 'text', textAlign: 'left' }}>
+              <button type="button" className={`tkd-bar-reply${draft.trim() || toast ? ' has' : ''}`} onClick={() => openComposer('reply')} aria-label={`Reply to ${custName}`}>
                 <MailIcon size={16} color="var(--coral)" />
-                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{barText}</span>
+                <span>{barText}</span>
               </button>
-              <button type="button" onClick={() => openComposer('note')}
-                style={{ height: 42, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 12px', borderRadius: 12, border: '1px solid #fde68a', background: '#fffdf5', color: '#b45309', font: 'inherit', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
+              <button type="button" className="tkd-bar-note" onClick={() => openComposer('note')}>
                 <LockIcon size={14} /> Note
               </button>
             </div>
             <div className="tkd-cmp-body">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 12, borderBottom: '1px solid var(--border)' }}>
-                {(['reply', 'note'] as const).map(t => (
-                  <button key={t} type="button" onClick={() => setTab(t)}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 4px', marginRight: 16, background: 'none', border: 'none', borderBottom: tab === t ? '2px solid var(--coral)' : '2px solid transparent', color: tab === t ? 'var(--coral)' : 'var(--slate)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>
-                    {t === 'reply' ? <><MailIcon size={15} /> Reply</> : <><LockIcon size={14} /> Internal note</>}
-                  </button>
-                ))}
-                <button type="button" className="tkd-cmp-collapse" onClick={foldComposer} title="Fold the reply box" aria-label="Fold the reply box"
-                  style={{ marginLeft: 'auto', width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 9, border: '1px solid var(--border)', background: '#fff', color: 'var(--slate)', cursor: 'pointer', padding: 0, flexShrink: 0 }}>
+              <div className="tkd-cmp-top">
+                <div className="tkd-switch" role="tablist" aria-label="Reply or internal note">
+                  {(['reply', 'note'] as const).map(t => (
+                    <button key={t} type="button" role="tab" aria-selected={tab === t} className={t} onClick={() => setTab(t)}>
+                      {t === 'reply' ? <><MailIcon size={15} /> Reply</> : <><LockIcon size={14} /> Internal note</>}
+                    </button>
+                  ))}
+                </div>
+                <span className="tkd-cmp-to">{tab === 'reply' ? (custEmail ? `Emailed to ${custEmail}` : `To ${custName}`) : 'Only your team sees this'}</span>
+                <button type="button" className="tkd-cmp-collapse tkd-round" onClick={foldComposer} title="Fold the reply box" aria-label="Fold the reply box">
                   <ChevronDownIcon size={16} />
                 </button>
               </div>
               {tab === 'reply' && <AiDraftInfo info={aiDraft.info} error={aiDraft.error} busy={aiDraft.busy} onRedo={i => aiDraft.run(i)} onClose={aiDraft.clear} />}
-              <textarea ref={textRef} value={draft} onChange={e => setDraft(e.target.value)} rows={4} aria-label={tab === 'reply' ? 'Reply' : 'Internal note'}
-                placeholder={tab === 'reply' ? 'Write a reply — this is emailed to the customer…' : 'Add an internal note (only your team sees this)…'}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical', background: tab === 'note' ? '#fffdf5' : '#fff' }} />
-              {toast && <p role="status" style={{ margin: '10px 0 0', fontSize: 13, color: 'var(--slate)' }}>{toast}</p>}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginTop: 12 }}>
-                {tab === 'reply' && <AiDraftButton busy={aiDraft.busy} onClick={() => aiDraft.run()} height={40} />}
-                <button type="button" className="tkd-cmp-send" onClick={send} disabled={sending || !draft.trim()}
-                  style={{ height: 40, padding: '0 20px', borderRadius: 10, border: 'none', background: tab === 'reply' ? 'var(--coral)' : '#b45309', color: '#fff', fontWeight: 700, fontSize: 14, cursor: sending || !draft.trim() ? 'default' : 'pointer', opacity: sending || !draft.trim() ? 0.6 : 1 }}>
+              <textarea ref={textRef} className={`tkd-ta${tab === 'note' ? ' note' : ''}`} value={draft} onChange={e => setDraft(e.target.value)} rows={4} aria-label={tab === 'reply' ? 'Reply' : 'Internal note'}
+                placeholder={tab === 'reply' ? 'Write a reply — this is emailed to the customer…' : 'Add an internal note (only your team sees this)…'} />
+              {toast && <p role="status" className="tkd-cmp-msg">{toast}</p>}
+              <div className="tkd-cmp-foot">
+                {tab === 'reply' && <AiDraftButton busy={aiDraft.busy} onClick={() => aiDraft.run()} height={42} />}
+                <button type="button" className={`tkd-send tkd-cmp-send${tab === 'note' ? ' note' : ''}`} onClick={send} disabled={sending || !draft.trim()}>
+                  {tab === 'reply' ? <MailIcon size={15} /> : <LockIcon size={14} />}
                   {sending ? 'Sending…' : tab === 'reply' ? 'Send reply' : 'Add note'}
                 </button>
               </div>
@@ -407,11 +534,11 @@ export default function TicketDetail() {
         </div>
 
         {/* Sidebar */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
-          <div className="tkd-desk" style={card}>
-            <p style={sideTitle}>Ticket status</p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              {STATUSES.map(statusButton)}
+        <div className="tkd-aside">
+          <div className="tkd-desk tkd-card">
+            <h3 className="tkd-h tkd-display">Status</h3>
+            <div className="tkd-st-grid" role="group" aria-label="Ticket status">
+              {STATUSES.map(statusTile)}
             </div>
             {patchErrLine}
           </div>
@@ -419,84 +546,73 @@ export default function TicketDetail() {
           {slaNow && (() => {
             const t = slaNow
             const row = (label: string, c: Clock, what: 'Reply' | 'Resolve') => {
-              const when = c.doneAt || c.dueAt
+              const at = c.doneAt || c.dueAt
               return (
-                <div style={{ padding: '8px 0', borderTop: '1px solid var(--border)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 13, color: 'var(--slate)' }}>{label}</span>
-                    {c.state === 'off'
-                      ? <span style={{ fontSize: 12, color: '#94a3b8' }}>—</span>
-                      : clockChip(c, what)}
+                <div className="tkd-dl">
+                  <div className="tkd-dl-top">
+                    <span>{label}</span>
+                    {c.state === 'off' ? <span style={{ color: '#94a3b8' }}>—</span> : clockChip(c, what)}
                   </div>
-                  {when && c.state !== 'off' && (
-                    <div style={{ fontSize: 11.5, color: 'var(--slate)', marginTop: 3, textAlign: 'right' }}>
-                      {c.doneAt ? 'Done' : 'Due'} {when.toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+                  {at && c.state !== 'off' && (
+                    <div className="tkd-dl-sub">
+                      {c.doneAt ? 'Done' : 'Due'} {at.toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
                     </div>
                   )}
                 </div>
               )
             }
             return (
-              <div className="tkd-card" style={{ ...card, borderColor: t.worst === 'overdue' ? '#fecaca' : 'var(--border)' }}>
-                <p style={sideTitle}><ClockIcon size={14} /> Deadlines</p>
+              <div className="tkd-card" style={t.worst === 'overdue' ? { boxShadow: '0 0 0 1px #fecaca, 0 1px 2px rgba(16,24,40,.04)' } : undefined}>
+                <h3 className="tkd-h tkd-display"><ClockIcon size={16} /> Deadlines</h3>
                 {row('First reply', t.firstResponse, 'Reply')}
                 {row('Resolution', t.resolution, 'Resolve')}
               </div>
             )
           })()}
 
-          <div className="tkd-card" style={card}>
-            <p style={sideTitle}>Ticket details</p>
-            {[
-              ['Ticket ID', ticket.ticket_number],
-              ['Created', new Date(ticket.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })],
-              ['Last updated', new Date(ticket.updated_at || ticket.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })],
-            ].map(([k, v]) => (
-              <div key={k as string} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '6px 0', fontSize: 13 }}>
-                <span style={{ color: 'var(--slate)' }}>{k}</span>
-                <span style={{ color: 'var(--ink)', fontWeight: 600, textAlign: 'right' }}>{v}</span>
-              </div>
-            ))}
-            <div className="tkd-desk" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '6px 0', fontSize: 13 }}>
-              <span style={{ color: 'var(--slate)' }}>Priority</span>
-              {prioritySelect()}
-            </div>
-            <div className="tkd-desk" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '6px 0', fontSize: 13 }}>
-              <span style={{ color: 'var(--slate)' }}>Assignee</span>
-              {assigneeSelect()}
-            </div>
+          <div className="tkd-card">
+            <h3 className="tkd-h tkd-display">Details</h3>
+            <div className="tkd-row"><span>Ticket ID</span><b>{ticket.ticket_number}</b></div>
+            <div className="tkd-row"><span>Created</span><b>{new Date(ticket.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</b></div>
+            <div className="tkd-row"><span>Last updated</span><b>{new Date(ticket.updated_at || ticket.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</b></div>
+            <div className="tkd-row tkd-desk"><span>Priority</span>{prioPick(prioRef, 'prio')}</div>
+            <div className="tkd-row tkd-desk"><span>Assignee</span>{asgPick(asgRef, 'asg')}</div>
           </div>
 
-          <div className="tkd-card" style={card}>
-            <p style={sideTitle}>Customer</p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--peach)', color: 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, flexShrink: 0 }}>{initials(custName)}</div>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{custName}</div>
-                {custEmail && <div style={{ fontSize: 12.5, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{custEmail}</div>}
+          <div className="tkd-card">
+            <h3 className="tkd-h tkd-display">Customer</h3>
+            <div className="tkd-cust">
+              <span className="tkd-av" aria-hidden>{initials(custName)}</span>
+              <div>
+                <b>{custName}</b>
+                {custEmail && <small>{custEmail}</small>}
               </div>
             </div>
-            {contact?.id && (
-              <button type="button" onClick={() => router.push(`/admin/customers/profile?id=${contact.id}`)} style={{ width: '100%', marginTop: 12, padding: '8px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--ink)' }}>View customer</button>
-            )}
-            {ticket.conversation_id && (
-              <button type="button" onClick={() => router.push(`/admin/inbox?conversation=${ticket.conversation_id}`)} style={{ width: '100%', marginTop: 8, padding: '8px', borderRadius: 10, border: '1px solid var(--border)', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--coral)' }}>View conversation</button>
+            {(contact?.id || ticket.conversation_id) && (
+              <div className="tkd-btns">
+                {contact?.id && <button type="button" className="tkd-btn" onClick={() => router.push(`/admin/customers/profile?id=${contact.id}`)}>View customer</button>}
+                {ticket.conversation_id && <button type="button" className="tkd-btn accent" onClick={() => router.push(`/admin/inbox?conversation=${ticket.conversation_id}`)}>View conversation</button>}
+              </div>
             )}
           </div>
 
           {articles.length > 0 && (
-            <div className="tkd-card" style={card}>
-              <p style={sideTitle}>Related articles</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {articles.map(a => (
-                  <a key={a.id} href={company?.slug ? `https://${company.slug}.colvy.com/help/${a.id}` : `/help/${a.id}`} target="_blank" rel="noreferrer"
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 13, color: 'var(--coral)', fontWeight: 600, textDecoration: 'none' }}>{a.title} <ExternalLinkIcon size={12} /></a>
-                ))}
-              </div>
+            <div className="tkd-card">
+              <h3 className="tkd-h tkd-display">Related articles</h3>
+              {articles.map(a => (
+                <a key={a.id} className="tkd-art" href={company?.slug ? `https://${company.slug}.colvy.com/help/${a.id}` : `/help/${a.id}`} target="_blank" rel="noreferrer">
+                  <span>{a.title}</span><ExternalLinkIcon size={13} />
+                </a>
+              ))}
             </div>
           )}
         </div>
       </div>
+
+      <SelectPopover open={picker === 'prio' || picker === 'prio-ph'} onClose={() => setPicker(null)} anchorRef={picker === 'prio-ph' ? prioPhRef : prioRef}
+        label="Priority" value={pr} options={prioOptions} width={200} onPick={v => patchTicket({ priority: v })} />
+      <SelectPopover open={picker === 'asg' || picker === 'asg-ph'} onClose={() => setPicker(null)} anchorRef={picker === 'asg-ph' ? asgPhRef : asgRef}
+        label="Assignee" value={ticket.assigned_to || ''} options={asgOptions} width={240} onPick={v => patchTicket({ assigned_to: v || null })} />
     </div>
   )
 }
