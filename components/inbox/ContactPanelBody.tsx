@@ -24,6 +24,7 @@ import ResilientImage from '@/components/ResilientImage'
 import { AiSparkIcon, CHANNEL_ICON, CHANNEL_NAME, Highlight, Icon, STATUS_COLOR, STATUS_ICON, VideoTileMark, fmtDateTime, fmtTime, timeOpts, videoPoster } from '@/components/inbox/inbox-shared'
 import { ENGAGEMENT_CSS, FacebookComment, GoogleReview, InstagramComment } from '@/components/inbox/EngagementCards'
 import { useInbox } from '@/components/inbox/InboxContext'
+import ContactTags from '@/components/inbox/ContactTags'
 
 export default function ContactPanelBody() {
   const {
@@ -507,6 +508,14 @@ export default function ContactPanelBody() {
                     </div>
                   )
                 })()}
+
+                {/* ── Tags ── the customer's tags (Contacts page, campaign audiences). */}
+                {companyId && contact?.id && (
+                  <div style={{ paddingTop: 14 }}>
+                    <ContactTags companyId={companyId} contact={contact as any} showToast={showToast}
+                      onChange={tags => setContact((c: any) => (c ? { ...c, tags } : c))} />
+                  </div>
+                )}
 
                 <SuperAdminContactWorkspaces email={(contact as any)?.email || null} />
 

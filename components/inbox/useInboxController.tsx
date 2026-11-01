@@ -1819,8 +1819,10 @@ export function useInboxController() {
       convId = existing?.[0]?.id || null
 
       if (!convId) {
+        const fwdSms = !!contactTarget.phone
         const { data: created } = await (supabase as any).from('conversations').insert({
-          company_id: companyId, channel: 'chat', contact_id: contactTarget.id,
+          company_id: companyId, channel: fwdSms ? 'sms' : contactTarget.email ? 'email' : 'chat', contact_id: contactTarget.id,
+          ...(fwdSms ? { sms_number: contactTarget.phone, sms_enabled: true } : {}),
           subject: contactTarget.name || contactTarget.email,
           status: 'open', is_unread: false,
           last_message: '', last_message_at: new Date().toISOString(),
@@ -2161,9 +2163,14 @@ export function useInboxController() {
         .order('last_message_at', { ascending: false }).limit(1)
       let conv: any = existing?.[0] || null
       if (!conv) {
-        const chan = wantCh === 'email' ? 'email' : wantCh === 'sms' ? 'sms' : 'chat'
+        // Asked for a channel: that one. Otherwise the way to reach them: their
+        // mobile, else their email. A "live chat" thread for someone with no
+        // chat open went nowhere (upload links read "Live Chat" and weren't sent).
+        const chan = wantCh === 'email' || wantCh === 'sms' || wantCh === 'chat' ? wantCh
+          : ct.phone ? 'sms' : ct.email ? 'email' : 'chat'
         const { data: created } = await (supabase as any).from('conversations').insert({
           company_id: companyId, channel: chan, contact_id: contactId,
+          ...(chan === 'sms' && ct.phone ? { sms_number: ct.phone, sms_enabled: true } : {}),
           subject: ct.name || ct.email || ct.phone || 'New conversation',
           status: 'open', is_unread: false,
           last_message: '', last_message_at: new Date().toISOString(),
