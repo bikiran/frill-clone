@@ -12,8 +12,9 @@
 // either app reads the same in both. Opened from the composer's + menu and
 // the contact panel's Delivery row.
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import DateTimeField from '@/components/ui/DateTimeField'
 import { authFetch } from '@/lib/auth-fetch'
 import { deliveryDay, deliveryLine } from '@/lib/delivery-line'
 
@@ -99,11 +100,11 @@ export default function ScheduleDeliverySheet({ companyId, contact, conversation
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
-  const dateRef = useRef<HTMLInputElement>(null)
 
   // Escape closes.
   useEffect(() => {
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !saving) onClose() }
+    // (Not while its calendar is open: Escape closes that.)
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !saving && !document.querySelector('.dtf-pop')) onClose() }
     document.addEventListener('keydown', key)
     return () => document.removeEventListener('keydown', key)
   }, [onClose, saving])
@@ -288,11 +289,9 @@ export default function ScheduleDeliverySheet({ companyId, contact, conversation
                 </button>
               ))}
             </div>
-            <label className="sds-field sds-date" onClick={() => { try { dateRef.current?.showPicker?.() } catch {} }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4.5" width="18" height="16.5" rx="3" /><path d="M3 9.5h18M8 2.5v4M16 2.5v4" /></svg>
-              <input ref={dateRef} type="date" value={date} min={today} onChange={e => { setDate(e.target.value); setErr('') }} aria-label="Delivery date" />
-              <span className="sds-date-l">{date ? new Date(`${date}T12:00:00`).toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' }) : 'Pick a date'}</span>
-            </label>
+<div className="sds-dtf">
+              <DateTimeField mode="date" label="Delivery date" value={date} min={today} clearable={false} onChange={v => { setDate(v); setErr('') }} />
+            </div>
           </section>
 
           <section className="sds-sec">
@@ -451,12 +450,10 @@ export const SDS_CSS = `
 .sds-field{display:flex;align-items:flex-start;gap:10px;margin-top:10px;padding:12px 14px;border-radius:14px;background:#f2f2f5;color:var(--slate,#71717a);cursor:text}
 /* Flush under its heading only; after chips (the date field under Today / Tomorrow) it keeps its gap. */
 .sds-sec>h3+.sds-field{margin-top:0}
-.sds-chips+.sds-field{margin-top:10px}
+.sds-chips+.sds-field,.sds-chips+.sds-dtf{margin-top:10px}
+.sds-chips+.sds-dtf+.sds-chips{margin-top:10px}
 .sds-field svg{flex-shrink:0;margin-top:1px}
 .sds .sds-field textarea,.sds .sds-field textarea:focus{flex:1;min-width:0;border:none!important;background:transparent!important;box-shadow:none!important;outline:none!important;padding:0;font:inherit;font-size:14.5px;line-height:1.45;color:var(--ink);resize:none}
-.sds-date{position:relative;align-items:center;cursor:pointer}
-.sds .sds-date input{position:absolute;inset:0;opacity:0;cursor:pointer;border:0;width:100%}
-.sds-date-l{font-size:14.5px;font-weight:600;color:var(--ink)}
 .sds-check{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13.5px;font-weight:600;color:var(--ink);cursor:pointer}
 .sds-check input{width:17px;height:17px;accent-color:var(--coral,#ff7a6b)}
 .sds-hint{margin:6px 2px 0;font-size:13px;color:var(--slate,#71717a)}
