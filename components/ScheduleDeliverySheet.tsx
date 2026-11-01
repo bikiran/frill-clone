@@ -21,7 +21,7 @@ type Order = { id: string; order_number: string; total?: number | null; status?:
 
 export const DELIVERY_WINDOWS = ['Morning', 'Afternoon', 'Evening', '9am–12pm', '12pm–5pm', 'After 7pm']
 const CLOSED = /^(completed|cancelled|refunded|delivered|failed|shipped)$/i
-const STATUS_LABEL: Record<string, string> = { pending: 'Pending', scheduled: 'Scheduled', out_for_delivery: 'Out for delivery', delivered: 'Delivered', failed: 'Failed', cancelled: 'Cancelled' }
+const STATUS_LABEL: Record<string, string> = { pending: 'Pending', scheduled: 'Scheduled', out_for_delivery: 'Out for delivery', completed: 'Delivered', delivered: 'Delivered', failed: 'Failed', cancelled: 'Cancelled' }
 const digits = (s?: string | null) => String(s || '').replace(/\D/g, '')
 // YYYY-MM-DD in local time (toISOString would shift it to UTC).
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -59,7 +59,7 @@ function windowPhrase(w: string): string {
   return `between ${w}`
 }
 
-export default function ScheduleDeliverySheet({ companyId, contact, conversationId, senderName, defaultLocationId, onClose, onScheduled, tellCustomer }: {
+export default function ScheduleDeliverySheet({ companyId, contact, conversationId, senderName, defaultLocationId, onClose, onScheduled, tellCustomer, onOpenBooked }: {
   companyId: string
   contact: any
   /** The thread the card goes into; the contact's latest one when not given. */
@@ -72,6 +72,8 @@ export default function ScheduleDeliverySheet({ companyId, contact, conversation
   onScheduled?: (patch: Record<string, any>) => void
   /** Sends the customer a message over their channel; without it there's no "text them" option. */
   tellCustomer?: (text: string) => Promise<string>
+  /** Open one of their booked deliveries (components/DeliveryDetailsSheet). */
+  onOpenBooked?: (eventId: string) => void
 }) {
   const today = ymd(new Date())
   const profileAddr = profileAddress(contact)
@@ -124,7 +126,7 @@ export default function ScheduleDeliverySheet({ companyId, contact, conversation
         (supabase as any).from('company_locations').select('id, label, suburb, is_primary').eq('company_id', companyId).order('is_primary', { ascending: false }),
         contact?.id
           ? (supabase as any).from('calendar_events').select('id, starts_at, time_window, status, address')
-            .eq('company_id', companyId).eq('contact_id', contact.id).eq('event_type', 'delivery')
+            .eq('company_id', companyId).eq('contact_id', contact.id).eq('event_type', 'delivery').neq('status', 'cancelled')
             .gte('starts_at', new Date(`${today}T00:00:00`).toISOString()).order('starts_at', { ascending: true }).limit(4)
           : Promise.resolve({ data: [] }),
       ].map(p => Promise.resolve(p).catch(() => ({ data: [] }))))
@@ -263,13 +265,16 @@ export default function ScheduleDeliverySheet({ companyId, contact, conversation
           {booked.length > 0 && (
             <div className="sds-booked">
               <span className="sds-booked-h">Already booked</span>
-              {booked.map(b => (
-                <span key={b.id} className="sds-booked-r">
+              {booked.map(b => {
+                const inner = (<>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z" /><path d="M3 8l9 5 9-5M12 13v8" /></svg>
                   <span>{deliveryDay(ymd(new Date(b.starts_at)))}{b.time_window ? ` · ${b.time_window}` : ''}</span>
                   {b.status && <em>{STATUS_LABEL[b.status] || b.status}</em>}
-                </span>
-              ))}
+                </>)
+                return onOpenBooked
+                  ? <button key={b.id} type="button" className="sds-booked-r link" onClick={() => onOpenBooked(b.id)} title="Open this delivery">{inner}<svg className="go" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></button>
+                  : <span key={b.id} className="sds-booked-r">{inner}</span>
+              })}
             </div>
           )}
 
@@ -408,7 +413,7 @@ export default function ScheduleDeliverySheet({ companyId, contact, conversation
   )
 }
 
-const SDS_CSS = `
+export const SDS_CSS = `
 .sds-scrim{position:fixed;inset:0;z-index:1150;background:rgba(15,15,20,.42);display:flex;align-items:center;justify-content:center;padding:20px;animation:sdsFade .16s ease-out}
 .sds{position:relative;width:480px;max-width:100%;max-height:min(860px,92vh);display:flex;flex-direction:column;background:var(--card,#fff);border-radius:26px;box-shadow:0 30px 70px -20px rgba(16,24,40,.45);overflow:hidden;animation:sdsUp .22s cubic-bezier(.2,.8,.2,1)}
 .sds button::before{display:none!important}
@@ -473,6 +478,37 @@ const SDS_CSS = `
 .sds-info{display:flex;align-items:flex-start;gap:8px;margin:0;padding:0 4px;font-size:12.5px;line-height:1.5;color:var(--slate,#71717a)}
 .sds-info svg{flex-shrink:0;margin-top:2px}
 .sds-err{margin:0;padding:10px 12px;border-radius:12px;background:#fef3f2;color:#b42318;font-size:13px;font-weight:600}
+.sds-booked-r.link{width:100%;border:0;background:none;padding:2px 0;font:inherit;text-align:left;cursor:pointer;border-radius:8px}
+.sds-booked-r.link:hover span{text-decoration:underline;text-underline-offset:3px}
+.sds-booked-r .go{flex-shrink:0;color:#047857;opacity:.6}
+.sds-booked-r.link em{margin-left:auto}
+/* The delivery itself (DeliveryDetailsSheet) */
+.sds-detail .sds-head{grid-template-columns:40px 1fr 40px}
+.sds-center{text-align:center;padding:30px 0}
+.sds-hero{display:flex;align-items:center;gap:14px;padding:16px;border-radius:22px;background:#ecfdf5}
+.sds-hero-i{width:56px;height:56px;flex-shrink:0;border-radius:18px;background:var(--card,#fff);color:#059669;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 2px rgba(16,24,40,.06)}
+.sds-hero-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.sds-hero-t b{font-size:18px;font-weight:800;color:var(--ink);letter-spacing:-.01em}
+.sds-hero-t small{font-size:13.5px;color:var(--slate,#71717a)}
+.sds-status{flex-shrink:0;display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:750;padding:5px 10px;border-radius:999px}
+.sds-status.t-green{color:#059669;background:transparent}.sds-status.t-blue{color:#2563eb;background:#eff6ff}
+.sds-status.t-amber{color:#b45309;background:#fffbeb}.sds-status.t-violet{color:#7c3aed;background:#f5f3ff}.sds-status.t-red{color:#dc2626;background:#fef2f2}
+.sds-dir{display:inline-flex;align-items:center;gap:6px;height:36px;text-decoration:none}
+.sds-link{width:100%;border:0;font:inherit;text-align:left;cursor:pointer;transition:background .15s}
+.sds-link:hover:not(:disabled){background:#ececf0}
+.sds-link:disabled{cursor:default}
+.sds-notes-v{margin:0;padding:12px 14px;border-radius:14px;background:#f2f2f5;font-size:14px;line-height:1.5;color:var(--ink);white-space:pre-wrap}
+.sds-meta{margin:0;text-align:center;font-size:13px;color:var(--slate,#71717a)}
+.sds-actions{display:flex;flex-direction:column;gap:10px}
+.sds-row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:2px}
+.sds-sec .sds-row2{margin-top:14px}
+.sds-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:48px;padding:0 16px;border:0;border-radius:999px;background:#f2f2f5;color:var(--ink);font:inherit;font-size:15px;font-weight:700;cursor:pointer;transition:background .15s,filter .15s}
+.sds-btn:hover:not(:disabled){background:#e8e8ec}
+.sds-btn:disabled{opacity:.55;cursor:default}
+.sds-btn.wide{width:100%}
+.sds-btn.primary{background:#059669;color:#fff}.sds-btn.primary:hover:not(:disabled){background:#047857}
+.sds-btn.danger{background:#fdecec;color:#dc2626}.sds-btn.danger:hover:not(:disabled){background:#fbdcdc}
+.sds-confirm{display:flex;flex-direction:column;gap:4px;padding:12px;border-radius:18px;background:#fef2f2;font-size:13.5px;font-weight:600;color:#b42318}
 @keyframes sdsFade{from{opacity:0}to{opacity:1}}
 @keyframes sdsUp{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
 @media (max-width:640px){
@@ -493,4 +529,8 @@ const SDS_CSS = `
 [data-theme="dark"] .sds-ic.orange{background:#3a2516}[data-theme="dark"] .sds-ic.blue{background:#1c2740}
 [data-theme="dark"] .sds-err{background:#3a1d1b;color:#fda29b}
 [data-theme="dark"] .sds-booked-r em,[data-theme="dark"] .sds-booked-h{color:#34d399}
+[data-theme="dark"] .sds-hero{background:color-mix(in srgb,#10b981 12%,#1c1c1f)}[data-theme="dark"] .sds-hero-i{background:#1c1c1f}
+[data-theme="dark"] .sds-btn,[data-theme="dark"] .sds-notes-v{background:#2a2a2e}[data-theme="dark"] .sds-btn:hover:not(:disabled),[data-theme="dark"] .sds-link:hover:not(:disabled){background:#34343a}
+[data-theme="dark"] .sds-btn.primary{background:#059669}[data-theme="dark"] .sds-btn.danger{background:#3a1d1b;color:#fda29b}[data-theme="dark"] .sds-confirm{background:#2b1a19;color:#fda29b}
+[data-theme="dark"] .sds-status.t-blue{background:#172036;color:#93c5fd}[data-theme="dark"] .sds-status.t-amber{background:#2d2312;color:#fcd34d}[data-theme="dark"] .sds-status.t-violet{background:#241b38;color:#c4b5fd}[data-theme="dark"] .sds-status.t-red{background:#3a1d1b;color:#fda29b}[data-theme="dark"] .sds-status.t-green{color:#34d399}
 `

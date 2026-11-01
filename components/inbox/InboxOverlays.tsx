@@ -11,6 +11,7 @@ import ResilientImage from '@/components/ResilientImage'
 import RefundOrderModal from '@/components/RefundOrderModal'
 import { SkClose, SkFiles, SkIcon, SkStyle } from '@/components/ui/SheetKit'
 import ScheduleDeliverySheet from '@/components/ScheduleDeliverySheet'
+import DeliveryDetailsSheet from '@/components/DeliveryDetailsSheet'
 import ContactTimeline from '@/components/ContactTimeline'
 import { supabase } from '@/lib/supabase'
 import Dialer from '@/components/Dialer'
@@ -37,7 +38,7 @@ export default function InboxOverlays() {
     editOrderLoading, editOrderSaving, editingScheduled, emailGalleryMedia, filteredConvs, filters,
     filtersCustomDates, folderBtnInbox, forwardBusy, forwardPicked, forwardResults, forwardSearch,
     forwardTo, forwarding, galleryFolder, galleryFolders, galleryIndex, galleryItems, gallerySearch,
-    gallerySelected, invoicePreview, invoiceSending, loadConversationExtras, reloadThread, scrollBottom, loadConversations,
+    gallerySelected, invoicePreview, invoiceSending, loadConversationExtras, reloadThread, scrollBottom, deliveryView, setDeliveryView, setActivePanel, setMobilePane, setTabletContact, loadConversations,
     loadGalleryFolder, markRead, mergeConversation, mrAccept, mrExpiry, mrMaxFiles, mrPrompt,
     mrSaving, myName, orderGallery, orderPrefillCart, outboundChannel, outlets, payAddress, payAmount, payDesc, paySending, pickerItems, pickupModal, pickupSending, pinnedIds,
     podFiles, podNote, podSending, productError, productQuery, productSearchedFor, productSearching, productSent,
@@ -215,6 +216,29 @@ export default function InboxOverlays() {
             showToast(`Delivery scheduled. It’s on the team calendar${_told ? (/^but /.test(_told) ? `, ${_told}` : ` · ${_told}`) : ''}`)
           }}
           tellCustomer={(text: string) => deliverToCustomer({ body: text })}
+          onOpenBooked={(eventId: string) => { setShowSchedule(false); setShowDeliveryPanel(false); setDeliveryView({ eventId, contactId: contact?.id || null }) }}
+        />
+      )}
+
+      {/* A booked delivery: from its pill in the thread, or "Already booked" above. */}
+      {deliveryView && companyId && (
+        <DeliveryDetailsSheet
+          companyId={companyId}
+          eventId={deliveryView.eventId}
+          fallback={{ contactId: deliveryView.contactId || null, date: deliveryView.date || null }}
+          senderName={myName}
+          onClose={() => setDeliveryView(null)}
+          onOpenOrder={() => {
+            // The customer's orders, as the header's order summary opens them.
+            setActivePanel('orders')
+            const w = window.innerWidth
+            if (w < 768) setMobilePane('contact')
+            else if (w <= 1100) setTabletContact(true)
+          }}
+          onChanged={(patch: any) => {
+            if (patch && contact) setContact((c: any) => ({ ...c, ...patch }))
+            if (selected) { reloadThread(selected.id).catch(() => {}); loadConversationExtras(selected.id) }
+          }}
         />
       )}
 

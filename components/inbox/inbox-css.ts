@@ -695,13 +695,16 @@ export const THREAD_MESSAGES_CSS = `
               }
               @media (prefers-reduced-motion:reduce){.cmp-mode-thumb,.cmp-tool{transition:none}}
             
-/* A scheduled delivery in the thread: the phone app's card. */
-.tm-dlv{display:flex;align-items:flex-start;gap:10px;max-width:min(560px,100%);padding:11px 16px 12px 12px;border-radius:18px;background:color-mix(in srgb,#059669 8%,var(--card,#fff));box-shadow:inset 0 0 0 1.5px color-mix(in srgb,#059669 28%,transparent);color:#047857}
-.tm-dlv-i{width:30px;height:30px;flex-shrink:0;border-radius:10px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,#059669 14%,transparent);color:#059669}
-.tm-dlv-t{display:flex;flex-direction:column;gap:3px;min-width:0;padding-top:5px}
-.tm-dlv-t b{font-size:13.5px;font-weight:750;line-height:1.35;color:#047857}
-.tm-dlv-t b span{font-weight:650}
-.tm-dlv-t small{font-size:12.5px;line-height:1.45;color:color-mix(in srgb,#047857 85%,var(--ink));overflow-wrap:anywhere}
-[data-theme="dark"] .tm-dlv{background:color-mix(in srgb,#10b981 10%,#1c1c1f);color:#6ee7b7}
-[data-theme="dark"] .tm-dlv-t b{color:#6ee7b7}[data-theme="dark"] .tm-dlv-t small{color:#a7f3d0}
+/* A scheduled delivery in the thread: the same pill as the other lifecycle lines, clickable. */
+.tm-dlv{display:inline-flex;align-items:flex-start;gap:8px;max-width:100%;padding:7px 12px 7px 15px;border:0;border-radius:16px;background:color-mix(in srgb,#059669 13%,transparent);color:#059669;font:inherit;line-height:1.45;text-align:left;cursor:pointer;transition:background .15s}
+.tm-dlv::before{display:none!important}
+.tm-dlv:hover{background:color-mix(in srgb,#059669 19%,transparent)}
+.tm-dlv:focus-visible{outline:2px solid color-mix(in srgb,#059669 55%,transparent);outline-offset:2px}
+.tm-dlv-i{flex-shrink:0;display:inline-flex;margin-top:2px}
+.tm-dlv-t{min-width:0;font-size:12px;overflow-wrap:anywhere}
+.tm-dlv-t b{font-weight:700}
+.tm-dlv-t span{opacity:.8;font-weight:500}
+.tm-dlv-go{flex-shrink:0;margin-top:3px;opacity:.55}
+.tm-dlv:hover .tm-dlv-go{opacity:.9}
+[data-theme="dark"] .tm-dlv{color:#34d399}
 `

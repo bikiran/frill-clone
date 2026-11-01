@@ -48,7 +48,7 @@ export default function ThreadMessages() {
     setShowReactPicker, setStoryView, showMsgSearch, showOriginalMsgs, showReactPicker, showToast,
     tasks, teamMembers, textareaRef, threadIndex, threadWin, threadWinRef, toggleBlockContact,
     toggleMsgOriginal, translateMsg, translatingMsgs, updateOrderStatus, user, visibleReadBy,
-    wooOrders,
+    wooOrders, setDeliveryView,
   } = useInbox()
   return (
     <>
@@ -413,24 +413,27 @@ export default function ThreadMessages() {
               )
             }
 
-            // A scheduled delivery: the card the phone app shows (when on the
-            // first line, then where and the order), not the one-line pill.
+            // A scheduled delivery: the same compact pill as the other
+            // lifecycle lines; clicking it opens the delivery (status,
+            // directions, Mark delivered, Reschedule, Cancel), as in the app.
             if (kind === 'delivery') {
               const dl = readDelivery(String(msg.content || ''), sm)
-              const rest = [dl.address, dl.order].filter(Boolean).join(' · ')
+              const rest = [dl.when, dl.address, dl.order].filter(Boolean).join(' · ')
               return (
                 <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
                   {dateDivider}
-                  <div style={{ display: 'flex', justifyContent: 'center', padding: '6px 0' }}>
-                    <div className="tm-dlv" title={sm.by ? `Scheduled by ${sm.by}` : undefined}>
+                  <div style={{ display: 'flex', justifyContent: 'center', padding: '5px 0' }}>
+                    <button type="button" className="tm-dlv" title={sm.by ? `Booked by ${sm.by}. Open the delivery` : 'Open the delivery'}
+                      onClick={() => setDeliveryView({ eventId: sm.event_id || null, contactId: (selected as any)?.contact_id || contact?.id || null, date: sm.date || null })}>
                       <span className="tm-dlv-i" aria-hidden="true">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z" /><path d="M3 8l9 5 9-5M12 13v8" /></svg>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z" /><path d="M3 8l9 5 9-5M12 13v8" /></svg>
                       </span>
                       <span className="tm-dlv-t">
-                        <b>Delivery scheduled{dl.when ? <span> · {dl.when}</span> : null}</b>
-                        {rest && <small>{rest}</small>}
+                        <b>{sm.rescheduled ? 'Delivery rescheduled' : 'Delivery scheduled'}</b>
+                        {rest && <span>{` · ${rest}`}</span>}
                       </span>
-                    </div>
+                      <svg className="tm-dlv-go" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+                    </button>
                   </div>
                 </div>
               )
