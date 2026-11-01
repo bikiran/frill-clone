@@ -171,8 +171,8 @@ export const notificationSoundOn = () => { try { return localStorage.getItem(SOU
 // from the bell: anything overdue and not yet delivered, then today, tomorrow
 // and the coming weeks. A row opens the customer's conversation (where the
 // "Delivery scheduled" card is), or the calendar when there isn't one.
-const DLV_DONE = /^(delivered|cancelled|failed)$/i
-const DLV_STATUS: Record<string, string> = { pending: 'Pending', scheduled: 'Scheduled', out_for_delivery: 'Out for delivery', delivered: 'Delivered', failed: 'Failed', cancelled: 'Cancelled' }
+const DLV_DONE = /^(delivered|completed|cancelled|failed)$/i   // the app stores Delivered as 'completed'
+const DLV_STATUS: Record<string, string> = { pending: 'Pending', scheduled: 'Scheduled', out_for_delivery: 'Out for delivery', completed: 'Delivered', delivered: 'Delivered', failed: 'Failed', cancelled: 'Cancelled' }
 const dayStart = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x }
 function deliveryGroups(list: any[]): { label: string; rows: any[] }[] {
   const today = dayStart(new Date()).getTime()
@@ -221,11 +221,11 @@ const CSS = `
   .np-dlv-st.s-out_for_delivery { color: #1d4ed8; background: color-mix(in srgb, #2563eb 12%, transparent); }
   .np-dlv-st.s-pending { color: #b45309; background: color-mix(in srgb, #d97706 13%, transparent); }
   .np-dlv-st.s-failed, .np-dlv-st.s-cancelled { color: #b42318; background: color-mix(in srgb, #dc2626 11%, transparent); }
-  .np-dlv-st.s-delivered { color: #52525b; background: #f4f4f5; }
+  .np-dlv-st.s-delivered, .np-dlv-st.s-completed { color: #52525b; background: #f4f4f5; }
   [data-theme="dark"] .np-chip-dlv:not(.on) { color: #6ee7b7; background: color-mix(in srgb, #10b981 16%, #1c1c1f); }
   [data-theme="dark"] .np-dlv-st { color: #6ee7b7; }
   [data-theme="dark"] .np-dlv-st.s-out_for_delivery { color: #93c5fd; } [data-theme="dark"] .np-dlv-st.s-pending { color: #fcd34d; }
-  [data-theme="dark"] .np-dlv-st.s-failed, [data-theme="dark"] .np-dlv-st.s-cancelled { color: #fda29b; } [data-theme="dark"] .np-dlv-st.s-delivered { color: #a1a1aa; background: #2a2a2e; }
+  [data-theme="dark"] .np-dlv-st.s-failed, [data-theme="dark"] .np-dlv-st.s-cancelled { color: #fda29b; } [data-theme="dark"] .np-dlv-st.s-delivered, [data-theme="dark"] .np-dlv-st.s-completed { color: #a1a1aa; background: #2a2a2e; }
   .np-list { flex: 1; overflow-y: auto; padding: 4px 8px 8px; overscroll-behavior: contain; }
   .np-day { position: sticky; top: 0; z-index: 1; padding: 12px 12px 6px; font-size: 12.5px; font-weight: 600; color: #8e8e93; background: rgba(255,255,255,.94); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
   .np-item { position: relative; display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 10px 12px; margin-bottom: 2px; border: none; border-radius: 16px; background: transparent; text-align: left; font: inherit; cursor: pointer; transition: background .12s ease; }

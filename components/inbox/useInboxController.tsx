@@ -619,6 +619,8 @@ export function useInboxController() {
   // components/ScheduleDeliverySheet (the phone app's sheet): books it on the
   // team calendar and drops a "Delivery scheduled" card into the thread.
   const [showSchedule, setShowSchedule] = useState(false)
+  // A booked delivery open in components/DeliveryDetailsSheet (from its line in the thread).
+  const [deliveryView, setDeliveryView] = useState<{ eventId: string | null; contactId?: string | null; date?: string | null } | null>(null)
   // "Schedule message" — send the composed reply at a future time (cron delivers).
   const [showScheduleMsg, setShowScheduleMsg] = useState(false)
   const [scheduleMsgAt, setScheduleMsgAt] = useState('')
@@ -6651,7 +6653,7 @@ export function useInboxController() {
     setSendChannel, setSendPicker, setSentiment, setShowActionMenu, setShowActions,
     setShowAddContact, setShowAssignMenu, setShowCardAssign, setShowCardMore, setShowChannelMenu,
     setShowChargeCard, setShowCompose, setShowContactEdit, setShowCoupon, setShowCreateOrder,
-    setShowDeliveryPanel, setShowDialer, setShowDoa, setShowEmoji, setShowFilters, setShowInboxQR,
+    setShowDeliveryPanel, deliveryView, setDeliveryView, setShowDialer, setShowDoa, setShowEmoji, setShowFilters, setShowInboxQR,
     setShowMediaPicker, setShowMediaRequest, setShowMergePicker, setShowMoveMenu, setShowMsgSearch,
     setShowOrderSearch, setShowPod, setShowProducts, setShowQuickMenu, setShowReactPicker,
     setShowRecordSale, setShowSchedule, setShowScheduleMsg, setShowSnooze, setShowStatusMenu,
