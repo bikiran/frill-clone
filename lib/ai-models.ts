@@ -19,7 +19,7 @@ export type AiJob =
   | 'knowledge_search' | 'knowledge_answer' | 'unanswered_scan' | 'help_import' | 'form_builder'
   | 'review_reply' | 'review_sentiment' | 'social_reply' | 'social_classify'
   | 'conversation_summary' | 'call_summary' | 'call_transcript' | 'dictation' | 'translate' | 'contact_capture' | 'card_scan'
-  | 'phone_agent' | 'feedback_summary' | 'announcement_writer'
+  | 'phone_agent' | 'feedback_summary' | 'announcement_writer' | 'campaign_builder'
 
 // modern: the feature sends newer request options (effort, structured output,
 // fallbacks), so only Claude 5-generation models are offered for it.
@@ -35,6 +35,7 @@ export const AI_JOBS: Record<AiJob, { label: string; group: string; about: strin
   unanswered_scan: { group: 'Knowledge', label: 'Unanswered questions', about: 'Finding questions your knowledge doesn’t cover yet.', default: 'claude-opus-5-5', modern: true },
   help_import: { group: 'Knowledge', label: 'Help centre import', about: 'Turning a website into help articles.', default: 'claude-opus-5-5', modern: true },
   form_builder: { group: 'Team tools', label: 'Form builder', about: 'Building forms, polls and surveys from a description.', default: 'claude-opus-5-5', modern: true },
+  campaign_builder: { group: 'Team tools', label: 'Campaign builder', about: '“Build with Colvy AI” on Campaigns: the audience, the text or email, and when to send, from a description.', default: 'claude-opus-5-5', modern: true },
   announcement_writer: { group: 'Team tools', label: 'Announcement writer', about: '“Write with Colvy AI” on announcements, and turning a post into an SMS or social post.', default: 'claude-sonnet-5', modern: true },
   review_reply: { group: 'Reviews and social', label: 'Review reply drafts', about: '“Generate AI reply” on Google reviews.', default: 'claude-sonnet-4-6' },
   review_sentiment: { group: 'Reviews and social', label: 'Review sentiment', about: 'Reading how happy a review is.', default: 'claude-haiku-4-5' },

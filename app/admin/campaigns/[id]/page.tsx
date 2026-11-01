@@ -555,6 +555,15 @@ export default function CampaignEditorPage() {
     }
   }
 
+  // ?step=N opens that step (Colvy AI's builder lands on Review), once.
+  const stepFromUrl = useRef(false)
+  useEffect(() => {
+    if (!campaign || stepFromUrl.current || typeof window === 'undefined') return
+    stepFromUrl.current = true
+    const n = Number(new URLSearchParams(window.location.search).get('step'))
+    if (n >= 2 && n <= 6 && !(campaign.channel === 'email' && n === 4)) setStep(n)
+  }, [campaign])
+
   // ── Schedule (step 5) ────────────────────────────────────────────────────
   const scheduledIso = () => {
     if (sendMode === 'now' || !schedDate) return null
