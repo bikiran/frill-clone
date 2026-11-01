@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { createPortal } from 'react-dom'
+import DeliveryDetailsSheet from '@/components/DeliveryDetailsSheet'
 import { supabase } from '@/lib/supabase'
 import EmptyScroll from '@/components/EmptyScroll'
 
@@ -313,26 +315,31 @@ export default function NotificationsPanel({ userId, companyId = null, unreadCou
   const [view, setView] = useState<'notifications' | 'deliveries'>('notifications')
   const router = useRouter()
 
+  // The delivery open in the Delivery sheet (a row was clicked).
+  const [openDelivery, setOpenDelivery] = useState<any | null>(null)
+
   // Scheduled deliveries: the last week (anything still not delivered shows as
-  // overdue) through the next month.
-  useEffect(() => {
+  // overdue) through the next month. Reloaded after a change in the sheet.
+  const loadDeliveries = useCallback(async () => {
     if (!companyId) { setDeliveries([]); return }
-    let live = true
     const from = dayStart(new Date(Date.now() - 7 * 864e5)).toISOString()
     const to = new Date(Date.now() + 31 * 864e5).toISOString()
-    ;(supabase as any).from('calendar_events')
-      .select('id, title, starts_at, time_window, address, status, conversation_id, order_id')
-      .eq('company_id', companyId).eq('event_type', 'delivery')
-      .gte('starts_at', from).lte('starts_at', to).order('starts_at', { ascending: true }).limit(150)
-      .then(({ data }: any) => { if (live) setDeliveries(data || []) }, () => {})
-    return () => { live = false }
+    try {
+      const { data } = await (supabase as any).from('calendar_events')
+        .select('id, title, starts_at, time_window, address, status, conversation_id, order_id')
+        .eq('company_id', companyId).eq('event_type', 'delivery')
+        .gte('starts_at', from).lte('starts_at', to).order('starts_at', { ascending: true }).limit(150)
+      setDeliveries(data || [])
+    } catch { /* the list stays as it was */ }
   }, [companyId])
+  useEffect(() => { loadDeliveries() }, [loadDeliveries])
   const deliveryList = useMemo(() => deliveryGroups(deliveries), [deliveries])
   const deliveryCount = deliveryList.reduce((n, g) => n + g.rows.length, 0)
   const dueToday = deliveryList.filter(g => g.label === 'Overdue' || g.label === 'Today').reduce((n, g) => n + g.rows.length, 0)
-  const openDelivery = (r: any) => {
+  const goToChat = (r: any) => {
+    setOpenDelivery(null)
     onClose()
-    router.push(r.conversation_id ? `/admin/inbox?conversation=${r.conversation_id}` : '/admin/calendar')
+    router.push(`/admin/inbox?conversation=${r.conversation_id}`)
   }
 
   useEffect(() => {
@@ -549,7 +556,7 @@ export default function NotificationsPanel({ userId, companyId = null, unreadCou
                   const done = DLV_DONE.test(String(r.status || ''))
                   return (
                     <div key={r.id} role="button" tabIndex={0} className={`np-item np-dlv${done ? ' done' : ''}`}
-                      onClick={() => openDelivery(r)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDelivery(r) } }}>
+                      onClick={() => setOpenDelivery(r)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenDelivery(r) } }}>
                       <span className="np-tile" style={{ ['--k' as any]: g.label === 'Overdue' ? '#dc2626' : '#059669' }}>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z" /><path d="M3 8l9 5 9-5M12 13v8" /></svg>
                       </span>
@@ -562,7 +569,7 @@ export default function NotificationsPanel({ userId, companyId = null, unreadCou
                         <div className="np-meta">
                           <span className={`np-dlv-st s-${String(r.status || 'scheduled')}`}>{DLV_STATUS[String(r.status || 'scheduled')] || r.status}</span>
                           {g.label === 'Overdue' && <span className="np-actor">{new Date(r.starts_at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })}</span>}
-                          {r.conversation_id && <span className="np-actor">Open chat</span>}
+
                         </div>
                       </div>
                     </div>
@@ -599,6 +606,18 @@ export default function NotificationsPanel({ userId, companyId = null, unreadCou
           </>
         )}
       </div>
+
+      {/* A delivery row opens the Delivery sheet over the page; the bell stays open behind it. */}
+      {openDelivery && companyId && typeof document !== 'undefined' && createPortal(
+        <DeliveryDetailsSheet
+          companyId={companyId}
+          eventId={openDelivery.id}
+          onClose={() => setOpenDelivery(null)}
+          onOpenChat={openDelivery.conversation_id ? () => goToChat(openDelivery) : undefined}
+          onChanged={() => { loadDeliveries() }}
+        />,
+        document.body,
+      )}
 
       <div className="np-foot">
         <label className="np-switch" title="A soft chime when something new arrives">

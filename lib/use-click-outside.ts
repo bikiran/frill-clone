@@ -21,6 +21,10 @@ export function useClickOutside(
       for (const ref of refs) {
         if (ref.current && ref.current.contains(target)) return
       }
+      // A pop-up a menu opened over the page (rendered on the body, so it
+      // isn't inside the menu) keeps the menu open behind it: e.g. the
+      // Delivery sheet opened from the bell's Deliveries list.
+      if ((target as Element)?.closest?.('[data-keeps-menus]')) return
       onClose()
     }
 
