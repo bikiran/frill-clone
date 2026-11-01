@@ -13,12 +13,16 @@ export type EmailBrand = {
   website?: string | null
   phone?: string | null
   email?: string | null
+  /** Social links to offer in the designer: the last email's, the connected Facebook and Instagram, the website. Not used when sending. */
+  socials?: SocialLink[]
 }
 
 export type Align = 'left' | 'center'
 
 export type ProductItem = { name: string; price?: string; image?: string; url?: string }
-export type SocialLink = { network: 'facebook' | 'instagram' | 'tiktok' | 'youtube' | 'website' | 'x' | 'linkedin'; url: string }
+export type SocialLink = { network: 'facebook' | 'instagram' | 'tiktok' | 'youtube' | 'website' | 'x' | 'linkedin' | 'pinterest' | 'threads' | 'whatsapp'; url: string }
+/** How social links show: logos on the network's colour, dark or light circles, or the names as pills. */
+export type SocialLook = 'brand' | 'dark' | 'light' | 'text'
 /** One side of a two-column block: any of a picture, title, text and button. */
 export type ColumnItem = { image?: string; alt?: string; title?: string; text?: string; label?: string; url?: string }
 export type MenuLink = { label: string; url: string }
@@ -40,7 +44,7 @@ export type Block =
   | { id: string; type: 'coupon'; code: string; offer?: string; title?: string; note?: string; label?: string; url?: string }
   | { id: string; type: 'divider' }
   | { id: string; type: 'spacer'; height?: number }
-  | { id: string; type: 'social'; links: SocialLink[] }
+  | { id: string; type: 'social'; links: SocialLink[]; look?: SocialLook }
   | { id: string; type: 'columns'; items: ColumnItem[] }
   /** A picture that opens the video (email can't play video): YouTube links get their thumbnail automatically. */
   | { id: string; type: 'video'; url: string; thumbnail?: string; label?: string }

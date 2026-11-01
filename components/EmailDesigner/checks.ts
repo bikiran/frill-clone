@@ -3,6 +3,7 @@
 // and, where it can, which block to open.
 
 import { safeImage, safeUrl, videoThumb } from './render'
+import { isNetwork, socialUrl } from './social'
 import { PREVIEW_HINT, SUBJECT_HINT, type Block } from './types'
 
 export type CheckLevel = 'error' | 'warn' | 'tip'
@@ -55,6 +56,8 @@ export function runChecks(d: { subject: string; previewText: string; design: { b
   out.push({ id: 'links', ok: !badButton, level: 'error', title: 'Buttons and links go somewhere', detail: badButton ? 'A button or link has no web address yet (it must start with https://), so it won’t show.' : 'Every button and link has an address.', blockId: badButton?.id })
   const badInline = blocks.find(b => (b.type === 'text' || b.type === 'heading') && [...String(b.text || '').matchAll(LINK)].some(m => !safeUrl(m[2])))
   if (badInline) out.push({ id: 'inline-links', ok: false, level: 'error', title: 'Text links work', detail: 'A link in your text doesn’t start with https://, so it shows as plain words.', blockId: badInline.id })
+  const badSocial = blocks.find(b => b.type === 'social' && (b.links || []).some(l => String(l?.url || '').trim() && !socialUrl(isNetwork(l?.network) ? l.network : 'website', l.url)))
+  if (badSocial) out.push({ id: 'social-links', ok: false, level: 'warn', title: 'Social links work', detail: 'A social link isn’t a handle (like @yourshop) or a web address yet, so it won’t show.', blockId: badSocial.id })
 
   const cta = blocks.some(b => (b.type === 'button' && safeUrl(b.url) && String(b.label || '').trim()) || (b.type === 'products' && (b.items || []).some(p => safeUrl(p?.url, false))) || (b.type === 'video' && safeUrl(b.url, false)) || (b.type === 'coupon' && !!String(b.label || '').trim() && !!safeUrl(b.url)) || (b.type === 'columns' && (b.items || []).some(c => safeUrl(c?.url, false))))
   out.push({ id: 'cta', ok: cta, level: 'warn', title: 'A clear next step', detail: cta ? 'There’s something to tap (a button, product or video).' : 'Add a button, products or a video so people know what to do next.' })
