@@ -31,3 +31,27 @@ export function inStoreLabel(pos: { saleId?: string; outlet?: string }, shop?: s
   const at = String(shop || pos.outlet || '').trim()
   return `In-store sale${pos.saleId ? ` ${pos.saleId}` : ''}${at ? ` at ${at}` : ''}`
 }
+
+/**
+ * Claim the one alert for a new WooCommerce order. Three paths can see a new
+ * order first and each used to alert: the store's webhook (WooCommerce often
+ * delivers it a minute late), the scheduled sync that polls the store every
+ * few minutes, and the Orders board's sync when someone opens it (web or app).
+ * The first to record (company, order, 'announced') in order_chat_events,
+ * whose unique index (V134) settles a race, sends the alert; the rest stay
+ * quiet. True means "you announce it". On an unexpected error it says true:
+ * an order announced twice is better than one never announced.
+ */
+export async function claimOrderAnnouncement(db: any, companyId: string, wooOrderId: unknown): Promise<boolean> {
+  const id = Number(wooOrderId)
+  if (!companyId || !Number.isSafeInteger(id) || id <= 0) return true
+  try {
+    const { data: had } = await db.from('order_chat_events').select('id')
+      .eq('company_id', companyId).eq('order_id', id).eq('status', 'announced').limit(1)
+    if (had?.length) return false
+    const { error } = await db.from('order_chat_events').insert({ company_id: companyId, order_id: id, status: 'announced' })
+    return !(error && (error.code === '23505' || /duplicate key/i.test(String(error.message || ''))))
+  } catch {
+    return true
+  }
+}

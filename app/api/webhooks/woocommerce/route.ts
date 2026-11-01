@@ -9,7 +9,7 @@ import { WebhookService } from '@/lib/webhook-service'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { upsertWooOrder } from '@/lib/orders-sync'
-import { inStoreLabel, wooPushIcon } from '@/lib/order-alerts'
+import { claimOrderAnnouncement, inStoreLabel, wooPushIcon } from '@/lib/order-alerts'
 import { wooDateToISO } from '@/lib/orders'
 import { DEFAULT_ORDER_MESSAGES, isStaleOrderMessage, withCompletedFallbacks, isPickupMethod, completedKey, trackingAlreadySent } from '@/lib/order-messages'
 import { findCustomerGoogleReview } from '@/lib/review-match'
@@ -421,6 +421,11 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     // sale R50270 at Roxy Aquarium Somerton", "Online order" (with the
     // WooCommerce logo as the picture) or "Order completed".
     const orderVerb = pos.isPos ? `${inStoreLabel(pos, posShop)} ·` : status === 'completed' ? 'Order completed' : 'Online order'
+    // One alert per new order: the scheduled sync or the Orders board may have
+    // seen it first (this webhook often arrives a minute late) and announced
+    // it already. A later status for the order ("Order completed") still alerts.
+    const firstForOrder = !priorOrderMsg
+    const announce = (await claimOrderAnnouncement(db, companyId, order.id)) || !firstForOrder
     try { await notifyCompany({ db, companyId, type: 'order', message: `${orderVerb} #${order.number || order.id} from ${displayName} — $${order.total}`, actorName: displayName, conversationId: conv.id }) } catch {}
     // notifyCompany only writes the in-app bell row — it does NOT push, which is
     // why a new order showed up in Activity and on the web while no phone ever
@@ -428,7 +433,7 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     // the dedup marker below. This is the order's ONE alert: mirroring it onto
     // the Orders board below stays quiet (it used to send a second, generic
     // "New order" push for the same sale).
-    try {
+    if (announce) try {
       await pushInboundMessage({
         companyId,
         conversationId: conv.id,
