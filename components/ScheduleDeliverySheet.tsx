@@ -424,7 +424,10 @@ export const SDS_CSS = `
 .sds-round:hover{background:#e8e8ec}
 .sds-save{height:40px;padding:0 22px;border:0;border-radius:999px;background:var(--coral,#ff7a6b);color:#fff;font:inherit;font-size:14.5px;font-weight:750;cursor:pointer;box-shadow:0 6px 16px -8px color-mix(in srgb,var(--coral,#ff7a6b) 80%,transparent)}
 .sds-save:disabled{opacity:.6;cursor:default}
-.sds-body{overflow-y:auto;padding:6px 18px 22px;display:flex;flex-direction:column;gap:20px;overscroll-behavior:contain}
+.sds-body{overflow-y:auto;padding:6px 18px 22px;display:flex;flex-direction:column;gap:20px;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:rgba(120,120,128,.35) transparent}
+.sds-body::-webkit-scrollbar{width:6px}
+.sds-body::-webkit-scrollbar-track{background:transparent}
+.sds-body::-webkit-scrollbar-thumb{background:rgba(120,120,128,.35);border-radius:6px}
 .sds-card{display:flex;align-items:center;gap:12px;padding:12px;border-radius:18px;background:#f2f2f5}
 .sds-av{width:44px;height:44px;flex-shrink:0;border-radius:14px;background:color-mix(in srgb,var(--coral,#ff7a6b) 13%,#fff);color:var(--coral,#ff7a6b);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800}
 .sds-card-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
@@ -446,7 +449,8 @@ export const SDS_CSS = `
 .sds-chip:hover{background:#e8e8ec}
 .sds-chip.on{background:color-mix(in srgb,var(--coral,#ff7a6b) 13%,#fff);color:var(--coral,#ff7a6b)}
 .sds-field{display:flex;align-items:flex-start;gap:10px;margin-top:10px;padding:12px 14px;border-radius:14px;background:#f2f2f5;color:var(--slate,#71717a);cursor:text}
-.sds-sec>.sds-field:first-of-type{margin-top:0}
+/* Flush under its heading only; after chips (the date field under Today / Tomorrow) it keeps its gap. */
+.sds-sec>h3+.sds-field{margin-top:0}
 .sds-chips+.sds-field{margin-top:10px}
 .sds-field svg{flex-shrink:0;margin-top:1px}
 .sds .sds-field textarea,.sds .sds-field textarea:focus{flex:1;min-width:0;border:none!important;background:transparent!important;box-shadow:none!important;outline:none!important;padding:0;font:inherit;font-size:14.5px;line-height:1.45;color:var(--ink);resize:none}
