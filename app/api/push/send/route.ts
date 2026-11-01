@@ -33,6 +33,10 @@ export async function POST(req: NextRequest) {
       // Optional feature key (lib/permissions.ts) this push is about. Usually
       // worked out from the rest (see featuresForPush).
       feature,
+      // Optional https picture for the notification's large icon on Android
+      // (e.g. the WooCommerce logo on an online order), used instead of the
+      // customer's photo.
+      icon,
     } = await req.json()
     if (!companyId || !body) return NextResponse.json({ error: 'Missing companyId or body' }, { status: 400 })
     // Our own server, or a member of the workspace (the browser call alert).
@@ -60,8 +64,8 @@ export async function POST(req: NextRequest) {
     // The sender's avatar, so the mobile app (notifee) can show their photo as
     // the notification's large icon. Best-effort: resolve the conversation's
     // contact avatar once for the whole batch.
-    let avatar: string | null = null
-    if (conversationId) {
+    let avatar: string | null = typeof icon === 'string' && /^https:\/\/[^\s"'<>]+$/i.test(icon) ? icon : null
+    if (conversationId && !avatar) {
       try {
         const { data: conv } = await db.from('conversations').select('contact_id, avatar_url').eq('id', conversationId).maybeSingle()
         avatar = (conv as any)?.avatar_url || null

@@ -1,0 +1,33 @@
+// What the team's phones say about a WooCommerce order, so the two kinds read
+// differently at a glance:
+//   • an in-store sale (Prexty pushes each one into WooCommerce, tagged
+//     _prexty_source = pos): "In-store sale R50270 at Roxy Aquarium Somerton",
+//     and only that one alert;
+//   • a website order: "Online order", with the WooCommerce logo as the
+//     notification's picture on Android.
+
+import { posSaleInfo } from '@/lib/prexty-pos'
+
+/** Colvy's own site (https), for pictures a phone downloads. */
+function siteBase(): string {
+  const s = String(process.env.NEXT_PUBLIC_SITE_URL || '').trim().replace(/\/+$/, '')
+  return /^https:\/\/[a-z0-9.-]+\.[a-z]{2,}$/i.test(s) ? s : 'https://colvy.com'
+}
+
+/** The WooCommerce logo for an online order's notification (public/push/woocommerce.png, 192px). */
+export const wooPushIcon = () => `${siteBase()}/push/woocommerce.png`
+
+/**
+ * Was this WooCommerce order an in-store sale? Reads a webhook order (its
+ * meta_data) or a woocommerce_orders row (pos_source, V407).
+ */
+export function wooPos(o: any): { isPos: boolean; saleId: string; outlet: string } {
+  if (o?.pos_source === 'prexty') return { isPos: true, saleId: String(o.pos_sale_id || '').trim(), outlet: String(o.pos_outlet || '').trim() }
+  return posSaleInfo(o)
+}
+
+/** "In-store sale R50270 at Roxy Aquarium Somerton" (the shop when known, else Prexty's outlet name). */
+export function inStoreLabel(pos: { saleId?: string; outlet?: string }, shop?: string | null): string {
+  const at = String(shop || pos.outlet || '').trim()
+  return `In-store sale${pos.saleId ? ` ${pos.saleId}` : ''}${at ? ` at ${at}` : ''}`
+}

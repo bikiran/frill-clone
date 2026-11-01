@@ -71,6 +71,7 @@ function titleOf(n: N): string {
     case 'order': {
       if (/^in-store sale/i.test(m)) return 'In-store sale'
       if (/^prexty pos order/i.test(m)) return 'In-store sale'
+      if (/^online order/i.test(m)) return 'Online order'
       if (/^order completed/i.test(m)) return 'Order completed'
       if (/^(order )?refund/i.test(m)) return 'Refund'
       if (/^draft order/i.test(m)) return 'Draft order created'
