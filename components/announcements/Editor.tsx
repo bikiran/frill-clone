@@ -20,6 +20,7 @@ import { htmlToText, looksLikeHtml } from '@/lib/safe-html'
 import { PublicPost, POST_CSS } from './PublicPost'
 import NotifyDialog from './NotifyDialog'
 import { AnnIcon } from './icons'
+import DateTimeField, { type QuickPick } from '@/components/ui/DateTimeField'
 import { ADMIN_CSS } from './styles'
 import { annAction, askAi, boardBase, sendNotify, uploadMedia, type AdminData } from './client'
 
@@ -43,6 +44,20 @@ const toLocalInput = (iso: string | null | undefined) => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
 }
 const fromLocalInput = (v: string) => (v ? new Date(v).toISOString() : null)
+
+// Quick picks in the date pickers.
+const at = (days: number, h: number, m: number) => { const d = new Date(); d.setDate(d.getDate() + days); d.setHours(h, m, 0, 0); return d }
+const GO_LIVE_PICKS: QuickPick[] = [
+  { label: 'In an hour', at: () => { const d = new Date(Date.now() + 3600000); d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5, 0, 0); return d } },
+  { label: 'Tomorrow 9am', at: () => at(1, 9, 0) },
+  { label: 'Monday 9am', at: () => at(((8 - new Date().getDay()) % 7) || 7, 9, 0) },
+]
+const ENDS_PICKS: QuickPick[] = [
+  { label: 'Tonight', at: () => at(0, 23, 59) },
+  { label: 'Tomorrow', at: () => at(1, 23, 59) },
+  { label: 'In a week', at: () => at(7, 23, 59) },
+  { label: 'End of month', at: () => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59) } },
+]
 
 function fromRow(a: any | null, now: number): Draft {
   const s = a ? statusOf(a, now) : 'draft'
@@ -245,7 +260,15 @@ export default function Editor({ companyId, data, initial, startWithAi, onSaved 
       </div>
       <div className={`ae-stage is-${device}`}>
         <div className="ae-device">
-          <PublicPost post={preview} ideaTitle={ideaTitle} preview />
+          {device === 'phone' && (
+            <div className="ae-phone-bar" aria-hidden>
+              <span>9:41</span><i />
+              <svg width="38" height="12" viewBox="0 0 38 12" fill="currentColor"><rect x="0" y="7" width="3" height="5" rx="1" /><rect x="5" y="5" width="3" height="7" rx="1" /><rect x="10" y="3" width="3" height="9" rx="1" /><rect x="15" y="1" width="3" height="11" rx="1" /><rect x="22" y="1.5" width="14" height="9" rx="2.5" fill="none" stroke="currentColor" strokeWidth="1.2" /><rect x="24" y="3.5" width="9" height="5" rx="1.2" /></svg>
+            </div>
+          )}
+          <div className="ae-device-screen">
+            <PublicPost post={preview} ideaTitle={ideaTitle} preview />
+          </div>
         </div>
       </div>
       {d.boost_enabled && (
@@ -399,14 +422,14 @@ export default function Editor({ companyId, data, initial, startWithAi, onSaved 
             </div>
             {d.when === 'schedule' && (
               <Field label="Goes live" htmlFor="ae-pub" hint="Your local time. It appears on your updates page and widget at this time.">
-                <input id="ae-pub" type="datetime-local" className="ae-input" value={d.publish_at} min={toLocalInput(new Date().toISOString())} onChange={e => set('publish_at', e.target.value)} />
+                <DateTimeField id="ae-pub" label="Goes live" value={d.publish_at} min={toLocalInput(new Date().toISOString())} onChange={v => set('publish_at', v)}
+                  defaultTime="09:00" quick={GO_LIVE_PICKS} placeholder="Pick when it goes live" />
               </Field>
             )}
             <Field label="Ends (optional)" htmlFor="ae-exp" hint="For sales and events: it comes down from your updates page and widget after this.">
-              <div className="ae-inline">
-                <input id="ae-exp" type="datetime-local" className="ae-input" value={d.expires_at} onChange={e => set('expires_at', e.target.value)} disabled={!ready} />
-                {d.expires_at && <button type="button" className="an-btn an-btn-sm" onClick={() => set('expires_at', '')}>Clear</button>}
-              </div>
+              <DateTimeField id="ae-exp" label="Ends" value={d.expires_at} onChange={v => set('expires_at', v)} disabled={!ready}
+                min={d.when === 'schedule' && d.publish_at ? d.publish_at : toLocalInput(new Date().toISOString())}
+                defaultTime="23:59" quick={ENDS_PICKS} placeholder="No end date" />
             </Field>
             <div className="ae-row">
               <span className="ae-row-text"><strong>Pin to the top</strong><span>Stays first on your updates page.</span></span>
@@ -601,9 +624,12 @@ const EDITOR_CSS = `
 .ae-inline { display: flex; gap: 8px; align-items: center; min-width: 0; }
 .ae-two { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 16px; }
 @media (min-width: 900px) { .ae-two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .ae-two .ae-field:first-child { margin-top: 0; } .ae-two .ae-field { margin-top: 0; } }
-.ae-when { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 3px; border: 1px solid var(--an-strong); border-radius: 11px; background: var(--an-soft); }
-.ae-when-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; padding: 0 6px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--slate); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; min-width: 0; }
-.ae-when-btn.on { background: var(--an-card); color: var(--ink); border-color: var(--an-strong); }
+/* A pill switch; each option as wide as its label, so "Publish now" keeps its icon. */
+.ae-when { display: flex; gap: 2px; padding: 4px; border-radius: 999px; background: var(--ae-fill, #f4f4f5); }
+[data-theme="dark"] .ae-when { --ae-fill: #2a2a2e; }
+.ae-when-btn { flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; padding: 0 10px; border: none; border-radius: 999px; background: transparent; color: var(--slate); font-size: 13.5px; font-weight: 650; cursor: pointer; white-space: nowrap; min-width: 0; }
+.ae-when-btn svg { flex-shrink: 0; }
+.ae-when-btn.on { background: var(--an-card); color: var(--ink); box-shadow: 0 1px 3px rgba(16,24,40,.14); }
 .ae-when-btn[disabled] { opacity: .45; cursor: default; }
 .ae-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }
 .ae-row-text { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; color: var(--slate); min-width: 0; }
@@ -625,7 +651,14 @@ const EDITOR_CSS = `
 .ae-preview-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
 .ae-preview-title { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 700; }
 .ae-stage { background: var(--canvas, #f5f5f7); border-radius: 14px; padding: 16px; max-height: calc(100vh - 260px); overflow-y: auto; }
-.ae-stage.is-phone .ae-device { width: 100%; max-width: 390px; margin: 0 auto; border: 8px solid #1c1c1e; border-radius: 34px; overflow: hidden; background: var(--canvas, #f5f5f7); padding: 12px 8px; }
+/* Phone: a phone, with a status bar and island, its screen scrolling inside. */
+.ae-stage.is-phone { padding: 20px 16px; }
+.ae-stage.is-phone .ae-device { position: relative; display: flex; flex-direction: column; width: 320px; max-width: 100%; height: 640px; max-height: calc(100vh - 300px); min-height: 460px; margin: 0 auto; border: 10px solid #111113; border-radius: 48px; overflow: hidden; background: var(--canvas, #f5f5f7); box-shadow: 0 0 0 1.5px #3a3a3c, 0 30px 60px -24px rgba(0,0,0,.4); box-sizing: border-box; }
+.ae-phone-bar { position: relative; flex-shrink: 0; height: 40px; display: flex; align-items: center; justify-content: space-between; padding: 0 22px 0 26px; font-size: 13px; font-weight: 700; color: var(--ink); }
+.ae-phone-bar i { position: absolute; left: 50%; top: 9px; transform: translateX(-50%); width: 88px; height: 25px; border-radius: 999px; background: #111113; }
+.ae-stage.is-phone .ae-device-screen { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 10px 18px; scrollbar-width: none; }
+.ae-stage.is-phone .ae-device-screen::-webkit-scrollbar { display: none; }
+.ae-stage.is-phone .ae-device::after { content: ''; position: absolute; left: 50%; bottom: 7px; transform: translateX(-50%); width: 108px; height: 4px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 75%, transparent); pointer-events: none; }
 .ae-preview-dialog { max-width: 980px; }
 .ae-preview-dialog .ae-stage { max-height: calc(100vh - 220px); }
 .ae-widget-preview { margin-top: 14px; }
