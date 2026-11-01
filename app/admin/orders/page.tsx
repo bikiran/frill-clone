@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createPortal } from 'react-dom'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
@@ -194,6 +195,20 @@ function Avatar({ name }: { name: string | null }) {
   return <span title={name} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: '50%', background: `hsl(${hue} 60% 90%)`, color: `hsl(${hue} 45% 38%)`, fontSize: 10.5, fontWeight: 800 }}>{initials}</span>
 }
 
+// /admin/orders?order=<number or id> (a delivery's Order row, for one): hands
+// the order it names to the board once, and again for a fresh link (`at`
+// changes with every click). Its own component inside <Suspense>, so reading
+// the query string doesn't stop the rest of the page prerendering.
+function OrderLinkParam({ ready, onOrder }: { ready: boolean; onOrder: (ref: string) => void }) {
+  const sp = useSearchParams()
+  const ref = (sp?.get('order') || '').replace(/^#/, '').trim()
+  const key = ref ? `${ref}|${sp?.get('at') || ''}` : ''
+  const cb = useRef(onOrder)
+  cb.current = onOrder
+  useEffect(() => { if (ready && ref) cb.current(ref) }, [key, ready]) // eslint-disable-line react-hooks/exhaustive-deps
+  return null
+}
+
 export default function OrdersPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
   // The company's own brand colour drives the accent (active tab, primary
@@ -263,6 +278,30 @@ export default function OrdersPage() {
   // SAME tab (not a new tab, not a route change).
   const [drawerFull, setDrawerFull] = useState(false)
   const openOrder = (id: string) => { setDrawerId(id); setDrawerFull(!showSidebar) }
+  // Open the order a link names, by order number (what deliveries store) or
+  // id: from the board if it's loaded, otherwise fetched on its own (a big book
+  // may not have reached it yet). The link's params come off the address so a
+  // reload doesn't reopen it.
+  const openLinkedOrder = async (ref: string) => {
+    try {
+      const u = new URL(window.location.href)
+      u.searchParams.delete('order'); u.searchParams.delete('at')
+      window.history.replaceState(window.history.state, '', u.pathname + u.search + u.hash)
+    } catch {}
+    const isId = /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(ref)
+    const isIt = (o: any) => isId ? o.id === ref : String(o?.order_number ?? '') === ref
+    let hit: any = orders.find(isIt) || null
+    if (!hit && companyId) {
+      try {
+        const q = (supabase as any).from('orders').select('*').eq('company_id', companyId)
+        const { data } = await (isId ? q.eq('id', ref) : q.eq('order_number', ref)).limit(1)
+        hit = Array.isArray(data) ? data[0] || null : null
+      } catch {}
+      if (hit) setOrders(os => os.some(o => o.id === hit.id) ? os : [hit, ...os])
+    }
+    if (hit) openOrder(hit.id)
+    else flash(`Order #${ref} isn't in Colvy yet. Try Sync`)
+  }
 
   // Publish the open order to the floating Colvy AI assistant so "refund this
   // order" / "mark this order completed" resolve to the drawer's order.
@@ -860,6 +899,7 @@ export default function OrdersPage() {
 
   return (
     <div className="ord-page" style={{ ['--ord-accent' as any]: ACCENT }}>
+      <Suspense fallback={null}><OrderLinkParam ready={!!companyId} onOrder={openLinkedOrder} /></Suspense>
       <style>{`@keyframes ospin{to{transform:rotate(360deg)}} .tag-opt:hover{background:var(--canvas)} .ord-item:hover{background:var(--canvas)} .ord-note-actions{opacity:0;transition:opacity .12s} .ord-note:hover .ord-note-actions{opacity:1}
         @keyframes ordFade{from{opacity:0}to{opacity:1}}
         @keyframes ordPop{from{opacity:0;transform:translateY(8px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
