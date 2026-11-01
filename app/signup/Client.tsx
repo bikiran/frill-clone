@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react'
+import { useBodyClass } from '@/lib/body-class'
 import { supabase } from '@/lib/supabase'
 import { signInWithGoogle, signInWithGitHub } from '@/lib/auth'
 import { isValidSlug, isSlugAvailable } from '@/lib/board'
@@ -82,6 +83,7 @@ function Shell({ children }: { children: React.ReactNode }) {
 }
 
 function SignUpForm() {
+  useBodyClass('nw-on')
   const router = useRouter()
   const searchParams = useSearchParams()
 

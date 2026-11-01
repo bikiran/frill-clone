@@ -2,6 +2,7 @@
 
 import { authFetch } from '@/lib/auth-fetch'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useBodyClass } from '@/lib/body-class'
 import { supabase } from '@/lib/supabase'
 import { isValidSlug, isSlugAvailable } from '@/lib/board'
 import { useRouter } from 'next/navigation'
@@ -43,6 +44,7 @@ const BUILDING = ['Creating your inbox…', 'Saving your branding…', 'Getting 
 type Brand = { domain: string; icon: string | null; colors: string[]; name: string | null }
 
 export default function NewWorkspacePage() {
+  useBodyClass('nw-on')
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
   const [step, setStep] = useState(0)
