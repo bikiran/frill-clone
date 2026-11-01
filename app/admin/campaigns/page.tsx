@@ -9,6 +9,8 @@ import { SkeletonList } from '@/components/Skeleton'
 import { alertDialog, confirmDialog } from '@/components/ConfirmDialog'
 import { campaignControls, unscheduleFlow, rescheduleFlow, stopSendingFlow, type ActionOutcome } from '@/components/campaigns/CampaignActions'
 import EmptyScroll from '@/components/EmptyScroll'
+import AiBuddy from '@/components/AiBuddy'
+import AiCampaignBuilder from '@/components/campaigns/AiCampaignBuilder'
 
 type Campaign = {
   id: string; name: string; channel: string; campaign_type: string | null
@@ -74,6 +76,8 @@ export default function CampaignsPage() {
   const [showNew, setShowNew] = useState(false)
   const [newChannel, setNewChannel] = useState<'sms' | 'email'>('sms')
   const [tableMissing, setTableMissing] = useState(false)
+  // Colvy AI campaign builder (full screen), and the channel it starts on.
+  const [aiOpen, setAiOpen] = useState<null | 'sms' | 'email' | 'both'>(null)
 
   useEffect(() => {
     ;(async () => {
@@ -263,6 +267,9 @@ export default function CampaignsPage() {
           </button>
           <button type="button" className="cp-pill" onClick={() => router.push('/admin/campaigns/templates')}>Templates</button>
           <button type="button" className="cp-pill cp-hide-sm" onClick={() => router.push('/admin/contacts?import=1')}>Import contacts</button>
+          <button type="button" className="cp-ai" onClick={() => setAiOpen('sms')} disabled={!companyId}>
+            <span className="cp-ai-face"><AiBuddy size={20} /></span>Build with Colvy AI
+          </button>
           <button type="button" className="cv-btn cv-btn-primary" onClick={() => setShowNew(true)}>
             {I(<><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></>, 15)} Create campaign
           </button>
@@ -412,6 +419,8 @@ export default function CampaignsPage() {
       </p>
 
       {/* New campaign */}
+      {aiOpen && companyId && <AiCampaignBuilder companyId={companyId} initialChannel={aiOpen} onClose={() => setAiOpen(null)} />}
+
       {showNew && (
         <div className="cp-overlay" onClick={closeNew}>
           <div className="cp-modal" role="dialog" aria-modal="true" aria-label="Create a campaign" onClick={e => e.stopPropagation()}>
@@ -423,6 +432,11 @@ export default function CampaignsPage() {
               <button type="button" className="cp-round lg" onClick={closeNew} aria-label="Close">{I(<><path d="M18 6 6 18" /><path d="m6 6 12 12" /></>, 16)}</button>
             </div>
             <div className="cp-mb">
+              <button type="button" className="cp-ai-card" onClick={() => { const ch = newChannel; closeNew(); setAiOpen(ch) }}>
+                <AiBuddy size={34} />
+                <span><b>Let Colvy AI build it</b><small>Describe it in a sentence: it picks the audience, writes it and suggests when to send.</small></span>
+                {I(<path d="m9 18 6-6-6-6" />, 16)}
+              </button>
               <p className="cp-flabel">How will it go out?</p>
               <div className="cp-chans" role="radiogroup" aria-label="Channel">
                 {([['sms', 'SMS', 'A text message to customers’ mobiles. Uses your SMS allowance, then SMS credit.'], ['email', 'Email', 'A designed email in your branding. Doesn’t use SMS credit.']] as const).map(([v, t, d]) => (
@@ -458,6 +472,14 @@ const CP_CSS = `
 .cp-head h1{margin:0;font-size:30px;font-weight:800;letter-spacing:-.025em;line-height:1.1}
 .cp-head p{margin:6px 0 0;font-size:14px;color:#71717a}
 .cp-head-acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cp-ai{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 16px 0 6px;border:none;border-radius:999px;background:#18181b;color:#fff;font:inherit;font-size:13.5px;font-weight:650;cursor:pointer;white-space:nowrap;box-shadow:0 6px 16px -10px rgba(24,24,27,.6);transition:transform .12s,box-shadow .15s}
+.cp-ai:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 10px 22px -10px rgba(24,24,27,.7)}.cp-ai:disabled{opacity:.5;cursor:default}
+.cp-ai-face{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,.12)}
+.cp-ai-card{display:flex;align-items:center;gap:12px;width:100%;margin:0 0 16px;padding:14px;border:none;border-radius:18px;background:color-mix(in srgb,var(--coral) 8%,#fff);box-shadow:0 0 0 1px color-mix(in srgb,var(--coral) 22%,transparent);font:inherit;text-align:left;color:var(--ink);cursor:pointer}
+.cp-ai-card:hover{background:color-mix(in srgb,var(--coral) 12%,#fff)}
+.cp-ai-card>span{flex:1;display:flex;flex-direction:column;gap:2px}.cp-ai-card b{font-size:14px}.cp-ai-card small{font-size:12.5px;line-height:1.4;color:#71717a}
+[data-theme="dark"] .cp-ai{background:#f4f4f5;color:#18181b}[data-theme="dark"] .cp-ai-face{background:rgba(0,0,0,.06)}
+[data-theme="dark"] .cp-ai-card{background:color-mix(in srgb,var(--coral) 12%,#1c1c1f)}[data-theme="dark"] .cp-ai-card small{color:#a1a1aa}
 .cp-pill{height:38px;padding:0 15px;border:none;border-radius:999px;background:#f4f4f5;color:#18181b;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background-color .15s}
 .cp-pill:hover{background-color:#ececef}
 .cp-banner{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;padding:12px 14px 12px 16px;border-radius:16px;font-size:13.5px;line-height:1.5}
