@@ -210,11 +210,11 @@ export default function AdminRail({ workspace, sections, settings, search, ring,
         .admin-rail.dim { z-index: 960; transition-delay: 0s; }
         .rail-scrim { position: fixed; inset: 0; z-index: -1; background: rgba(17,17,20,.15); opacity: 0; pointer-events: none; transition: opacity .3s cubic-bezier(.4,0,.2,1); }
         .admin-rail.dim .rail-scrim { opacity: 1; transition-duration: .22s; }
-        /* The account menu (in the slot at the foot) gets the same veil. */
+        /* The account menu (in the slot at the foot) gets the same veil (AppChrome sets .acct-open). */
         .rail-acct { width: 100%; }
-        .admin-rail:has(.cv-acct) { z-index: 960; transition-delay: 0s; }
-        .admin-rail:has(.cv-acct) .rail-scrim { opacity: 1; transition-duration: .22s; }
-        .admin-rail:has(.cv-acct) :is(.rail-top, .rail-bottom > :not(.rail-item):not(.rail-acct), .rail-item > .rail-tile) { opacity: .5; }
+        .admin-rail.acct-open { z-index: 960; transition-delay: 0s; }
+        .admin-rail.acct-open .rail-scrim { opacity: 1; transition-duration: .22s; }
+        .admin-rail.acct-open :is(.rail-top, .rail-bottom > :not(.rail-item):not(.rail-acct), .rail-item > .rail-tile) { opacity: .5; }
         .rail-top, .rail-bottom > :not(.rail-item), .rail-item > .rail-tile { transition: opacity .25s ease, background .2s, color .15s, box-shadow .2s; }
         .admin-rail.dim :is(.rail-top, .rail-bottom > :not(.rail-item), .rail-item:not(.open) > .rail-tile) { opacity: .5; }
         .rail-item.open > .rail-tile { background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 4px 14px rgba(0,0,0,.08); }

@@ -14,6 +14,7 @@ import { AiDraftButton, AiDraftInfo } from '@/components/AiDraft'
 import { TranslateButton, TranslateStrip, customerLanguage } from '@/components/inbox/ReplyTranslate'
 import VoiceDictationButton from '@/components/VoiceDictationButton'
 import { Icon, sendChannelGlyph, toolBtn } from '@/components/inbox/inbox-shared'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useInbox } from '@/components/inbox/InboxContext'
 
 export default function InboxComposer() {
@@ -29,7 +30,7 @@ export default function InboxComposer() {
     mentionMatches, mentionQuery, messages, myName, openMediaPicker, openMobileComposer,
     openScheduleMsg, openTicket, outboundChannel, paymentSignal, quickIndex, quickMatches,
     quickMenuRef, recSeconds, recording, reloadThread, renderLinkTools, renderModeHead,
-    renderSendMenu, reply, replyTo, replyTr, saleDismissed, scheduledBusy, scheduledList,
+    renderSendMenu, reply, replyRev, typeReply, replyTo, replyTr, saleDismissed, scheduledBusy, scheduledList,
     scheduledWhen, scrollBottom, selected, sendAndClose, sendChannel, sendReply, sendScheduledNow,
     sending, setBulkCustomDate, setBulkExpiryOpen, setComposerH, setConvAi, setCustomDateFor,
     setEditingScheduled, setEmailDraftText, setExpiryDeleteMode, setExpiryMenuFor, setInternalMode,
@@ -42,6 +43,26 @@ export default function InboxComposer() {
     themeGradient, themeSolid, ticketDesc, ticketMode, ticketPriority, ticketSaving, ticketSubject,
     toLocalInput, wooOrders,
   } = useInbox()
+  // What's in the box, drawn from here as you type: the rest of the inbox
+  // catches up when typing pauses (typeReply), so a keystroke doesn't redraw
+  // the list, thread and contact panel.
+  const [text, setText] = useState(reply)
+  // Text set from outside the box (a template, Colvy AI, a draft, after
+  // sending). The box itself is uncontrolled: React 19 rewrites a controlled
+  // textarea's text node on every update, and that DOM change restyled the
+  // whole page on each keystroke. So its value is set here, not by React.
+  useEffect(() => {
+    setText(reply)
+    const ta = textareaRef.current
+    if (ta && ta.value !== reply) ta.value = reply
+  }, [replyRev]) // eslint-disable-line react-hooks/exhaustive-deps
+  // A box that mounts afresh (switching to a note or back) starts with the text so far.
+  const textNow = useRef(text)
+  textNow.current = text
+  const boxRef = useCallback((el: HTMLTextAreaElement | null) => {
+    ;(textareaRef as any).current = el
+    if (el && el.value !== textNow.current) el.value = textNow.current
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
       {/* Reply box */}
@@ -214,7 +235,7 @@ export default function InboxComposer() {
 
         {/* Unsent replies are kept per conversation, so you can leave and
             come back without losing what you'd written. */}
-        {draft.saved && reply.trim() && (
+        {draft.saved && text.trim() && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--slate)', marginBottom: 4 }}>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
             Draft saved
@@ -543,7 +564,7 @@ export default function InboxComposer() {
           </div>
         )}
         {!internalMode && <AiDraftInfo info={aiDraft.info} error={aiDraft.error} busy={aiDraft.busy} onRedo={i => aiDraft.run(i)} onClose={aiDraft.clear} />}
-        {!internalMode && <TranslateStrip t={replyTr} suggested={customerLanguage(messages)} hasText={!!reply.trim()} />}
+        {!internalMode && <TranslateStrip t={replyTr} suggested={customerLanguage(messages)} hasText={!!text.trim()} />}
 
         {/* @mention picker */}
         {mentionQuery !== null && mentionMatches.length > 0 && (
@@ -593,9 +614,10 @@ export default function InboxComposer() {
 
         <div className={`cmp-card${internalMode ? ' note' : ''}`}>
           {renderModeHead()}
-        <textarea ref={textareaRef} value={reply} onChange={e => {
+        <textarea ref={boxRef} onChange={e => {
             const v = e.target.value
-            setReply(v)
+            setText(v)
+            typeReply(v)
             if (v.trim()) broadcastAgentTyping()
             // Detect an in-progress "@name" token at the caret so the
             // mention picker can offer team members.
@@ -666,8 +688,8 @@ export default function InboxComposer() {
             </button>
             {/* Send + channel selector */}
             <div ref={channelMenuRef} style={{ position: 'relative', display: 'flex' }}>
-              <button type="button" onClick={sendReply} disabled={sending || (!reply.trim() && stagedMedia.length === 0)}
-                style={{ height: 38, padding: internalMode ? '0 18px' : '0 14px 0 18px', borderRadius: internalMode ? 999 : '999px 0 0 999px', background: (!reply.trim() && stagedMedia.length === 0) ? '#e5e7eb' : internalMode ? '#f59e0b' : (themeGradient || 'var(--coral)'), color: (reply.trim() || stagedMedia.length) ? '#fff' : '#9ca3af', border: 'none', fontSize: 13, fontWeight: 700, cursor: (reply.trim() || stagedMedia.length) ? 'pointer' : 'default', transition: 'all 0.15s' }}>
+              <button type="button" onClick={sendReply} disabled={sending || (!text.trim() && stagedMedia.length === 0)}
+                style={{ height: 38, padding: internalMode ? '0 18px' : '0 14px 0 18px', borderRadius: internalMode ? 999 : '999px 0 0 999px', background: (!text.trim() && stagedMedia.length === 0) ? '#e5e7eb' : internalMode ? '#f59e0b' : (themeGradient || 'var(--coral)'), color: (text.trim() || stagedMedia.length) ? '#fff' : '#9ca3af', border: 'none', fontSize: 13, fontWeight: 700, cursor: (text.trim() || stagedMedia.length) ? 'pointer' : 'default', transition: 'all 0.15s' }}>
                 {sending
                   ? (internalMode ? 'Saving…' : 'Sending…')
                   : internalMode
@@ -682,14 +704,14 @@ export default function InboxComposer() {
               <>
               <button type="button" onClick={() => setShowChannelMenu(v => !v)} disabled={sending}
                 title="Choose a channel"
-                style={{ height: 38, padding: '0 13px 0 10px', borderRadius: '0 999px 999px 0', background: (reply.trim() || stagedMedia.length) ? themeSolid : '#e5e7eb', color: (reply.trim() || stagedMedia.length) ? '#fff' : '#9ca3af', border: 'none', borderLeft: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                style={{ height: 38, padding: '0 13px 0 10px', borderRadius: '0 999px 999px 0', background: (text.trim() || stagedMedia.length) ? themeSolid : '#e5e7eb', color: (text.trim() || stagedMedia.length) ? '#fff' : '#9ca3af', border: 'none', borderLeft: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="18 15 12 9 6 15"/></svg>
               </button>
 
               {showChannelMenu && (
                 <div style={{ position: 'absolute', bottom: '120%', right: 0, width: 190, background: '#fff', borderRadius: 12, border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.14)', zIndex: 60, overflow: 'hidden', padding: '4px 0' }}>
-                  <button type="button" onClick={() => { setShowChannelMenu(false); sendAndClose() }} disabled={sending || (!reply.trim() && stagedMedia.length === 0)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: (reply.trim() || stagedMedia.length) ? 'var(--ink)' : '#9ca3af', fontWeight: 600 }}>
+                  <button type="button" onClick={() => { setShowChannelMenu(false); sendAndClose() }} disabled={sending || (!text.trim() && stagedMedia.length === 0)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, color: (text.trim() || stagedMedia.length) ? 'var(--ink)' : '#9ca3af', fontWeight: 600 }}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></svg>
                     Send &amp; close
                   </button>

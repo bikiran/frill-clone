@@ -5,7 +5,7 @@
 // returned values through InboxContext.
 
 import { peekCompanyUser, readCache, resolveCompanyUser, writeCache } from '@/lib/client-cache'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { getEffectiveEntitlements } from '@/lib/entitlements-client'
 import { flagEnabled } from '@/lib/feature-flags'
 import { supabase } from '@/lib/supabase'
@@ -365,11 +365,46 @@ export function useInboxController() {
   const isManager = String(user?.email || '').toLowerCase() === 'bishalstha76@gmail.com'
     || teamMembers.some(m => m.user_id === user?.id && ['owner', 'admin'].includes(String(m.role || '').toLowerCase()))
   const canSeeEmailWhy = isManager
-  const [reply, setReply] = useState('')
+  // The reply being written. The composer shows each keystroke straight away
+  // from its own state and hands the text over with typeReply, which updates
+  // `reply` (and so the whole inbox) only once typing pauses, as a background
+  // update. Redrawing the list, thread and contact panel on every key made
+  // typing lag badly on busy inboxes (~140 ms a key with a long thread).
+  // replyNow is the text exactly as typed: sending, scheduling and Colvy AI
+  // read it, never the lagging state. setReply is for text set from outside
+  // the box (a template, Colvy AI, a draft, clearing after a send); it bumps
+  // replyRev so the composer shows it.
+  const [reply, setReplyState] = useState('')
+  const replyNow = useRef('')
+  const typeTimer = useRef<any>(null)
+  const [replyRev, setReplyRev] = useState(0)
+  const setReply = useCallback((v: string | ((prev: string) => string)) => {
+    const next = typeof v === 'function' ? v(replyNow.current) : v
+    replyNow.current = next
+    if (typeTimer.current) { clearTimeout(typeTimer.current); typeTimer.current = null }
+    setReplyState(next)
+    setReplyRev(r => r + 1)
+  }, [])
+  const typeReply = useCallback((v: string) => {
+    replyNow.current = v
+    if (typeTimer.current) clearTimeout(typeTimer.current)
+    // Read when applied, so a later setReply always wins over a pending one.
+    const commit = () => { typeTimer.current = null; startTransition(() => setReplyState(() => replyNow.current)) }
+    // The "/" saved-reply picker and an emptied box answer straight away.
+    if (!v || /(?:^|\s)\/[\w-]*$/.test(v)) commit()
+    else typeTimer.current = setTimeout(commit, 300)
+  }, [])
+  /** Bring `reply` up to date now (before something shows it). */
+  const flushReply = useCallback(() => {
+    if (!typeTimer.current) return
+    clearTimeout(typeTimer.current); typeTimer.current = null
+    setReplyState(replyNow.current)
+  }, [])
+  useEffect(() => () => { if (typeTimer.current) clearTimeout(typeTimer.current) }, [])
   // ✨ Draft reply (chat/SMS composer): AI writes the next reply for the agent to review.
-  const aiDraft = useAiDraft({ companyId, conversationId: selected?.id || null, onDraft: t => setReply(t), getText: () => reply })
+  const aiDraft = useAiDraft({ companyId, conversationId: selected?.id || null, onDraft: t => setReply(t), getText: () => replyNow.current })
   // Reply in the customer's language (components/inbox/ReplyTranslate).
-  const replyTr = useReplyTranslate({ companyId, conversationId: selected?.id || null, getText: () => reply, setText: t => setReply(t) })
+  const replyTr = useReplyTranslate({ companyId, conversationId: selected?.id || null, getText: () => replyNow.current, setText: t => setReply(t) })
 
   // ── Coax-style resizable composer ──────────────────────────────────────
   // The reply box can be dragged taller/shorter via the grab handle on its top
@@ -781,7 +816,8 @@ export function useInboxController() {
   // from now; the /api/cron/send-scheduled worker delivers it on the
   // conversation's channel when the time arrives.
   const openScheduleMsg = () => {
-    if (!reply.trim()) { showToast('Type a message first, then schedule it.'); return }
+    flushReply()
+    if (!replyNow.current.trim()) { showToast('Type a message first, then schedule it.'); return }
     const t = new Date(Date.now() + 60 * 60 * 1000)
     // datetime-local wants local wall-clock, so offset out the timezone.
     const local = new Date(t.getTime() - t.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
@@ -853,7 +889,7 @@ export function useInboxController() {
 
   const scheduleMessage = async () => {
     if (!selected || !user || schedulingMsg) return
-    const content = reply.trim()
+    const content = replyNow.current.trim()
     if (!content) { showToast('Type a message first.'); return }
     const when = scheduleMsgAt ? new Date(scheduleMsgAt) : null
     if (!when || isNaN(when.getTime())) { showToast('Pick a valid date and time.'); return }
@@ -5439,9 +5475,10 @@ export function useInboxController() {
   const dictatedRef = useRef<string[]>([])
   useEffect(() => { if (!reply) dictatedRef.current = [] }, [reply])
   const sendReply = async () => {
-    if ((!reply.trim() && stagedMedia.length === 0) || !selected || !user) return
+    if ((!replyNow.current.trim() && stagedMedia.length === 0) || !selected || !user) return
+    flushReply()
     setSending(true)
-    let content = reply.trim()
+    let content = replyNow.current.trim()
     const senderName = myName
     const voice = voiceKind(content, dictatedRef.current)
     const voiceSince = new Date(Date.now() - 5000).toISOString()
@@ -6681,7 +6718,7 @@ export function useInboxController() {
     productSearching, productSent, products, protectionBusy, quickIndex, quickMatches, quickMenuRef,
     quickMrBusy, reactToMessage, recSeconds, recording, refundOrder, reloadThread, renderLinkTools,
     renderModeHead, renderNotesSection, renderSendMenu, renderTasksSection, renderTextWithLinks,
-    renderWithMentions, reopenConv, reply, replyTo, replyTr, reportSpam, requestMediaQuick,
+    renderWithMentions, reopenConv, reply, replyNow, replyRev, typeReply, flushReply, replyTo, replyTr, reportSpam, requestMediaQuick,
     resetFilters, revealedMsgs, reviewAlready, reviewChannel, saleDismissed, saveCard, saveContact,
     saveOrderEdit, saveSchedule, saveScheduledEdit, saveSingleField, savedCards, savingContact,
     schedule, scheduleMessage, scheduleMsgAt, scheduledBusy, scheduledList, scheduledWhen,

@@ -242,7 +242,7 @@ export function Account({ user, theme, setTheme, className }: { user: any; theme
 export const SETUP_CSS = `
 .nw{position:fixed;inset:0;z-index:1200;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:12px;padding:12px;background:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#18181b;overflow:hidden}
 .nw button::before{display:none}
-body:has(.nw) button[title="Send feedback"]{display:none!important}
+body.nw-on button[title="Send feedback"]{display:none!important}
 .nw-left{display:flex;flex-direction:column;min-height:0;min-width:0;width:100%;max-width:470px;margin:0 auto;padding:18px 24px 14px;box-sizing:border-box;transition:opacity .45s ease,transform .6s cubic-bezier(.65,0,.35,1)}
 .nw-zoom .nw-left,.nw-full .nw-left{opacity:0;transform:translateX(-40px);pointer-events:none}
 .nw-top{display:flex;align-items:center;gap:14px}

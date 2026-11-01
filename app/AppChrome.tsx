@@ -159,6 +159,16 @@ export default function AppChrome({
   const userMenuRef = useRef<HTMLDivElement>(null)
   const notifMenuRef = useRef<HTMLDivElement>(null)
   useClickOutside(showUserMenu, () => setShowUserMenu(false), [userMenuRef])
+  // The rail dims behind the open account menu. A class rather than
+  // `.admin-rail:has(.cv-acct)`: that selector made every text change on the
+  // page (each keystroke, each ticking timer) restyle the whole admin, ~70 ms
+  // a time on a busy inbox.
+  useEffect(() => {
+    const rail = document.querySelector('.admin-rail')
+    if (!rail) return
+    rail.classList.toggle('acct-open', showUserMenu)
+    return () => { rail.classList.remove('acct-open') }
+  }, [showUserMenu])
   useClickOutside(showNotifications, () => setShowNotifications(false), [notifMenuRef])
   const [unreadCount, setUnreadCount] = useState(0)
   const [freshContent] = useState({ ideas: false, roadmap: false, updates: false, help: false })

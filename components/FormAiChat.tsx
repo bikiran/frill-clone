@@ -2,6 +2,7 @@
 
 import { authFetch } from '@/lib/auth-fetch'
 import { useEffect, useRef, useState } from 'react'
+import { useBodyClass } from '@/lib/body-class'
 import { supabase } from '@/lib/supabase'
 import { readFormLogic, validateLogic } from '@/lib/form-logic'
 import { isExclusiveLabel, isOtherLabel } from '@/lib/form-choice-options'
@@ -184,6 +185,7 @@ export default function FormAiChat({ open, onClose, formId, current, apply }: {
   apply: (s: FormSnapshot) => void
 }) {
   const [msgs, setMsgs] = useState<Msg[]>([])
+  useBodyClass('fai-is-open', open)
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -276,7 +278,7 @@ export default function FormAiChat({ open, onClose, formId, current, apply }: {
         .fai-open .fai-panel{opacity:1;transform:none;pointer-events:auto}
         .fai-open .fai-scrim{opacity:1;pointer-events:auto}
         @media (min-width:1100px){.fai-scrim{display:none}}
-        body:has(.fai-open) button[title="Send feedback"]{display:none!important}
+        body.fai-is-open button[title="Send feedback"]{display:none!important}
         @media (max-width:640px){
           .fai-panel{top:auto;left:0;right:0;bottom:0;width:100%;height:calc(100dvh - 40px);border-radius:22px 22px 0 0;transform:translate3d(0,40px,0);padding-bottom:env(safe-area-inset-bottom)}
         }

@@ -3,6 +3,7 @@
 import { authFetch } from '@/lib/auth-fetch'
 import AiBuddy from '@/components/AiBuddy'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { useBodyClass } from '@/lib/body-class'
 import { usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { readAiContext } from '@/lib/ai-context'
@@ -66,6 +67,7 @@ const SUGGEST_LABEL: Record<string, string> = {
 export default function ColvyAssistant({ companyId, userId, agentName }: { companyId?: string | null; userId?: string | null; agentName?: string | null }) {
   const pathname = usePathname() || ''
   const [open, setOpen] = useState(false)
+  useBodyClass('cai-is-open', open)
   // How the orb comes back when the panel closes: a different entrance each
   // time (never the same twice running), just after the panel slides away.
   const [orbIn, setOrbIn] = useState<{ name: string; late: boolean }>({ name: 'pop', late: false })
@@ -577,7 +579,7 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
         @media (max-width:640px){
           .cai-panel{left:0;right:0;bottom:0;width:100%;height:calc(100dvh - 40px);border-radius:22px 22px 0 0;transform:translate3d(0,40px,0)}
         }
-        body:has(.cai-open) button[title="Send feedback"]{display:none!important}
+        body.cai-is-open button[title="Send feedback"]{display:none!important}
         .cai-msg{animation:caiIn .32s cubic-bezier(.22,1,.36,1) both}
         @keyframes caiIn{from{opacity:0;transform:translate3d(0,8px,0)}to{opacity:1;transform:none}}
         .cai-chip{border:1px solid #ececef;background:#fff;border-radius:999px;padding:8px 13px;font-size:13px;font-weight:600;color:#3f3f46;cursor:pointer;font-family:inherit;transition:border-color .15s ease,background .15s ease,transform .15s ease}
