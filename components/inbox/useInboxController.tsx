@@ -1608,6 +1608,9 @@ export function useInboxController() {
   const [aiSavedFields, setAiSavedFields] = useState<Set<string>>(new Set())
   const [savingContact, setSavingContact] = useState(false)
   const [activePanel, setActivePanel] = useState<'info' | 'timeline' | 'orders'>('info')
+  // An order to bring into view in the panel's Orders tab (a delivery's Order
+  // row in the thread). The panel scrolls to it and clears this.
+  const [orderFocus, setOrderFocus] = useState<{ ref: string; convId: string | null } | null>(null)
   const [wooCustomer, setWooCustomer] = useState<any>(null)
   const [wooOrders, setWooOrders] = useState<any[]>([])
   // True while the order history for the selected contact is being fetched, so
@@ -6590,7 +6593,7 @@ export function useInboxController() {
   const themeSolid = igThemeActive ? '#C13584' : msgrThemeActive ? '#006AFF' : 'var(--coral)'
 
   return {
-    EMOJIS, abandonedCarts, activeCall, activeChannel, activeFilterCount, activePanel, addrToString,
+    EMOJIS, abandonedCarts, activeCall, activeChannel, activeFilterCount, activePanel, addrToString, orderFocus, setOrderFocus,
     afterOrderRefund, agentFaceOf, agentNameOf, agentTeam, agentTyping, aiDraft, aiSavedFields, aiSummary,
     aiTodos, answeringRole, anyExpiring, applyBulkExpiry, applyMention, applyQuickResponse,
     assignArrows, assignFilter, assignScrollRef, assignSearch, assignTo, attToken,
