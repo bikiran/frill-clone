@@ -1,5 +1,6 @@
 'use client'
 
+import { enrichNames } from '@/lib/team-names'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
@@ -58,6 +59,15 @@ export default function BusinessSettings() {
       setCompany(co)
       setLocations(locs || [])
       setMembers(team || [])
+      // Names and photos people set on their own profile (the browser can't
+      // read those for anyone else), so the list doesn't show "simkhada.bijan"
+      // for someone who calls themselves Bijan Simkhada.
+      if (team?.length) {
+        const named = team.map((m: any) => ({ ...m, name: m.display_name || m.name || '' }))
+        // Staff only: board visitors (viewers) can run to hundreds, each a lookup.
+        await enrichNames(named.filter((m: any) => String(m.role || 'viewer') !== 'viewer'))
+        setMembers(named.map((m: any) => ({ ...m, display_name: m.name || m.display_name, avatar_url: m.avatar_url || m.avatar || null })))
+      }
     })()
   }, [companyId])
 
@@ -299,6 +309,16 @@ const BZ_CSS = `
 .bz-team-t b{display:block;font-size:15px;font-weight:700;color:#111}
 .bz-team-t small{display:block;margin-top:1px;font-size:12.5px;color:#71717a;text-transform:none}
 .bz-invite{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 15px;border-radius:999px;background:#111;color:#fff;font-size:13.5px;font-weight:650;text-decoration:none;transition:filter .15s,transform .12s}
+/* Phone: faces and Invite on one line, the count underneath (it was squeezed
+   into a one-word-wide column between them). */
+@media (max-width:560px){
+  .bz-team-top{display:grid;grid-template-columns:1fr auto;grid-template-areas:"stack invite" "text text";align-items:center;row-gap:10px}
+  .bz-stack{grid-area:stack}
+  .bz-invite{grid-area:invite}
+  .bz-team-t{grid-area:text}
+  .bz-team-t b,.bz-team-t small{display:inline}
+  .bz-team-t small::before{content:' · '}
+}
 .bz-invite:hover{filter:brightness(1.2)}
 .bz-people{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr));gap:1px;background:#f0f0f2}
 .bz-person{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;background:#fff;text-decoration:none;transition:background .15s}

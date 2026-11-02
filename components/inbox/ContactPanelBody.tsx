@@ -21,7 +21,7 @@ import ReviewRequestButton from '@/components/composer/ReviewRequestButton'
 import { posSaleInfo, prextyInStore } from '@/lib/prexty-pos'
 import PrextyMark from '@/components/PrextyMark'
 import ResilientImage from '@/components/ResilientImage'
-import { AiSparkIcon, CHANNEL_ICON, CHANNEL_NAME, Highlight, Icon, STATUS_COLOR, STATUS_ICON, VideoTileMark, fmtDateTime, fmtTime, timeOpts, videoPoster } from '@/components/inbox/inbox-shared'
+import { AiSparkIcon, CHANNEL_ICON, assigneeName, avatarColor, initials, CHANNEL_NAME, Highlight, Icon, STATUS_COLOR, STATUS_ICON, VideoTileMark, fmtDateTime, fmtTime, timeOpts, videoPoster } from '@/components/inbox/inbox-shared'
 import { ENGAGEMENT_CSS, FacebookComment, GoogleReview, InstagramComment } from '@/components/inbox/EngagementCards'
 import { useInbox } from '@/components/inbox/InboxContext'
 import { useEffect, useState } from 'react'
@@ -652,10 +652,15 @@ export default function ContactPanelBody() {
                 <div className="cpd-li cdt-row">
                   <span className="cpd-ic">{CPD_ICON.name}</span>
                   <span className="cpd-li-t">Assigned to</span>
-                  <span className={`cpd-li-v cdt-v${selected.assigned_name ? ' set' : ''}`}>
-                    {selected.assigned_name ? <MenuAvatar name={selected.assigned_name} color={['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'][String(selected.assigned_name).length % 6]} /> : null}
-                    <span>{selected.assigned_name || 'Nobody yet'}</span>
-                  </span>
+                  {(() => {
+                    const who = assigneeName(selected, teamMembers)
+                    return (
+                      <span className={`cpd-li-v cdt-v${who ? ' set' : ''}`}>
+                        {who ? <span className="cdt-av" style={{ background: avatarColor(who) }} aria-hidden>{initials(who)}</span> : null}
+                        <span title={who || undefined}>{who || 'Nobody yet'}</span>
+                      </span>
+                    )
+                  })()}
                 </div>
                 {/* The customer's whole history — every channel, orders, bookings,
                     calls, payments, tasks and notes. */}

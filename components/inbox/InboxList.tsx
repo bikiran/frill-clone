@@ -12,7 +12,7 @@ import PrextyMark from '@/components/PrextyMark'
 import { callMatches } from '@/lib/active-call'
 import { waitlistPreview } from '@/lib/waitlist-ai'
 import WidgetInstallCard from '@/components/inbox/WidgetInstallCard'
-import { CallGlyph, Highlight, callGlyphKind, listTime, parseTs, stripCallEmoji } from '@/components/inbox/inbox-shared'
+import { CallGlyph, Highlight, assigneeName, callGlyphKind, listTime, parseTs, stripCallEmoji } from '@/components/inbox/inbox-shared'
 import { useInbox } from '@/components/inbox/InboxContext'
 
 export default function InboxList() {
@@ -23,7 +23,7 @@ export default function InboxList() {
     searchTerm, selectConversation, selected, setAssignFilter, setConvLimit, setConversations,
     setCtxMenu, setLocationFilter, setSearchScope, setSearchTerm, setShowAddContact, setShowCompose,
     setShowFilters, setShowStatusMenu, setSidebarCollapsed, setStatusFilter, showStatusMenu,
-    statusFilter,
+    statusFilter, teamMembers,
   } = useInbox()
   return (
     <>
@@ -397,9 +397,9 @@ export default function InboxList() {
                     </span>
                   </p>
                   )}
-                  {conv.assigned_name && (
-                    <span className="ilc-who" title={`Assigned to ${conv.assigned_name}`} aria-label={`Assigned to ${conv.assigned_name}`}>{conv.assigned_name.charAt(0).toUpperCase()}</span>
-                  )}
+                  {conv.assigned_name && (() => { const who = assigneeName(conv, teamMembers) || conv.assigned_name; return (
+                    <span className="ilc-who" title={`Assigned to ${who}`} aria-label={`Assigned to ${who}`}>{who.charAt(0).toUpperCase()}</span>
+                  ) })()}
                   {conv.unread_count > 0 && <span className="ilc-count">{conv.unread_count}</span>}
                 </span>
                 {(() => {
