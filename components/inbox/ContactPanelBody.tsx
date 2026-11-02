@@ -7,7 +7,7 @@
 import CustomerMatchCard from '@/components/CustomerMatchCard'
 import { supabase } from '@/lib/supabase'
 import AddressAutocomplete from '@/components/AddressAutocomplete'
-import { CPD_CSS, CPD_ICON, DELIVERY_STATUS_OPTIONS, PT_CSS, PanelItem } from '@/components/inbox/ContactPanelBits'
+import { CPD_CSS, CPD_ICON, CPF_CSS, DELIVERY_STATUS_OPTIONS, PT_CSS, PanelItem } from '@/components/inbox/ContactPanelBits'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { MenuAvatar } from '@/components/ui/SelectMenu'
 import WaitlistQuickAdd from '@/components/WaitlistQuickAdd'
@@ -225,6 +225,7 @@ export default function ContactPanelBody() {
               </div>
             )}
             {/* Contact card */}
+            <style href="colvy-contact-form" precedence="default">{CPF_CSS}</style>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Contact</h3>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -244,7 +245,7 @@ export default function ContactPanelBody() {
             </div>
 
             {showContactEdit ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div className="cpf">
                 {/* Fill blank fields from the linked WooCommerce order's
                     billing — recovers name / phone / address when the order
                     matched the contact only by email and left them empty. */}
@@ -268,21 +269,35 @@ export default function ContactPanelBody() {
                       country: c.country || b.country || c.country,
                       company_name: c.company_name || b.company || c.company_name,
                     }))}
-                      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 8, border: '1px dashed var(--coral)', background: 'var(--peach)', color: 'var(--coral)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                      className="cpf-fill">
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                       Fill from order
                     </button>
                   )
                 })()}
-                {[['name', 'Name', 'text'], ['email', 'Email', 'email'], ['phone', 'Phone', 'tel'], ['address', 'Address', 'text'], ['city', 'City', 'text'], ['state', 'State', 'text'], ['postcode', 'Postcode', 'text'], ['country', 'Country', 'text']].map(([field, label, type]) => (
-                  <div key={field}>
-                    <label style={{ fontSize: 12.5, fontWeight: 500, color: '#8e8e93', display: 'block', marginBottom: 3 }}>{label}</label>
-                    {field === 'address' ? (
-                      // Address lookup (keyless by default; Google when a key is
-                      // set). Picking a suggestion fills the street line and
-                      // splits city/state/postcode/country into their own fields.
-                      // The custom dropdown never blocks typing.
-                      <AddressAutocomplete value={(editContact as any).address || ''}
+                {(() => {
+                  const ec: any = editContact
+                  const set = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) => setEditContact(c => ({ ...c, [field]: e.target.value }))
+                  const field = (key: string, label: string, type = 'text', auto?: string) => (
+                    <label className="cpf-f" key={key}>
+                      <span>{label}</span>
+                      <input type={type} value={ec[key] || ''} onChange={set(key)} autoComplete={auto || 'off'} />
+                    </label>
+                  )
+                  const rel = ec.relationship_type || 'customer'
+                  const marketing = !!ec.subscribed_to_marketing
+                  return <>
+                    {field('name', 'Name', 'text', 'name')}
+                    {field('email', 'Email', 'email', 'email')}
+                    {field('phone', 'Phone', 'tel', 'tel')}
+                    <div className="cpf-f">
+                      <span>Address</span>
+                      {/* Address lookup (keyless by default; Google when a key is
+                          set). Picking a suggestion fills the street line and
+                          splits city/state/postcode/country into their own fields.
+                          The custom dropdown never blocks typing. */}
+                      <AddressAutocomplete value={ec.address || ''} className="cpf-in"
+                        placeholder="Start typing an address…"
                         onChange={v => setEditContact(c => ({ ...c, address: v }))}
                         onSelect={(parts) => setEditContact(c => ({
                           ...c,
@@ -291,58 +306,50 @@ export default function ContactPanelBody() {
                           state: parts.state || (c as any).state,
                           postcode: parts.postcode || (c as any).postcode,
                           country: parts.country || (c as any).country,
-                        }))}
-                        style={{ ...inp, fontSize: 12 }} />
-                    ) : (
-                      <input type={type} value={(editContact as any)[field] || ''} onChange={e => setEditContact(c => ({ ...c, [field]: e.target.value }))}
-                        style={{ ...inp, fontSize: 12 }} />
-                    )}
-                  </div>
-                ))}
-                <div>
-                  <label style={{ fontSize: 12.5, fontWeight: 500, color: '#8e8e93', display: 'block', marginBottom: 3 }}>Relationship</label>
-                  <select
-                    value={(editContact as any).relationship_type || 'customer'}
-                    onChange={e => {
-                      const rt = e.target.value
-                      // A non-customer (supplier/wholesaler/business) is excluded
-                      // from marketing by default.
-                      setEditContact(c => ({ ...c, relationship_type: rt, ...(rt === 'customer' ? {} : { subscribed_to_marketing: false }) }))
-                    }}
-                    style={{ ...inp, fontSize: 12, cursor: 'pointer' }}>
-                    <option value="customer">Customer</option>
-                    <option value="supplier">Supplier</option>
-                    <option value="wholesaler">Wholesaler</option>
-                    <option value="business">Business contact</option>
-                  </select>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input type="checkbox" id="marketing" checked={!!editContact.subscribed_to_marketing} onChange={e => setEditContact(c => ({ ...c, subscribed_to_marketing: e.target.checked }))} />
-                  <label htmlFor="marketing" style={{ fontSize: 12, color: 'var(--slate)' }}>Subscribed to marketing</label>
-                </div>
-                {/* Why this contact is (or isn't) marketable — the basis you'd
-                    need to be able to point to if an opt-out is disputed. */}
-                {((editContact as any).consent_basis || (editContact as any).unsubscribed_at) && (
-                  <div style={{ marginTop: -6, marginBottom: 8, fontSize: 11, color: 'var(--slate)', lineHeight: 1.5 }}>
-                    {(editContact as any).unsubscribed_at ? (
-                      <span style={{ color: '#dc2626', fontWeight: 600 }}>
-                        Unsubscribed {(editContact as any).unsubscribe_method === 'sms_keyword' ? 'by replying STOP' : ''} · do not include in campaigns
+                        }))} />
+                    </div>
+                    <div className="cpf-2">{field('city', 'City')}{field('state', 'State')}</div>
+                    <div className="cpf-2">{field('postcode', 'Postcode')}{field('country', 'Country')}</div>
+                    <div className="cpf-f">
+                      <span id="cpf-rel">Relationship</span>
+                      <div className="cpf-seg" role="radiogroup" aria-labelledby="cpf-rel">
+                        {[['customer', 'Customer'], ['supplier', 'Supplier'], ['wholesaler', 'Wholesaler'], ['business', 'Business']].map(([v, l]) => (
+                          <button key={v} type="button" role="radio" aria-checked={rel === v} className={rel === v ? 'on' : ''}
+                            // A non-customer (supplier/wholesaler/business) is excluded
+                            // from marketing by default.
+                            onClick={() => setEditContact(c => ({ ...c, relationship_type: v, ...(v === 'customer' ? {} : { subscribed_to_marketing: false }) }))}>
+                            {l}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <label className="cpf-switch">
+                      <span className="cpf-switch-t">
+                        <b>Marketing</b>
+                        <small>{marketing ? 'Gets your campaigns' : 'Left out of campaigns'}</small>
                       </span>
-                    ) : (
-                      <>
-                        Consent: <strong style={{ color: 'var(--ink)' }}>{(editContact as any).consent_basis}</strong>
-                        {(editContact as any).consent_source ? ` — ${(editContact as any).consent_source}` : ''}
-                      </>
+                      <input type="checkbox" role="switch" checked={marketing} aria-label="Subscribed to marketing"
+                        onChange={e => setEditContact(c => ({ ...c, subscribed_to_marketing: e.target.checked }))} />
+                      <span className="cpf-knob" aria-hidden />
+                    </label>
+                    {/* Why this contact is (or isn't) marketable — the basis you'd
+                        need to be able to point to if an opt-out is disputed. */}
+                    {(ec.consent_basis || ec.unsubscribed_at) && (
+                      <p className={`cpf-consent${ec.unsubscribed_at ? ' off' : ''}`}>
+                        {ec.unsubscribed_at
+                          ? <>Unsubscribed{ec.unsubscribe_method === 'sms_keyword' ? ' by replying STOP' : ''} · don’t include in campaigns</>
+                          : <>Consent: <b>{ec.consent_basis}</b>{ec.consent_source ? ` · ${ec.consent_source}` : ''}</>}
+                      </p>
                     )}
-                  </div>
-                )}
-                <div style={{ display: 'none' }}>
-                </div>
-                <textarea value={editContact.notes || ''} onChange={e => setEditContact(c => ({ ...c, notes: e.target.value }))} placeholder="Notes…" rows={2}
-                  style={{ ...inp, resize: 'vertical', fontSize: 12 }} />
-                <button type="button" onClick={saveContact} disabled={savingContact} className="cv-btn cv-btn-primary" style={{ width: '100%' }}>
-                  {savingContact ? 'Saving…' : 'Save Contact'}
-                </button>
+                    <label className="cpf-f">
+                      <span>Notes</span>
+                      <textarea value={editContact.notes || ''} onChange={e => setEditContact(c => ({ ...c, notes: e.target.value }))} placeholder="Anything the team should know" rows={2} />
+                    </label>
+                    <button type="button" onClick={saveContact} disabled={savingContact} className="cpf-save">
+                      {savingContact ? 'Saving…' : 'Save contact'}
+                    </button>
+                  </>
+                })()}
               </div>
             ) : contact ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
@@ -574,11 +581,19 @@ export default function ContactPanelBody() {
                   {renderTasksSection()}
                 </div>
 
-                {contact.subscribed_to_marketing && <span style={{ fontSize: 11, color: '#059669', fontWeight: 600 }}>✓ Subscribed to marketing</span>}
-                <Link href={`/admin/customers/profile?id=${contact.id}`}
-                  style={{ fontSize: 12, color: 'var(--coral)', fontWeight: 600, textDecoration: 'none' }}>
-                  View full profile →
-                </Link>
+                <div className="cpf-meta">
+                  {contact.subscribed_to_marketing && (
+                    <span className="cpf-sub">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="20 6 9 17 4 12" /></svg>
+                      Subscribed to marketing
+                    </span>
+                  )}
+                  <Link href={`/admin/customers/profile?id=${contact.id}`} className="cpf-profile">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>
+                    <span>View full profile</span>
+                    <svg className="cpf-go" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="m9 6 6 6-6 6" /></svg>
+                  </Link>
+                </div>
                 <style>{`.contact-field-row:hover .contact-field-actions { opacity: 1 !important; }` + CPD_CSS}</style>
               </div>
             ) : (

@@ -60,53 +60,90 @@ export default function CustomerAddresses({ contactId, canEdit = true, userName 
   if (!loading && addresses.length === 0 && !canEdit) return null
 
   return (
-    <div style={{ marginTop: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <p style={{ margin: 0, fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>{!loading && addresses.length === 0 ? 'No saved addresses' : 'Saved addresses'}</p>
-        {canEdit && <button type="button" onClick={() => setAdding(v => !v)} style={{ border: 'none', background: 'none', color: 'var(--coral)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{adding ? 'Cancel' : '+ Add'}</button>}
+    <div className="cad">
+      <style href="colvy-customer-addresses" precedence="default">{CAD_CSS}</style>
+      <div className="cad-h">
+        <h3>Saved addresses</h3>
+        {addresses.length > 0 && <span className="cad-count">{addresses.length}</span>}
+        {canEdit && (
+          <button type="button" className={`cad-add${adding ? '' : ' accent'}`} onClick={() => setAdding(v => !v)} aria-expanded={adding}>
+            {adding ? 'Cancel' : <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" aria-hidden><path d="M12 5v14M5 12h14" /></svg>Add</>}
+          </button>
+        )}
       </div>
 
-      {loading && addresses.length === 0 && <p style={{ fontSize: 12, color: 'var(--slate)', margin: 0 }}>Loading…</p>}
+      {loading && addresses.length === 0 && <p className="cad-empty">Loading…</p>}
+      {!loading && addresses.length === 0 && !adding && <p className="cad-empty">No saved addresses yet. Delivery addresses from orders land here too.</p>}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {addresses.map(a => (
-          <div key={a.id} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '9px 11px', background: a.is_default ? 'var(--canvas)' : '#fff' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-              <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.45, overflowWrap: 'anywhere' }}>{a.formatted || [a.line1, a.city, a.postcode].filter(Boolean).join(', ')}</p>
-              {a.is_default && <span style={{ flexShrink: 0, fontSize: 9.5, fontWeight: 800, color: '#047857', background: '#dcfce7', padding: '2px 7px', borderRadius: 20 }}>DEFAULT</span>}
-            </div>
-            {(a.source || a.last_used_at) && (
-              <p style={{ margin: '4px 0 0', fontSize: 10.5, color: '#9ca3af' }}>
-                {a.source}{a.source && a.last_used_at ? ' · ' : ''}{a.last_used_at ? `used ${fmtDate(a.last_used_at)}` : ''}
-              </p>
-            )}
-            {canEdit && (
-              <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
-                {!a.is_default && <button type="button" disabled={!!busy} onClick={() => setDefault(a)} style={link}>{busy === 'def' + a.id ? '…' : 'Set default'}</button>}
-                <button type="button" disabled={!!busy} onClick={() => remove(a)} style={{ ...link, color: '#dc2626' }}>{busy === 'del' + a.id ? '…' : 'Delete'}</button>
+      {addresses.length > 0 && (
+        <div className="cad-list">
+          {addresses.map(a => (
+            <div key={a.id} className={`cad-card${a.is_default ? ' def' : ''}`}>
+              <div className="cad-top">
+                <svg className="cad-pin" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" /><circle cx="12" cy="10" r="3" /></svg>
+                <p className="cad-addr">{a.formatted || [a.line1, a.city, a.postcode].filter(Boolean).join(', ')}</p>
+                {a.is_default && <span className="cad-def">Default</span>}
               </div>
-            )}
-          </div>
-        ))}
-      </div>
+              {(a.source || a.last_used_at) && (
+                <p className="cad-src">{a.source}{a.source && a.last_used_at ? ' · ' : ''}{a.last_used_at ? `used ${fmtDate(a.last_used_at)}` : ''}</p>
+              )}
+              {canEdit && (
+                <div className="cad-acts">
+                  {!a.is_default && <button type="button" disabled={!!busy} onClick={() => setDefault(a)}>{busy === 'def' + a.id ? '…' : 'Set default'}</button>}
+                  <button type="button" className="del" disabled={!!busy} onClick={() => remove(a)}>{busy === 'del' + a.id ? '…' : 'Delete'}</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {adding && canEdit && (
-        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <input value={form.line1} onChange={e => setForm({ ...form, line1: e.target.value })} placeholder="Street address" style={inp} />
-          <div style={{ display: 'flex', gap: 6 }}>
-            <input value={form.suburb} onChange={e => setForm({ ...form, suburb: e.target.value })} placeholder="Suburb" style={inp} />
-            <input value={form.postcode} onChange={e => setForm({ ...form, postcode: e.target.value })} placeholder="Postcode" style={{ ...inp, maxWidth: 110 }} />
+        <div className="cad-form">
+          <input value={form.line1} onChange={e => setForm({ ...form, line1: e.target.value })} placeholder="Street address" aria-label="Street address" autoFocus />
+          <div className="cad-2">
+            <input value={form.suburb} onChange={e => setForm({ ...form, suburb: e.target.value })} placeholder="Suburb" aria-label="Suburb" />
+            <input value={form.postcode} onChange={e => setForm({ ...form, postcode: e.target.value })} placeholder="Postcode" aria-label="Postcode" />
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <input value={form.state} onChange={e => setForm({ ...form, state: e.target.value })} placeholder="State" style={inp} />
-            <input value={form.country} onChange={e => setForm({ ...form, country: e.target.value })} placeholder="Country" style={inp} />
+          <div className="cad-2">
+            <input value={form.state} onChange={e => setForm({ ...form, state: e.target.value })} placeholder="State" aria-label="State" />
+            <input value={form.country} onChange={e => setForm({ ...form, country: e.target.value })} placeholder="Country" aria-label="Country" />
           </div>
-          <button type="button" disabled={busy === 'add'} onClick={add} style={{ alignSelf: 'flex-start', padding: '7px 14px', borderRadius: 9, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>{busy === 'add' ? 'Saving…' : 'Save address'}</button>
+          <button type="button" className="cad-save" disabled={busy === 'add' || (!form.line1.trim() && !form.city.trim())} onClick={add}>{busy === 'add' ? 'Saving…' : 'Save address'}</button>
         </div>
       )}
     </div>
   )
 }
 
-const link: React.CSSProperties = { border: 'none', background: 'none', color: 'var(--coral)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', padding: 0 }
-const inp: React.CSSProperties = { flex: 1, minWidth: 0, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13 }
+const CAD_CSS = `
+.cad{--cad-fill:#f4f4f5;--cad-soft:#71717a;margin-top:18px}
+[data-theme="dark"] .cad{--cad-fill:#2a2a2e;--cad-soft:#a1a1aa}
+.cad-h{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.cad-h h3{margin:0;font-size:15px;font-weight:700;color:var(--ink)}
+.cad-count{min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--cad-fill);color:var(--cad-soft);font-size:11.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
+.cad-add{margin-left:auto;display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 12px;border:none;border-radius:999px;background:var(--cad-fill);color:var(--ink);font:inherit;font-size:12.5px;font-weight:650;cursor:pointer}
+.cad-add.accent{background:color-mix(in srgb,var(--coral) 12%,transparent);color:var(--coral)}
+.cad-add:hover{filter:brightness(.97)}
+.cad-empty{margin:0;padding:12px 14px;border-radius:16px;background:var(--cad-fill);font-size:12.5px;line-height:1.45;color:var(--cad-soft)}
+.cad-list{display:flex;flex-direction:column;gap:8px}
+.cad-card{padding:11px 12px 11px 13px;border-radius:16px;background:var(--cad-fill)}
+.cad-card.def{box-shadow:inset 0 0 0 1.5px color-mix(in srgb,#10b981 45%,transparent)}
+.cad-top{display:flex;align-items:flex-start;gap:9px}
+.cad-pin{flex-shrink:0;margin-top:2px;color:var(--cad-soft)}
+.cad-addr{margin:0;flex:1;min-width:0;font-size:13.5px;line-height:1.45;color:var(--ink);overflow-wrap:anywhere}
+.cad-def{flex-shrink:0;height:22px;padding:0 9px;border-radius:999px;background:color-mix(in srgb,#10b981 15%,transparent);color:#047857;font-size:11.5px;font-weight:700;display:inline-flex;align-items:center}
+[data-theme="dark"] .cad-def{color:#6ee7b7}
+.cad-src{margin:4px 0 0 24px;font-size:11.5px;color:var(--cad-soft)}
+.cad-acts{display:flex;gap:6px;margin:8px 0 0 24px}
+.cad-acts button{height:28px;padding:0 11px;border:none;border-radius:999px;background:var(--card,#fff);color:var(--ink);font:inherit;font-size:12px;font-weight:650;cursor:pointer}
+.cad-acts button.del{color:#dc2626}
+.cad-acts button:disabled{opacity:.55;cursor:default}
+.cad-form{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.cad-2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.cad-form input{width:100%;min-width:0;box-sizing:border-box;height:42px;padding:0 13px;border:1.5px solid transparent;border-radius:14px;background:var(--cad-fill);color:var(--ink);font:inherit;font-size:13.5px;outline:none}
+.cad-form input:focus{background:var(--card,#fff);border-color:color-mix(in srgb,var(--coral) 55%,transparent)}
+.cad-save{align-self:flex-start;height:38px;padding:0 16px;border:none;border-radius:999px;background:var(--coral);color:#fff;font:inherit;font-size:13.5px;font-weight:700;cursor:pointer}
+.cad-save:disabled{opacity:.55;cursor:default}
+.cad button:focus-visible{outline:2px solid color-mix(in srgb,var(--coral) 55%,transparent);outline-offset:2px}
+`
