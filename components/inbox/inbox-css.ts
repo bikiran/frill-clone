@@ -54,6 +54,16 @@ export const INBOX_CSS = `
             height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px) - var(--admin-banners-h, 0px)) !important;
             max-height: calc(100dvh - 56px - 58px - env(safe-area-inset-bottom, 0px) - var(--admin-banners-h, 0px)) !important;
           }
+          /* The inbox is exactly the screen between the header and the tab bar,
+             so the page behind it must not scroll. Its wrappers had a 100vh
+             minimum, and on Android Chrome 100vh counts the address bar, which
+             left ~60px of page to scroll: swiping to the end of the list
+             carried on into the page, sliding the list's title row under the
+             header and showing a grey strip above the tab bar. */
+          .admin-shell:has(.inbox-root), .admin-main:has(.inbox-root) { min-height: 0 !important; }
+          html:has(.inbox-root), body:has(.inbox-root) { overscroll-behavior-y: none; }
+          .inbox-root .il-scroll, .inbox-root .inbox-messages, .inbox-root .inbox-col-contact,
+          .inbox-root .inbox-col-contact * { overscroll-behavior-y: contain; }
           /* Keyboard up (components/KeyboardAware): the page has shrunk to the
              space above it and the bottom tabs and banners have stepped aside,
              so the inbox takes everything under the top bar. While writing an
@@ -246,6 +256,10 @@ export const INBOX_CSS = `
           /* Apple's minimum comfortable target is 44px; several controls were
              under 30px and hard to hit accurately. */
           .inbox-root button { min-height: 36px; }
+          /* …but not the panel's small round ticks and section headings: a
+             36px floor stretched the 20px task ticks into tall ovals. */
+          .inbox-root .cpn-check { min-height: 0; }
+          .inbox-root .cpn-h { min-height: 0; }
           .inbox-composer button { min-height: 40px; }
           .sched-list .sched-btn { min-height: 34px; }
           /* Attachment tiles keep a round remove button (a bit larger for a thumb). */

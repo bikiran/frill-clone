@@ -7,7 +7,7 @@
 import CustomerMatchCard from '@/components/CustomerMatchCard'
 import { supabase } from '@/lib/supabase'
 import AddressAutocomplete from '@/components/AddressAutocomplete'
-import { CPD_CSS, CPD_ICON, CPF_CSS, DELIVERY_STATUS_OPTIONS, PT_CSS, PanelItem } from '@/components/inbox/ContactPanelBits'
+import { CDT_CSS, CPD_CSS, CPD_ICON, CPF_CSS, DELIVERY_STATUS_OPTIONS, PT_CSS, PanelItem, cdtWhen } from '@/components/inbox/ContactPanelBits'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { MenuAvatar } from '@/components/ui/SelectMenu'
 import WaitlistQuickAdd from '@/components/WaitlistQuickAdd'
@@ -570,14 +570,14 @@ export default function ContactPanelBody() {
                     one store, two locations, with @mention + edit/copy/delete
                     and synced to mobile. Replaces the old single contact.notes
                     field. */}
-                <div style={{ paddingTop: 14 }}>
+                <div style={{ paddingTop: 4 }}>
                   {renderNotesSection()}
                 </div>
 
                 {/* ── Tasks ─────────────────────────────────────────────
                     Same conversation_tasks as the Timeline tab, shown here
                     below Notes with assignment + @mention + copy/edit/delete. */}
-                <div style={{ paddingTop: 14 }}>
+                <div style={{ paddingTop: 4 }}>
                   {renderTasksSection()}
                 </div>
 
@@ -617,16 +617,60 @@ export default function ContactPanelBody() {
               />
             )}
 
-            {/* Conversation metadata */}
-            <div style={{ borderTop: '1px solid var(--border)', marginTop: 16, paddingTop: 14 }}>
-              <h3 style={{ margin: '0 0 10px 0', fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Details</h3>
+            {/* Conversation details (Sellio): one grey list, like the rows above. */}
+            <div className="cdt">
+              <style href="colvy-cpd" precedence="default">{CPD_CSS}</style>
+              <style href="colvy-cdt" precedence="default">{CDT_CSS}</style>
+              <h3 className="cdt-h">Details</h3>
+              <div className="cpd-list cdt-list">
+                {/* The LIVE channel, not the one the conversation started on — a
+                    customer who began on the widget and is now texting reads "SMS". */}
+                <div className="cpd-li cdt-row">
+                  <span className="cpd-ic">{CHANNEL_ICON[activeChannel] || Icon.chat(15)}</span>
+                  <span className="cpd-li-t">Channel</span>
+                  <span className="cpd-li-v set cdt-v">
+                    <span>{CHANNEL_NAME[activeChannel] || activeChannel}</span>
+                    {!isWebChat && String((selected as any).channel || '').toLowerCase() !== activeChannel && (
+                      <small>started on {CHANNEL_NAME[String((selected as any).channel || '').toLowerCase()] || 'live chat'}</small>
+                    )}
+                  </span>
+                </div>
+                <div className="cpd-li cdt-row">
+                  <span className="cpd-ic">{CPD_ICON.box}</span>
+                  <span className="cpd-li-t">Status</span>
+                  <span className="cpd-li-v cdt-v">
+                    <span className="cdt-pill" style={{ background: STATUS_COLOR[selected.status]?.bg || '#f3f4f6', color: STATUS_COLOR[selected.status]?.color || 'var(--ink)' }}>
+                      {STATUS_ICON[selected.status] || STATUS_ICON.open}{String(selected.status || 'open').replace(/_/g, ' ')}
+                    </span>
+                  </span>
+                </div>
+                <div className="cpd-li cdt-row">
+                  <span className="cpd-ic">{CPD_ICON.calendar}</span>
+                  <span className="cpd-li-t">Started</span>
+                  <span className="cpd-li-v set cdt-v"><span title={fmtDateTime((selected as any).created_at || selected.updated_at)}>{cdtWhen((selected as any).created_at || selected.updated_at)}</span></span>
+                </div>
+                <div className="cpd-li cdt-row">
+                  <span className="cpd-ic">{CPD_ICON.name}</span>
+                  <span className="cpd-li-t">Assigned to</span>
+                  <span className={`cpd-li-v cdt-v${selected.assigned_name ? ' set' : ''}`}>
+                    {selected.assigned_name ? <MenuAvatar name={selected.assigned_name} color={['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'][String(selected.assigned_name).length % 6]} /> : null}
+                    <span>{selected.assigned_name || 'Nobody yet'}</span>
+                  </span>
+                </div>
+                {/* The customer's whole history — every channel, orders, bookings,
+                    calls, payments, tasks and notes. */}
+                {contact && (
+                  <PanelItem icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>}
+                    label="Customer timeline" value="Everything, in order" onClick={() => setShowTimeline(true)} />
+                )}
+              </div>
 
               {/* Cross-channel identity: every channel this person has used,
                   linked by shared email/phone. Same human, one profile. */}
               {linkedChannels.length > 1 && (
-                <div style={{ marginBottom: 14, padding: 10, borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)' }}>
-                  <p style={{ margin: '0 0 7px', fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>Also reachable on</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <>
+                  <p className="cdt-sub">Also reachable on</p>
+                  <div className="cpd-list cdt-list">
                     {linkedChannels.map((lc, i) => {
                       const isCommerce = ['woocommerce', 'pos', 'shopify', 'prexty'].includes(String(lc.channel).toLowerCase())
                       const isCurrent = lc.conversationId && lc.conversationId === selected?.id
@@ -642,68 +686,19 @@ export default function ContactPanelBody() {
                         }
                       }
                       return (
-                        <button key={i} type="button" disabled={!clickable} onClick={go}
-                          style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '5px 6px', margin: '0 -6px', borderRadius: 8, border: 'none', background: 'none', cursor: clickable ? 'pointer' : 'default' }}
-                          onMouseEnter={e => { if (clickable) e.currentTarget.style.background = '#fff' }}
-                          onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
-                          <span style={{ display: 'flex', flexShrink: 0 }}>{CHANNEL_ICON[String(lc.channel).toLowerCase()] || Icon.chat(14)}</span>
-                          <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {CHANNEL_NAME[String(lc.channel).toLowerCase()] || lc.channel}
-                            {lc.label ? <span style={{ color: 'var(--slate)' }}> · {lc.label}</span> : null}
-                            {isCurrent ? <span style={{ color: '#9ca3af' }}> · current</span> : null}
+                        <button key={i} type="button" disabled={!clickable} onClick={go} className={`cpd-li${clickable ? '' : ' cdt-row'}`}>
+                          <span className="cpd-ic">{CHANNEL_ICON[String(lc.channel).toLowerCase()] || Icon.chat(15)}</span>
+                          <span className="cpd-li-t">{CHANNEL_NAME[String(lc.channel).toLowerCase()] || lc.channel}</span>
+                          <span className="cpd-li-v">
+                            <span>{lc.label || ''}{isCurrent ? (lc.label ? ' · this chat' : 'This chat') : ''}</span>
+                            {clickable && CPD_ICON.chev}
                           </span>
-                          {clickable && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="9 18 15 12 9 6"/></svg>}
                         </button>
                       )
                     })}
                   </div>
-                </div>
+                </>
               )}
-
-              {/* The customer's whole history — every channel, orders,
-                  bookings, calls, payments, tasks and notes — for anyone
-                  with a contact, not just people on several channels. */}
-              {contact && (
-                <button type="button" onClick={() => setShowTimeline(true)}
-                  className="cv-btn" style={{ marginBottom: 14, width: '100%', height: 36, fontSize: 13 }}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
-                  Customer timeline
-                </button>
-              )}
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div>
-                  <p style={{ margin: '0 0 2px', fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>Channel</p>
-                  {/* The LIVE channel, not the one the conversation started
-                      on — a customer who began on the widget and is now
-                      texting should read "SMS" here. */}
-                  <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {CHANNEL_ICON[activeChannel] || Icon.chat(14)}
-                    {CHANNEL_NAME[activeChannel] || activeChannel}
-                  </p>
-                  {!isWebChat && String((selected as any).channel || '').toLowerCase() !== activeChannel && (
-                    <p style={{ margin: '2px 0 0', fontSize: 10.5, color: '#9ca3af' }}>
-                      Started on {CHANNEL_NAME[String((selected as any).channel || '').toLowerCase()] || 'live chat'}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <p style={{ margin: '0 0 2px', fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>Status</p>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 28, padding: '0 11px 0 9px', borderRadius: 999, background: STATUS_COLOR[selected.status]?.bg || '#f3f4f6', color: STATUS_COLOR[selected.status]?.color || '#6b7280', fontSize: 12.5, fontWeight: 650, textTransform: 'capitalize' }}>
-                    {STATUS_ICON[selected.status] || STATUS_ICON.open}{selected.status}
-                  </span>
-                </div>
-                <div>
-                  <p style={{ margin: '0 0 2px', fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>Started</p>
-                  <p style={{ margin: 0, fontSize: 12, color: 'var(--ink)' }}>{fmtDateTime(selected.updated_at)}</p>
-                </div>
-                {selected.assigned_name && (
-                  <div>
-                    <p style={{ margin: '0 0 2px', fontSize: 12.5, fontWeight: 500, color: '#8e8e93' }}>Assigned to</p>
-                    <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6 }}>{Icon.person(13)}{selected.assigned_name}</p>
-                  </div>
-                )}
-              </div>
             </div>
 
             {/* Abandoned cart — what the customer was trying to buy */}
