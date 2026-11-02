@@ -358,7 +358,7 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[], 
       const t = src.order_date ? new Date(src.order_date).getTime() : 0
       if (!t || now - t > RECENT_MS) continue
       // The webhook (or another sync) may already have announced it.
-      if (!(await claimOrderAnnouncement(db, companyId, fresh[i].woo_order_id))) continue
+      if (!(await claimOrderAnnouncement(db, companyId, fresh[i].woo_order_id, wooPos(fresh[i]).saleId))) continue
       notifyNewOrder(companyId, src, wooOrderAlert(fresh[i], await shopOf(fresh[i])))
       sent++
     }
@@ -453,7 +453,7 @@ export async function upsertWooOrder(db: any, companyId: string, o: any, contact
     // A brand-new order just landed — ping the team's phones the way a new chat
     // does, so the Orders tab badge and a push both fire. Best-effort; never
     // block the sync on it. (Only on INSERT, so a status refresh doesn't re-alert.)
-    if (!opts?.quiet && await claimOrderAnnouncement(db, companyId, o.woo_order_id)) notifyNewOrder(companyId, src, wooOrderAlert(o, await shopNamer(db, companyId)(o)))
+    if (!opts?.quiet && await claimOrderAnnouncement(db, companyId, o.woo_order_id, wooPos(o).saleId)) notifyNewOrder(companyId, src, wooOrderAlert(o, await shopNamer(db, companyId)(o)))
     emitIntegrationEvent(companyId, 'order.created', {
       ...orderEvent(src, orderId, `New order #${src.order_number}${src.total ? ` · $${Number(src.total).toFixed(2)}` : ''} · ${src.customer_name}`, { Status: statusMeta(st).label }, Array.isArray(o.line_items) ? o.line_items : []),
       dedupeKey: `order.created:${orderId}`,

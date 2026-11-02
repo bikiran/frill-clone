@@ -15,6 +15,7 @@ import { deliverAutomatedMessage } from '@/lib/channel-fallback'
 import { linkContactIdentity, linkedContacts } from '@/lib/identity'
 import { attributeOrderToLinks } from '@/lib/link-attribution'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
+import { claimEvent, claimOrderAnnouncement, orderAlertVerb } from '@/lib/order-alerts'
 import { DEFAULT_ORDER_MESSAGES, isStaleOrderMessage, withCompletedFallbacks, isPickupMethod, completedKey, trackingAlreadySent } from '@/lib/order-messages'
 import { findCustomerGoogleReview } from '@/lib/review-match'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
@@ -213,7 +214,11 @@ export async function runOrderAutomation(db: any, companyId: string, o: NormalOr
   } catch {}
 
   // ── Once per (order, status): the thread line + team alert ────────────────
-  const { data: seenEvent } = await db.from('order_chat_events').select('id').match(dupeKey).maybeSingle()
+  // Claimed up front, so two deliveries a second apart can't both post it
+  // (the unique index lets one through; see the WooCommerce webhook).
+  const { data: seenBefore } = await db.from('order_chat_events').select('id').match(dupeKey).maybeSingle()
+  let seenEvent: any = seenBefore
+  if (!seenEvent && !(await claimEvent(db, companyId, dupeKey.order_id, status, { conversation_id: conv.id }))) seenEvent = { id: 'claimed' }
   if (!seenEvent) {
     const line = `Order #${o.number} — ${badgeStatus || 'received'} · ${money(o.total)}`
     const { data: priorOrderMsgs } = await db.from('messages').select('id, metadata').eq('conversation_id', conv.id)
@@ -226,12 +231,15 @@ export async function runOrderAutomation(db: any, companyId: string, o: NormalOr
         content: line, metadata: { order_event: true, order_id: o.externalId, status: badgeStatus, channel: o.channel },
       })
     }
-    const orderVerb = status === 'completed' ? 'Order completed' : 'New order'
-    try { await notifyCompany({ db, companyId, type: 'order', message: `${orderVerb} #${o.number} from ${displayName} — ${money(o.total)}`, actorName: displayName, conversationId: conv.id }) } catch {}
-    try {
+    // One "New order" per order; after that only a real change alerts
+    // ("Order completed", "Order refunded"…), not pending → paid again.
+    const firstAlert = await claimOrderAnnouncement(db, companyId, dupeKey.order_id)
+    const said = orderAlertVerb({ firstAlert, hadOrderLine: !!priorOrderMsg, status: firstAlert ? status : (badgeStatus || status), isPos: false })
+    const orderVerb = said === 'Online order' ? 'New order' : said
+    if (orderVerb) try { await notifyCompany({ db, companyId, type: 'order', message: `${orderVerb} #${o.number} from ${displayName} — ${money(o.total)}`, actorName: displayName, conversationId: conv.id }) } catch {}
+    if (orderVerb) try {
       await pushInboundMessage({ companyId, conversationId: conv.id, title: `${orderVerb} #${o.number}`, body: `${displayName} — ${money(o.total)}`, route: `/conversation/${conv.id}` })
     } catch {}
-    await db.from('order_chat_events').insert({ ...dupeKey, conversation_id: conv.id })
   }
 
   // ── The customer message ──────────────────────────────────────────────────
