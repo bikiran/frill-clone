@@ -14,6 +14,7 @@ export const SK_CSS = `
 .sk{--sk-fill:#f4f4f5;--sk-fill-2:#ececef;--sk-muted:#71717a;--sk-line:#f0f0f2;
   width:var(--sk-w,460px);max-width:100%;max-height:92vh;overflow-y:auto;overscroll-behavior:contain;background:var(--card,#fff);border-radius:26px;padding:24px;display:flex;flex-direction:column;color:var(--ink);
   box-shadow:0 0 0 1px rgba(0,0,0,.05),0 30px 80px -20px rgba(16,24,40,.35);animation:skIn .28s cubic-bezier(.22,1,.36,1) both}
+.sk:not(.side)>*{flex-shrink:0}
 .sk.side{height:100%;max-height:none;border-radius:26px 0 0 26px;padding:0;animation-name:skSlide}
 .sk.side .sk-body{flex:1;overflow-y:auto;padding:4px 24px 24px}
 .sk.side .sk-head{position:sticky;top:0;z-index:2;margin:0;padding:22px 24px 14px;background:var(--card,#fff)}

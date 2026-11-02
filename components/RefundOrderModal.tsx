@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { SkClose, SkIcon, SkStyle } from '@/components/ui/SheetKit'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { refundedByLine, type OrderRefund } from '@/lib/order-refunds'
+import { useRefundAccess, RefundPinField, RefundNotAllowed, isPinError } from '@/components/RefundPin'
 
 // Full, itemised refund for a WooCommerce order — the same capability the inbox
 // order panel has, usable from the Orders board. Choose per-item quantities,
@@ -40,6 +41,9 @@ export default function RefundOrderModal({
   const [shippingRefunded, setShippingRefunded] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // Who may refund, and the workspace's refund PIN (the server checks both).
+  const access = useRefundAccess(companyId)
+  const [pin, setPin] = useState('')
 
   const money = (n: number) => `$${(Number(n) || 0).toFixed(2)}`
 
@@ -121,6 +125,8 @@ export default function RefundOrderModal({
     if (fullyRefunded) { setError('This order has already been refunded in full.'); return }
     if (!noItems && chosen.length === 0 && !(refundShipping && shippingLeft > 0)) { setError('Select at least one item or shipping to refund.'); return }
     if (total <= 0) { setError('Nothing to refund.'); return }
+    if (!access.canRefund) { setError('You don’t have permission to issue refunds.'); return }
+    if (access.pinSet && pin.length < 4) { setError('Enter the refund PIN.'); return }
     if (orderTotal > 0 && total > available + 0.01) { setError(`At most ${money(available)} is left to refund on this order.`); return }
     // Only shipping ticked is an easy slip when the whole order was meant to go
     // back (items start at 0), so say plainly what is and isn't included.
@@ -144,10 +150,14 @@ export default function RefundOrderModal({
           conversationId: order.conversation_id || undefined,
           ...(noItems ? { amount: +total.toFixed(2) } : {}),
           lineItems, shipping: refundShipping ? shippingLeft : 0, restock, reason: reason || undefined,
+          ...(pin ? { refundPin: pin } : {}),
         }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || 'Refund failed')
+      if (!res.ok) {
+        if (isPinError(data.code)) setPin('')
+        throw new Error(data.error || 'Refund failed')
+      }
       onDone?.(Number(data.amount || total), reason)
       onClose()
     } catch (e: any) {
@@ -234,11 +244,14 @@ export default function RefundOrderModal({
               <div className="sk-sum-r total"><span>Refund total</span><b style={{ color: total > 0 ? accent : undefined }}>{money(total)}</b></div>
             </div>
 
+            {!access.loading && !access.canRefund && <RefundNotAllowed />}
+            {access.canRefund && access.pinSet && !fullyRefunded && <RefundPinField value={pin} onChange={setPin} id="rf-pin" />}
+
             {error && <p className="sk-err" role="alert">{error}</p>}
 
             <div className="sk-actions">
               <button type="button" className="sk-btn" onClick={onClose} disabled={busy}>Cancel</button>
-              <button type="button" className="sk-btn primary" onClick={submit} disabled={busy || fullyRefunded || total <= 0}>
+              <button type="button" className="sk-btn primary" onClick={submit} disabled={busy || fullyRefunded || total <= 0 || (!access.loading && !access.canRefund)}>
                 {busy ? 'Refunding…' : fullyRefunded ? 'Nothing left to refund' : total > 0 ? `Refund ${money(total)}` : 'Choose what to refund'}
               </button>
             </div>

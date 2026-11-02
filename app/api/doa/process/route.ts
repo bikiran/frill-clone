@@ -1,4 +1,5 @@
 import { requireCompanyAccess } from '@/lib/company-access'
+import { guardRefund, guardBody, isRefused } from '@/lib/refund-guard'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
@@ -24,14 +25,18 @@ function genCouponCode(email: string) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { companyId, conversationId, contactId, order, resolution, selectedItems, shipping, amount, notes, createdBy } = body
+    const { companyId, conversationId, contactId, order, resolution, selectedItems, shipping, amount, notes, createdBy, refundPin } = body
     if (!companyId || !order?.order_id || !resolution) {
       return NextResponse.json({ error: 'Missing companyId, order, or resolution' }, { status: 400 })
     }
 
     const db = admin()
-    // Workspace members only.
-    if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    // Workspace members only. A refund, or store credit (a coupon worth money),
+    // also needs "Issue refunds" and the refund PIN when one is set.
+    if (resolution === 'refund' || resolution === 'coupon') {
+      const guard = await guardRefund(req, db, companyId, { pin: refundPin })
+      if (isRefused(guard)) return NextResponse.json(guardBody(guard), { status: guard.status })
+    } else if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     // The chat and customer this posts into / refunds for must be this workspace's.
     for (const [table, rid] of [['conversations', conversationId], ['contacts', contactId]] as const) {
       if (!rid) continue

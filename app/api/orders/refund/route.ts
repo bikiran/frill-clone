@@ -1,5 +1,4 @@
-import { isInternalCall } from '@/lib/internal-call'
-import { requireCompanyAccess } from '@/lib/company-access'
+import { guardRefund, guardBody, isRefused } from '@/lib/refund-guard'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { deliverAutomatedMessage } from '@/lib/channel-fallback'
@@ -32,7 +31,12 @@ function admin() {
  *   lineItems?,     // [{ id, qty, total, tax }]  per-item refund
  *   shipping?,      // shipping amount to refund
  *   restock?,       // put refunded quantities back into stock
+ *   refundPin?,     // the workspace's refund PIN, when one is set
+ *   actorUserId?,   // server-to-server calls only: the person it acts for
  * }
+ *
+ * Who may: lib/refund-guard (staff with "Issue refunds", plus the refund PIN
+ * when the workspace has one). Nothing else here runs until that passes.
  * Omitting everything but the order refunds the full total.
  *
  * Shopify orders (orderId "shopify-<id>", an `orders` row id, or channel:
@@ -42,14 +46,16 @@ function admin() {
 export async function POST(req: NextRequest) {
   try {
     const { companyId, integrationId, orderId, amount, reason, conversationId,
-            lineItems, shipping, restock, channel, orderRowId, idempotencyKey } = await req.json()
+            lineItems, shipping, restock, channel, orderRowId, idempotencyKey, refundPin, actorUserId } = await req.json()
     if (!companyId || !orderId) {
       return NextResponse.json({ error: 'Missing companyId or orderId' }, { status: 400 })
     }
 
     const db = admin()
-    // Workspace members only (customer details, orders and refunds).
-    if (!isInternalCall(req) && !(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    // Staff with "Issue refunds", and the refund PIN when one is set.
+    const guard = await guardRefund(req, db, companyId, { pin: refundPin, actorUserId })
+    if (isRefused(guard)) return NextResponse.json(guardBody(guard), { status: guard.status })
+    const okGuard = guard as Extract<typeof guard, { ok: true }>
     if (conversationId) {
       const { data: owner } = await db.from('conversations').select('company_id').eq('id', conversationId).maybeSingle()
       if (!owner || owner.company_id !== companyId) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
@@ -170,6 +176,19 @@ export async function POST(req: NextRequest) {
       if (shippingNum > 0) {
         payload.shipping_lines = [{ id: shippingLineId ?? 0, refund_total: shippingNum }]
       }
+
+      // A second tap (or a retry after a slow response) must not refund twice:
+      // WooCommerce has no idempotency key, so refuse when the same amount was
+      // refunded on this order in the last two minutes.
+      try {
+        const rr = await fetch(`${integ.store_url}/wp-json/wc/v3/orders/${orderId}/refunds?per_page=5`, { headers: { 'Authorization': auth } })
+        const recent = rr.ok ? await readStoreJson(rr, { provider: 'woocommerce', store: integ.store_url }).catch(() => null) : null
+        const dupe = Array.isArray(recent) && recent.some((r: any) => {
+          const at = new Date(r?.date_created_gmt ? `${r.date_created_gmt}Z` : r?.date_created || 0).getTime()
+          return Math.abs(Math.abs(parseFloat(r?.amount || r?.total || 0)) - Number(refundAmount)) < 0.005 && Date.now() - at < 120000
+        })
+        if (dupe) return NextResponse.json({ error: `A refund of $${Number(refundAmount).toFixed(2)} was just made on this order. Check the order before refunding again.`, code: 'refund_duplicate' }, { status: 409 })
+      } catch {}
 
       const res = await fetch(`${integ.store_url}/wp-json/wc/v3/orders/${orderId}/refunds`, {
         method: 'POST',
@@ -293,7 +312,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    await audit(req, db, companyId, 'refund_issued', `Refunded ${refundAmount ? `$${refundAmount}` : 'an amount'} on ${shop ? 'Shopify ' : ''}order #${orderLabel}${reason ? ` — ${String(reason).slice(0, 120)}` : ''}`, { order_id: String(orderId), amount: refundAmount, conversation_id: conversationId || null })
+    await audit(req, db, companyId, 'refund_issued', `${okGuard.actor.name ? `${okGuard.actor.name} refunded` : 'Refunded'} ${refundAmount ? `$${refundAmount}` : 'an amount'} on ${shop ? 'Shopify ' : ''}order #${orderLabel}${okGuard.pinRequired ? ' (PIN checked)' : ''}${reason ? ` — ${String(reason).slice(0, 120)}` : ''}`, { order_id: String(orderId), amount: refundAmount, conversation_id: conversationId || null, by: okGuard.actor.userId })
     return NextResponse.json({ ok: true, refund: data, amount: refundAmount })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })

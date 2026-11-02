@@ -8,6 +8,7 @@ import { peekCompanyUser } from '@/lib/client-cache'
 import { SkeletonList } from '@/components/Skeleton'
 import CreatePaymentLinkModal from '@/components/CreatePaymentLinkModal'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import { useRefundAccess, RefundPinField, isPinError } from '@/components/RefundPin'
 import EmptyScroll from '@/components/EmptyScroll'
 
 // Payments — transactions taken through Colvy payment links (Stripe). Refund
@@ -126,6 +127,9 @@ export default function PaymentsPage() {
   const [detailsLoading, setDetailsLoading] = useState(false)
   const [activity, setActivity] = useState<any[]>([])
   const [refundAmt, setRefundAmt] = useState('')
+  // The workspace's refund PIN (checked by /api/stripe/refund too).
+  const refundAccess = useRefundAccess(companyId)
+  const [refundPin, setRefundPin] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [page, setPage] = useState(0)
   const PER = 25
@@ -316,15 +320,18 @@ export default function PaymentsPage() {
   const doRefund = async (p: Payment, amount?: number | null) => {
     const remainingCents = (p.amount_cents || 0) - (p.refunded_cents || 0)
     const askCents = amount != null ? Math.round(amount * 100) : remainingCents
+    // With a PIN set, refunds happen in the payment's panel, where the PIN is entered.
+    if (refundAccess.pinSet && refundPin.length < 4) { setSelected(p); setToast('Enter the refund PIN to refund this payment'); return }
     if (!await confirmDialog(`Refund ${money(askCents, p.currency || 'AUD')} to ${customerOf(p).name}? This cannot be undone.`)) return
     setBusy(p.id)
     try {
       const res = await authFetch('/api/stripe/refund', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, paymentId: p.id, amount: amount != null ? amount : undefined }),
+        body: JSON.stringify({ companyId, paymentId: p.id, amount: amount != null ? amount : undefined, ...(refundPin ? { refundPin } : {}) }),
       })
       const j = await res.json().catch(() => ({}))
-      if (!res.ok || j.error) { setToast(`Refund failed: ${j.error || res.status}`); return }
+      if (!res.ok || j.error) { if (isPinError(j.code)) setRefundPin(''); setToast(`Refund failed: ${j.error || res.status}`); return }
+      setRefundPin('')
       applyPatch(p.id, { status: j.full ? 'refunded' : 'paid', refunded_cents: j.totalRefunded ?? j.refundedCents ?? p.amount_cents })
       setRefundAmt('')
       setToast(j.full ? 'Payment fully refunded' : `Refunded ${money(j.refundedCents, p.currency || 'AUD')}`)
@@ -721,6 +728,7 @@ export default function PaymentsPage() {
                       </button>
                     </div>
                     <p className="py-fine">Leave it blank to refund the full {money(remaining, p.currency || 'AUD')} still kept.</p>
+                    {refundAccess.pinSet && <RefundPinField value={refundPin} onChange={setRefundPin} id="py-pin" />}
                   </section>
                 )}
 

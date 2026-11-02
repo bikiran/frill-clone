@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { PlatformLogo } from '@/components/StoreLogo'
 import { SkClose, SkIcon, SkStyle } from '@/components/ui/SheetKit'
+import { useRefundAccess, RefundPinField, RefundNotAllowed, isPinError } from '@/components/RefundPin'
 
 // Default customer-facing DOA messages. The business can override these in
 // CRM settings → Order Automation → "DOA claim messages"; {amount} and {code}
@@ -42,6 +43,9 @@ export default function DoaPanel({ companyId, conversationId, contactId, contact
   const [customAmount, setCustomAmount] = useState('')
   const [notes, setNotes] = useState('')
   const [processing, setProcessing] = useState(false)
+  // A refund or store credit needs "Issue refunds" and the refund PIN when set.
+  const access = useRefundAccess(companyId)
+  const [pin, setPin] = useState('')
   const [result, setResult] = useState<string>('')
   const [recentOrders, setRecentOrders] = useState<any[]>([])
   const [loadingRecent, setLoadingRecent] = useState(false)
@@ -118,6 +122,9 @@ export default function DoaPanel({ companyId, conversationId, contactId, contact
 
   const process = async (resolution: Resolution) => {
     if (!order) return
+    const money = resolution === 'refund' || resolution === 'coupon'
+    if (money && !access.canRefund) { setError('You don’t have permission to issue refunds or store credit.'); return }
+    if (money && access.pinSet && pin.length < 4) { setError('Enter the refund PIN.'); return }
     setProcessing(true); setError('')
     try {
       const amount = customAmount ? customAmount : (resolution === 'refund' ? refundDefault.toFixed(2) : undefined)
@@ -128,10 +135,14 @@ export default function DoaPanel({ companyId, conversationId, contactId, contact
           selectedItems: resolution === 'refund' && !customAmount ? selectedItems : undefined,
           shipping: resolution === 'refund' && !customAmount ? shipRefund : 0,
           amount, notes,
+          ...(money && pin ? { refundPin: pin } : {}),
         }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Could not process')
+      if (!res.ok) {
+        if (isPinError(data.code)) setPin('')
+        throw new Error(data.error || 'Could not process')
+      }
 
       // Notify the customer on their channel, matching the resolution.
       if (notify && canNotify) {
@@ -366,6 +377,11 @@ export default function DoaPanel({ companyId, conversationId, contactId, contact
           )}
         </div>
 
+        {order && !result && (resolution === 'refund' || resolution === 'coupon') && !access.loading && (
+          <div style={{ padding: '0 24px' }}>
+            {!access.canRefund ? <RefundNotAllowed /> : access.pinSet ? <RefundPinField value={pin} onChange={setPin} id="doa-pin" /> : null}
+          </div>
+        )}
         {order && !result && (
           <div className="sk-foot">
             <div className="sk-actions" style={{ marginTop: 0 }}>
