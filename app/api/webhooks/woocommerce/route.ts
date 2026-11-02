@@ -9,7 +9,7 @@ import { WebhookService } from '@/lib/webhook-service'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { upsertWooOrder } from '@/lib/orders-sync'
-import { claimOrderAnnouncement, inStoreLabel, wooPushIcon } from '@/lib/order-alerts'
+import { claimEvent, claimOrderAnnouncement, inStoreLabel, orderAlertVerb, wooPushIcon } from '@/lib/order-alerts'
 import { wooDateToISO } from '@/lib/orders'
 import { DEFAULT_ORDER_MESSAGES, isStaleOrderMessage, withCompletedFallbacks, isPickupMethod, completedKey, trackingAlreadySent } from '@/lib/order-messages'
 import { findCustomerGoogleReview } from '@/lib/review-match'
@@ -389,7 +389,14 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
 
   // Post a system event for the order once per (order, status) so a brand-new
   // order is visible in the thread even with automation off.
-  const { data: seenEvent } = await db.from('order_chat_events').select('id').match(dupeKey).maybeSingle()
+  // Claimed up front: WooCommerce often delivers order.created and
+  // order.updated within a second of each other, and both used to get past a
+  // "seen it?" check here (the marker was only written at the end), so the
+  // thread line, the bell row and the customer's message could go out twice.
+  // The unique index (V134, V424) lets exactly one delivery through.
+  const { data: seenBefore } = await db.from('order_chat_events').select('id').match(dupeKey).maybeSingle()
+  let seenEvent: any = seenBefore
+  if (!seenEvent && !(await claimEvent(db, companyId, Number(order.id), status, { conversation_id: conv.id }))) seenEvent = { id: 'claimed' }
   if (!seenEvent) {
     // If an order message already exists for this order (from an earlier
     // status), UPDATE it in place so the thread shows the current status
@@ -420,20 +427,20 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     // website order and a fulfilment read differently at a glance: "In-store
     // sale R50270 at Roxy Aquarium Somerton", "Online order" (with the
     // WooCommerce logo as the picture) or "Order completed".
-    const orderVerb = pos.isPos ? `${inStoreLabel(pos, posShop)} ·` : status === 'completed' ? 'Order completed' : 'Online order'
     // One alert per new order: the scheduled sync or the Orders board may have
     // seen it first (this webhook often arrives a minute late) and announced
-    // it already. A later status for the order ("Order completed") still alerts.
-    const firstForOrder = !priorOrderMsg
-    const announce = (await claimOrderAnnouncement(db, companyId, order.id)) || !firstForOrder
-    try { await notifyCompany({ db, companyId, type: 'order', message: `${orderVerb} #${order.number || order.id} from ${displayName} — $${order.total}`, actorName: displayName, conversationId: conv.id }) } catch {}
-    // notifyCompany only writes the in-app bell row — it does NOT push, which is
-    // why a new order showed up in Activity and on the web while no phone ever
-    // made a sound. Only announce the order once, on the delivery that created
-    // the dedup marker below. This is the order's ONE alert: mirroring it onto
-    // the Orders board below stays quiet (it used to send a second, generic
-    // "New order" push for the same sale).
-    if (announce) try {
+    // it already, and an in-store receipt Prexty pushed twice is one sale.
+    // After that, only a real change alerts again ("Order completed",
+    // "Order refunded"…); pending → processing used to say "Online order"
+    // a second time, in the bell and on the phones.
+    const firstAlert = await claimOrderAnnouncement(db, companyId, order.id, pos.isPos ? pos.saleId : null)
+    // badgeStatus: never a spurious negative (Afterpay's pending → cancelled → processing).
+    const orderVerb = orderAlertVerb({ firstAlert, hadOrderLine: !!priorOrderMsg, status: firstAlert ? status : badgeStatus, isPos: pos.isPos, inStore: inStoreLabel(pos, posShop) })
+    // notifyCompany writes the in-app bell row and pushInboundMessage the
+    // phones' alert: the same one alert, both or neither. Mirroring the order
+    // onto the Orders board below stays quiet.
+    if (orderVerb) try { await notifyCompany({ db, companyId, type: 'order', message: `${orderVerb} #${order.number || order.id} from ${displayName} — $${order.total}`, actorName: displayName, conversationId: conv.id }) } catch {}
+    if (orderVerb) try {
       await pushInboundMessage({
         companyId,
         conversationId: conv.id,
@@ -443,9 +450,6 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
         ...(pos.isPos ? {} : { icon: wooPushIcon() }),
       })
     } catch {}
-    // Record the dedup marker now so repeated webhook deliveries for the same
-    // order+status don't re-post (whether or not automation is enabled).
-    await db.from('order_chat_events').insert({ ...dupeKey, conversation_id: conv.id })
   }
 
   // In-store POS sale (pushed to WooCommerce by Prexty)? Never send the customer
