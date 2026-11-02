@@ -2618,6 +2618,28 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
   )
   const I = { width: 16, height: 16, fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, viewBox: '0 0 24 24' }
   const when = (d?: string | null) => d ? new Date(d).toLocaleString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''
+  // "2 Nov, 6:35 pm" (the year only when it isn't this year); the full date is in the tooltip.
+  const whenShort = (d?: string | null) => {
+    if (!d) return ''
+    const t = new Date(d); if (!Number.isFinite(t.getTime())) return ''
+    return t.toLocaleString('en-AU', { day: 'numeric', month: 'short', ...(t.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}), hour: 'numeric', minute: '2-digit' })
+  }
+  const noteColor = (name?: string | null) => ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#14b8a6', '#ef4444'][[...String(name || '?')].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7) % 8]
+  // An icon and a colour for each kind of order event in the timeline.
+  const eventKind = (ev: any): { tone: string; icon: React.ReactNode } => {
+    const t = String(ev?.type || '').toLowerCase(), d = String(ev?.detail || '').toLowerCase()
+    const ic = (paths: React.ReactNode) => <svg {...I} width={13} height={13}>{paths}</svg>
+    if (t === 'note_added') return { tone: 'amber', icon: ic(<><path d="M15.5 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z" /><path d="M15 3v6h6" /></>) }
+    if (t === 'outlet' || /assigned to .*(aquarium|store|shop|outlet)/.test(d)) return { tone: 'violet', icon: ic(<><path d="M3 9l1.5-5h15L21 9" /><path d="M4 9v11h16V9" /><path d="M9 20v-6h6v6" /></>) }
+    if (t === 'assigned') return { tone: 'violet', icon: ic(<><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>) }
+    if (t === 'refunded' || /refund/.test(d)) return { tone: 'orange', icon: ic(<><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></>) }
+    if (t === 'label_voided' || /cancel|void/.test(d)) return { tone: 'red', icon: ic(<><circle cx="12" cy="12" r="9" /><path d="m15 9-6 6M9 9l6 6" /></>) }
+    if (t === 'tracking_sent' || /track|ship|label|dispatch/.test(d)) return { tone: 'blue', icon: ic(<><rect x="1" y="3" width="15" height="13" rx="1" /><path d="M16 8h4l3 3v5h-7V8z" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></>) }
+    if (t === 'collected' || t === 'pickup_notified' || /pick ?up|collect/.test(d)) return { tone: 'teal', icon: ic(<><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" /><path d="M3 6h18M16 10a4 4 0 0 1-8 0" /></>) }
+    if (t === 'created' || /import|placed|created/.test(d)) return { tone: 'slate', icon: ic(<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5M12 15V3" /></>) }
+    if (t === 'status_changed' || /complete|status|paid/.test(d)) return { tone: 'green', icon: ic(<path d="M20 6 9 17l-5-5" />) }
+    return { tone: 'accent', icon: ic(<circle cx="12" cy="12" r="3" />) }
+  }
   const custName = String(order.customer_name || '')
   const custInitials = custName.split(' ').filter(Boolean).map((w: string) => w[0]).join('').slice(0, 2).toUpperCase() || '?'
   const custHue = Array.from(custName).reduce((a: number, c: string) => a + c.charCodeAt(0), 0) % 360
@@ -2736,13 +2758,70 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
         .od-tool::before { display: none; }
         .od-tool:hover { background: #fff; color: #18181b; }
         .od-tool.danger:hover { color: #dc2626; }
-        .od-tl { position: relative; display: flex; gap: 11px; padding-bottom: 14px; }
-        .od-tl::before { content: ""; position: absolute; left: 3.5px; top: 15px; bottom: 0; width: 1.5px; background: #ececef; }
-        .od-tl:last-child { padding-bottom: 0; }
-        .od-tl:last-child::before { display: none; }
-        .od-tl-dot { width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; flex-shrink: 0; background: var(--ord-accent); }
-        .od-tl p { margin: 0; font-size: 13.5px; color: var(--ink); }
-        .od-tl small { display: block; margin-top: 2px; font-size: 12px; color: #8e8e93; }
+        /* Order timeline (Sellio): composer with its send button, note cards, activity */
+        .otl-cmp { position: relative; margin: 10px 0 0; }
+        .otl-in { display: block; width: 100%; box-sizing: border-box; min-height: 72px; max-height: 240px; padding: 12px 52px 12px 14px; border: 1.5px solid transparent; border-radius: 16px; background: #f4f4f5; color: var(--ink); font: inherit; font-size: 14px; line-height: 1.5; resize: none; field-sizing: content; outline: none; transition: background .15s, border-color .15s; }
+        .otl-in::placeholder { color: #a1a1aa; }
+        .otl-in:focus { background: var(--card, #fff); border-color: color-mix(in srgb, var(--ord-accent) 50%, transparent); }
+        .otl-send { position: absolute; right: 8px; bottom: 8px; width: 34px; height: 34px; border-radius: 50%; border: none; padding: 0; display: inline-flex; align-items: center; justify-content: center; background: #e4e4e7; color: #a1a1aa; cursor: default; transition: background .15s, color .15s, transform .15s; }
+        .otl-send.on { background: var(--ord-accent); color: #fff; cursor: pointer; }
+        .otl-send.on:hover { transform: scale(1.06); }
+        .otl-send:focus-visible, .otl-act:focus-visible, .otl-btn:focus-visible { outline: 2px solid color-mix(in srgb, var(--ord-accent) 55%, transparent); outline-offset: 2px; }
+        .otl-hint { margin: 6px 4px 0; font-size: 11.5px; color: #a1a1aa; }
+        .otl-notes { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+        .otl-note { padding: 10px 12px 12px; border-radius: 16px; background: #fefce8; box-shadow: inset 0 0 0 1px #fef08a; }
+        .otl-note.editing { background: var(--card, #fff); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ord-accent) 40%, transparent); }
+        .otl-note-h { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+        .otl-av { width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; font-weight: 800; }
+        .otl-note-h b { font-size: 13px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+        .otl-note-h time { font-size: 12px; color: #8e8e93; white-space: nowrap; }
+        .otl-acts { margin-left: auto; display: inline-flex; gap: 2px; opacity: .45; transition: opacity .15s; }
+        .otl-note:hover .otl-acts, .otl-note:focus-within .otl-acts { opacity: 1; }
+        @media (hover: none) { .otl-acts { opacity: 1; } }
+        .otl-act { width: 28px; height: 28px; border: none; border-radius: 999px; padding: 0; display: inline-flex; align-items: center; justify-content: center; background: transparent; color: #71717a; cursor: pointer; transition: background .12s, color .12s; }
+        .otl-act::before { display: none; }
+        .otl-act:hover { background: rgba(0,0,0,.06); color: var(--ink); }
+        .otl-act.danger:hover { background: #fee2e2; color: #dc2626; }
+        .otl-body { margin: 4px 0 0 30px; font-size: 14px; line-height: 1.5; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+        .otl-edit { margin-top: 6px; display: flex; flex-direction: column; gap: 8px; }
+        .otl-edit .otl-in { padding-right: 14px; min-height: 64px; }
+        .otl-edit-acts { display: flex; justify-content: flex-end; gap: 6px; }
+        .otl-btn { height: 34px; padding: 0 14px; border: none; border-radius: 999px; background: #f4f4f5; color: var(--ink); font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
+        .otl-btn.primary { background: var(--ord-accent); color: #fff; }
+        .otl-btn:disabled { opacity: .5; cursor: default; }
+        .otl-label { margin: 16px 0 8px; font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #a1a1aa; }
+        .otl-events { list-style: none; margin: 0; padding: 0; }
+        .otl-ev { position: relative; display: flex; gap: 11px; padding-bottom: 14px; }
+        .otl-ev::before { content: ""; position: absolute; left: 13px; top: 30px; bottom: 2px; width: 1.5px; background: #ececef; }
+        .otl-ev:last-child { padding-bottom: 0; }
+        .otl-ev:last-child::before { display: none; }
+        .otl-ev-ic { width: 28px; height: 28px; flex-shrink: 0; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; background: #f4f4f5; color: #71717a; }
+        .otl-ev-ic.amber { background: #fef3c7; color: #b45309; }
+        .otl-ev-ic.violet { background: #ede9fe; color: #6d28d9; }
+        .otl-ev-ic.orange { background: #ffedd5; color: #c2410c; }
+        .otl-ev-ic.red { background: #fee2e2; color: #dc2626; }
+        .otl-ev-ic.blue { background: #dbeafe; color: #1d4ed8; }
+        .otl-ev-ic.teal { background: #ccfbf1; color: #0f766e; }
+        .otl-ev-ic.green { background: #dcfce7; color: #15803d; }
+        .otl-ev-ic.accent { background: color-mix(in srgb, var(--ord-accent) 14%, transparent); color: var(--ord-accent); }
+        .otl-ev-t { min-width: 0; padding-top: 4px; }
+        .otl-ev-t p { margin: 0; font-size: 13.5px; line-height: 1.4; color: var(--ink); overflow-wrap: anywhere; }
+        .otl-ev-t small { display: block; margin-top: 2px; font-size: 12px; color: #8e8e93; }
+        .otl-empty { margin: 12px 2px 0; font-size: 13px; color: #a1a1aa; }
+        [data-theme="dark"] .otl-in, [data-theme="dark"] .otl-btn:not(.primary) { background: #2a2a2e; }
+        [data-theme="dark"] .otl-send { background: #3a3a3f; color: #71717a; }
+        [data-theme="dark"] .otl-send.on { background: var(--ord-accent); color: #fff; }
+        [data-theme="dark"] .otl-note { background: rgba(250,204,21,.08); box-shadow: inset 0 0 0 1px rgba(250,204,21,.2); }
+        [data-theme="dark"] .otl-act:hover { background: rgba(255,255,255,.08); }
+        [data-theme="dark"] .otl-ev::before { background: #2c2c31; }
+        [data-theme="dark"] .otl-ev-ic { background: #2a2a2e; color: #a1a1aa; }
+        [data-theme="dark"] .otl-ev-ic.amber { background: rgba(245,158,11,.16); color: #fbbf24; }
+        [data-theme="dark"] .otl-ev-ic.violet { background: rgba(139,92,246,.18); color: #c4b5fd; }
+        [data-theme="dark"] .otl-ev-ic.orange { background: rgba(249,115,22,.16); color: #fdba74; }
+        [data-theme="dark"] .otl-ev-ic.red { background: rgba(239,68,68,.16); color: #fca5a5; }
+        [data-theme="dark"] .otl-ev-ic.blue { background: rgba(59,130,246,.18); color: #93c5fd; }
+        [data-theme="dark"] .otl-ev-ic.teal { background: rgba(20,184,166,.16); color: #5eead4; }
+        [data-theme="dark"] .otl-ev-ic.green { background: rgba(34,197,94,.16); color: #86efac; }
         .od-task { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 13.5px; color: var(--ink); }
         .od-check { width: 18px; height: 18px; flex-shrink: 0; padding: 0; border-radius: 50%; border: 1.5px solid #d4d4d8; background: transparent; color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
         .od-check::before { display: none; }
@@ -3072,50 +3151,63 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
 
           {/* Timeline + notes */}
           <CollapseSection style={{ ...sect, marginBottom: 0 }} storageKey="order-timeline" title="Order timeline" id="od-sec-timeline">
-            <div style={{ margin: '10px 0 14px' }}>
-              <textarea id="ord-note" className="od-field" value={noteBody} onChange={e => setNoteBody(e.target.value)} placeholder="Add a note… use @ to mention someone" rows={2}
-                onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addNote() }} />
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-                <button type="button" className="od-small primary" onClick={addNote} disabled={!noteBody.trim()}>Add note</button>
-              </div>
+            {/* Composer: the note box with its send button inside (⌘/Ctrl + Enter adds it). */}
+            <div className="otl-cmp">
+              <textarea id="ord-note" className="otl-in" value={noteBody} onChange={e => setNoteBody(e.target.value)} placeholder="Add a note… use @ to mention someone" rows={2}
+                aria-label="New note" onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addNote() } }} />
+              <button type="button" className={`otl-send${noteBody.trim() ? ' on' : ''}`} onClick={addNote} disabled={!noteBody.trim()} aria-label="Add note" title="Add note (⌘ Enter)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+              </button>
             </div>
-            {notes.length > 0 && <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+            {noteBody.trim() && <p className="otl-hint">⌘ Enter to add · only your team sees notes</p>}
+
+            {notes.length > 0 && <div className="otl-notes">
               {notes.map((n: any) => (
-                <div key={n.id} className="od-note">
+                <div key={n.id} className={`otl-note${editNoteId === n.id ? ' editing' : ''}`}>
+                  <div className="otl-note-h">
+                    <span className="otl-av" style={{ background: noteColor(n.author_name) }} aria-hidden>{String(n.author_name || '?').trim().charAt(0).toUpperCase()}</span>
+                    <b>{n.author_name || 'Someone'}</b>
+                    {n.created_at && <time dateTime={n.created_at} title={when(n.created_at)}>{whenShort(n.created_at)}</time>}
+                    {editNoteId !== n.id && <span className="otl-acts">
+                      <button type="button" className="otl-act" title="Copy" aria-label="Copy note" onClick={() => copyToClipboard(n.body, onFlash)}><svg {...I} width={14} height={14}><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg></button>
+                      <button type="button" className="otl-act" title="Edit" aria-label="Edit note" onClick={() => { setEditNoteId(n.id); setEditNoteText(n.body || '') }}><svg {...I} width={14} height={14}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg></button>
+                      <button type="button" className="otl-act danger" title="Delete" aria-label="Delete note" onClick={() => deleteNote(n)}><svg {...I} width={14} height={14}><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /></svg></button>
+                    </span>}
+                  </div>
                   {editNoteId === n.id ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      <textarea autoFocus className="od-field" value={editNoteText} onChange={e => setEditNoteText(e.target.value)} rows={2} style={{ background: '#fff' }} />
-                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                        <button type="button" className="od-small" onClick={() => setEditNoteId(null)} style={{ background: '#fff' }}>Cancel</button>
-                        <button type="button" className="od-small primary" onClick={() => saveNoteEdit(n)}>Save</button>
+                    <div className="otl-edit">
+                      <textarea autoFocus className="otl-in" value={editNoteText} onChange={e => setEditNoteText(e.target.value)} rows={2} aria-label="Edit note"
+                        onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveNoteEdit(n) } if (e.key === 'Escape') { e.stopPropagation(); setEditNoteId(null) } }} />
+                      <div className="otl-edit-acts">
+                        <button type="button" className="otl-btn" onClick={() => setEditNoteId(null)}>Cancel</button>
+                        <button type="button" className="otl-btn primary" onClick={() => saveNoteEdit(n)} disabled={!editNoteText.trim()}>Save</button>
                       </div>
                     </div>
                   ) : (
-                    <>
-                      <p style={{ paddingRight: 84 }}>{n.body}</p>
-                      <div className="meta">{n.author_name || 'Someone'}{n.created_at ? ` · ${when(n.created_at)}` : ''}</div>
-                      <div className="od-note-tools">
-                        <button type="button" className="od-tool" title="Copy" aria-label="Copy note" onClick={() => copyToClipboard(n.body, onFlash)}><svg {...I} width={13} height={13}><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg></button>
-                        <button type="button" className="od-tool" title="Edit" aria-label="Edit note" onClick={() => { setEditNoteId(n.id); setEditNoteText(n.body || '') }}><svg {...I} width={13} height={13}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg></button>
-                        <button type="button" className="od-tool danger" title="Delete" aria-label="Delete note" onClick={() => deleteNote(n)}><svg {...I} width={13} height={13}><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /></svg></button>
-                      </div>
-                    </>
+                    <p className="otl-body">{n.body}</p>
                   )}
                 </div>
               ))}
             </div>}
-            {events.length > 0 && <div>
-              {events.map((ev: any) => (
-                <div key={ev.id} className="od-tl">
-                  <span className="od-tl-dot" />
-                  <div>
-                    <p>{ev.detail || ev.type}</p>
-                    <small>{when(ev.created_at)}{ev.actor_name ? ` · ${ev.actor_name}` : ''}</small>
-                  </div>
-                </div>
-              ))}
-            </div>}
-            {notes.length === 0 && events.length === 0 && <p className="od-muted" style={{ marginTop: 0 }}>No activity yet.</p>}
+
+            {events.length > 0 && <>
+              <div className="otl-label">Activity</div>
+              <ol className="otl-events">
+                {events.map((ev: any) => {
+                  const k = eventKind(ev)
+                  return (
+                    <li key={ev.id} className="otl-ev">
+                      <span className={`otl-ev-ic ${k.tone}`} aria-hidden>{k.icon}</span>
+                      <div className="otl-ev-t">
+                        <p>{ev.detail || String(ev.type || '').replace(/_/g, ' ')}</p>
+                        <small><time dateTime={ev.created_at} title={when(ev.created_at)}>{whenShort(ev.created_at)}</time>{ev.actor_name ? ` · ${ev.actor_name}` : ''}</small>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ol>
+            </>}
+            {notes.length === 0 && events.length === 0 && <p className="otl-empty">No notes or activity yet.</p>}
           </CollapseSection>
           </div>
         </div>
