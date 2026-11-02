@@ -38,7 +38,7 @@ export default function InboxOverlays() {
     editOrderLoading, editOrderSaving, editingScheduled, emailGalleryMedia, filteredConvs, filters,
     filtersCustomDates, folderBtnInbox, forwardBusy, forwardPicked, forwardResults, forwardSearch,
     forwardTo, forwarding, galleryFolder, galleryFolders, galleryIndex, galleryItems, gallerySearch,
-    gallerySelected, invoicePreview, invoiceSending, loadConversationExtras, reloadThread, scrollBottom, deliveryView, setDeliveryView, setActivePanel, setMobilePane, setTabletContact, loadConversations,
+    gallerySelected, invoicePreview, invoiceSending, loadConversationExtras, reloadThread, scrollBottom, deliveryView, setDeliveryView, loadConversations,
     loadGalleryFolder, markRead, mergeConversation, mrAccept, mrExpiry, mrMaxFiles, mrPrompt,
     mrSaving, myName, orderGallery, orderPrefillCart, outboundChannel, outlets, payAddress, payAmount, payDesc, paySending, pickerItems, pickupModal, pickupSending, pinnedIds,
     podFiles, podNote, podSending, productError, productQuery, productSearchedFor, productSearching, productSent,
@@ -62,7 +62,7 @@ export default function InboxOverlays() {
     showMediaRequest, showMergePicker, showPod, showProducts, showRecordSale, showSchedule,
     showScheduleMsg, showTimeline, showToast, showTracking, snoozeConv, stageQrMedia,
     stageSelectedMedia, storyView, teamMembers, toast, togglePin, user,
-    setOrderFocus,
+    openOrderInPanel,
   } = useInbox()
   // A DOA claim was processed: reload the conversation (its claim note, the
   // order's new status) once the panel closes. Reloading straight away closed
@@ -229,16 +229,7 @@ export default function InboxOverlays() {
           fallback={{ contactId: deliveryView.contactId || null, date: deliveryView.date || null }}
           senderName={myName}
           onClose={() => setDeliveryView(null)}
-          onOpenOrder={(ref: string) => {
-            // The customer's orders, as the header's order summary opens them,
-            // scrolled to this one (ContactPanelBody); the Orders page if it
-            // isn't one of theirs.
-            setOrderFocus({ ref, convId: selected?.id || null })
-            setActivePanel('orders')
-            const w = window.innerWidth
-            if (w < 768) setMobilePane('contact')
-            else if (w <= 1100) setTabletContact(true)
-          }}
+          onOpenOrder={openOrderInPanel}
           onChanged={(patch: any) => {
             if (patch && contact) setContact((c: any) => ({ ...c, ...patch }))
             if (selected) { reloadThread(selected.id).catch(() => {}); loadConversationExtras(selected.id) }
