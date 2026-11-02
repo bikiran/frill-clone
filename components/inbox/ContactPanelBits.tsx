@@ -239,3 +239,49 @@ export const NT_CSS = `
 .cpn-pill{height:32px;padding:0 14px;border:none;border-radius:999px;background:var(--card,#fff);color:var(--ink);font:inherit;font-size:12.5px;font-weight:650;cursor:pointer}
 .cpn-pill.primary{background:var(--coral);color:#fff}
 `
+
+// The contact edit form and the rows under the contact card (marketing,
+// full profile), Sellio style: grey filled fields, pill choices, a switch
+// and one accent pill to save.
+export const CPF_CSS = `
+.cpf{--cpf-fill:#f4f4f5;--cpf-soft:#71717a;display:flex;flex-direction:column;gap:12px}
+[data-theme="dark"] .cpf,[data-theme="dark"] .cpf-meta{--cpf-fill:#2a2a2e;--cpf-soft:#a1a1aa}
+.cpf-f{display:flex;flex-direction:column;gap:6px;min-width:0}
+.cpf-f>span{font-size:12.5px;font-weight:600;color:var(--cpf-soft)}
+.cpf .cpf-f input,.cpf .cpf-in,.cpf .cpf-f textarea{width:100%;box-sizing:border-box;height:44px;padding:0 14px;border:1.5px solid transparent;border-radius:14px;background:var(--cpf-fill);color:var(--ink);font:inherit;font-size:13.5px;outline:none;box-shadow:none;transition:background .15s,border-color .15s}
+.cpf .cpf-f textarea{height:auto;min-height:72px;max-height:220px;padding:11px 14px;line-height:1.5;resize:none;field-sizing:content}
+.cpf .cpf-f input:focus,.cpf .cpf-in:focus,.cpf .cpf-f textarea:focus{background:var(--card,#fff);border-color:color-mix(in srgb,var(--coral) 55%,transparent)}
+.cpf .cpf-f input::placeholder,.cpf .cpf-in::placeholder,.cpf .cpf-f textarea::placeholder{color:color-mix(in srgb,var(--cpf-soft) 75%,transparent)}
+.cpf-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.cpf-seg{display:flex;flex-wrap:wrap;gap:6px}
+.cpf-seg button{height:34px;padding:0 13px;border:none;border-radius:999px;background:var(--cpf-fill);color:var(--ink);font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s,color .15s}
+.cpf-seg button:hover{background:color-mix(in srgb,var(--cpf-fill) 80%,var(--ink) 6%)}
+.cpf-seg button.on{background:var(--ink);color:var(--card,#fff)}
+.cpf-seg button:focus-visible,.cpf-save:focus-visible,.cpf-fill:focus-visible,.cpf-profile:focus-visible{outline:2px solid color-mix(in srgb,var(--coral) 55%,transparent);outline-offset:2px}
+.cpf-switch{position:relative;display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:16px;background:var(--cpf-fill);cursor:pointer}
+.cpf-switch-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.cpf-switch-t b{font-size:13.5px;font-weight:650;color:var(--ink)}
+.cpf-switch-t small{font-size:12px;color:var(--cpf-soft)}
+.cpf-switch input{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+.cpf-knob{flex-shrink:0;position:relative;width:40px;height:24px;border-radius:999px;background:#d4d4d8;transition:background .18s}
+.cpf-knob::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .2s cubic-bezier(.22,1,.36,1)}
+.cpf-switch input:checked+.cpf-knob{background:#10b981}
+.cpf-switch input:checked+.cpf-knob::after{transform:translateX(16px)}
+.cpf-switch input:focus-visible+.cpf-knob{outline:2px solid color-mix(in srgb,var(--coral) 55%,transparent);outline-offset:2px}
+.cpf-consent{margin:-4px 2px 0;font-size:12px;line-height:1.45;color:var(--cpf-soft)}
+.cpf-consent b{color:var(--ink);font-weight:650}
+.cpf-consent.off{color:#dc2626;font-weight:600}
+.cpf-save{height:46px;margin-top:2px;border:none;border-radius:999px;background:var(--coral);color:#fff;font:inherit;font-size:14.5px;font-weight:700;cursor:pointer;box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 1px 2px rgba(16,24,40,.12)}
+.cpf-save:hover:not(:disabled){filter:brightness(1.05)}
+.cpf-save:disabled{opacity:.6;cursor:default}
+.cpf-fill{align-self:flex-start;display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 13px;border:none;border-radius:999px;background:color-mix(in srgb,var(--coral) 12%,transparent);color:var(--coral);font:inherit;font-size:13px;font-weight:650;cursor:pointer}
+.cpf-fill:hover{background:color-mix(in srgb,var(--coral) 18%,transparent)}
+.cpf-meta{--cpf-fill:#f4f4f5;--cpf-soft:#71717a;display:flex;flex-direction:column;align-items:flex-start;gap:8px;margin-top:2px}
+.cpf-sub{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 11px;border-radius:999px;background:color-mix(in srgb,#10b981 13%,transparent);color:#047857;font-size:12.5px;font-weight:650}
+[data-theme="dark"] .cpf-sub{color:#6ee7b7}
+.cpf-profile{align-self:stretch;display:flex;align-items:center;gap:10px;min-height:44px;padding:0 12px 0 14px;border-radius:16px;background:var(--cpf-fill);color:var(--ink);font-size:13.5px;font-weight:600;text-decoration:none;transition:background .15s}
+.cpf-profile:hover{background:color-mix(in srgb,var(--cpf-fill) 80%,var(--ink) 6%)}
+.cpf-profile>svg:first-child{color:var(--cpf-soft)}
+.cpf-profile span{flex:1;min-width:0}
+.cpf-go{color:var(--cpf-soft)}
+`
