@@ -19,6 +19,7 @@ import { PlatformLogo } from '@/components/StoreLogo'
 import OrderDraftsPanel, { useOrderDraftCount } from '@/components/OrderDraftsPanel'
 import OutOfStockModal from '@/components/OutOfStockModal'
 import RefundOrderModal from '@/components/RefundOrderModal'
+import OrderHeadsUp from '@/components/orders/OrderHeadsUp'
 import EmptyScroll from '@/components/EmptyScroll'
 import { CARRIERS as TRACK_CARRIERS, carrierByKey } from '@/lib/carriers'
 import { barcodeSVG } from '@/lib/barcode'
@@ -781,6 +782,43 @@ export default function OrdersPage() {
   const pageRows = filtered.slice(page * pageSize, page * pageSize + pageSize)
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
 
+  // Which orders on this page carry team notes or open tasks, so they're seen
+  // before anyone opens the order. Re-read when the drawer closes (a note may
+  // have just been added).
+  const [noteFlags, setNoteFlags] = useState<Record<string, { notes: number; tasks: number }>>({})
+  const pageIdsKey = pageRows.map((o: any) => o.id).join(',')
+  useEffect(() => {
+    const ids = pageIdsKey ? pageIdsKey.split(',') : []
+    if (!ids.length || !companyId || drawerId) return
+    let off = false
+    ;(async () => {
+      const [nt, tk] = await Promise.all([
+        (supabase as any).from('order_notes').select('order_id').in('order_id', ids).limit(2000),
+        (supabase as any).from('conversation_tasks').select('order_id, done, status').eq('company_id', companyId).in('order_id', ids).limit(2000),
+      ]).catch(() => [{ data: [] }, { data: [] }])
+      if (off) return
+      const f: Record<string, { notes: number; tasks: number }> = {}
+      for (const r of nt?.data || []) { const k = String(r.order_id); (f[k] ||= { notes: 0, tasks: 0 }).notes++ }
+      for (const r of tk?.data || []) { if (r.done || r.status === 'done') continue; const k = String(r.order_id); (f[k] ||= { notes: 0, tasks: 0 }).tasks++ }
+      setNoteFlags(f)
+    })()
+    return () => { off = true }
+  }, [pageIdsKey, companyId, drawerId])
+  const noteFlag = (o: any) => {
+    const f = noteFlags[o.id]
+    const cust = !!String(o.customer_note || '').trim()
+    if (!f && !cust) return null
+    const parts = [cust ? 'customer note' : '', f?.notes ? `${f.notes} note${f.notes === 1 ? '' : 's'}` : '', f?.tasks ? `${f.tasks} open task${f.tasks === 1 ? '' : 's'}` : ''].filter(Boolean)
+    if (!parts.length) return null
+    const n = (f?.notes || 0) + (f?.tasks || 0) + (cust ? 1 : 0)
+    return (
+      <span className="ord-flag" title={`Has ${parts.join(', ')}`} aria-label={`Has ${parts.join(', ')}`}>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M15.5 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z" /><path d="M15 3v6h6" /></svg>
+        {n}
+      </span>
+    )
+  }
+
   // ── Mutations ──────────────────────────────────────────────────────────────
   const patchOrder = async (ids: string[], patch: any, event?: { type: string; detail: string }) => {
     setOrders(os => os.map(o => ids.includes(o.id) ? { ...o, ...patch } : o))
@@ -1036,6 +1074,10 @@ export default function OrdersPage() {
         .ord-check { width: 16px; height: 16px; margin: 0; accent-color: #18181b; cursor: pointer; vertical-align: middle; }
         .ord-num { font-weight: 650; }
         .ord-num span { color: #a1a1aa; font-weight: 500; }
+        .ord-num .ord-flag, .ord-flag { display: inline-flex; align-items: center; gap: 3px; height: 20px; margin-left: 7px; padding: 0 7px; border-radius: 999px; background: #fef3c7; color: #b45309; font-size: 11.5px; font-weight: 750; vertical-align: 1px; animation: ordFlagIn .4s cubic-bezier(.22,1,.36,1) both; }
+        [data-theme="dark"] .ord-flag { background: rgba(245,158,11,.18); color: #fbbf24; }
+        @keyframes ordFlagIn { from { opacity: 0; transform: scale(.7); } to { opacity: 1; transform: none; } }
+        @media (prefers-reduced-motion: reduce) { .ord-flag { animation: none; } }
         .ord-age { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; }
         .ord-age::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
         .ord-muted { color: #71717a; }
@@ -1370,11 +1412,11 @@ export default function OrdersPage() {
                   <tr key={o.id} className={`ord-row${drawerId === o.id ? ' open' : sel ? ' sel' : cc ? ' cc' : ''}`} onClick={() => openOrder(o.id)}>
                     <td onClick={e => { e.stopPropagation(); toggleOne(o.id) }}><input type="checkbox" className="ord-check" aria-label={`Select order ${o.order_number}`} checked={sel} onChange={() => {}} /></td>
                     <td className="ord-m">
-                      <div className="ord-m-top"><span><span className="ord-num"><span>#</span>{o.order_number}</span><span className="ord-age" style={{ color: age.color }}>{age.label}</span></span><b style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(o.total, o.currency)}</b></div>
+                      <div className="ord-m-top"><span><span className="ord-num"><span>#</span>{o.order_number}</span>{noteFlag(o)}<span className="ord-age" style={{ color: age.color }}>{age.label}</span></span><b style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(o.total, o.currency)}</b></div>
                       <div className="ord-m-mid"><span className="ord-m-name">{o.customer_name || '—'}</span><span className="ord-tag" style={{ ['--tag' as any]: sm.fg }}>{sentence(sm.label)}</span></div>
                       <div className="ord-m-sub"><ChannelIcon channel={o.sales_channel} size={12} /><span>{cc ? 'Click & Collect' : (o.shipping_method || 'Free shipping')} · {o.item_count || 0} item{(o.item_count || 0) === 1 ? '' : 's'}{(o.assignee_name || teamName(o.assignee_id)) ? ` · ${o.assignee_name || teamName(o.assignee_id)}` : ''}</span></div>
                     </td>
-                    <td className="ord-num"><span>#</span>{o.order_number}</td>
+                    <td className="ord-num"><span>#</span>{o.order_number}{noteFlag(o)}</td>
                     <td><span className="ord-age" style={{ color: age.color }}>{age.label}</span></td>
                     <td className="ord-muted">{fmtDate(o.order_date)}</td>
                     <td style={{ fontWeight: 600 }}>{o.customer_name || '—'}</td>
@@ -2511,6 +2553,22 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
     } catch {}
     setTaskText('')
   }
+  // Heads-up → "See all": open the full section (even if it was folded away),
+  // bring it into view and glow it for a moment.
+  const seeAllNotes = (where: 'tasks' | 'notes' | 'customer') => {
+    const id = where === 'tasks' ? 'od-sec-tasks' : where === 'customer' ? 'od-sec-cust' : 'od-sec-timeline'
+    const el = document.getElementById(id) || document.getElementById('od-sec-timeline')
+    if (!el) return
+    const head = el.querySelector('.colvy-sect-head') as HTMLButtonElement | null
+    const folded = head?.getAttribute('aria-expanded') === 'false'
+    if (folded) head!.click()
+    // A folded section finishes opening first (~0.36s), so the scroll lands on it.
+    setTimeout(() => {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      el.classList.remove('ohu-target'); void el.offsetWidth; el.classList.add('ohu-target')
+      setTimeout(() => el.classList.remove('ohu-target'), 1700)
+    }, folded ? 400 : 0)
+  }
   const toggleTask = async (t: any) => {
     const done = !(t.done || t.status === 'done')
     setTasks(ts => ts.map(x => x.id === t.id ? { ...x, done, status: done ? 'done' : 'todo' } : x))
@@ -2654,7 +2712,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
         .od-field { width: 100%; box-sizing: border-box; height: 40px; padding: 0 14px; border: 1.5px solid transparent; border-radius: 12px; background: #f4f4f5; font: inherit; font-size: 14px; color: var(--ink); outline: none; transition: background .15s ease, border-color .15s ease, box-shadow .15s ease; }
         .od-field::placeholder { color: #a1a1aa; }
         .od-field:focus { background: #fff; border-color: #d4d4d8; box-shadow: 0 0 0 3px color-mix(in srgb, var(--ord-accent) 16%, transparent); }
-        textarea.od-field { height: auto; padding: 10px 14px; resize: vertical; line-height: 1.45; }
+        textarea.od-field { height: auto; min-height: 72px; max-height: 240px; padding: 10px 14px; resize: none; field-sizing: content; line-height: 1.45; }
         .od-label { display: block; margin: 12px 0 6px; font-size: 12.5px; font-weight: 500; color: #8e8e93; }
         .od-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
         .od-choice { height: 36px; border: none; border-radius: 999px; background: #f4f4f5; color: #52525b; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s ease, color .15s ease; }
@@ -2906,6 +2964,12 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
             </CollapseSection>
           )}
 
+          {/* Heads-up: the customer's note, the team's notes and open tasks,
+              up here where they're seen (they're also in full below). */}
+          <OrderHeadsUp key={order.id} orderId={order.id} meId={me?.id} notes={notes} tasks={tasks}
+            checkoutNote={(order.customer_note || wooCustomerNote || '').trim()}
+            onToggleTask={toggleTask} onSeeAll={seeAllNotes} />
+
           {/* Send tracking — expands inline below (no popup) */}
           <div style={sect}>
             <button type="button" className="od-rowbtn" aria-expanded={showTracking} onClick={() => setShowTracking(v => !v)}>
@@ -2956,7 +3020,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
           </CollapseSection>
 
           {/* Tasks */}
-          <CollapseSection style={sect} storageKey="order-tasks" title="Tasks">
+          <CollapseSection style={sect} storageKey="order-tasks" title="Tasks" id="od-sec-tasks">
             <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
               <input className="od-field" value={taskText} onChange={e => setTaskText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addTask() }} placeholder="Add a task, e.g. Pack the aquarium" aria-label="New task" />
               <button type="button" className="od-small primary" onClick={addTask} disabled={!taskText.trim()} style={{ height: 40, padding: '0 16px' }}>Add</button>
@@ -2980,7 +3044,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
             const checkoutNote = (order.customer_note || wooCustomerNote || '').trim()
             const hasCheckout = !!checkoutNote
             return (
-              <CollapseSection style={sect} storageKey="order-cust-notes" title="Customer notes">
+              <CollapseSection style={sect} storageKey="order-cust-notes" title="Customer notes" id="od-sec-cust">
                 {wooNotes === null && !hasCheckout && <p className="od-muted">Loading notes…</p>}
                 {wooNotes !== null && customerWoo.length === 0 && !hasCheckout && <p className="od-muted">No customer notes.</p>}
                 {(hasCheckout || customerWoo.length > 0) && <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -3007,7 +3071,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
           })()}
 
           {/* Timeline + notes */}
-          <CollapseSection style={{ ...sect, marginBottom: 0 }} storageKey="order-timeline" title="Order timeline">
+          <CollapseSection style={{ ...sect, marginBottom: 0 }} storageKey="order-timeline" title="Order timeline" id="od-sec-timeline">
             <div style={{ margin: '10px 0 14px' }}>
               <textarea id="ord-note" className="od-field" value={noteBody} onChange={e => setNoteBody(e.target.value)} placeholder="Add a note… use @ to mention someone" rows={2}
                 onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addNote() }} />
