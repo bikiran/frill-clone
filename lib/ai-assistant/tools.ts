@@ -1355,11 +1355,13 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     try {
       const res = await fetch(`${base}/api/orders/refund`, {
         method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ companyId: ctx.companyId, orderId: storeRef(order), amount: amount != null ? String(amount) : undefined, reason: args?.reason || undefined, conversationId: order.conversation_id || undefined }),
+        body: JSON.stringify({ companyId: ctx.companyId, actorUserId: ctx.userId || undefined, orderId: storeRef(order), amount: amount != null ? String(amount) : undefined, reason: args?.reason || undefined, conversationId: order.conversation_id || undefined }),
       })
       const data = await res.json().catch(() => ({}))
       ok = res.ok && data?.ok !== false
-      if (!ok) err = data?.error || `Refund failed (${res.status})`
+      // A refund PIN is set: the assistant can't know it, so send them to the order.
+      if (!ok && (data?.code === 'refund_pin_required' || data?.code === 'refund_pin_wrong')) err = `Refunds need the refund PIN, which I can’t enter for you. Open order ${order.order_number || ''} and use Refund.`.replace('  ', ' ')
+      else if (!ok) err = data?.error || `Refund failed (${res.status})`
     } catch (e: any) { err = e?.message || 'Refund failed' }
     if (!ok) return { ok: false, error: err }
 

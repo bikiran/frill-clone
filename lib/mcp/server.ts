@@ -25,7 +25,11 @@ export const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '202
 export const SERVER_INFO = { name: 'colvy', title: 'Colvy', version: '1.0.0' }
 
 // Not useful outside the Colvy app (opens the in-browser phone).
-const HIDDEN = new Set(['start_call'])
+// Not for outside apps: start_call needs this browser; refund_order moves money
+// back to a customer, which a connected assistant could be talked into (its
+// "confirmed: true" is the assistant's own say-so). Refunds stay in Colvy, with
+// the "Issue refunds" permission and the refund PIN (lib/refund-guard).
+const HIDDEN = new Set(['start_call', 'refund_order'])
 
 const INSTRUCTIONS = `Colvy runs a small business's customer conversations (website chat, SMS, email, Facebook/Instagram), orders, bookings, payments, tasks, support tickets and Google reviews.
 - Look things up with the search_/get_/list_ tools before acting; never guess an id.

@@ -1,4 +1,5 @@
 import { requireCompanyAdmin } from '@/lib/company-access'
+import { checkRefundPin, isPinRefused } from '@/lib/refund-guard'
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
@@ -18,13 +19,16 @@ function admin() {
 // connected account charged with the platform key.
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, paymentId, amount } = await req.json()
+    const { companyId, paymentId, amount, refundPin } = await req.json()
     if (!companyId || !paymentId) return NextResponse.json({ error: 'Missing companyId or paymentId' }, { status: 400 })
 
     const db = admin()
     // Owner / admin only: a refund sends the business's money back out.
     const access = await requireCompanyAdmin(req, db, companyId)
     if (!access.ok) return NextResponse.json({ error: access.notAdmin ? 'Only the owner or an admin can refund payments.' : 'Not authorized' }, { status: 403 })
+    // And the refund PIN, when the workspace has one (lib/refund-guard).
+    const pin = await checkRefundPin(db, companyId, refundPin, { req })
+    if (isPinRefused(pin)) return NextResponse.json({ error: pin.error, code: pin.code, ...(pin.attemptsLeft != null ? { attemptsLeft: pin.attemptsLeft } : {}) }, { status: pin.code === 'refund_pin_locked' ? 429 : 403 })
     const { data: pay } = await db.from('chat_payments').select('*').eq('id', paymentId).eq('company_id', companyId).maybeSingle()
     if (!pay) return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
     if (pay.status === 'refunded') return NextResponse.json({ error: 'Already refunded' }, { status: 400 })

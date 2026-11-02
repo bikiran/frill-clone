@@ -8,7 +8,7 @@ import { peekCompanyUser } from '@/lib/client-cache'
 import ConfirmModal from '@/components/ConfirmModal'
 import { SkeletonList } from '@/components/Skeleton'
 import { alertDialog, confirmDialog } from '@/components/ConfirmDialog'
-import { PERMISSION_SUITES, ALL_FEATURE_KEYS, restrictedDefault } from '@/lib/permissions'
+import { PERMISSION_SUITES, ALL_FEATURE_KEYS, restrictedDefault, isExplicitFeature } from '@/lib/permissions'
 import { loadTeamList, loadMoreViewers, mergeTeam, isViewerRow, VIEWER_PAGE } from '@/lib/team-list'
 import EmptyScroll from '@/components/EmptyScroll'
 
@@ -137,14 +137,17 @@ export default function TeamPage() {
   const permsOf = (m: any) => {
     const existing = m.permissions && typeof m.permissions === 'object' ? m.permissions : null
     const draft: Record<string, boolean> = {}
-    for (const key of ALL_FEATURE_KEYS) draft[key] = existing ? (key in existing ? existing[key] !== false : restrictedDefault(key)) : true
+    // Explicit actions (Issue refunds) are off unless they were turned on.
+    for (const key of ALL_FEATURE_KEYS) draft[key] = isExplicitFeature(key) ? existing?.[key] === true : existing ? (key in existing ? existing[key] !== false : restrictedDefault(key)) : true
     return draft
   }
   const toggleFeature = (key: string) => setPermDraft(d => ({ ...d, [key]: !d[key] }))
   const setSuite = (suiteKey: string, on: boolean) => {
     const suite = PERMISSION_SUITES.find(s => s.key === suiteKey)
     if (!suite) return
-    setPermDraft(d => { const n = { ...d }; for (const f of suite.features) n[f.key] = on; return n })
+    // Turning a whole suite on never grants an explicit action (Issue refunds):
+    // that one is switched on by itself. Turning the suite off clears it too.
+    setPermDraft(d => { const n = { ...d }; for (const f of suite.features) { if (on && f.explicit) continue; n[f.key] = on } return n })
   }
 
   // The member open in the side panel. Everything there (profile, role,

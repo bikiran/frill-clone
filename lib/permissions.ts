@@ -101,6 +101,11 @@ export interface FeatureDef {
   // so nobody lost access when this was introduced; features added since
   // default to hidden, so a restricted member never silently gains a new page.
   restrictedDefault?: boolean
+  // An action rather than a page (no paths), that a member has ONLY when it's
+  // turned on for them: owners and admins always have it, everyone else needs
+  // an explicit `true` in their map. Used for money-moving actions (refunds),
+  // which the server checks too (lib/refund-guard.ts).
+  explicit?: boolean
 }
 
 export interface SuiteDef {
@@ -145,6 +150,9 @@ export const PERMISSION_SUITES: SuiteDef[] = [
     label: 'Orders & Fulfillment',
     features: [
       { key: 'orders', label: 'Orders', paths: ['/admin/orders'] },
+      // Refunds move money back to the customer. Off for agents unless the owner
+      // turns it on; checked on the server for every refund.
+      { key: 'refunds', label: 'Issue refunds (moves money back to the customer)', paths: [], explicit: true },
       { key: 'reports', label: 'Reports', paths: ['/admin/orders/reports'] },
       { key: 'payments', label: 'Payments', paths: ['/admin/payments'] },
       { key: 'shipping', label: 'Shipping', paths: ['/admin/orders/shipping'] },
@@ -233,7 +241,14 @@ const FEATURE_BY_KEY: Record<string, FeatureDef> = Object.fromEntries(PERMISSION
 
 // A restricted member's access to a feature their saved map doesn't mention.
 export function restrictedDefault(featureKey: string): boolean {
-  return FEATURE_BY_KEY[featureKey]?.restrictedDefault ?? true
+  const f = FEATURE_BY_KEY[featureKey]
+  if (f?.explicit) return false
+  return f?.restrictedDefault ?? true
+}
+
+/** An action a member has only when it's turned on for them (see FeatureDef.explicit). */
+export function isExplicitFeature(featureKey: string): boolean {
+  return !!FEATURE_BY_KEY[featureKey]?.explicit
 }
 
 // Roles that always have full access regardless of the permission map.
@@ -246,6 +261,8 @@ export function hasFullAccess(role: string | null | undefined): boolean {
 // Can this (role, permissions) use a given feature key?
 export function canUseFeature(role: string | null | undefined, perms: PermissionMap, featureKey: string): boolean {
   if (hasFullAccess(role)) return true
+  // Explicit actions (refunds): only when turned on for this person.
+  if (isExplicitFeature(featureKey)) return !!perms && typeof perms === 'object' && perms[featureKey] === true
   // No map configured → unrestricted (don't lock existing members out).
   if (!perms || typeof perms !== 'object') return true
   // Saved choice wins; a feature the map doesn't mention yet falls back to its

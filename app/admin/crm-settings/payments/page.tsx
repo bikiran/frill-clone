@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useCompanyUser, S, ToggleRow } from '../_shared'
 import Link from 'next/link'
+import RefundSecurity from '@/components/settings/RefundSecurity'
 
 export default function PaymentsSettings() {
   const { companyId, loading } = useCompanyUser()
@@ -91,6 +92,9 @@ export default function PaymentsSettings() {
           <p style={S.hint}>{(cfg.paylink_save_card || 'ask') === 'ask' ? 'Stripe shows a \u201cSave my card for future payments\u201d tick box. Only customers who tick it get a saved card.' : cfg.paylink_save_card === 'always' ? 'Every card is kept. Stripe shows wording that you may charge it later. Only use this if your terms say so.' : 'Cards are used for this payment only.'}</p>
         </div>
       </div>
+
+      {/* Who may refund, and the refund PIN (saved on its own, not with Save changes). */}
+      <RefundSecurity companyId={companyId} />
 
       <div className="st-sec">
         <h2 style={S.h2}>Transactions</h2>
