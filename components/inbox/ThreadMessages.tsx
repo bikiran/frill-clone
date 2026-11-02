@@ -48,7 +48,7 @@ export default function ThreadMessages() {
     setShowReactPicker, setStoryView, showMsgSearch, showOriginalMsgs, showReactPicker, showToast,
     tasks, teamMembers, textareaRef, threadIndex, threadWin, threadWinRef, toggleBlockContact,
     toggleMsgOriginal, translateMsg, translatingMsgs, updateOrderStatus, user, visibleReadBy,
-    wooOrders, setDeliveryView,
+    wooOrders, setDeliveryView, openOrderInPanel,
   } = useInbox()
   return (
     <>
@@ -451,6 +451,14 @@ export default function ThreadMessages() {
               .replace(/[\s:•\-–—]+$/u, '')                // trailing separators
               .trim()
 
+            // An order line (online order, in-store sale, refund…) opens that
+            // order in the side panel's Orders tab, or on the Orders page when
+            // it isn't one of this customer's.
+            const orderRef = ['placed', 'refunded', 'failed'].includes(kind)
+              ? String(sm.order_number || (raw.match(/Order\s*#\s*([\w-]+)/i) || [])[1] || (sm.order_id ?? '')).trim()
+              : ''
+            const openOrder = orderRef ? () => openOrderInPanel(orderRef) : undefined
+
             return (
               <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
                 {dateDivider}
@@ -458,18 +466,25 @@ export default function ThreadMessages() {
                   {/* Grows to the full stream width and wraps to more lines
                       rather than truncating, so the whole cart/order detail
                       is readable. Keeps the rounded-pill look on one line. */}
-                  <span style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 8, maxWidth: '100%', background: `color-mix(in srgb, ${accent} 13%, transparent)`, color: accent, padding: '7px 15px', borderRadius: 16, lineHeight: 1.45 }}>
+                  <span className={openOrder ? 'tm-life go' : 'tm-life'}
+                    {...(openOrder ? {
+                      role: 'button', tabIndex: 0, title: `Open order #${orderRef.replace(/^#/, '')}`,
+                      onClick: openOrder,
+                      onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openOrder() } },
+                    } : {})}
+                    style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 8, maxWidth: '100%', '--tm-life': accent, color: accent, padding: openOrder ? '7px 12px 7px 15px' : '7px 15px', borderRadius: 16, lineHeight: 1.45 } as React.CSSProperties}>
                     <span style={{ flexShrink: 0, display: 'inline-flex', marginTop: 2 }}>{posLine != null ? <PrextyMark size={14} /> : <LifecycleIcon kind={kind} />}</span>
                     <span style={{ minWidth: 0, fontSize: 12, overflowWrap: 'anywhere' }}>
                       <span style={{ fontWeight: 700 }}>{title}</span>
                       {detail && <span style={{ opacity: 0.8, fontWeight: 500 }}>{` · ${detail}`}</span>}
                       {link && (
-                        <a href={link} target="_blank" rel="noreferrer" title={link}
+                        <a href={link} target="_blank" rel="noreferrer" title={link} onClick={e => e.stopPropagation()}
                           style={{ color: accent, marginLeft: 6, display: 'inline-flex', alignItems: 'center', verticalAlign: 'middle' }}>
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17L17 7M17 7H8M17 7v9"/></svg>
                         </a>
                       )}
                     </span>
+                    {openOrder && <svg className="tm-life-go" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>}
                   </span>
                 </div>
               </div>

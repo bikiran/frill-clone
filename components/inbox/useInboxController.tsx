@@ -1613,6 +1613,17 @@ export function useInboxController() {
   // An order to bring into view in the panel's Orders tab (a delivery's Order
   // row in the thread). The panel scrolls to it and clears this.
   const [orderFocus, setOrderFocus] = useState<{ ref: string; convId: string | null } | null>(null)
+  // Open an order from the thread (an order line, a delivery's Order row): the
+  // customer's orders in the side panel, scrolled to it and ringed
+  // (ContactPanelBody), or the Orders page when it isn't one of theirs.
+  const openOrderInPanel = (ref: string) => {
+    if (!ref) return
+    setOrderFocus({ ref, convId: selected?.id || null })
+    setActivePanel('orders')
+    const w = window.innerWidth
+    if (w < 768) setMobilePane('contact')
+    else if (w <= 1100) setTabletContact(true)
+  }
   const [wooCustomer, setWooCustomer] = useState<any>(null)
   const [wooOrders, setWooOrders] = useState<any[]>([])
   // True while the order history for the selected contact is being fetched, so
@@ -3692,7 +3703,7 @@ export function useInboxController() {
     <div className="cpn-cmp">
       <MentionInput value={o.value} onChange={o.onChange} team={teamMembers as any}
         multiline={o.multiline} rows={o.rows} placeholder={o.placeholder} onSubmit={o.onSubmit} className="cpn-in"
-        style={{ padding: '12px 48px 12px 14px', fontSize: 13.5, lineHeight: 1.5, borderRadius: 16, border: 'none', background: 'var(--cpn-fill)', color: 'var(--ink)' }} />
+        style={{ padding: '12px 48px 12px 14px', fontSize: 13.5, lineHeight: 1.5, borderRadius: 16, border: 'none', background: 'var(--cpn-fill)', color: 'var(--ink)', resize: 'none' }} />
       <button type="button" className={`cpn-send${active ? ' on' : ''}`} onClick={o.onSubmit} title="Add" aria-label="Add" disabled={!active}>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
       </button>
@@ -3715,7 +3726,7 @@ export function useInboxController() {
   const ntEditBox = (value: string, onChange: (v: string) => void, onSave: () => void, onCancel: () => void, rows: number, placeholder: string) => (
     <div className="cpn-edit">
       <MentionInput value={value} onChange={onChange} team={teamMembers as any} multiline rows={rows} placeholder={placeholder} onSubmit={onSave}
-        style={{ padding: '10px 12px', fontSize: 13.5, lineHeight: 1.5, borderRadius: 14, border: 'none', background: 'var(--card, #fff)', color: 'var(--ink)' }} />
+        style={{ padding: '10px 12px', fontSize: 13.5, lineHeight: 1.5, borderRadius: 14, border: 'none', background: 'var(--card, #fff)', color: 'var(--ink)', resize: 'none' }} />
       <div className="cpn-edit-acts">
         <button type="button" className="cpn-pill" onClick={onCancel}>Cancel</button>
         <button type="button" className="cpn-pill primary" onClick={onSave}>Save</button>
@@ -6618,7 +6629,7 @@ export function useInboxController() {
   const themeSolid = igThemeActive ? '#C13584' : msgrThemeActive ? '#006AFF' : 'var(--coral)'
 
   return {
-    EMOJIS, abandonedCarts, activeCall, activeChannel, activeFilterCount, activePanel, addrToString, orderFocus, setOrderFocus,
+    EMOJIS, abandonedCarts, activeCall, activeChannel, activeFilterCount, activePanel, addrToString, orderFocus, setOrderFocus, openOrderInPanel,
     afterOrderRefund, agentFaceOf, agentNameOf, agentTeam, agentTyping, aiDraft, aiSavedFields, aiSummary,
     aiTodos, answeringRole, anyExpiring, applyBulkExpiry, applyMention, applyQuickResponse,
     assignArrows, assignFilter, assignScrollRef, assignSearch, assignTo, attToken,

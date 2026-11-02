@@ -707,4 +707,10 @@ export const THREAD_MESSAGES_CSS = `
 .tm-dlv-go{flex-shrink:0;margin-top:3px;opacity:.55}
 .tm-dlv:hover .tm-dlv-go{opacity:.9}
 [data-theme="dark"] .tm-dlv{color:#34d399}
+.tm-life{background:color-mix(in srgb,var(--tm-life) 13%,transparent)}
+.tm-life.go{cursor:pointer;transition:background .15s}
+.tm-life.go:hover{background:color-mix(in srgb,var(--tm-life) 19%,transparent)}
+.tm-life.go:focus-visible{outline:2px solid color-mix(in srgb,var(--tm-life) 55%,transparent);outline-offset:2px}
+.tm-life-go{flex-shrink:0;margin-top:3px;opacity:.55}
+.tm-life.go:hover .tm-life-go{opacity:.9}
 `

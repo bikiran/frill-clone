@@ -224,6 +224,8 @@ export const NT_CSS = `
   .cpn-note:hover .cpn-acts,.cpn-note:focus-within .cpn-acts,.cpn-task:hover .cpn-acts,.cpn-task:focus-within .cpn-acts{opacity:1;pointer-events:auto}
 }
 .cpn-cmp{position:relative;margin-top:2px}
+/* No resize grip in the rounded corner: the box grows with the note instead. */
+.cpn-cmp textarea,.cpn-edit textarea{field-sizing:content;min-height:68px;max-height:240px;overflow-y:auto;scrollbar-width:thin}
 .cpn-cmp textarea:focus,.cpn-cmp input:focus,.cpn-edit textarea:focus{outline:none;box-shadow:0 0 0 2px color-mix(in srgb,var(--coral) 40%,transparent)}
 .cpn-in::placeholder{color:var(--cpn-soft)}
 .cpn-send{position:absolute;right:7px;bottom:7px;width:32px;height:32px;border-radius:50%;border:none;background:color-mix(in srgb,var(--cpn-soft) 16%,transparent);color:var(--cpn-soft);display:inline-flex;align-items:center;justify-content:center;cursor:default;padding:0;transition:background .15s,color .15s}
