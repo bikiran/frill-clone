@@ -9,7 +9,7 @@ import { MOODS, MOOD_COLOR, MOOD_LABEL, MoodBadge, MoodFace, isMood, launchMood 
 import { decodeEntities as dec } from '@/lib/decode-entities'
 import { supabase } from '@/lib/supabase'
 import CustomerGlance from '@/components/inbox/CustomerGlance'
-import { CHANNEL_NAME, STATUS_COLOR, STATUS_ICON, timeAgo } from '@/components/inbox/inbox-shared'
+import { CHANNEL_NAME, STATUS_COLOR, STATUS_ICON, assigneeName, initials, timeAgo } from '@/components/inbox/inbox-shared'
 import { useInbox } from '@/components/inbox/InboxContext'
 
 export default function ThreadTop() {
@@ -24,6 +24,8 @@ export default function ThreadTop() {
     showMsgSearch, showProducts, showSnooze, showToast, snoozeConversation, tabletContact,
     teamMembers, togglePin, user, wooOrders,
   } = useInbox()
+  // The teammate's current name, not the copy taken at assignment.
+  const assignee = assigneeName(selected, teamMembers)
   return (
     <>
       {/* Detected contact details are auto-saved silently to empty fields;
@@ -154,10 +156,10 @@ export default function ThreadTop() {
         {/* Assign: who has it (or "Assign"), and a menu to find a teammate. */}
         <div style={{ position: 'relative' }} data-assign-menu>
           <button type="button" onClick={() => { setShowAssignMenu(v => !v); setAssignSearch('') }} aria-expanded={showAssignMenu}
-            title={selected.assigned_name ? `Assigned to ${selected.assigned_name}` : 'Assign this conversation'} aria-label={selected.assigned_name ? `Assigned to ${selected.assigned_name}` : 'Assign'}
-            className={`th-pill th-assign${selected.assigned_name ? '' : ' none'}${showAssignMenu ? ' on' : ''}`}>
-            {selected.assigned_name
-              ? <><span className="th-av">{selected.assigned_name.charAt(0).toUpperCase()}</span><span className="th-assign-name">{selected.assigned_name}</span></>
+            title={assignee ? `Assigned to ${assignee}` : 'Assign this conversation'} aria-label={assignee ? `Assigned to ${assignee}` : 'Assign'}
+            className={`th-pill th-assign${assignee ? '' : ' none'}${showAssignMenu ? ' on' : ''}`}>
+            {assignee
+              ? <><span className="th-av">{initials(assignee).charAt(0)}</span><span className="th-assign-name">{assignee}</span></>
               : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="9" cy="7.5" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M19 8v6M16 11h6"/></svg>}
           </button>
           {showAssignMenu && (() => {

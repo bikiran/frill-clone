@@ -299,8 +299,9 @@ export const CDT_CSS = `
 .cdt-h{margin:0 0 10px;font-size:14px;font-weight:650;color:var(--ink)}
 .cdt .cdt-list{margin-top:0}
 .cdt-row{cursor:default}
-.cdt-row:hover{background:none}
-.cdt-v{gap:6px}
+.cpd-li.cdt-row:hover,.cpd-li.cdt-row:active{background:none}
+.cdt-v{gap:7px}
+.cdt-v>.cdt-av{flex-shrink:0;overflow:visible;width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;line-height:1;letter-spacing:0}
 .cdt-v small{font-size:11.5px;font-weight:500;color:#a1a1aa}
 .cdt-pill{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 10px 0 8px;border-radius:999px;font-size:12.5px;font-weight:650;text-transform:capitalize}
 .cdt-pill svg{color:currentColor!important}

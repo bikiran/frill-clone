@@ -41,6 +41,23 @@ export type Contact = {
 export type TeamMember = { id: string; user_id: string; name: string; role: string; avatar?: string }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+/** Who a conversation is assigned to, as people know them: the teammate's
+ *  current profile name from the team list. assigned_name is a copy taken when
+ *  it was assigned, and was just the email's first half (e.g. "simkhada.bijan")
+ *  if the profile names hadn't loaded yet. */
+export function assigneeName(conv: { assigned_to?: string | null; assigned_name?: string | null } | null | undefined, team: { id?: string; user_id?: string; name?: string }[] = []): string {
+  if (!conv) return ''
+  const m = conv.assigned_to ? team.find(t => t.user_id === conv.assigned_to || t.id === conv.assigned_to) : null
+  return String(m?.name || conv.assigned_name || '').trim()
+}
+const AV_COLORS = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6']
+export const avatarColor = (name: string) => AV_COLORS[[...String(name)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % AV_COLORS.length]
+export const initials = (name: string) => {
+  // Letters only, so "Roxy Aquarium (Owner)" gives "RA", not "R(".
+  const w = String(name).replace(/\([^)]*\)/g, ' ').split(/[\s._@-]+/).map(x => x.replace(/[^\p{L}\p{N}]/gu, '')).filter(Boolean)
+  return ((w[0]?.[0] || '?') + (w.length > 1 ? w[w.length - 1][0] : '')).toUpperCase()
+}
+
 // Channel icons are defined below (CHANNEL_ICON) once the `svg` helper exists —
 // they used to be emoji, which render differently on every OS and looked like
 // clip-art next to the rest of the UI.

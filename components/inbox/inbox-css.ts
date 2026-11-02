@@ -260,6 +260,12 @@ export const INBOX_CSS = `
              36px floor stretched the 20px task ticks into tall ovals. */
           .inbox-root .cpn-check { min-height: 0; }
           .inbox-root .cpn-h { min-height: 0; }
+          /* Round icon buttons keep their circle: the Notes / Tasks send
+             arrows, the Orders search, the list's + and settings. */
+          .inbox-root .cpn-send { min-height: 0; width: 34px; height: 34px; }
+          .inbox-root .pt-icon-btn { min-height: 0; width: 36px; height: 36px; }
+          .inbox-root .il-new, .inbox-root .cv-btn-icon { min-height: 0; width: 36px !important; height: 36px !important; }
+          .inbox-root .contact-field-actions button { min-height: 0; width: 30px !important; height: 30px !important; }
           .inbox-composer button { min-height: 40px; }
           .sched-list .sched-btn { min-height: 34px; }
           /* Attachment tiles keep a round remove button (a bit larger for a thumb). */
