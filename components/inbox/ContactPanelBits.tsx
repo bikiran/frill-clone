@@ -181,7 +181,7 @@ export const PT_CSS = `
 // The contact panel's Notes and Tasks (Information and Timeline tabs): Sellio
 // cards, round checks, quiet copy / edit / delete, grey-fill composers.
 export const NT_CSS = `
-.cpn{--cpn-fill:#f4f4f5;--cpn-soft:#71717a;margin-bottom:18px}
+.cpn{--cpn-fill:#f4f4f5;--cpn-soft:#71717a;margin-bottom:12px}
 [data-theme="dark"] .cpn{--cpn-fill:#2a2a2e;--cpn-soft:#a1a1aa}
 .cpn-h{display:flex;align-items:center;gap:8px;width:100%;margin:0 0 10px;padding:0;border:none;background:none;cursor:pointer;text-align:left;font:inherit;color:var(--ink)}
 .cpn-h h3{margin:0;font-size:14px;font-weight:650;color:var(--ink)}
@@ -198,7 +198,8 @@ export const NT_CSS = `
 .cpn-check:hover{box-shadow:inset 0 0 0 1.75px var(--coral)}
 .cpn-check.on{background:var(--coral);box-shadow:none}
 .cpn-task.done{background:color-mix(in srgb,var(--cpn-fill) 55%,transparent)}
-.cpn-task.done .cpn-text{color:var(--cpn-soft);text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--cpn-soft) 55%,transparent);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+/* A done task: one flowing paragraph cut to two lines (blank lines in it used to leave a lone ellipsis line). */
+.cpn-task.done .cpn-text{color:var(--cpn-soft);text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--cpn-soft) 55%,transparent);white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .cpn-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;min-width:0}
 .cpn-task .cpn-foot{padding-left:30px}
 .cpn-by{display:inline-flex;align-items:center;gap:7px;min-width:0}
@@ -284,4 +285,26 @@ export const CPF_CSS = `
 .cpf-profile>svg:first-child{color:var(--cpf-soft)}
 .cpf-profile span{flex:1;min-width:0}
 .cpf-go{color:var(--cpf-soft)}
+`
+
+// The conversation's Details (Sellio): one grey list of quiet rows, like the
+// Rings first / Delivery rows above it.
+export const cdtWhen = (d?: string | null) => {
+  if (!d) return ''
+  const t = new Date(d); if (!Number.isFinite(t.getTime())) return ''
+  return t.toLocaleString('en-AU', { day: 'numeric', month: 'short', ...(t.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}), hour: 'numeric', minute: '2-digit' })
+}
+export const CDT_CSS = `
+.cdt{margin-top:22px}
+.cdt-h{margin:0 0 10px;font-size:14px;font-weight:650;color:var(--ink)}
+.cdt .cdt-list{margin-top:0}
+.cdt-row{cursor:default}
+.cdt-row:hover{background:none}
+.cdt-v{gap:6px}
+.cdt-v small{font-size:11.5px;font-weight:500;color:#a1a1aa}
+.cdt-pill{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 10px 0 8px;border-radius:999px;font-size:12.5px;font-weight:650;text-transform:capitalize}
+.cdt-pill svg{color:currentColor!important}
+.cdt-sub{margin:14px 2px 8px;font-size:12px;font-weight:650;color:#8e8e93}
+button.cpd-li:disabled{cursor:default}
+[data-theme="dark"] .cdt-v small{color:#71717a}
 `

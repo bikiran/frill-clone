@@ -984,7 +984,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   )
 
   return (
-    <div style={{ display: 'flex', minHeight: 'calc(100vh - 56px)' }}>
+    <div className="admin-shell" style={{ display: 'flex', minHeight: 'calc(100vh - 56px)' }}>
       {/* Super-admin impersonation banner (shows only when a session is active) */}
       <ImpersonationBanner />
       {/* Shown when the database stops answering (lib/net-timeout) */}
