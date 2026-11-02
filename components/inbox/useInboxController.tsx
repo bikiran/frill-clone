@@ -99,6 +99,10 @@ async function linkPhoneThreads(companyId: string, rows: any[]): Promise<void> {
   } catch { /* the number still shows */ }
 }
 
+
+/** The email channel columns the composer's From line uses. */
+const EMAIL_FROM_COLS = 'id, from_name, inbound_address, from_address, signature'
+
 export function useInboxController() {
   // Seed from the shared identity cache + the last conversation list we rendered
   // so a revisit shows the inbox instantly instead of "Loading inbox…".
@@ -1418,11 +1422,13 @@ export function useInboxController() {
       let ch: any = null
       const chId = (selected as any).email_channel_id
       if (chId) {
-        const { data } = await (supabase as any).from('email_channels').select('*').eq('id', chId).maybeSingle()
+        // Only what the From line needs: the table also holds the mailbox's
+        // tokens, which the browser can't read (V425).
+        const { data } = await (supabase as any).from('email_channels').select(EMAIL_FROM_COLS).eq('id', chId).maybeSingle()
         ch = data
       }
       if (!ch && companyId) {
-        const { data } = await (supabase as any).from('email_channels').select('*')
+        const { data } = await (supabase as any).from('email_channels').select(EMAIL_FROM_COLS)
           .eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: true }).limit(1)
         ch = data?.[0]
       }

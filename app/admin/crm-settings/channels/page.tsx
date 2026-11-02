@@ -66,11 +66,12 @@ export default function ChannelsSettings() {
       const status: Record<string, boolean> = {}
       // Each channel's check is independent — ask them all at once.
       const q = (p: any) => Promise.resolve(p).then((r: any) => r?.data ?? null).catch(() => null)
-      const [telnyx, twilio, email, google, realestate, meta, sending] = await Promise.all([
-        q((supabase as any).from('telnyx_integrations').select('api_key, phone_number').eq('company_id', companyId).maybeSingle()),
+      const [keyed, twilio, email, realestate, meta, sending] = await Promise.all([
+        // Telnyx and Google hinge on a stored key, which the browser can't
+        // read (V425): the server says yes / no.
+        authFetch(`/api/channels/connected?companyId=${encodeURIComponent(companyId)}`).then(r => (r.ok ? r.json() : null)).catch(() => null),
         q((supabase as any).from('twilio_integrations').select('account_sid, phone_number').eq('company_id', companyId).maybeSingle()),
         q((supabase as any).from('email_channels').select('id, provider').eq('company_id', companyId).eq('is_active', true).limit(50)),
-        q((supabase as any).from('google_business_accounts').select('access_token').eq('company_id', companyId).maybeSingle()),
         q((supabase as any).from('realestate_integrations').select('is_active').eq('company_id', companyId).maybeSingle()),
         q(supabase.from('meta_channels').select('platform').eq('company_id', companyId).eq('is_active', true).limit(50)),
         // Staff may read their own sending domains (V396); null before it runs.
@@ -78,7 +79,7 @@ export default function ChannelsSettings() {
       ])
 
       // SMS / Calls — a number on Twilio (below), or a legacy Telnyx integration.
-      if (telnyx?.api_key && telnyx?.phone_number) { status.sms = true; status.phone = true }
+      if (keyed?.telnyx) { status.sms = true; status.phone = true }
       // Twilio — a second SMS/MMS + calling provider (BYO account).
       status.twilio = !!(twilio?.account_sid && twilio?.phone_number)
       if (status.twilio) { status.sms = true; status.phone = true }
@@ -93,7 +94,7 @@ export default function ChannelsSettings() {
       status.instagram = social.some(r => r.platform === 'instagram')
       status.facebook = social.some(r => r.platform === 'facebook')
       // Google Reviews — an OAuth token stored.
-      status.google = !!google?.access_token
+      status.google = !!keyed?.google
       // RealEstate — an active realestate.com.au integration.
       status.realestate = !!realestate?.is_active
 

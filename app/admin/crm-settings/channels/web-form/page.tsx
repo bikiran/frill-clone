@@ -6,9 +6,6 @@ import { authFetch } from '@/lib/auth-fetch'
 import { S, useCompanyUser } from '../../_shared'
 import BrandLogo from '@/components/BrandLogo'
 
-const FORMS_DOMAIN = process.env.NEXT_PUBLIC_FORMS_DOMAIN || 'forms.colvy.com'
-const hex = (s: string) => (s || '').replace(/[^a-f0-9]/gi, '').toLowerCase()
-
 const FAQ = [
   { q: 'What is this email address for?', a: 'Point your website contact form (WordPress, Wix, Squarespace, Typeform, etc.) to send its submissions to this address. Each submission arrives in your Colvy inbox as a new conversation for that location.' },
   { q: 'How do I set up Web Forms?', a: 'In your form builder, set the notification/recipient email to the address below (or add it as a CC). That\'s it — the next submission shows up in your inbox.' },
@@ -36,7 +33,7 @@ export default function WebFormChannel() {
     setLoading(true)
     const [{ data: locs }, { data: chans }, { data: co }] = await Promise.all([
       (supabase as any).from('company_locations').select('id, label, suburb, is_primary').eq('company_id', companyId).order('is_primary', { ascending: false }),
-      (supabase as any).from('email_channels').select('*').eq('company_id', companyId).eq('provider', 'webform'),
+      (supabase as any).from('email_channels').select('id, company_id, location_id, inbound_address, label, provider, is_active, created_at').eq('company_id', companyId).eq('provider', 'webform'),
       (supabase as any).from('companies').select('name').eq('id', companyId).maybeSingle(),
     ])
     setLocations(locs || [])
@@ -58,13 +55,14 @@ export default function WebFormChannel() {
     if (!companyId || busy) return
     setBusy(true)
     try {
-      const token = `${hex(companyId).slice(0, 6)}.${locationId ? hex(locationId).slice(0, 2) : 'all'}`
-      const inbound = `${token}@${FORMS_DOMAIN}`
-      const { data, error } = await (supabase as any).from('email_channels').insert({
-        company_id: companyId, inbound_address: inbound, provider: 'webform',
-        location_id: locationId, label: `Web Form — ${label}`, is_active: true, from_address: null,
-      }).select('*').maybeSingle()
-      if (!error && data) setRows(r => [...r, data])
+      // Created by the server (/api/web-form/channels): email channels hold
+      // mailbox tokens, so the browser doesn't write them (V425).
+      const res = await authFetch('/api/web-form/channels', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, locationId, label }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (res.ok && d.channel) setRows(r => (r.some(x => x.id === d.channel.id) ? r : [...r, d.channel]))
     } finally { setBusy(false) }
   }
 
