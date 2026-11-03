@@ -23,6 +23,24 @@ const PersonIcon = () => ico(<><circle cx="12" cy="7" r="4"/><path d="M5.5 21a8.
 const PhoneIcon = (size = 13) => ico(<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>, size)
 const PhoneMissedIcon = (size = 13) => ico(<><line x1="23" y1="1" x2="17" y2="7"/><line x1="17" y1="1" x2="23" y2="7"/><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></>, size)
 const VoicemailIcon = (size = 13) => ico(<><circle cx="6" cy="12" r="4"/><circle cx="18" cy="12" r="4"/><line x1="6" y1="16" x2="18" y2="16"/></>, size)
+const DownloadIcon = () => ico(<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></>)
+const RefreshIcon = () => ico(<><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></>, 13)
+const ChevronIcon = ({ up }: { up?: boolean }) => ico(<polyline points={up ? '18 15 12 9 6 15' : '6 9 12 15 18 9'}/>, 13)
+// A small arrow on the phone: in for a call received, out for one made.
+const DirArrow = ({ inbound }: { inbound: boolean }) => (
+  <svg className="cc-dir" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    {inbound ? <><polyline points="16 18 6 18 6 8"/><line x1="18" y1="6" x2="6" y2="18"/></> : <><polyline points="8 6 18 6 18 16"/><line x1="6" y1="18" x2="18" y2="6"/></>}
+  </svg>
+)
+// "Speaker 1" → "S1", "Sabeen" → "S".
+const speakerMark = (s: string) => {
+  const m = /^speaker\s*(\d+)/i.exec(String(s).trim())
+  return m ? `S${m[1]}` : (String(s).trim()[0] || '?').toUpperCase()
+}
+const initialsOf = (name: string) => {
+  const w = String(name).replace(/\([^)]*\)/g, ' ').split(/[\s._@-]+/).map(x => x.replace(/[^\p{L}\p{N}]/gu, '')).filter(Boolean)
+  return ((w[0]?.[0] || '?') + (w.length > 1 ? w[w.length - 1][0] : '')).toUpperCase()
+}
 
 const SENTIMENT: Record<string, { label: string; color: string; bg: string }> = {
   positive: { label: 'Positive', color: '#15803d', bg: '#dcfce7' },
@@ -199,7 +217,6 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
   // Call routing: the phone menu choice, the voicemail box, a forward.
   const routed = callRoutingFacts(call)
 
-  // Missed call — a compact timeline pill, not a full card (there's nothing to
   // Answered by the AI phone agent: its own compact card (the transcript note,
   // AiCallNote) covers the call, so this one steps aside. Before the row loads,
   // the call's agent name says so; a call that went on to voicemail keeps its card.
@@ -208,13 +225,15 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
     : (meta?.agent_name === 'AI phone agent')
   if (aiHasNote) return null
 
+  // Missed call: a compact timeline pill, not a full card (there's nothing to
   // play or summarise). Rendered once the row loads so we know it truly missed.
   if (call && isMissed) {
     const num = inbound ? call.from_number : call.to_number
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', margin: '8px 0' }}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '5px 12px', borderRadius: 20, background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: 12, fontWeight: 600 }}>
-          <span style={{ display: 'inline-flex', color: '#dc2626' }}>{PhoneMissedIcon(13)}</span>
+      <div className="cc-missed-row">
+        <style href="colvy-callcard" precedence="default">{CC_CSS}</style>
+        <span className="cc-missed">
+          {PhoneMissedIcon(13)}
           {inbound ? 'Missed call' : 'Call not answered'}{num ? ` · ${num}` : ''}{routed.choice ? ` · ${routed.choice}` : ''}{when ? ` · ${when}` : ''}
         </span>
       </div>
@@ -223,7 +242,15 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
 
   const headLabel = isVoicemail ? `Voicemail${routed.box ? ` · ${routed.box}` : ''}` : (inbound ? 'Call received' : 'Call made')
   const handledBy = call?.agent_name || meta?.agent_name || ''
-  const handledText = routed.forwardedTo ? `Forwarded to ${routed.forwardedTo}` : handledBy ? (/^Forwarded to /.test(handledBy) ? handledBy : `Handled by ${handledBy}`) : ''
+  // Who took it, as the team knows them: agent_name is a copy taken on the
+  // call, and was the email's first half ("sabingau") when no profile name
+  // had loaded.
+  const member = call?.answered_by_user_id && Array.isArray(teamMembers)
+    ? teamMembers.find((m: any) => (m?.user_id || m?.id) === call.answered_by_user_id && m?.name)
+    : null
+  const forwarded = routed.forwardedTo ? `Forwarded to ${routed.forwardedTo}` : /^Forwarded to /.test(handledBy) ? handledBy : ''
+  const handlerName: string = forwarded ? '' : (member?.name || handledBy)
+  const handledText = forwarded || (handlerName ? `Handled by ${handlerName}` : '')
   // Show a badge whenever we have any AI output. Older calls summarised before
   // sentiment was persisted have a summary but a null sentiment — treat those
   // as neutral rather than showing no badge at all.
@@ -249,101 +276,97 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
     : []
   const wanted = pickedView || call?.transcript_meta?.view || 'en'
   const transcriptView: 'en' | 'roman' | 'original' = views.some(v => v.key === wanted) ? wanted : 'en'
+  // Each voice gets its own colour, in the order they first speak.
+  const speakers: string[] = []
+  for (const sg of segs) { const k = String(sg?.speaker || ''); if (k && !speakers.includes(k)) speakers.push(k) }
+  const recUrl: string | null = call?.recording_url || (call as any)?.conference_recording_url || null
 
   return (
-    <div style={{ maxWidth: 560, margin: '10px auto', background: '#f7f9fc', border: '1px solid #e3e9f2', borderRadius: 14, padding: 14 }}>
-      {/* Header: direction + duration */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: summary || call?.recording_url ? 12 : 0 }}>
-        <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: '50%', background: isVoicemail ? '#fef3c7' : '#dcfce7', color: isVoicemail ? '#b45309' : '#15803d' }}>
-          {isVoicemail ? VoicemailIcon(14) : PhoneIcon(13)}
+    <div className="cc" style={{ '--cc-accent': accent } as React.CSSProperties}>
+      <style href="colvy-callcard" precedence="default">{CC_CSS}</style>
+      {/* Header: direction, length, who took it, and the mood */}
+      <div className="cc-h">
+        <span className={`cc-ic${isVoicemail ? ' vm' : inbound ? ' in' : ''}`} aria-hidden>
+          {isVoicemail ? VoicemailIcon(17) : PhoneIcon(16)}
+          {!isVoicemail && <DirArrow inbound={inbound} />}
         </span>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>
-            {headLabel}{duration ? ` · ${fmt(duration)}` : ''}
+        <div className="cc-ht">
+          <p className="cc-title">
+            <b>{headLabel}</b>
+            {duration ? <span className="cc-dur">{fmt(duration)}</span> : null}
           </p>
-          <p style={{ margin: 0, fontSize: 11, color: 'var(--slate)' }}>
-            {[routed.choice, handledText, timestamp ? new Date(timestamp).toLocaleString('en-AU', { day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit' }) : ''].filter(Boolean).join(' · ')}
+          <p className="cc-sub">
+            {member ? <span className="cc-av" aria-hidden>{initialsOf(member.name)}</span> : null}
+            <span>{[routed.choice, handledText, when].filter(Boolean).join(' · ')}</span>
           </p>
         </div>
         {sent && (
-          <span style={{ fontSize: 10.5, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: sent.bg, color: sent.color }}>
-            {sent.label}
-          </span>
+          <span className={`cc-sent ${sentKey}`}><i aria-hidden />{sent.label}</span>
         )}
       </div>
 
       {/* AI summary */}
       {summary && (
-        <div style={{ marginBottom: 12 }}>
-          <p style={{ margin: '0 0 6px', fontSize: 12.5, fontWeight: 700, color: '#8b5cf6', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <SparkIcon /> Call Summary
+        <section className="cc-sec">
+          <p className="cc-sh">
+            <span className="cc-sh-ic ai"><SparkIcon /></span>
+            Call summary
             {hasTranslation && (
-              <span style={{ fontWeight: 600, fontSize: 10.5, color: 'var(--slate)' }}>· {hasNonLatinScript(summary) || call?.transcript_meta?.summary === 'ne-roman' ? `from a ${langName} call` : `English · translated from ${langName}`}</span>
+              <small>· {hasNonLatinScript(summary) || call?.transcript_meta?.summary === 'ne-roman' ? `from a ${langName} call` : `English · translated from ${langName}`}</small>
             )}
           </p>
-          <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: 'var(--ink)' }}>
-            <HL text={expanded || !longSummary ? summary : `${summary.slice(0, 180).trim()}…`} q={highlight} accent={accent} />
-          </p>
-          {longSummary && (
-            <button type="button" onClick={() => setExpanded(v => !v)}
-              style={{ marginTop: 4, background: 'none', border: 'none', padding: 0, color: '#2563eb', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
-              {expanded ? 'Read Less' : 'Read More'}
-            </button>
-          )}
-        </div>
+          <div className="cc-sum">
+            <p><HL text={expanded || !longSummary ? summary : `${summary.slice(0, 180).trim()}…`} q={highlight} accent={accent} /></p>
+            {longSummary && (
+              <button type="button" className="cc-more" onClick={() => setExpanded(v => !v)} aria-expanded={expanded}>
+                {expanded ? 'Show less' : 'Read more'} <ChevronIcon up={expanded} />
+              </button>
+            )}
+          </div>
+        </section>
       )}
 
       {/* AI draft tasks — turn the call's action items into real tasks (with
           per-task priority, assignee, outlet and an optional reminder). The
           shared panel remembers dismissal/creation per call. */}
       {todos.length > 0 && (
-        <div style={{ marginBottom: 12 }}>
-          <DraftTasks
-            todos={todos} source="call_summary" storageKey={`colvy-call-tasks-${callId}`}
-            conversationId={call?.conversation_id} companyId={call?.company_id}
-            teamMembers={teamMembers} outlets={outlets} defaultLocationId={defaultLocationId}
-            actor={actor} onCreated={onTasksCreated} onClosedChange={setDraftsClosed}
-            contactName={call?.contact_name || contactName}
-            // Unused and the chat has moved on below this call: one closed row.
-            collapsible={collapseDrafts}
-          />
-        </div>
+        <DraftTasks
+          todos={todos} source="call_summary" storageKey={`colvy-call-tasks-${callId}`}
+          conversationId={call?.conversation_id} companyId={call?.company_id}
+          teamMembers={teamMembers} outlets={outlets} defaultLocationId={defaultLocationId}
+          actor={actor} onCreated={onTasksCreated} onClosedChange={setDraftsClosed}
+          contactName={call?.contact_name || contactName}
+          // Unused and the chat has moved on below this call: one closed row.
+          collapsible={collapseDrafts}
+        />
       )}
 
       {/* Action items — the plain list, once drafts are created/dismissed. */}
       {expanded && todos.length > 0 && draftsClosed && (
-        <div style={{ marginBottom: 12, paddingTop: 12, borderTop: '1px solid #e3e9f2' }}>
-          <p style={{ margin: '0 0 6px', fontSize: 12.5, fontWeight: 700, color: '#2563eb', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <ClockIcon /> Action Items
-          </p>
-          <ul style={{ margin: 0, paddingLeft: 18 }}>
-            {todos.map((t, i) => (
-              <li key={i} style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--ink)', marginBottom: 3 }}><HL text={t} q={highlight} accent={accent} /></li>
-            ))}
+        <section className="cc-sec">
+          <p className="cc-sh"><span className="cc-sh-ic"><ClockIcon /></span>Action items</p>
+          <ul className="cc-list">
+            {todos.map((t, i) => <li key={i}><HL text={t} q={highlight} accent={accent} /></li>)}
           </ul>
-        </div>
+        </section>
       )}
 
-      {/* Contact Information — Coax lists who the call was with, pulled from
-          the AI's read of the transcript plus the linked contact record. */}
+      {/* Contact Information — who the call was with, from the AI's read of
+          the transcript plus the linked contact record. */}
       {expanded && (call?.contact_name || call?.to_number || call?.from_number) && (
-        <div style={{ marginBottom: 12, paddingTop: 12, borderTop: '1px solid #e3e9f2' }}>
-          <p style={{ margin: '0 0 6px', fontSize: 12.5, fontWeight: 700, color: '#2563eb', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <PersonIcon /> Contact Information
-          </p>
-          <ul style={{ margin: 0, paddingLeft: 18 }}>
-            {call?.contact_name && <li style={{ fontSize: 12.5, color: 'var(--ink)', marginBottom: 3 }}>{call.contact_name}</li>}
-            <li style={{ fontSize: 12.5, color: 'var(--ink)' }}>{inbound ? call?.from_number : call?.to_number}</li>
+        <section className="cc-sec">
+          <p className="cc-sh"><span className="cc-sh-ic"><PersonIcon /></span>Contact</p>
+          <ul className="cc-list">
+            {call?.contact_name && <li>{call.contact_name}</li>}
+            <li>{inbound ? call?.from_number : call?.to_number}</li>
           </ul>
-        </div>
+        </section>
       )}
 
       {/* Recording */}
-      {(call?.recording_url || (call as any)?.conference_recording_url) ? (
-        <div style={{ paddingTop: 12, borderTop: '1px solid #e3e9f2' }}>
-          <p style={{ margin: '0 0 7px', fontSize: 12.5, fontWeight: 700, color: '#2563eb', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <MicIcon /> {isVoicemail ? 'Voicemail' : 'Call Recording'}
-          </p>
+      {recUrl ? (
+        <section className="cc-sec">
+          <p className="cc-sh"><span className="cc-sh-ic rec"><MicIcon /></span>{isVoicemail ? 'Voicemail' : 'Call recording'}</p>
           {/* The call's length isn't the recording's (ringing, hold), so only the
               recording's own length is shown before Play. */}
           {call?.recording_url && <VoicePlayer src={call.recording_url} name={isVoicemail ? 'Voicemail' : 'Call recording'} lazy durationSec={call.recording_duration || undefined} />}
@@ -351,94 +374,185 @@ export default function CallCard({ callId, meta, timestamp, highlight, accent = 
               recording for the part after the handoff — play it too. */}
           {(call as any)?.conference_recording_url && (
             <>
-              {call?.recording_url && <p style={{ margin: '9px 0 5px', fontSize: 11, fontWeight: 600, color: 'var(--slate)' }}>After device switch / transfer</p>}
+              {call?.recording_url && <p className="cc-cap">After device switch / transfer</p>}
               <VoicePlayer src={(call as any).conference_recording_url} name="Call recording (after transfer)" lazy durationSec={(call as any).conference_recording_duration || undefined} />
             </>
           )}
-          <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-            <a href={call.recording_url || (call as any).conference_recording_url} download
-              style={{ fontSize: 12, fontWeight: 600, color: '#2563eb', textDecoration: 'none' }}>
-              Download recording
-            </a>
+          <div className="cc-acts">
+            <a className="cc-pill" href={recUrl} download><DownloadIcon /> Download</a>
             {call?.transcription && (
-              <button type="button" onClick={() => setShowTranscript(v => !v)}
-                style={{ background: 'none', border: 'none', padding: 0, color: '#2563eb', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
-                <DocIcon /> {showTranscript ? 'Hide' : 'View'} transcription
+              <button type="button" className={`cc-pill${showTranscript ? ' on' : ''}`} onClick={() => setShowTranscript(v => !v)} aria-expanded={showTranscript}>
+                <DocIcon /> {showTranscript ? 'Hide transcript' : 'View transcript'}
               </button>
             )}
           </div>
-        </div>
+        </section>
       ) : (
-        <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #e3e9f2' }}>
-          {call?.recording_error ? (
-            <p style={{ margin: 0, fontSize: 11.5, color: '#dc2626', lineHeight: 1.5 }}>
-              {call.recording_error}
-            </p>
-          ) : aiAnswered ? (
-            <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)' }}>
-              Not recorded. The AI phone agent’s transcript is in the note below.
-            </p>
-          ) : (
-            <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)', fontStyle: 'italic' }}>
-              Recording uploading…
-            </p>
-          )}
-        </div>
+        <p className={`cc-note${call?.recording_error ? ' err' : ''}`}>
+          {call?.recording_error
+            ? call.recording_error
+            : aiAnswered
+              ? 'Not recorded. The AI phone agent’s transcript is in the note below.'
+              : <><span className="cc-dots" aria-hidden><i /><i /><i /></span>Recording uploading…</>}
+        </p>
       )}
 
       {/* No summary yet? Say why, and offer to run it — rather than an empty
           card that gives no clue whether it's still working or has failed. */}
-      {(call?.recording_url || (call as any)?.conference_recording_url) && !summary && (
-        <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #e3e9f2', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <button type="button" onClick={runTranscription} disabled={retrying}
-            style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #c7d7f0', background: '#fff', color: '#2563eb', fontSize: 12, fontWeight: 700, cursor: retrying ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+      {recUrl && !summary && (
+        <div className="cc-run">
+          <button type="button" className="cc-pill ai" onClick={runTranscription} disabled={retrying}>
             <SparkIcon /> {retrying ? 'Transcribing…' : (call?.transcription ? 'Generate AI summary' : 'Transcribe & summarise')}
           </button>
-          {retryMsg && <span style={{ fontSize: 11.5, color: '#dc2626', flex: 1, minWidth: 0, lineHeight: 1.45 }}>{retryMsg}</span>}
+          {retryMsg && <span className="cc-err">{retryMsg}</span>}
         </div>
       )}
 
       {/* Transcript */}
       {showTranscript && call?.transcription && (
-        <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #e3e9f2' }}>
-          {/* Language views — for a call that isn't all English. */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, fontSize: 11.5, flexWrap: 'wrap' }}>
-            {views.map((v, i) => (
-              <span key={v.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                {i > 0 && <span style={{ color: '#c7d0dd' }}>|</span>}
-                <button type="button" onClick={() => setTranscriptView(v.key)} aria-pressed={transcriptView === v.key}
-                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: transcriptView === v.key ? 800 : 500, color: transcriptView === v.key ? '#2563eb' : 'var(--slate)' }}>
-                  {v.label}
-                </button>
-              </span>
-            ))}
-            {hasTranslation && mixedEnglish && <span style={{ color: 'var(--slate)' }}>· {langName} and English</span>}
-            <button type="button" onClick={runTranscription} disabled={retrying} title="Transcribe and summarise this call again with the current call language settings"
-              style={{ marginLeft: 'auto', background: 'none', border: 'none', padding: 0, cursor: retrying ? 'wait' : 'pointer', color: 'var(--slate)', fontWeight: 600 }}>
-              {retrying ? 'Re-transcribing…' : 'Re-transcribe'}
+        <section className="cc-tr">
+          <div className="cc-tr-bar">
+            {/* Language views — for a call that isn't all English. */}
+            {views.length > 0 && (
+              <div className="cc-seg" role="group" aria-label="Transcript language">
+                {views.map(v => (
+                  <button key={v.key} type="button" onClick={() => setTranscriptView(v.key)} aria-pressed={transcriptView === v.key} className={transcriptView === v.key ? 'on' : ''}>
+                    {v.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {hasTranslation && mixedEnglish && <span className="cc-tr-note">{langName} and English</span>}
+            <button type="button" className="cc-ghost" onClick={runTranscription} disabled={retrying} title="Transcribe and summarise this call again with the current call language settings">
+              <RefreshIcon /> {retrying ? 'Re-transcribing…' : 'Re-transcribe'}
             </button>
           </div>
-          {retryMsg && <p style={{ margin: '0 0 8px', fontSize: 11.5, color: '#dc2626' }}>{retryMsg}</p>}
-          <div style={{ maxHeight: 260, overflowY: 'auto' }}>
+          {retryMsg && <p className="cc-err block">{retryMsg}</p>}
+          <div className="cc-tr-body">
             {perLine || (!hasTranslation && segs.length) ? (
               segs.map((seg: any, i: number) => {
                 const line = transcriptView === 'en' && perLine ? seg.en : transcriptView === 'roman' && perLine ? (seg.roman || seg.text) : seg.text
+                const who = String(seg.speaker || '')
+                const tone = who ? speakers.indexOf(who) % 4 : 1
+                const first = !who || who !== String(segs[i - 1]?.speaker || '')
                 return (
-                  <div key={i} style={{ marginBottom: 8 }}>
-                    {seg.speaker && <p style={{ margin: 0, fontSize: 10.5, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase' }}>{seg.speaker}</p>}
-                    <p lang={transcriptView === 'original' && tLang ? String(tLang) : undefined} style={{ margin: 0, fontSize: 12.5, lineHeight: 1.55, color: 'var(--ink)' }}><HL text={String(line || '')} q={highlight} accent={accent} /></p>
+                  <div key={i} className={`cc-turn t${tone}${first ? ' first' : ''}`}>
+                    <span className="cc-turn-av" aria-hidden>{first && who ? speakerMark(who) : ''}</span>
+                    <div className="cc-turn-b">
+                      {first && who && <p className="cc-turn-who">{who}</p>}
+                      <p className="cc-turn-text" lang={transcriptView === 'original' && tLang ? String(tLang) : undefined}><HL text={String(line || '')} q={highlight} accent={accent} /></p>
+                    </div>
                   </div>
                 )
               })
             ) : (
               // Older translated calls: whole-text versions, no per-line split.
-              <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6, color: 'var(--ink)', whiteSpace: 'pre-wrap' }}>
+              <p className="cc-tr-plain">
                 <HL text={String((transcriptView === 'en' ? call.transcript_en : transcriptView === 'roman' ? call.transcript_roman : null) || call.transcription)} q={highlight} accent={accent} />
               </p>
             )}
           </div>
-        </div>
+        </section>
       )}
     </div>
   )
 }
+
+// Sellio card: white, soft ring, roomy; sections by whitespace and small
+// labelled icon tiles; grey fills for the summary, the player and the pills.
+const CC_CSS = `
+.cc{--cc-fill:#f4f4f5;--cc-fill-2:#ececef;--cc-ring:#ececef;--cc-mute:#8e8e93;max-width:560px;margin:12px auto;padding:16px 16px 15px;border-radius:22px;background:var(--card,#fff);box-shadow:0 0 0 1px var(--cc-ring),0 1px 2px rgba(16,24,40,.04),0 10px 24px -16px rgba(16,24,40,.18);text-align:left}
+.cc button::before,.cc a::before{display:none}
+.cc-h{display:flex;align-items:center;gap:12px}
+.cc-ic{position:relative;width:42px;height:42px;flex-shrink:0;border-radius:14px;display:inline-flex;align-items:center;justify-content:center;background:#dcfce7;color:#15803d}
+.cc-ic.in{background:#dbeafe;color:#1d4ed8}
+.cc-ic.vm{background:#fef3c7;color:#b45309}
+.cc-dir{position:absolute;right:5px;top:5px}
+.cc-ht{flex:1;min-width:0}
+.cc-title{margin:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cc-title b{font-size:15px;font-weight:700;color:var(--ink);letter-spacing:-.01em}
+.cc-dur{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:999px;background:var(--cc-fill);color:#52525b;font-size:12px;font-weight:650;font-variant-numeric:tabular-nums}
+.cc-sub{margin:3px 0 0;display:flex;align-items:center;gap:6px;min-width:0;font-size:12.5px;color:var(--cc-mute)}
+.cc-sub>span:last-child{min-width:0;line-height:1.4}
+.cc-av{width:18px;height:18px;flex-shrink:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--cc-accent) 16%,transparent);color:var(--cc-accent);font-size:8.5px;font-weight:800;letter-spacing:0}
+.cc-sent{flex-shrink:0;display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 11px;border-radius:999px;font-size:12px;font-weight:650;background:#f4f4f5;color:#52525b}
+.cc-sent i{width:7px;height:7px;border-radius:50%;background:currentColor}
+.cc-sent.positive{background:#dcfce7;color:#15803d}
+.cc-sent.negative{background:#fee2e2;color:#dc2626}
+.cc-sec{margin-top:18px}
+.cc-sh{margin:0 0 9px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13.5px;font-weight:700;color:var(--ink)}
+.cc-sh small{font-size:12px;font-weight:550;color:var(--cc-mute)}
+.cc-sh-ic{width:24px;height:24px;flex-shrink:0;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;background:var(--cc-fill);color:#52525b}
+.cc-sh-ic.ai{background:#ede9fe;color:#7c3aed}
+.cc-sh-ic.rec{background:color-mix(in srgb,var(--cc-accent) 13%,transparent);color:var(--cc-accent)}
+.cc-sum{padding:12px 14px;border-radius:16px;background:var(--cc-fill)}
+.cc-sum p{margin:0;font-size:13.5px;line-height:1.6;color:var(--ink)}
+.cc-more{margin-top:6px;display:inline-flex;align-items:center;gap:4px;height:26px;padding:0 10px 0 0;border:none;background:none;color:var(--ink);font:inherit;font-size:12.5px;font-weight:650;cursor:pointer}
+.cc-more:hover{color:var(--cc-accent)}
+.cc-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.cc-list li{position:relative;padding:9px 12px 9px 26px;border-radius:12px;background:var(--cc-fill);font-size:13px;line-height:1.45;color:var(--ink)}
+.cc-list li::before{content:"";position:absolute;left:12px;top:15px;width:6px;height:6px;border-radius:50%;background:#a1a1aa}
+.cc .vp{padding:6px 14px 6px 6px;border:none;border-radius:999px;background:var(--cc-fill)}
+.cc .vp-play{width:38px;height:38px;background:var(--cc-accent)}
+.cc .vp-bar.on{background:var(--cc-accent)}
+.cc .vp-rate{background:var(--card,#fff);color:var(--ink)}
+.cc-cap{margin:10px 2px 6px;font-size:12px;font-weight:600;color:var(--cc-mute)}
+.cc-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.cc-pill{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 13px;border:none;border-radius:999px;background:var(--cc-fill);color:var(--ink);font:inherit;font-size:12.5px;font-weight:650;text-decoration:none;cursor:pointer;transition:background .15s ease,color .15s ease}
+.cc-pill:hover{background:var(--cc-fill-2)}
+.cc-pill.on{background:#18181b;color:#fff}
+.cc-pill.ai{background:#ede9fe;color:#6d28d9}
+.cc-pill.ai:hover{background:#e4dcfd}
+.cc-pill:disabled{opacity:.6;cursor:wait}
+.cc-pill:focus-visible,.cc-ghost:focus-visible,.cc-more:focus-visible,.cc-seg button:focus-visible{outline:2px solid color-mix(in srgb,var(--cc-accent) 55%,transparent);outline-offset:2px}
+.cc-note{margin:16px 0 0;padding:10px 12px;border-radius:14px;background:var(--cc-fill);font-size:12.5px;line-height:1.5;color:var(--cc-mute);display:flex;align-items:center;gap:8px}
+.cc-note.err{background:#fef2f2;color:#b91c1c}
+.cc-dots{display:inline-flex;gap:3px}
+.cc-dots i{width:5px;height:5px;border-radius:50%;background:#a1a1aa;animation:ccDot 1.2s ease-in-out infinite}
+.cc-dots i:nth-child(2){animation-delay:.15s}.cc-dots i:nth-child(3){animation-delay:.3s}
+@keyframes ccDot{0%,80%,100%{opacity:.3;transform:none}40%{opacity:1;transform:translateY(-2px)}}
+.cc-run{margin-top:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.cc-err{flex:1;min-width:0;font-size:12px;line-height:1.45;color:#dc2626}
+.cc-err.block{display:block;margin:0 0 8px}
+.cc-tr{margin-top:14px;padding-top:14px;border-top:1px solid var(--cc-ring)}
+.cc-tr-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.cc-seg{display:inline-flex;padding:3px;border-radius:999px;background:var(--cc-fill)}
+.cc-seg button{height:28px;padding:0 12px;border:none;border-radius:999px;background:none;color:#71717a;font:inherit;font-size:12px;font-weight:650;cursor:pointer}
+.cc-seg button.on{background:var(--card,#fff);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.cc-tr-note{font-size:12px;color:var(--cc-mute)}
+.cc-ghost{margin-left:auto;display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;border:none;border-radius:999px;background:none;color:#71717a;font:inherit;font-size:12.5px;font-weight:650;cursor:pointer}
+.cc-ghost:hover{background:var(--cc-fill);color:var(--ink)}
+.cc-ghost:disabled{cursor:wait;opacity:.7}
+.cc-tr-body{max-height:340px;overflow-y:auto;padding-right:4px;scrollbar-width:thin;scrollbar-color:#d4d4d8 transparent}
+.cc-turn{display:flex;gap:9px;margin-top:3px}
+.cc-turn.first{margin-top:12px}
+.cc-turn:first-child{margin-top:0}
+.cc-turn-av{width:26px;flex-shrink:0;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#fff}
+.cc-turn.first .cc-turn-av{background:#a1a1aa}
+.cc-turn.first.t0 .cc-turn-av{background:var(--cc-accent)}
+.cc-turn.first.t1 .cc-turn-av{background:#71717a}
+.cc-turn.first.t2 .cc-turn-av{background:#8b5cf6}
+.cc-turn.first.t3 .cc-turn-av{background:#f59e0b}
+.cc-turn-b{min-width:0;flex:1}
+.cc-turn-who{margin:0 0 3px;font-size:12px;font-weight:650;color:var(--cc-mute)}
+.cc-turn-text{display:inline-block;max-width:100%;margin:0;padding:8px 12px;border-radius:4px 16px 16px 16px;background:var(--cc-fill);font-size:13.5px;line-height:1.5;color:var(--ink);overflow-wrap:anywhere}
+.cc-turn:not(.first) .cc-turn-text{border-radius:16px}
+.cc-turn.t0 .cc-turn-text{background:color-mix(in srgb,var(--cc-accent) 10%,var(--card,#fff))}
+.cc-tr-plain{margin:0;font-size:13.5px;line-height:1.6;color:var(--ink);white-space:pre-wrap}
+.cc-missed-row{display:flex;justify-content:center;margin:8px 0}
+.cc-missed{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 13px;border-radius:999px;background:#fef2f2;color:#b91c1c;font-size:12.5px;font-weight:650}
+.cc-missed svg{color:#dc2626}
+[data-theme="dark"] .cc{--cc-fill:#2a2a2e;--cc-fill-2:#333338;--cc-ring:#2f2f34;--cc-mute:#8e8e93;box-shadow:0 0 0 1px var(--cc-ring)}
+[data-theme="dark"] .cc-ic{background:rgba(34,197,94,.16);color:#4ade80}
+[data-theme="dark"] .cc-ic.in{background:rgba(59,130,246,.18);color:#93c5fd}
+[data-theme="dark"] .cc-ic.vm{background:rgba(245,158,11,.16);color:#fbbf24}
+[data-theme="dark"] .cc-dur,[data-theme="dark"] .cc-sh-ic,[data-theme="dark"] .cc-sent{color:#d4d4d8}
+[data-theme="dark"] .cc-sent.positive{background:rgba(34,197,94,.16);color:#4ade80}
+[data-theme="dark"] .cc-sent.negative{background:rgba(239,68,68,.16);color:#fca5a5}
+[data-theme="dark"] .cc-sh-ic.ai,[data-theme="dark"] .cc-pill.ai{background:rgba(139,92,246,.2);color:#c4b5fd}
+[data-theme="dark"] .cc-pill.on{background:#f4f4f5;color:#18181b}
+[data-theme="dark"] .cc-seg button.on{background:#3a3a3f}
+[data-theme="dark"] .cc-note.err,[data-theme="dark"] .cc-missed{background:rgba(239,68,68,.14);color:#fca5a5}
+[data-theme="dark"] .cc-turn.t0 .cc-turn-text{background:color-mix(in srgb,var(--cc-accent) 18%,#1c1c1f)}
+@media (prefers-reduced-motion: reduce){.cc-dots i{animation:none}}
+`

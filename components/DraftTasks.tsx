@@ -54,9 +54,6 @@ const TaskIcon = () => (
   </svg>
 )
 
-const selStyle: React.CSSProperties = { fontSize: 11, fontWeight: 600, padding: '3px 6px', borderRadius: 7, border: '1px solid #ede9fe', background: '#fff', color: 'var(--slate)', cursor: 'pointer', maxWidth: 150 }
-const chipBtn = (on: boolean): React.CSSProperties => ({ padding: '3px 9px', borderRadius: 7, border: `1px solid ${on ? '#7c3aed' : '#ede9fe'}`, background: on ? '#f3e8ff' : '#fff', color: '#7c3aed', fontSize: 11, fontWeight: 700, cursor: 'pointer' })
-
 const fmtWhen = (iso: string) => {
   try {
     const d = new Date(iso)
@@ -253,53 +250,54 @@ export default function DraftTasks({
     : `Create ${chosenCount - adds} · Add to ${adds}`
 
   return (
-    <div style={bare ? { paddingTop: 4 } : { paddingTop: 12, borderTop: '1px solid #e3e9f2' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: folded ? 0 : 8 }}>
+    <div className={`dt${bare ? ' bare' : ''}${folded ? ' folded' : ''}`}>
+      <style href="colvy-draft-tasks" precedence="default">{DT_CSS}</style>
+      <div className="dt-h">
         {collapsible ? (
-          <button type="button" onClick={toggle} aria-expanded={open} aria-label={open ? 'Hide draft tasks' : 'Show draft tasks'}
-            style={{ margin: 0, padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, color: '#7c3aed', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit' }}>
-            <SparkIcon /> Draft tasks
-            <span style={{ fontWeight: 600, fontSize: 10.5, color: 'var(--slate)' }}>· {folded ? `${drafts.length} to review` : `from ${drafts.length} action item${drafts.length === 1 ? '' : 's'}`}</span>
+          <button type="button" className="dt-title" onClick={toggle} aria-expanded={open} aria-label={open ? 'Hide draft tasks' : 'Show draft tasks'}>
+            <span className="dt-ic"><SparkIcon /></span>
+            Draft tasks
+            <small>· {folded ? `${drafts.length} to review` : `from ${drafts.length} action item${drafts.length === 1 ? '' : 's'}`}</small>
             <Chevron open={open} />
           </button>
         ) : (
-          <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: '#7c3aed', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <SparkIcon /> Draft tasks
-            <span style={{ fontWeight: 600, fontSize: 10.5, color: 'var(--slate)' }}>· from {drafts.length} action item{drafts.length === 1 ? '' : 's'}</span>
+          <p className="dt-title">
+            <span className="dt-ic"><SparkIcon /></span>
+            Draft tasks
+            <small>· from {drafts.length} action item{drafts.length === 1 ? '' : 's'}</small>
           </p>
         )}
-        <button type="button" onClick={close} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 11.5, fontWeight: 600, color: 'var(--slate)' }}>Dismiss</button>
+        <button type="button" className="dt-ghost" onClick={close}>Dismiss</button>
       </div>
 
       {!folded && <>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+      <div className="dt-list">
         {drafts.map((d, i) => {
           const adding = !!d.match && d.mode === 'add'
+          const stepsOn = d.items.filter(s => s.include).length
           return (
-          <div key={d.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 11px', borderRadius: 10, background: '#faf5ff', border: '1px solid #ede9fe' }}>
-            <input type="checkbox" checked={d.include} onChange={() => patch(i, { include: !d.include })} aria-label="Include" style={{ marginTop: 3, cursor: 'pointer', accentColor: '#7c3aed', flexShrink: 0 }} />
-            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 7, opacity: d.include ? 1 : 0.5 }}>
+          <div key={d.id} className={`dt-card${d.include ? '' : ' off'}`}>
+            <input type="checkbox" className="dt-check" checked={d.include} onChange={() => patch(i, { include: !d.include })} aria-label="Include" />
+            <div className="dt-body">
               {d.items.length ? (
-                <input value={d.title} onChange={e => patch(i, { title: e.target.value })} aria-label="Task title"
-                  style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.4, border: 'none', background: 'transparent', padding: 0, outline: 'none', width: '100%', fontFamily: 'inherit' }} />
+                <input className="dt-name" value={d.title} onChange={e => patch(i, { title: e.target.value })} aria-label="Task title" />
               ) : (
-                <span style={{ fontSize: 12.5, color: 'var(--ink)', lineHeight: 1.4 }}>{d.title}</span>
+                <span className="dt-text">{d.title}</span>
               )}
 
               {/* The job's steps — its checklist. */}
               {d.items.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div className="dt-steps">
                   {d.items.map((s, j) => (
-                    <label key={j} style={{ display: 'flex', alignItems: 'flex-start', gap: 7, fontSize: 12, color: 'var(--ink)', lineHeight: 1.4, cursor: 'pointer' }}>
-                      <input type="checkbox" checked={s.include} onChange={() => patchStep(i, j, { include: !s.include })} style={{ marginTop: 2, cursor: 'pointer', accentColor: '#7c3aed', flexShrink: 0, width: 12, height: 12 }} />
-                      <span style={{ opacity: s.include ? 1 : 0.5, textDecoration: s.include ? 'none' : 'line-through' }}>{s.text}</span>
+                    <label key={j} className={`dt-step${s.include ? '' : ' off'}`}>
+                      <input type="checkbox" className="dt-check sm" checked={s.include} onChange={() => patchStep(i, j, { include: !s.include })} />
+                      <span>{s.text}</span>
                     </label>
                   ))}
-                  <span style={{ fontSize: 10.5, color: 'var(--slate)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {d.items.filter(s => s.include).length} checklist step{d.items.filter(s => s.include).length === 1 ? '' : 's'}
+                  <span className="dt-meta">
+                    {stepsOn} checklist step{stepsOn === 1 ? '' : 's'}
                     {d.items.length > 1 && (
-                      <button type="button" onClick={() => split(i)} title="Make each step its own task"
-                        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#7c3aed', fontSize: 10.5, fontWeight: 700 }}>Split into {d.items.length} tasks</button>
+                      <button type="button" className="dt-link" onClick={() => split(i)} title="Make each step its own task">Split into {d.items.length} tasks</button>
                     )}
                   </span>
                 </div>
@@ -307,37 +305,37 @@ export default function DraftTasks({
 
               {/* An open task already covers this job. */}
               {d.match && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, padding: '6px 8px', borderRadius: 8, background: '#fff', border: '1px dashed #d8b4fe' }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: 'var(--ink)', minWidth: 0, flex: '1 1 160px' }}>
-                    <span style={{ color: '#7c3aed', display: 'inline-flex' }}><TaskIcon /></span>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Already a task: <strong style={{ fontWeight: 700 }}>{d.match.title}</strong></span>
+                <div className="dt-match">
+                  <span className="dt-match-t">
+                    <span className="dt-match-ic"><TaskIcon /></span>
+                    <span>Already a task: <strong>{d.match.title}</strong></span>
                   </span>
-                  <button type="button" onClick={() => patch(i, { mode: 'add' })} style={chipBtn(d.mode === 'add')}>Add as checklist</button>
-                  <button type="button" onClick={() => patch(i, { mode: 'create' })} style={chipBtn(d.mode === 'create')}>Create anyway</button>
+                  <div className="dt-seg" role="group" aria-label="What to do with it">
+                    <button type="button" className={d.mode === 'add' ? 'on' : ''} aria-pressed={d.mode === 'add'} onClick={() => patch(i, { mode: 'add' })}>Add as checklist</button>
+                    <button type="button" className={d.mode === 'create' ? 'on' : ''} aria-pressed={d.mode === 'create'} onClick={() => patch(i, { mode: 'create' })}>Create anyway</button>
+                  </div>
                   {adding && d.match.newSteps === 0 && (
-                    <span style={{ fontSize: 10.5, color: 'var(--slate)', flexBasis: '100%' }}>It already has these steps — nothing new to add.</span>
+                    <span className="dt-meta full">It already has these steps — nothing new to add.</span>
                   )}
                 </div>
               )}
 
               {/* Compact controls — kept subtle so the panel doesn't feel busy. */}
-              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
-                <select value={d.priority} onChange={e => patch(i, { priority: e.target.value as any })} aria-label="Priority" style={selStyle}>
+              <div className="dt-ctrls">
+                <select className="dt-sel" value={d.priority} onChange={e => patch(i, { priority: e.target.value as any })} aria-label="Priority">
                   <option value="low">Low</option>
                   <option value="normal">Medium</option>
                   <option value="high">High</option>
                 </select>
                 {/* Adding to an open task keeps whoever already has it. */}
                 {!adding && teamMembers.length > 0 && (
-                  <select value={d.assigneeId} onChange={e => patch(i, { assigneeId: e.target.value })} aria-label="Assignee"
-                    style={{ ...selStyle, color: d.assigneeId ? '#7c3aed' : 'var(--slate)' }}>
+                  <select className={`dt-sel${d.assigneeId ? ' set' : ''}`} value={d.assigneeId} onChange={e => patch(i, { assigneeId: e.target.value })} aria-label="Assignee">
                     <option value="">＋ Assign</option>
                     {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                   </select>
                 )}
                 {!adding && outlets.length > 1 && (
-                  <select value={d.locationId} onChange={e => patch(i, { locationId: e.target.value })} aria-label="Outlet"
-                    style={{ ...selStyle, color: d.locationId ? '#7c3aed' : 'var(--slate)' }}>
+                  <select className={`dt-sel${d.locationId ? ' set' : ''}`} value={d.locationId} onChange={e => patch(i, { locationId: e.target.value })} aria-label="Outlet">
                     <option value="">＋ Outlet</option>
                     {outlets.map(o => <option key={o.id} value={o.id}>{o.label || o.suburb || 'Outlet'}</option>)}
                   </select>
@@ -346,19 +344,17 @@ export default function DraftTasks({
                     picker; the chosen time becomes the task's due date (the
                     reminder cron pushes the assignee when it arrives). */}
                 {d.remindAt ? (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 7, background: '#ede9fe', color: '#7c3aed', fontSize: 11, fontWeight: 700 }}>
+                  <span className="dt-chip on">
                     <ClockIcon /> {fmtWhen(d.remindAt)}
-                    <button type="button" onClick={() => { patch(i, { remindAt: '' }); setRemindOpen(prev => { const n = new Set(prev); n.delete(d.id); return n }) }}
-                      title="Clear reminder" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#7c3aed', display: 'inline-flex', fontWeight: 800, fontSize: 13, lineHeight: 1 }}>×</button>
+                    <button type="button" className="dt-x" onClick={() => { patch(i, { remindAt: '' }); setRemindOpen(prev => { const n = new Set(prev); n.delete(d.id); return n }) }}
+                      title="Clear reminder" aria-label="Clear reminder">×</button>
                   </span>
                 ) : remindOpen.has(d.id) ? (
-                  <input type="datetime-local" autoFocus value={d.remindAt}
+                  <input type="datetime-local" className="dt-when" autoFocus value={d.remindAt}
                     onChange={e => patch(i, { remindAt: e.target.value })}
-                    onBlur={() => { if (!d.remindAt) toggleRemind(d.id) }}
-                    style={{ fontSize: 11, fontWeight: 600, padding: '2px 6px', borderRadius: 7, border: '1px solid #d8b4fe', background: '#fff', color: 'var(--ink)' }} />
+                    onBlur={() => { if (!d.remindAt) toggleRemind(d.id) }} />
                 ) : (
-                  <button type="button" onClick={() => toggleRemind(d.id)} title="Set a reminder"
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 7, border: '1px dashed #d8b4fe', background: '#fff', color: '#7c3aed', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                  <button type="button" className="dt-chip" onClick={() => toggleRemind(d.id)} title="Set a reminder">
                     <ClockIcon /> Remind
                   </button>
                 )}
@@ -369,22 +365,18 @@ export default function DraftTasks({
         })}
       </div>
 
-      {error && <p style={{ margin: '8px 0 0', fontSize: 11.5, color: '#dc2626' }}>{error}</p>}
+      {error && <p className="dt-err">{error}</p>}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 10, fontWeight: 800, color: '#7c3aed', background: '#f3e8ff', padding: '3px 8px', borderRadius: 6, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-          Source · {source === 'call_summary' ? 'Call summary' : 'Chat summary'}
-        </span>
-        <span style={{ flex: 1 }} />
+      <div className="dt-foot">
+        <span className="dt-src"><SparkIcon /> From the {source === 'call_summary' ? 'call summary' : 'chat summary'}</span>
+        <span className="dt-grow" />
         {chosenCount > 1 && (
-          <button type="button" onClick={() => setCombine(c => !c)} title="Merge the selected drafts into one task with a checklist"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 9, cursor: 'pointer', fontSize: 12, fontWeight: 700, border: `1px solid ${combine ? '#7c3aed' : '#ede9fe'}`, background: combine ? '#f3e8ff' : '#fff', color: '#7c3aed' }}>
+          <button type="button" className={`dt-btn${combine ? ' on' : ''}`} onClick={() => setCombine(c => !c)} aria-pressed={combine} title="Merge the selected drafts into one task with a checklist">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M7 8l-4 4 4 4"/><path d="M17 8l4 4-4 4"/><path d="M3 12h6"/><path d="M15 12h6"/></svg>
             Combine
           </button>
         )}
-        <button type="button" onClick={createTasks} disabled={creating || chosenCount === 0}
-          style={{ padding: '7px 14px', borderRadius: 9, border: 'none', background: chosenCount ? '#7c3aed' : '#c4b5fd', color: '#fff', fontSize: 12, fontWeight: 700, cursor: creating || !chosenCount ? 'default' : 'pointer' }}>
+        <button type="button" className="dt-btn primary" onClick={createTasks} disabled={creating || chosenCount === 0}>
           {actionLabel}
         </button>
       </div>
@@ -392,3 +384,91 @@ export default function DraftTasks({
     </div>
   )
 }
+
+// Sellio: soft violet cards for the AI's drafts, round custom ticks, pill
+// controls, a segmented choice for "already a task", one violet pill to save.
+const TICK = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E\")"
+const CHEV = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")"
+const CHEV_DARK = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")"
+const DT_CSS = `
+.dt{--dt-v:#7c3aed;--dt-card:color-mix(in srgb,#7c3aed 5%,var(--card,#fff));--dt-ring:color-mix(in srgb,#7c3aed 14%,transparent);--dt-pill:var(--card,#fff);--dt-pill-ring:#e4e4e7;--dt-mute:#8e8e93;margin-top:18px}
+.dt.bare{margin-top:0;padding-top:0}
+.dt-wrap{max-width:560px;width:100%;box-sizing:border-box;margin:0 auto 4px;align-self:center;padding:14px 16px 15px;border-radius:22px;background:var(--card,#fff);box-shadow:0 0 0 1px #ececef,0 1px 2px rgba(16,24,40,.04),0 10px 24px -16px rgba(16,24,40,.18)}
+[data-theme="dark"] .dt-wrap{box-shadow:0 0 0 1px #2f2f34}
+.dt button::before{display:none}
+.dt-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px}
+.dt.folded .dt-h{margin-bottom:0}
+.dt-title{margin:0;padding:0;border:none;background:none;display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;font:inherit;font-size:13.5px;font-weight:700;color:var(--ink);text-align:left}
+button.dt-title{cursor:pointer}
+.dt-title small{font-size:12px;font-weight:550;color:var(--dt-mute)}
+.dt-title>svg:last-child{color:var(--dt-mute)}
+.dt-ic{width:24px;height:24px;flex-shrink:0;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;background:#ede9fe;color:var(--dt-v)}
+.dt-ghost{height:28px;padding:0 11px;border:none;border-radius:999px;background:none;color:#71717a;font:inherit;font-size:12.5px;font-weight:650;cursor:pointer}
+.dt-ghost:hover{background:#f4f4f5;color:var(--ink)}
+.dt-list{display:flex;flex-direction:column;gap:8px}
+.dt-card{display:flex;align-items:flex-start;gap:11px;padding:12px 14px;border-radius:18px;background:var(--dt-card);box-shadow:inset 0 0 0 1px var(--dt-ring)}
+.dt-card.off .dt-body{opacity:.5}
+.dt-check{appearance:none;-webkit-appearance:none;flex-shrink:0;width:20px;height:20px;margin:1px 0 0;border-radius:7px;border:1.5px solid #d4d4d8;background:var(--card,#fff) center/14px no-repeat;cursor:pointer;transition:background-color .15s ease,border-color .15s ease}
+.dt-check:checked{background-color:var(--dt-v);border-color:var(--dt-v);background-image:${TICK}}
+.dt-check.sm{width:16px;height:16px;border-radius:5px;background-size:11px;margin-top:1px}
+.dt-check:focus-visible{outline:2px solid color-mix(in srgb,var(--dt-v) 50%,transparent);outline-offset:2px}
+.dt-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:9px}
+.dt-text{font-size:13.5px;line-height:1.5;color:var(--ink)}
+.dt-name{width:100%;padding:0;border:none;background:transparent;outline:none;font:inherit;font-size:13.5px;font-weight:700;line-height:1.45;color:var(--ink)}
+.dt-steps{display:flex;flex-direction:column;gap:5px}
+.dt-step{display:flex;align-items:flex-start;gap:8px;font-size:13px;line-height:1.45;color:var(--ink);cursor:pointer}
+.dt-step.off span{opacity:.5;text-decoration:line-through}
+.dt-meta{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dt-mute)}
+.dt-meta.full{flex-basis:100%}
+.dt-link{padding:0;border:none;background:none;color:var(--dt-v);font:inherit;font-size:12px;font-weight:650;cursor:pointer}
+.dt-match{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 8px 8px 12px;border-radius:14px;background:var(--card,#fff);box-shadow:inset 0 0 0 1px var(--dt-ring)}
+.dt-match-t{flex:1 1 170px;min-width:0;display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink)}
+.dt-match-t>span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dt-match-t strong{font-weight:700}
+.dt-match-ic{display:inline-flex;color:var(--dt-v)}
+.dt-seg{display:inline-flex;padding:3px;border-radius:999px;background:#f4f4f5}
+.dt-seg button{height:28px;padding:0 11px;border:none;border-radius:999px;background:none;color:#71717a;font:inherit;font-size:12px;font-weight:650;cursor:pointer;white-space:nowrap}
+.dt-seg button.on{background:var(--card,#fff);color:#6d28d9;box-shadow:0 1px 2px rgba(0,0,0,.1)}
+.dt-ctrls{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.dt .dt-sel{height:30px;max-width:230px;text-overflow:ellipsis;padding:0 28px 0 12px;border:none;border-radius:999px;background:var(--dt-pill) ${CHEV} right 10px center/12px no-repeat;box-shadow:inset 0 0 0 1px var(--dt-pill-ring);color:#52525b;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;appearance:none;-webkit-appearance:none;outline:none}
+.dt .dt-sel.set{color:#6d28d9;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--dt-v) 40%,transparent)}
+.dt .dt-sel:focus-visible{box-shadow:inset 0 0 0 1.5px var(--dt-v)}
+.dt-chip{display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 12px;border:none;border-radius:999px;background:var(--dt-pill);box-shadow:inset 0 0 0 1px var(--dt-pill-ring);color:#6d28d9;font:inherit;font-size:12.5px;font-weight:650;cursor:pointer}
+.dt-chip.on{background:#ede9fe;box-shadow:none;cursor:default;padding-right:6px}
+.dt-x{width:20px;height:20px;margin-left:2px;padding:0;border:none;border-radius:50%;background:none;color:#6d28d9;font-size:15px;font-weight:700;line-height:1;cursor:pointer}
+.dt-x:hover{background:rgba(124,58,237,.14)}
+.dt .dt-when{height:30px;padding:0 10px;border:none;border-radius:999px;background:var(--dt-pill);box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--dt-v) 45%,transparent);color:var(--ink);font:inherit;font-size:12.5px;font-weight:600}
+.dt-err{margin:8px 2px 0;font-size:12px;color:#dc2626}
+.dt-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}
+.dt-src{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--dt-mute)}
+.dt-src svg{width:12px;height:12px;color:var(--dt-v)}
+.dt-grow{flex:1}
+.dt-btn{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 15px;border:none;border-radius:999px;background:#f4f4f5;color:var(--ink);font:inherit;font-size:13px;font-weight:650;cursor:pointer;transition:background .15s ease,transform .12s ease,box-shadow .15s ease}
+.dt-btn.on{background:#ede9fe;color:#6d28d9}
+.dt-btn.primary{padding:0 18px;background:var(--dt-v);color:#fff;box-shadow:0 6px 14px -8px rgba(124,58,237,.7)}
+.dt-btn.primary:hover{background:#6d28d9}
+.dt-btn.primary:active{transform:scale(.97)}
+.dt-btn:disabled{background:#c4b5fd;box-shadow:none;cursor:default}
+.dt-btn:focus-visible,.dt-chip:focus-visible,.dt-seg button:focus-visible,.dt-ghost:focus-visible,.dt-title:focus-visible{outline:2px solid color-mix(in srgb,var(--dt-v) 50%,transparent);outline-offset:2px}
+[data-theme="dark"] .dt{--dt-v:#a78bfa;--dt-solid:#7c3aed;--dt-card:color-mix(in srgb,#8b5cf6 10%,var(--card,#1c1c1f));--dt-ring:rgba(139,92,246,.22);--dt-pill:#2a2a2e;--dt-pill-ring:#3a3a3f}
+[data-theme="dark"] .dt-ic,[data-theme="dark"] .dt-chip.on,[data-theme="dark"] .dt-btn.on{background:rgba(139,92,246,.2);color:#c4b5fd}
+[data-theme="dark"] .dt-chip,[data-theme="dark"] .dt-x,[data-theme="dark"] .dt .dt-sel.set,[data-theme="dark"] .dt-seg button.on{color:#c4b5fd}
+[data-theme="dark"] .dt .dt-sel{color:#d4d4d8}
+[data-theme="dark"] .dt-check{border-color:#52525b;background-color:#2a2a2e}
+[data-theme="dark"] .dt-check:checked{background-color:var(--dt-v);border-color:var(--dt-v)}
+[data-theme="dark"] .dt-seg,[data-theme="dark"] .dt-btn:not(.primary):not(.on),[data-theme="dark"] .dt-ghost:hover{background:#2a2a2e}
+[data-theme="dark"] .dt-seg button.on{background:#3a3a3f}
+[data-theme="dark"] .dt-match{background:#1f1f23}
+/* The global dark rule paints every input and select with !important (it would
+   wipe the ticks and chevrons), and the dark-theme pass maps .dt-btn's grey to
+   a dark fill that also caught the violet button. */
+[data-theme="dark"] .dt .dt-btn.primary{background:var(--dt-solid);color:#fff}
+[data-theme="dark"] .dt .dt-btn.primary:hover{background:#6d28d9}
+[data-theme="dark"] .dt .dt-btn.primary:disabled{background:#4c3a7a;color:#c4b5fd}
+[data-theme="dark"] .dt .dt-check{background:#2a2a2e center/14px no-repeat !important;border-color:#52525b !important}
+[data-theme="dark"] .dt .dt-check:checked{background:var(--dt-solid) ${TICK} center/14px no-repeat !important;border-color:var(--dt-solid) !important}
+[data-theme="dark"] .dt .dt-check.sm{background-size:11px !important}
+[data-theme="dark"] .dt .dt-name{background:transparent !important;border:none !important}
+[data-theme="dark"] .dt .dt-sel{background:#2a2a2e ${CHEV_DARK} right 10px center/12px no-repeat !important;border:none !important}
+[data-theme="dark"] .dt .dt-when{background:#2a2a2e !important;border:none !important}
+`
