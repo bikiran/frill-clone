@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { decodeEntities } from '@/lib/decode-entities'
 
 // "Heads-up" at the top of an order (under Assign outlet): the customer's
 // checkout note, the team's latest notes and the open tasks, so nobody packs or
@@ -58,7 +59,8 @@ export default function OrderHeadsUp({ orderId, meId, notes, tasks, checkoutNote
   // Ticked tasks linger for a moment (crossed out) before leaving the card.
   const [leaving, setLeaving] = useState<Record<string, boolean>>({})
   const openTasks = useMemo(() => tasks.filter(t => !taskDone(t) || leaving[t.id]), [tasks, leaving])
-  const note = (checkoutNote || '').trim()
+  // WooCommerce sends the checkout note HTML-escaped ("Pots &amp; baskets").
+  const note = decodeEntities(checkoutNote || '').trim()
 
   const rows = useMemo(() => {
     const staff = notes.map(n => ({ kind: 'note' as const, key: 'n' + n.id, at: ts(n.created_at), fresh: isNew(n.created_at, n.author_id), n }))

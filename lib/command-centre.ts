@@ -415,11 +415,13 @@ export type CallStats = {
   missRate: number               // (missed + voicemail) ÷ inboundDone, as a whole percent
   avgTalk: number                // seconds, over connected calls with talk time
   talkSecs: number
+  talkIn: number                 // talk seconds on incoming calls…
+  talkOut: number                // …and on outgoing ones (talkSecs = both)
   ai: { calls: number; handled: number; messages: number; voicemail: number; missed: number; bookingLinks: number; texts: number }
 }
 
 export function aggregate(calls: CcCall[], now: number = Date.now()): CallStats {
-  const st: CallStats = { total: calls.length, inbound: 0, outbound: 0, answered: 0, missed: 0, voicemail: 0, live: 0, inboundDone: 0, outboundConnected: 0, missRate: 0, avgTalk: 0, talkSecs: 0, ai: { calls: 0, handled: 0, messages: 0, voicemail: 0, missed: 0, bookingLinks: 0, texts: 0 } }
+  const st: CallStats = { total: calls.length, inbound: 0, outbound: 0, answered: 0, missed: 0, voicemail: 0, live: 0, inboundDone: 0, outboundConnected: 0, missRate: 0, avgTalk: 0, talkSecs: 0, talkIn: 0, talkOut: 0, ai: { calls: 0, handled: 0, messages: 0, voicemail: 0, missed: 0, bookingLinks: 0, texts: 0 } }
   let talkN = 0
   for (const c of calls) {
     const o = outcomeOf(c, now)
@@ -445,7 +447,11 @@ export function aggregate(calls: CcCall[], now: number = Date.now()): CallStats 
       if (ao === 'ai_missed') st.ai.missed++
     }
     // Average talk time leaves out 0-second rows (no talk time recorded).
-    if (o === 'answered' && c.duration_seconds > 0) { st.talkSecs += c.duration_seconds; talkN++ }
+    if (o === 'answered' && c.duration_seconds > 0) {
+      st.talkSecs += c.duration_seconds; talkN++
+      if (c.direction === 'outbound') st.talkOut += c.duration_seconds
+      else st.talkIn += c.duration_seconds
+    }
   }
   st.missRate = st.inboundDone ? Math.round((st.missed + st.voicemail) / st.inboundDone * 100) : 0
   st.avgTalk = talkN ? Math.round(st.talkSecs / talkN) : 0

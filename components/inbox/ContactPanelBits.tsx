@@ -125,6 +125,19 @@ export const PT_CSS = `
 .pt-pill:hover{background:var(--pt-fill-2,#ececef)}
 .pt-icon-btn{width:32px;height:32px;border:none;border-radius:50%;background:var(--pt-fill);color:var(--pt-muted);display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
 .pt-icon-btn:hover,.pt-icon-btn.on{background:var(--pt-fill-2);color:var(--pt-ink)}
+.pt-osearch{margin-bottom:12px;padding:12px;border-radius:18px;background:var(--pt-fill);display:flex;flex-direction:column;gap:10px;container-type:inline-size}
+.pt-osearch .pt-ofield{width:100%;min-width:0;height:40px;padding:0 12px;box-sizing:border-box;border:1.5px solid transparent;border-radius:12px;background:var(--card,#fff);color:var(--pt-ink);font:inherit;font-size:13.5px;outline:none}
+.pt-osearch .pt-ofield:focus{border-color:color-mix(in srgb,var(--coral) 45%,transparent)}
+.pt-osearch .pt-ofield::placeholder{color:#a1a1aa}
+.pt-odates{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+/* A narrow panel: From and To on their own lines, so the dates aren't clipped. */
+@container (max-width: 300px){.pt-odates{grid-template-columns:minmax(0,1fr)}}
+.pt-odate{display:flex;flex-direction:column;gap:4px;min-width:0}
+.pt-odate>span{font-size:12px;font-weight:600;color:var(--pt-muted)}
+.pt-osearch .pt-ofield[type="date"]{padding:0 8px;font-size:13px}
+.pt-osearch .pt-ofield[type="date"]::-webkit-calendar-picker-indicator{margin-left:2px;padding:0;cursor:pointer}
+.pt-oclear{align-self:flex-start;height:28px;padding:0 11px;border:none;border-radius:999px;background:var(--card,#fff);color:var(--pt-ink);font:inherit;font-size:12.5px;font-weight:650;cursor:pointer}
+.pt-oclear::before{display:none}
 .pt-empty{margin:0;font-size:13px;color:var(--pt-soft)}
 .pt-tl{list-style:none;margin:0;padding:0}
 .pt-tl li{position:relative;display:flex;gap:12px;padding-bottom:14px}
