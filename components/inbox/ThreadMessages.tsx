@@ -76,7 +76,7 @@ export default function ThreadMessages() {
           if (!tx) return false
           return aiTodos.some((td: any) => { const s = String(td.text || '').trim().toLowerCase(); return !!s && (tx === s || tx.includes(s) || s.includes(tx)) })
         }) && (
-          <div style={{ maxWidth: 560, width: '100%', margin: '0 auto 4px', alignSelf: 'center', background: '#faf5ff', border: '1px solid #ede9fe', borderRadius: 14, padding: '4px 14px 14px' }}>
+          <div className="dt-wrap">
             <DraftTasks
               todos={aiTodos.map((t: any) => t.text).filter(Boolean)}
               source="ai_summary" storageKey={`colvy-conv-tasks-${selected.id}`}
