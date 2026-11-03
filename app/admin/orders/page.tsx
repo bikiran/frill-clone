@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createPortal } from 'react-dom'
+import { decodeEntities } from '@/lib/decode-entities'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
 import { readLocal, writeLocal } from '@/lib/local-cache'
@@ -3120,7 +3121,8 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
               (the private system/stock/payment logs are hidden). */}
           {order.sales_channel === 'woocommerce' && (() => {
             const customerWoo = (wooNotes || []).filter((n: any) => n.customer_note)
-            const checkoutNote = (order.customer_note || wooCustomerNote || '').trim()
+            // WooCommerce sends it HTML-escaped ("Pots &amp; baskets").
+            const checkoutNote = decodeEntities(order.customer_note || wooCustomerNote || '').trim()
             const hasCheckout = !!checkoutNote
             return (
               <CollapseSection style={sect} storageKey="order-cust-notes" title="Customer notes" id="od-sec-cust">

@@ -982,22 +982,23 @@ export default function ContactPanelBody() {
               </button>
             </div>
             {showOrderSearch && (
-              <div style={{ marginBottom: 12, padding: 10, borderRadius: 10, background: 'var(--canvas)', border: '1px solid var(--border)' }}>
-                <input value={orderSearch} onChange={e => setOrderSearch(e.target.value)} placeholder="Order #, name, email, phone, address, item…"
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12.5, boxSizing: 'border-box', marginBottom: 8 }} />
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: 10, color: 'var(--slate)', fontWeight: 600 }}>From</label>
-                    <input type="date" value={orderDateFrom} onChange={e => setOrderDateFrom(e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12, boxSizing: 'border-box' }} />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: 10, color: 'var(--slate)', fontWeight: 600 }}>To</label>
-                    <input type="date" value={orderDateTo} onChange={e => setOrderDateTo(e.target.value)} style={{ width: '100%', padding: '6px 8px', borderRadius: 7, border: '1px solid var(--border)', fontSize: 12, boxSizing: 'border-box' }} />
-                  </div>
-                  {(orderSearch || orderDateFrom || orderDateTo) && (
-                    <button onClick={() => { setOrderSearch(''); setOrderDateFrom(''); setOrderDateTo('') }} style={{ alignSelf: 'flex-end', fontSize: 11, color: 'var(--coral)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, padding: '6px 4px' }}>Clear</button>
-                  )}
+              <div className="pt-osearch">
+                <input className="pt-ofield" value={orderSearch} onChange={e => setOrderSearch(e.target.value)} placeholder="Order #, name, email, phone, address, item…" aria-label="Find an order by number, name or item" />
+                {/* A grid, not a flex row: date inputs won't shrink below their
+                    own width in a flex row, so "To" ran past the card. */}
+                <div className="pt-odates">
+                  <label className="pt-odate">
+                    <span>From</span>
+                    <input className="pt-ofield" type="date" value={orderDateFrom} onChange={e => setOrderDateFrom(e.target.value)} />
+                  </label>
+                  <label className="pt-odate">
+                    <span>To</span>
+                    <input className="pt-ofield" type="date" value={orderDateTo} onChange={e => setOrderDateTo(e.target.value)} />
+                  </label>
                 </div>
+                {(orderSearch || orderDateFrom || orderDateTo) && (
+                  <button type="button" className="pt-oclear" onClick={() => { setOrderSearch(''); setOrderDateFrom(''); setOrderDateTo('') }}>Clear search</button>
+                )}
               </div>
             )}
             {(() => {

@@ -574,7 +574,7 @@ export default function CommandCentrePage() {
   const rangeLabel = range === 'custom' && customFrom && customTo ? `${customFrom} to ${customTo}` : (RANGES.find(([k]) => k === range)?.[1] || 'Today')
   const isToday = range === 'today'
 
-  const recovery = useMemo(() => (recoveryState === 'stored' || recoveryState === 'live' || recoveryState === 'stale' ? ov?.recovery.items || [] : []), [recoveryState, ov])
+  const recovery = useMemo(() => (recoveryState === 'stored' || recoveryState === 'live' || recoveryState === 'stale' ? ov?.recovery?.items || [] : []), [recoveryState, ov])
   const loading = !booted
   // Nothing to warn about until the calls are in (and "nobody available" only once the team is).
   const alerts = useMemo(() => (loading ? [] : buildAlerts({ stats, recovery, live: liveCalls, available: teamCounts ? teamCounts.available : 1, now: nowTick, tz, isToday })), [loading, stats, recovery, liveCalls, teamCounts, nowTick, tz, isToday])
@@ -889,6 +889,11 @@ export default function CommandCentrePage() {
         .cc-kpis{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}
         @media (min-width: 1700px){ .cc-kpis{ grid-template-columns: repeat(8,minmax(0,1fr)); } }
         @media (max-width: 900px){ .cc-kpis{ grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; } }
+        /* Call logs has nine tiles: 3 × 3, one row of nine on a wide screen, and
+           on a phone the odd one out spans the row. */
+        .cc-kpis.nine{grid-template-columns:repeat(3,minmax(0,1fr))}
+        @media (min-width: 1700px){ .cc-kpis.nine{ grid-template-columns: repeat(9,minmax(0,1fr)); } }
+        @media (max-width: 900px){ .cc-kpis.nine{ grid-template-columns: repeat(2,minmax(0,1fr)); } .cc-kpis.nine > :last-child:nth-child(odd){ grid-column: 1 / -1; } }
         .cc-row{cursor:pointer;transition:background-color .12s ease}.cc-row:hover{background-color:#fafafa}
         .cc-page button::before,.cc-drawer button::before,.cc-tb button::before{display:none}
         .cc-tab{height:36px;padding:0 15px;border:none;border-radius:999px;background:transparent;color:#52525b;font:inherit;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;transition:background-color .15s,color .15s}
@@ -1168,13 +1173,15 @@ export default function CommandCentrePage() {
       {/* ── CALL LOGS ───────────────────────────────────────────────────────── */}
       {commsMode === 'calls' && tab === 'logs' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div className="cc-kpis">
+          <div className="cc-kpis nine">
             <Kpi label="Total calls" value={kv(logStats.total)} color="#3b82f6" icon={Icon.phone()} sub={ks(`${logStats.inbound} in · ${logStats.outbound} out`)} onClick={() => setOutcomeFilter('all')} active={outcomeFilter === 'all'} />
             <Kpi label="Answered" value={kv(logStats.answered)} color={C.green} icon={Icon.check()} sub={ks(`of ${logStats.inboundDone} incoming`)} onClick={() => setOutcomeFilter(outcomeFilter === 'answered' ? 'all' : 'answered')} active={outcomeFilter === 'answered'} />
             <Kpi label="Missed" value={kv(logStats.missed)} color={C.red} icon={Icon.phoneMissed()} sub="no message left" onClick={() => setOutcomeFilter(outcomeFilter === 'missed' ? 'all' : 'missed')} active={outcomeFilter === 'missed'} />
             <Kpi label="Voicemails" value={kv(logStats.voicemail)} color={C.amber} icon={Icon.vm()} onClick={() => setOutcomeFilter(outcomeFilter === 'voicemail' ? 'all' : 'voicemail')} active={outcomeFilter === 'voicemail'} />
             <Kpi label="Miss rate" value={kv(`${logStats.missRate}%`)} color={missColor(logStats.missRate)} icon={Icon.pct()} sub="missed + voicemail, of incoming" onClick={() => setOutcomeFilter(outcomeFilter === 'unanswered' ? 'all' : 'unanswered')} active={outcomeFilter === 'unanswered'} />
             <Kpi label="Avg talk time" value={kv(fmtDur(logStats.avgTalk))} color={C.violet} icon={Icon.clock()} sub="answered calls, 0s left out" />
+            {/* Every connected call's talk time in the period, in and out. */}
+            <Kpi label="Total talk time" value={kv(fmtTalk(logStats.talkSecs))} color={C.green} icon={Icon.phone()} sub={ks(`${fmtTalk(logStats.talkIn)} in · ${fmtTalk(logStats.talkOut)} out`)} />
             <Kpi label="Outgoing" value={kv(logStats.outbound)} color={C.cyan} icon={Icon.phoneOut()} sub={ks(`${logStats.outboundConnected} got through`)} onClick={() => setDirFilter(dirFilter === 'outbound' ? 'all' : 'outbound')} active={dirFilter === 'outbound'} />
             <Kpi label="AI receptionist" value={kv(logStats.ai.calls)} color={C.violet} icon={Icon.spark(17)} sub={ks(`${logStats.ai.messages} message${logStats.ai.messages === 1 ? '' : 's'} · ${logStats.ai.bookingLinks} booking link${logStats.ai.bookingLinks === 1 ? '' : 's'}`)} onClick={() => setOutcomeFilter(outcomeFilter === 'ai' ? 'all' : 'ai')} active={outcomeFilter === 'ai'} />
           </div>
