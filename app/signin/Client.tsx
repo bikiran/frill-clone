@@ -231,13 +231,19 @@ function SignInForm() {
     e.preventDefault()
     setLoading(true)
     setError('')
-    const { error: err } = await supabase.auth.signInWithPassword({ email, password })
+    const { data: signedIn, error: err } = await supabase.auth.signInWithPassword({ email, password })
     if (err) { setError(err.message); setLoading(false); return }
+    // Greet them by the name on their account, not a guess from the email.
+    const meta = (signedIn?.user?.user_metadata || {}) as Record<string, unknown>
+    const given = String(meta.display_name || meta.full_name || meta.name || '').trim().split(/\s+/)[0]
+    if (given) setRealFirst(given)
+    // The workspace's colour, so the admin starts in it (app/layout.tsx).
+    try { if (/^#[0-9a-f]{6}$/i.test(color) && color.toLowerCase() !== CORAL.toLowerCase()) localStorage.setItem('colvy-accent', color) } catch {}
     const started = Date.now()
-    zoomOut((e.nativeEvent as SubmitEvent).submitter)
+    const lands = zoomOut((e.nativeEvent as SubmitEvent).submitter)
     const redirect = safeRedirect(params.get('redirect')) || await getRedirectUrl()
-    // Let the zoom land before the next page starts to load over it.
-    setTimeout(() => { window.location.href = redirect }, Math.max(0, 700 - (Date.now() - started)))
+    // Let the move land before the next page starts to load over it.
+    setTimeout(() => { window.location.href = redirect }, Math.max(0, lands - (Date.now() - started)))
   }
 
   const handleGoogle = async () => {
@@ -263,7 +269,8 @@ function SignInForm() {
   const color = brand.color
   const wsName: string = companyContext?.name || ''
   const emailOk = EMAIL_RE.test(email.trim())
-  const first = emailOk ? firstFromEmail(email.trim()) : ''
+  const [realFirst, setRealFirst] = useState('')
+  const first = realFirst || (emailOk ? firstFromEmail(email.trim()) : '')
   const focus: PreviewFocus = field === 'email' ? 'name' : field === 'password' ? 'channels' : 'overview'
   // The newest SHOWN of an endless feed, newest first; keys follow each item
   // so only the new one animates in.
@@ -403,9 +410,11 @@ function SignInForm() {
         build={
           <div className="nw-build">
             <AiBuddy size={84} color={color} shadow />
-            <h2>Welcome back{first ? `, ${first}` : ''}</h2>
-            {wsName && <p className="nw-build-for">{brand.logo ? <span className="nw-build-chip"><img src={brand.logo} alt="" /></span> : null}{wsName}</p>}
-            <p className="nw-build-line" key={lineKey}>{line}</p>
+            <div className="si-build-tx">
+              <h2>Welcome back{first ? `, ${first}` : ''}</h2>
+              {wsName && <p className="nw-build-for">{brand.logo ? <span className="nw-build-chip"><img src={brand.logo} alt="" /></span> : null}{wsName}</p>}
+              <p className="nw-build-line" key={lineKey}>{line}</p>
+            </div>
           </div>
         } />
     </div>

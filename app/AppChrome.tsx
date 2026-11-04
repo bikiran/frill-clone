@@ -69,6 +69,19 @@ function companyHost(hostname: string): { slug: string | null; customHost: strin
   return { slug: null, customHost: h }
 }
 
+// The workspace's colour on the page. On a workspace's own address it's also
+// remembered, so the next load starts in it (app/layout.tsx applies it before
+// the first paint) instead of flashing Colvy's coral first.
+function applyAccent(color: string | null | undefined) {
+  if (!color || typeof document === 'undefined') return
+  const root = document.documentElement.style
+  root.setProperty('--coral', color)
+  if (!/^#[0-9a-f]{6}$/i.test(color)) return
+  const r = parseInt(color.slice(1, 3), 16), g = parseInt(color.slice(3, 5), 16), b = parseInt(color.slice(5, 7), 16)
+  root.setProperty('--peach', `rgba(${r}, ${g}, ${b}, 0.1)`)
+  try { const c = companyHost(window.location.hostname); if (c.slug || c.customHost) localStorage.setItem('colvy-accent', color) } catch {}
+}
+
 const NavIcon = ({ type, size = 18 }: { type: string; size?: number }) => {
   const p = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
   switch (type) {
@@ -274,13 +287,7 @@ export default function AppChrome({
           if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link) }
           link.href = favicon
           // Accent color
-          if (s.accentColor) {
-            document.documentElement.style.setProperty('--coral', s.accentColor)
-            const r = parseInt(s.accentColor.slice(1, 3), 16)
-            const g = parseInt(s.accentColor.slice(3, 5), 16)
-            const b = parseInt(s.accentColor.slice(5, 7), 16)
-            document.documentElement.style.setProperty('--peach', `rgba(${r}, ${g}, ${b}, 0.1)`)
-          }
+          if (s.accentColor) applyAccent(s.accentColor)
           // Light/dark (auto follows the system) and the seasonal theme
           // (lib/seasonal-themes), which can switch to dark while it runs.
           setAppearance({ themeMode: s.themeMode || 'light', seasonal: s.seasonal || {} })
@@ -323,13 +330,7 @@ export default function AppChrome({
               if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link) }
               link.href = co.logo_url
             }
-            if (co.accent_color && typeof document !== 'undefined') {
-              document.documentElement.style.setProperty('--coral', co.accent_color)
-              const r = parseInt(co.accent_color.slice(1,3), 16)
-              const g = parseInt(co.accent_color.slice(3,5), 16)
-              const b = parseInt(co.accent_color.slice(5,7), 16)
-              document.documentElement.style.setProperty('--peach', `rgba(${r},${g},${b},0.1)`)
-            }
+            if (co.accent_color) applyAccent(co.accent_color)
             q = q.eq('company_id', co.id)
           } else {
             // On a company host but company not found — do NOT load unscoped
@@ -463,13 +464,7 @@ export default function AppChrome({
               }
             }
             // Always apply the subdomain company's branding, even for regular visitors
-            if (!data && coBySlug.accent_color) {
-              document.documentElement.style.setProperty('--coral', coBySlug.accent_color)
-              const r = parseInt(coBySlug.accent_color.slice(1,3),16)
-              const g = parseInt(coBySlug.accent_color.slice(3,5),16)
-              const b = parseInt(coBySlug.accent_color.slice(5,7),16)
-              document.documentElement.style.setProperty('--peach', `rgba(${r},${g},${b},0.1)`)
-            }
+            if (!data && coBySlug.accent_color) applyAccent(coBySlug.accent_color)
           }
         } else {
           // Main domain: a user administers their own company
@@ -481,13 +476,7 @@ export default function AppChrome({
         if (data) {
           setCompany(data)
           // Apply company accent color
-          if (data.accent_color) {
-            document.documentElement.style.setProperty('--coral', data.accent_color)
-            const r = parseInt(data.accent_color.slice(1,3),16)
-            const g = parseInt(data.accent_color.slice(3,5),16)
-            const b = parseInt(data.accent_color.slice(5,7),16)
-            document.documentElement.style.setProperty('--peach', `rgba(${r},${g},${b},0.1)`)
-          }
+          if (data.accent_color) applyAccent(data.accent_color)
         }
       } catch {
         setIsCompanyOwner(u.email === SUPER_ADMIN)

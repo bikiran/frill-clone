@@ -56,17 +56,23 @@ export function usePanelZoom(lines: string[]) {
     const t = setInterval(() => setN(k => Math.min(lines.length - 1, k + 1)), 1100)
     return () => clearInterval(t)
   }, [phase, lines.length])
-  const zoomOut = useCallback((fromEl?: Element | null) => {
+  // Returns how long the move takes, so the next page waits for it to land.
+  const zoomOut = useCallback((fromEl?: Element | null): number => {
     const r = panelRef.current?.getBoundingClientRect()
     if (r && r.width) {
       setFrom({ top: r.top, left: r.left, right: window.innerWidth - r.right, bottom: window.innerHeight - r.bottom }); setPhase('zoom')
       requestAnimationFrame(() => requestAnimationFrame(() => setFrom({ top: 0, left: 0, right: 0, bottom: 0 })))
-    } else {
-      const b = (fromEl || document.querySelector('.si-submit'))?.getBoundingClientRect()
-      setOrigin(b ? { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) } : null)
-      setPhase('zoom')
+      setTimeout(() => setPhase(p => (p === 'zoom' ? 'full' : p)), 750)
+      return 700
     }
-    setTimeout(() => setPhase(p => (p === 'zoom' ? 'full' : p)), 750)
+    // Phones: the card opens out of the button, then grows to fill the
+    // screen (the rail folding away, as the phone admin has none) before the
+    // workspace loads in under it.
+    const b = (fromEl || document.querySelector('.si-submit'))?.getBoundingClientRect()
+    setOrigin(b ? { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) } : null)
+    setPhase('zoom')
+    setTimeout(() => setPhase(p => (p === 'zoom' ? 'full' : p)), 480)
+    return 1300
   }, [])
   // For the page's root: where a phone's reveal grows from.
   const originStyle = (origin ? { ['--ox' as string]: `${origin.x}px`, ['--oy' as string]: `${origin.y}px` } : {}) as React.CSSProperties
@@ -145,6 +151,7 @@ export const AUTH_CSS = `
 .nw.dark .si-note.good{background:rgba(34,197,94,.12);color:#86efac}
 .nw.dark .si-note.bad{background:rgba(239,68,68,.12);color:#fca5a5}
 .nw.dark .si-sent-ic{background:color-mix(in srgb,var(--c) 18%,#18181b)}
+.si-build-tx{display:contents}
 @media (max-width:900px){.si .nw-body{padding-top:32px}}
 /* Phones: the strip, and the panel opening out of the button pressed. */
 .au-band{display:none}
@@ -166,9 +173,19 @@ export const AUTH_CSS = `
   .au-band .nw-msg img{width:26px;height:26px;border-radius:8px}
   .au-band .nw-msg p{max-width:100%;padding:8px 12px;font-size:13px;line-height:1.4}
   .si.nw-zoom .nw-panel,.si.nw-full .nw-panel{animation:auReveal .8s cubic-bezier(.65,0,.35,1) both}
+  /* …then the card fills the screen, white edge to edge like the admin. */
+  .si .nw-app{transition:left .8s cubic-bezier(.65,0,.35,1),top .8s cubic-bezier(.65,0,.35,1),right .8s cubic-bezier(.65,0,.35,1),bottom .8s cubic-bezier(.65,0,.35,1),border-radius .8s ease,box-shadow .8s ease}
+  .si.nw-full .nw-app{left:0;top:0;right:0;bottom:0;border-radius:0;box-shadow:none}
+  .si .nw-rail{transition:width .7s cubic-bezier(.65,0,.35,1),opacity .35s ease}
+  .si.nw-full .nw-rail{width:0;opacity:0;overflow:hidden}
+  /* The buddy sits dead centre (where the admin's loading screen has it) and
+     the words hang under it, so the hand-off doesn't jump. */
+  .si .nw-build{position:relative}
+  .si .si-build-tx{position:absolute;left:0;right:0;top:calc(50% + 50px);display:flex;flex-direction:column;align-items:center;padding:0 22px}
+  .si .si-build-tx h2{margin-top:0}
 }
 @media (max-width:900px) and (max-height:600px){.au-band{display:none}}
 @keyframes auReveal{from{clip-path:circle(0px at var(--ox,50%) var(--oy,85%))}to{clip-path:circle(160vmax at var(--ox,50%) var(--oy,85%))}}
 .nw.dark .au-band-app{background:#151517}
-@media (prefers-reduced-motion: reduce){.si-sent-ic,.si-new-n,.au-band,.au-band-app,.au-band *,.si.nw-zoom .nw-panel,.si.nw-full .nw-panel{animation:none!important}}
+@media (prefers-reduced-motion: reduce){.si-sent-ic,.si-new-n,.au-band,.au-band-app,.au-band *,.si.nw-zoom .nw-panel,.si.nw-full .nw-panel{animation:none!important}.si .nw-app,.si .nw-rail{transition:none!important}}
 `
