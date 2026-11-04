@@ -2128,8 +2128,19 @@ function withMentions(text: string, team: { name: string }[]): React.ReactNode {
   const names = Array.from(new Set(team.map(m => m.name).filter(Boolean))).sort((a, b) => b.length - a.length)
   if (!names.length || !text.includes('@')) return text
   const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const re = new RegExp(`(@(?:${names.map(esc).join('|')}))(?![\\w])`, 'gi')
-  return text.split(re).map((part, k) => (k % 2 ? <b key={k} className="otl-at">{part}</b> : part))
+  // "@" starts the text or follows a space / bracket (bob@amit.com isn't one).
+  const re = new RegExp(`(^|[\\s(])(@(?:${names.map(esc).join('|')}))(?![\\w])`, 'gi')
+  const out: React.ReactNode[] = []
+  let last = 0
+  for (let m = re.exec(text); m; m = re.exec(text)) {
+    const at = m.index + m[1].length
+    if (at > last) out.push(text.slice(last, at))
+    out.push(<b key={at} className="otl-at">{m[2]}</b>)
+    last = at + m[2].length
+    re.lastIndex = last
+  }
+  if (last < text.length) out.push(text.slice(last))
+  return out
 }
 
 function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, tagDefs, tagColor, onEnsureTag, onManageTags, onClose, onPatch, onFlash, onLabel, onPrintSlip, onPrintLabel, onLabelPdf, teamName, outletName, fullScreen = false }: any) {
@@ -2960,55 +2971,6 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
             )}
           </CollapseSection>
 
-          {/* Shipping address */}
-          {(addr.address_1 || addr.city) && (
-            <CollapseSection style={sect} storageKey="order-address" title="Shipping address"
-              right={<CopyBtn title="Copy address" onClick={() => copyToClipboard(addrText, onFlash)} />}>
-              <p onClick={() => copyToClipboard(addrText, onFlash)} title="Click to copy address" style={{ margin: '10px 0 0', fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.6, cursor: 'copy' }}>
-                {order.customer_name}<br />
-                {[addr.address_1, addr.address_2].filter(Boolean).join(', ')}<br />
-                {[addr.city, (addr.state || '').toUpperCase(), addr.postcode].filter(Boolean).join(' ')}<br />
-                {addr.country}
-              </p>
-            </CollapseSection>
-          )}
-
-          {/* Order summary */}
-          <CollapseSection style={sect} storageKey="order-summary" title="Order summary">
-            <div style={{ marginTop: 8 }}>
-              {([
-                ['Outlet', store || 'No outlet'],
-                ['Order date', order.order_date ? when(order.order_date) : '—'],
-                ['Sales channel', <span key="ch" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ChannelIcon channel={order.sales_channel} size={13} />{channelMeta(order.sales_channel).label}</span>],
-                ['Payment', order.payment_status ? sentence(String(order.payment_status)) : '—'],
-                ['Fulfilment', order.fulfilment_status ? sentence(String(order.fulfilment_status)) : '—'],
-                ['Subtotal', order.subtotal != null ? fmtMoney(order.subtotal, order.currency) : '—'],
-                ...(financials?.coupons?.length ? [['Coupon', financials.coupons.join(', ')]] as [string, any][] : []),
-                ...(financials && financials.discount > 0 ? [['Discount', <span key="disc" style={{ color: '#15803d' }}>−{fmtMoney(financials.discount, order.currency)}</span>]] as [string, any][] : []),
-                ...((financials?.fees || []).map(f => [f.name, fmtMoney(f.total, order.currency)]) as [string, any][]),
-                ['Shipping', isClickCollect(order)
-                  ? <span key="cc" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#2563eb' }}><ClickCollectIcon size={13} />{order.shipping_method || 'Click & Collect'}</span>
-                  : (Number(order.shipping_total) || 0) > 0 ? `${fmtMoney(order.shipping_total, order.currency)}${order.shipping_method ? ` · ${order.shipping_method}` : ''}` : (order.shipping_method || 'Free')],
-              ] as [string, any][]).map(([k, v]) => (
-                <div key={k} className="od-row"><span>{k}</span><span>{v}</span></div>
-              ))}
-              <div className="od-row total"><span>Total</span><span>{fmtMoney(order.total, order.currency)} <span style={{ color: '#a1a1aa', fontWeight: 600, fontSize: 12.5 }}>{order.currency || ''}</span></span></div>
-              {refundedTotal > 0.004 && <>
-                <div className="od-row"><span>Refunded</span><span style={{ color: '#b45309' }}>−{fmtMoney(refundedTotal, order.currency)}</span></div>
-                <div className="od-row"><span>Net</span><span>{fmtMoney(Math.max(0, (Number(order.total) || 0) - refundedTotal), order.currency)}</span></div>
-              </>}
-            </div>
-          </CollapseSection>
-
-          {/* Order barcode — scannable Code128 of the order number */}
-          {order.order_number && (
-            <div style={{ ...sect, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-              <div title={`Order ${order.order_number}`} style={{ width: '100%', maxWidth: 320, display: 'flex', justifyContent: 'center' }}
-                dangerouslySetInnerHTML={{ __html: barcodeSVG(String(order.order_number), { moduleWidth: 2, height: 54 }) }} />
-              <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.14em', color: 'var(--ink)', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{order.order_number}</span>
-            </div>
-          )}
-
           {/* Items */}
           <div style={sect} id="ord-items-panel">
             <OrderItemsPanel order={order} companyId={companyId} items={items} accent={ACCENT}
@@ -3089,6 +3051,57 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
           <OrderHeadsUp key={order.id} orderId={order.id} meId={me?.id} notes={notes} tasks={tasks}
             checkoutNote={(order.customer_note || wooCustomerNote || '').trim()}
             onToggleTask={toggleTask} onSeeAll={seeAllNotes} />
+
+          {/* Where it's going, what it came to and its barcode: up here with the
+              outlet, where packing starts (they were above the items). */}
+          {/* Shipping address */}
+          {(addr.address_1 || addr.city) && (
+            <CollapseSection style={sect} storageKey="order-address" title="Shipping address"
+              right={<CopyBtn title="Copy address" onClick={() => copyToClipboard(addrText, onFlash)} />}>
+              <p onClick={() => copyToClipboard(addrText, onFlash)} title="Click to copy address" style={{ margin: '10px 0 0', fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.6, cursor: 'copy' }}>
+                {order.customer_name}<br />
+                {[addr.address_1, addr.address_2].filter(Boolean).join(', ')}<br />
+                {[addr.city, (addr.state || '').toUpperCase(), addr.postcode].filter(Boolean).join(' ')}<br />
+                {addr.country}
+              </p>
+            </CollapseSection>
+          )}
+
+          {/* Order summary */}
+          <CollapseSection style={sect} storageKey="order-summary" title="Order summary">
+            <div style={{ marginTop: 8 }}>
+              {([
+                ['Outlet', store || 'No outlet'],
+                ['Order date', order.order_date ? when(order.order_date) : '—'],
+                ['Sales channel', <span key="ch" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><ChannelIcon channel={order.sales_channel} size={13} />{channelMeta(order.sales_channel).label}</span>],
+                ['Payment', order.payment_status ? sentence(String(order.payment_status)) : '—'],
+                ['Fulfilment', order.fulfilment_status ? sentence(String(order.fulfilment_status)) : '—'],
+                ['Subtotal', order.subtotal != null ? fmtMoney(order.subtotal, order.currency) : '—'],
+                ...(financials?.coupons?.length ? [['Coupon', financials.coupons.join(', ')]] as [string, any][] : []),
+                ...(financials && financials.discount > 0 ? [['Discount', <span key="disc" style={{ color: '#15803d' }}>−{fmtMoney(financials.discount, order.currency)}</span>]] as [string, any][] : []),
+                ...((financials?.fees || []).map(f => [f.name, fmtMoney(f.total, order.currency)]) as [string, any][]),
+                ['Shipping', isClickCollect(order)
+                  ? <span key="cc" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#2563eb' }}><ClickCollectIcon size={13} />{order.shipping_method || 'Click & Collect'}</span>
+                  : (Number(order.shipping_total) || 0) > 0 ? `${fmtMoney(order.shipping_total, order.currency)}${order.shipping_method ? ` · ${order.shipping_method}` : ''}` : (order.shipping_method || 'Free')],
+              ] as [string, any][]).map(([k, v]) => (
+                <div key={k} className="od-row"><span>{k}</span><span>{v}</span></div>
+              ))}
+              <div className="od-row total"><span>Total</span><span>{fmtMoney(order.total, order.currency)} <span style={{ color: '#a1a1aa', fontWeight: 600, fontSize: 12.5 }}>{order.currency || ''}</span></span></div>
+              {refundedTotal > 0.004 && <>
+                <div className="od-row"><span>Refunded</span><span style={{ color: '#b45309' }}>−{fmtMoney(refundedTotal, order.currency)}</span></div>
+                <div className="od-row"><span>Net</span><span>{fmtMoney(Math.max(0, (Number(order.total) || 0) - refundedTotal), order.currency)}</span></div>
+              </>}
+            </div>
+          </CollapseSection>
+
+          {/* Order barcode — scannable Code128 of the order number */}
+          {order.order_number && (
+            <div style={{ ...sect, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+              <div title={`Order ${order.order_number}`} style={{ width: '100%', maxWidth: 320, display: 'flex', justifyContent: 'center' }}
+                dangerouslySetInnerHTML={{ __html: barcodeSVG(String(order.order_number), { moduleWidth: 2, height: 54 }) }} />
+              <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.14em', color: 'var(--ink)', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{order.order_number}</span>
+            </div>
+          )}
 
           {/* Send tracking — expands inline below (no popup) */}
           <div style={sect}>

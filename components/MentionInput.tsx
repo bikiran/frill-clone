@@ -38,11 +38,16 @@ interface Props {
 export function resolveMentions(text: string, team: TeamMember[]): TeamMember[] {
   if (!text) return []
   const found: TeamMember[] = []
-  for (const m of team) {
-    if (!m.name) continue
-    // Match @Name allowing the space in "Jane Smith", stopping at punctuation.
+  // Longest names first, each match used up, so "@Amit Panta" doesn't also
+  // count as "@Amit" (the app's rule).
+  let rest = text
+  for (const m of [...team].filter(x => x?.name).sort((a, b) => b.name.length - a.name.length)) {
+    // "@Name" (spaces allowed, as in "Jane Smith") that starts the text or
+    // follows a space / bracket, so an email like bob@amit.com isn't a
+    // mention, and isn't glued to a following letter or digit.
     const escaped = m.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    if (new RegExp(`@${escaped}\\b`, 'i').test(text)) found.push(m)
+    const re = new RegExp(`(^|[\\s(])@${escaped}(?![\\w])`, 'i')
+    if (re.test(rest)) { found.push(m); rest = rest.replace(re, '$1 ') }
   }
   return found
 }
@@ -80,7 +85,7 @@ const MentionInput = forwardRef<HTMLTextAreaElement | HTMLInputElement, Props>(f
     if (at === -1) { setQuery(null); return }
     // Only treat it as a mention if @ starts a word.
     const charBefore = at > 0 ? before[at - 1] : ' '
-    if (!/\s|^/.test(charBefore) && at !== 0) { setQuery(null); return }
+    if (at !== 0 && !/[\s(]/.test(charBefore)) { setQuery(null); return }
     const fragment = before.slice(at + 1)
     // A newline or a second @ means they've moved on.
     if (/[\n@]/.test(fragment)) { setQuery(null); return }
