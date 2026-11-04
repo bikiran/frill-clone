@@ -21,6 +21,7 @@ import { authFetch } from '@/lib/auth-fetch'
 import { MessagesPhone, DEVICES_CSS } from '@/components/EmailDesigner/Devices'
 import SmsChecksCard from '@/components/campaigns/SmsChecksCard'
 import { runSmsChecks } from '@/lib/sms-checks'
+import { useStoreStatus } from '@/lib/store-status'
 
 const AUDIENCE_TYPES: [string, string, string][] = [
   ['all_subscribed', 'All subscribed contacts', 'Everyone with marketing consent'],
@@ -34,6 +35,10 @@ const AUDIENCE_TYPES: [string, string, string][] = [
   ['abandoned_checkout', 'Abandoned checkout', 'Left an unrecovered cart'],
   ['manual', 'Manual contact selection', 'Pick contacts by hand'],
 ]
+// Audiences and links that need a store's data (lib/store-status): store
+// customers and carts need WooCommerce or Shopify; purchases need orders.
+const NEEDS_STORE = ['woocommerce', 'abandoned_checkout', 'product', 'category']
+const NEEDS_ORDERS = ['purchased_category', 'lapsed']
 
 const SEGMENTS = ['Champions', 'Loyal Customers', 'Potential Loyalists', 'At Risk', 'Lost']
 
@@ -74,6 +79,8 @@ export default function CampaignEditorPage() {
 
   const [loading, setLoading] = useState(true)
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const storeStatus = useStoreStatus(companyId)
+  const storeAllows = (k: string) => (storeStatus.store || !NEEDS_STORE.includes(k)) && (storeStatus.orders || !NEEDS_ORDERS.includes(k))
   const [companyName, setCompanyName] = useState('')
   const [campaign, setCampaign] = useState<any>(null)
   const [outlets, setOutlets] = useState<any[]>([])
@@ -119,6 +126,8 @@ export default function CampaignEditorPage() {
   // Links & offers (step 4)
   const [attachment, setAttachment] = useState<any>(null)
   const [attachKind, setAttachKind] = useState('product')
+  // No store: the link picker starts on an external link instead of Product.
+  useEffect(() => { if (storeStatus.known && !storeStatus.store && (attachKind === 'product' || attachKind === 'category')) setAttachKind('external') }, [storeStatus.known, storeStatus.store]) // eslint-disable-line react-hooks/exhaustive-deps
   const [linkUrl, setLinkUrl] = useState('')
   const [linkLabel, setLinkLabel] = useState('')
   const [prodQuery, setProdQuery] = useState('')
@@ -860,7 +869,7 @@ export default function CampaignEditorPage() {
         <div style={card}>
           <label style={label}>Who should receive this?</label>
           <div style={{ display: 'grid', gap: 6, marginBottom: 16 }}>
-            {AUDIENCE_TYPES.map(([val, title, desc]) => (
+            {AUDIENCE_TYPES.filter(([val]) => val === audType || storeAllows(val)).map(([val, title, desc]) => (
               <button key={val} type="button" onClick={() => setAudType(val)}
                 style={{
                   textAlign: 'left', padding: '12px 14px', borderRadius: 14, cursor: 'pointer', border: 'none',
@@ -1139,7 +1148,7 @@ export default function CampaignEditorPage() {
                 ['product', 'Product'], ['category', 'Category'], ['help', 'Help article'],
                 ['announcement', 'Announcement'], ['form', 'Form'], ['booking', 'Booking page'],
                 ['payment', 'Payment link'], ['external', 'External URL'],
-              ].map(([k, l]) => (
+              ].filter(([k]) => k === attachKind || storeAllows(k)).map(([k, l]) => (
                 <button key={k} type="button"
                   onClick={() => { setAttachKind(k); if (k === 'help') loadArticles() }}
                   style={{

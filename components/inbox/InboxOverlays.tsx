@@ -62,7 +62,7 @@ export default function InboxOverlays() {
     showMediaRequest, showMergePicker, showPod, showProducts, showRecordSale, showSchedule,
     showScheduleMsg, showTimeline, showToast, showTracking, snoozeConv, stageQrMedia,
     stageSelectedMedia, storyView, teamMembers, toast, togglePin, user,
-    openOrderInPanel,
+    openOrderInPanel, storeConnected,
   } = useInbox()
   // A DOA claim was processed: reload the conversation (its claim note, the
   // order's new status) once the panel closes. Reloading straight away closed
@@ -240,7 +240,7 @@ export default function InboxOverlays() {
       {/* Product search — look a product up and send its price or buy link.
           No scrim: the chat stays usable beside it. Above the Feedback tab and
           Colvy orb; the toast (same layer, later in the page) still shows on top. */}
-      {showProducts && selected && (() => {
+      {showProducts && selected && storeConnected && (() => {
         const q = productQuery.trim()
         const pending = q.length >= 2 && productSearchedFor !== q && !productError
         const noMatch = q.length >= 2 && !pending && !productSearching && !productError && products.length === 0
@@ -638,7 +638,7 @@ export default function InboxOverlays() {
 
               <section>
                 <p className="ifl-l">Source</p>
-                {chips('source', [['', 'Any'], ['chat', 'Live chat enquiry'], ['order', 'Order placed'], ['cart', 'Abandoned cart']])}
+                {chips('source', [['', 'Any'], ['chat', 'Live chat enquiry'], ...(storeConnected ? [['order', 'Order placed'], ['cart', 'Abandoned cart']] as [string, string][] : [])])}
               </section>
 
               <section>

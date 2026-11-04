@@ -46,7 +46,7 @@ export default function ContactPanelBody() {
     setShowOrderSearch, setShowTimeline, setShowTracking, setStatus, showCardAssign, showCardMore,
     showContactEdit, showEmailComposer, showMsgSearch, showOrderSearch, showToast, teamMembers,
     toggleBlockContact, user, wooCustomer, wooOrders, wooOrdersLoading,
-    orderFocus, setOrderFocus,
+    orderFocus, setOrderFocus, storeConnected,
   } = useInbox()
   const router = useRouter()
 
@@ -536,7 +536,8 @@ export default function ContactPanelBody() {
                             } catch { showToast('Could not save who rings first') }
                           },
                         }} />
-                      <WaitlistQuickAdd compact companyId={companyId} contact={contact as any} conversationId={selected?.id || null} />
+                      {/* Back-in-stock alerts are for a store's products. */}
+                      {storeConnected && <WaitlistQuickAdd compact companyId={companyId} contact={contact as any} conversationId={selected?.id || null} />}
                       <PanelItem icon={CPD_ICON.calendar} label="Delivery" set={!!when} onClick={() => setShowDeliveryPanel(true)}
                         value={when ? new Date(when).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Schedule'} />
                       <PanelItem icon={CPD_ICON.box} label="Delivery status" value={D_LABEL[dStatus] || 'Not set'} set={!!dStatus}
