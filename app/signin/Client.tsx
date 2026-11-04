@@ -1,11 +1,13 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useState, useEffect, useRef, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { signInWithGoogle, signInWithGitHub } from '@/lib/auth'
-import ColvyLogo from '@/components/ColvyLogo'
 import { sameSitePath } from '@/lib/same-site-path'
+import { useBodyClass } from '@/lib/body-class'
+import AiBuddy from '@/components/AiBuddy'
+import { COLVY_ICON, I, ICONS, SETUP_CSS, SetupPreview, PreviewSection, PreviewRow, useSetupTheme, type PreviewFocus, type Rect } from '@/components/setup/SetupKit'
 
 // ?redirect= is a page on this same site: a path, or a full URL on this origin
 // (the board sends its own address). Never another site or a javascript: URL.
@@ -20,28 +22,55 @@ function safeRedirect(raw: string | null): string {
 }
 
 const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
+const CORAL = '#ff7a6b'
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-const TESTIMONIALS = [
-  { quote: "Colvy replaced our messy spreadsheet overnight. Customers finally feel heard.", name: 'Jordan Mills', role: 'Founder, Prexty', avatar: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=80&h=80&fit=crop&crop=face' },
-  { quote: "The public roadmap doubled our trial-to-paid conversion. Our users love the transparency.", name: 'Aiko Tanaka', role: 'Product Lead, nePlay', avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=80&h=80&fit=crop&crop=face' },
-  { quote: "Setup took 4 minutes. We migrated from Canny in one click and have not looked back since.", name: 'Sam Rivera', role: 'CEO, Roxy Aquarium', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=80&h=80&fit=crop&crop=face' },
+// The preview: a workspace's inbox filling up while you were away. Sample
+// messages of the kind any business gets (no names of real customers, and no
+// quotes from anyone: the old testimonials here were made up).
+const PHONE = <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z" />
+const MAIL = <><rect x="3" y="5" width="18" height="14" rx="2" /><polyline points="3 7 12 13 21 7" /></>
+const CHANNELS = {
+  chat: { label: 'Website chat', color: CORAL, icon: ICONS.chat },
+  sms: { label: 'SMS', color: '#22c55e', icon: ICONS.chat },
+  email: { label: 'Email', color: '#3b82f6', icon: MAIL },
+  call: { label: 'Calls', color: '#7c3aed', icon: PHONE },
+  order: { label: 'Orders', color: '#f59e0b', icon: ICONS.bag },
+} as const
+type Ch = keyof typeof CHANNELS
+const FEED: { ch: Ch; who: string; text: string; ai?: boolean }[] = [
+  { ch: 'sms', who: 'Mia', text: 'Can you deliver on Saturday morning?', ai: true },
+  { ch: 'order', who: 'Ethan', text: 'New order #1042 · $186.50' },
+  { ch: 'email', who: 'Liam', text: 'Could I get a quote for 20 units?' },
+  { ch: 'chat', who: 'Ava', text: 'Is the blue one back in stock?', ai: true },
+  { ch: 'call', who: 'Noah', text: 'Missed call · left a voicemail' },
+  { ch: 'sms', who: 'Zoe', text: 'Any times free this weekend?', ai: true },
 ]
+const FEED_EVERY = 2600
+const SHOWN = 5
 
-const EyeIcon = ({ off }: { off: boolean }) => off ? (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-) : (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-)
+const OPENING = ['Signing you in…', 'Opening your inbox…', 'Loading your conversations…']
+
+/** A first name from an email, when it plainly has one (jo.smith@ → Jo). */
+function firstFromEmail(email: string): string {
+  const local = (email.split('@')[0] || '').split(/[._+-]/)[0] || ''
+  return /^[a-z]{2,14}$/i.test(local) ? local[0].toUpperCase() + local.slice(1).toLowerCase() : ''
+}
+
+const EyeIcon = ({ off }: { off: boolean }) => off
+  ? I(<><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></>, 18, 1.8)
+  : I(<><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></>, 18, 1.8)
 
 const GoogleIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+  <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
 )
 const GithubIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
 )
 
 function SignInForm() {
-  const router = useRouter()
+  useBodyClass('nw-on')
+  const { dark } = useSetupTheme()
   const params = useSearchParams()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -49,8 +78,9 @@ function SignInForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [oauthLoading, setOAuthLoading] = useState('')
-  const [slide, setSlide] = useState(0)
   const [companyContext, setCompanyContext] = useState<any>(null)
+  // A workspace's own sign-in page wears its colour and logo.
+  const [brand, setBrand] = useState<{ color: string; logo: string | null }>({ color: CORAL, logo: null })
   // How this workspace lets people sign in (Settings → Sign-in & security).
   const [methods, setMethods] = useState({ google: true, github: true, magicLink: false })
   const [linkSending, setLinkSending] = useState(false)
@@ -62,6 +92,25 @@ function SignInForm() {
     const m = document.cookie.match(/(?:^|;\s*)colvy_shopify_pending=([^;]*)/)
     if (m) { try { setShopifyStore(decodeURIComponent(m[1]) || 'your Shopify store') } catch { setShopifyStore('your Shopify store') } }
   }, [params])
+
+  // The preview: which field you're in moves its camera, and the feed ticks.
+  const [field, setField] = useState<'email' | 'password' | null>(null)
+  // Starts with a few in, so the inbox isn't empty while the page settles.
+  const [tick, setTick] = useState(2)
+  const [phase, setPhase] = useState<'form' | 'zoom' | 'full'>('form')
+  const [from, setFrom] = useState<Rect | null>(null)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const [openLine, setOpenLine] = useState(0)
+  useEffect(() => {
+    if (phase !== 'form') return
+    const t = setInterval(() => setTick(n => n + 1), FEED_EVERY)
+    return () => clearInterval(t)
+  }, [phase])
+  useEffect(() => {
+    if (phase === 'form') { setOpenLine(0); return }
+    const t = setInterval(() => setOpenLine(n => Math.min(OPENING.length - 1, n + 1)), 1100)
+    return () => clearInterval(t)
+  }, [phase])
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data }: any) => {
@@ -75,12 +124,18 @@ function SignInForm() {
     if (typeof window !== 'undefined') {
       const hostname = window.location.hostname
       const isSubdomain = hostname.endsWith('.colvy.com') && hostname !== 'colvy.com' && hostname !== 'www.colvy.com' && !hostname.includes('localhost')
-      
+
       if (isSubdomain) {
         const slug = hostname.split('.')[0]
         supabase.from('companies').select('id, name, slug').eq('slug', slug).single().then(async ({ data }) => {
           if (data) {
             setCompanyContext(data)
+            // Its look, asked separately so a missing column can't lose the context above.
+            ;(supabase as any).from('companies').select('logo_url, accent_color').eq('id', data.id).maybeSingle()
+              .then(({ data: look }: any) => {
+                if (!look) return
+                setBrand({ color: /^#[0-9a-f]{6}$/i.test(look.accent_color || '') ? look.accent_color : CORAL, logo: look.logo_url || null })
+              }, () => {})
             const { data: rows } = await (supabase as any).from('site_settings').select('value').eq('key', 'general').eq('company_id', data.id)
               .order('updated_at', { ascending: false }).limit(1)
             const m = rows?.[0]?.value?.signIn
@@ -89,9 +144,6 @@ function SignInForm() {
         })
       }
     }
-
-    const t = setInterval(() => setSlide(s => (s + 1) % TESTIMONIALS.length), 5000)
-    return () => clearInterval(t)
   }, [])
 
   const getRedirectUrl = async () => {
@@ -178,7 +230,7 @@ function SignInForm() {
   const sendMagicLink = async () => {
     setError('')
     const addr = email.trim()
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) { setError('Enter your email above first, then we can send you a link.'); return }
+    if (!EMAIL_RE.test(addr)) { setError('Enter your email above first, then we can send you a link.'); return }
     setLinkSending(true)
     try { localStorage.setItem('colvy_signin_next', JSON.stringify({ next: safeRedirect(params.get('redirect')), at: Date.now() })) } catch {}
     const { error: err } = await supabase.auth.signInWithOtp({ email: addr, options: { emailRedirectTo: `${window.location.origin}/auth/confirm`, shouldCreateUser: false } })
@@ -193,14 +245,29 @@ function SignInForm() {
     setLinkSent(addr)
   }
 
+  // Signed in: the preview grows to fill the screen ("Opening your inbox…")
+  // while the workspace loads, as sign-up does when it makes one.
+  const zoomOut = () => {
+    const r = panelRef.current?.getBoundingClientRect()
+    if (r && r.width) {
+      const start = { top: r.top, left: r.left, right: window.innerWidth - r.right, bottom: window.innerHeight - r.bottom }
+      setFrom(start); setPhase('zoom')
+      requestAnimationFrame(() => requestAnimationFrame(() => setFrom({ top: 0, left: 0, right: 0, bottom: 0 })))
+      setTimeout(() => setPhase(p => (p === 'zoom' ? 'full' : p)), 750)
+    } else setPhase('full')
+  }
+
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError('')
     const { error: err } = await supabase.auth.signInWithPassword({ email, password })
     if (err) { setError(err.message); setLoading(false); return }
+    const started = Date.now()
+    zoomOut()
     const redirect = safeRedirect(params.get('redirect')) || await getRedirectUrl()
-    window.location.href = redirect
+    // Let the zoom land before the next page starts to load over it.
+    setTimeout(() => { window.location.href = redirect }, Math.max(0, 700 - (Date.now() - started)))
   }
 
   const handleGoogle = async () => {
@@ -223,148 +290,211 @@ function SignInForm() {
     if (err) { setError('GitHub sign-in not enabled. Enable it in Supabase → Authentication → Providers → GitHub.'); setOAuthLoading('') }
   }
 
+  const color = brand.color
+  const wsName: string = companyContext?.name || ''
+  const emailOk = EMAIL_RE.test(email.trim())
+  const first = emailOk ? firstFromEmail(email.trim()) : ''
+  const focus: PreviewFocus = field === 'email' ? 'name' : field === 'password' ? 'channels' : 'overview'
+  // The newest SHOWN of an endless feed, newest first; keys follow each item
+  // so only the new one animates in.
+  const shown = Array.from({ length: SHOWN }, (_, k) => tick - k).filter(n => n >= 0).map(n => ({ n, ...FEED[n % FEED.length] }))
+  const unread = (ch: Ch) => shown.filter(s => s.ch === ch).length
+  const oauth = !linkSent && (methods.google || methods.github)
+
   return (
-    <div style={{ minHeight: '100vh', display: 'grid', gridTemplateColumns: '1fr 1fr', background: '#fff' }}>
-      <style>{`
-        @media (max-width: 900px) { .sf-visual { display: none !important; } .sf-form-col { grid-column: 1 / -1 !important; } }
-        @keyframes sfFade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-        .sf-anim { animation: sfFade 0.5s ease both; }
-      `}</style>
+    <div className={`nw nw-${phase}${dark ? ' dark' : ''} si`} style={{ ['--c' as string]: color } as React.CSSProperties}>
+      <style>{SETUP_CSS + SI_CSS}</style>
 
-      {/* LEFT — form */}
-      <div className="sf-form-col" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '48px clamp(24px, 8vw, 96px)' }}>
-        <div style={{ maxWidth: 380, width: '100%', margin: '0 auto' }}>
-          <ColvyLogo size={32} fontSize={20} style={{ marginBottom: 40 }} />
+      <div className="nw-left">
+        <div className="nw-top">
+          <div className="nw-brand"><img src={COLVY_ICON} alt="" width={30} height={30} /><span>Colvy</span></div>
+          <a href="/signup" className="nw-top-link si-top-link">Sign up</a>
+        </div>
 
-          <h1 style={{ fontSize: 26, fontWeight: 800, color: '#0d0d0d', marginBottom: 6, letterSpacing: '-0.01em' }}>Welcome back</h1>
-          <p style={{ fontSize: 14, color: '#6b6b70', marginBottom: 28 }}>Sign in to your Colvy workspace.</p>
-
-          {shopifyStore && (
-            <div role="status" style={{ padding: '10px 14px', borderRadius: 10, background: '#ecfdf3', border: '1px solid #abefc6', color: '#067647', fontSize: 13, marginBottom: 16, lineHeight: 1.5 }}>
-              Colvy is installed on <strong>{shopifyStore}</strong>. Sign in, or create a free account, to finish connecting it.
-            </div>
-          )}
-
-          {error && (
-            <div style={{ padding: '10px 14px', borderRadius: 10, background: '#fef2f2', border: '1px solid #fca5a5', color: '#dc2626', fontSize: 13, marginBottom: 16 }}>
-              {error}
-            </div>
-          )}
-
-          {linkSent ? null : (methods.google || methods.github) && <>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
-            {methods.google && <button onClick={handleGoogle} disabled={!!oauthLoading}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '11px', borderRadius: 12, border: '1px solid #e5e5e5', background: '#fff', fontSize: 14, fontWeight: 600, color: '#0d0d0d', cursor: 'pointer' }}>
-              <GoogleIcon /> {oauthLoading === 'google' ? 'Connecting...' : 'Continue with Google'}
-            </button>}
-            {methods.github && <button onClick={handleGitHub} disabled={!!oauthLoading}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '11px', borderRadius: 12, border: '1px solid #e5e5e5', background: '#fff', fontSize: 14, fontWeight: 600, color: '#0d0d0d', cursor: 'pointer' }}>
-              <GithubIcon /> {oauthLoading === 'github' ? 'Connecting...' : 'Continue with GitHub'}
-            </button>}
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '20px 0' }}>
-            <div style={{ flex: 1, height: 1, background: '#e5e5e5' }} />
-            <span style={{ fontSize: 12, color: '#9ca3af' }}>or</span>
-            <div style={{ flex: 1, height: 1, background: '#e5e5e5' }} />
-          </div>
-          </>}
-
-          {linkSent ? (
-            <div style={{ textAlign: 'center', padding: '28px 8px 8px' }}>
-              <div style={{ width: 60, height: 60, margin: '0 auto 16px', borderRadius: '50%', background: '#fff1ee', color: '#ff7a6b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="m3.5 7 8.5 6 8.5-6" /></svg>
+        <div className="nw-body">
+          <div key={linkSent ? 'sent' : 'form'} className="nw-step fwd">
+            {linkSent ? (
+              <div className="si-sent">
+                <span className="si-sent-ic">{I(MAIL, 26)}</span>
+                <h1>Check your email</h1>
+                <p className="nw-sub">We sent a sign-in link to <b>{linkSent}</b>. Open it on this device to come straight back here. It works once and expires soon.</p>
+                <button type="button" className="nw-back" onClick={() => { setLinkSent(''); setError('') }}>{I(ICONS.back, 15)}Use a different email</button>
               </div>
-              <p style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 800, color: '#0d0d0d' }}>Check your email</p>
-              <p style={{ margin: 0, fontSize: 14, color: '#6b6b70', lineHeight: 1.55 }}>We sent a sign-in link to <b style={{ color: '#0d0d0d' }}>{linkSent}</b>. Open it on this device to come straight back here. It works once and expires soon.</p>
-              <button type="button" onClick={() => { setLinkSent(''); setError('') }} style={{ marginTop: 18, padding: '9px 16px', borderRadius: 999, border: '1.5px solid #e5e5e5', background: '#fff', fontSize: 13.5, fontWeight: 600, color: '#0d0d0d', cursor: 'pointer' }}>Use a different email</button>
-            </div>
-          ) : (
-          <form onSubmit={handleSignIn}>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#0d0d0d', marginBottom: 6 }}>Email</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="you@company.com"
-                style={{ width: '100%', padding: '11px 14px', borderRadius: 12, border: '1px solid #e5e5e5', fontSize: 15, outline: 'none', boxSizing: 'border-box' }} />
-            </div>
+            ) : (<>
+              <h1>{wsName ? <>Sign in to {wsName}</> : <>Welcome back</>}</h1>
+              <p className="nw-sub">{wsName ? 'Pick up where your team left off.' : 'Sign in to your Colvy workspace.'}</p>
 
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                <label style={{ fontSize: 13, fontWeight: 600, color: '#0d0d0d' }}>Password</label>
-                <a href="/forgot-password" style={{ fontSize: 12, color: '#ff7a6b', textDecoration: 'none' }}>Forgot password?</a>
-              </div>
-              <div style={{ position: 'relative' }}>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  required
-                  placeholder="Your password"
-                  style={{ width: '100%', padding: '11px 44px 11px 14px', borderRadius: 12, border: '1px solid #e5e5e5', fontSize: 15, outline: 'none', boxSizing: 'border-box' }}
-                />
-                <button type="button" onClick={() => setShowPassword(!showPassword)}
-                  style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', cursor: 'pointer', color: '#6b6b70', borderRadius: 8 }}>
-                  <EyeIcon off={showPassword} />
+              {shopifyStore && (
+                <div role="status" className="si-note good">{I(ICONS.check, 16, 2.4)}<span>Colvy is installed on <strong>{shopifyStore}</strong>. Sign in, or create a free account, to finish connecting it.</span></div>
+              )}
+
+              {oauth && <>
+                <div className="si-oauth">
+                  {methods.google && <button type="button" onClick={handleGoogle} disabled={!!oauthLoading}>
+                    {oauthLoading === 'google' ? <span className="nw-spin" /> : <GoogleIcon />}{oauthLoading === 'google' ? 'Connecting…' : 'Google'}
+                  </button>}
+                  {methods.github && <button type="button" onClick={handleGitHub} disabled={!!oauthLoading}>
+                    {oauthLoading === 'github' ? <span className="nw-spin" /> : <GithubIcon />}{oauthLoading === 'github' ? 'Connecting…' : 'GitHub'}
+                  </button>}
+                </div>
+                <div className="si-or"><span />or with your email<span /></div>
+              </>}
+
+              <form onSubmit={handleSignIn}>
+                <label className="si-field"><span>Email</span>
+                  <input className="nw-input" type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="you@company.com" autoComplete="email"
+                    onFocus={() => setField('email')} onBlur={() => setField(f => (f === 'email' ? null : f))} />
+                </label>
+
+                <div className="si-field">
+                  <span><label htmlFor="si-password">Password</label><a href="/forgot-password" className="si-forgot">Forgot password?</a></span>
+                  <div className="nw-input nw-domain si-pass">
+                    <input id="si-password" type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} required placeholder="Your password" autoComplete="current-password"
+                      onFocus={() => setField('password')} onBlur={() => setField(f => (f === 'password' ? null : f))} />
+                    <button type="button" className="si-eye" onClick={() => setShowPassword(v => !v)} aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword}>
+                      <EyeIcon off={showPassword} />
+                    </button>
+                  </div>
+                </div>
+
+                {error && <div role="alert" className="nw-error si-error">{error}</div>}
+
+                <button type="submit" className="nw-next si-submit" disabled={loading || phase !== 'form'}>
+                  {loading ? <><span className="nw-spin si-spin" />Signing in…</> : <>Sign in{I(ICONS.next, 15)}</>}
                 </button>
-              </div>
-            </div>
+                {methods.magicLink && (
+                  <button type="button" className="nw-back si-alt" onClick={sendMagicLink} disabled={linkSending}>
+                    {I(MAIL, 16)}{linkSending ? 'Sending…' : 'Email me a sign-in link instead'}
+                  </button>
+                )}
+              </form>
+            </>)}
+          </div>
+        </div>
 
-            <button type="submit" disabled={loading}
-              style={{ width: '100%', padding: '12px', borderRadius: 12, background: '#ff7a6b', color: '#fff', fontWeight: 700, fontSize: 15, border: 'none', cursor: loading ? 'wait' : 'pointer', opacity: loading ? 0.7 : 1 }}>
-              {loading ? 'Signing in…' : 'Sign in'}
-            </button>
-            {methods.magicLink && (
-              <button type="button" onClick={sendMagicLink} disabled={linkSending}
-                style={{ width: '100%', marginTop: 10, padding: '11px', borderRadius: 12, background: '#fff', color: '#0d0d0d', fontWeight: 600, fontSize: 14.5, border: '1px solid #e5e5e5', cursor: linkSending ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="m3.5 7 8.5 6 8.5-6" /></svg>
-                {linkSending ? 'Sending…' : 'Email me a sign-in link instead'}
-              </button>
-            )}
-          </form>
-          )}
-
-          <p style={{ textAlign: 'center', fontSize: 13, color: '#6b6b70', marginTop: 24 }}>
-            Don't have an account? <a href="/signup" style={{ color: '#ff7a6b', fontWeight: 600, textDecoration: 'none' }}>Sign up free</a>
-          </p>
+        <div className="nw-foot">
+          <p className="nw-legal si-new">New to Colvy? <a href="/signup">Create your workspace</a></p>
         </div>
       </div>
 
-      {/* RIGHT — visual / testimonial slider */}
-      <div className="sf-visual" style={{ background: 'linear-gradient(160deg, #fff7f5 0%, #ffeae6 100%)', position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 48 }}>
-        <div style={{ position: 'absolute', top: '-10%', right: '-10%', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,122,107,0.18), transparent 70%)' }} />
-        <div style={{ position: 'absolute', bottom: '-15%', left: '-10%', width: 350, height: 350, borderRadius: '50%', background: 'radial-gradient(circle, rgba(99,102,241,0.12), transparent 70%)' }} />
-
-        <div key={slide} className="sf-anim" style={{ position: 'relative', zIndex: 1, maxWidth: 440 }}>
-          <div style={{ display: 'flex', gap: 3, marginBottom: 24 }}>
-            {[...Array(5)].map((_, i) => (
-              <svg key={i} width="18" height="18" viewBox="0 0 24 24" fill="#ff7a6b"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-            ))}
-          </div>
-          <p style={{ fontSize: 26, fontWeight: 600, color: '#1a1a1a', lineHeight: 1.4, marginBottom: 32, letterSpacing: '-0.01em' }}>
-            "{TESTIMONIALS[slide].quote}"
-          </p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <img src={TESTIMONIALS[slide].avatar} alt={TESTIMONIALS[slide].name} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover' }} />
-            <div>
-              <p style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>{TESTIMONIALS[slide].name}</p>
-              <p style={{ fontSize: 13, color: '#6b6b70' }}>{TESTIMONIALS[slide].role}</p>
+      {/* ── The live preview ───────────────────────────────────────────── */}
+      <SetupPreview panelRef={panelRef} phase={phase} from={from} name={wsName || 'Your inbox'} focus={focus}
+        logo={brand.logo ? { kind: 'img', src: brand.logo } : { kind: 'colvy' }}
+        corner={emailOk ? <div className="nw-me si-me" key={email.trim()[0]?.toLowerCase()}><span className="nw-av-ini" style={{ width: 30, height: 30, fontSize: 13 }}>{email.trim()[0].toUpperCase()}</span><span className="si-me-mail">{email.trim()}</span></div> : null}
+        sub={wsName && companyContext?.slug ? <div className="nw-ws-site">{I(ICONS.chat, 13)}{companyContext.slug}.colvy.com</div> : undefined}
+        sections={
+          <PreviewSection k="channels" icon={ICONS.chat} title="Channels">
+            {(Object.keys(CHANNELS) as Ch[]).map(ch => {
+              const n = unread(ch)
+              return <PreviewRow key={ch} color={CHANNELS[ch].color} icon={CHANNELS[ch].icon} label={CHANNELS[ch].label} fresh={false}
+                detail={<span key={n} className={n ? 'si-new-n' : undefined}>{n ? `${n} new` : 'All caught up'}</span>} />
+            })}
+          </PreviewSection>
+        }
+        conv={
+          <div className="nw-thread si-thread">
+            <div className="nw-msg"><img src={COLVY_ICON} alt="" /><p>Welcome back{first ? <>, <b>{first}</b></> : null}! 👋 Here&rsquo;s what came in while you were away.</p></div>
+            <div className="si-feed">
+              {shown.map((s, i) => {
+                const c = CHANNELS[s.ch]
+                return (
+                  <div key={s.n} className={`si-item${i === 0 ? ' in' : ''}`} style={{ ['--t' as string]: c.color } as React.CSSProperties}>
+                    <span className="si-av">{s.who[0]}<span className="si-av-ch">{I(c.icon, 9, 2.6)}</span></span>
+                    <span className="si-item-txt">
+                      <b>{s.who}<em>{i === 0 ? 'now' : `${i * 3}m`}</em></b>
+                      <small>{s.text}</small>
+                      {s.ai && i < 2 && <span className="si-ai">{I(<path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z" />, 11, 2.2)}Reply drafted</span>}
+                    </span>
+                    {i < 2 && <span className="si-unread" />}
+                  </div>
+                )
+              })}
             </div>
           </div>
-
-          <div style={{ display: 'flex', gap: 6, marginTop: 36 }}>
-            {TESTIMONIALS.map((_, i) => (
-              <button key={i} onClick={() => setSlide(i)}
-                style={{ width: i === slide ? 24 : 8, height: 8, borderRadius: 999, background: i === slide ? '#ff7a6b' : 'rgba(0,0,0,0.15)', border: 'none', cursor: 'pointer', transition: 'all 0.3s' }} />
-            ))}
+        }
+        build={
+          <div className="nw-build">
+            <AiBuddy size={84} color={color} shadow />
+            <h2>Welcome back{first ? `, ${first}` : ''}</h2>
+            {wsName && <p className="nw-build-for">{brand.logo ? <span className="nw-build-chip"><img src={brand.logo} alt="" /></span> : null}{wsName}</p>}
+            <p className="nw-build-line" key={openLine}>{OPENING[openLine]}</p>
           </div>
-        </div>
-      </div>
+        } />
     </div>
   )
 }
 
+const SI_CSS = `
+.si .nw-body{padding-top:clamp(24px,8vh,88px)}
+.si-top-link{margin-left:auto}
+.si-field{display:block;margin:0 0 16px}
+.si-field>span{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 8px;font-size:14px;font-weight:600}
+.si-forgot{font-size:13px;font-weight:600;color:#71717a;text-decoration:none}
+.si-forgot:hover{color:#18181b;text-decoration:underline;text-underline-offset:3px}
+.si-pass{padding-right:6px}
+.si-eye{width:38px;height:38px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;border:none;border-radius:50%;background:none;color:#8e8e93;cursor:pointer}
+.si-eye:hover{background:#f4f4f5;color:#18181b}
+.si-oauth{display:flex;gap:10px}
+.si-oauth button{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:9px;height:50px;border-radius:999px;border:1.5px solid #e4e4e7;background:#fff;font:inherit;font-size:15px;font-weight:600;color:#18181b;cursor:pointer;transition:background-color .15s,transform .15s}
+.si-oauth button:hover:not(:disabled){background:#fafafa;transform:translateY(-1px)}
+.si-oauth button:disabled{opacity:.6;cursor:default}
+.si-or{display:flex;align-items:center;gap:12px;margin:22px 0 18px;font-size:12.5px;color:#a1a1aa}
+.si-or span{flex:1;height:1px;background:#ececef}
+.si-error{margin:0 0 14px}
+.si-submit{width:100%;margin-top:6px}
+.si-spin{border-color:rgba(255,255,255,.35);border-top-color:#fff}
+.si-alt{width:100%;justify-content:center;margin-top:10px;height:50px}
+.si-alt:disabled{opacity:.6;cursor:default}
+.si-note{display:flex;gap:10px;align-items:flex-start;margin:0 0 18px;padding:12px 14px;border-radius:14px;font-size:13.5px;line-height:1.45}
+.si-note.good{background:#f0fdf4;color:#166534}
+.si-note svg{flex-shrink:0;margin-top:1px}
+.si-sent{text-align:left}
+.si-sent-ic{width:60px;height:60px;margin:0 0 20px;border-radius:18px;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--c) 12%,#fff);color:var(--c);animation:nwPopIn .5s cubic-bezier(.2,.9,.3,1.3) both}
+.si-sent .nw-sub b{color:#18181b}
+.si-new a{color:#18181b;font-weight:600;text-decoration:underline;text-underline-offset:2px}
+.si-me{max-width:min(320px,60%)}
+.si-me-mail{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.si-new-n{color:var(--c);font-weight:700;animation:nwFade .4s ease both}
+/* Room for the feed: a narrower list, the app a little higher (only while
+   the form shows: the zoom keeps sign-up's own positions). */
+.si.nw-form .nw-app{top:24%}
+.si .nw-list{width:min(232px,40%)}
+/* The feed: one new conversation at a time slides in on top. */
+.si-thread{gap:18px;padding-right:clamp(36px,4.6vw,60px)}
+.si-feed{display:flex;flex-direction:column;gap:8px}
+.si-item{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:16px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.05),0 6px 18px -10px rgba(0,0,0,.18);overflow:hidden}
+.si-item.in{animation:siIn .7s cubic-bezier(.22,1,.36,1) both}
+@keyframes siIn{0%{opacity:0;transform:translateY(-10px) scale(.97);max-height:0;padding-top:0;padding-bottom:0;margin-bottom:-8px}45%{max-height:90px;padding-top:11px;padding-bottom:11px;margin-bottom:0}100%{opacity:1;transform:none;max-height:90px}}
+.si-av{position:relative;width:40px;height:40px;border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--t) 16%,#fff);color:color-mix(in srgb,var(--t) 80%,#000);font-size:15px;font-weight:700}
+.si-av-ch{position:absolute;right:-3px;bottom:-3px;width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:var(--t);color:#fff;box-shadow:0 0 0 2px #fff}
+.si-item-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;line-height:1.3}
+.si-item-txt b{display:flex;align-items:baseline;gap:8px;font-size:14px;font-weight:650;color:#18181b}
+.si-item-txt em{margin-left:auto;font-style:normal;font-size:11.5px;font-weight:500;color:#a1a1aa}
+.si-item-txt small{font-size:13px;color:#52525b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.si-ai{align-self:flex-start;display:inline-flex;align-items:center;gap:4px;margin-top:4px;padding:2px 8px;border-radius:999px;background:#f3e8ff;color:#7c3aed;font-size:11px;font-weight:700;animation:nwPopIn .45s cubic-bezier(.2,.9,.3,1.3) .5s both}
+.si-unread{width:8px;height:8px;border-radius:50%;background:var(--c);flex-shrink:0}
+.nw.dark .si-oauth button{background:#18181b;border-color:#2c2c31;color:#f4f4f5}
+.nw.dark .si-oauth button:hover:not(:disabled){background:#1f1f23}
+.nw.dark .si-or span{background:#26262b}
+.nw.dark .si-forgot{color:#a1a1aa}
+.nw.dark .si-forgot:hover,.nw.dark .si-sent .nw-sub b,.nw.dark .si-new a{color:#f4f4f5}
+.nw.dark .si-eye:hover{background:#26262b;color:#f4f4f5}
+.nw.dark .si-pass input{color:#f4f4f5}
+.nw.dark .si-note.good{background:rgba(34,197,94,.12);color:#86efac}
+.nw.dark .si-sent-ic{background:color-mix(in srgb,var(--c) 18%,#18181b)}
+.nw.dark .si-item{background:#1c1c1f;box-shadow:0 0 0 1px rgba(255,255,255,.06)}
+.nw.dark .si-item-txt b{color:#f4f4f5}
+.nw.dark .si-item-txt small{color:#a1a1aa}
+.nw.dark .si-av{background:color-mix(in srgb,var(--t) 22%,#1c1c1f);color:color-mix(in srgb,var(--t) 70%,#fff)}
+.nw.dark .si-av-ch{box-shadow:0 0 0 2px #1c1c1f}
+.nw.dark .si-ai{background:rgba(124,58,237,.2);color:#c4b5fd}
+@media (max-width:900px){.si .nw-body{padding-top:32px}}
+@media (prefers-reduced-motion: reduce){.si-item.in,.si-ai,.si-sent-ic,.si-new-n{animation:none!important}}
+`
+
 export default function SignInPage() {
   return (
-    <Suspense fallback={<div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading...</div>}>
+    <Suspense fallback={<div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading…</div>}>
       <SignInForm />
     </Suspense>
   )
