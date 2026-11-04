@@ -25,7 +25,7 @@ import { decodeEntities as dec } from '@/lib/decode-entities'
 import RecordSaleModal from '@/components/RecordSaleModal'
 import MediaGallery, { MediaItem } from '@/components/MediaGallery'
 import { waitlistPreview } from '@/lib/waitlist-ai'
-import { CHANNEL_NAME, IFL_CSS, Icon } from '@/components/inbox/inbox-shared'
+import { CHANNEL_NAME, IFL_CSS, Icon, isFailureToast } from '@/components/inbox/inbox-shared'
 import { useInbox } from '@/components/inbox/InboxContext'
 import { useRef } from 'react'
 
@@ -1152,7 +1152,9 @@ export default function InboxOverlays() {
       {/* Toast */}
       {toast && (
         <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: '#0d0d0d', color: '#fff', padding: '10px 20px', borderRadius: 10, fontSize: 13, fontWeight: 600, zIndex: 9999, boxShadow: '0 8px 24px rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          {isFailureToast(toast)
+            ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#f87171" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} aria-hidden><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12.5"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} aria-hidden><polyline points="20 6 9 17 4 12"/></svg>}
           {toast}
         </div>
       )}
