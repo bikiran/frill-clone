@@ -11,12 +11,12 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import AddressAutocomplete, { AddressParts } from '@/components/AddressAutocomplete'
 import BusinessAutocomplete, { BusinessDetails, BusinessHours, emptyHours } from '@/components/BusinessAutocomplete'
 import BusinessHoursEditor from '@/components/BusinessHoursEditor'
-import ColvyLogo from '@/components/ColvyLogo'
 import { INDUSTRIES } from '@/lib/industries'
 import Turnstile, { TurnstileHandle, TURNSTILE_SITE_KEY } from '@/components/Turnstile'
 import { normaliseSignupMobile } from '@/lib/signup-delivery'
 import { signupProfilePayload } from '@/lib/signup-profile'
 import AiBuddy from '@/components/AiBuddy'
+import JoinWorkspace from './Join'
 import { COLVY_ICON, MORE_COLORS, DOMAIN_RE, cleanDomain, I, GLOBE, ICONS, SETUP_CSS, SetupPreview, type PreviewFocus, SetupToast, PreviewSection, PreviewRow, GhostRows, Swatch, useSetupTheme, type Rect } from '@/components/setup/SetupKit'
 import { DAYS, type DayHours } from '@/lib/week-hours'
 
@@ -53,34 +53,6 @@ const SmsIcon = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none
 const PhoneIcon = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" /></svg>
 const EditIcon = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
 const AlertIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
-
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '12px 14px', borderRadius: 12, border: '1px solid #e5e5e5',
-  fontSize: 15, outline: 'none', boxSizing: 'border-box',
-}
-const labelStyle: React.CSSProperties = { display: 'block', fontSize: 13, fontWeight: 600, color: '#0d0d0d', marginBottom: 6 }
-const primaryBtn = (disabled?: boolean): React.CSSProperties => ({
-  padding: '12px 22px', borderRadius: 12, background: CORAL, color: '#fff', fontWeight: 700,
-  fontSize: 15, border: 'none', cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.55 : 1,
-  display: 'inline-flex', alignItems: 'center', gap: 8,
-})
-
-// Page chrome. MUST live at module scope — if it were defined inside the form
-// component it'd be a new component type on every render, remounting the inputs
-// and dropping focus after each keystroke.
-function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg, #fff 0%, #fff7f5 100%)', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px clamp(20px, 5vw, 48px)' }}>
-        <ColvyLogo size={30} fontSize={19} />
-        <a href="/signin" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14, fontWeight: 600, color: '#0d0d0d', textDecoration: 'none', border: '1px solid #e5e5e5', padding: '8px 14px', borderRadius: 10, background: '#fff' }}>Sign In</a>
-      </div>
-      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', padding: '8px 16px 48px' }}>
-        <div style={{ width: '100%', maxWidth: 720 }}>{children}</div>
-      </div>
-    </div>
-  )
-}
 
 function SignUpForm() {
   useBodyClass('nw-on')
@@ -150,11 +122,6 @@ function SignUpForm() {
   const [oauthLoading, setOAuthLoading] = useState('')
   const [error, setError] = useState('')
 
-  // Join-flow (subdomain) fields
-  const [joinEmail, setJoinEmail] = useState('')
-  const [joinPassword, setJoinPassword] = useState('')
-  const [joinName, setJoinName] = useState('')
-  const [needsConfirmation, setNeedsConfirmation] = useState(false)
 
   const planParam = searchParams.get('plan')
   const billingParam = searchParams.get('billing') === 'annual' ? 'annual' : 'monthly'
@@ -513,31 +480,11 @@ function SignUpForm() {
     if (provider === 'google') await signInWithGoogle(opts); else await signInWithGitHub(opts)
   }
 
-  // ── Join an existing board (subdomain flow) ──────────────────────────────
-  const handleJoin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    if (joinPassword.length < 6) { setError('Password must be at least 6 characters'); return }
-    setLoading(true)
-    try {
-      const res = await fetch('/api/auth/signup', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: joinEmail, password: joinPassword, name: joinName || null, companyId: companyContext.id, turnstileToken: humanToken }),
-      })
-      const data = await res.json()
-      if (!res.ok) { humanRef.current?.reset(); throw new Error(data.error || 'Signup failed') }
-      localStorage.setItem('pending_company_join', JSON.stringify({ userId: data.userId, companyId: companyContext.id, email: joinEmail, role: 'viewer' }))
-      track('signup_submitted', { via: 'email', joining: true })
-      setNeedsConfirmation(true)
-    } catch (err: any) { setError(err.message) }
-    setLoading(false)
-  }
-
   // ── Guards for subdomain resolution ───────────────────────────────────────
   if (isSubdomainContext && !companyCheckDone) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff' }}>
-        <div style={{ width: 32, height: 32, border: '3px solid #f0f0f0', borderTop: `3px solid ${CORAL}`, borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+        <div style={{ width: 32, height: 32, border: '3px solid #f0f0f0', borderTop: '3px solid var(--coral)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     )
@@ -553,38 +500,8 @@ function SignUpForm() {
     )
   }
 
-  // ── Join card (subdomain) ─────────────────────────────────────────────────
-  if (companyContext) {
-    if (needsConfirmation) {
-      return (
-        <Shell>
-          <div style={{ background: '#fff', border: '1px solid #f0e6e2', borderRadius: 20, padding: 32, textAlign: 'center', maxWidth: 460, margin: '24px auto' }}>
-            <h1 style={{ fontSize: 22, fontWeight: 800, color: '#0d0d0d', marginBottom: 8 }}>Check your email</h1>
-            <p style={{ fontSize: 14, color: '#6b6b70' }}>We sent a confirmation link to <strong>{joinEmail}</strong>. Click it to join {companyContext.name}.</p>
-          </div>
-        </Shell>
-      )
-    }
-    return (
-      <Shell>
-        <div style={{ background: '#fff', border: '1px solid #f0e6e2', borderRadius: 20, padding: 32, maxWidth: 460, margin: '24px auto' }}>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0d0d0d', marginBottom: 4 }}>Join {companyContext.name}</h1>
-          <p style={{ fontSize: 14, color: '#6b6b70', marginBottom: 20 }}>Create your account to start collaborating.</p>
-          {error && <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 10, background: '#fef2f2', border: '1px solid #fca5a5', color: '#dc2626', fontSize: 13 }}>{error}</div>}
-          <form onSubmit={handleJoin}>
-            <div style={{ marginBottom: 14 }}><label style={labelStyle}>Your name</label>
-              <input value={joinName} onChange={e => setJoinName(e.target.value)} placeholder="Jane Smith" style={inputStyle} /></div>
-            <div style={{ marginBottom: 14 }}><label style={labelStyle}>Email</label>
-              <input type="email" value={joinEmail} onChange={e => setJoinEmail(e.target.value)} placeholder="you@company.com" required style={inputStyle} /></div>
-            <div style={{ marginBottom: 20 }}><label style={labelStyle}>Password</label>
-              <input type="password" value={joinPassword} onChange={e => setJoinPassword(e.target.value)} placeholder="Min. 6 characters" required style={inputStyle} /></div>
-            <Turnstile ref={humanRef} onToken={setHumanToken} action="join" />
-            <button type="submit" disabled={loading || waitingForHuman} style={{ ...primaryBtn(loading || waitingForHuman), width: '100%', justifyContent: 'center' }}>{loading ? 'Creating…' : waitingForHuman ? 'Checking…' : `Join ${companyContext.name}`}</button>
-          </form>
-        </div>
-      </Shell>
-    )
-  }
+  // ── Joining a workspace's board, on its own address (Join.tsx) ────────────
+  if (companyContext) return <JoinWorkspace company={companyContext} />
 
   // ── The wizard: the form beside a live preview of their workspace ─────────
   const first = fullName.trim().split(/\s+/)[0] || ''
