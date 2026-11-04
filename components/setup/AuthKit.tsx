@@ -46,6 +46,9 @@ export function EmailChip({ email }: { email: string }) {
 export function usePanelZoom(lines: string[]) {
   const [phase, setPhase] = useState<'form' | 'zoom' | 'full'>('form')
   const [from, setFrom] = useState<Rect | null>(null)
+  // Phones hide the panel: it opens out of the button pressed instead (a
+  // growing circle, AUTH_CSS), centred here.
+  const [origin, setOrigin] = useState<{ x: number; y: number } | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
   const [n, setN] = useState(0)
   useEffect(() => {
@@ -53,15 +56,21 @@ export function usePanelZoom(lines: string[]) {
     const t = setInterval(() => setN(k => Math.min(lines.length - 1, k + 1)), 1100)
     return () => clearInterval(t)
   }, [phase, lines.length])
-  const zoomOut = useCallback(() => {
+  const zoomOut = useCallback((fromEl?: Element | null) => {
     const r = panelRef.current?.getBoundingClientRect()
     if (r && r.width) {
       setFrom({ top: r.top, left: r.left, right: window.innerWidth - r.right, bottom: window.innerHeight - r.bottom }); setPhase('zoom')
       requestAnimationFrame(() => requestAnimationFrame(() => setFrom({ top: 0, left: 0, right: 0, bottom: 0 })))
-      setTimeout(() => setPhase(p => (p === 'zoom' ? 'full' : p)), 750)
-    } else setPhase('full')
+    } else {
+      const b = (fromEl || document.querySelector('.si-submit'))?.getBoundingClientRect()
+      setOrigin(b ? { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) } : null)
+      setPhase('zoom')
+    }
+    setTimeout(() => setPhase(p => (p === 'zoom' ? 'full' : p)), 750)
   }, [])
-  return { phase, from, panelRef, zoomOut, line: lines[n] || '', lineKey: n }
+  // For the page's root: where a phone's reveal grows from.
+  const originStyle = (origin ? { ['--ox' as string]: `${origin.x}px`, ['--oy' as string]: `${origin.y}px` } : {}) as React.CSSProperties
+  return { phase, from, panelRef, zoomOut, line: lines[n] || '', lineKey: n, originStyle }
 }
 
 /** On a workspace's own address (roxyaquarium.colvy.com): its name, colour and logo. */
@@ -83,6 +92,21 @@ export function useWorkspaceLook() {
     }, () => {})
   }, [])
   return look
+}
+
+/**
+ * Phones: the live preview as a short strip under the logo (the side panel
+ * doesn't fit), so the page moves there too. Each page puts in a compact
+ * part of its preview; hidden when the screen is short (a keyboard up).
+ */
+export function PhoneBand({ children, corner, title }: { children: React.ReactNode; corner?: React.ReactNode; title?: string }) {
+  return (
+    <div className="au-band" aria-hidden="true">
+      {title ? <div className="au-band-hi" key={title}>{title}</div> : null}
+      {corner}
+      <div className="au-band-app">{children}</div>
+    </div>
+  )
 }
 
 export const AUTH_CSS = `
@@ -122,5 +146,29 @@ export const AUTH_CSS = `
 .nw.dark .si-note.bad{background:rgba(239,68,68,.12);color:#fca5a5}
 .nw.dark .si-sent-ic{background:color-mix(in srgb,var(--c) 18%,#18181b)}
 @media (max-width:900px){.si .nw-body{padding-top:32px}}
-@media (prefers-reduced-motion: reduce){.si-sent-ic,.si-new-n{animation:none!important}}
+/* Phones: the strip, and the panel opening out of the button pressed. */
+.au-band{display:none}
+@media (max-width:900px){
+  .si .au-band ~ .nw-body{padding-top:16px}
+  .au-band{display:block;position:relative;flex-shrink:0;height:clamp(118px,18vh,156px);margin:12px 0 0;border-radius:22px;overflow:hidden;background-color:var(--c);background-image:radial-gradient(120% 90% at 85% 0%,rgba(255,255,255,.28),transparent 55%),radial-gradient(90% 70% at 0% 100%,rgba(0,0,0,.14),transparent 60%),repeating-linear-gradient(45deg,rgba(255,255,255,.12) 0 1px,transparent 1px 60px),repeating-linear-gradient(-45deg,rgba(255,255,255,.12) 0 1px,transparent 1px 60px);transition:background-color .6s ease;animation:auBandIn .7s cubic-bezier(.22,1,.36,1) both}
+  @keyframes auBandIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+  .au-band-app{position:absolute;left:16px;right:-12px;top:36px;bottom:-16px;padding:10px 26px 0 12px;box-sizing:border-box;background:#fff;border-radius:20px 0 0 0;box-shadow:0 20px 50px -18px rgba(0,0,0,.35);overflow:hidden;animation:auAppIn .8s cubic-bezier(.22,1,.36,1) .12s both}
+  @keyframes auAppIn{from{transform:translateY(24px)}to{transform:none}}
+  .au-band .nw-me{top:6px;right:8px;padding:3px 11px 3px 3px;font-size:12px;max-width:58%}
+  .au-band-hi{position:absolute;left:16px;top:12px;max-width:40%;font-size:13.5px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 2px rgba(0,0,0,.12);animation:nwFade .45s ease both}
+  /* A little tighter so the button stays above the fold with the strip. */
+  .si .au-band ~ .nw-body .nw-sub{margin:6px 0 16px}
+  .si .au-band ~ .nw-body .si-field{margin-bottom:12px}
+  .si .au-band ~ .nw-body .nw-input{height:48px}
+  .si .au-band ~ .nw-body .nw-next{height:50px}
+  .au-band .nw-me .nw-av-ini{width:24px!important;height:24px!important;font-size:11px!important}
+  .au-band .nw-msg{gap:8px}
+  .au-band .nw-msg img{width:26px;height:26px;border-radius:8px}
+  .au-band .nw-msg p{max-width:100%;padding:8px 12px;font-size:13px;line-height:1.4}
+  .si.nw-zoom .nw-panel,.si.nw-full .nw-panel{animation:auReveal .8s cubic-bezier(.65,0,.35,1) both}
+}
+@media (max-width:900px) and (max-height:600px){.au-band{display:none}}
+@keyframes auReveal{from{clip-path:circle(0px at var(--ox,50%) var(--oy,85%))}to{clip-path:circle(160vmax at var(--ox,50%) var(--oy,85%))}}
+.nw.dark .au-band-app{background:#151517}
+@media (prefers-reduced-motion: reduce){.si-sent-ic,.si-new-n,.au-band,.au-band-app,.au-band *,.si.nw-zoom .nw-panel,.si.nw-full .nw-panel{animation:none!important}}
 `

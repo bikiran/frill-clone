@@ -6,15 +6,15 @@ import { useRouter } from 'next/navigation'
 import { useBodyClass } from '@/lib/body-class'
 import AiBuddy from '@/components/AiBuddy'
 import { COLVY_ICON, I, ICONS, SETUP_CSS, SetupPreview, PreviewSection, PreviewRow, useSetupTheme } from '@/components/setup/SetupKit'
-import { MAIL, LOCK, UNLOCK, EyeIcon, EmailChip, firstFromEmail, usePanelZoom, useWorkspaceLook, AUTH_CSS } from '@/components/setup/AuthKit'
+import { MAIL, LOCK, UNLOCK, EyeIcon, EmailChip, PhoneBand, firstFromEmail, usePanelZoom, useWorkspaceLook, AUTH_CSS } from '@/components/setup/AuthKit'
 
 // What makes a password stronger. Only the length of 6 is required (as
 // before); the rest is a guide, ticked off live in the preview.
-const CHECKS: { label: string; ok: (p: string) => boolean }[] = [
-  { label: 'At least 8 characters', ok: p => p.length >= 8 },
-  { label: 'Upper and lower case', ok: p => /[a-z]/.test(p) && /[A-Z]/.test(p) },
-  { label: 'A number', ok: p => /\d/.test(p) },
-  { label: 'A symbol', ok: p => /[^A-Za-z0-9]/.test(p) },
+const CHECKS: { label: string; short: string; ok: (p: string) => boolean }[] = [
+  { label: 'At least 8 characters', short: '8+', ok: p => p.length >= 8 },
+  { label: 'Upper and lower case', short: 'Aa', ok: p => /[a-z]/.test(p) && /[A-Z]/.test(p) },
+  { label: 'A number', short: '123', ok: p => /\d/.test(p) },
+  { label: 'A symbol', short: '#!', ok: p => /[^A-Za-z0-9]/.test(p) },
 ]
 const LEVELS = [
   { label: '', color: '#e4e4e7' },
@@ -44,7 +44,7 @@ function ResetPasswordForm() {
   const [error, setError] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [who, setWho] = useState('')
-  const { phase, from, panelRef, zoomOut, line, lineKey } = usePanelZoom(SAVING)
+  const { phase, from, panelRef, zoomOut, line, lineKey, originStyle } = usePanelZoom(SAVING)
 
   // Make this page self-sufficient: if the recovery tokens are in the URL hash
   // (the reset link may land here directly), establish the session from them so
@@ -78,7 +78,7 @@ function ResetPasswordForm() {
       if (err) throw err
       setDone(true)
       // Saved: the preview fills the screen while the dashboard opens.
-      zoomOut()
+      zoomOut((e.nativeEvent as SubmitEvent).submitter)
       setTimeout(() => router.push('/admin'), 2000)
     } catch (err: any) {
       setError(err.message)
@@ -92,9 +92,26 @@ function ResetPasswordForm() {
   const matches = !!confirmPassword && confirmPassword === password
   const first = who ? firstFromEmail(who) : ''
   const dots = '•'.repeat(Math.min(password.length, 12))
+  // The strength card (the panel and the phone strip).
+  const strengthCard = (
+    <div className="nw-card rp-card">
+      <div className="rp-card-top">
+        <span className={`rp-lock${strong ? ' shut' : ''}`} key={strong ? 'shut' : 'open'}>{I(strong ? LOCK : UNLOCK, 22, 2)}</span>
+        <span className="rp-card-t"><b>New password</b><small key={score}>{password ? (level.label || '—') : 'Start typing'}</small></span>
+      </div>
+      <div className="rp-bar"><span style={{ width: `${score * 25}%` }} /></div>
+      <div className="rp-checks">
+        {CHECKS.map(c => {
+          const ok = c.ok(password)
+          return <div key={c.label} className={ok ? 'on' : ''}><span className="rp-tick" key={String(ok)}>{ok ? I(ICONS.check, 11, 3.2) : null}</span><span className="rp-full">{c.label}</span><span className="rp-short">{c.short}</span></div>
+        })}
+      </div>
+      {confirmPassword && <div className={`rp-same${matches ? ' ok' : ''}`} key={String(matches)}>{matches ? <>{I(ICONS.check, 13, 3)}Both passwords match</> : 'The two passwords don’t match yet'}</div>}
+    </div>
+  )
 
   return (
-    <div className={`nw nw-${phase}${dark ? ' dark' : ''} si`} style={{ ['--c' as string]: look.color, ['--s' as string]: level.color } as React.CSSProperties}>
+    <div className={`nw nw-${phase}${dark ? ' dark' : ''} si`} style={{ ['--c' as string]: look.color, ['--s' as string]: level.color, ...originStyle } as React.CSSProperties}>
       <style>{SETUP_CSS + AUTH_CSS + RP_CSS}</style>
 
       <div className="nw-left">
@@ -102,6 +119,9 @@ function ResetPasswordForm() {
           <div className="nw-brand"><img src={COLVY_ICON} alt="" width={30} height={30} /><span>Colvy</span></div>
           <a href="/signin" className="nw-top-link si-top-link">Sign in</a>
         </div>
+
+        {/* Phones: the strength card, as a strip. */}
+        <PhoneBand corner={<EmailChip email={who} />} title={done ? 'Password updated' : first ? `Welcome back, ${first}` : 'New password'}>{strengthCard}</PhoneBand>
 
         <div className="nw-body">
           <div className="nw-step fwd">
@@ -158,20 +178,7 @@ function ResetPasswordForm() {
         conv={
           <div className="nw-thread si-thread">
             <div className="nw-msg"><img src={COLVY_ICON} alt="" /><p>Welcome back{first ? <>, <b>{first}</b></> : null}! Pick a new password. I&rsquo;ll tick things off as you type.</p></div>
-            <div className="nw-card rp-card">
-              <div className="rp-card-top">
-                <span className={`rp-lock${strong ? ' shut' : ''}`} key={strong ? 'shut' : 'open'}>{I(strong ? LOCK : UNLOCK, 22, 2)}</span>
-                <span className="rp-card-t"><b>New password</b><small key={score}>{password ? (level.label || '—') : 'Start typing'}</small></span>
-              </div>
-              <div className="rp-bar"><span style={{ width: `${score * 25}%` }} /></div>
-              <div className="rp-checks">
-                {CHECKS.map(c => {
-                  const ok = c.ok(password)
-                  return <div key={c.label} className={ok ? 'on' : ''}><span className="rp-tick" key={String(ok)}>{ok ? I(ICONS.check, 11, 3.2) : null}</span>{c.label}</div>
-                })}
-              </div>
-              {confirmPassword && <div className={`rp-same${matches ? ' ok' : ''}`} key={String(matches)}>{matches ? <>{I(ICONS.check, 13, 3)}Both passwords match</> : 'The two passwords don’t match yet'}</div>}
-            </div>
+            {strengthCard}
           </div>
         }
         build={
@@ -221,6 +228,21 @@ const RP_CSS = `
 .nw.dark .rp-tick{border-color:#3f3f46}
 .nw.dark .rp-same{background:#232327;color:#a1a1aa}
 .nw.dark .rp-same.ok{background:rgba(34,197,94,.12);color:#86efac}
+/* The phone strip: the card is the strip's content (no card in a card). */
+.rp-short{display:none}
+.au-band .rp-card{padding:0;gap:7px;box-shadow:none;background:none;animation:none}
+.au-band .rp-card-top{gap:10px}
+.au-band .rp-lock{width:28px;height:28px;border-radius:9px}
+.au-band .rp-lock svg{width:17px;height:17px}
+.au-band .rp-card-t{flex-direction:row;align-items:baseline;gap:8px}
+.au-band .rp-card-t b{font-size:13.5px}
+.au-band .rp-bar{height:6px}
+.au-band .rp-checks{display:flex;gap:12px}
+.au-band .rp-checks div{font-size:12px;gap:5px}
+.au-band .rp-full{display:none}
+.au-band .rp-short{display:inline}
+.au-band .rp-tick{width:16px;height:16px}
+.au-band .rp-same{display:none}
 @media (prefers-reduced-motion: reduce){.rp-lock,.rp-lock.shut,.rp-checks div.on .rp-tick,.rp-same,.rp-level,.rp-match{animation:none!important}}
 `
 

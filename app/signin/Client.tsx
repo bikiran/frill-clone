@@ -8,7 +8,7 @@ import { sameSitePath } from '@/lib/same-site-path'
 import { useBodyClass } from '@/lib/body-class'
 import AiBuddy from '@/components/AiBuddy'
 import { COLVY_ICON, I, ICONS, SETUP_CSS, SetupPreview, PreviewSection, PreviewRow, useSetupTheme, type PreviewFocus } from '@/components/setup/SetupKit'
-import { CORAL, EMAIL_RE, MAIL, firstFromEmail, EyeIcon, EmailChip, usePanelZoom, AUTH_CSS } from '@/components/setup/AuthKit'
+import { CORAL, EMAIL_RE, MAIL, firstFromEmail, EyeIcon, EmailChip, PhoneBand, usePanelZoom, AUTH_CSS } from '@/components/setup/AuthKit'
 
 // ?redirect= is a page on this same site: a path, or a full URL on this origin
 // (the board sends its own address). Never another site or a javascript: URL.
@@ -85,7 +85,7 @@ function SignInForm() {
   const [field, setField] = useState<'email' | 'password' | null>(null)
   // Starts with a few in, so the inbox isn't empty while the page settles.
   const [tick, setTick] = useState(2)
-  const { phase, from, panelRef, zoomOut, line, lineKey } = usePanelZoom(OPENING)
+  const { phase, from, panelRef, zoomOut, line, lineKey, originStyle } = usePanelZoom(OPENING)
   useEffect(() => {
     if (phase !== 'form') return
     const t = setInterval(() => setTick(n => n + 1), FEED_EVERY)
@@ -234,7 +234,7 @@ function SignInForm() {
     const { error: err } = await supabase.auth.signInWithPassword({ email, password })
     if (err) { setError(err.message); setLoading(false); return }
     const started = Date.now()
-    zoomOut()
+    zoomOut((e.nativeEvent as SubmitEvent).submitter)
     const redirect = safeRedirect(params.get('redirect')) || await getRedirectUrl()
     // Let the zoom land before the next page starts to load over it.
     setTimeout(() => { window.location.href = redirect }, Math.max(0, 700 - (Date.now() - started)))
@@ -272,7 +272,7 @@ function SignInForm() {
   const oauth = !linkSent && (methods.google || methods.github)
 
   return (
-    <div className={`nw nw-${phase}${dark ? ' dark' : ''} si`} style={{ ['--c' as string]: color } as React.CSSProperties}>
+    <div className={`nw nw-${phase}${dark ? ' dark' : ''} si`} style={{ ['--c' as string]: color, ...originStyle } as React.CSSProperties}>
       <style>{SETUP_CSS + AUTH_CSS + SI_CSS}</style>
 
       <div className="nw-left">
@@ -280,6 +280,24 @@ function SignInForm() {
           <div className="nw-brand"><img src={COLVY_ICON} alt="" width={30} height={30} /><span>Colvy</span></div>
           <a href="/signup" className="nw-top-link si-top-link">Sign up</a>
         </div>
+
+        {/* Phones: the inbox filling up, as a strip (the panel doesn't fit). */}
+        <PhoneBand corner={<EmailChip email={email} />} title={`Welcome back${first ? `, ${first}` : ''} 👋`}>
+          <div className="si-bfeed-clip">
+            <div className="si-bfeed" key={tick}>
+              {shown.slice(0, 3).map((s, i) => {
+                const c = CHANNELS[s.ch]
+                return (
+                  <div key={s.n} className={`si-item${i === 0 ? ' in' : ''}`} style={{ ['--t' as string]: c.color } as React.CSSProperties}>
+                    <span className="si-av">{s.who[0]}<span className="si-av-ch">{I(c.icon, 9, 2.6)}</span></span>
+                    <span className="si-item-txt"><b>{s.who}<em>{i === 0 ? 'now' : `${i * 3}m`}</em></b><small>{s.text}</small></span>
+                    {i < 2 && <span className="si-unread" />}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </PhoneBand>
 
         <div className="nw-body">
           <div key={linkSent ? 'sent' : 'form'} className="nw-step fwd">
@@ -423,7 +441,20 @@ const SI_CSS = `
 .nw.dark .si-av{background:color-mix(in srgb,var(--t) 22%,#1c1c1f);color:color-mix(in srgb,var(--t) 70%,#fff)}
 .nw.dark .si-av-ch{box-shadow:0 0 0 2px #1c1c1f}
 .nw.dark .si-ai{background:rgba(124,58,237,.2);color:#c4b5fd}
-@media (prefers-reduced-motion: reduce){.si-item.in,.si-ai{animation:none!important}}
+/* The phone strip's feed: fixed-height rows, and the list slides down one
+   row as the new one comes in on top (transform only, smooth on phones). */
+.si-bfeed-clip{overflow:hidden}
+.si .au-band ~ .nw-body .si-or{margin:12px 0 10px}
+.si .au-band ~ .nw-body .si-oauth button{height:46px}
+.si-bfeed{display:flex;flex-direction:column;gap:8px;animation:siPush .65s cubic-bezier(.22,1,.36,1) both}
+@keyframes siPush{from{transform:translateY(-62px)}to{transform:none}}
+.si-bfeed .si-item{height:54px;box-sizing:border-box;padding:0 12px;flex-shrink:0;box-shadow:0 0 0 1px rgba(0,0,0,.06)}
+.si-bfeed .si-item.in{animation:siFade .55s ease both}
+@keyframes siFade{from{opacity:0}to{opacity:1}}
+.si-bfeed .si-av{width:34px;height:34px;font-size:13px}
+.si-bfeed .si-item-txt b{font-size:13px}
+.si-bfeed .si-item-txt small{font-size:12.5px}
+@media (prefers-reduced-motion: reduce){.si-item.in,.si-ai,.si-bfeed{animation:none!important}}
 `
 
 export default function SignInPage() {

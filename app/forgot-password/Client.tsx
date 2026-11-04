@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useBodyClass } from '@/lib/body-class'
 import { COLVY_ICON, I, ICONS, SETUP_CSS, SetupPreview, PreviewSection, PreviewRow, useSetupTheme } from '@/components/setup/SetupKit'
-import { EMAIL_RE, MAIL, LOCK, firstFromEmail, EmailChip, useWorkspaceLook, AUTH_CSS } from '@/components/setup/AuthKit'
+import { EMAIL_RE, MAIL, LOCK, firstFromEmail, EmailChip, PhoneBand, useWorkspaceLook, AUTH_CSS } from '@/components/setup/AuthKit'
 
 // Forgot password, in sign-in's style. The preview tells the story: Colvy
 // offers to help, your email goes on the account, and once it's sent the
@@ -50,6 +50,23 @@ export default function ForgotPasswordPage() {
   const addr = email.trim()
   const emailOk = EMAIL_RE.test(addr)
   const first = emailOk ? firstFromEmail(addr) : ''
+  // The reset email as it lands (the panel and the phone strip).
+  const mailCard = (
+    <div className="fp-mail" key={'mail' + resent}>
+      <div className="fp-mail-head">
+        <img src={COLVY_ICON} alt="" />
+        <span><b>{look.name || 'Colvy'}</b><small>to {addr}</small></span>
+        <em>now</em>
+      </div>
+      <h4>Reset your password</h4>
+      <p>Tap the button to choose a new password. The link works once and expires soon.</p>
+      <span className="fp-mail-btn">{I(LOCK, 13, 2.2)}Set a new password</span>
+      <div className={`fp-mail-st${delivered ? ' ok' : ''}`} key={delivered ? 'd' : 's'}>
+        <span className="fp-ticks">{I(ICONS.check, 12, 3)}{delivered && I(ICONS.check, 12, 3)}</span>{delivered ? 'Delivered' : 'Sent'}
+      </div>
+    </div>
+  )
+  const typing = <div className="nw-msg"><img src={COLVY_ICON} alt="" /><p className="fp-typing" aria-label="Sending"><span /><span /><span /></p></div>
 
   return (
     <div className={`nw nw-form${dark ? ' dark' : ''} si`} style={{ ['--c' as string]: look.color } as React.CSSProperties}>
@@ -60,6 +77,21 @@ export default function ForgotPasswordPage() {
           <div className="nw-brand"><img src={COLVY_ICON} alt="" width={30} height={30} /><span>Colvy</span></div>
           <a href="/signin" className="nw-top-link si-top-link">Sign in</a>
         </div>
+
+        {/* Phones: Colvy's offer, then the reset email landing, as a strip. */}
+        <PhoneBand corner={<EmailChip email={email} />} title={sent ? 'Reset link sent' : `Locked out${first ? `, ${first}` : ''}?`}>
+          {sent ? (
+            // The email landing, in one row: subject, who it's to, Sent → Delivered.
+            <div className="fp-bmail" key={'bm' + resent}>
+              <img src={COLVY_ICON} alt="" />
+              <span><b>Reset your password</b><small>{look.name || 'Colvy'} · to {addr}</small></span>
+              <em className={delivered ? 'ok' : ''} key={delivered ? 'd' : 's'}><span className="fp-ticks">{I(ICONS.check, 12, 3)}{delivered && I(ICONS.check, 12, 3)}</span>{delivered ? 'Delivered' : 'Sent'}</em>
+            </div>
+          ) : <>
+            <div className="nw-msg"><img src={COLVY_ICON} alt="" /><p>I&rsquo;ll email you a link to set a new password.</p></div>
+            {loading && <div className="fp-btyping">{typing}</div>}
+          </>}
+        </PhoneBand>
 
         <div className="nw-body">
           <div key={sent ? 'sent' : 'form'} className="nw-step fwd">
@@ -117,22 +149,10 @@ export default function ForgotPasswordPage() {
         conv={
           <div className="nw-thread si-thread">
             <div className="nw-msg"><img src={COLVY_ICON} alt="" /><p>Locked out{first ? <>, <b>{first}</b></> : null}? No problem. Tell me your email and I&rsquo;ll send you a link to set a new password.</p></div>
-            {loading && !sent && <div className="nw-msg"><img src={COLVY_ICON} alt="" /><p className="fp-typing" aria-label="Sending"><span /><span /><span /></p></div>}
+            {loading && !sent && typing}
             {sent && <>
               <div className="nw-msg" key={'done' + resent}><img src={COLVY_ICON} alt="" /><p>Done! A reset link is on its way to <b>{addr}</b>.</p></div>
-              <div className="fp-mail" key={'mail' + resent}>
-                <div className="fp-mail-head">
-                  <img src={COLVY_ICON} alt="" />
-                  <span><b>{look.name || 'Colvy'}</b><small>to {addr}</small></span>
-                  <em>now</em>
-                </div>
-                <h4>Reset your password</h4>
-                <p>Tap the button to choose a new password. The link works once and expires soon.</p>
-                <span className="fp-mail-btn">{I(LOCK, 13, 2.2)}Set a new password</span>
-                <div className={`fp-mail-st${delivered ? ' ok' : ''}`} key={delivered ? 'd' : 's'}>
-                  <span className="fp-ticks">{I(ICONS.check, 12, 3)}{delivered && I(ICONS.check, 12, 3)}</span>{delivered ? 'Delivered' : 'Sent'}
-                </div>
-              </div>
+              {mailCard}
             </>}
           </div>
         }
@@ -169,5 +189,16 @@ const FP_CSS = `
 .nw.dark .fp-mail-head{border-bottom-color:#2c2c31}
 .nw.dark .fp-mail-head b,.nw.dark .fp-mail h4{color:#f4f4f5}
 .nw.dark .fp-mail p{color:#a1a1aa}
-@media (prefers-reduced-motion: reduce){.fp-mail,.fp-typing span,.fp-mail-st{animation:none!important}}
+/* The phone strip: the email landing, as one row. */
+.fp-bmail{display:flex;align-items:center;gap:10px;height:54px;padding:0 12px;box-sizing:border-box;border-radius:16px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 8px 20px -12px rgba(0,0,0,.25);animation:fpMail .7s cubic-bezier(.2,.9,.3,1.15) .15s both}
+.fp-bmail img{width:30px;height:30px;border-radius:9px;flex-shrink:0}
+.fp-bmail span{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.25}
+.fp-bmail b{font-size:13.5px;font-weight:700;color:#18181b}
+.fp-bmail small{font-size:12px;color:#8e8e93;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fp-bmail em{display:flex;align-items:center;flex-shrink:0;font-style:normal;font-size:11.5px;font-weight:600;color:#a1a1aa;animation:nwFade .35s ease both}
+.fp-bmail em.ok{color:#16a34a}
+.nw.dark .fp-bmail{background:#1c1c1f;box-shadow:0 0 0 1px rgba(255,255,255,.07)}
+.nw.dark .fp-bmail b{color:#f4f4f5}
+.fp-btyping{margin-top:8px}
+@media (prefers-reduced-motion: reduce){.fp-mail,.fp-typing span,.fp-mail-st,.fp-bmail,.fp-bmail em{animation:none!important}}
 `
