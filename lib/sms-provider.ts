@@ -14,7 +14,7 @@ import { TwilioService } from './twilio-service'
 import { assertSmsAllowed, recordSmsSent, checkSmsAllowance, SmsQuotaError } from './sms-quota'
 import { chargeSingleSend, refundSingleSend, costForParts } from './sms-credits'
 import { fmtCents } from './sms-credits-core'
-import { analyseSms } from './sms-segments'
+import { analyseSms, smsTooLongReason } from './sms-segments'
 import { getSmsPolicy, blockedText } from './sms-policy'
 
 export type SmsProvider = 'telnyx' | 'twilio'
@@ -69,7 +69,30 @@ export function explainSmsFailure(raw: unknown): string {
   if (isLandlineRejection(msg)) {
     return `That number cannot receive text messages — it looks like a landline. (${msg})`
   }
+  // Twilio 21617: the body is over 1,600 characters. Senders check this first
+  // (SmsTooLongError), so this only catches a body that grew on the way out.
+  if (/\b21617\b|1600 character limit|body (?:is )?too long/i.test(msg)) {
+    return `Too long for a text: one text can carry up to 1,600 characters. Shorten it, or send it by email. (${msg})`
+  }
   return msg
+}
+
+/**
+ * A text refused before it went because it's longer than one text can carry
+ * (lib/sms-segments SMS_MAX_CHARS). Thrown before anything is charged, with a
+ * reason the sender can act on instead of the provider's error code.
+ */
+export class SmsTooLongError extends Error {
+  readonly reason = 'too_long'
+  constructor(readonly length: number, message: string) {
+    super(message)
+    this.name = 'SmsTooLongError'
+  }
+}
+
+function assertFitsInText(text: string | null | undefined) {
+  const why = smsTooLongReason(text)
+  if (why) throw new SmsTooLongError((text || '').length, why)
 }
 
 /** The company's SMS provider. Colvy runs on Twilio; Telnyx is legacy and only
@@ -84,7 +107,7 @@ export async function getSmsProvider(db: any, companyId: string): Promise<SmsPro
 
 // The provider sender with E.164 normalisation only (see resolveSmsSender).
 function unmetered(base: SmsSender): SmsSender {
-  return { ...base, send: (p: SmsSendParams) => base.send({ ...p, to: toE164(p.to || '') || p.to }) }
+  return { ...base, send: async (p: SmsSendParams) => { assertFitsInText(p.text); return base.send({ ...p, to: toE164(p.to || '') || p.to }) } }
 }
 
 /**
@@ -138,6 +161,7 @@ function meteredSender(db: any, companyId: string, base: SmsSender): SmsSender {
   return {
     ...base,
     async send(p: SmsSendParams): Promise<SmsSendResult> {
+      assertFitsInText(p.text)  // too long to go: refused before it's paid for
       const parts = smsParts(p.text)
       const paid = await payForText(db, companyId, parts)  // throws SmsQuotaError if blocked
       // Always send to an E.164 number. Callers pass whatever they have — a

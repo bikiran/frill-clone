@@ -77,6 +77,23 @@ export function analyseSms(text: string): SegmentInfo {
 }
 
 /**
+ * The most one text can carry. Twilio refuses a longer body outright (its
+ * error 21617), so a long reply from the inbox failed with nothing the sender
+ * could act on. Counted as typed, in UTF-16 units (an emoji counts as two),
+ * which errs on the safe side.
+ */
+export const SMS_MAX_CHARS = 1600
+
+const grouped = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+
+/** Why a text can't go because of its length, in plain words; null when it fits. */
+export function smsTooLongReason(text: string | null | undefined): string | null {
+  const n = (text || '').length
+  if (n <= SMS_MAX_CHARS) return null
+  return `Too long for a text: it's ${grouped(n)} characters and one text can carry up to ${grouped(SMS_MAX_CHARS)}. Shorten it, or send it by email.`
+}
+
+/**
  * Substitute personalisation variables.
  *
  * Used for the live preview and, later, for the real send. Unknown variables

@@ -39,8 +39,9 @@ import BookingLinkButton from '@/components/booking/BookingLinkButton'
 import { decodeEntities as dec } from '@/lib/decode-entities'
 import { useClickOutside } from '@/lib/use-click-outside'
 import { tagVoice, voiceKind } from '@/lib/voice-typed'
+import { SMS_MAX_CHARS, smsTooLongReason } from '@/lib/sms-segments'
 import { agentChannel, useAgentTeam } from '@/components/agents/useAgentTeam'
-import { Contact, Conversation, Highlight, INBOX_HOUR12, Icon, Message, PAYMENT_SIGNAL_PHRASES, THREAD_PAGE, TeamMember, extractFromText, initialsOf, makeSnippet, parseTs, runPool, sendChannelGlyph, setInboxHour12, threadCacheGet, threadCacheSet, toolBtn, tsOf, videoPoster } from '@/components/inbox/inbox-shared'
+import { Contact, Conversation, Highlight, INBOX_HOUR12, Icon, Message, PAYMENT_SIGNAL_PHRASES, THREAD_PAGE, TeamMember, extractFromText, initialsOf, makeSnippet, parseTs, runPool, sendChannelGlyph, setInboxHour12, isFailureToast, threadCacheGet, threadCacheSet, toolBtn, tsOf, videoPoster } from '@/components/inbox/inbox-shared'
 
 // The contacts behind the list's rows, by id. One failed query used to blank
 // every name in the inbox (the rows fell back to their phone numbers): a column
@@ -73,6 +74,9 @@ async function contactsByIds(ids: string[]): Promise<Record<string, any>> {
   }
   return byId
 }
+
+// The composer counts an SMS reply from here on (one text carries SMS_MAX_CHARS).
+const SMS_COUNT_FROM = 1200
 
 // A phone thread (SMS, calls) that started before its contact existed has no
 // contact_id, so the list showed the bare number while the open thread (which
@@ -4526,6 +4530,14 @@ export function useInboxController() {
                         </button>
                       ) : null
                     })()}
+                    {/* Near or over what one text can carry: count it, so a long
+                        reply isn't found out by a failed send. */}
+                    {!internalMode && !ticketMode && !channelResolving && ['sms', 'call'].includes(sendChannel !== 'auto' ? sendChannel : outboundChannel) && reply.length > SMS_COUNT_FROM ? (
+                      <span className={`cmp-sms-count${reply.length > SMS_MAX_CHARS ? ' over' : ''}`}
+                        title={smsTooLongReason(reply) || `One text can carry up to ${SMS_MAX_CHARS.toLocaleString('en-AU')} characters`}>
+                        {reply.length.toLocaleString('en-AU')}/{SMS_MAX_CHARS.toLocaleString('en-AU')}
+                      </span>
+                    ) : null}
                   </span>
                   {/* Phones: fold the composer back to its one-line bar (the
                       draft is kept) so the thread gets the screen again. */}
@@ -5784,7 +5796,10 @@ export function useInboxController() {
         setSending(false)
         const emsg = String(e?.message || 'SMS failed')
         const emsgClean = emsg.replace(/[.\s]+$/, '')
-        if (e?.reason === 'credit') {
+        if (e?.reason === 'too_long') {
+          // Over what one text carries: the reason says so, and the text stays.
+          showToast(`${emsgClean}. Your message wasn’t sent.`)
+        } else if (e?.reason === 'credit') {
           setSmsCreditError(emsgClean)
           showToast('Not enough SMS credit — your message wasn’t sent. Top up to keep texting.')
         } else if (/not included in this plan|upgrade to the/i.test(emsg)) {
@@ -5980,7 +5995,14 @@ export function useInboxController() {
   }
 
   // ── Accept AI-detected info ────────────────────────────────────────────────
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2200) }
+  // A failure stays long enough to read its reason (and a newer toast isn't
+  // cut short by an older one's timer).
+  const toastTimer = useRef<any>(null)
+  const showToast = (msg: string) => {
+    setToast(msg)
+    if (toastTimer.current) clearTimeout(toastTimer.current)
+    toastTimer.current = setTimeout(() => setToast(''), isFailureToast(msg) ? 6000 : 2200)
+  }
 
   // The AI team (faces, who's on, which channels): who's answering the open
   // conversation, and each agent's face on what it did.

@@ -681,6 +681,8 @@ export const THREAD_MESSAGES_CSS = `
               .cmp-card.note .cmp-mode button[aria-selected="true"]{color:#b45309}
               .cmp-via{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--slate);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
               .cmp-via b{color:var(--ink);font-weight:700}
+              .cmp-sms-count{margin-left:8px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--slate)}
+              .cmp-sms-count.over{color:#dc2626}
               .cmp-input::placeholder{color:#9ca3af}
               .cmp-input:focus{outline:none!important;box-shadow:none!important;border:none!important}
               .cmp-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 10px 10px}

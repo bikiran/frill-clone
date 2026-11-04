@@ -283,6 +283,14 @@ export function isEmailWithoutChannel(msg: any): boolean {
 // Two-letter initials from a name — first + last (e.g. "Bikiran Simkhada" → "BS")
 // so team members whose first names share a letter stay distinguishable. A
 // single-word name uses its first two letters.
+/**
+ * A toast that reports something didn't happen ("…wasn't sent", "couldn't…").
+ * It showed the same green tick as a success and was gone in two seconds,
+ * too quick to read a reason like a text being too long.
+ */
+export const isFailureToast = (msg: string) =>
+  /wasn[’']t sent|not sent|wasn[’']t delivered|not delivered|couldn[’']t|could not|did not go out|failed/i.test(msg || '')
+
 export function initialsOf(name?: string | null): string {
   const parts = String(name || '').trim().split(/\s+/).filter(Boolean)
   if (!parts.length) return '?'

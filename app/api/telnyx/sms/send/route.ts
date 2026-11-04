@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { toE164 } from '@/lib/telnyx-service'
-import { resolveSmsSender, isLandlineRejection } from '@/lib/sms-provider'
+import { resolveSmsSender, isLandlineRejection, SmsTooLongError } from '@/lib/sms-provider'
+import { smsTooLongReason, SMS_MAX_CHARS } from '@/lib/sms-segments'
 import { trackLinks, applyTrackedLinks, type TrackedLink } from '@/lib/link-tracking'
 import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
 import { SmsQuotaError } from '@/lib/sms-quota'
@@ -62,6 +63,12 @@ export async function POST(req: NextRequest) {
       threadContactId = owner?.contact_id || null
     }
     if (await isExternalSendBlocked(companyId, db)) { logBlockedSend(companyId, 'sms', db); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
+
+    // Longer than one text can carry: say so now, before any link is made or
+    // anything charged. The provider refused it with only an error code, so
+    // the inbox could say no more than "couldn't be sent".
+    const tooLong = smsTooLongReason(text)
+    if (tooLong) return NextResponse.json({ error: tooLong, reason: 'too_long', length: String(text || '').length, limit: SMS_MAX_CHARS }, { status: 400 })
 
     // Resolve whichever provider this company sends SMS through (Telnyx by
     // default, Twilio when selected). One uniform sender — the rest of this
@@ -314,6 +321,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, id: providerMessageId, ...(mediaNotSent ? { mediaNotSent } : {}) })
   } catch (err: any) {
+    // Grew past what one text can carry on the way out (attachment links).
+    if (err instanceof SmsTooLongError) {
+      return NextResponse.json({ error: err.message, reason: 'too_long', length: err.length, limit: SMS_MAX_CHARS }, { status: 400 })
+    }
     // Plan doesn't include SMS, or the monthly allowance is used up — answer
     // 402 with the reason so the composer and campaign runner can surface it
     // as an upgrade/limit message rather than a generic failure.
