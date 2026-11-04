@@ -19,12 +19,15 @@ const admin = () => createClient(
  * are written, and deliberately fail-soft: the in-app notification is already
  * recorded, so an email problem must never surface as a failed action.
  *
- * Body: { companyId, conversationId, userIds: string[], mentionedBy, preview, context? }
+ * Body: { companyId, conversationId, userIds: string[], mentionedBy, preview, context?, orderRef? }
+ * (orderRef: an order's number or id; the email and text then link to the order)
  */
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, conversationId, userIds: asked, mentionedBy, preview, context } =
+    const { companyId, conversationId, userIds: asked, mentionedBy, preview, context, orderRef } =
       await req.json()
+    // A mention in an order's notes links to that order (a number or an id only).
+    const order = typeof orderRef === 'string' && /^[\w-]{1,64}$/.test(orderRef) ? orderRef : null
 
     if (!companyId || !Array.isArray(asked) || asked.length === 0) {
       return NextResponse.json({ ok: true, sent: 0, skipped: 'nothing to send' })
@@ -89,9 +92,11 @@ export async function POST(req: NextRequest) {
     } catch {}
 
     const base = company?.slug ? `https://${company.slug}.colvy.com` : 'https://colvy.com'
-    const link = conversationId
-      ? `${base}/admin/inbox?conversation=${conversationId}`
-      : `${base}/admin/inbox`
+    const link = order
+      ? `${base}/admin/orders?order=${encodeURIComponent(order)}`
+      : conversationId
+        ? `${base}/admin/inbox?conversation=${conversationId}`
+        : `${base}/admin/inbox`
     const where = context || 'a conversation'
     // Plain text: the email escapes it itself, and a text message shows it as is
     // (it used to carry &amp; and &lt; into the SMS).

@@ -28,6 +28,10 @@ interface Props {
   onSubmit?: () => void
   disabled?: boolean
   autoFocus?: boolean
+  /** Leave the field's look to `className` (no built-in padding/border). */
+  unstyled?: boolean
+  id?: string
+  ariaLabel?: string
 }
 
 /** Everyone named with @ in the text, matched against the team list. */
@@ -44,7 +48,7 @@ export function resolveMentions(text: string, team: TeamMember[]): TeamMember[] 
 }
 
 const MentionInput = forwardRef<HTMLTextAreaElement | HTMLInputElement, Props>(function MentionInput(
-  { value, onChange, team, placeholder, multiline, rows = 3, style, className, onSubmit, disabled, autoFocus },
+  { value, onChange, team, placeholder, multiline, rows = 3, style, className, onSubmit, disabled, autoFocus, unstyled, id, ariaLabel },
   forwardedRef
 ) {
   const innerRef = useRef<any>(null)
@@ -110,9 +114,13 @@ const MentionInput = forwardRef<HTMLTextAreaElement | HTMLInputElement, Props>(f
     if (onSubmit && e.key === 'Enter' && !e.shiftKey && !multiline) {
       e.preventDefault(); onSubmit()
     }
+    // A multi-line field sends with ⌘ / Ctrl + Enter (Enter is a new line).
+    if (onSubmit && multiline && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault(); onSubmit()
+    }
   }
 
-  const baseStyle: React.CSSProperties = {
+  const baseStyle: React.CSSProperties = unstyled ? { ...style } : {
     width: '100%', padding: '9px 12px', borderRadius: 9,
     border: '1px solid var(--border)', fontSize: 13.5, boxSizing: 'border-box',
     fontFamily: 'inherit', resize: multiline ? 'vertical' : 'none',
@@ -125,13 +133,13 @@ const MentionInput = forwardRef<HTMLTextAreaElement | HTMLInputElement, Props>(f
         <textarea
           ref={ref} value={value} rows={rows} disabled={disabled} autoFocus={autoFocus}
           onChange={e => handleChange(e.target.value)} onKeyDown={onKeyDown}
-          placeholder={placeholder} className={className} style={baseStyle}
+          placeholder={placeholder} className={className} style={baseStyle} id={id} aria-label={ariaLabel}
         />
       ) : (
         <input
           ref={ref} value={value} disabled={disabled} autoFocus={autoFocus}
           onChange={e => handleChange(e.target.value)} onKeyDown={onKeyDown}
-          placeholder={placeholder} className={className} style={baseStyle}
+          placeholder={placeholder} className={className} style={baseStyle} id={id} aria-label={ariaLabel}
         />
       )}
 

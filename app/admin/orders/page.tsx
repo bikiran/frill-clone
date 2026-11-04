@@ -27,6 +27,8 @@ import { barcodeSVG } from '@/lib/barcode'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { notifyIntegrations } from '@/lib/integrations-notify'
 import { authFetch } from '@/lib/auth-fetch'
+import MentionInput, { resolveMentions } from '@/components/MentionInput'
+import { enrichNames } from '@/lib/team-names'
 import { loadStaffRows } from '@/lib/team-list'
 import type { OrderRefund } from '@/lib/order-refunds'
 import { sanitizeHtml } from '@/lib/safe-html'
@@ -646,8 +648,14 @@ export default function OrdersPage() {
         if (!uid || members.some(x => x.id === uid)) continue
         members.push({ id: uid, name: m.name || m.display_name || m.email?.split('@')[0] || 'Teammate' })
       }
-      const needIds = members.filter(m => !m.name || m.name === 'Teammate').map(m => m.id)
-      if (needIds.length) { try { const r = await authFetch('/api/team/names', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userIds: needIds }) }); const names = (await r.json()).names || {}; for (const m of members) if (names[m.id]?.name) m.name = names[m.id].name } catch {} }
+      // Everyone's profile name (the browser can't read anyone else's), so the
+      // assignee pickers and @mentions show "Bijan Simkhada", not the email's
+      // first half.
+      try {
+        const rows = members.map(m => ({ ...m, user_id: m.id }))
+        await enrichNames(rows)
+        rows.forEach((r, k) => { if (r.name) members[k].name = r.name })
+      } catch { /* the fallback names stand */ }
       setTeam(members)
       setMetaFresh(true)
 
@@ -2114,6 +2122,16 @@ function ManageTagsModal({ companyId, accent, tagDefs, setTagDefs, orders, setOr
 }
 
 // ── Right-side order drawer ───────────────────────────────────────────────────
+// A note's text with each @Teammate in bold accent, longest names first so
+// "@Amit Panta" wins over "@Amit".
+function withMentions(text: string, team: { name: string }[]): React.ReactNode {
+  const names = Array.from(new Set(team.map(m => m.name).filter(Boolean))).sort((a, b) => b.length - a.length)
+  if (!names.length || !text.includes('@')) return text
+  const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const re = new RegExp(`(@(?:${names.map(esc).join('|')}))(?![\\w])`, 'gi')
+  return text.split(re).map((part, k) => (k % 2 ? <b key={k} className="otl-at">{part}</b> : part))
+}
+
 function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, tagDefs, tagColor, onEnsureTag, onManageTags, onClose, onPatch, onFlash, onLabel, onPrintSlip, onPrintLabel, onLabelPdf, teamName, outletName, fullScreen = false }: any) {
   const ACCENT = accent || 'var(--coral)'
   const [items, setItems] = useState<any[]>([])
@@ -2512,14 +2530,16 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
   }
   const addNote = async () => {
     const body = noteBody.trim(); if (!body) return
-    const mentions = Array.from(body.matchAll(/@(\w[\w.-]*)/g)).map(m => m[1])
+    // Who's named with @ (full names, "@Amit Panta"), as the inbox's notes do.
+    const mentioned = resolveMentions(body, team || []) as { id: string; name: string }[]
+    const mentions = mentioned.map(m => m.name)
     const row = { order_id: order.id, company_id: companyId, author_id: me.id, author_name: me.name, body, mentions }
     try { const { data } = await (supabase as any).from('order_notes').insert(row).select().maybeSingle(); if (data) { setNotes(n => [data, ...n]); logEvent('note_added', 'Internal note added') } } catch {}
     // One-way link: mirror the note into the inbox chat so it also shows in the
     // conversation's Notes section. Prefer the order's / contact's existing chat;
     // create one only if the customer has none yet.
+    let convId: string | null = order.conversation_id || null
     try {
-      let convId: string | null = order.conversation_id || null
       if (!convId && order.contact_id) {
         const { data: c } = await (supabase as any).from('conversations').select('id').eq('company_id', companyId).eq('contact_id', order.contact_id).order('last_message_at', { ascending: false }).limit(1).maybeSingle()
         if (c?.id) convId = c.id
@@ -2531,6 +2551,25 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
       if (convId && convId !== order.conversation_id) { order.conversation_id = convId; onPatch({ conversation_id: convId }) }
       if (convId) await (supabase as any).from('conversation_notes').insert({ conversation_id: convId, company_id: companyId, author_name: me.name, content: `[Order ${order.order_number}] ${body}` })
     } catch {}
+    // Tell anyone @mentioned (never yourself): the bell, a push and an email,
+    // with the link opening this order.
+    const ids = Array.from(new Set(mentioned.map(m => m.id))).filter(uid => uid && uid !== me.id)
+    if (ids.length) {
+      // The inbox's mention list needs the chat the note was copied to; the
+      // bell, push and email below go out either way.
+      if (convId) {
+        try {
+          await (supabase as any).from('mention_notifications').insert(ids.map(uid => ({
+            company_id: companyId, conversation_id: convId, mentioned_user: uid, mentioned_by: me.name, preview: body.slice(0, 140),
+          })))
+        } catch {}
+      }
+      authFetch('/api/mentions/notify', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, conversationId: convId, userIds: ids, mentionedBy: me.name, preview: body.slice(0, 300),
+          context: `a note on order #${order.order_number}`, orderRef: String(order.order_number || order.id) }),
+      }).catch(() => {})
+    }
     setNoteBody('')
   }
   const saveNoteEdit = async (n: any) => {
@@ -2783,6 +2822,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
         .otl-act::before { display: none; }
         .otl-act:hover { background: rgba(0,0,0,.06); color: var(--ink); }
         .otl-act.danger:hover { background: #fee2e2; color: #dc2626; }
+        .otl-at { font-weight: 700; color: var(--ord-accent); }
         .otl-body { margin: 4px 0 0 30px; font-size: 14px; line-height: 1.5; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
         .otl-edit { margin-top: 6px; display: flex; flex-direction: column; gap: 8px; }
         .otl-edit .otl-in { padding-right: 14px; min-height: 64px; }
@@ -3155,8 +3195,10 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
           <CollapseSection style={{ ...sect, marginBottom: 0 }} storageKey="order-timeline" title="Order timeline" id="od-sec-timeline">
             {/* Composer: the note box with its send button inside (⌘/Ctrl + Enter adds it). */}
             <div className="otl-cmp">
-              <textarea id="ord-note" className="otl-in" value={noteBody} onChange={e => setNoteBody(e.target.value)} placeholder="Add a note… use @ to mention someone" rows={2}
-                aria-label="New note" onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addNote() } }} />
+              {/* @ lists the team as you type (MentionInput, as in the inbox). */}
+              <MentionInput id="ord-note" ariaLabel="New note" className="otl-in" unstyled multiline rows={2}
+                value={noteBody} onChange={v => setNoteBody(v)} team={(team || []) as any} onSubmit={addNote}
+                placeholder="Add a note… use @ to mention someone" />
               <button type="button" className={`otl-send${noteBody.trim() ? ' on' : ''}`} onClick={addNote} disabled={!noteBody.trim()} aria-label="Add note" title="Add note (⌘ Enter)">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 19V5M5 12l7-7 7 7" /></svg>
               </button>
@@ -3186,7 +3228,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
                       </div>
                     </div>
                   ) : (
-                    <p className="otl-body">{n.body}</p>
+                    <p className="otl-body">{withMentions(String(n.body || ''), team || [])}</p>
                   )}
                 </div>
               ))}
