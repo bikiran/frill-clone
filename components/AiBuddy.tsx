@@ -129,15 +129,20 @@ export default function AiBuddy({ size = 40, color = '#ff7a6b', shape = 'star', 
     return () => { glancing = false; stop(); timers.forEach(clearTimeout) }
   }, [eyeY])
 
+  // A hex colour is mixed here; anything else (var(--coral)) by the browser.
+  const hex = /^#[0-9a-f]{6}$/i.test(color)
+  const top = hex ? mix(color, '#ffffff', 0.18) : `color-mix(in srgb, ${color} 82%, #fff)`
+  const bottom = hex ? (/^#ff7a6b$/i.test(color) ? mix(color, '#e2541f', 0.28) : mix(color, '#000000', 0.16)) : `color-mix(in srgb, ${color} 84%, #000)`
+  const glow = hex ? `${mix(color, '#ffffff', 0.1)}88` : `color-mix(in srgb, ${color} 53%, transparent)`
   return (
     <svg ref={svgRef} className={`aib${className ? ' ' + className : ''}`} width={size} height={size} viewBox="0 0 100 100" aria-hidden="true"
-      style={{ display: 'block', flexShrink: 0, overflow: 'visible', ...(shadow ? { filter: `drop-shadow(0 ${Math.round(size * 0.14)}px ${Math.round(size * 0.18)}px ${mix(color, '#ffffff', 0.1)}88)` } : {}), ...style }}>
+      style={{ display: 'block', flexShrink: 0, overflow: 'visible', ...(shadow ? { filter: `drop-shadow(0 ${Math.round(size * 0.14)}px ${Math.round(size * 0.18)}px ${glow})` } : {}), ...style }}>
       <style>{`.aib-eye{transform-box:fill-box;transform-origin:center}.aib-blinking .aib-eye{animation:aibBlink .17s ease-in-out}@keyframes aibBlink{0%,100%{transform:scaleY(1)}50%{transform:scaleY(.12)}}`}</style>
       <defs>
         <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor={mix(color, '#ffffff', 0.18)} />
+          <stop offset="0" style={{ stopColor: top }} />
           {/* Coral deepens towards orange; any other colour towards a darker shade of itself. */}
-          <stop offset="1" stopColor={/^#ff7a6b$/i.test(color) ? mix(color, '#e2541f', 0.28) : mix(color, '#000000', 0.16)} />
+          <stop offset="1" style={{ stopColor: bottom }} />
         </linearGradient>
       </defs>
       <path d={d} fill={`url(#${id})`} />

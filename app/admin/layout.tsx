@@ -46,6 +46,7 @@ import { SETTINGS_NAV } from '@/components/settings/settings-nav'
 import { canUseFeature, canAccessPath, featureForPath, hasFullAccess, type PermissionMap } from '@/lib/permissions'
 import { reportFonts } from '@/lib/fonts'
 import { useStoreStatus, storeAllowsPage } from '@/lib/store-status'
+import AiBuddy from '@/components/AiBuddy'
 
 const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
@@ -897,8 +898,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   if (authed === null) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--canvas)' }}>
-        <div className="w-8 h-8 rounded-full border-2 animate-spin" style={{ borderColor: 'var(--coral)', borderTopColor: 'transparent' }} />
+      <div className="adm-boot" role="status" aria-label="Opening your workspace">
+        <style>{`.adm-boot{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;background:#fff}
+.adm-boot p{position:absolute;left:0;right:0;top:calc(50% + 58px);margin:0;text-align:center;font-size:15px;color:#71717a;animation:admBootIn .5s ease .6s both}
+[data-theme="dark"] .adm-boot{background:var(--canvas)}
+@keyframes admBootIn{from{opacity:0}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){.adm-boot p{animation:none}}`}</style>
+        <AiBuddy size={84} color="var(--coral)" shadow />
+        <p>Opening your workspace…</p>
       </div>
     )
   }

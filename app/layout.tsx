@@ -100,6 +100,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               "(function(){var K='colvy-chunk-reload-at';function go(){try{var l=+sessionStorage.getItem(K)||0;if(Date.now()-l<30000)return;sessionStorage.setItem(K,String(Date.now()))}catch(e){}location.reload()}addEventListener('error',function(e){var t=e.target;if(!t||t===window||!t.tagName)return;var u=t.src||t.href||'';if((t.tagName==='SCRIPT'||t.tagName==='LINK')&&u.indexOf('/_next/static/')!==-1)go()},true);addEventListener('load',function(){var s=document.querySelectorAll('link[rel=stylesheet][href*=\"/_next/static/\"]');for(var i=0;i<s.length;i++){if(!s[i].sheet){go();return}}})})();",
           }}
         />
+        {/*
+          A workspace's own address (roxy.colvy.com, or its custom domain) starts
+          in the workspace's colour, remembered from the last visit (AppChrome's
+          applyAccent), so nothing flashes Colvy's coral before it loads. A
+          <style> rather than attributes on <html>, which React hydrates.
+        */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{var h=location.hostname;if(h==='colvy.com'||h==='www.colvy.com'||h==='admin.colvy.com')return;var a=localStorage.getItem('colvy-accent')||'';if(!/^#[0-9a-f]{6}$/i.test(a))return;var p='rgba('+parseInt(a.slice(1,3),16)+','+parseInt(a.slice(3,5),16)+','+parseInt(a.slice(5,7),16)+',0.1)';var s=document.createElement('style');s.id='colvy-accent';s.textContent='html:root{--coral:'+a+';--peach:'+p+'}';document.head.appendChild(s)}catch(e){}})();",
+          }}
+        />
       </head>
       <body style={{ background: 'var(--canvas)' }}>
         {/*
