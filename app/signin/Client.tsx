@@ -1,13 +1,14 @@
 'use client'
 
-import { useState, useEffect, useRef, Suspense } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { signInWithGoogle, signInWithGitHub } from '@/lib/auth'
 import { sameSitePath } from '@/lib/same-site-path'
 import { useBodyClass } from '@/lib/body-class'
 import AiBuddy from '@/components/AiBuddy'
-import { COLVY_ICON, I, ICONS, SETUP_CSS, SetupPreview, PreviewSection, PreviewRow, useSetupTheme, type PreviewFocus, type Rect } from '@/components/setup/SetupKit'
+import { COLVY_ICON, I, ICONS, SETUP_CSS, SetupPreview, PreviewSection, PreviewRow, useSetupTheme, type PreviewFocus } from '@/components/setup/SetupKit'
+import { CORAL, EMAIL_RE, MAIL, firstFromEmail, EyeIcon, EmailChip, usePanelZoom, AUTH_CSS } from '@/components/setup/AuthKit'
 
 // ?redirect= is a page on this same site: a path, or a full URL on this origin
 // (the board sends its own address). Never another site or a javascript: URL.
@@ -22,14 +23,11 @@ function safeRedirect(raw: string | null): string {
 }
 
 const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
-const CORAL = '#ff7a6b'
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 // The preview: a workspace's inbox filling up while you were away. Sample
 // messages of the kind any business gets (no names of real customers, and no
 // quotes from anyone: the old testimonials here were made up).
 const PHONE = <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z" />
-const MAIL = <><rect x="3" y="5" width="18" height="14" rx="2" /><polyline points="3 7 12 13 21 7" /></>
 const CHANNELS = {
   chat: { label: 'Website chat', color: CORAL, icon: ICONS.chat },
   sms: { label: 'SMS', color: '#22c55e', icon: ICONS.chat },
@@ -50,16 +48,6 @@ const FEED_EVERY = 2600
 const SHOWN = 5
 
 const OPENING = ['Signing you in…', 'Opening your inbox…', 'Loading your conversations…']
-
-/** A first name from an email, when it plainly has one (jo.smith@ → Jo). */
-function firstFromEmail(email: string): string {
-  const local = (email.split('@')[0] || '').split(/[._+-]/)[0] || ''
-  return /^[a-z]{2,14}$/i.test(local) ? local[0].toUpperCase() + local.slice(1).toLowerCase() : ''
-}
-
-const EyeIcon = ({ off }: { off: boolean }) => off
-  ? I(<><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></>, 18, 1.8)
-  : I(<><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></>, 18, 1.8)
 
 const GoogleIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
@@ -97,18 +85,10 @@ function SignInForm() {
   const [field, setField] = useState<'email' | 'password' | null>(null)
   // Starts with a few in, so the inbox isn't empty while the page settles.
   const [tick, setTick] = useState(2)
-  const [phase, setPhase] = useState<'form' | 'zoom' | 'full'>('form')
-  const [from, setFrom] = useState<Rect | null>(null)
-  const panelRef = useRef<HTMLDivElement | null>(null)
-  const [openLine, setOpenLine] = useState(0)
+  const { phase, from, panelRef, zoomOut, line, lineKey } = usePanelZoom(OPENING)
   useEffect(() => {
     if (phase !== 'form') return
     const t = setInterval(() => setTick(n => n + 1), FEED_EVERY)
-    return () => clearInterval(t)
-  }, [phase])
-  useEffect(() => {
-    if (phase === 'form') { setOpenLine(0); return }
-    const t = setInterval(() => setOpenLine(n => Math.min(OPENING.length - 1, n + 1)), 1100)
     return () => clearInterval(t)
   }, [phase])
 
@@ -246,17 +226,7 @@ function SignInForm() {
   }
 
   // Signed in: the preview grows to fill the screen ("Opening your inbox…")
-  // while the workspace loads, as sign-up does when it makes one.
-  const zoomOut = () => {
-    const r = panelRef.current?.getBoundingClientRect()
-    if (r && r.width) {
-      const start = { top: r.top, left: r.left, right: window.innerWidth - r.right, bottom: window.innerHeight - r.bottom }
-      setFrom(start); setPhase('zoom')
-      requestAnimationFrame(() => requestAnimationFrame(() => setFrom({ top: 0, left: 0, right: 0, bottom: 0 })))
-      setTimeout(() => setPhase(p => (p === 'zoom' ? 'full' : p)), 750)
-    } else setPhase('full')
-  }
-
+  // while the workspace loads (usePanelZoom), as sign-up does when it makes one.
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -303,7 +273,7 @@ function SignInForm() {
 
   return (
     <div className={`nw nw-${phase}${dark ? ' dark' : ''} si`} style={{ ['--c' as string]: color } as React.CSSProperties}>
-      <style>{SETUP_CSS + SI_CSS}</style>
+      <style>{SETUP_CSS + AUTH_CSS + SI_CSS}</style>
 
       <div className="nw-left">
         <div className="nw-top">
@@ -380,7 +350,7 @@ function SignInForm() {
       {/* ── The live preview ───────────────────────────────────────────── */}
       <SetupPreview panelRef={panelRef} phase={phase} from={from} name={wsName || 'Your inbox'} focus={focus}
         logo={brand.logo ? { kind: 'img', src: brand.logo } : { kind: 'colvy' }}
-        corner={emailOk ? <div className="nw-me si-me" key={email.trim()[0]?.toLowerCase()}><span className="nw-av-ini" style={{ width: 30, height: 30, fontSize: 13 }}>{email.trim()[0].toUpperCase()}</span><span className="si-me-mail">{email.trim()}</span></div> : null}
+        corner={<EmailChip email={email} />}
         sub={wsName && companyContext?.slug ? <div className="nw-ws-site">{I(ICONS.chat, 13)}{companyContext.slug}.colvy.com</div> : undefined}
         sections={
           <PreviewSection k="channels" icon={ICONS.chat} title="Channels">
@@ -417,7 +387,7 @@ function SignInForm() {
             <AiBuddy size={84} color={color} shadow />
             <h2>Welcome back{first ? `, ${first}` : ''}</h2>
             {wsName && <p className="nw-build-for">{brand.logo ? <span className="nw-build-chip"><img src={brand.logo} alt="" /></span> : null}{wsName}</p>}
-            <p className="nw-build-line" key={openLine}>{OPENING[openLine]}</p>
+            <p className="nw-build-line" key={lineKey}>{line}</p>
           </div>
         } />
     </div>
@@ -425,42 +395,13 @@ function SignInForm() {
 }
 
 const SI_CSS = `
-.si .nw-body{padding-top:clamp(24px,8vh,88px)}
-.si-top-link{margin-left:auto}
-.si-field{display:block;margin:0 0 16px}
-.si-field>span{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 8px;font-size:14px;font-weight:600}
-.si-forgot{font-size:13px;font-weight:600;color:#71717a;text-decoration:none}
-.si-forgot:hover{color:#18181b;text-decoration:underline;text-underline-offset:3px}
-.si-pass{padding-right:6px}
-.si-eye{width:38px;height:38px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;border:none;border-radius:50%;background:none;color:#8e8e93;cursor:pointer}
-.si-eye:hover{background:#f4f4f5;color:#18181b}
 .si-oauth{display:flex;gap:10px}
 .si-oauth button{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:9px;height:50px;border-radius:999px;border:1.5px solid #e4e4e7;background:#fff;font:inherit;font-size:15px;font-weight:600;color:#18181b;cursor:pointer;transition:background-color .15s,transform .15s}
 .si-oauth button:hover:not(:disabled){background:#fafafa;transform:translateY(-1px)}
 .si-oauth button:disabled{opacity:.6;cursor:default}
 .si-or{display:flex;align-items:center;gap:12px;margin:22px 0 18px;font-size:12.5px;color:#a1a1aa}
 .si-or span{flex:1;height:1px;background:#ececef}
-.si-error{margin:0 0 14px}
-.si-submit{width:100%;margin-top:6px}
-.si-spin{border-color:rgba(255,255,255,.35);border-top-color:#fff}
-.si-alt{width:100%;justify-content:center;margin-top:10px;height:50px}
-.si-alt:disabled{opacity:.6;cursor:default}
-.si-note{display:flex;gap:10px;align-items:flex-start;margin:0 0 18px;padding:12px 14px;border-radius:14px;font-size:13.5px;line-height:1.45}
-.si-note.good{background:#f0fdf4;color:#166534}
-.si-note svg{flex-shrink:0;margin-top:1px}
-.si-sent{text-align:left}
-.si-sent-ic{width:60px;height:60px;margin:0 0 20px;border-radius:18px;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--c) 12%,#fff);color:var(--c);animation:nwPopIn .5s cubic-bezier(.2,.9,.3,1.3) both}
-.si-sent .nw-sub b{color:#18181b}
-.si-new a{color:#18181b;font-weight:600;text-decoration:underline;text-underline-offset:2px}
-.si-me{max-width:min(320px,60%)}
-.si-me-mail{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.si-new-n{color:var(--c);font-weight:700;animation:nwFade .4s ease both}
-/* Room for the feed: a narrower list, the app a little higher (only while
-   the form shows: the zoom keeps sign-up's own positions). */
-.si.nw-form .nw-app{top:24%}
-.si .nw-list{width:min(232px,40%)}
 /* The feed: one new conversation at a time slides in on top. */
-.si-thread{gap:18px;padding-right:clamp(36px,4.6vw,60px)}
 .si-feed{display:flex;flex-direction:column;gap:8px}
 .si-item{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:16px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.05),0 6px 18px -10px rgba(0,0,0,.18);overflow:hidden}
 .si-item.in{animation:siIn .7s cubic-bezier(.22,1,.36,1) both}
@@ -476,20 +417,13 @@ const SI_CSS = `
 .nw.dark .si-oauth button{background:#18181b;border-color:#2c2c31;color:#f4f4f5}
 .nw.dark .si-oauth button:hover:not(:disabled){background:#1f1f23}
 .nw.dark .si-or span{background:#26262b}
-.nw.dark .si-forgot{color:#a1a1aa}
-.nw.dark .si-forgot:hover,.nw.dark .si-sent .nw-sub b,.nw.dark .si-new a{color:#f4f4f5}
-.nw.dark .si-eye:hover{background:#26262b;color:#f4f4f5}
-.nw.dark .si-pass input{color:#f4f4f5}
-.nw.dark .si-note.good{background:rgba(34,197,94,.12);color:#86efac}
-.nw.dark .si-sent-ic{background:color-mix(in srgb,var(--c) 18%,#18181b)}
 .nw.dark .si-item{background:#1c1c1f;box-shadow:0 0 0 1px rgba(255,255,255,.06)}
 .nw.dark .si-item-txt b{color:#f4f4f5}
 .nw.dark .si-item-txt small{color:#a1a1aa}
 .nw.dark .si-av{background:color-mix(in srgb,var(--t) 22%,#1c1c1f);color:color-mix(in srgb,var(--t) 70%,#fff)}
 .nw.dark .si-av-ch{box-shadow:0 0 0 2px #1c1c1f}
 .nw.dark .si-ai{background:rgba(124,58,237,.2);color:#c4b5fd}
-@media (max-width:900px){.si .nw-body{padding-top:32px}}
-@media (prefers-reduced-motion: reduce){.si-item.in,.si-ai,.si-sent-ic,.si-new-n{animation:none!important}}
+@media (prefers-reduced-motion: reduce){.si-item.in,.si-ai{animation:none!important}}
 `
 
 export default function SignInPage() {
