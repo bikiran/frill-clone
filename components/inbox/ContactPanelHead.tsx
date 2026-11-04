@@ -14,6 +14,7 @@ export default function ContactPanelHead() {
     setCouponAmount, setCouponCode, setCouponExpiry, setCouponOneTime, setCouponType, setMobilePane,
     setPodFiles, setPodNote, setShowActionMenu, setShowCoupon, setShowCreateOrder, setShowDoa,
     setShowPod, setShowRecordSale, setTabletContact, showActionMenu, showToast,
+    storeConnected, ordersConnected,
   } = useInbox()
   return (
     <>
@@ -34,7 +35,8 @@ export default function ContactPanelHead() {
             loading (wooCustomer || wooOrders.length), so on first open it was
             missing and you had to click Timeline to trigger the load before
             it showed. Always render it; it shows its own empty state. */}
-        {(['info', 'timeline', 'orders'] as const).map(p => (
+        {/* Orders only when there are orders to show (a store, or Prexty). */}
+        {(['info', 'timeline', ...(ordersConnected ? ['orders'] as const : [])] as const).map(p => (
           <button key={p} type="button" role="tab" aria-selected={activePanel === p} onClick={() => setActivePanel(p)} className={`cp-tab${activePanel === p ? ' on' : ''}`}>
             {p === 'info' ? 'Information' : p === 'timeline' ? 'Timeline' : 'Orders'}
           </button>
@@ -43,7 +45,9 @@ export default function ContactPanelHead() {
 
       {/* + Action button — shows enabled conversation actions */}
       {(() => {
-        const enabledActions = Object.entries(convActions).filter(([, v]: any) => v?.enabled)
+        // DOA, returns, new orders and coupons all go through the store.
+        const STORE_ACTIONS = ['doa', 'return_refund', 'create_order', 'send_coupon']
+        const enabledActions = Object.entries(convActions).filter(([k, v]: any) => v?.enabled && (storeConnected || !STORE_ACTIONS.includes(k)))
         const ACTION_META: Record<string, { label: string; icon: (s?: number) => React.ReactNode }> = {
           doa: { label: 'DOA claim', icon: Icon.box },
           warranty: { label: 'Warranty claim', icon: Icon.shield },
@@ -96,7 +100,7 @@ export default function ContactPanelHead() {
                 })}
               </div>
             )}
-            {doaMatch && convActions.doa?.enabled && (
+            {doaMatch && convActions.doa?.enabled && storeConnected && (
               <button type="button" onClick={() => setShowDoa(true)} className="cp-hint" title="Start a DOA claim for this customer's order">
                 <span className="cp-hint-ic">{Icon.box(15)}</span>
                 <span style={{ flex: 1, minWidth: 0, fontWeight: 600, color: '#18181b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Matches an order</span>

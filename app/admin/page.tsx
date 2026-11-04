@@ -13,6 +13,7 @@ import { LightbulbIcon, MegaphoneIcon, SurveyIcon, PollIcon, StarIcon, TicketIco
 import SetupChecklist, { readSetupLink, setupWorthLoading, type SetupLink } from '@/components/SetupChecklist'
 import EmptyScroll from '@/components/EmptyScroll'
 import type { SetupStatus } from '@/lib/setup-status'
+import { useStoreStatus, type StoreStatus } from '@/lib/store-status'
 
 // ── Admin home ────────────────────────────────────────────────────────────────
 // Leads with what needs someone today (unread chats, missed calls, orders to
@@ -69,6 +70,9 @@ const isSummary = (d: any): d is Summary => !!(d && d.attention && d.today && Ar
 // Can the signed-in member see this area? Until the first summary arrives (or
 // from an old cached one without `access`) nothing is hidden.
 const canSee = (s: Summary | null, key: string) => !s?.access || s.access.full || s.access.features?.[key] !== false
+// Store tiles need a store (lib/store-status): orders a store or Prexty,
+// waitlists (back in stock) and abandoned carts WooCommerce or Shopify.
+const storeOk = (st: StoreStatus | undefined, key: string) => !st || (key === 'orders' ? st.orders : key === 'waitlists' || key === 'carts' ? st.store : true)
 
 const money = (n: number, cents = false) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', minimumFractionDigits: cents ? 2 : 0, maximumFractionDigits: cents ? 2 : 0 }).format(n || 0)
 const plural = (n: number, one: string, many = one + 's') => `${n} ${n === 1 ? one : many}`
@@ -126,6 +130,7 @@ function writeCache(userId: string | undefined, companyId: string, patch: Partia
 
 export default function AdminDashboard() {
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const storeStatus = useStoreStatus(companyId)
   const [user, setUser] = useState<any>(null)
   const [summary, setSummary] = useState<Summary | null>(null)
   const [summaryError, setSummaryError] = useState('')
@@ -290,9 +295,9 @@ export default function AdminDashboard() {
         {summaryError && !summary && <div className="dh-err" role="alert">{summaryError}</div>}
 
         {setupTop && checklist}
-        <NeedsAttention s={summary} refreshing={refreshing} />
+        <NeedsAttention s={summary} refreshing={refreshing} st={storeStatus} />
         <Today s={summary} />
-        <Performance s={summary} />
+        <Performance s={summary} st={storeStatus} />
 
         {sales && sales.count > 0 && canSee(summary, 'payments') && (
           <section className="dh-sec">
@@ -339,7 +344,7 @@ export default function AdminDashboard() {
 
 // ── Needs attention ───────────────────────────────────────────────────────────
 
-function NeedsAttention({ s, refreshing }: { s: Summary | null; refreshing?: boolean }) {
+function NeedsAttention({ s, refreshing, st }: { s: Summary | null; refreshing?: boolean; st?: StoreStatus }) {
   const a = s?.attention
   const [allCallBack, setAllCallBack] = useState(false)
   // Missed calls stay until someone gets back to the caller, rather than
@@ -375,7 +380,7 @@ function NeedsAttention({ s, refreshing }: { s: Summary | null; refreshing?: boo
       sub: 'Customers waiting for stock' },
     { key: 'carts', feature: 'orders', label: 'Abandoned carts', n: a.carts, urgent: false, href: '/admin/inbox', icon: CartI,
       sub: a.carts ? `${money(a.cartValue)} left in carts · 7 days` : 'None in the last 7 days' },
-  ].filter(t => canSee(s, t.feature)) : []
+  ].filter(t => canSee(s, t.feature) && storeOk(st, t.key === 'carts' ? 'carts' : t.feature)) : []
   // A member who can't open any of these areas doesn't get an empty section.
   if (a && tiles.length === 0) return null
   // Areas that need someone get a tile; the clear ones fold into one quiet
@@ -556,7 +561,7 @@ function Delta({ now, prev, invert = false }: { now: number; prev: number; inver
   )
 }
 
-function Performance({ s }: { s: Summary | null }) {
+function Performance({ s, st }: { s: Summary | null; st?: StoreStatus }) {
   if (!s) return null
   const p = s.perf
   const reports = canSee(s, 'reports')
@@ -568,8 +573,8 @@ function Performance({ s }: { s: Summary | null }) {
     { feature: 'calls', label: 'Calls', value: <CountUp id="dash-calls" value={p.calls.now} />, d: <Delta now={p.calls.now} prev={p.calls.prev} />, href: canSee(s, 'command_centre') ? '/admin/command-centre' : '/admin/calls' },
     { feature: 'reviews', label: 'Google reviews', value: p.reviews.avgNow != null ? `${p.reviews.avgNow.toFixed(1)}` : '—', suffix: p.reviews.now ? `from ${p.reviews.now}` : '',
       d: <Delta now={p.reviews.now} prev={p.reviews.prev} />, href: '/admin/reviews', star: p.reviews.avgNow != null },
-  ].filter(t => canSee(s, t.feature))
-  const chart = canSee(s, 'orders')
+  ].filter(t => canSee(s, t.feature) && storeOk(st, t.feature))
+  const chart = canSee(s, 'orders') && storeOk(st, 'orders')
   if (!tiles.length) return null
   return (
     <section className="dh-sec">

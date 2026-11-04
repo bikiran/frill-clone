@@ -28,6 +28,7 @@ import TemplatePicker from './TemplatePicker'
 import SocialFields from './SocialFields'
 import { SOCIAL } from './social'
 import { MERGE_TAGS, PREVIEW_HINT, SUBJECT_HINT, type Block, type BlockType, type ColumnItem, type EmailBrand, type EmailDesign, type FontChoice, type ProductItem } from './types'
+import { useStoreStatus } from '@/lib/store-status'
 
 export type DesignDraft = { id?: string | null; name: string; subject: string; previewText: string; design: EmailDesign }
 export type SenderInfo = { from: string; shared: boolean; replyTo?: string | null } | null
@@ -928,6 +929,8 @@ function BlockFields({ b, brand, companyId, update, field, wrap }: { b: Block; b
 }
 
 function ProductsFields({ b, companyId, update }: { b: Extract<Block, { type: 'products' }>; companyId: string; update: (p: Partial<Block>) => void }) {
+  // Searching needs a store (lib/store-status); adding by hand always works.
+  const { store } = useStoreStatus(companyId)
   const [q, setQ] = useState('')
   const [results, setResults] = useState<any[]>([])
   const [busy, setBusy] = useState(false)
@@ -951,10 +954,10 @@ function ProductsFields({ b, companyId, update }: { b: Extract<Block, { type: 'p
   }
   const set = (i: number, patch: Partial<ProductItem>) => update({ items: items.map((x, j) => (j === i ? { ...x, ...patch } : x)) })
   return (<>
-    <div className="ed-row">
+    {store && <div className="ed-row">
       <input className="ed-input" value={q} placeholder="Search your products by name or SKU" onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); search() } }} />
       <button type="button" className="ed-ghost" onClick={search} disabled={busy}><DIcon name="search" size={15} />{busy ? 'Searching…' : 'Search'}</button>
-    </div>
+    </div>}
     {note && <p className="ed-hint">{note}</p>}
     {results.length > 0 && (
       <div className="ed-results">

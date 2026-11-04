@@ -40,6 +40,7 @@ import { decodeEntities as dec } from '@/lib/decode-entities'
 import { useClickOutside } from '@/lib/use-click-outside'
 import { tagVoice, voiceKind } from '@/lib/voice-typed'
 import { SMS_MAX_CHARS, smsTooLongReason } from '@/lib/sms-segments'
+import { useStoreStatus } from '@/lib/store-status'
 import { agentChannel, useAgentTeam } from '@/components/agents/useAgentTeam'
 import { Contact, Conversation, Highlight, INBOX_HOUR12, Icon, Message, PAYMENT_SIGNAL_PHRASES, THREAD_PAGE, TeamMember, extractFromText, initialsOf, makeSnippet, parseTs, runPool, sendChannelGlyph, setInboxHour12, isFailureToast, threadCacheGet, threadCacheSet, toolBtn, tsOf, videoPoster } from '@/components/inbox/inbox-shared'
 
@@ -1620,6 +1621,13 @@ export function useInboxController() {
   const [aiSavedFields, setAiSavedFields] = useState<Set<string>>(new Set())
   const [savingContact, setSavingContact] = useState(false)
   const [activePanel, setActivePanel] = useState<'info' | 'timeline' | 'orders'>('info')
+  // The store tools (product search, back-in-stock, create order, coupons,
+  // DOA / refunds, the order filters) need WooCommerce or Shopify; the Orders
+  // tab needs orders (a store, or Prexty's in-store sales). lib/store-status.
+  const storeStatus = useStoreStatus(companyId)
+  const storeConnected = storeStatus.store
+  const ordersConnected = storeStatus.orders
+  useEffect(() => { if (!ordersConnected && activePanel === 'orders') setActivePanel('info') }, [ordersConnected, activePanel])
   // An order to bring into view in the panel's Orders tab (a delivery's Order
   // row in the thread). The panel scrolls to it and clears this.
   const [orderFocus, setOrderFocus] = useState<{ ref: string; convId: string | null } | null>(null)
@@ -6657,7 +6665,7 @@ export function useInboxController() {
   const themeSolid = igThemeActive ? '#C13584' : msgrThemeActive ? '#006AFF' : 'var(--coral)'
 
   return {
-    EMOJIS, abandonedCarts, activeCall, activeChannel, activeFilterCount, activePanel, addrToString, orderFocus, setOrderFocus, openOrderInPanel,
+    EMOJIS, storeConnected, ordersConnected, abandonedCarts, activeCall, activeChannel, activeFilterCount, activePanel, addrToString, orderFocus, setOrderFocus, openOrderInPanel,
     afterOrderRefund, agentFaceOf, agentNameOf, agentTeam, agentTyping, aiDraft, aiSavedFields, aiSummary,
     aiTodos, answeringRole, anyExpiring, applyBulkExpiry, applyMention, applyQuickResponse,
     assignArrows, assignFilter, assignScrollRef, assignSearch, assignTo, attToken,

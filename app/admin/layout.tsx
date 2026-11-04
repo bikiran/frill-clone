@@ -45,6 +45,7 @@ import { SettingsAccess } from '@/components/settings/SettingsShell'
 import { SETTINGS_NAV } from '@/components/settings/settings-nav'
 import { canUseFeature, canAccessPath, featureForPath, hasFullAccess, type PermissionMap } from '@/lib/permissions'
 import { reportFonts } from '@/lib/fonts'
+import { useStoreStatus, storeAllowsPage } from '@/lib/store-status'
 
 const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
@@ -447,6 +448,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // last time this browser opened the Orders page (colvy-orders-seen-at). Only
   // actionable orders count: PAID (unpaid/pending aren't ready to ship) and not
   // already shipped/cancelled/refunded.
+  // Store tools (Orders, Shipping, Waitlists, Order automation) show only with a store.
+  const storeStatus = useStoreStatus(company?.id)
   const [ordersNew, setOrdersNew] = useState(0)
   useEffect(() => {
     if (!company?.id) return
@@ -905,6 +908,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // Nav visibility for the current member.
   const canUseNavItem = (item: { href: string; label: string }) => {
     const featKey = item.label === 'Ideas' ? 'ideas' : featureForPath(item.href.split(/[?#]/)[0])?.key
+    if (!storeAllowsPage(item.href, storeStatus)) return false
     return !featKey || canUseFeature(myRole, myPerms, featKey)
   }
 
@@ -940,7 +944,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         locked: !!company?.is_demo && DEMO_LOCKED_HREFS.some(h => it.href === h || it.href.startsWith(h + '/')),
       })),
     })).filter(g => g.items.length)
-    return groups.length ? { key: sec.key, label: sec.label, glyph: sec.glyph, groups } : null
+    // No orders (no store, no Prexty): the Orders section is just Payments.
+    const label = sec.key === 'orders' && !storeStatus.orders ? 'Payments' : sec.label
+    return groups.length ? { key: sec.key, label, glyph: sec.glyph, groups } : null
   }
   const railSections = SECTIONS.map(toRail).filter((x): x is RailSection => !!x)
   const railSettingsBase = toRail(SETTINGS_SECTION)

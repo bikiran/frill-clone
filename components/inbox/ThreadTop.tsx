@@ -22,7 +22,7 @@ export default function ThreadTop() {
     setShowDialer, setShowMergePicker, setShowMoveMenu, setShowMsgSearch, setShowProducts,
     setShowSnooze, setStatus, setTabletContact, showActions, showAssignMenu, showMoveMenu,
     showMsgSearch, showProducts, showSnooze, showToast, snoozeConversation, tabletContact,
-    teamMembers, togglePin, user, wooOrders,
+    teamMembers, togglePin, user, wooOrders, storeConnected,
   } = useInbox()
   // The teammate's current name, not the copy taken at assignment.
   const assignee = assigneeName(selected, teamMembers)
@@ -234,11 +234,11 @@ export default function ThreadTop() {
           {(selected as any).ai_enabled === false && <span className="th-ai-slash" aria-hidden />}
         </button>}
 
-        {/* Product search */}
-        <button type="button" onClick={() => setShowProducts(true)} title="Product search — send a price or buy link" aria-label="Product search"
+        {/* Product search — needs a store to search */}
+        {storeConnected && <button type="button" onClick={() => setShowProducts(true)} title="Product search — send a price or buy link" aria-label="Product search"
           className={`th-btn${showProducts ? ' on' : ''}`}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-        </button>
+        </button>}
 
         {/* Move or view enquiries across outlets */}
         {outlets.length > 0 && (
