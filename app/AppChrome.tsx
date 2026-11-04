@@ -47,6 +47,76 @@ const NAV_ITEMS = [
   { href: '/pricing', label: 'Pricing', icon: 'pricing' },
 ]
 
+// The line under each item in the phone menu (by link).
+const NAV_BLURB: Record<string, string> = {
+  '/': 'Suggest and vote on ideas',
+  '/roadmap': 'What’s planned and on the way',
+  '/announcements': 'What’s new',
+  '/help': 'Guides and answers',
+  '/admin': 'Manage your workspace',
+  '/inbox-crm': 'Every channel in one inbox',
+  '/product/ideas': 'Collect feedback and votes',
+  '/product/roadmap': 'Share what you’re building',
+  '/product/announcements': 'Tell customers what’s new',
+  '/product/knowledgebase': 'A help centre for your customers',
+  '/pricing': 'Plans for every team',
+}
+
+// The phone menu: a sheet that drops from the header (Sellio-style rows with
+// icon tiles), and the menu button that turns into a close cross.
+const PM_CSS = `
+.cv-burger{position:relative;width:42px;height:42px;margin-right:-6px;border:none;border-radius:999px;background:transparent;color:var(--ink,#18181b);cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background-color .2s ease}
+.cv-burger span{position:absolute;left:12px;width:18px;height:2px;border-radius:2px;background:currentColor;transition:transform .4s cubic-bezier(.65,0,.35,1),opacity .2s ease}
+.cv-burger span:nth-child(1){top:14px}
+.cv-burger span:nth-child(2){top:20px}
+.cv-burger span:nth-child(3){top:26px}
+.cv-burger.open{background:#f4f4f5}
+.cv-burger.open span:nth-child(1){transform:translateY(6px) rotate(45deg)}
+.cv-burger.open span:nth-child(2){opacity:0;transform:scaleX(.2)}
+.cv-burger.open span:nth-child(3){transform:translateY(-6px) rotate(-45deg)}
+@media (hover:hover){.cv-burger:hover{background:#f4f4f5}}
+.cv-pm{position:fixed;left:0;right:0;bottom:0;top:var(--pm-top,56px);z-index:45;visibility:hidden;pointer-events:none;transition:visibility 0s linear .45s}
+.cv-pm.open{visibility:visible;pointer-events:auto;transition:none}
+.cv-pm-scrim{position:fixed;left:0;right:0;bottom:0;top:var(--pm-top,56px);background:rgba(17,17,20,.28);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);opacity:0;transition:opacity .3s ease}
+.cv-pm.open .cv-pm-scrim{opacity:1}
+.cv-pm-sheet{position:absolute;left:10px;right:10px;top:8px;max-height:calc(100% - 20px);overflow-y:auto;overscroll-behavior:contain;padding:8px;box-sizing:border-box;border-radius:26px;background:#fff;box-shadow:0 28px 60px -18px rgba(0,0,0,.35),0 0 0 1px rgba(0,0,0,.05);transform-origin:calc(100% - 28px) -10px;opacity:0;transform:translateY(-12px) scale(.94);transition:opacity .2s ease,transform .3s cubic-bezier(.65,0,.35,1)}
+.cv-pm.open .cv-pm-sheet{opacity:1;transform:none;transition:opacity .25s ease,transform .55s cubic-bezier(.22,1,.36,1)}
+.cv-pm-list{display:flex;flex-direction:column;gap:2px}
+.cv-pm-item,.cv-pm-foot{opacity:0;transform:translateY(-8px);transition:opacity .2s ease,transform .3s ease}
+.cv-pm.open .cv-pm-item,.cv-pm.open .cv-pm-foot{opacity:1;transform:none;transition:background-color .15s ease,opacity .35s ease calc(70ms + var(--i,0) * 45ms),transform .55s cubic-bezier(.22,1,.36,1) calc(70ms + var(--i,0) * 45ms)}
+.cv-pm-item{display:flex;align-items:center;gap:14px;min-height:64px;padding:9px 12px 9px 9px;box-sizing:border-box;border-radius:19px;color:#18181b;text-decoration:none;-webkit-tap-highlight-color:transparent}
+.cv-pm-item:active{background:#f4f4f5}
+@media (hover:hover){.cv-pm-item:hover{background:#f6f6f7}}
+.cv-pm-ic{position:relative;width:46px;height:46px;border-radius:15px;background:#f4f4f5;color:#3f3f46;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background-color .2s ease,color .2s ease}
+.cv-pm-new{position:absolute;top:-2px;right:-2px;width:10px;height:10px;border-radius:50%;background:var(--coral);box-shadow:0 0 0 2px #fff}
+.cv-pm-tx{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.25}
+.cv-pm-tx b{font-size:16.5px;font-weight:700;letter-spacing:-.01em}
+.cv-pm-tx small{margin-top:3px;font-size:13px;color:#8e8e93;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cv-pm-chev{flex-shrink:0;color:#c7c7cc}
+.cv-pm-item.on{background:var(--peach)}
+.cv-pm-item.on .cv-pm-ic{background:var(--coral);color:#fff;box-shadow:0 8px 18px -8px var(--coral)}
+.cv-pm-item.on .cv-pm-tx b{color:var(--coral)}
+.cv-pm-here{flex-shrink:0;padding:4px 9px;border-radius:999px;background:#fff;color:var(--coral);font-size:11.5px;font-weight:700}
+.cv-pm-foot{margin:6px 0 0;padding:14px 4px 4px;border-top:1px solid #f0f0f2;display:flex;flex-direction:column;gap:9px}
+.cv-pm-btn{display:flex;align-items:center;justify-content:center;gap:8px;height:52px;border-radius:999px;border:1.5px solid #e4e4e7;background:#fff;color:#18181b;font:inherit;font-size:15.5px;font-weight:650;text-decoration:none;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .15s ease}
+.cv-pm-btn:active{transform:scale(.98)}
+.cv-pm-primary{border-color:transparent;background:var(--coral);color:#fff;box-shadow:0 12px 26px -14px var(--coral)}
+.cv-pm-note{margin:0;text-align:center;font-size:12.5px;line-height:1.45;color:#8e8e93}
+.cv-pm-me{display:flex;align-items:center;gap:12px;padding:0 6px 2px}
+.cv-pm-av{width:42px;height:42px;border-radius:50%;background:var(--peach);color:var(--coral);font-weight:700;font-size:16px;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0}
+.cv-pm-av img{width:100%;height:100%;object-fit:cover}
+[data-theme="dark"] .cv-burger.open{background:#26262a}
+[data-theme="dark"] .cv-pm-sheet{background:#18181b;box-shadow:0 28px 60px -18px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.07)}
+[data-theme="dark"] .cv-pm-item{color:#f4f4f5}
+[data-theme="dark"] .cv-pm-ic{background:#26262a;color:#d4d4d8}
+[data-theme="dark"] .cv-pm-item:active{background:#232326}
+[data-theme="dark"] .cv-pm-foot{border-color:#2c2c31}
+[data-theme="dark"] .cv-pm-btn{background:#18181b;border-color:#2c2c31;color:#f4f4f5}
+[data-theme="dark"] .cv-pm-primary{background:var(--coral);border-color:transparent;color:#fff}
+[data-theme="dark"] .cv-pm-here{background:#18181b}
+@media (prefers-reduced-motion:reduce){.cv-pm,.cv-pm *,.cv-burger span{transition-duration:0s!important;transition-delay:0s!important}}
+`
+
 // Marketing-context nav (colvy.com, signin, signup) — real pages that exist
 const MARKETING_NAV = [
   { href: '/inbox-crm', label: 'Inbox & CRM', icon: 'inbox' },
@@ -200,6 +270,21 @@ export default function AppChrome({
     return () => window.removeEventListener('colvy:rail-slot', find)
   }, [])
   const [isCompanyOwner, setIsCompanyOwner] = useState(false)
+
+  // The phone menu closes when the page changes or on Escape, holds the page
+  // still while it's open, and drops from just under the header.
+  const [drawerTop, setDrawerTop] = useState(56)
+  useEffect(() => { setShowDrawer(false) }, [pathname])
+  useEffect(() => {
+    if (!showDrawer) return
+    const b = headerRef.current?.getBoundingClientRect().bottom
+    if (b) setDrawerTop(Math.max(0, Math.round(b)))
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowDrawer(false) }
+    const root = document.documentElement, prev = root.style.overflow
+    root.style.overflow = 'hidden'
+    window.addEventListener('keydown', onKey)
+    return () => { root.style.overflow = prev; window.removeEventListener('keydown', onKey) }
+  }, [showDrawer])
 
   useEffect(() => {
     // Listen for avatar updates from profile page
@@ -782,6 +867,42 @@ export default function AppChrome({
     }
   }
 
+  // The board's menu (or Colvy's own, on colvy.com): the desktop bar and the
+  // phone menu show the same items, in the workspace's order and wording.
+  const isOnBoard = isSubdomain || isCompanyOwner
+  const navItems = (isOnBoard
+    // Apply the saved drag-to-reorder sequence (Site Navigation settings).
+    ? [...NAV_ITEMS].sort((a, b) => {
+        const ai = navOrder.indexOf(a.label), bi = navOrder.indexOf(b.label)
+        if (ai === -1 && bi === -1) return 0
+        if (ai === -1) return 1
+        if (bi === -1) return -1
+        return ai - bi
+      })
+    : MARKETING_NAV
+  ).filter(item => {
+    // Inside the admin the left sidebar already covers navigation.
+    if (pathname?.startsWith('/admin')) return false
+    if (isOnBoard && navVisibility[item.label as keyof typeof navVisibility] === false) return false
+    const isBoardItem = ['Ideas', 'Roadmap', 'Updates', 'Help'].includes(item.label) && item.href.startsWith('/') && !item.href.startsWith('/product')
+    // Colvy's own sales items never belong on a company's board/help site.
+    const isMarketingItem = item.label === 'Features' || item.label === 'Product' || item.label === 'Pricing'
+    if (!isOnBoard && isBoardItem) return false
+    if (isOnBoard && isMarketingItem) return false
+    // Pricing is unnecessary once the user is logged in
+    if (item.label === 'Pricing' && user) return false
+    return true
+  })
+  const navLabel = (item: { label: string }) => (isOnBoard && NAV_TERM[item.label] ? termFor(siteTerms, NAV_TERM[item.label]) : item.label)
+  // The board's "/" needs ?view=ideas to reach the ideas board even when
+  // another page (e.g. Help) is the homepage. item.href stays "/" for the
+  // active-state checks.
+  const navHref = (item: { href: string }) => (item.href === '/' ? '/?view=ideas' : item.href)
+  const isHere = (href: string) => !!pathname && (href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(href + '/'))
+  const hasFresh = (label: string) => (label === 'Ideas' && freshContent.ideas) || (label === 'Roadmap' && freshContent.roadmap) || (label === 'Updates' && freshContent.updates) || (label === 'Help' && freshContent.help)
+  const drawerItems = [...navItems, ...((isAdmin || isCompanyOwner) && user ? [{ href: '/admin', label: 'Admin', icon: 'admin' }] : [])]
+  const userName = String(user?.user_metadata?.display_name || user?.user_metadata?.full_name || user?.email || '')
+
   return (
     <>
         <Analytics />
@@ -827,39 +948,7 @@ export default function AppChrome({
 
             {/* Desktop Nav */}
             <div className="hidden md:flex items-center gap-1">
-              {(() => {
-                const isOnBoard = isSubdomain || isCompanyOwner
-                // On colvy.com show the full marketing menu; on boards show board nav
-                const items = isOnBoard ? NAV_ITEMS : MARKETING_NAV
-                // Apply the saved drag-to-reorder sequence (Site Navigation
-                // settings) — items were always rendered in NAV_ITEMS' fixed
-                // array order regardless of navOrder, so dragging "Help" to the
-                // top never actually changed where it appeared here.
-                const ordered = isOnBoard
-                  ? [...items].sort((a, b) => {
-                      const ai = navOrder.indexOf(a.label), bi = navOrder.indexOf(b.label)
-                      if (ai === -1 && bi === -1) return 0
-                      if (ai === -1) return 1
-                      if (bi === -1) return -1
-                      return ai - bi
-                    })
-                  : items
-                return ordered
-                .filter(item => {
-                  // Inside the admin the left sidebar already covers navigation, so
-                  // the top board menu (Help/Ideas/Roadmap/Updates) is redundant —
-                  // hide it once you're in /admin.
-                  if (pathname?.startsWith('/admin')) return false
-                  if (isOnBoard && navVisibility[item.label as keyof typeof navVisibility] === false) return false
-                  const isBoardItem = ['Ideas', 'Roadmap', 'Updates', 'Help'].includes(item.label) && item.href.startsWith('/') && !item.href.startsWith('/product')
-                  // Colvy's own sales items never belong on a company's board/help site.
-                  const isMarketingItem = item.label === 'Features' || item.label === 'Product' || item.label === 'Pricing'
-                  if (!isOnBoard && isBoardItem) return false
-                  if (isOnBoard && isMarketingItem) return false
-                  // Pricing is unnecessary once the user is logged in
-                  if (item.label === 'Pricing' && user) return false
-                  return true
-                }).map(item => (
+              {navItems.map(item => (
                 <Link
                   key={item.href}
                   // (see the filter above; center nav is hidden inside /admin)
@@ -868,7 +957,7 @@ export default function AppChrome({
                   // homepage — bare "/" would just redirect straight past it.
                   // item.href itself stays "/" so the active-state checks below
                   // (which compare against pathname, without the query) still work.
-                  href={item.label === 'Ideas' ? '/?view=ideas' : item.href}
+                  href={navHref(item)}
                   className="px-4 py-2 rounded-lg text-sm font-medium transition-smooth group relative"
                   style={{
                     color: pathname === item.href ? 'var(--coral)' : 'var(--slate)',
@@ -883,14 +972,13 @@ export default function AppChrome({
                         <div className="absolute -top-1 -right-1 w-2 h-2 rounded-full" style={{ background: 'var(--coral)' }} />
                       )}
                     </span>
-                    {isOnBoard && NAV_TERM[item.label] ? termFor(siteTerms, NAV_TERM[item.label]) : item.label}
+                    {navLabel(item)}
                   </span>
                   {pathname === item.href && (
                     <div className="absolute bottom-0 left-0 right-0 h-1 rounded-t-lg" style={{ background: 'var(--coral)' }} />
                   )}
                 </Link>
-              ))
-              })()}
+              ))}
             </div>
 
             {/* Right side */}
@@ -1051,102 +1139,61 @@ export default function AppChrome({
                   the right). On admin pages it's rendered on the LEFT instead. */}
               {!pathname?.startsWith('/admin') && (
                 <button
-                  className="md:hidden p-2 -mr-1 rounded-lg hover:bg-gray-100 transition-smooth cursor-pointer"
-                  onClick={() => setShowDrawer(!showDrawer)}
-                  aria-label="Menu">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                  className={`md:hidden cv-burger${showDrawer ? ' open' : ''}`}
+                  onClick={() => setShowDrawer(v => !v)}
+                  aria-label={showDrawer ? 'Close menu' : 'Menu'} aria-expanded={showDrawer} aria-controls="cv-pm">
+                  <span /><span /><span />
                 </button>
               )}
             </div>
           </nav>
         </header>
 
-        {/* Mobile Drawer */}
-        {showDrawer && (
-          <>
-            <div className="fixed inset-0 z-30 bg-black/20" onClick={() => setShowDrawer(false)} />
-            <div className="fixed right-0 top-14 bottom-0 z-40 w-64 bg-white border-l drawer-open" style={{ borderColor: 'var(--border)' }}>
-              <div className="p-4 space-y-2">
-                {[...NAV_ITEMS].sort((a, b) => {
-                  const ai = navOrder.indexOf(a.label), bi = navOrder.indexOf(b.label)
-                  if (ai === -1 && bi === -1) return 0
-                  if (ai === -1) return 1
-                  if (bi === -1) return -1
-                  return ai - bi
-                }).filter(item => {
-                  if (navVisibility[item.label as keyof typeof navVisibility] === false) return false
-                  const isBoardItem2 = ['Ideas', 'Roadmap', 'Updates', 'Help'].includes(item.label)
-                  const isMarketingItem2 = item.label === 'Features' || item.label === 'Pricing'
-                  const isOnBoard2 = isSubdomain || isCompanyOwner
-                  if (!isOnBoard2 && isBoardItem2) return false
-                  if (isOnBoard2 && isMarketingItem2) return false
-                  return true
-                }).map(item => (
-                  <Link
-                    key={item.href}
-                    href={item.label === 'Ideas' ? '/?view=ideas' : item.href}
-                    onClick={() => setShowDrawer(false)}
-                    className="block px-4 py-3 rounded-lg font-medium transition-smooth cursor-pointer"
-                    style={{
-                      background: pathname === item.href ? 'var(--peach)' : 'transparent',
-                      color: pathname === item.href ? 'var(--coral)' : 'var(--ink)',
-                    }}>
-                    <span className="flex items-center gap-2">
-                      <span className="relative">
-                        <NavIcon type={item.icon} size={18} />
-                        {((item.label === 'Ideas' && freshContent.ideas) ||
-                          (item.label === 'Roadmap' && freshContent.roadmap) ||
-                          (item.label === 'Updates' && freshContent.updates) ||
-                          (item.label === 'Help' && freshContent.help)) && (
-                          <div className="absolute -top-1 -right-1 w-2 h-2 rounded-full" style={{ background: 'var(--coral)' }} />
-                        )}
-                      </span>
-                      {(isSubdomain || isCompanyOwner) && NAV_TERM[item.label] ? termFor(siteTerms, NAV_TERM[item.label]) : item.label}
-                    </span>
-                  </Link>
-                ))}
-                {isAdmin && (
-                  <Link
-                    href="/admin"
-                    onClick={() => setShowDrawer(false)}
-                    className="block px-4 py-3 rounded-lg font-medium transition-smooth cursor-pointer"
-                    style={{
-                      background: pathname?.startsWith('/admin') ? 'var(--peach)' : 'transparent',
-                      color: pathname?.startsWith('/admin') ? 'var(--coral)' : 'var(--ink)',
-                    }}>
-                    <span className="flex items-center gap-2">
-                      <NavIcon type="admin" size={18} />
-                      Admin
-                    </span>
-                  </Link>
-                )}
-                {/* Auth buttons in drawer */}
-                {!user && (
-                  <div className="pt-4 border-t space-y-2" style={{ borderColor: 'var(--border)' }}>
-                    <Link href="/signin" onClick={() => setShowDrawer(false)}
-                      className="block px-4 py-3 rounded-lg text-sm font-medium text-center border cursor-pointer"
-                      style={{ borderColor: 'var(--border)', color: 'var(--ink)' }}>
-                      Sign in
+        {/* Phone menu: a sheet that drops from the header. Always there (hidden)
+            so it animates out as smoothly as it comes in. */}
+        {!pathname?.startsWith('/admin') && (
+          <div className={`cv-pm md:hidden${showDrawer ? ' open' : ''}`} style={{ ['--pm-top' as string]: `${drawerTop}px` } as React.CSSProperties} aria-hidden={!showDrawer}>
+            <style>{PM_CSS}</style>
+            <div className="cv-pm-scrim" onClick={() => setShowDrawer(false)} />
+            <nav id="cv-pm" className="cv-pm-sheet" aria-label="Menu">
+              <div className="cv-pm-list">
+                {drawerItems.map((item, i) => {
+                  const here = isHere(item.href)
+                  return (
+                    <Link key={item.href} href={navHref(item)} onClick={() => setShowDrawer(false)} tabIndex={showDrawer ? undefined : -1}
+                      className={`cv-pm-item${here ? ' on' : ''}`} aria-current={here ? 'page' : undefined}
+                      style={{ ['--i' as string]: i } as React.CSSProperties}>
+                      <span className="cv-pm-ic"><NavIcon type={item.icon} size={21} />{hasFresh(item.label) && <span className="cv-pm-new" />}</span>
+                      <span className="cv-pm-tx"><b>{navLabel(item)}</b>{NAV_BLURB[item.href] && <small>{NAV_BLURB[item.href]}</small>}</span>
+                      {here
+                        ? <span className="cv-pm-here">You’re here</span>
+                        : <svg className="cv-pm-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>}
                     </Link>
-                    {!isSubdomain && <Link href="/signup" onClick={() => setShowDrawer(false)}
-                      className="block px-4 py-3 rounded-lg text-sm font-semibold text-white text-center cursor-pointer cv-shine"
-                      style={{ background: 'var(--coral)' }}>
-                      Get started
-                    </Link>}
-                  </div>
-                )}
-                {user && (
-                  <div className="pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
-                    <button onClick={handleLogout}
-                      className="w-full px-4 py-3 rounded-lg text-sm font-medium text-left cursor-pointer hover:bg-gray-50"
-                      style={{ color: 'var(--ink)' }}>
-                      Sign out
-                    </button>
-                  </div>
+                  )
+                })}
+              </div>
+              <div className="cv-pm-foot" style={{ ['--i' as string]: drawerItems.length } as React.CSSProperties}>
+                {user ? (
+                  <>
+                    <div className="cv-pm-me">
+                      <span className="cv-pm-av">{avatarUrl ? <img src={avatarUrl} alt="" /> : userInitial}</span>
+                      <span className="cv-pm-tx"><b>{userName.includes('@') ? userName.split('@')[0] : userName}</b><small>{user.email}</small></span>
+                    </div>
+                    <button type="button" className="cv-pm-btn" tabIndex={showDrawer ? undefined : -1} onClick={() => { setShowDrawer(false); handleLogout() }}>Sign out</button>
+                  </>
+                ) : (
+                  <>
+                    <Link href="/signin" onClick={() => setShowDrawer(false)} tabIndex={showDrawer ? undefined : -1} className="cv-pm-btn cv-pm-primary cv-shine">
+                      Sign in
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
+                    </Link>
+                    {!isSubdomain && <Link href="/signup" onClick={() => setShowDrawer(false)} tabIndex={showDrawer ? undefined : -1} className="cv-pm-btn">Get started free</Link>}
+                    <p className="cv-pm-note">{isOnBoard ? 'Sign in to vote, comment and follow what you care about.' : 'Sign in to your Colvy workspace.'}</p>
+                  </>
                 )}
               </div>
-            </div>
-          </>
+            </nav>
+          </div>
         )}
 
         <main className="w-full px-0 py-0">
