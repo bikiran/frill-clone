@@ -757,4 +757,13 @@ export const THREAD_MESSAGES_CSS = `
 .tm-file:hover .tm-file-go{background:color-mix(in srgb,var(--coral) 20%,transparent)}
 .tm-file.on:hover .tm-file-go{background:rgba(255,255,255,.32)}
 [data-theme="dark"] .tm-file.plain{background:#1c1c1f;box-shadow:0 0 0 1px #2c2c31}
+.tm-file:focus-visible{outline:2px solid color-mix(in srgb,var(--ft) 55%,transparent);outline-offset:2px}
+.tm-file:focus:not(:focus-visible){outline:none}
+.tm-file.off{cursor:default}
+.tm-file.off .tm-file-tx small{opacity:.55}
+.tm-file.em-photo{border:0;font:inherit;text-align:left;cursor:zoom-in}
+.tm-file-th{position:relative;width:42px;height:46px;flex-shrink:0;border-radius:11px;overflow:hidden;background:#e8edf4}
+.tm-file-th img,.tm-file-th video{width:100%;height:100%;object-fit:cover;display:block}
+.tm-file-play{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;background:rgba(0,0,0,.25)}
+[data-theme="dark"] .tm-file-th{background:#2c2c31}
 `
