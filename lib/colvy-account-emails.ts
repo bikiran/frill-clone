@@ -59,6 +59,21 @@ export function confirmEmail(o: {
   return { subject: 'Confirm your email address — Colvy', html, text }
 }
 
+// ── Reset your password, from the app (app/api/auth/mobile/recover) ─────────
+
+export function resetCodeEmail(o: { code: string; link: string }): Mail {
+  const { html, text } = colvyEmail({
+    preheader: `Your code is ${o.code}. Enter it in the Colvy app to choose a new password.`,
+    title: 'Reset your password',
+    intro: 'Enter this code in the Colvy app to choose a new password.',
+    blocks: [{ type: 'code', code: o.code, note: 'The code and the link below work once and expire in an hour.' }],
+    cta: { label: 'Reset it in my browser', url: o.link },
+    more: [{ type: 'link', url: o.link }],
+    secondary: 'Didn’t ask to reset your password? You can ignore this email. Your password stays as it is.',
+  })
+  return { subject: `${o.code} is your Colvy password reset code`, html, text }
+}
+
 // ── Team invite (app/api/send-team-invite) ──────────────────────────────────
 
 export const ROLE_LABELS: Record<string, string> = {
