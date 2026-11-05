@@ -761,6 +761,17 @@ export const THREAD_MESSAGES_CSS = `
 .tm-file:focus:not(:focus-visible){outline:none}
 .tm-file.off{cursor:default}
 .tm-file.off .tm-file-tx small{opacity:.55}
+.tm-file.pend{cursor:default}
+.tm-file.sm{width:min(260px,72vw);padding:7px;gap:10px;border-radius:13px}
+.tm-file.sm .tm-file-ic{width:34px;height:38px;border-radius:9px}
+.tm-file.sm .tm-file-ic svg{width:15px;height:15px}
+.tm-file.sm .tm-file-ic em{font-size:8.5px}
+.tm-file.sm .tm-file-tx b{font-size:12.5px;-webkit-line-clamp:1}
+.tm-file.sm .tm-file-tx small{font-size:11px}
+.tm-file.sm .tm-file-go{width:28px;height:28px}
+.tm-file-x{border:0;padding:0;cursor:pointer;background:color-mix(in srgb,var(--ink) 7%,transparent);color:var(--slate);transition:background-color .15s,color .15s}
+.tm-file .tm-file-x:hover{background:#fee2e2;color:#dc2626}
+[data-theme="dark"] .tm-file .tm-file-x:hover{background:rgba(220,38,38,.18);color:#f87171}
 .tm-file.em-photo{border:0;font:inherit;text-align:left;cursor:zoom-in}
 .tm-file-th{position:relative;width:42px;height:46px;flex-shrink:0;border-radius:11px;overflow:hidden;background:#e8edf4}
 .tm-file-th img,.tm-file-th video{width:100%;height:100%;object-fit:cover;display:block}

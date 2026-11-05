@@ -2,7 +2,7 @@
 
 import { useAttachmentToken } from '@/lib/useAttachmentToken'
 import { VoiceTag } from '@/components/VoiceTag'
-import FileCard, { fileSize } from '@/components/inbox/FileCard'
+import FileCard, { fileSize, withoutFileLines } from '@/components/inbox/FileCard'
 import { useEffect, useRef, useState } from 'react'
 import { quotedDateOf, emailFrameDoc, estimateEmailHeight, emailHtmlHasContent } from '@/lib/email-text'
 import { toPublicUrl, sizedImageUrl, sizedImageFallback } from '@/lib/storage-url'
@@ -138,7 +138,8 @@ export default function EmailMessage({ msg, agentColor, onOpenMedia, businessNam
   const seenUrls = new Set(received.map(a => a?.url).filter(Boolean))
   const sent: any[] = (Array.isArray(msg.attachments) ? msg.attachments : []).filter((a: any) => a?.url && !seenUrls.has(a.url))
   const attachments: any[] = [...received.map((a, i) => ({ ...a, _i: i })), ...sent.map(a => ({ ...a, _sent: true }))]
-  const text = cleanPreview(msg.content)
+  // Without the "📎 name" lines that only repeat a file shown below as a card.
+  const text = cleanPreview(withoutFileLines(msg.content, attachments))
   const when = fmtWhen(msg.metadata?.inbound_email?.received_at || msg.created_at)
   const quotedOn = quotedDateOf(quoted)
   const isAuto = isAgent && !!msg.metadata?.auto

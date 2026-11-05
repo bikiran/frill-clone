@@ -68,13 +68,26 @@ function FileTile({ ext }: { ext: string }) {
   )
 }
 
-export default function FileCard({ a, mine, plain, open }: { a: FileAtt; mine?: boolean; plain?: boolean; open?: boolean }) {
+export default function FileCard({ a, mine, plain, open, small, onRemove }: { a: FileAtt; mine?: boolean; plain?: boolean; open?: boolean; small?: boolean; onRemove?: () => void }) {
   const name = a.name || 'File'
   const ext = fileExt(a.name, a.type)
   const tone = fileTone(ext)
   const meta = [ext ? (KINDS[ext] || `${ext} file`) : 'File', fileSize(a.size)].filter(Boolean).join(' · ')
-  const cls = `tm-file${plain ? ' plain' : mine ? ' on' : ''}${a.url ? '' : ' off'}`
+  const cls = `tm-file${plain ? ' plain' : mine ? ' on' : ''}${a.url ? '' : ' off'}${small ? ' sm' : ''}${onRemove ? ' pend' : ''}`
   const style = { ['--ft' as string]: tone } as React.CSSProperties
+  // A file waiting to be sent (the email composer): its card with a remove
+  // button in place of the download one.
+  if (onRemove) {
+    return (
+      <span className={cls} style={style} title={name}>
+        <FileTile ext={ext} />
+        <span className="tm-file-tx"><b>{name}</b><small>{meta}</small></span>
+        <button type="button" className="tm-file-go tm-file-x" onClick={onRemove} title={`Remove ${name}`} aria-label={`Remove ${name}`}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+        </button>
+      </span>
+    )
+  }
   // `plain`: the card on its own (a file-only message); otherwise inside a
   // coloured bubble or an email, where it sits as a soft panel. `open`: open
   // it in a new tab (a PDF or photo shows in place) rather than download it.

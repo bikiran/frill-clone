@@ -13,6 +13,7 @@ import { useAttachmentToken } from '@/lib/useAttachmentToken'
 import { publishAiContext } from '@/lib/ai-context'
 import { MediaItem } from '@/components/MediaGallery'
 import { emailAttachmentKind, emailAttachmentUrl } from '@/components/EmailMessage'
+import { filesPreview } from '@/lib/file-preview'
 import { useActiveCall } from '@/lib/active-call'
 import { isOldPhoneVideo } from '@/lib/web-video'
 import { authFetch } from '@/lib/auth-fetch'
@@ -3505,19 +3506,19 @@ export function useInboxController() {
           if (!r.ok) showToast(`Photo NOT delivered — ${rd.error || 'unknown error'}`)
         } catch (e: any) { showToast(`Photo NOT delivered: ${e?.message || 'send failed'}`) }
       }
-    } else if (metaCh === 'email') {
-      try {
-        const body = galleryUrl
-          ? `${media.length > 1 ? `${media.length} photos` : 'Photo'} attached:\n${galleryUrl}`
-          : attachments.map(a => `${a.name}:\n${a.url}`).join('\n\n')
-        const r = await authFetch('/api/email/reply', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ conversationId: convId, agentName: me, content: body }),
-        })
-        const rd = await readJsonSafe(r)
-        if (!r.ok) showToast(`Email NOT sent — ${rd.error || 'unknown error'}`)
-      } catch (e: any) { showToast(`Email NOT sent: ${e?.message || 'failed'}`) }
     }
+    // Email goes out below, once the thread row exists: the files go WITH the
+    // email as real attachments (the customer's mail shows them as files),
+    // and that row becomes the email's card, its files as file cards. It used
+    // to send each file as a bare link ("name:" + URL) in the text, and the
+    // thread showed that email plus a second copy of the files.
+    // Photos and videos keep their one gallery link (it carries the expiry);
+    // if that link couldn't be made, they're attached too.
+    const viaEmail = metaCh === 'email'
+    const emailFiles = galleryUrl ? plainFiles : attachments
+    const emailBody = galleryUrl
+      ? `${media.length > 1 ? `${media.length} photos` : media[0]?.kind === 'video' ? 'Video' : 'Photo'} attached:\n${galleryUrl}`
+      : 'See attached.'
 
     // Stamp the expiry onto each attachment so the thread shows the badge.
     const stamped = expiresAt
@@ -3528,15 +3529,33 @@ export function useInboxController() {
     const { data: attMsg } = await (supabase as any).from('messages').insert({
       conversation_id: convId, company_id: companyId, sender_type: 'agent',
       sender_id: user.id, sender_name: me, sender_email: user.email,
-      content: plainFiles.length && !media.length ? plainFiles.map(f => `📎 ${f.name}`).join('\n') : '',
+      content: viaEmail ? emailBody : plainFiles.length && !media.length ? plainFiles.map(f => `📎 ${f.name}`).join('\n') : '',
       attachments: stamped,
       metadata: galleryUrl ? { gallery_url: galleryUrl } : {},
       delivery_channel: ['instagram', 'facebook', 'email', 'whatsapp'].includes(metaCh) ? metaCh : (smsNumber ? 'sms' : 'chat'),
     }).select().maybeSingle()
     if (attMsg) broadcastMessage(convId, attMsg)
 
+    if (viaEmail) {
+      try {
+        // threadMessageId: the route stamps this row as the email that went
+        // out (subject, addresses, Message-ID), so the customer's reply threads
+        // onto it and it shows as the email's card.
+        const r = await authFetch('/api/email/reply', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            conversationId: convId, agentName: me, content: emailBody,
+            attachments: emailFiles.map(a => ({ url: a.url, name: a.name, type: a.type, size: a.size })),
+            ...(attMsg?.id ? { skipChatMessage: true, threadMessageId: attMsg.id } : {}),
+          }),
+        })
+        const rd = await readJsonSafe(r)
+        if (!r.ok) showToast(`Email NOT sent — ${rd.error || 'unknown error'}`)
+      } catch (e: any) { showToast(`Email NOT sent: ${e?.message || 'failed'}`) }
+    }
+
     await (supabase as any).from('conversations').update({
-      last_message: media.length ? (media.length > 1 ? `🖼️ ${media.length} photos` : '🖼️ Photo') : '📎 Attachment',
+      last_message: media.length ? (media.length > 1 ? `🖼️ ${media.length} photos` : '🖼️ Photo') : (filesPreview(plainFiles) || '📎 Attachment'),
       last_message_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     }).eq('id', convId)
 

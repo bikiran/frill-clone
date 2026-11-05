@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     // Normalise attachments to {url,name,type} + a display kind for the thread.
     const atts = (Array.isArray(attachments) ? attachments : [])
       .filter((a: any) => a && a.url)
-      .map((a: any) => ({ url: String(a.url), name: String(a.name || 'file'), type: a.type || undefined }))
+      .map((a: any) => ({ url: String(a.url), name: String(a.name || 'file'), type: a.type || undefined, ...(Number(a.size) > 0 ? { size: Number(a.size) } : {}) }))
     const displayAtts = atts.map(a => ({ ...a, kind: String(a.type || '').startsWith('image') ? 'image' : String(a.type || '').startsWith('video') ? 'video' : 'file' }))
     if (!conversationId || !content) {
       return NextResponse.json({ error: 'conversationId and content are required' }, { status: 400 })

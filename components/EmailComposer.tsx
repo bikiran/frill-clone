@@ -4,6 +4,7 @@ import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useRef } from 'react'
 import { useAiDraft, AiDraftButton, AiDraftInfo, AI_PILL_CSS } from '@/components/AiDraft'
 import { uploadDirect } from '@/lib/upload-attachment'
+import FileCard from '@/components/inbox/FileCard'
 import VoiceDictationButton from '@/components/VoiceDictationButton'
 import { voiceKind, tagVoice } from '@/lib/voice-typed'
 import Popover, { usePopover } from '@/components/composer/Popover'
@@ -180,7 +181,7 @@ export default function EmailComposer({
 
   // File attachments (sent as real email attachments).
   const attInputRef = useRef<HTMLInputElement>(null)
-  const [attachments, setAttachments] = useState<{ url: string; name: string; type?: string }[]>([])
+  const [attachments, setAttachments] = useState<{ url: string; name: string; type?: string; size?: number }[]>([])
   const [attBusy, setAttBusy] = useState(false)
   const onPickFiles = async (files: FileList | null) => {
     if (!files || !files.length) return
@@ -188,7 +189,7 @@ export default function EmailComposer({
     try {
       for (const f of Array.from(files)) {
         const url = await uploadDirect(f, `email-attachments/${companyId || 'x'}`, f.name)
-        if (url) setAttachments(prev => [...prev, { url, name: f.name, type: f.type }])
+        if (url) setAttachments(prev => [...prev, { url, name: f.name, type: f.type, size: f.size }])
       }
     } catch (e: any) { setErr(e.message || 'Could not attach file') }
     finally { setAttBusy(false); if (attInputRef.current) attInputRef.current.value = '' }
@@ -517,16 +518,10 @@ export default function EmailComposer({
         style={{ ...(compact ? { minHeight: 110, maxHeight: '34dvh' } : bodyHeight ? { height: bodyHeight } : { minHeight: 76, maxHeight: 280 }), overflowY: 'auto', outline: 'none', padding: '12px', fontSize: 13.5, lineHeight: 1.55, color: 'var(--ink)', background: '#fff' }} />
 
       {(attachments.length > 0 || attBusy) && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '0 12px 8px' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, padding: '0 12px 10px' }}>
           {attachments.map((a, i) => (
-            <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 8, background: 'var(--canvas)', border: '1px solid var(--border)', fontSize: 12, color: 'var(--ink)', maxWidth: 220 }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
-              <button type="button" onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))} title="Remove"
-                style={{ border: 'none', background: 'none', color: '#dc2626', cursor: 'pointer', padding: 0, display: 'flex', flexShrink: 0 }}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
-            </span>
+            // The same card the file will have in the conversation once sent.
+            <FileCard key={i} a={a} small onRemove={() => setAttachments(prev => prev.filter((_, j) => j !== i))} />
           ))}
           {attBusy && <span style={{ fontSize: 12, color: 'var(--slate)', alignSelf: 'center' }}>Uploading…</span>}
         </div>
