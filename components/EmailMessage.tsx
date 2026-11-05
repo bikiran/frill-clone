@@ -2,6 +2,7 @@
 
 import { useAttachmentToken } from '@/lib/useAttachmentToken'
 import { VoiceTag } from '@/components/VoiceTag'
+import FileCard, { fileSize } from '@/components/inbox/FileCard'
 import { useEffect, useRef, useState } from 'react'
 import { quotedDateOf, emailFrameDoc, estimateEmailHeight, emailHtmlHasContent } from '@/lib/email-text'
 import { toPublicUrl, sizedImageUrl, sizedImageFallback } from '@/lib/storage-url'
@@ -21,8 +22,6 @@ const ico = (path: React.ReactNode, size = 14) => (
 const InboxIn = () => ico(<><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></>, 13)
 const SentPlane = () => ico(<><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></>, 13)
 const Chevron = ({ open }: { open: boolean }) => ico(<polyline points={open ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} />, 13)
-const Paperclip = () => ico(<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>, 13)
-const Download = () => ico(<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></>, 13)
 
 function firstAddress(raw?: string | null): { name: string; email: string } {
   if (!raw) return { name: '', email: '' }
@@ -147,7 +146,6 @@ export default function EmailMessage({ msg, agentColor, onOpenMedia, businessNam
   const pendingWhy = pending && showWhy ? (PENDING_WHY[String(msg.metadata?.inbound_email?.body_error || '')] || (msg.metadata?.inbound_email?.body === 'unavailable' ? 'Resend didn’t hand over the text' : '')) : ''
   const accent = agentColor || '#2563eb'
 
-  const fmtBytes = (n: number) => n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n > 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`
   const initial = (fromName || '?').trim().charAt(0).toUpperCase()
 
   return (
@@ -220,44 +218,38 @@ export default function EmailMessage({ msg, agentColor, onOpenMedia, businessNam
 
           {/* Attachments */}
           {attachments.length > 0 && (
-            <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              <style>{`.em-media{transition:border-color .18s ease,box-shadow .18s ease,transform .18s cubic-bezier(.2,.8,.2,1)}.em-media:hover{border-color:#c9d6e8;box-shadow:0 2px 10px rgba(15,23,42,.07)}.em-media:active{transform:scale(.98)}`}</style>
+            <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
               {attachments.map((a, i) => {
                 const dl = a._sent ? a.url : emailAttachmentUrl(msg, a, attToken)
                 const kind = a._sent && (a.kind === 'image' || a.kind === 'video') ? a.kind : emailAttachmentKind(a)
                 if (dl && kind && onOpenMedia) {
+                  // A photo or video: the same card, its picture in the tile,
+                  // opening in the inbox's viewer.
                   return (
-                    <button key={i} type="button" className="em-media" onClick={() => onOpenMedia(a._sent ? { url: a.url } : { index: a._i })} title={`View ${a.name || 'attachment'}`}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '5px 11px 5px 5px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--canvas)', color: 'var(--ink)', fontSize: 12.5, maxWidth: 240, cursor: 'zoom-in', font: 'inherit' }}>
-                      <span style={{ position: 'relative', width: 32, height: 32, borderRadius: 6, overflow: 'hidden', background: '#e8edf4', flexShrink: 0 }}>
+                    <button key={i} type="button" className="tm-file em-photo" onClick={() => onOpenMedia(a._sent ? { url: a.url } : { index: a._i })} title={`View ${a.name || (kind === 'image' ? 'photo' : 'video')}`}
+                      style={{ ['--ft' as string]: '#0ea5e9' } as React.CSSProperties}>
+                      <span className="tm-file-th" aria-hidden="true">
                         {kind === 'image'
-                          ? <img src={a.thumbUrl ? toPublicUrl(a.thumbUrl) : sizedImageUrl(dl, 32)} onError={sizedImageFallback(dl)} alt="" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                          ? <img src={a.thumbUrl ? toPublicUrl(a.thumbUrl) : sizedImageUrl(dl, 96)} onError={sizedImageFallback(dl)} alt="" loading="lazy" decoding="async" />
                           : <>
-                              <video src={dl} preload="metadata" muted style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                              <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', background: 'rgba(0,0,0,0.25)' }}>
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg>
-                              </span>
+                              <video src={dl} preload="metadata" muted />
+                              <span className="tm-file-play"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg></span>
                             </>}
                       </span>
-                      <span style={{ fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
-                      {a.size ? <span style={{ color: 'var(--slate)', fontSize: 11, flexShrink: 0 }}>{fmtBytes(a.size)}</span> : null}
+                      <span className="tm-file-tx">
+                        <b>{a.name || (kind === 'image' ? 'Photo' : 'Video')}</b>
+                        <small>{[kind === 'image' ? 'Photo' : 'Video', fileSize(a.size)].filter(Boolean).join(' · ')}</small>
+                      </span>
+                      <span className="tm-file-go" aria-hidden="true">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /><path d="M11 8v6M8 11h6" /></svg>
+                      </span>
                     </button>
                   )
                 }
-                const isPdf = /pdf/i.test(String(a.type || a.mime || a.mimeType || '')) || /\.pdf$/i.test(String(a.name || ''))
-                const chip = (
-                  <span className="em-media" title={dl ? `Open ${a.name || 'attachment'}` : a.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: isPdf ? '5px 11px 5px 5px' : '7px 11px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--canvas)', color: 'var(--ink)', fontSize: 12.5, maxWidth: 280 }}>
-                    {isPdf
-                      ? <span aria-hidden style={{ width: 32, height: 32, borderRadius: 6, background: '#fee2e2', color: '#dc2626', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9.5, fontWeight: 800, letterSpacing: '.02em', flexShrink: 0 }}>PDF</span>
-                      : <Paperclip />}
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
-                    {a.size ? <span style={{ color: 'var(--slate)', fontSize: 11 }}>{fmtBytes(a.size)}</span> : null}
-                    {dl && <Download />}
-                  </span>
-                )
-                return dl
-                  ? <a key={i} href={dl} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>{chip}</a>
-                  : <span key={i}>{chip}</span>
+                // Any other file: the same card as a file in a chat (its type's
+                // colour, name, "PDF document · 69 KB"), opening in a new tab so
+                // a PDF shows in place.
+                return <FileCard key={i} a={{ url: dl || null, name: a.name, type: a.type || a.mime || a.mimeType, size: a.size }} open />
               })}
             </div>
           )}
