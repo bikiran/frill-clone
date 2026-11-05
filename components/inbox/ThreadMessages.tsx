@@ -33,6 +33,7 @@ import { AiSparkIcon, Icon, LifecycleIcon, ReviewCard, dayLabel, fmtReceipt, fmt
 import { THREAD_MESSAGES_CSS } from '@/components/inbox/inbox-css'
 import { useInbox } from '@/components/inbox/InboxContext'
 import CouponTicket from '@/components/CouponTicket'
+import FileCard, { withoutFileLines } from '@/components/inbox/FileCard'
 import { readDelivery } from '@/lib/delivery-line'
 
 export default function ThreadMessages() {
@@ -493,6 +494,12 @@ export default function ThreadMessages() {
           const reactions = Array.isArray((msg as any).reactions) ? (msg as any).reactions : []
           const readBy = visibleReadBy((msg as any).read_by, (msg as any).company_id)
           const atts = Array.isArray(msg.attachments) ? msg.attachments : []
+          // Files (not photos, videos or voice notes) show as cards; a
+          // file-only message is saved with "📎 name" as its text, which the
+          // card already says, so that isn't repeated under it.
+          const fileAtts = atts.filter((a: any) => a.kind !== 'image' && a.kind !== 'video' && !(a.kind === 'audio' || /^audio\//.test(a.type || '') || /\.(webm|ogg|m4a|mp3|wav|aac)(\?|$)/i.test(a.url || '')))
+          const msgText = withoutFileLines(msg.content, fileAtts)
+          const fileOnly = fileAtts.length > 0 && fileAtts.length === atts.length && !msgText
           // Who sent it, for agent messages ("Support Agent · approved by Roxy
           // Aquarium · Why?"), and which teammates have read it. Shared by
           // chat bubbles and email cards so both say the same thing.
@@ -622,7 +629,7 @@ export default function ThreadMessages() {
                   </div>
                 )}
 
-                <div className="msg-bubble" style={msg.message_type === 'coupon' && msg.message_payload ? { padding: 0, background: 'transparent', boxShadow: 'none', border: 'none', position: 'relative' } : {
+                <div className="msg-bubble" style={(msg.message_type === 'coupon' && msg.message_payload) || fileOnly ? { padding: 0, background: 'transparent', boxShadow: 'none', border: 'none', position: 'relative' } : {
                   padding: (() => {
                     const hasMedia = atts.some((a: any) => a.kind === 'image' || a.kind === 'video')
                     // A media-only message shows the collage flush to the
@@ -832,10 +839,9 @@ export default function ThreadMessages() {
                             )
                           }
                           return (
-                            <a key={`f${ai}`} href={a.url} target="_blank" rel="noopener"
-                              style={{ display: 'flex', alignItems: 'center', gap: 8, color: isAgent ? '#fff' : 'var(--coral)', textDecoration: 'none', fontSize: 13, fontWeight: 600, marginBottom: msg.content ? 6 : 0 }}>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{Icon.attach(12)}{a.name}</span>
-                            </a>
+                            <div key={`f${ai}`} style={{ marginBottom: msgText ? 8 : ai < files.length - 1 ? 6 : 0 }}>
+                              <FileCard a={a} mine={isAgent} plain={fileOnly} />
+                            </div>
                           )
                         })}
                       </>
@@ -855,7 +861,7 @@ export default function ThreadMessages() {
                       label = days >= 1 ? `Expires in ${days} day${days === 1 ? '' : 's'}` : `Expires in ${hrs} hour${hrs === 1 ? '' : 's'}`
                     }
                     return (
-                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, margin: '2px 6px 4px', padding: '2px 8px', borderRadius: 20, fontSize: 10.5, fontWeight: 700, background: isAgent ? 'rgba(255,255,255,0.2)' : 'var(--canvas)', color: isAgent ? '#fff' : 'var(--slate)' }}
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, margin: '2px 6px 4px', padding: '2px 8px', borderRadius: 20, fontSize: 10.5, fontWeight: 700, background: isAgent && !fileOnly ? 'rgba(255,255,255,0.2)' : 'var(--canvas)', color: isAgent && !fileOnly ? '#fff' : 'var(--slate)' }}
                         title={del ? 'Auto-deletes from Colvy at expiry' : 'Recipient access is revoked at expiry'}>
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
                         {label}{del ? ' · auto-delete' : ''}
@@ -904,13 +910,13 @@ export default function ThreadMessages() {
                       <div style={{ marginTop: 10, maxWidth: 320, marginLeft: 'auto', marginRight: 'auto', fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{renderTextWithLinks(msg.content)}</div>
                     </div>
                   ) : (
-                    msg.content && !(msg.message_type === 'coupon' && msg.message_payload) && (() => {
+                    msgText && !(msg.message_type === 'coupon' && msg.message_payload) && (() => {
                       // Non-English inbound message → show the English
                       // translation by default, with a "View original" toggle.
                       const tLang = (msg as any).content_lang
                       const hasTr = !isAgent && !!(msg as any).translated_content && !!tLang && !/^en/i.test(String(tLang)) && tLang !== 'unknown'
                       const showOrig = showOriginalMsgs.has(msg.id)
-                      const body = hasTr && !showOrig ? (msg as any).translated_content : msg.content
+                      const body = hasTr && !showOrig ? (msg as any).translated_content : msgText
                       let langName = ''
                       if (hasTr) {
                         const c = String(tLang).toLowerCase()

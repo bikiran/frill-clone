@@ -735,4 +735,21 @@ export const THREAD_MESSAGES_CSS = `
 .tm-life.go:focus-visible{outline:2px solid color-mix(in srgb,var(--tm-life) 55%,transparent);outline-offset:2px}
 .tm-life-go{flex-shrink:0;margin-top:3px;opacity:.55}
 .tm-life.go:hover .tm-life-go{opacity:.9}
+/* A file in the conversation (components/inbox/FileCard). */
+.tm-file{display:flex;align-items:center;gap:12px;width:min(320px,76vw);max-width:100%;box-sizing:border-box;padding:10px;border-radius:16px;color:inherit;text-decoration:none;transition:background-color .15s,box-shadow .2s,transform .2s}
+.tm-file.on{background:rgba(255,255,255,.16)}
+.tm-file.on:hover{background:rgba(255,255,255,.24)}
+.tm-file:not(.on):not(.plain){background:var(--canvas)}
+.tm-file.plain{background:#fff;color:var(--ink);box-shadow:0 0 0 1px var(--border),0 8px 22px -14px rgba(0,0,0,.25)}
+.tm-file.plain:hover{transform:translateY(-1px);box-shadow:0 0 0 1px color-mix(in srgb,var(--ft) 35%,var(--border)),0 12px 26px -14px rgba(0,0,0,.3)}
+.tm-file-ic{width:42px;height:46px;flex-shrink:0;border-radius:11px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:var(--ft);color:#fff;box-shadow:inset 0 -10px 18px -12px rgba(0,0,0,.25)}
+.tm-file-ic em{font-style:normal;font-size:9.5px;font-weight:800;letter-spacing:.04em;line-height:1}
+.tm-file-tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;line-height:1.25}
+.tm-file-tx b{font-size:13.5px;font-weight:650;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.tm-file-tx small{font-size:11.5px;opacity:.68;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tm-file-go{width:32px;height:32px;flex-shrink:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--coral) 12%,transparent);color:var(--coral);transition:background-color .15s}
+.tm-file.on .tm-file-go{background:rgba(255,255,255,.22);color:#fff}
+.tm-file:hover .tm-file-go{background:color-mix(in srgb,var(--coral) 20%,transparent)}
+.tm-file.on:hover .tm-file-go{background:rgba(255,255,255,.32)}
+[data-theme="dark"] .tm-file.plain{background:#1c1c1f;box-shadow:0 0 0 1px #2c2c31}
 `
