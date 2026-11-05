@@ -2,6 +2,7 @@
 // the Gmail sync, the body backfill and the inbox's email card.
 
 import { sanitizeHtml } from '@/lib/safe-html'
+import { filesPreview } from '@/lib/file-preview'
 
 /** A header's value from Resend's headers object, or a [{name,value}] list. */
 export function headerValue(headers: any, name: string): string | null {
@@ -93,10 +94,15 @@ export function htmlToPlain(html: string | null | undefined): string {
     .replace(/[ \t]+/g, ' ').replace(/\n\s*\n\s*\n+/g, '\n\n').trim()
 }
 
-/** The thread list's preview for an email: its text, else its files, else its subject. */
-export function emailPreview(content: string, attachmentCount: number, subject?: string | null): string {
+/**
+ * The thread list's preview for an email: its text, else its files ("📎 Jeb
+ * Order Labels.pdf", drawn by the list as a file chip), else its subject.
+ */
+export function emailPreview(content: string, files: number | any[] | null | undefined, subject?: string | null): string {
+  const n = Array.isArray(files) ? files.length : Number(files) || 0
   const p = (content || '').trim()
-    || (attachmentCount === 1 ? 'Sent an attachment' : attachmentCount > 1 ? `Sent ${attachmentCount} attachments` : '')
+    || (Array.isArray(files) ? filesPreview(files) : '')
+    || (n === 1 ? 'Sent an attachment' : n > 1 ? `Sent ${n} attachments` : '')
     || (subject ? `Email: ${subject}` : 'Email received')
   return p.slice(0, 200)
 }

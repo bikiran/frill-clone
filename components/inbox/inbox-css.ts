@@ -544,6 +544,11 @@ export const INBOX_CSS = `
         .ilc-mid > p { font-size: 12.5px !important; }
         .ilc-prev { flex: 1; min-width: 0; font-size: 12.5px; color: #71717a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .ilc.unread .ilc-prev { color: var(--ink); font-weight: 600; }
+        /* A file-only preview ("📎 Jeb Order Labels.pdf"): a chip in the file type's colour. */
+        .lfp { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; height: 18px; padding: 0 8px 0 2px; box-sizing: border-box; border-radius: 999px; background: color-mix(in srgb, var(--ft) 9%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ft) 22%, transparent); }
+        .lfp-ic { width: 14px; height: 14px; flex-shrink: 0; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; background: var(--ft); color: #fff; }
+        .lfp-nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .lfp-more { flex-shrink: 0; font-size: 11px; font-weight: 650; color: var(--ft); }
         .ilc-who { width: 20px; height: 20px; flex-shrink: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: #6a9f3e; color: #fff; font-size: 10.5px; font-weight: 700; }
         .ilc-count { min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; flex-shrink: 0; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; background: var(--acc); color: #fff; font-size: 10.5px; font-weight: 750; }
         .ilc-tags { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; min-width: 0; margin-top: 8px; max-height: 60px; overflow: hidden; transition: opacity .18s, max-height .36s cubic-bezier(.32,.72,0,1), margin-top .36s cubic-bezier(.32,.72,0,1); }

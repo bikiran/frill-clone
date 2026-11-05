@@ -3,6 +3,7 @@ import { sanitizeHtml } from '@/lib/safe-html'
 import { publicUrlProblem } from '@/lib/site-crawl'
 import { uploadToR2, r2Configured } from '@/lib/r2'
 import { emitInboundEvent } from '@/lib/integration-hooks'
+import { emailPreview } from '@/lib/email-text'
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -541,6 +542,8 @@ export async function syncGmailChannel(
     const ccHeader = header(headers, 'Cc')
     const companyId = channel.company_id
     const attachments = await storeEmbeddedFiles(db, m.id, collectAttachments(full.payload), companyId)
+    // The list's preview: the text, else the files ("📎 Jeb Order Labels.pdf"), else the subject.
+    const preview = emailPreview(content, attachments, subject)
 
     // Pull inline (cid:) images out of the body into stored URLs so they render
     // on web and mobile instead of showing broken.
@@ -614,7 +617,7 @@ export async function syncGmailChannel(
         assigned_location_id: channel.location_id || null,
         contact_id: contact?.id || null, status: 'open',
         is_unread: true, unread_count: 1,
-        last_message: content.slice(0, 200), last_message_at: new Date().toISOString(),
+        last_message: preview, last_message_at: new Date().toISOString(),
       }).select().maybeSingle()
       conv = newConv
     } else {
@@ -622,7 +625,7 @@ export async function syncGmailChannel(
         status: 'open', is_unread: true,
         email_channel_id: channel.id,
         unread_count: (conv.unread_count || 0) + 1,
-        last_message: content.slice(0, 200), last_message_at: new Date().toISOString(),
+        last_message: preview, last_message_at: new Date().toISOString(),
       }).eq('id', conv.id)
     }
     if (!conv) continue

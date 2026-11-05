@@ -11,6 +11,8 @@ import BrandLogo, { type BrandKey } from '@/components/BrandLogo'
 import PrextyMark from '@/components/PrextyMark'
 import { callMatches } from '@/lib/active-call'
 import { waitlistPreview } from '@/lib/waitlist-ai'
+import { parseFilePreview, tidyFileLinks } from '@/lib/file-preview'
+import { FilePreviewChip } from '@/components/inbox/FileCard'
 import WidgetInstallCard from '@/components/inbox/WidgetInstallCard'
 import { CallGlyph, Highlight, assigneeName, callGlyphKind, listTime, parseTs, stripCallEmoji } from '@/components/inbox/inbox-shared'
 import { useInbox } from '@/components/inbox/InboxContext'
@@ -391,10 +393,20 @@ export default function InboxList() {
                     </p>
                   ) : (
                   <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 12, color: conv.is_unread ? 'var(--ink)' : '#6b7280', fontWeight: conv.is_unread ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}>
-                    {(() => { const k = callGlyphKind(conv.last_message); return k ? <CallGlyph kind={k} /> : null })()}
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      <Highlight text={(callGlyphKind(conv.last_message) ? stripCallEmoji(conv.last_message) : waitlistPreview(conv.last_message)) || 'No messages yet'} q={searchTerm} accent={accent} />
-                    </span>
+                    {(() => {
+                      // Only files (a PDF a customer emailed): the file, as a chip.
+                      const fp = parseFilePreview(conv.last_message)
+                      if (fp) return <FilePreviewChip name={fp.name} more={fp.more} photo={fp.photo}><Highlight text={fp.name} q={searchTerm} accent={accent} /></FilePreviewChip>
+                      const k = callGlyphKind(conv.last_message)
+                      return (
+                        <>
+                          {k ? <CallGlyph kind={k} /> : null}
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <Highlight text={(k ? stripCallEmoji(conv.last_message) : tidyFileLinks(waitlistPreview(conv.last_message))) || 'No messages yet'} q={searchTerm} accent={accent} />
+                          </span>
+                        </>
+                      )
+                    })()}
                   </p>
                   )}
                   {conv.assigned_name && (() => { const who = assigneeName(conv, teamMembers) || conv.assigned_name; return (
