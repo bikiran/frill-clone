@@ -29,7 +29,10 @@ export const dynamic = 'force-dynamic'
 const PACKAGE = 'com.colvy.app'
 const VERSION = '1.5.0'
 // The builds live on the stores right now (the fallback when nothing else says).
-const ANDROID_BUILD = 16
+// The build Play is SERVING, not the newest one submitted: 16 was submitted on
+// 5 Nov but the live release is 15, and announcing 16 sent phones already on 15
+// to a Play page with nothing to update.
+const ANDROID_BUILD = 15
 const IOS_BUILD = 0   // 0 = no prompt on iOS until APP_IOS_BUILD is set
 
 const num = (v?: string | null) => (v && Number(v)) || 0
