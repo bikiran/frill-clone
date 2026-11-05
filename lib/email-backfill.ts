@@ -415,7 +415,7 @@ export async function backfillEmptyEmailBodies(db: any, o: {
       const { error: upErr } = await db.from('messages').update(patch).eq('id', m.id)
       if (upErr) { delete patch.email_quoted; delete patch.metadata; await db.from('messages').update(patch).eq('id', m.id) }
       if (patch.email_attachments) scheduleMessageThumbs(db, m.id, patch.email_attachments, { field: 'email_attachments', prefixes: [`/ticket-attachments/${m.company_id}/`] })
-      const preview = emailPreview(split.reply, (patch.email_attachments || m.email_attachments || []).length, m.email_subject)
+      const preview = emailPreview(split.reply, patch.email_attachments || m.email_attachments || [], m.email_subject)
 
       // Optionally put it with the conversation it replies to (e.g. the order
       // conversation the original email was sent from). Never triggers an

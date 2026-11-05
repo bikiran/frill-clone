@@ -276,7 +276,7 @@ export async function POST(req: NextRequest) {
           }).select('id').maybeSingle()
           // Small copies of photos for the inbox tiles, after the response.
           scheduleMessageThumbs(db, ticketMsg?.id, ticketAtts.map((a: any) => ({ mime: a.type, url: a.url })), { field: 'email_attachments', prefixes: [`/ticket-attachments/${ticket.company_id}/`] })
-          await db.from('conversations').update({ last_message: emailPreview(content, ticketAtts.length, subject), last_message_at: new Date().toISOString(), is_unread: true, status: 'open' }).eq('id', ticket.conversation_id)
+          await db.from('conversations').update({ last_message: emailPreview(content, ticketAtts.map(a => ({ name: a.name, mime: a.type, inline: !!a.cid })), subject), last_message_at: new Date().toISOString(), is_unread: true, status: 'open' }).eq('id', ticket.conversation_id)
         } catch {}
       }
       try { await notifyCompany({ db, companyId: ticket.company_id, type: 'ticket', message: `Reply on ${ticket.ticket_number} from ${from.name || from.email}`, actorName: from.name || from.email }) } catch {}
@@ -323,7 +323,7 @@ export async function POST(req: NextRequest) {
     // Photos pasted into the email body arrive as cid: images; point them at the stored files first.
     const emailHtml = htmlBody ? sanitizeEmailHtml(resolveCidImages(String(htmlBody), emailAtts)) : ''
     // Never blank: a blank last_message reads "No messages yet" in the list.
-    const preview = emailPreview(content, emailAtts.length, subject)
+    const preview = emailPreview(content, emailAtts.map(a => ({ name: a.name, mime: a.type, inline: !!a.cid })), subject)
 
     // ── Find-or-create the contact ───────────────────────────────────────────
     let contact: any = null
