@@ -132,8 +132,30 @@ function collectAttachments(payload: any, out: any[] = []): any[] {
   const attId = payload.body?.attachmentId
   if (filename && attId) {
     out.push({ name: filename, mime: payload.mimeType || 'application/octet-stream', size: payload.body?.size || 0, attachmentId: attId })
+  } else if (filename && payload.body?.data) {
+    // A small file Gmail put straight in the message (no attachment id to
+    // fetch it by later): keep its bytes for storeEmbeddedFiles below.
+    out.push({ name: filename, mime: payload.mimeType || 'application/octet-stream', size: payload.body?.size || 0, _data: payload.body.data })
   }
   for (const part of payload.parts || []) collectAttachments(part, out)
+  return out
+}
+
+// Files that came with their bytes in the message (collectAttachments' _data):
+// store them and keep a URL instead, as there is no attachment id to stream
+// them by. One that can't be stored is left out rather than kept broken.
+async function storeEmbeddedFiles(db: any, messageId: string, atts: any[], companyId: string): Promise<any[]> {
+  const out: any[] = []
+  for (const a of atts) {
+    if (!a._data) { out.push(a); continue }
+    try {
+      const bytes = Buffer.from(String(a._data).replace(/-/g, '+').replace(/_/g, '/'), 'base64')
+      const safe = String(a.name || 'file').replace(/[^\w.\-]/g, '_')
+      const key = `email-files/${companyId}/${messageId}-${out.length}-${safe}`
+      const url = await storeInlineImage(db, key, bytes, a.mime || 'application/octet-stream')
+      if (url) out.push({ name: a.name, mime: a.mime, size: a.size || bytes.length, url })
+    } catch { /* leave this one out; never fail the sync */ }
+  }
   return out
 }
 
@@ -517,8 +539,8 @@ export async function syncGmailChannel(
     const emailHtml = htmlPart ? sanitizeEmailHtml(htmlPart) : ''
     const toHeader = header(headers, 'To')
     const ccHeader = header(headers, 'Cc')
-    const attachments = collectAttachments(full.payload)
     const companyId = channel.company_id
+    const attachments = await storeEmbeddedFiles(db, m.id, collectAttachments(full.payload), companyId)
 
     // Pull inline (cid:) images out of the body into stored URLs so they render
     // on web and mobile instead of showing broken.

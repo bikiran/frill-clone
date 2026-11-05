@@ -68,11 +68,19 @@ export async function GET(req: NextRequest) {
     const b64 = String(data.data || '').replace(/-/g, '+').replace(/_/g, '/')
     const buf = Buffer.from(b64, 'base64')
 
+    // PDFs and photos open in place (the browser's or the phone's viewer);
+    // anything else downloads. Never HTML or SVG in place: this is our origin.
+    const ext = (name.split('.').pop() || '').toLowerCase()
+    const viewable: Record<string, string> = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', heic: 'image/heic' }
+    const type = viewable[ext]
+    const safeName = name.replace(/["\r\n]/g, '')
     return new NextResponse(buf, {
       headers: {
-        'Content-Type': 'application/octet-stream',
-        'Content-Disposition': `attachment; filename="${name.replace(/"/g, '')}"`,
+        'Content-Type': type || 'application/octet-stream',
+        'Content-Disposition': `${type ? 'inline' : 'attachment'}; filename="${safeName}"`,
         'Content-Length': String(buf.length),
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'private, max-age=3600',
       },
     })
   } catch (err: any) {
