@@ -399,6 +399,25 @@ export default function LandingPage() {
         .cv-suite-card:hover { transform:translateY(-6px) !important; box-shadow:0 40px 90px rgba(15,17,25,0.42) !important; }
         .cv-sm{ display:none; }
         @media (max-width:900px){ .cv-prof-head{ grid-template-columns:1fr !important; align-items:start !important; } .cv-hero{ flex-direction:column !important; align-items:stretch !important; } .cv-big-row{ grid-template-columns:1fr !important; } .cv-hero-grid{ grid-template-columns:1fr !important; } .cv-desktop{ display:none !important; } .cv-mobile-toggle{ display:flex !important; } .cv-bubbles{ display:none !important; } .cv-brand-huge{ font-size:64px !important; } .cv-trust{ position:static !important; margin-top:32px; bottom:auto !important; width:100% !important; } .cv-lg{ display:none !important; } .cv-sm{ display:inline !important; } .cv-hero-cta{ flex-wrap:nowrap !important; } .cv-hero-cta > *{ flex:1 1 0 !important; min-width:0 !important; justify-content:center !important; padding-left:14px !important; padding-right:14px !important; white-space:nowrap !important; } }
+        /* The start button's arrow sits in a soft circle (Sellio-style). */
+        .cv-hero-cta .cv-btn-primary .cv-inv-arrow{ box-sizing:content-box; padding:7px; margin:-7px -14px -7px 4px; border-radius:50%; background:rgba(255,255,255,0.2); }
+        .cv-chip{ transition:transform .2s cubic-bezier(0.16,1,0.3,1), box-shadow .2s; }
+        .cv-chip:hover{ transform:translateY(-1px); }
+        .cv-hero-sub .cv-sm{ display:none; }
+        @media (max-width:600px){
+          .cv-blob-y{ width:320px !important; height:320px !important; top:-150px !important; left:-130px !important; filter:blur(46px); opacity:${dark ? 0.12 : 0.5} !important; }
+          .cv-blob-b{ width:300px !important; height:300px !important; filter:blur(50px); }
+          .cv-hero{ padding-top:92px !important; }
+          .cv-chip{ margin-bottom:20px !important; }
+          .cv-h1{ font-size:clamp(40px, 11.6vw, 48px) !important; line-height:1 !important; letter-spacing:-0.04em !important; margin-bottom:18px !important; }
+          .cv-hero-sub{ font-size:16.5px !important; line-height:1.55 !important; margin-bottom:26px !important; }
+          .cv-hero-sub .cv-lg{ display:none !important; }
+          .cv-hero-sub .cv-sm{ display:inline !important; }
+          .cv-hero-cta{ flex-direction:column !important; align-items:stretch !important; flex-wrap:nowrap !important; gap:6px !important; }
+          .cv-hero-cta > *{ flex:none !important; justify-content:center !important; }
+          .cv-hero-cta .cv-btn-primary{ height:58px; padding:0 22px !important; font-size:17px !important; }
+          .cv-hero-cta .cv-btn-ghost{ border:0 !important; padding:12px !important; font-size:15px !important; color:${muted} !important; }
+        }
         @media (prefers-reduced-motion: reduce){ .cv-marquee-track{ animation:none } [class*="cv-float"]{ animation:none !important } .cv-live-ring{ animation:none !important } }
         /* Below the fold: let the browser skip layout/paint (and pause the CSS
            animations) of sections until they're near the viewport. */
@@ -411,29 +430,35 @@ export default function LandingPage() {
       {/* HERO — full-bleed, grid-lined, colour blobs bleeding off both edges */}
       <section className="cv-hero" onMouseMove={onHeroMouse} style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', padding: 'clamp(84px, 12vw, 120px) 24px 130px', overflow: 'hidden', background: dark ? 'linear-gradient(180deg, #10111b 0%, #0a0b12 60%)' : 'linear-gradient(180deg, #fff4ef 0%, #ffffff 58%)' }}>
         <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: gridImg, backgroundSize: '54px 54px', WebkitMaskImage: 'radial-gradient(ellipse 80% 70% at 50% 40%, #000 40%, transparent 80%)', maskImage: 'radial-gradient(ellipse 80% 70% at 50% 40%, #000 40%, transparent 80%)' }} />
-        <div aria-hidden style={{ position: 'absolute', top: '-14%', left: '-8%', width: 460, height: 460, background: YELLOW, borderRadius: '46% 54% 60% 40% / 45% 45% 55% 55%', opacity: dark ? 0.16 : 0.5, transform: 'translate3d(0, calc(var(--sy) * 0.12px), 0)' }} />
-        <div aria-hidden style={{ position: 'absolute', bottom: '-12%', right: '-8%', width: 520, height: 520, background: BLUE, borderRadius: '58% 42% 45% 55% / 55% 48% 52% 45%', opacity: dark ? 0.16 : 0.14, transform: 'translate3d(0, calc(var(--sy) * -0.08px), 0)' }} />
+        <div aria-hidden className="cv-blob-y" style={{ position: 'absolute', top: '-14%', left: '-8%', width: 460, height: 460, background: YELLOW, borderRadius: '46% 54% 60% 40% / 45% 45% 55% 55%', opacity: dark ? 0.16 : 0.5, transform: 'translate3d(0, calc(var(--sy) * 0.12px), 0)' }} />
+        <div aria-hidden className="cv-blob-b" style={{ position: 'absolute', bottom: '-12%', right: '-8%', width: 520, height: 520, background: BLUE, borderRadius: '58% 42% 45% 55% / 55% 48% 52% 45%', opacity: dark ? 0.16 : 0.14, transform: 'translate3d(0, calc(var(--sy) * -0.08px), 0)' }} />
 
         <div style={{ position: 'relative', zIndex: 2, maxWidth: 1280, margin: '0 auto', width: '100%' }}>
           <div className="cv-hero-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 40, alignItems: 'center' }}>
             {/* Left: copy */}
             <div style={{ maxWidth: 620 }}>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 15px', borderRadius: 999, marginBottom: 24, background: dark ? 'rgba(255,106,77,0.14)' : 'rgba(255,106,77,0.1)', border: `1px solid ${CORAL}44`, color: CORAL, fontSize: 13, fontWeight: 800 }}>
-                <span style={{ width: 7, height: 7, borderRadius: '50%', background: GREEN, animation: 'blink 1.6s infinite' }} /> <span className="cv-lg">Shared inbox, business phone &amp; SMS, AI-powered CRM</span><span className="cv-sm">Inbox, phone &amp; SMS, AI CRM</span>
-              </div>
-              <h1 style={{ fontSize: 'clamp(46px, 6.8vw, 92px)', fontWeight: 900, lineHeight: 0.97, letterSpacing: '-0.035em', margin: '0 0 24px' }}>
+              {/* What's new, as a chip that opens it */}
+              <a href="/email-sms-marketing" className="cv-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 9, padding: '5px 12px 5px 5px', borderRadius: 999, marginBottom: 24, background: dark ? 'rgba(255,255,255,0.06)' : '#fff', boxShadow: dark ? 'inset 0 0 0 1px rgba(255,255,255,0.1)' : '0 6px 18px -8px rgba(15,17,25,0.18), inset 0 0 0 1px rgba(15,17,25,0.07)', color: text, fontSize: 13.5, fontWeight: 700, textDecoration: 'none' }}>
+                <span style={{ padding: '4px 10px', borderRadius: 999, background: CORAL, color: '#fff', fontSize: 11.5, fontWeight: 800, letterSpacing: '0.02em' }}>New</span>
+                <span className="cv-lg">Email &amp; SMS campaigns, built with Colvy AI</span><span className="cv-sm">Email &amp; SMS campaigns</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }} aria-hidden><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+              </a>
+              <h1 className="cv-h1" style={{ fontSize: 'clamp(46px, 6.8vw, 92px)', fontWeight: 900, lineHeight: 0.97, letterSpacing: '-0.035em', margin: '0 0 24px' }}>
                 Turn every chat<br />into a{' '}
                 <span style={{ position: 'relative', display: 'inline-block' }}>
                   <RotatingWord words={HERO_WORDS} color={CORAL} />
                   <svg viewBox="0 0 320 20" preserveAspectRatio="none" style={{ position: 'absolute', left: 0, bottom: -8, width: '100%', height: 14 }}><path d="M3 14 Q 160 2 317 12" stroke={YELLOW} strokeWidth="7" fill="none" strokeLinecap="round" /></svg>
                 </span>
               </h1>
-              <p style={{ fontSize: 'clamp(16px, 1.7vw, 20px)', color: muted, lineHeight: 1.6, maxWidth: 520, margin: '0 0 32px' }}>
-                One shared inbox for SMS, calls, Instagram, Messenger, email &amp; live chat — with a business number, an AI-powered CRM, store orders, payments and AI agents built in. For teams of every size, from your first hire to enterprise.
+              <p className="cv-hero-sub" style={{ fontSize: 'clamp(16px, 1.7vw, 20px)', color: muted, lineHeight: 1.6, maxWidth: 520, margin: '0 0 32px' }}>
+                <span className="cv-lg">One shared inbox for SMS, calls, Instagram, Messenger, email &amp; live chat — with a business number, an AI-powered CRM, store orders, payments, campaigns and AI agents built in. For teams of every size, from your first hire to enterprise.</span>
+                <span className="cv-sm">One inbox for SMS, calls, Instagram, Messenger, email and live chat, with a business number, an AI CRM, campaigns and AI agents built in.</span>
               </p>
               <div className="cv-hero-cta" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
-                <InviteCta cta={{ id: 'home_hero_start_free', location: 'home' }} onClick={handleDashboard} className="cv-btn-primary cv-shine" style={btnPrimary}>{user ? 'Go to dashboard' : (<><span className="cv-lg">Start free — no card</span><span className="cv-sm">Start free</span></>)}</InviteCta>
-                <a href="#features" className="cv-btn-ghost" style={btnGhost}><span className="cv-lg">See how it works ↓</span><span className="cv-sm">How it works ↓</span></a>
+                <InviteCta cta={{ id: 'home_hero_start_free', location: 'home' }} onClick={handleDashboard} className="cv-btn-primary cv-shine" style={btnPrimary}>
+                  {user ? 'Go to dashboard' : (<><span className="cv-lg">Start free — no card</span><span className="cv-sm">Start free, no card</span></>)}
+                </InviteCta>
+                <a href="#features" className="cv-btn-ghost" style={btnGhost}><span className="cv-lg">See how it works ↓</span><span className="cv-sm">See how it works ↓</span></a>
               </div>
               <ProofStrip dark={dark} teams={realStats.teams} messages={realStats.messages} text={text} muted={muted} border={cardBorder} />
             </div>
