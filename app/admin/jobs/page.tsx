@@ -333,7 +333,7 @@ function Board({ jobs, tz, prefix, qPrefix, onMove, onOpen, onWarm }: { jobs: an
                   tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') onOpen(j) }} aria-label={`${fmtJobNumber(j.number, prefix)} ${j.title}`}>
                   <div className="jb-card-t">
                     <span className="jb-no">{fmtJobNumber(j.number, prefix)}</span>
-                    <span className="jb-card-r"><AvatarStack people={j.assignees || []} size={22} /><MoveMenu job={j} onMove={onMove} /></span>
+                    <span className="jb-card-r"><AvatarStack people={j.assignees || []} size={22} max={2} /><MoveMenu job={j} onMove={onMove} /></span>
                   </div>
                   <b className="jb-title">{j.title}</b>
                   <div className="jb-meta">

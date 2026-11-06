@@ -88,9 +88,11 @@ function AssignDialog({ companyId, job, onClose, onSaved, toast }: { companyId: 
   const shown = useMemo(() => (team || []).filter(p => !q.trim() || p.name.toLowerCase().includes(q.trim().toLowerCase())), [team, q])
   const busyIds = new Set(clashes.map(c => c.userId))
   const toggle = (id: string) => setPicked(ps => (ps.includes(id) ? ps.filter(x => x !== id) : [...ps, id]))
+  // A clash already on screen has been seen, so saving means "assign anyway".
+  const anyway = confirm || (!checking && clashes.length > 0)
   const save = async () => {
     setBusy(true)
-    const r = await apiRaw(`/api/jobs/${job.id}/assign`, { method: 'POST', json: { companyId, assignees: picked, force: confirm } }).catch((e: any) => ({ ok: false, status: 0, data: { error: e.message } }))
+    const r = await apiRaw(`/api/jobs/${job.id}/assign`, { method: 'POST', json: { companyId, assignees: picked, force: anyway } }).catch((e: any) => ({ ok: false, status: 0, data: { error: e.message } }))
     setBusy(false)
     if (r.ok) { onSaved(r.data.job, r.data.conflicts || []); toast(picked.length ? 'Team saved' : 'No one on this job now'); return }
     if (r.status === 409 && r.data.needsConfirm) { setClashes(r.data.conflicts || []); setConfirm(true); return }
@@ -100,7 +102,7 @@ function AssignDialog({ companyId, job, onClose, onSaved, toast }: { companyId: 
     <Dialog title="Who’s on this job?" onClose={onClose} width={480}
       footer={<>
         <button type="button" className="ak-btn ghost" onClick={onClose}>Cancel</button>
-        <button type="button" className={`ak-btn ${confirm ? 'danger' : 'go'}`} onClick={save} disabled={busy || team === null}>{busy ? 'Saving…' : confirm ? 'Assign anyway' : 'Save'}</button>
+        <button type="button" className={`ak-btn ${anyway ? 'danger' : 'go'}`} onClick={save} disabled={busy || team === null}>{busy ? 'Saving…' : anyway ? 'Assign anyway' : 'Save'}</button>
       </>}>
       {(team?.length || 0) > 6 && <input className="ak-field" value={q} onChange={e => setQ(e.target.value)} placeholder="Find a team member" aria-label="Find a team member" />}
       {team === null ? <div className="fl-skel"><span /><span /><span /></div> : (
@@ -120,7 +122,7 @@ function AssignDialog({ companyId, job, onClose, onSaved, toast }: { companyId: 
         </div>
       )}
       <p className="fl-hint">
-        {!scheduled ? 'Give the job a time to check whether people are free.' : checking ? 'Checking who’s free…' : clashes.length ? (confirm ? 'They’re busy then. Assign anyway, or pick someone else.' : 'Some of them are busy then.') : picked.length ? 'Everyone picked is free then.' : 'Pick the people doing the work. They’re told straight away.'}
+        {!scheduled ? 'Give the job a time to check whether people are free.' : checking ? 'Checking who’s free…' : clashes.length ? 'Someone you picked is busy then. Assign anyway, or pick someone else.' : picked.length ? 'Everyone picked is free then.' : 'Pick the people doing the work. They’re told straight away.'}
       </p>
     </Dialog>
   )
@@ -273,7 +275,7 @@ export function ChecklistPanel({ companyId, jobId, items, onChange, toast }: {
                 onKeyDown={e => { if (e.key === 'Enter') saveEdit(it); if (e.key === 'Escape') setEditing(null) }} onBlur={() => saveEdit(it)} />
             ) : (
               <span className="fl-check-t" onDoubleClick={() => { if (!it.pending) { setEditing(it.id); setDraft(it.text) } }}>
-                {it.text}
+                <span className="fl-check-x">{it.text}</span>
                 {it.done && it.done_by_name && <em>{it.done_by_name}{it.done_at ? ` · ${fmtAgo(it.done_at)}` : ''}</em>}
               </span>
             )}
@@ -538,8 +540,9 @@ export const FIELD_CSS = `
 .fl-check li.done .fl-box{background:#22c55e;border-color:#22c55e}
 .fl-box svg{width:14px;height:14px}
 .fl-check-t{flex:1;min-width:0;font-size:14.5px;line-height:1.45;overflow-wrap:anywhere;cursor:text}
-.fl-check li.done .fl-check-t{color:var(--mut);text-decoration:line-through;text-decoration-color:#a1a1aa}
-.fl-check-t em{display:block;font-style:normal;font-size:12px;color:var(--soft);text-decoration:none}
+.fl-check li.done .fl-check-t{color:var(--mut)}
+.fl-check li.done .fl-check-x{text-decoration:line-through;text-decoration-color:#a1a1aa}
+.fl-check-t em{display:block;font-style:normal;font-size:12px;color:var(--soft)}
 .fl-row-tools{display:flex;gap:2px;opacity:0;transition:opacity .15s}
 .fl-check li:hover .fl-row-tools,.fl-check li:focus-within .fl-row-tools{opacity:1}
 @media (hover:none){.fl-row-tools{opacity:.7}}

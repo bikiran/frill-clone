@@ -932,6 +932,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   // Nav visibility for the current member.
   const canUseNavItem = (item: { href: string; label: string }) => {
+    // Quote settings are changed by owners and admins only; keep it out of
+    // everyone else's menu (the page still opens, read-only, by its link).
+    if (item.href === '/admin/jobs/settings' && permsLoaded && !hasFullAccess(myRole)) return false
     const featKey = item.label === 'Ideas' ? 'ideas' : featureForPath(item.href.split(/[?#]/)[0])?.key
     if (!storeAllowsPage(item.href, storeStatus)) return false
     if (!moduleAllowsPage(item.href, moduleStatus)) return false

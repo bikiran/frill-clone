@@ -108,12 +108,17 @@ Every change is compare-and-set (`update … where status = <expected>`), so two
   - printable.
 - **Create job** from: the Inbox "More actions" menu, a booking's ⋯ menu and the form response drawer.
 
+## Phase 2 (built; needs migrations/COLVY_V428_JOBS_PHASE2.sql)
+
+- **Team:** `jobs.assignees` (staff ids + names). Assigning checks each person's other jobs, bookings and calendar events at the job's time; a clash comes back for confirmation ("Assign anyway"). The job keeps a `calendar_events` row (external_source 'job') with its people, so their booking slots are blocked. People added or taken off are notified (bell + push).
+- **Work timer:** `job_time_entries`, one running timer per person (unique index). Start moves New/Scheduled to In progress and puts you on the job; Finish stops everyone's timer and completes the job.
+- **Checklist:** `job_checklist_items` (one row per step, who ticked it and when) and saved checklists (`job_checklists`) added in one go.
+- **Photos:** `job_attachments` (before / after / other), uploaded to the job's own storage folder, with a copy in the Gallery tagged with the job. Only files from that folder are accepted.
+- **Sign-off:** the customer signs on the team member's screen (`jobs.signature`). Settings can require it before a job is completed.
+- **Field staff view:** a setting limits anyone who isn't an owner or admin to the jobs they're on, without prices, quotes or the price list. My jobs (`/admin/jobs/my`) lists your jobs by day with directions.
+
 ## Later phases (not built yet)
 
-- **Phase 2:**
-  - assignees and staff conflicts, using `calendar_events` mirror rows (they already block booking slots);
-  - checklists, before/after photos (`attachments` + Gallery), signatures;
-  - start/pause/complete with time tracking, staff-only views, change notifications.
 - **Phase 3:** industry templates (removalist, cleaning, trades), validated by per-template schemas stored in `jobs.fields`.
 - **Phase 4:** invoices (from a job or accepted quote) with deposits, partials and balances; customer portal; PDFs; payment reminders; no double-counting (payments are the source of truth).
 - **Phase 5:** automation templates (quote reminder, on-the-way, completed, invoice reminder, review, repeat service) and reports (conversion, completed jobs, outstanding payments, utilisation, recorded revenue).

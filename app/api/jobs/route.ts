@@ -36,7 +36,9 @@ export async function GET(req: NextRequest) {
       .select('id, number, title, status, source, contact_id, conversation_id, booking_id, address, scheduled_start, scheduled_end, value_cents, accepted_quote_id, sort_order, assignees, time_seconds, completed_at, created_at, updated_at')
       .eq('company_id', companyId!)
     // Field staff (when the business limits them) see only their own jobs; anyone can ask for "mine".
-    if ((view.restrict && !view.isManager) || sp.get('mine') === '1') q = q.contains('assignees', [{ id: view.userId }])
+    // JSON text, not an array: supabase-js turns an array into a Postgres array
+    // literal ({…}), which doesn't match a jsonb column.
+    if ((view.restrict && !view.isManager) || sp.get('mine') === '1') q = q.contains('assignees', JSON.stringify([{ id: view.userId }]))
     const status = sp.get('status')
     if (status && isJobStatus(status)) q = q.eq('status', status)
     const contactId = sp.get('contactId')
