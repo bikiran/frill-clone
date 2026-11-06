@@ -19,7 +19,7 @@ const CSS = `
 .ctk-off{margin-top:6px;font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:30px;font-weight:800;letter-spacing:-.03em;line-height:1}
 .ctk-off small{margin-left:6px;font-family:inherit;font-size:13px;font-weight:600;letter-spacing:0;opacity:.85}
 .ctk-bot{position:relative;padding:14px 18px 14px;background:#fff;color:#18181b}
-.ctk-bot::before{content:'';position:absolute;left:16px;right:16px;top:0;border-top:2px dashed color-mix(in srgb,var(--ctk) 30%,#e4e4e7)}
+.ctk-bot::before{content:'';position:absolute;left:16px;right:16px;top:0;border-top:1.5px solid color-mix(in srgb,var(--ctk) 30%,#e4e4e7)}
 .ctk-row{display:flex;align-items:center;gap:10px}
 .ctk-code{flex:1;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:19px;font-weight:800;letter-spacing:.08em;color:#18181b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ctk-copy{flex-shrink:0;display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 12px;border:none;border-radius:999px;background:color-mix(in srgb,var(--ctk) 12%,#fff);color:color-mix(in srgb,var(--ctk) 85%,#000);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;transition:background .15s}

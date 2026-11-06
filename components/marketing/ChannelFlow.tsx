@@ -191,7 +191,7 @@ const CFL_CSS = `
 .cfl-heads span{position:absolute;transform:translateX(-50%);font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;opacity:.45;white-space:nowrap}
 .cfl-stage{position:relative;width:100%}
 .cfl-stage>svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
-.cfl-dash{fill:none;stroke:#d4d4d8;stroke-width:1.5;stroke-dasharray:3 5}
+.cfl-dash{fill:none;stroke:#e4e4e7;stroke-width:1.5}
 .cfl-line{fill:none;stroke:#e4e4e7;stroke-width:1.6;transition:stroke .35s ease,stroke-width .35s ease}
 .cfl-line.hot{stroke:#ff8a70;stroke-width:2.2}
 .cfl-dot{fill:#ff6a4d;filter:drop-shadow(0 0 6px rgba(255,106,77,.7))}

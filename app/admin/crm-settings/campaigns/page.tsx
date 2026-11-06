@@ -41,7 +41,7 @@ export default function CampaignsSettings() {
           </div>
         </div>
       ) : campaigns.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 48, color: 'var(--slate)', border: '1px dashed var(--border)', borderRadius: 14 }}>You haven&rsquo;t sent any campaigns yet.</div>
+        <div style={{ textAlign: 'center', padding: 48, color: 'var(--slate)', border: '1px solid var(--border)', borderRadius: 14 }}>You haven&rsquo;t sent any campaigns yet.</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {campaigns.map(c => (

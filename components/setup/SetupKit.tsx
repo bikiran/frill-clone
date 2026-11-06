@@ -287,7 +287,7 @@ body.nw-on button[title="Send feedback"]{display:none!important}
 .nw-icons button{display:flex;flex-direction:column;align-items:center;gap:10px;width:118px;padding:16px 8px 12px;border-radius:18px;border:1.5px solid #ececef;background:#fff;font:inherit;font-size:13px;font-weight:500;color:#3f3f46;cursor:pointer;transition:border-color .15s,box-shadow .15s,transform .15s}
 .nw-icons button:hover{transform:translateY(-1px)}
 .nw-icons button.on{border-color:#18181b;box-shadow:0 0 0 1px #18181b}
-.nw-icons .nw-up{border-style:dashed}
+.nw-icons .nw-up{border-style:solid}
 .nw-icons .nw-up.on{border-style:solid}
 .nw-icon-img{width:58px;height:58px;border-radius:16px;display:inline-flex;align-items:center;justify-content:center;background:#f4f4f5;color:#71717a;overflow:hidden}
 .nw-icon-img img{width:100%;height:100%;object-fit:contain}

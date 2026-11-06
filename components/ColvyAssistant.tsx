@@ -632,7 +632,7 @@ const Orb = ({ size = 28 }: { size?: number }) => <AiBuddy size={size} />
 
 function ActionCard({ card, onUndo }: { card: Card; onUndo: () => void }) {
   if (card.kind === '__undone') {
-    return <div className="cai-card" style={{ borderStyle: 'dashed', padding: '10px 12px', fontSize: 12.5, color: '#71717a' }}>Undone</div>
+    return <div className="cai-card" style={{ borderStyle: 'solid', padding: '10px 12px', fontSize: 12.5, color: '#71717a' }}>Undone</div>
   }
   if (card.kind === 'report') return <ReportCard card={card} />
   if (card.kind === 'list') return <ListCard card={card} />

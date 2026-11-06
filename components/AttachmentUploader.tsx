@@ -47,7 +47,7 @@ const STYLES = `
   .au-tile::before { display: none; }
   .au-tile:hover { background: #ececef; color: #18181b; }
   .au-tile:disabled { opacity: .55; cursor: default; }
-  .au-drop { outline: 2px dashed var(--coral); outline-offset: 4px; border-radius: 16px; }
+  .au-drop { outline: 1.5px solid var(--coral); outline-offset: 4px; border-radius: 16px; }
   .au-files { display: flex; flex-direction: column; gap: 6px; }
   .au-file { display: flex; align-items: center; gap: 11px; padding: 9px 8px 9px 10px; border-radius: 14px; background: #fafafa; box-shadow: 0 0 0 1px rgba(0,0,0,.05); cursor: pointer; min-width: 0; transition: background .15s ease; }
   .au-file:hover { background: #f4f4f5; }

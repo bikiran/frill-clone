@@ -133,7 +133,7 @@ function button(label: string, url: string, color: string, ctx: Ctx, align: Alig
 }
 
 function placeholder(label: string, height: number): string {
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="${height}" align="center" bgcolor="${C.soft}" style="height:${height}px;background-color:${C.soft};border:1px dashed #d4d4d8;border-radius:8px;font-family:${FONT};font-size:13px;color:${C.muted}">${escapeHtml(label)}</td></tr></table>`
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td height="${height}" align="center" bgcolor="${C.soft}" style="height:${height}px;background-color:${C.soft};border:1px solid #d4d4d8;border-radius:8px;font-family:${FONT};font-size:13px;color:${C.muted}">${escapeHtml(label)}</td></tr></table>`
 }
 
 function productCell(p: ProductItem, accent: string, buttonLabel: string, preview: boolean, ctx: Ctx): string {
@@ -245,7 +245,7 @@ function blockHtml(b: Block, ctx: Ctx): string {
     }
     case 'coupon': {
       // A ticket, like the coupon in chat: the offer on a coloured top, notches
-      // and a dashed tear line, then the code. Tables only: the notches are
+      // and a tear line, then the code. Tables only: the notches are
       // quarter circles in the card's colour either side of the tear line.
       const code = String(b.code || '').trim()
       if (!code && !preview) return ''
@@ -278,7 +278,7 @@ function blockHtml(b: Block, ctx: Ctx): string {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${cell(notch(`border-top-right-radius:${N}px`))}<td style="font-size:0;line-height:0">&nbsp;</td>${cell(notch(`border-top-left-radius:${N}px`))}</tr></table>
 </td></tr>
 <tr><td bgcolor="${tint}" style="background-color:${tint};border-radius:0 0 ${R}px ${R}px;padding:0">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${cell(notch(`border-bottom-right-radius:${N}px`))}<td style="padding:0 6px;font-size:0;line-height:0;vertical-align:top"><div style="border-top:2px dashed ${dash};font-size:0;line-height:0;height:0">&nbsp;</div></td>${cell(notch(`border-bottom-left-radius:${N}px`))}</tr></table>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>${cell(notch(`border-bottom-right-radius:${N}px`))}<td style="padding:0 6px;font-size:0;line-height:0;vertical-align:top"><div style="border-top:1.5px solid ${dash};font-size:0;line-height:0;height:0">&nbsp;</div></td>${cell(notch(`border-bottom-left-radius:${N}px`))}</tr></table>
 <div style="padding:4px 22px 18px">
 <p style="margin:0;font-family:${MONO};font-size:24px;line-height:1.25;font-weight:800;letter-spacing:3px;color:${C.ink};word-break:break-all">${escapeHtml(code || 'CODE')}</p>
 ${b.note ? `<p style="margin:6px 0 0;font-family:${ctx.font};font-size:13px;line-height:1.45;color:${C.muted}">${escapeHtml(b.note)}</p>` : ''}

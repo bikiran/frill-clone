@@ -3,6 +3,7 @@
 import { COLVY_CONTACT } from '@/lib/colvy-contact'
 import { soonLabel } from '@/lib/feature-availability'
 import { ratingSummary } from '@/lib/testimonials'
+import LetsTalk from '@/components/marketing/LetsTalk'
 
 // "Ask AI about Colvy": open an AI assistant with a question about Colvy
 // already asked (each takes it as ?q=). Colvy's own opens the site chat.
@@ -21,8 +22,10 @@ const ASK_AI: { name: string; href: string; icon: React.ReactNode }[] = [
 // every link column in one row across the full width (two-up on mobile, never
 // one long list), social links and a legal bar. Always dark for a strong
 // anchor regardless of the page theme.
-export default function MarketingFooter({ dark = false }: { dark?: boolean }) {
-  void dark
+//
+// Just above it on every page: "Have questions? Let's talk." (name + phone,
+// into Colvy's own inbox). Pass talk={false} to leave it out.
+export default function MarketingFooter({ dark = false, talk = true }: { dark?: boolean; talk?: boolean }) {
   const CORAL = '#ff6a4d'
   const text = '#ffffff'
   const muted = 'rgba(255,255,255,0.6)'
@@ -49,6 +52,8 @@ export default function MarketingFooter({ dark = false }: { dark?: boolean }) {
   const bg = '#0b0c14'
   const rating = ratingSummary()
   return (
+    <>
+    {talk && <LetsTalk dark={dark} />}
     <footer style={{ background: bg, color: text, padding: '0' }}>
       <style>{`
         .cvf-wrap{ max-width:1280px; margin:0 auto; padding:72px 24px 28px; }
@@ -164,5 +169,6 @@ export default function MarketingFooter({ dark = false }: { dark?: boolean }) {
         </div>
       </div>
     </footer>
+    </>
   )
 }

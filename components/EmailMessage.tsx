@@ -206,7 +206,7 @@ export default function EmailMessage({ msg, agentColor, onOpenMedia, businessNam
           ) : text ? (
             <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.55, color: 'var(--ink)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{text}</p>
           ) : pending ? (
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '9px 11px', border: '1px dashed var(--border)', borderRadius: 10, background: 'var(--canvas)' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '9px 11px', border: '1px solid var(--border)', borderRadius: 10, background: 'var(--canvas)' }}>
               <span style={{ color: 'var(--slate)', marginTop: 1 }}>{ico(<><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>, 14)}</span>
               <div style={{ minWidth: 0 }}>
                 <p style={{ margin: 0, fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>We couldn’t load this email’s text yet.</p>

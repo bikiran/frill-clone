@@ -130,6 +130,7 @@ The hard part isn’t writing one good reply. It’s doing it every time, on a b
   },
   {
     slug: 'abandoned-cart-sms-woocommerce-shopify',
+    cover: '/blog/online-store-wheres-my-order/checkout.jpg',
     title: 'Abandoned cart texts for WooCommerce and Shopify: what to send, and when',
     excerpt: 'Most shoppers who leave a cart weren’t saying no. Here’s how to follow up by SMS without being pushy, with message examples and the timing that works.',
     category: 'Growth', accent: GREEN, icon: 'cart',
@@ -202,6 +203,7 @@ For sold-out products, [back-in-stock texts](/product/waitlists) do the same job
   },
   {
     slug: 'meet-your-ai-team',
+    cover: '/blog/meet-your-ai-team-cover.jpg',
     title: "Meet your AI team: a Saturday at an aquarium shop, run with five AI agents",
     excerpt: "Order questions, bookings, reviews, a stuck parcel and an abandoned cart: one day at a busy store, and how Colvy’s Support, Reception, Reputation, Operations and Sales agents handle it while the team handles the exceptions.",
     category: 'Product', accent: PURPLE, icon: 'ai',

@@ -79,7 +79,7 @@ export const SK_CSS = `
 .sk-stepper button:hover:not(:disabled){background:var(--sk-fill)}
 .sk-stepper button:disabled{opacity:.35;cursor:not-allowed}
 .sk-stepper span{min-width:22px;text-align:center;font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
-.sk-drop{display:flex;align-items:center;justify-content:center;gap:9px;min-height:64px;padding:14px;border-radius:18px;border:1.5px dashed var(--sk-fill-2);background:var(--sk-fill);font-size:14px;font-weight:600;color:var(--ink);cursor:pointer;transition:border-color .15s,background .15s}
+.sk-drop{display:flex;align-items:center;justify-content:center;gap:9px;min-height:64px;padding:14px;border-radius:18px;border:1px solid var(--sk-fill-2);background:var(--sk-fill);font-size:14px;font-weight:600;color:var(--ink);cursor:pointer;transition:border-color .15s,background .15s}
 .sk-drop:hover{border-color:var(--coral,#ff7a6b);background:var(--peach,#fff4f1)}
 .sk-drop.over{border-color:var(--coral,#ff7a6b);background:var(--peach,#fff4f1)}
 .sk-drop small{display:block;font-size:12.5px;font-weight:500;color:var(--sk-muted)}

@@ -3,16 +3,21 @@
 import { useState } from 'react'
 import FeatureIcon from '@/components/FeatureIcon'
 import type { Article } from '@/lib/blog-store'
+import { coverFor, fallbackCover } from '@/lib/blog-covers'
 import { BLOG_PROSE_CSS } from '@/components/blog-prose-css'
 
 const CORAL = '#ff6a4d'
 
-// Cover image with a graceful fallback: if the image is missing or fails to
-// load, show the accent-gradient tile instead of a broken image.
+// Cover photo with a graceful fallback: a missing or broken cover shows a
+// stand-in photo (lib/blog-covers.ts) instead of a broken image.
 function Cover({ a, big = false }: { a: Article; big?: boolean }) {
+  // Its own cover, else a stand-in photo (lib/blog-covers); the tile below
+  // only if both fail to load.
+  const [src, setSrc] = useState(() => coverFor(a.slug, a.cover))
   const [failed, setFailed] = useState(false)
-  if (a.cover && !failed) {
-    return <img src={a.cover} alt="" aria-hidden onError={() => setFailed(true)} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+  if (!failed) {
+    const fallback = fallbackCover(a.slug)
+    return <img src={src} alt="" aria-hidden onError={() => (src !== fallback ? setSrc(fallback) : setFailed(true))} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
   }
   return (
     <div aria-hidden style={{ position: 'absolute', inset: 0, background: `linear-gradient(150deg, ${a.accent} 0%, ${a.accent}cc 48%, #171a2b 125%)` }}>
@@ -147,7 +152,7 @@ export default function BlogArticleView({ article, related, recent, url }: { art
       )}
 
       <style>{`
-        @media (max-width: 900px){ .blog-body-grid{ grid-template-columns: 1fr !important; } .blog-sidebar{ position: static !important; } }
+        @media (max-width: 900px){ .blog-body-grid{ grid-template-columns: minmax(0,1fr) !important; } .blog-sidebar{ position: static !important; } }
         ${BLOG_PROSE_CSS}
       `}</style>
     </main>

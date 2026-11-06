@@ -151,7 +151,7 @@ function Detail({ r, onChanged }: { r: any; onChanged: (msg: string) => void }) 
       </div>
 
       {canAttach(r.status) && (
-        <div style={{ padding: 12, borderRadius: 10, border: '1px dashed var(--sa-border)' }}>
+        <div style={{ padding: 12, borderRadius: 10, border: '1px solid var(--sa-border)' }}>
           <p style={label}>Attach a ported number</p>
           <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--sa-muted)', lineHeight: 1.45 }}>When Twilio shows the port complete, the number is on the platform account. Attaching points its calls and texts at Colvy (same as a purchase) and adds it to the business at A$15/month (1800: the toll-free price). The request completes when every number is attached.</p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

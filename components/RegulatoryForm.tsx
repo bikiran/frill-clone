@@ -282,7 +282,7 @@ export function FileDrop({ file, existingUrl, onPick, accept = 'image/*,applicat
       style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
         padding: '22px 16px', borderRadius: 12, cursor: 'pointer', textAlign: 'center',
-        border: `1.5px dashed ${dragOver ? 'var(--coral)' : '#d4d4d8'}`,
+        border: `1px solid ${dragOver ? 'var(--coral)' : '#d4d4d8'}`,
         background: dragOver ? 'var(--peach, #fff5f2)' : '#f7f7f8',
         transition: 'border-color .15s, background .15s',
       }}

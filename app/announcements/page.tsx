@@ -334,7 +334,7 @@ const PAGE_CSS = `
 .ap-month-n { color: var(--slate); font-variant-numeric: tabular-nums; }
 .ap-btn { display: inline-flex; align-items: center; justify-content: center; height: 40px; padding: 0 16px; border-radius: 11px; border: 1px solid var(--border); background: var(--ap-card); color: var(--ink); font-size: 14px; font-weight: 600; text-decoration: none; cursor: pointer; }
 .ap-btn:hover { border-color: #d4d4d8; }
-.ap-empty-state { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 64px 20px; border: 1px dashed var(--border); border-radius: 22px; background: var(--ap-card); }
+.ap-empty-state { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 64px 20px; border: 1px solid var(--border); border-radius: 22px; background: var(--ap-card); }
 .ap-empty-art { display: inline-flex; align-items: center; justify-content: center; width: 60px; height: 60px; border-radius: 18px; background: color-mix(in srgb, var(--coral) 10%, transparent); color: var(--coral); margin-bottom: 8px; }
 .ap-empty-title { margin: 0; font-size: 18px; font-weight: 700; color: var(--ink); }
 .ap-empty-text { margin: 0 0 10px; font-size: 14.5px; color: var(--slate); }

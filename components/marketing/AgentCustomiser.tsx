@@ -213,7 +213,7 @@ const CSS = `
 .acz-hue::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;border-radius:50%;background:var(--thumb);border:4px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.25)}
 .acz-hue::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:var(--thumb);border:4px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.25)}
 .acz-hue:focus-visible{box-shadow:0 0 0 3px rgba(255,106,77,.25)}
-.acz-preview{margin-top:16px;padding-top:16px;border-top:1px dashed}
+.acz-preview{margin-top:16px;padding-top:16px;border-top:1px solid}
 .acz-bar{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:18px}
 .acz-bar-face{position:relative;flex-shrink:0}
 .acz-bar-face i{position:absolute;right:-3px;bottom:-3px;width:12px;height:12px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 2.5px #fff}

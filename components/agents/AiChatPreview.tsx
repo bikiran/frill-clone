@@ -106,7 +106,7 @@ const ACP_CSS = `
 .acp-b{margin:0;max-width:240px;padding:9px 12px;font-size:13px;line-height:1.45;white-space:pre-line}
 .acp-row.them .acp-b{background:#18181b;color:#fff;border-radius:16px 16px 5px 16px}
 .acp-row.ai .acp-b{background:#fff;color:#18181b;border-radius:16px 16px 16px 5px;box-shadow:0 0 0 1px #ececef}
-.acp-row.draft .acp-b{background:#fafafa;border:1.5px dashed #d4d4d8;box-shadow:none;color:#3f3f46}
+.acp-row.draft .acp-b{background:#fafafa;border:1px solid #d4d4d8;box-shadow:none;color:#3f3f46}
 .acp-row.ai{align-items:flex-start}
 .acp-face{display:inline-flex;flex-shrink:0;margin-top:20px}
 .acp-row.typing .acp-face{margin-top:6px}

@@ -3692,7 +3692,7 @@ function SystemPage({ onGo }: { onGo?: (p: any) => void }) {
       <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', margin: '4px 0 10px' }}>Not monitored here</p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(240px, 100%), 1fr))', gap: 14 }}>
         {notMonitored.map(m => (
-          <div key={m.label} style={{ background: 'var(--sa-card)', border: '1px dashed var(--sa-border)', borderRadius: 14, padding: 18, opacity: 0.75 }}>
+          <div key={m.label} style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 14, padding: 18, opacity: 0.75 }}>
             <span style={{ fontSize: 13, color: 'var(--sa-muted)' }}>{m.label}</span>
             <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', margin: '6px 0 0' }}>{m.note}</p>
           </div>

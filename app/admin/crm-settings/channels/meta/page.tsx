@@ -287,7 +287,7 @@ export default function MetaChannelsPage() {
         </p>
       )}
       {channels.length === 0 ? (
-        <div style={{ padding: '34px 28px', borderRadius: 14, border: '1px dashed var(--border)', textAlign: 'center', background: 'var(--canvas, #fafafa)' }}>
+        <div style={{ padding: '34px 28px', borderRadius: 14, border: '1px solid var(--border)', textAlign: 'center', background: 'var(--canvas, #fafafa)' }}>
           <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#fff', border: '1px solid var(--border)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           </div>

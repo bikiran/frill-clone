@@ -585,7 +585,7 @@ export default function InboxComposer() {
         {/* Live typing preview — what the customer is typing right now.
             Admin-only; the customer never sees the agent's draft. */}
         {liveTyping.trim() && (
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 12px', borderRadius: 10, background: '#f0f9ff', border: '1px dashed #7dd3fc', marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 12px', borderRadius: 10, background: '#f0f9ff', border: '1px solid #7dd3fc', marginBottom: 8 }}>
             <span style={{ display: 'flex', gap: 2, paddingTop: 5, flexShrink: 0 }}>
               {[0, 1, 2].map(i => (
                 <span key={i} style={{ width: 4, height: 4, borderRadius: '50%', background: '#0284c7', animation: `typingDot 1.2s ${i * 0.15}s infinite` }} />

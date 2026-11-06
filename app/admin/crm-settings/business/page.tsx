@@ -345,7 +345,7 @@ const BZ_CSS = `
 .bz-loc-t b{display:block;font-size:14.5px;font-weight:650;color:#111}
 .bz-loc-t small{display:block;margin-top:2px;font-size:12.5px;line-height:1.45;color:#71717a}
 .bz-loc-t .bz-loc-staff{margin-top:6px;font-weight:600;color:#047857}
-.bz-add{display:flex;align-items:center;gap:12px;padding:14px;border-radius:18px;border:1.5px dashed #e4e4e7;text-decoration:none;transition:border-color .15s,background .15s}
+.bz-add{display:flex;align-items:center;gap:12px;padding:14px;border-radius:18px;border:1px solid #e4e4e7;text-decoration:none;transition:border-color .15s,background .15s}
 .bz-add:hover{border-color:var(--coral);background:color-mix(in srgb,var(--coral) 4%,#fff)}
 .bz-add-ic{width:38px;height:38px;flex-shrink:0;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;background:#f4f4f5;color:#52525b;font-size:22px;font-weight:500}
 .bz-add b{display:block;font-size:14.5px;font-weight:650;color:#111}

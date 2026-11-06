@@ -533,7 +533,7 @@ export default function EmailComposer({
           <div className="ecmp-sigwrap">
             <style>{SIG_CSS}</style>
             <button type="button" className="ecmp-sigline" onClick={() => setShowSig(v => !v)} aria-expanded={showSig}
-              title="Show the whole signature" style={{ width: '100%', padding: '7px 0 0', borderTop: '1px dashed var(--border)' }}>
+              title="Show the whole signature" style={{ width: '100%', padding: '7px 0 0', borderTop: '1px solid var(--border)' }}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0 }}><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
               <span>{sigPreview.split('\n').map(l => l.trim()).filter(Boolean).join(' · ').replace(/([,;:]) · /g, '$1 ')}</span>
             </button>
@@ -544,7 +544,7 @@ export default function EmailComposer({
 
       {/* Wide screens: which signature, and a one-line look at it (tap for all of it). */}
       {!compact && (
-        <div className="ecmp-sig" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderTop: '1px dashed var(--border)', fontSize: 11.5, color: 'var(--slate)', minWidth: 0 }}>
+        <div className="ecmp-sig" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderTop: '1px solid var(--border)', fontSize: 11.5, color: 'var(--slate)', minWidth: 0 }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0 }}><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
           <select value={sigId} onChange={e => setSigId(e.target.value)} aria-label="Signature" title="Signature added to this email"
             style={{ border: 'none', background: 'transparent', color: sigId ? 'var(--ink)' : 'var(--slate)', fontSize: 12, fontWeight: 600, cursor: 'pointer', maxWidth: 160, outline: 'none', padding: '1px 0', fontFamily: 'inherit', flexShrink: 0 }}>

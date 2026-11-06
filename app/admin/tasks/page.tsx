@@ -2080,7 +2080,7 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
     <div key={key} className="tl-col"
       onDragOver={(e) => { if (dragId) { e.preventDefault(); setDrop(key, list.length) } }}
       onDrop={(e) => { e.preventDefault(); doDrop(dateObj, list, overCol ? dropTarget!.index : list.length) }}
-      style={{ width: COL_W, boxSizing: 'border-box', flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%', borderLeft: '1px solid var(--border)', background: isToday ? 'var(--peach)' : (weekend ? 'var(--canvas)' : '#fff'), outline: overCol ? '2px dashed var(--coral)' : 'none', outlineOffset: -2, ...(sticky ? { background: 'var(--canvas)', ...(narrow ? {} : { position: 'sticky' as const, left: 0, zIndex: 3, boxShadow: '4px 0 10px rgba(0,0,0,0.06)' }) } : {}) }}>
+      style={{ width: COL_W, boxSizing: 'border-box', flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%', borderLeft: '1px solid var(--border)', background: isToday ? 'var(--peach)' : (weekend ? 'var(--canvas)' : '#fff'), outline: overCol ? '1.5px solid var(--coral)' : 'none', outlineOffset: -2, ...(sticky ? { background: 'var(--canvas)', ...(narrow ? {} : { position: 'sticky' as const, left: 0, zIndex: 3, boxShadow: '4px 0 10px rgba(0,0,0,0.06)' }) } : {}) }}>
       <div style={{ position: 'sticky', top: 0, zIndex: 1, padding: '10px 12px', borderBottom: `2px solid ${isToday ? 'var(--coral)' : '#ececef'}`, background: 'inherit', display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
         <span style={{ fontSize: 14, fontWeight: 700, color: isToday ? 'var(--coral)' : 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{header}</span>
         {sub && <span style={{ fontSize: 11.5, color: 'var(--slate)', whiteSpace: 'nowrap', flexShrink: 0 }}>{sub}</span>}
@@ -2110,7 +2110,7 @@ function Timeline({ tasks, convs, statusOf, onSelect, selectedId, outlets, onTog
           // Add a task straight onto this day. Always present at the foot of the
           // column, and a hover "+" (see .tl-col:hover .tl-add) makes it obvious.
           <button className="tl-add" onClick={(e) => { e.stopPropagation(); onAdd?.(dateObj) }}
-            style={{ width: '100%', marginTop: list.length ? 8 : 0, height: 36, borderRadius: 12, border: '1.5px dashed #e4e4e7', background: 'transparent', color: '#71717a', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: 'inherit' }}>
+            style={{ width: '100%', marginTop: list.length ? 8 : 0, height: 36, borderRadius: 12, border: '1px solid #e4e4e7', background: 'transparent', color: '#71717a', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: 'inherit' }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Add task
           </button>

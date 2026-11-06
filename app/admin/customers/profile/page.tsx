@@ -1097,7 +1097,7 @@ button.cp-v{padding:0;border:none;background:none;font:inherit;font-size:14.5px;
 .cp-lines{margin-top:10px;padding-top:8px;border-top:1px solid #ececef}
 .cp-line{display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:13.5px;color:#3f3f46}
 .cp-line > span:last-child{color:#71717a;flex-shrink:0;font-variant-numeric:tabular-nums}
-.cp-line.total{margin-top:6px;padding-top:8px;border-top:1px dashed #e4e4e7;font-weight:700;color:var(--ink)}
+.cp-line.total{margin-top:6px;padding-top:8px;border-top:1px solid #e4e4e7;font-weight:700;color:var(--ink)}
 .cp-line.total > span:last-child{color:var(--ink)}
 .cp-x{color:#a1a1aa}
 .cp-input{display:block;width:100%;box-sizing:border-box;min-height:40px;padding:9px 14px;border:1.5px solid transparent;border-radius:12px;background:#f4f4f5;font:inherit;font-size:14px;color:var(--ink);outline:none;resize:vertical;transition:background-color .15s,border-color .15s,box-shadow .15s}

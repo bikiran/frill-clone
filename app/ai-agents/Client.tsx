@@ -93,7 +93,7 @@ function AgentSection({ a, i, text, muted, line, card }: { a: MarketingAgent; i:
       <div style={{ order: i % 2 ? 1 : 2, borderRadius: 20, border: `1px solid ${line}`, background: card, padding: 20 }}>
         <div style={{ fontFamily: MONO, fontSize: 11.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: muted, marginBottom: 14 }}>{a.example.channel}</div>
         <div style={{ maxWidth: '88%', padding: '10px 14px', borderRadius: '16px 16px 16px 4px', background: line, fontSize: 15, lineHeight: 1.45, color: text, marginBottom: 14 }}>{a.example.them}</div>
-        <div style={{ display: 'grid', gap: 6, margin: '0 0 14px', padding: '12px 14px', borderRadius: 12, border: `1px dashed ${line}` }}>
+        <div style={{ display: 'grid', gap: 6, margin: '0 0 14px', padding: '12px 14px', borderRadius: 12, border: `1px solid ${line}` }}>
           {a.example.checks.map(c => <div key={c} style={{ fontFamily: MONO, fontSize: 12.5, color: muted }}><span style={{ color: a.color }}>✓</span> {c}</div>)}
         </div>
         <div style={{ marginLeft: 'auto', maxWidth: '90%', padding: '10px 14px', borderRadius: '16px 16px 4px 16px', background: a.color, color: '#fff', fontSize: 15, lineHeight: 1.45 }}>{a.example.reply}</div>
