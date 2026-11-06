@@ -51,6 +51,8 @@ import { isMissingWaitlist, queueWaitlistJob, WAITLIST_MIGRATION_HINT } from '@/
 import { QUIET_START, QUIET_END } from '@/lib/campaign-sender'
 import { textOptOut } from '@/lib/sms-consent'
 import { sendCustomerEmail } from '@/lib/customer-email'
+import { hidesPoweredBy } from '@/lib/branding'
+import { waitlistOfferEmailHtml } from '@/lib/booking-email'
 import { shortenUrl } from '@/lib/short-link'
 import { isExternalSendBlocked } from '@/lib/demo-guard'
 import { notifyCompany } from '@/lib/notify'
@@ -61,7 +63,6 @@ export { isMissingWaitlist, WAITLIST_MIGRATION_HINT }
 
 const MIN = 60_000
 const iso = (ms: number) => new Date(ms).toISOString()
-const esc = (s: string) => String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } as any)[c])
 const newToken = () => crypto.randomBytes(18).toString('base64url')
 
 // ── What sending needs (swappable in tests) ─────────────────────────────────
@@ -601,7 +602,8 @@ async function sendOffer(db: any, ctx: { company: any; settings: BookingSettings
   } else { optedOut = check.state === 'opted_out'; why = optedOut ? 'They replied STOP, so no text' : 'Couldn’t check the text opt-out' }
 
   if (!channel && e.customer_email) {
-    const ok = await deps.sendEmail({ company, to: e.customer_email, ...offerEmail(company, slot.service.name, when, link, o.mode, settings.waitlist.hold_mins, first) })
+    const hideBadge = await hidesPoweredBy(db, company.id, company)
+    const ok = await deps.sendEmail({ company, to: e.customer_email, ...offerEmail(company, { service: slot.service.name, when, startMs: slot.start, endMs: slot.end, timezone: tz, link, mode: o.mode, holdMins: settings.waitlist.hold_mins, first, hideBadge }) })
     if (ok) channel = 'email'
   }
 
@@ -621,21 +623,13 @@ async function sendOffer(db: any, ctx: { company: any; settings: BookingSettings
   return true
 }
 
-function offerEmail(company: any, service: string, when: string, link: string, mode: 'first' | 'order', holdMins: number, first: string) {
-  const business = company.name || 'us'
-  const accent = /^#[0-9a-f]{6}$/i.test(company.accent_color || '') ? company.accent_color : '#ff7a6b'
-  const line = mode === 'order' ? `It’s held for you for ${holdMins} minutes.` : 'It goes to whoever books first.'
-  const html = `<!doctype html><html><body style="margin:0;background:#f6f6f7;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
-<div style="max-width:520px;margin:0 auto;padding:28px 16px">
-  <div style="background:#fff;border-radius:16px;padding:28px;border:1px solid #eee">
-    ${company.logo_url ? `<img src="${esc(company.logo_url)}" alt="" style="height:36px;margin-bottom:14px">` : `<div style="font-weight:800;font-size:16px;margin-bottom:14px">${esc(business)}</div>`}
-    <h1 style="margin:0 0 8px;font-size:22px;color:#111">A spot opened up</h1>
-    <p style="margin:0 0 18px;color:#4b5563;font-size:14.5px;line-height:1.55">Hi ${esc(first || 'there')}, a time you were waiting for is free: <b>${esc(service)}</b>, ${esc(when)}. ${esc(line)}</p>
-    <a href="${esc(link)}" style="display:inline-block;background:${accent};color:#fff;text-decoration:none;font-weight:700;padding:11px 20px;border-radius:10px">Book this time</a>
-    <p style="margin:18px 0 0;color:#9ca3af;font-size:12px;line-height:1.5">You’re getting this because you joined the waitlist at ${esc(business)}. The link also lets you leave the waitlist.</p>
-  </div>
-</div></body></html>`
-  return { subject: `A spot opened: ${service}, ${when}`, html, text: `A spot opened up\n\n${service}, ${when}. ${line}\n\nBook it: ${link}` }
+function offerEmail(company: any, o: { service: string; when: string; startMs: number; endMs: number; timezone: string; link: string; mode: 'first' | 'order'; holdMins: number; first: string; hideBadge: boolean }) {
+  const line = o.mode === 'order' ? `It’s held for you for ${o.holdMins} minutes.` : 'It goes to whoever books first.'
+  const html = waitlistOfferEmailHtml({
+    business: company.name || 'us', logoUrl: company.logo_url || null, accent: company.accent_color || null, hideBadge: o.hideBadge,
+    first: o.first, serviceName: o.service, startMs: o.startMs, endMs: o.endMs, timezone: o.timezone, link: o.link, mode: o.mode, holdMins: o.holdMins,
+  })
+  return { subject: `A spot opened: ${o.service}, ${o.when}`, html, text: `A spot opened up\n\n${o.service}, ${o.when}. ${line}\n\nBook it: ${o.link}` }
 }
 
 // ── The claim link ───────────────────────────────────────────────────────────
