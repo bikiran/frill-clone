@@ -28,6 +28,7 @@ export type ActivityType =
   | 'refund_pin_changed'
   | 'refund_pin_removed'
   | 'coupon_sent'
+  | 'receipt_sent'
   | 'order_created'
   | 'order_updated'
   | 'job_created'

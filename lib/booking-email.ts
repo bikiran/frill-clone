@@ -580,3 +580,46 @@ export function backInStockEmailHtml(i: BackInStockEmailInput): string {
     blocks, preheader: `${i.item} is back in stock at ${i.business}.`,
   })
 }
+
+// ── A receipt / tax invoice (Send receipt: app/api/orders/receipt) ──────────
+
+export type ReceiptEmailInput = {
+  business: string; logoUrl?: string | null; accent?: string | null; hideBadge?: boolean
+  first?: string | null
+  /** "Tax invoice" or "Receipt" */
+  title: string
+  number: string
+  /** "$38.50" */
+  total: string
+  /** "$2.23" when there's GST. */
+  gst?: string | null
+  /** "3 November 2026" */
+  date: string
+  where?: string | null
+  status: 'paid' | 'unpaid' | 'refunded' | 'cancelled'
+  statusLabel: string
+  url: string
+}
+
+export function receiptEmailHtml(i: ReceiptEmailInput): string {
+  const k = kit(i.accent)
+  const word = i.title.toLowerCase()
+  const pill: Pill = i.status === 'paid' ? { tone: 'good', text: 'Paid', mark: '✓' }
+    : i.status === 'unpaid' ? { tone: 'warn', text: i.statusLabel, mark: '!' }
+    : { tone: 'bad', text: i.statusLabel, mark: '●' }
+  const blocks = [
+    summaryBlock(k, {
+      label: `${i.title} ${i.number}`, big: i.total, bigNote: i.gst ? `Includes GST of ${i.gst}` : 'Total',
+      rows: [['Date', i.date], ...(i.where ? [['Where', i.where] as [string, string]] : [])],
+    }),
+    buttonBlock(k, i.url, 'View, print or save as PDF'),
+    finePrint(k, `Keep this email: the button always opens your ${word} from ${i.business}.`),
+  ]
+  return shell(k, {
+    business: i.business, logoUrl: i.logoUrl, hideBadge: i.hideBadge,
+    pill,
+    headline: `Your ${word} ${i.number}`,
+    intro: `Hi ${esc(i.first || 'there')}, here’s your ${esc(word)} from ${esc(i.business)}. You can view it, print it or save it as a PDF.`,
+    blocks, preheader: `${i.title} ${i.number} · ${i.total}${i.gst ? ` incl. GST ${i.gst}` : ''}`,
+  })
+}

@@ -38,6 +38,7 @@ export type PortalReceipt = {
 }
 
 const cents = (v: any) => Math.round((Number(v) || 0) * 100)
+const wooName = (o: any) => { const b = o?.billing && typeof o.billing === 'object' ? o.billing : {}; return `${b.first_name || ''} ${b.last_name || ''}`.trim() || o?.customer_name || '' }
 const num = (v: any) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v))
 
 export function parseReceiptKey(key: any): { src: 'woo' | 'shop' | 'pay'; id: string } | null {
@@ -61,14 +62,25 @@ function theirs(contact: any, email: any, phoneNorm: any): boolean {
   return (!!e && String(email || '').trim().toLowerCase() === e) || (k.length >= 9 && String(phoneNorm || '') === k)
 }
 
+/** A signed-in customer's receipt: the order must be theirs. */
 export async function portalReceipt(db: any, pc: PortalCompany, contact: any, key: string): Promise<PortalReceipt | null> {
+  if (!contact) return null
+  return buildReceipt(db, pc.company.id, key, contact)
+}
+
+/**
+ * Any receipt of a business: with `owner` (a contact), only one of theirs;
+ * without, the team's own (Send receipt) or a signed receipt link.
+ */
+export async function buildReceipt(db: any, companyId: string, key: string, owner: any | null): Promise<PortalReceipt | null> {
   const k = parseReceiptKey(key)
-  if (!k || !contact) return null
-  const companyId = pc.company.id
+  if (!k || !companyId) return null
+  const contact = owner || null
+  const mine = (email: any, phone: any) => !contact || theirs(contact, email, phone)
 
   if (k.src === 'woo') {
     const { data: o } = await db.from('woocommerce_orders').select('*').eq('id', k.id).eq('company_id', companyId).maybeSingle()
-    if (!o || !theirs(contact, o.customer_email, o.billing_phone_norm)) return null
+    if (!o || !mine(o.customer_email, o.billing_phone_norm)) return null
     const d = o.detail && typeof o.detail === 'object' ? o.detail : {}
     const pos = o.pos_source === 'prexty' || !!o.pos_sale_id
     const st = String(o.status || '').toLowerCase()
@@ -102,7 +114,7 @@ export async function portalReceipt(db: any, pc: PortalCompany, contact: any, ke
       title: business.abn && gst && gst > 0 ? 'Tax invoice' : 'Receipt',
       number: pos && o.pos_sale_id ? String(o.pos_sale_id) : o.woo_order_id != null ? `#${o.woo_order_id}` : String(o.id).slice(0, 8),
       ref: pos && o.pos_sale_id && o.woo_order_id != null ? `Order #${o.woo_order_id}` : null,
-      date: o.order_date || d.date_created || o.created_at, business, customer: contact.name || null,
+      date: o.order_date || d.date_created || o.created_at, business, customer: contact?.name || wooName(o) || null,
       lines, adjustments, totalCents: cents(o.total), currency: String(o.currency || 'AUD').toUpperCase(), gstCents: gst ? cents(gst) : null,
       status, statusLabel: { paid: 'Paid', unpaid: 'Not paid yet', refunded: 'Refunded', cancelled: 'Cancelled' }[status],
       paymentMethod: d.payment_method_title ? String(d.payment_method_title).slice(0, 60) : null, paidAt: d.date_paid || (pos ? o.order_date : null),
@@ -111,9 +123,9 @@ export async function portalReceipt(db: any, pc: PortalCompany, contact: any, ke
   }
 
   if (k.src === 'shop') {
-    const { data: o } = await db.from('orders').select('id, order_number, status, payment_status, subtotal, shipping_total, tax_total, discount_total, total, currency, order_date, created_at, customer_email, customer_phone_norm, sales_channel')
+    const { data: o } = await db.from('orders').select('id, order_number, status, payment_status, subtotal, shipping_total, tax_total, discount_total, total, currency, order_date, created_at, customer_name, customer_email, customer_phone_norm, sales_channel')
       .eq('id', k.id).eq('company_id', companyId).maybeSingle()
-    if (!o || !theirs(contact, o.customer_email, o.customer_phone_norm)) return null
+    if (!o || !mine(o.customer_email, o.customer_phone_norm)) return null
     const { data: items } = await db.from('order_items').select('product_name, quantity, unit_price, total_price').eq('order_id', o.id).eq('company_id', companyId).limit(100)
     const lines: ReceiptLine[] = (items || []).map((i: any) => {
       const qty = Number(i.quantity) || 1
@@ -129,7 +141,7 @@ export async function portalReceipt(db: any, pc: PortalCompany, contact: any, ke
     const business = await businessOf(db, companyId)
     return {
       title: business.abn && gst && gst > 0 ? 'Tax invoice' : 'Receipt', number: o.order_number ? `#${String(o.order_number).replace(/^#/, '')}` : String(o.id).slice(0, 8), ref: null,
-      date: o.order_date || o.created_at, business, customer: contact.name || null, lines, adjustments, totalCents: cents(o.total),
+      date: o.order_date || o.created_at, business, customer: contact?.name || o.customer_name || null, lines, adjustments, totalCents: cents(o.total),
       currency: String(o.currency || 'AUD').toUpperCase(), gstCents: gst ? cents(gst) : null, status,
       statusLabel: { paid: 'Paid', unpaid: 'Not paid yet', refunded: 'Refunded', cancelled: 'Cancelled' }[status],
       paymentMethod: null, paidAt: null, where: 'Online order', shopUrl: null, cardReceiptUrl: null,
@@ -140,13 +152,17 @@ export async function portalReceipt(db: any, pc: PortalCompany, contact: any, ke
   const { data: p } = await db.from('chat_payments').select('id, conversation_id, amount_cents, refunded_cents, currency, description, status, receipt_url, paid_at, created_at')
     .eq('id', k.id).eq('company_id', companyId).maybeSingle()
   if (!p || !p.conversation_id) return null
-  const { data: conv } = await db.from('conversations').select('id').eq('id', p.conversation_id).eq('company_id', companyId).eq('contact_id', contact.id).maybeSingle()
+  let q = db.from('conversations').select('id, contact_id').eq('id', p.conversation_id).eq('company_id', companyId)
+  if (contact) q = q.eq('contact_id', contact.id)
+  const { data: conv } = await q.maybeSingle()
   if (!conv) return null
+  let payer = contact?.name || null
+  if (!payer && conv.contact_id) { try { const { data: c } = await db.from('contacts').select('name').eq('id', conv.contact_id).eq('company_id', companyId).maybeSingle(); payer = c?.name || null } catch {} }
   const business = await businessOf(db, companyId)
   const status: PortalReceipt['status'] = p.status === 'refunded' ? 'refunded' : p.status === 'paid' ? 'paid' : p.status === 'failed' ? 'cancelled' : 'unpaid'
   const adjustments = Number(p.refunded_cents) > 0 && p.status !== 'refunded' ? [{ label: 'Refunded', cents: -Number(p.refunded_cents) }] : []
   return {
-    title: 'Receipt', number: String(p.id).replace(/-/g, '').slice(0, 8).toUpperCase(), ref: null, date: p.paid_at || p.created_at, business, customer: contact.name || null,
+    title: 'Receipt', number: String(p.id).replace(/-/g, '').slice(0, 8).toUpperCase(), ref: null, date: p.paid_at || p.created_at, business, customer: payer,
     lines: [{ name: String(p.description || 'Payment').slice(0, 120), qty: 1, cents: Number(p.amount_cents) || 0 }], adjustments,
     totalCents: (Number(p.amount_cents) || 0) - (adjustments.length ? Number(p.refunded_cents) : 0), currency: String(p.currency || 'aud').toUpperCase(), gstCents: null,
     status, statusLabel: { paid: 'Paid', unpaid: 'Not paid yet', refunded: 'Refunded', cancelled: 'Payment failed' }[status],

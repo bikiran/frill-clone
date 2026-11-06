@@ -28,6 +28,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import ContactTags from '@/components/inbox/ContactTags'
 import GuestGlance from '@/components/restaurant/GuestGlance'
+import SendReceipt from '@/components/orders/SendReceipt'
 
 export default function ContactPanelBody() {
   const {
@@ -56,6 +57,8 @@ export default function ContactPanelBody() {
   // isn't one of this customer's orders (once theirs have loaded, and a beat
   // for the refresh behind cached ones), open it on the Orders page instead.
   const [ringOrder, setRingOrder] = useState<string | null>(null)
+  // Send receipt for one of this customer's orders (WooCommerce / Prexty, by its number).
+  const [receiptFor, setReceiptFor] = useState<{ wooOrderId: number | string } | null>(null)
   useEffect(() => {
     if (!orderFocus) return
     if ((orderFocus.convId && orderFocus.convId !== selected?.id) || activePanel !== 'orders') { setOrderFocus(null); return }
@@ -1146,6 +1149,7 @@ export default function ContactPanelBody() {
                         <button type="button" onClick={() => issueOrderRefund(payload)} style={miniBtn('#b45309')}>Issue refund</button>
                       )}
                       <button type="button" onClick={() => generateInvoice(payload)} style={miniBtn('var(--ink)')}>Invoice</button>
+                      {companyId && (o.woo_order_id || /^\d+$/.test(String(oid))) && <button type="button" onClick={() => setReceiptFor({ wooOrderId: o.woo_order_id || Number(oid) })} style={miniBtn('var(--ink)')}>Send receipt</button>}
                       {o.shop && <a href={`https://${o.shop}/admin/orders/${o.external_order_id}`} target="_blank" rel="noopener noreferrer" style={{ ...miniBtn('#008060'), textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>Open in Shopify</a>}
                       {o.status_url && <button type="button" onClick={() => { navigator.clipboard?.writeText(o.status_url); showToast('Order status link copied') }} style={miniBtn('var(--slate)')}>Copy status link</button>}
                     </div>
@@ -1166,6 +1170,7 @@ export default function ContactPanelBody() {
                         ? <button type="button" onClick={() => issueOrderRefund(payload)} style={miniBtn('#b45309')}>Issue refund</button>
                         : <button type="button" onClick={() => sendOrderPaymentRequest(payload)} style={miniBtn('#635BFF')}>Payment request</button>}
                       <button type="button" onClick={() => generateInvoice(payload)} style={miniBtn('var(--ink)')}>Invoice</button>
+                      {companyId && (o.woo_order_id || /^\d+$/.test(String(oid))) && <button type="button" onClick={() => setReceiptFor({ wooOrderId: o.woo_order_id || Number(oid) })} style={miniBtn('var(--ink)')}>Send receipt</button>}
                       {payload.pay_link && <button type="button" onClick={() => { navigator.clipboard?.writeText(payload.pay_link!); showToast('Pay link copied') }} style={miniBtn('var(--slate)')}>Copy link</button>}
                     </div>
                     )}
@@ -1177,6 +1182,7 @@ export default function ContactPanelBody() {
           </div>
         )}
       </div>
+      {receiptFor && companyId && <SendReceipt companyId={companyId} target={receiptFor} onClose={() => setReceiptFor(null)} onSent={(m: string) => showToast(m)} />}
     </>
   )
 }
