@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import SlotPicker from '@/components/booking/SlotPicker'
 import { api, money, card, input, Modal, Toggle } from './shared'
 import { PinIcon, CheckIcon, ChatIcon, CalendarIcon, XIcon, LinkIcon } from '@/components/booking/icons'
@@ -43,6 +44,7 @@ export default function BookingsList({ companyId, bookings, timezone, scope, set
   const [range, setRange] = useState('all')
   const [sort, setSort] = useState('start')
   const [cancelling, setCancelling] = useState<any | null>(null)
+  const router = useRouter()
   const [moving, setMoving] = useState<any | null>(null)
   const [noShow, setNoShow] = useState<any | null>(null)
   const [repeating, setRepeating] = useState<any | null>(null)
@@ -51,7 +53,7 @@ export default function BookingsList({ companyId, bookings, timezone, scope, set
   const makeJob = async (b: any) => {
     try {
       const d = await createJobFrom(companyId, { source: 'booking', bookingId: b.id })
-      window.location.href = `/admin/jobs/${d.job.id}`
+      router.push(`/admin/jobs/${d.job.id}`)
     } catch (e: any) { flash(e?.message || 'Couldn’t create the job') }
   }
 

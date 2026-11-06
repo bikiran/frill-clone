@@ -6,6 +6,7 @@
 // inbox controller through useInbox().
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { MOODS, MOOD_COLOR, MOOD_LABEL, MoodBadge, MoodFace, isMood, launchMood } from '@/components/inbox/Mood'
 import { decodeEntities as dec } from '@/lib/decode-entities'
 import { supabase } from '@/lib/supabase'
@@ -32,6 +33,7 @@ export default function ThreadTop() {
   // Jobs & quotes: turn this enquiry into a job (only when the module is on).
   const jobsOn = useJobsEnabled(companyId)
   const [makingJob, setMakingJob] = useState(false)
+  const router = useRouter()
   const createJob = async () => {
     if (!selected?.id || !companyId || makingJob) return
     const ok = await confirmDialog({ title: 'Create a job from this conversation?', message: 'The customer and their latest messages are added to a new job, linked back here.', confirmLabel: 'Create job' })
@@ -39,7 +41,7 @@ export default function ThreadTop() {
     setMakingJob(true)
     try {
       const d = await createJobFrom(companyId, { source: 'conversation', conversationId: selected.id })
-      window.location.href = `/admin/jobs/${d.job.id}`
+      router.push(`/admin/jobs/${d.job.id}`)
     } catch (e: any) { setMakingJob(false); alertDialog({ title: 'Couldn’t create the job', message: e?.message || 'Please try again.' }) }
   }
   return (

@@ -7,15 +7,24 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { resolveCompanyUser } from '@/lib/client-cache'
+import { resolveCompanyUser, peekCompanyUser, readStored, writeStored, writeCache } from '@/lib/client-cache'
+import { api as apiCall } from '@/components/booking/admin/shared'
 import { JOB_STATUS_LABEL, JOB_STATUS_TONE, QUOTE_STATUS_LABEL, QUOTE_STATUS_TONE, type JobStatus, type QuoteStatus } from '@/lib/jobs/status'
 export { api } from '@/components/booking/admin/shared'
 
-/** The workspace the signed-in person is working in. */
+/**
+ * The workspace the signed-in person is working in. Known straight away when
+ * the admin layout has already worked it out (peekCompanyUser), so pages can
+ * start loading on their first render.
+ */
 export function useJobsCompany(): { companyId: string; ready: boolean } {
   const router = useRouter()
-  const [s, setS] = useState({ companyId: '', ready: false })
+  const [s, setS] = useState(() => {
+    const peek = peekCompanyUser()
+    return peek?.companyId ? { companyId: peek.companyId, ready: true } : { companyId: '', ready: false }
+  })
   useEffect(() => {
+    if (s.ready) return
     let live = true
     ;(async () => {
       const { companyId: cidRaw, user } = await resolveCompanyUser()
@@ -28,9 +37,36 @@ export function useJobsCompany(): { companyId: string; ready: boolean } {
       if (live) setS({ companyId: cid || '', ready: true })
     })()
     return () => { live = false }
-  }, [router])
+  }, [router, s.ready])
   return s
 }
+
+// ── Last-seen data, shown instantly while a fresh copy loads ───────────────
+// Going back to the board or reopening a job paints at once instead of a
+// skeleton; the server's answer replaces it a moment later. The board (one
+// entry per workspace) is also kept in this browser so a fresh page load paints
+// straight away; single jobs and quotes stay in the bounded in-memory cache so
+// browser storage doesn't fill up with every job ever opened. All of it is
+// cleared on sign-out (lib/client-cache).
+export const cacheKeys = {
+  list: (cid: string) => `jobs:list:${cid}`,
+  job: (cid: string, id: string) => `jobs:job:${cid}:${id}`,
+  quote: (cid: string, id: string) => `jobs:quote:${cid}:${id}`,
+}
+export const readJobsCache = <T = any>(key: string) => readStored<T>(key)
+export const writeJobsCache = (key: string, v: any) => {
+  try { if (key.startsWith('jobs:list:')) writeStored(key, v); else writeCache(key, v) } catch {}
+}
+
+const inflight = new Map<string, Promise<any>>()
+/** Fetch into the cache ahead of a click (hovering a card, a quote row). */
+export function prefetchInto(key: string, url: string) {
+  if (inflight.has(key) || readStored(key)) return
+  const p = apiCall(url).then(d => { writeJobsCache(key, d); return d }).catch(() => null).finally(() => inflight.delete(key))
+  inflight.set(key, p)
+}
+export const prefetchJob = (cid: string, id: string) => prefetchInto(cacheKeys.job(cid, id), `/api/jobs/${id}?companyId=${cid}`)
+export const prefetchQuote = (cid: string, id: string) => prefetchInto(cacheKeys.quote(cid, id), `/api/jobs/quotes/${id}?companyId=${cid}`)
 
 export function StatusTag({ status }: { status: string }) {
   const s = status as JobStatus

@@ -2,11 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { AdminPage } from '@/components/ui/AdminKit'
 import NewJobDialog from '@/components/jobs/NewJobDialog'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import EmptyScroll from '@/components/EmptyScroll'
 import {
   api, useJobsCompany, StatusTag, QuoteTag, fmtWhen, fmtTime, fmtAgo, dayKeyIn, useToast, Toast, SetupNote, Icon, JB_CSS,
+  cacheKeys, readJobsCache, writeJobsCache, prefetchJob,
 } from '@/components/jobs/shared'
 import { JOB_STATUSES, JOB_STATUS_LABEL, canMoveJob, nextStatuses, fmtJobNumber, isOpenJob, type JobStatus } from '@/lib/jobs/status'
 import { fmtMoney } from '@/lib/jobs/quote-math'
@@ -25,11 +28,13 @@ export default function JobsPage() {
   const [view, setView] = useState<View>('board')
   const [filter, setFilter] = useState<Filter>('open')
   const [q, setQ] = useState('')
-  const [jobs, setJobs] = useState<any[]>([])
-  const [tz, setTz] = useState('Australia/Melbourne')
-  const [prefix, setPrefix] = useState('J')
-  const [qPrefix, setQPrefix] = useState('Q')
-  const [loading, setLoading] = useState(true)
+  // Last-seen board, painted straight away; the server's copy replaces it.
+  const seed = useRef<any>(companyId ? readJobsCache(cacheKeys.list(companyId)) : undefined)
+  const [jobs, setJobs] = useState<any[]>(() => seed.current?.jobs || [])
+  const [tz, setTz] = useState(() => seed.current?.timezone || 'Australia/Melbourne')
+  const [prefix, setPrefix] = useState(() => seed.current?.settings?.job_prefix || 'J')
+  const [qPrefix, setQPrefix] = useState(() => seed.current?.settings?.quote_prefix || 'Q')
+  const [loading, setLoading] = useState(() => !seed.current)
   const [setup, setSetup] = useState('')
   const [err, setErr] = useState('')
   const [showNew, setShowNew] = useState(false)
@@ -47,22 +52,45 @@ export default function JobsPage() {
     try { localStorage.setItem('colvy-jobs-view', v); const u = new URL(window.location.href); u.searchParams.set('view', v); window.history.replaceState(null, '', u.toString()) } catch {}
   }
 
+  // Only the newest request may paint, so a slow answer for "ab" can't land
+  // on top of the answer for "abc".
+  const seq = useRef(0)
+  const lastSearch = useRef('')
   const load = useCallback(async (cid: string, search: string) => {
+    const mine = ++seq.current
+    lastSearch.current = search
     try {
       const d = await api(`/api/jobs?companyId=${cid}${search ? `&q=${encodeURIComponent(search)}` : ''}`)
+      if (mine !== seq.current) return
       setJobs(d.jobs || []); setTz(d.timezone || 'Australia/Melbourne')
       setPrefix(d.settings?.job_prefix || 'J'); setQPrefix(d.settings?.quote_prefix || 'Q')
       setSetup(''); setErr('')
+      if (!search) writeJobsCache(cacheKeys.list(cid), { jobs: d.jobs || [], timezone: d.timezone, settings: { job_prefix: d.settings?.job_prefix, quote_prefix: d.settings?.quote_prefix } })
     } catch (e: any) {
+      if (mine !== seq.current) return
       if (/COLVY_V427/.test(e.message)) setSetup(e.message); else setErr(e.message)
-    } finally { setLoading(false) }
+    } finally { if (mine === seq.current) setLoading(false) }
   }, [])
-  useEffect(() => { if (ready && companyId) load(companyId, '') ; else if (ready) setLoading(false) }, [ready, companyId, load])
   useEffect(() => {
-    if (!companyId) return
-    const t = setTimeout(() => load(companyId, q.trim()), 280)
+    if (!ready) return
+    if (!companyId) { setLoading(false); return }
+    if (!seed.current) {
+      const c = readJobsCache<any>(cacheKeys.list(companyId))
+      if (c) { seed.current = c; setJobs(c.jobs || []); setTz(c.timezone || 'Australia/Melbourne'); setPrefix(c.settings?.job_prefix || 'J'); setQPrefix(c.settings?.quote_prefix || 'Q'); setLoading(false) }
+    }
+    load(companyId, '')
+  }, [ready, companyId, load])
+  useEffect(() => {
+    if (!companyId || q.trim() === lastSearch.current) return
+    const t = setTimeout(() => load(companyId, q.trim()), q.trim() ? 220 : 0)
     return () => clearTimeout(t)
   }, [q]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Keep the cached board in step with moves made here.
+  useEffect(() => {
+    if (!companyId || loading || q.trim() || setup) return
+    const c = readJobsCache<any>(cacheKeys.list(companyId))
+    if (c && c.jobs !== jobs) writeJobsCache(cacheKeys.list(companyId), { ...c, jobs })
+  }, [jobs]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Moving a job (board drag or the Move to menu) ──
   const move = useCallback(async (job: any, to: JobStatus) => {
@@ -94,13 +122,22 @@ export default function JobsPage() {
     return c
   }, [jobs])
 
-  const open = (j: any) => router.push(`/admin/jobs/${j.id}`)
+  const open = (j: any) => {
+    // Hand the job page what we already know so it can paint at once.
+    if (companyId && !readJobsCache(cacheKeys.job(companyId, j.id))) writeJobsCache(cacheKeys.job(companyId, j.id), { job: j, partial: true })
+    router.push(`/admin/jobs/${j.id}`)
+  }
+  const warm = useCallback((j: any) => {
+    if (!companyId) return
+    router.prefetch(`/admin/jobs/${j.id}`)
+    prefetchJob(companyId, j.id)
+  }, [companyId, router])
 
   return (
     <AdminPage title="Jobs" width="xl"
       sub="Quotes and jobs, from the first enquiry to done."
       actions={<>
-        <a href="/admin/jobs/settings" className="ak-btn" title="Quote settings, price list and templates">{Icon.gear}<span className="jb-hide-sm">Settings</span></a>
+        <Link href="/admin/jobs/settings" className="ak-btn" title="Quote settings, price list and templates">{Icon.gear}<span className="jb-hide-sm">Settings</span></Link>
         <button type="button" className="ak-btn go" onClick={() => setShowNew(true)} disabled={!companyId || !!setup}>{Icon.plus}New job</button>
       </>}>
       <style>{JB_CSS + PAGE_CSS}</style>
@@ -131,18 +168,24 @@ export default function JobsPage() {
 
       {loading ? (
         <div className="jb-skel">{Array.from({ length: 4 }).map((_, i) => <div key={i} />)}</div>
-      ) : err && jobs.length === 0 ? null : !setup && jobs.length === 0 && !q ? (
-        <div className="ak-panel"><div className="ak-empty">
-          <b>No jobs yet</b>
-          <span>Create one here, or turn an enquiry into a job from the Inbox, a booking or a form response.</span>
-          <button type="button" className="ak-btn go" style={{ marginTop: 12 }} onClick={() => setShowNew(true)}>{Icon.plus}New job</button>
-        </div></div>
+      ) : err && jobs.length === 0 ? null : !setup && jobs.length === 0 && !q.trim() ? (
+        <div className="ak-panel jb-empty">
+          <EmptyScroll title="No jobs yet" kinds={['job', 'quote', 'calendar']}
+            line="Create one here, or turn an enquiry into a job from the Inbox, a booking or a form response."
+            action={<button type="button" className="ak-btn go" onClick={() => setShowNew(true)}>{Icon.plus}New job</button>} />
+        </div>
+      ) : !setup && jobs.length === 0 ? (
+        <div className="ak-panel jb-empty">
+          <EmptyScroll title="Nothing found" kinds={['job', 'contact', 'quote']}
+            line={<>No jobs match “{q.trim()}”. Try a customer’s name, a title or a {prefix}-number.</>}
+            action={<button type="button" className="ak-btn" onClick={() => setQ('')}>Clear search</button>} />
+        </div>
       ) : view === 'board' ? (
-        <Board jobs={jobs} tz={tz} prefix={prefix} qPrefix={qPrefix} onMove={move} onOpen={open} />
+        <Board jobs={jobs} tz={tz} prefix={prefix} qPrefix={qPrefix} onMove={move} onOpen={open} onWarm={warm} />
       ) : view === 'list' ? (
-        <ListView jobs={shown} tz={tz} prefix={prefix} qPrefix={qPrefix} onOpen={open} />
+        <ListView jobs={shown} tz={tz} prefix={prefix} qPrefix={qPrefix} onOpen={open} onWarm={warm} onShowAll={filter !== 'open' ? () => setFilter('open') : undefined} />
       ) : (
-        <CalendarView jobs={jobs} tz={tz} prefix={prefix} onOpen={open} />
+        <CalendarView jobs={jobs} tz={tz} prefix={prefix} onOpen={open} onWarm={warm} />
       )}
 
       {showNew && companyId && (
@@ -155,7 +198,7 @@ export default function JobsPage() {
 
 // ── Board ────────────────────────────────────────────────────────────────────
 
-function Board({ jobs, tz, prefix, qPrefix, onMove, onOpen }: { jobs: any[]; tz: string; prefix: string; qPrefix: string; onMove: (j: any, to: JobStatus) => void; onOpen: (j: any) => void }) {
+function Board({ jobs, tz, prefix, qPrefix, onMove, onOpen, onWarm }: { jobs: any[]; tz: string; prefix: string; qPrefix: string; onMove: (j: any, to: JobStatus) => void; onOpen: (j: any) => void; onWarm: (j: any) => void }) {
   const [over, setOver] = useState<JobStatus | null>(null)
   const [dragId, setDragId] = useState<string | null>(null)
   const drag = useRef<any>(null)
@@ -265,7 +308,7 @@ function Board({ jobs, tz, prefix, qPrefix, onMove, onOpen }: { jobs: any[]; tz:
             <header><StatusTag status={s} /><span className="jb-count">{list.length}</span></header>
             <div className="jb-col-b">
               {list.map(j => (
-                <article key={j.id} className={`jb-card${dragId === j.id ? ' lifted' : ''}`} onPointerDown={e => down(e, j)}
+                <article key={j.id} className={`jb-card${dragId === j.id ? ' lifted' : ''}`} onPointerDown={e => { onWarm(j); down(e, j) }} onPointerEnter={() => onWarm(j)} onFocus={() => onWarm(j)}
                   tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') onOpen(j) }} aria-label={`${fmtJobNumber(j.number, prefix)} ${j.title}`}>
                   <div className="jb-card-t">
                     <span className="jb-no">{fmtJobNumber(j.number, prefix)}</span>
@@ -325,13 +368,17 @@ function MoveMenu({ job, onMove }: { job: any; onMove: (j: any, to: JobStatus) =
 
 // ── List ─────────────────────────────────────────────────────────────────────
 
-function ListView({ jobs, tz, prefix, qPrefix, onOpen }: { jobs: any[]; tz: string; prefix: string; qPrefix: string; onOpen: (j: any) => void }) {
-  if (!jobs.length) return <div className="ak-panel"><div className="ak-empty"><b>No jobs match</b><span>Try another filter or search.</span></div></div>
+function ListView({ jobs, tz, prefix, qPrefix, onOpen, onWarm, onShowAll }: { jobs: any[]; tz: string; prefix: string; qPrefix: string; onOpen: (j: any) => void; onWarm: (j: any) => void; onShowAll?: () => void }) {
+  if (!jobs.length) return (
+    <div className="ak-panel jb-empty">
+      <EmptyScroll title="Nothing here" kinds={['job', 'quote', 'calendar']} line="No jobs with this status. Try another filter." action={onShowAll ? <button type="button" className="ak-btn" onClick={onShowAll}>Show open jobs</button> : undefined} />
+    </div>
+  )
   return (
     <div className="ak-panel flush">
       <div className="jb-list">
         {jobs.map(j => (
-          <button key={j.id} type="button" className="jb-li" onClick={() => onOpen(j)}>
+          <button key={j.id} type="button" className="jb-li" onClick={() => onOpen(j)} onPointerEnter={() => onWarm(j)} onPointerDown={() => onWarm(j)} onFocus={() => onWarm(j)}>
             <div className="jb-li-main">
               <div className="jb-li-top"><span className="jb-no">{fmtJobNumber(j.number, prefix)}</span><StatusTag status={j.status} /></div>
               <b className="jb-title">{j.title}</b>
@@ -355,7 +402,7 @@ function ListView({ jobs, tz, prefix, qPrefix, onOpen }: { jobs: any[]; tz: stri
 
 // ── Calendar (month, business time) ─────────────────────────────────────────
 
-function CalendarView({ jobs, tz, prefix, onOpen }: { jobs: any[]; tz: string; prefix: string; onOpen: (j: any) => void }) {
+function CalendarView({ jobs, tz, prefix, onOpen, onWarm }: { jobs: any[]; tz: string; prefix: string; onOpen: (j: any) => void; onWarm: (j: any) => void }) {
   const today = dayKeyIn(new Date(), tz)
   const [ym, setYm] = useState(() => ({ y: +today.slice(0, 4), m: +today.slice(5, 7) - 1 }))
   const first = new Date(ym.y, ym.m, 1)
@@ -398,7 +445,7 @@ function CalendarView({ jobs, tz, prefix, onOpen }: { jobs: any[]; tz: string; p
             <div key={i} className={`jb-cal-c${k === today ? ' today' : ''}`}>
               <span className="jb-cal-d">{d}</span>
               {list.slice(0, 3).map(j => (
-                <button key={j.id} type="button" className={`jb-cal-j s-${j.status}`} onClick={() => onOpen(j)} title={`${fmtJobNumber(j.number, prefix)} ${j.title} · ${fmtWhen(j.scheduled_start, j.scheduled_end, tz)}`}>
+                <button key={j.id} type="button" className={`jb-cal-j s-${j.status}`} onClick={() => onOpen(j)} onPointerEnter={() => onWarm(j)} onPointerDown={() => onWarm(j)} title={`${fmtJobNumber(j.number, prefix)} ${j.title} · ${fmtWhen(j.scheduled_start, j.scheduled_end, tz)}`}>
                   <span className="jb-num">{fmtTime(j.scheduled_start, tz)}</span> {j.title}
                 </button>
               ))}
@@ -413,6 +460,9 @@ function CalendarView({ jobs, tz, prefix, onOpen }: { jobs: any[]; tz: string; p
 }
 
 const PAGE_CSS = `
+.jb-empty{padding:28px 20px 34px}
+.jb-empty .es-title{font-size:16px}
+.jb-empty .es-line{max-width:380px;font-size:13.5px}
 .jb-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px}
 .jb-search{display:flex;align-items:center;gap:8px;flex:1;max-width:340px;min-width:200px;height:40px;padding:0 14px;border-radius:999px;background:var(--f);color:var(--mut)}
 .jb-search input{flex:1;min-width:0;border:none;background:none;outline:none;font:inherit;font-size:14px;color:var(--ink)}

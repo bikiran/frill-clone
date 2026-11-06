@@ -10,6 +10,7 @@ import type { ReactNode } from 'react'
 
 export type EmptyKind = 'chat' | 'sms' | 'email' | 'task' | 'contact' | 'order' | 'ticket'
   | 'review' | 'link' | 'campaign' | 'calendar' | 'form' | 'payment' | 'photo' | 'call' | 'note' | 'article' | 'place' | 'idea'
+  | 'job' | 'quote'
 type Kind = EmptyKind
 
 // Drawn as a coloured outline on its own, without the tile behind it.
@@ -19,6 +20,7 @@ const TINT: Record<Kind, string> = {
   chat: '#ff7a6b', sms: '#34c759', email: '#007aff', task: '#af52de', contact: '#ff9f0a', order: '#5ac8fa', ticket: '#f2551d',
   review: '#ffb800', link: '#5856d6', campaign: '#ff375f', calendar: '#ff453a', form: '#30b0c7', payment: '#00b894',
   photo: '#ff9500', call: '#32c766', note: '#c69c6d', article: '#5e5ce6', place: '#ff2d55', idea: '#f5b400',
+  job: '#4f6bed', quote: '#13a07e',
 }
 
 const Glyph = ({ kind }: { kind: Kind }) => {
@@ -41,6 +43,8 @@ const Glyph = ({ kind }: { kind: Kind }) => {
     case 'note': return <svg {...p}><path d="M5 4.5h10l4 4v11H5z" /><path d="M15 4.5v4h4M8.5 13h7M8.5 16.5h4" /></svg>
     case 'article': return <svg {...p}><path d="M4 6a2 2 0 0 1 2-2h5v16H6a2 2 0 0 0-2 2zM20 6a2 2 0 0 0-2-2h-5v16h5a2 2 0 0 1 2 2z" /></svg>
     case 'place': return <svg {...p}><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z" /><circle cx="12" cy="10" r="2.2" /></svg>
+    case 'job': return <svg {...p}><rect x="3.5" y="7.5" width="17" height="12" rx="2.2" /><path d="M9 7.5V6a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 6v1.5M3.5 12.5h17" /></svg>
+    case 'quote': return <svg {...p}><path d="M6 3.5h8l4 4v13H6z" /><path d="M14 3.5v4h4M12 10.5v6.5M14 11.6h-2.6a1.3 1.3 0 0 0 0 2.6h1.2a1.3 1.3 0 0 1 0 2.6H10" /></svg>
     case 'idea': return <svg {...p}><path d="M9 18h6M10 21h4" /><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z" /></svg>
     default: return <svg {...p}><path d="M20 14.5a2 2 0 0 1-2 2H8.5L4 20V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z" /></svg>
   }
