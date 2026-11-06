@@ -5,9 +5,10 @@
 
 import { loadStaff } from '@/lib/booking'
 import { internalHeaders } from '@/lib/internal-call'
-import { jobWindow, assigneesOf, canSeeJob, canSeeMoney, type Busy } from '@/lib/jobs/work'
+import { jobWindow, assigneesOf, canSeeJob, canSeeMoney, jobFileUrlOk, type Busy } from '@/lib/jobs/work'
 import { isJobsManager, companySettings, jobsAccess, isUuid, json, setupNeeded, isMissingJobsSchema, loadCompany, companyTz, type JobsCaller } from '@/lib/jobs/server'
 import type { JobSettings } from '@/lib/jobs/settings'
+import { r2PublicBase } from '@/lib/r2'
 
 export type StaffMember = { id: string; name: string; avatar_url?: string | null; email?: string | null; phone?: string | null }
 
@@ -221,4 +222,13 @@ export async function jobContext(req: Request, db: any, companyId: any, id: any)
     response: null as any, access, job, company, settings, view,
     tz: companyTz(company), label: `${settings.job_prefix}-${job.number}`,
   }
+}
+
+/**
+ * A file this job may record: uploaded by /api/storage/put into THIS job's
+ * folder on our own storage (R2's public domain or the Supabase bucket).
+ */
+export function isJobFileUrl(url: any, companyId: string, jobId: string): boolean {
+  const sb = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/+$/, '')
+  return jobFileUrlOk(url, companyId, jobId, [r2PublicBase(), sb ? `${sb}/storage/v1/object/public/chat-attachments` : ''])
 }

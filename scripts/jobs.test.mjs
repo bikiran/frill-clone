@@ -13,7 +13,7 @@ import { resolveJobSettings, effectiveTaxRate } from '../lib/jobs/settings.ts'
 import { jobsEnabled, moduleAllowsPage, readModules } from '../lib/modules.ts'
 import { canUseFeature, featureForPath, ALL_FEATURE_KEYS } from '../lib/permissions.ts'
 import { checkJobsAccess } from '../lib/jobs/access-core.ts'
-import { cleanAssignees, isAssigned, overlaps, jobWindow, findConflicts, entrySeconds, timeTotals, fmtDuration, canSeeJob, canSeeMoney, cleanChecklistItems, cleanChecklistText, isPhotoKind, MAX_ASSIGNEES, MAX_CHECKLIST_ITEMS } from '../lib/jobs/work.ts'
+import { cleanAssignees, isAssigned, overlaps, jobWindow, findConflicts, entrySeconds, timeTotals, fmtDuration, canSeeJob, canSeeMoney, cleanChecklistItems, cleanChecklistText, isPhotoKind, jobFileUrlOk, MAX_ASSIGNEES, MAX_CHECKLIST_ITEMS } from '../lib/jobs/work.ts'
 
 let passed = 0, failed = 0
 function ok(name, cond) {
@@ -275,6 +275,24 @@ console.log('Phase 2: checklists and photos')
   eq(`at most ${MAX_CHECKLIST_ITEMS}`, cleanChecklistItems(Array.from({ length: 150 }, (_, i) => 'item ' + i)).length, MAX_CHECKLIST_ITEMS)
   eq('long text cut to 300', cleanChecklistText('x'.repeat(500)).length, 300)
   ok('photo kinds', isPhotoKind('before') && isPhotoKind('after') && isPhotoKind('other') && !isPhotoKind('signature'))
+}
+
+console.log('Phase 2: only files from this job\'s own folder')
+{
+  const co = 'c0000000-0000-4000-8000-000000000001', job = 'j0000000-0000-4000-8000-000000000001'
+  const bases = ['https://media.example.test', 'https://abc.supabase.co/storage/v1/object/public/chat-attachments']
+  const f = `chat-attachments/${co}/jobs/${job}/123-photo.jpg`
+  ok('R2 file in the job folder', jobFileUrlOk(`https://media.example.test/${f}`, co, job, bases))
+  ok('Supabase file in the job folder', jobFileUrlOk(`https://abc.supabase.co/storage/v1/object/public/chat-attachments/${f}`, co, job, bases))
+  ok('another host refused', !jobFileUrlOk(`https://evil.test/${f}`, co, job, bases))
+  ok('look-alike host refused', !jobFileUrlOk(`https://media.example.test.evil.test/${f}`, co, job, bases))
+  ok('folder in the query refused', !jobFileUrlOk(`https://evil.test/x?u=https://media.example.test/${f}`, co, job, bases))
+  ok('another job refused', !jobFileUrlOk(`https://media.example.test/chat-attachments/${co}/jobs/other/1.jpg`, co, job, bases))
+  ok('another workspace refused', !jobFileUrlOk(`https://media.example.test/chat-attachments/other/jobs/${job}/1.jpg`, co, job, bases))
+  ok('../ refused', !jobFileUrlOk(`https://media.example.test/chat-attachments/${co}/jobs/${job}/../../x/1.jpg`, co, job, bases))
+  ok('the bare folder refused', !jobFileUrlOk(`https://media.example.test/chat-attachments/${co}/jobs/${job}/`, co, job, bases))
+  ok('javascript: refused', !jobFileUrlOk(`javascript:alert(1)//media.example.test/${f}`, co, job, bases))
+  ok('not a string refused', !jobFileUrlOk(null, co, job, bases))
 }
 
 console.log(`\n${passed} passed, ${failed} failed`)

@@ -108,3 +108,15 @@ export const PHOTO_KINDS = ['before', 'after', 'other'] as const
 export type PhotoKind = typeof PHOTO_KINDS[number]
 export const PHOTO_KIND_LABEL: Record<PhotoKind, string> = { before: 'Before', after: 'After', other: 'Other' }
 export const isPhotoKind = (k: any): k is PhotoKind => (PHOTO_KINDS as readonly string[]).includes(k)
+
+/**
+ * Is `url` a file in this job's own folder (chat-attachments/<company>/jobs/<job>/)
+ * under one of our storage bases? Anything else (another host, another
+ * workspace's or job's folder, a "../" path, a look-alike host) is refused.
+ */
+export function jobFileUrlOk(url: any, companyId: string, jobId: string, bases: string[]): boolean {
+  if (typeof url !== 'string' || url.length > 1000 || url.includes('..') || /[\s\\]/.test(url)) return false
+  try { const u = new URL(url); if (u.protocol !== 'https:' && u.protocol !== 'http:') return false } catch { return false }
+  const key = `chat-attachments/${companyId}/jobs/${jobId}/`
+  return bases.some(b => !!b && url.startsWith(`${b.replace(/\/+$/, '')}/${key}`) && url.length > b.length + key.length + 1)
+}
