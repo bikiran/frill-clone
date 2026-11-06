@@ -1,13 +1,17 @@
 // Tests for restaurant reservations (Phase 1): settings, dining times by party
 // size, covers and pacing (the same rules as claim_reservation in V429), the
 // day's seating times in the business's time zone, the module switch and the
-// new business type. Zero dependencies:
+// new business type. Phase 2: which table a party gets (the same order as
+// claim_table_reservation in V430), combos, floor plan checks, deposits and
+// the missed-call text's booking link. Zero dependencies:
 //
 //   npx tsx scripts/restaurant.test.mjs
 //
 // Exits non-zero when anything fails.
 
-import { resolveRestaurantSettings, durationFor, periodName, cleanDurations, reservationName } from '../lib/restaurant/settings.ts'
+import { resolveRestaurantSettings, durationFor, periodName, cleanDurations, reservationName, depositFor } from '../lib/restaurant/settings.ts'
+import { pickTable, tableFree, tableChoices, seatsByTable, floorProblem } from '../lib/restaurant/tables.ts'
+import { renderMissedCallText, missedCallTextSettings, MISSED_CALL_TEXT_RESTAURANT, MISSED_CALL_TEXT_DEFAULT } from '../lib/missed-call-text-settings.ts'
 import { peakCovers, paceCovers, fits, reservationSlots, onGrid, coversTimeline, daySpan } from '../lib/restaurant/availability.ts'
 import { restaurantEnabled, moduleAllowsPage, jobsEnabled } from '../lib/modules.ts'
 import { industryFromGoogle } from '../lib/industries.ts'
@@ -132,6 +136,77 @@ console.log('Module, business type, permission')
   eq('Google: bakery stays Food & Drink', industryFromGoogle('bakery'), 'Food & Drink')
   eq('reservations pages belong to the reservations permission', featureForPath('/admin/reservations/settings')?.key, 'reservations')
   ok('owners can use it', canUseFeature('owner', null, 'reservations'))
+}
+
+console.log('Tables (Phase 2)')
+{
+  const T = (id, label, min, max, extra = {}) => ({ id, label, area_id: extra.area || null, min_party: min, max_party: max, online: extra.online ?? true, active: extra.active ?? true, unavailable_until: extra.until || null, sort: extra.sort ?? 0 })
+  const floor = {
+    tables: [T('t1', '1', 1, 2), T('t2', '2', 1, 2, { area: 'patio' }), T('t4', '4', 2, 4), T('t5', '5', 2, 4), T('t6', '6', 4, 6, { online: false }), T('t9', '9', 1, 2, { active: false })],
+    combos: [{ id: 'c45', name: '4 + 5', table_ids: ['t4', 't5'], min_party: 6, max_party: 8, online: true, active: true }],
+  }
+  const at = Date.parse('2026-11-14T08:00:00Z'), end = at + 90 * MIN
+  eq('a couple: the smallest table first (1, by label)', pickTable(floor, [], { party: 2, start: at, end })?.tables, ['t1'])
+  eq('…the area they asked for first', pickTable(floor, [], { party: 2, start: at, end, area: 'patio' })?.tables, ['t2'])
+  const busy1 = [{ table_id: 't1', booking_id: 'b1', starts: at - 30 * MIN, ends: at + 30 * MIN }]
+  eq('table 1 taken for part of the visit: the next one', pickTable(floor, busy1, { party: 2, start: at, end })?.tables, ['t2'])
+  eq('…but not when it’s that same reservation moving', pickTable(floor, busy1, { party: 2, start: at, end, excludeId: 'b1' })?.tables, ['t1'])
+  ok('a hold that ended as they arrive doesn’t block', tableFree(floor.tables[0], [{ table_id: 't1', booking_id: 'b0', starts: at - 90 * MIN, ends: at }], at, end))
+  eq('four: a four-top', pickTable(floor, [], { party: 4, start: at, end })?.tables, ['t4'])
+  eq('six: table 6 for the team', pickTable(floor, [], { party: 6, start: at, end })?.tables, ['t6'])
+  const six = pickTable(floor, [], { party: 6, start: at, end, onlineOnly: true })
+  eq('six online: 6 isn’t bookable online, so the 4 + 5 combo', [six?.tables, six?.combo], [['t4', 't5'], 'c45'])
+  eq('combo needs every table free', pickTable(floor, [{ table_id: 't5', booking_id: 'b2', starts: at, ends: end }], { party: 6, start: at, end, onlineOnly: true }), null)
+  eq('nine: nothing fits', pickTable(floor, [], { party: 9, start: at, end }), null)
+  const out = { ...floor, tables: floor.tables.map(t => t.id === 't1' ? { ...t, unavailable_until: new Date(at + 60 * MIN).toISOString() } : t) }
+  eq('a table out of action is skipped', pickTable(out, [], { party: 2, start: at, end })?.tables, ['t2'])
+  ok('switched-off tables never count', !tableFree(floor.tables[5], [], at, end))
+  ok('seats by table only with the setting on and a table', seatsByTable(true, floor) && !seatsByTable(false, floor) && !seatsByTable(true, { tables: [], combos: [] }) && !seatsByTable(true, null))
+  const ch = tableChoices(floor, busy1, { party: 4, start: at, end })
+  eq('picker: free and fitting first, taken last', ch.map(c => c.label), ['4', '5', '6', '2', '1'])
+  ok('picker: says which are taken', ch.find(c => c.label === '1').free === false)
+  eq('plan check: fine', floorProblem({ tables: floor.tables, combos: floor.combos }), null)
+  ok('plan check: two tables called 4', /Two tables are called/.test(floorProblem({ tables: [T('a', '4', 1, 2), T('b', ' 4', 1, 2)], combos: [] }) || ''))
+  ok('plan check: most fewer than fewest', /fewer than the fewest/.test(floorProblem({ tables: [T('a', '1', 4, 2)], combos: [] }) || ''))
+  ok('plan check: a combo using a removed table', /no longer on the plan/.test(floorProblem({ tables: [T('t4', '4', 2, 4)], combos: floor.combos }) || ''))
+
+  // The day's times when seating by table: covers allow it, but no table does.
+  const s = resolveRestaurantSettings({ interval_mins: 30, duration_mins: 90, durations: [], max_covers: 40, pace_covers: 0, min_notice_mins: 0, hours: { sat: [{ start: '18:00', end: '19:00' }] } })
+  const tz = 'Australia/Melbourne', six30 = zonedToUtc('2026-11-14', '18:00', tz)
+  const small = { tables: [T('t1', '1', 1, 2)], combos: [] }
+  const live = [{ id: 'b1', starts: six30, ends: six30 + 90 * MIN, seats: 2 }]
+  const slots = reservationSlots({ settings: s, tz, date: '2026-11-14', party: 2, live, now: Date.parse('2026-11-10T00:00:00Z'), floor: { floor: small, holds: [{ table_id: 't1', booking_id: 'b1', starts: six30, ends: six30 + 90 * MIN }], onlineOnly: true } })
+  ok('one table, taken at 6: 6pm says no table', slots[0].ok === false && slots[0].reason === 'no_table')
+  ok('…7:30 isn’t on the grid, 7pm is still taken', slots.every(x => !x.ok))
+  const nofloor = reservationSlots({ settings: s, tz, date: '2026-11-14', party: 2, live, now: Date.parse('2026-11-10T00:00:00Z') })
+  ok('without tables the same evening has room (covers only)', nofloor.every(x => x.ok))
+}
+
+console.log('Deposits and no-shows (Phase 2)')
+{
+  const s = resolveRestaurantSettings({ deposit: { mode: 'per_person', cents: 2000, min_party: 6, days: ['fri', 'sat'] }, no_show: { auto_mins: 30, block_after: 3, deposit_after: 2 } })
+  eq('defaults: no deposit, no automatic no-shows', [resolveRestaurantSettings(null).deposit.mode, resolveRestaurantSettings(null).no_show.auto_mins], ['off', 0])
+  eq('6 on a Saturday: $20 each', depositFor(s, { party: 6, date: '2026-11-14' }), { cents: 12000, why: 'rule' })
+  eq('4 on a Saturday: none', depositFor(s, { party: 4, date: '2026-11-14' }), { cents: 0, why: null })
+  eq('6 on a Tuesday: none', depositFor(s, { party: 6, date: '2026-11-10' }), { cents: 0, why: null })
+  eq('…unless they’ve not turned up twice before', depositFor(s, { party: 2, date: '2026-11-10', noShows: 2 }), { cents: 4000, why: 'no_shows' })
+  const pb = resolveRestaurantSettings({ deposit: { mode: 'per_booking', cents: 5000, min_party: 1, days: [] } })
+  eq('per booking, any day', depositFor(pb, { party: 3, date: '2026-11-10' }), { cents: 5000, why: 'rule' })
+  eq('no-show rule cleaned: auto 5 → 10 (the least), block 99 → 10', [resolveRestaurantSettings({ no_show: { auto_mins: 5, block_after: 99 } }).no_show.auto_mins, resolveRestaurantSettings({ no_show: { auto_mins: 5, block_after: 99 } }).no_show.block_after], [10, 10])
+  eq('a negative deposit is none', resolveRestaurantSettings({ deposit: { mode: 'per_person', cents: -5 } }).deposit.cents, 0)
+}
+
+console.log('Missed-call text: the booking link (Phase 2)')
+{
+  eq('restaurant text with its booking page', renderMissedCallText(MISSED_CALL_TEXT_RESTAURANT, 'Harbour Lane Kitchen', 'https://harbour.colvy.com/reserve'),
+    "Sorry we missed your call! This is Harbour Lane Kitchen. Book a table here: https://harbour.colvy.com/reserve or reply and we'll get back to you.")
+  eq('no page to link to: the link sentence goes', renderMissedCallText(MISSED_CALL_TEXT_RESTAURANT, 'Harbour Lane Kitchen', null),
+    "Sorry we missed your call! This is Harbour Lane Kitchen. Reply and we'll get back to you.")
+  eq('a bare placeholder just goes', renderMissedCallText('Hi from {business}! {booking_link}', 'X', ''), 'Hi from X!')
+  eq('restaurants get the table text by default', missedCallTextSettings({}, { restaurant: true }).message, MISSED_CALL_TEXT_RESTAURANT)
+  eq('…and instead of the old plain default', missedCallTextSettings({ missed_call_text: { message: MISSED_CALL_TEXT_DEFAULT } }, { restaurant: true }).message, MISSED_CALL_TEXT_RESTAURANT)
+  eq('their own words are kept', missedCallTextSettings({ missed_call_text: { message: 'Call us back!' } }, { restaurant: true }).message, 'Call us back!')
+  eq('gap between texts: 12 hours by default, theirs when set, 12 when silly', [missedCallTextSettings({}).hours, missedCallTextSettings({ missed_call_text: { hours: 24 } }).hours, missedCallTextSettings({ missed_call_text: { hours: 999 } }).hours], [12, 24, 12])
 }
 
 console.log(`\n${passed} passed, ${failed} failed`)

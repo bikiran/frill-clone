@@ -42,11 +42,12 @@ async function load(db: any, token: string | null) {
   const settings = resolveBookingSettings(company.booking_settings)
   if (service?.kind === 'reservation') {
     // A table: the restaurant's own window for changes; cancelling is always
-    // allowed online (a restaurant would rather know than get a no-show).
+    // allowed online (a restaurant would rather know than get a no-show). A
+    // deposit comes back when they cancel before that window; after it, it's kept.
     try {
       const { data: rc } = await db.from('companies').select('restaurant_settings').eq('id', company.id).maybeSingle()
       const rs = resolveRestaurantSettings(rc?.restaurant_settings)
-      Object.assign(settings, { cancel_hours: rs.cancel_hours, allow_reschedule: rs.allow_changes, late_cancel: 'allow', refund_on_cancel: false })
+      Object.assign(settings, { cancel_hours: rs.cancel_hours, allow_reschedule: rs.allow_changes, late_cancel: 'allow', refund_on_cancel: true })
     } catch {}
   }
   return { b, company, service, settings }

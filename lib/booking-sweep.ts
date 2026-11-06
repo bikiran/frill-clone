@@ -10,6 +10,9 @@
 //      that set it, unless they've already booked again.
 //   4. Tidy — lapsed unpaid holds become 'expired' (and their time is queued
 //      for the booking waitlist, lib/booking-waitlist.ts, if the business has one).
+//   Restaurants (before the wrap-up): a table nobody turned up for is marked a
+//   no-show N minutes after its time, when the restaurant turns that on
+//   (Reservation settings → No-shows).
 //
 // Every send is claimed first (update … where <col> is null) so overlapping
 // runs never double-send. Needs migrations V323 + V324.
@@ -18,12 +21,13 @@ import { resolveBookingSettings, customerMessage, PUBLIC_COMPANY_COLS, isMissing
 import { zonedParts } from '@/lib/booking-time'
 import { isWithinSendingHours } from '@/lib/campaign-sender'
 import { bookingTimeFreed } from '@/lib/booking-waitlist-queue'
+import { resolveRestaurantSettings } from '@/lib/restaurant/settings'
 
 const MIN = 60_000
 const HOUR = 3_600_000
 const DAY = 86_400_000
 
-export type SweepResult = { reminders24: number; reminders2: number; completed: number; reviews: number; rebooks: number; expired: number; note?: string }
+export type SweepResult = { reminders24: number; reminders2: number; completed: number; reviews: number; rebooks: number; expired: number; noShows?: number; note?: string }
 
 export async function runBookingSweep(db: any, origin: string): Promise<SweepResult> {
   const out: SweepResult = { reminders24: 0, reminders2: 0, completed: 0, reviews: 0, rebooks: 0, expired: 0 }
@@ -86,6 +90,9 @@ export async function runBookingSweep(db: any, origin: string): Promise<SweepRes
       }
     } catch (e) { console.error('[booking sweep] reminder failed', b.id, e) }
   }
+
+  // ── 1b. Restaurants: nobody came → a no-show (before the wrap-up would finish it) ──
+  try { out.noShows = await autoNoShows(db, now) } catch (e) { console.error('[booking sweep] no-shows failed', e) }
 
   // ── 2. Wrap-up: complete finished bookings, queue review requests ────────
   const { data: finished } = await db.from('bookings')
@@ -162,4 +169,36 @@ export async function runBookingSweep(db: any, origin: string): Promise<SweepRes
   } catch {}
 
   return out
+}
+
+/**
+ * Table reservations still unseated `auto_mins` after their time, at
+ * restaurants that turned it on, become no-shows (their table is freed by the
+ * V430 trigger). The team can undo it on the day.
+ */
+async function autoNoShows(db: any, now: number): Promise<number> {
+  const { data: svcs, error } = await db.from('booking_services').select('id, company_id').eq('kind', 'reservation').limit(5000)
+  if (error || !svcs?.length) return 0
+  const { data: rows } = await db.from('bookings').select('id, company_id, service_id, service_name, starts_at, conversation_id, calendar_event_id, customer_name')
+    .eq('status', 'confirmed').is('seated_at', null).in('service_id', svcs.map((s: any) => s.id))
+    .lt('starts_at', new Date(now - 10 * MIN).toISOString()).gt('starts_at', new Date(now - 2 * DAY).toISOString())
+    .limit(500)
+  if (!rows?.length) return 0
+  const ids = Array.from(new Set(rows.map((b: any) => b.company_id)))
+  const { data: cos } = await db.from('companies').select('id, restaurant_settings').in('id', ids)
+  const after = new Map<string, number>()
+  for (const c of cos || []) after.set(c.id, resolveRestaurantSettings(c.restaurant_settings).no_show.auto_mins)
+  let n = 0
+  const { systemNote } = await import('@/lib/booking')
+  for (const b of rows) {
+    const mins = after.get(b.company_id) || 0
+    if (!mins || Date.parse(b.starts_at) + mins * MIN > now) continue
+    const { data: done } = await db.from('bookings').update({ status: 'no_show', updated_at: new Date(now).toISOString() })
+      .eq('id', b.id).eq('status', 'confirmed').is('seated_at', null).select('id')
+    if (!done?.length) continue
+    n++
+    if (b.calendar_event_id) { try { await db.from('calendar_events').update({ status: 'missed' }).eq('id', b.calendar_event_id) } catch {} }
+    try { await systemNote(db, b, `🚫 No-show: ${b.service_name} wasn’t seated ${mins} minutes after the booking time, so Colvy marked it. Undo it on the reservation if they did come.`) } catch {}
+  }
+  return n
 }

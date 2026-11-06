@@ -8,7 +8,7 @@ import { readCache, writeCache } from '@/lib/client-cache'
 import NewReservation, { WalkIn } from '@/components/restaurant/NewReservation'
 import ReservationDrawer from '@/components/restaurant/ReservationDrawer'
 import {
-  api, apiRaw, useResCompany, useToast, Toast, SetupNote, Icon, JB_CSS, RS_CSS, StateTag, PeopleIcon, SEATING,
+  api, apiRaw, useResCompany, useToast, Toast, SetupNote, Icon, JB_CSS, RS_CSS, StateTag, PeopleIcon, SEATING, TableChip, money, tablesText,
   addDays, dayLabel, timeOf, fmtDay, covers, type Reservation,
 } from '@/components/restaurant/shared'
 
@@ -23,6 +23,8 @@ type Day = {
   counts: { reservations: number; covers: number; seated: number; toCome: number; noShows: number; cancelled: number }
   maxCovers: number; interval: number; periods: { name: string; start: string; end: string }[]
   closed: { date: string; label: string } | null; strips: { name: string; points: { at: number; covers: number }[] }[]
+  /** Phase 2: seating by table (the setting is on and there's a floor plan). */
+  useTables?: boolean; hasFloor?: boolean
 }
 
 const hhmm = (iso: string, tz: string) => {
@@ -117,6 +119,7 @@ export default function ReservationsPage() {
     <AdminPage title="Reservations" width="xl" sub="Tonight’s tables, covers and guests, in one place."
       actions={<>
         {meta?.canManage && <Link href="/admin/reservations/settings" className="ak-btn" title="Hours, covers, booking page">{Icon.gear}<span className="rs-hide-sm">Settings</span></Link>}
+        {(day?.hasFloor || meta?.canManage) && <Link href={`/admin/reservations/floor${date ? `?date=${date}` : ''}`} className="ak-btn" title="Tables on the floor plan, live">{FLOOR_ICON}<span className="rs-hide-sm">Floor plan</span></Link>}
         <button type="button" className="ak-btn" onClick={() => setShowWalkIn(true)} disabled={!companyId || !!setup}>{Icon.people}<span className="rs-hide-sm">Walk-in</span></button>
         <button type="button" className="ak-btn go" onClick={() => setShowNew(true)} disabled={!companyId || !!setup}>{Icon.plus}New reservation</button>
       </>}>
@@ -159,16 +162,16 @@ export default function ReservationsPage() {
       )}
 
       {showNew && companyId && (
-        <NewReservation companyId={companyId} tz={tz} today={today || date} date={date || today} seatingOptions={meta?.seating || []}
+        <NewReservation companyId={companyId} tz={tz} today={today || date} date={date || today} seatingOptions={meta?.seating || []} useTables={!!day?.useTables}
           onClose={() => setShowNew(false)}
-          onCreated={r => { setShowNew(false); setToast(`Booked: ${r.name}, ${r.party} at ${timeOf(r.startsAt, tz)}`); const d = r.startsAt ? new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(r.startsAt)) : date; if (tab !== 'day') switchTab('day'); if (d !== date) setDate(d); else if (companyId) loadDay(companyId, d, true) }} />
+          onCreated={(r, noTable) => { setShowNew(false); setToast(`Booked: ${r.name}, ${r.party} at ${timeOf(r.startsAt, tz)}${r.tables?.length ? ` · ${tablesText(r.tables)}` : noTable ? ' · no table free yet' : ''}`); const d = r.startsAt ? new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(r.startsAt)) : date; if (tab !== 'day') switchTab('day'); if (d !== date) setDate(d); else if (companyId) loadDay(companyId, d, true) }} />
       )}
       {showWalkIn && companyId && (
-        <WalkIn companyId={companyId} onClose={() => setShowWalkIn(false)}
-          onCreated={r => { setShowWalkIn(false); setToast(`${r.name === 'Walk-in' ? 'Walk-in' : r.name} seated, ${r.party}`); if (tab !== 'day') switchTab('day'); if (today && date !== today) setDate(today); else if (companyId) loadDay(companyId, date, true) }} />
+        <WalkIn companyId={companyId} useTables={!!day?.useTables} onClose={() => setShowWalkIn(false)}
+          onCreated={r => { setShowWalkIn(false); setToast(`${r.name === 'Walk-in' ? 'Walk-in' : r.name} seated, ${r.party}${r.tables?.length ? ` at ${tablesText(r.tables)}` : ''}`); if (tab !== 'day') switchTab('day'); if (today && date !== today) setDate(today); else if (companyId) loadDay(companyId, date, true) }} />
       )}
       {open && companyId && (
-        <ReservationDrawer companyId={companyId} tz={tz} today={today} res={open} seatingOptions={meta?.seating || []}
+        <ReservationDrawer companyId={companyId} tz={tz} today={today} res={open} seatingOptions={meta?.seating || []} useTables={!!day?.hasFloor}
           onClose={() => setOpen(null)} onChange={changed} toast={setToast} />
       )}
       <Toast text={toast} />
@@ -234,7 +237,7 @@ function DaySheet({ day, tz, onOpen, onQuick, onNew }: { day: Day; tz: string; o
           {groups.map(g => (
             <section key={g.name} className="ak-panel flush">
               <div className="ak-panel-h"><h2>{g.name}</h2><span className="rs-count">{g.list.length ? `${g.list.length} · ${covers(g.list.reduce((n, r) => n + r.party, 0))}` : 'Nothing booked'}</span></div>
-              {g.list.map(r => <Row key={r.id} r={r} tz={tz} isToday={isToday} onOpen={onOpen} onQuick={onQuick} />)}
+              {g.list.map(r => <Row key={r.id} r={r} tz={tz} isToday={isToday} onOpen={onOpen} onQuick={onQuick} useTables={!!day.useTables} />)}
             </section>
           ))}
           {gone.length > 0 && (
@@ -249,7 +252,7 @@ function DaySheet({ day, tz, onOpen, onQuick, onNew }: { day: Day; tz: string; o
   )
 }
 
-function Row({ r, tz, isToday, onOpen, onQuick }: { r: Reservation; tz: string; isToday: boolean; onOpen: (r: Reservation) => void; onQuick: (r: Reservation, a: 'seat' | 'complete') => void }) {
+function Row({ r, tz, isToday, onOpen, onQuick, useTables }: { r: Reservation; tz: string; isToday: boolean; onOpen: (r: Reservation) => void; onQuick: (r: Reservation, a: 'seat' | 'complete') => void; useTables?: boolean }) {
   const live = r.status === 'confirmed'
   const [busy, setBusy] = useState(false)
   // Visits before this one (the guest's count includes a table that's seated or done).
@@ -261,8 +264,9 @@ function Row({ r, tz, isToday, onOpen, onQuick }: { r: Reservation; tz: string; 
       <span className="rs-time">{timeOf(r.startsAt, tz)}</span>
       <span className="rs-party" title={covers(r.party)}><PeopleIcon size={13} />{r.party}</span>
       <div className="rs-main">
-        <b>{r.name || 'Guest'}</b>
+        <b className="rs-name"><TableChip tables={r.tables} missing={useTables && (r.status === 'confirmed' || r.status === 'pending')} />{r.name || 'Guest'}</b>
         <div className="rs-meta">
+          {r.deposit && <span className={r.deposit.status === 'paid' ? 'ok' : 'warn'}>{r.deposit.status === 'paid' ? `Deposit ${money(r.deposit.cents)} paid` : r.deposit.status === 'refunded' ? 'Deposit refunded' : `Deposit ${money(r.deposit.cents)} not paid`}</span>}
           {prior > 0 && <span>{`${prior + 1}${ord(prior + 1)} visit`}</span>}
           {r.guest && r.guest.noShows > 0 && <span className="warn">{r.guest.noShows} no-show{r.guest.noShows === 1 ? '' : 's'}</span>}
           {r.occasion && <span>🎉 {r.occasion}</span>}
@@ -279,6 +283,9 @@ function Row({ r, tz, isToday, onOpen, onQuick }: { r: Reservation; tz: string; 
     </div>
   )
 }
+const FLOOR_ICON = (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="3" y="3" width="7" height="7" rx="1.5" /><circle cx="17" cy="6.5" r="3.5" /><rect x="3" y="14" width="18" height="7" rx="1.5" /></svg>
+)
 const ord = (n: number) => (n % 100 >= 11 && n % 100 <= 13 ? 'th' : n % 10 === 1 ? 'st' : n % 10 === 2 ? 'nd' : n % 10 === 3 ? 'rd' : 'th')
 
 /** Guests seated through a service, against the most the room takes. */
@@ -407,11 +414,6 @@ function Guests({ companyId }: { companyId: string }) {
 
 const PAGE_CSS = `
 .rs-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px}
-.rs-nav{display:flex;align-items:center;gap:6px}
-.rs-nav .ak-icon-btn{font-size:20px;line-height:1}
-.rs-date{position:relative;display:inline-flex;align-items:center;height:40px;padding:0 16px;border-radius:999px;background:var(--f);cursor:pointer}
-.rs-date b{font-size:14.5px;font-weight:650;white-space:nowrap}
-.rs-date input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
 .rs-hide-sm{display:inline}
 @media(max-width:600px){.ak-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.ak-tile{padding:14px}.ak-tile-v{font-size:22px}}
 @media(max-width:600px){.rs-hide-sm{display:none}.rs-bar{flex-direction:column;align-items:stretch}.rs-nav{justify-content:space-between}}
@@ -440,7 +442,6 @@ const PAGE_CSS = `
 .rs-axis{display:flex;gap:2px;margin-top:6px;padding-top:4px;box-shadow:0 -1px 0 var(--line)}
 .rs-axis span{flex:1;min-width:0;font-size:10.5px;color:var(--soft);white-space:nowrap;overflow:visible}
 .rs-groups{display:flex;flex-direction:column}
-.rs-count{font-size:12.5px;font-weight:600;color:var(--mut);white-space:nowrap}
 .rs-row{display:flex;align-items:center;gap:14px;padding:12px 20px;cursor:pointer;color:var(--ink);transition:background .12s;outline:none}
 .rs-row+.rs-row,.ak-panel-h+.rs-row{box-shadow:0 -1px 0 var(--line)}
 .rs-row:hover,.rs-row:focus-visible{background:color-mix(in srgb,var(--f) 60%,transparent)}
@@ -451,6 +452,8 @@ const PAGE_CSS = `
 .rs-main b{font-size:14.5px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rs-meta{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12.5px;color:var(--mut);min-width:0}
 .rs-meta .warn{color:#b45309;font-weight:600}
+.rs-meta .ok{color:#15803d;font-weight:600}
+.rs-main b.rs-name{display:flex;align-items:center;gap:8px;min-width:0}
 .rs-ell{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rs-side{display:flex;align-items:center;gap:8px;flex-shrink:0}
 .rs-side .ak-btn.sm{min-width:64px}

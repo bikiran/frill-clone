@@ -5,10 +5,11 @@ import { authFetch } from '@/lib/auth-fetch'
 import { analyseSms } from '@/lib/sms-segments'
 import { CK_ICON, CkHead, CkOption, CkSave, CkStyle, CkToggle } from '@/components/calls/CallKit'
 import {
-  MISSED_CALL_TEXT_DEFAULT, MISSED_CALL_TEXT_MAX, renderMissedCallText, type MissedCallTextWhen,
+  MISSED_CALL_TEXT_DEFAULT, MISSED_CALL_TEXT_RESTAURANT, MISSED_CALL_TEXT_MAX, MISSED_CALL_TEXT_HOURS, MISSED_CALL_TEXT_HOUR_CHOICES,
+  renderMissedCallText, type MissedCallTextWhen,
 } from '@/lib/missed-call-text-settings'
 
-type Saved = { ring: number; vmOn: boolean; greeting: string; textOn: boolean; textMsg: string; textWhen: MissedCallTextWhen }
+type Saved = { ring: number; vmOn: boolean; greeting: string; textOn: boolean; textMsg: string; textWhen: MissedCallTextWhen; textHours: number }
 type Hours = { known: boolean; source?: string; summary?: string }
 
 // Calls & SMS → "When nobody answers": how long phones ring before the call
@@ -24,7 +25,11 @@ export default function CallAnswerSettings({ companyId }: { companyId: string })
   const [textOn, setTextOn] = useState(false)
   const [textMsg, setTextMsg] = useState(MISSED_CALL_TEXT_DEFAULT)
   const [textWhen, setTextWhen] = useState<MissedCallTextWhen>('always')
+  const [textHours, setTextHours] = useState(MISSED_CALL_TEXT_HOURS)
   const [business, setBusiness] = useState('')
+  // What {booking_link} becomes (the table booking page for a restaurant); null: no booking page.
+  const [link, setLink] = useState<string | null>(null)
+  const [restaurant, setRestaurant] = useState(false)
   const [hours, setHours] = useState<Hours>({ known: false })
   const [smsReady, setSmsReady] = useState(true)
   const [saved, setSaved] = useState<Saved | null>(null)
@@ -36,9 +41,10 @@ export default function CallAnswerSettings({ companyId }: { companyId: string })
     const next: Saved = {
       ring: d.ringSeconds, vmOn: d.voicemailEnabled, greeting: d.voicemailGreeting,
       textOn: t.enabled === true, textMsg: t.message || MISSED_CALL_TEXT_DEFAULT, textWhen: t.when === 'after_hours' ? 'after_hours' : 'always',
+      textHours: Number(t.hours) || MISSED_CALL_TEXT_HOURS,
     }
     setRing(next.ring); setVmOn(next.vmOn); setGreeting(next.greeting)
-    setTextOn(next.textOn); setTextMsg(next.textMsg); setTextWhen(next.textWhen)
+    setTextOn(next.textOn); setTextMsg(next.textMsg); setTextWhen(next.textWhen); setTextHours(next.textHours)
     setSaved(next)
   }
   useEffect(() => {
@@ -49,6 +55,7 @@ export default function CallAnswerSettings({ companyId }: { companyId: string })
         if (!d.error) {
           setConnected(d.connected !== false); apply(d)
           setBusiness(d.businessName || ''); setHours(d.hours || { known: false }); setSmsReady(d.smsReady !== false)
+          setLink(d.bookingLink || null); setRestaurant(d.restaurant === true)
         }
         setLoaded(true)
       })
@@ -57,7 +64,7 @@ export default function CallAnswerSettings({ companyId }: { companyId: string })
   }, [companyId])
 
   const dirty = !!saved && (saved.ring !== ring || saved.vmOn !== vmOn || saved.greeting !== greeting
-    || saved.textOn !== textOn || saved.textMsg !== textMsg || saved.textWhen !== textWhen)
+    || saved.textOn !== textOn || saved.textMsg !== textMsg || saved.textWhen !== textWhen || saved.textHours !== textHours)
   const save = async () => {
     setBusy(true); setMsg(null)
     try {
@@ -65,7 +72,7 @@ export default function CallAnswerSettings({ companyId }: { companyId: string })
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           companyId, ringSeconds: ring, voicemailEnabled: vmOn, voicemailGreeting: greeting,
-          missedCallText: { enabled: textOn, message: textMsg, when: textWhen },
+          missedCallText: { enabled: textOn, message: textMsg, when: textWhen, hours: textHours },
         }),
       })
       const d = await r.json()
@@ -77,7 +84,10 @@ export default function CallAnswerSettings({ companyId }: { companyId: string })
   }
 
   if (!loaded || !connected) return null
-  const preview = renderMissedCallText(textMsg, business)
+  const preview = renderMissedCallText(textMsg, business, link)
+  const suggested = restaurant ? MISSED_CALL_TEXT_RESTAURANT : MISSED_CALL_TEXT_DEFAULT
+  const usesLink = /\{\s*booking_link\s*\}/i.test(textMsg)
+  const HOURS = MISSED_CALL_TEXT_HOUR_CHOICES.includes(textHours) ? MISSED_CALL_TEXT_HOUR_CHOICES : [...MISSED_CALL_TEXT_HOUR_CHOICES, textHours].sort((x, y) => x - y)
   const seg = analyseSms(preview)
   const afterHoursOff = !hours.known && textWhen !== 'after_hours'
   const RINGS = [20, 25, 30, 40, 50, 60]
@@ -123,9 +133,15 @@ export default function CallAnswerSettings({ companyId }: { companyId: string })
                 <label htmlFor="cas-text-msg" className="ck-lbl">Message</label>
                 <textarea id="cas-text-msg" className="ck-in" value={textMsg} onChange={e => setTextMsg(e.target.value)} maxLength={MISSED_CALL_TEXT_MAX} rows={4} />
                 <p className="ck-hint">
-                  <code className="cas-code">{'{business}'}</code> becomes {business || 'your business name'}.
-                  {textMsg !== MISSED_CALL_TEXT_DEFAULT && (
-                    <> <button type="button" className="cas-link" onClick={() => setTextMsg(MISSED_CALL_TEXT_DEFAULT)}>Use the suggested text</button></>
+                  <code className="cas-code">{'{business}'}</code> becomes {business || 'your business name'}.{' '}
+                  <code className="cas-code">{'{booking_link}'}</code> becomes {link
+                    ? <>your {restaurant ? 'table booking' : 'booking'} page</>
+                    : <>your booking page once online booking is on (until then it&rsquo;s left out)</>}.
+                  {textMsg !== suggested && (
+                    <> <button type="button" className="cas-link" onClick={() => setTextMsg(suggested)}>Use the suggested text</button></>
+                  )}
+                  {link && !usesLink && textMsg === MISSED_CALL_TEXT_DEFAULT && (
+                    <> <button type="button" className="cas-link" onClick={() => setTextMsg(restaurant ? MISSED_CALL_TEXT_RESTAURANT : `${MISSED_CALL_TEXT_DEFAULT} Or book online: {booking_link}`)}>Add your booking link</button></>
                   )}
                 </p>
 
@@ -136,6 +152,13 @@ export default function CallAnswerSettings({ companyId }: { companyId: string })
                     sub={hours.known
                       ? <>Uses your opening hours from {hours.source}{hours.summary ? `: ${hours.summary}` : ''}.</>
                       : <>We couldn&rsquo;t find your opening hours. Connect your Google Business Profile to use this.</>} />
+                </div>
+
+                <span className="ck-lbl" id="cas-gap" style={{ marginTop: 16 }}>Text the same caller again after</span>
+                <div className="ck-chips" role="radiogroup" aria-labelledby="cas-gap">
+                  {HOURS.map(h => (
+                    <button key={h} type="button" role="radio" aria-checked={textHours === h} className={`ck-chip${textHours === h ? ' on' : ''}`} onClick={() => setTextHours(h)}>{h} hours</button>
+                  ))}
                 </div>
               </div>
 
@@ -152,7 +175,7 @@ export default function CallAnswerSettings({ companyId }: { companyId: string })
                 </p>
               </div>
             </div>
-            <p className="ck-note info">{CK_ICON.info}<span>Each caller gets at most one text every 12 hours. Never sent when someone answered, to hidden or overseas numbers, landlines, your team, or anyone who has opted out.</span></p>
+            <p className="ck-note info">{CK_ICON.info}<span>Each caller gets at most one text every {textHours} hours. Never sent when someone answered, to hidden or overseas numbers, landlines, your team, or anyone who has opted out.</span></p>
           </div>
         )}
       </div>

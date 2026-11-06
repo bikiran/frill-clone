@@ -3,7 +3,7 @@
 // Hours are SEATING times: the first and last time a table can be booked
 // ("Dinner 17:30–21:00" means the last booking is at 9pm).
 
-import { cleanWeek, isDate, type WeekHours, type DayKey } from '@/lib/booking-time'
+import { cleanWeek, isDate, dayKeyOf, DAY_ORDER, type WeekHours, type DayKey } from '@/lib/booking-time'
 
 export type PartyDuration = { upTo: number; mins: number }
 export type SeatingOption = 'indoor' | 'outdoor' | 'bar'
@@ -34,6 +34,30 @@ export type RestaurantSettings = {
   intro: string
   confirmation_note: string
   large_party_note: string
+  /** Seat by table once there are tables on the floor plan (Phase 2). Off: covers only. */
+  use_tables: boolean
+  /** Deposits for online bookings: per person or per booking, from a party size, on some days. */
+  deposit: DepositRule
+  /** No-show tools. */
+  no_show: NoShowRule
+}
+
+export type DepositRule = {
+  mode: 'off' | 'per_person' | 'per_booking'
+  /** In cents (per person, or for the booking). */
+  cents: number
+  /** Only parties of this size or more (1 = everyone). */
+  min_party: number
+  /** Only on these days (empty = every day). */
+  days: DayKey[]
+}
+export type NoShowRule = {
+  /** Mark a booked table that never sat down as a no-show this many minutes after its time (0 = never). */
+  auto_mins: number
+  /** Guests with this many no-shows can't book online and are asked to call (0 = off). */
+  block_after: number
+  /** Guests with this many no-shows pay a deposit online, even when deposits are off (0 = off). */
+  deposit_after: number
 }
 
 const D = (start: string, end: string) => [{ start, end }]
@@ -88,7 +112,40 @@ export function resolveRestaurantSettings(raw: any): RestaurantSettings {
     intro: text(s.intro, 1000),
     confirmation_note: text(s.confirmation_note, 1000),
     large_party_note: text(s.large_party_note, 300),
+    use_tables: s.use_tables !== false,
+    deposit: cleanDeposit(s.deposit),
+    no_show: cleanNoShow(s.no_show),
   }
+}
+
+export function cleanDeposit(raw: any): DepositRule {
+  const d = raw && typeof raw === 'object' ? raw : {}
+  const mode = d.mode === 'per_person' || d.mode === 'per_booking' ? d.mode : 'off'
+  return {
+    mode, cents: int(d.cents, 0, 100_000, 0), min_party: int(d.min_party, 1, 100, 1),
+    days: Array.isArray(d.days) ? DAY_ORDER.filter(k => d.days.includes(k)) : [],
+  }
+}
+
+export function cleanNoShow(raw: any): NoShowRule {
+  const n = raw && typeof raw === 'object' ? raw : {}
+  const auto = int(n.auto_mins, 0, 240, 0)
+  return { auto_mins: auto && auto < 10 ? 10 : auto, block_after: int(n.block_after, 0, 10, 0), deposit_after: int(n.deposit_after, 0, 10, 0) }
+}
+
+/**
+ * The deposit an online booking needs, in cents (0 = none): the restaurant's
+ * rule for this party and day, or — for a guest with enough past no-shows —
+ * the same amount even when deposits are otherwise off.
+ */
+export function depositFor(rs: RestaurantSettings, opts: { party: number; date: string; noShows?: number }): { cents: number; why: 'rule' | 'no_shows' | null } {
+  const d = rs.deposit
+  if (d.cents <= 0) return { cents: 0, why: null }
+  const per = (mode: 'per_person' | 'per_booking') => (mode === 'per_person' ? d.cents * Math.max(1, opts.party) : d.cents)
+  const ruleApplies = d.mode !== 'off' && opts.party >= d.min_party && (!d.days.length || d.days.includes(dayKeyOf(opts.date)))
+  if (ruleApplies) return { cents: per(d.mode as 'per_person' | 'per_booking'), why: 'rule' }
+  if (rs.no_show.deposit_after > 0 && (opts.noShows || 0) >= rs.no_show.deposit_after) return { cents: per(d.mode === 'per_booking' ? 'per_booking' : 'per_person'), why: 'no_shows' }
+  return { cents: 0, why: null }
 }
 
 /** How long a party of this size keeps its table. */

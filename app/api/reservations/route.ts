@@ -2,11 +2,14 @@ import { NextRequest } from 'next/server'
 import { audit } from '@/lib/activity-logging'
 import { cancelBooking, manageUrl, systemNote, whenText } from '@/lib/booking'
 import { addDays, dateInTz, isDate, dayKeyOf, zonedToUtc } from '@/lib/booking-time'
+import { guardRefund, isRefused, guardBody } from '@/lib/refund-guard'
 import { durationFor, periodName } from '@/lib/restaurant/settings'
 import { coversTimeline, daySpan } from '@/lib/restaurant/availability'
+import { pickTable, tableChoices } from '@/lib/restaurant/tables'
 import {
   restaurantDb, reservationsAccess, resContext, json, setupNeeded, isMissingRestaurantSchema, isUuid, isManager,
-  RES_COLS, liveReservations, slotsFor, guestStats, createReservation, moveReservation, clip, cleanPhone, cleanEmail, cleanSeating,
+  RES_COLS, liveReservations, slotsFor, guestStats, createReservation, moveReservation, assignTables, tableHolds, tablesFor,
+  clip, cleanPhone, cleanEmail, cleanSeating,
 } from '@/lib/restaurant/server'
 
 export const dynamic = 'force-dynamic'
@@ -17,13 +20,15 @@ export const dynamic = 'force-dynamic'
 //   GET  ?companyId&op=slots&date&party&exclude times for a party (team view: full ones marked)
 //   GET  ?companyId&op=guests&q                 guests with visits, no-shows, last and next visit
 //   GET  ?companyId&op=guest&contactId          one guest (Inbox panel, the reservation drawer)
+//   GET  ?companyId&op=tables&at&party&exclude  tables for a party at a time, free first, and Colvy's pick
 //   POST { companyId, startsAt, party, name, phone?, email?, contactId?, notes?, seating?, occasion?,
-//          internalNotes?, notify?, force?, walkIn? }
-//   PATCH { companyId, id, action: seat | unseat | complete | no_show | undo | cancel | move | update, ... }
+//          internalNotes?, notify?, force?, walkIn?, tables? }      tables: ids, or left out for Colvy to choose
+//   PATCH { companyId, id, action: seat | unseat | complete | no_show | undo | cancel | move | update | assign, ... }
+//         assign { tables: ids | null (Colvy chooses) | [] (none) }; cancel { refund?, refundPin? }
 
 const ACTIVE = ['pending', 'confirmed', 'completed', 'no_show', 'cancelled']
 
-function shape(b: any, company: any, stats?: any) {
+function shape(b: any, company: any, stats?: any, tables?: { id: string; label: string }[]) {
   const now = Date.now()
   const start = Date.parse(b.starts_at)
   let state = b.status as string
@@ -36,6 +41,8 @@ function shape(b: any, company: any, stats?: any) {
     source: b.source, createdAt: b.created_at, cancelledAt: b.cancelled_at || null, cancelReason: b.cancel_reason || null,
     confirmedByGuest: !!b.customer_confirmed_at, manageUrl: company && b.manage_token ? manageUrl(company, b.manage_token) : null,
     guest: stats ? { visits: stats.visits, noShows: stats.noShows, lastVisit: stats.lastVisit } : null,
+    tables: tables || [],
+    deposit: b.payment_mode === 'deposit' && b.amount_due_cents ? { cents: b.amount_due_cents, status: b.payment_status || 'pending' } : null,
   }
 }
 
@@ -65,8 +72,11 @@ export async function GET(req: NextRequest) {
       if (error) { if (isMissingRestaurantSchema(error)) return setupNeeded(); throw error }
       const nowIso = new Date().toISOString()
       const rows = (data || []).filter((b: any) => b.status !== 'pending' || (b.hold_expires_at && b.hold_expires_at > nowIso))
-      const stats = await guestStats(db, companyId!, service.id, rows.map((b: any) => b.contact_id).filter(Boolean))
-      const list = rows.map((b: any) => shape(b, company, b.contact_id ? stats.get(b.contact_id) : null))
+      const [stats, tabs] = await Promise.all([
+        guestStats(db, companyId!, service.id, rows.map((b: any) => b.contact_id).filter(Boolean)),
+        tablesFor(db, r.ctx, rows.filter((b: any) => b.status === 'confirmed' || b.status === 'pending').map((b: any) => b.id)),
+      ])
+      const list = rows.map((b: any) => shape(b, company, b.contact_id ? stats.get(b.contact_id) : null, tabs.get(b.id)))
       const live = rows.filter((b: any) => b.status === 'confirmed' || b.status === 'pending')
       const counts = {
         reservations: live.length + rows.filter((b: any) => b.status === 'completed').length,
@@ -76,7 +86,7 @@ export async function GET(req: NextRequest) {
         noShows: rows.filter((b: any) => b.status === 'no_show').length,
         cancelled: rows.filter((b: any) => b.status === 'cancelled').length,
       }
-      const out: any = { from, to, today, timezone: tz, reservations: list, counts, maxCovers: rs.max_covers, interval: rs.interval_mins }
+      const out: any = { from, to, today, timezone: tz, reservations: list, counts, maxCovers: rs.max_covers, interval: rs.interval_mins, useTables: r.ctx.byTable, hasFloor: !!r.ctx.floor }
       if (op === 'day') {
         const windows = rs.hours[dayKeyOf(from)] || []
         out.periods = windows.map(w => ({ name: periodName(w.start), start: w.start, end: w.end }))
@@ -118,6 +128,20 @@ export async function GET(req: NextRequest) {
         date, timezone: tz, party, duration: durationFor(rs, party), maxCovers: rs.max_covers,
         slots: slots.map(s => ({ start: new Date(s.start).toISOString(), period: s.period, ok: s.ok, reason: s.reason || null, coversLeft: Number.isFinite(s.coversLeft) ? s.coversLeft : null })),
       })
+    }
+
+    if (op === 'tables') {
+      // The team's table picker: every table, free ones first, and which Colvy would choose.
+      if (!r.ctx.floor) return json({ tables: [], suggested: null, setup: true })
+      const at = Date.parse(String(sp.get('at') || ''))
+      if (!Number.isFinite(at)) return json({ error: 'Pick a time.' }, 400)
+      const party = Math.max(1, Math.min(500, Math.round(Number(sp.get('party')) || 2)))
+      const exclude = isUuid(sp.get('exclude')) ? sp.get('exclude') : null
+      const end = at + durationFor(rs, party) * 60_000
+      const live = await liveReservations(db, companyId!, service.id, at - 12 * 3600e3, end + 12 * 3600e3)
+      const holds = await tableHolds(db, companyId!, live)
+      const pick = pickTable(r.ctx.floor, holds, { party, start: at, end, excludeId: exclude })
+      return json({ tables: tableChoices(r.ctx.floor, holds, { party, start: at, end, excludeId: exclude }), suggested: pick?.tables || null, party, endsAt: new Date(end).toISOString() })
     }
 
     if (op === 'guests') {
@@ -185,10 +209,16 @@ export async function POST(req: NextRequest) {
       contactId: body.contactId, notes: body.notes, seating: body.seating, occasion: body.occasion, internalNotes: body.internalNotes,
       source: walkIn ? 'walk_in' : body.source === 'manual' ? 'manual' : 'phone', byTeam: true, force: body.force === true,
       notify: !walkIn && body.notify !== false, seatNow: walkIn, origin: req.nextUrl.origin,
+      tables: Array.isArray(body.tables) ? body.tables : null,
     })
     if (!res.ok) return json({ error: res.error, full: !!res.full, reason: res.reason || null }, res.status || 400)
     await audit(req, db, companyId, 'reservation_created', `${res.booking.service_name} for ${res.booking.customer_name} — ${whenText(res.booking)}${body.force ? ' (over the covers limit)' : ''}`, { booking_id: res.booking.id, party: res.booking.seats, walk_in: walkIn })
-    return json({ reservation: shape(res.booking, r.ctx.company) })
+    const labels = new Map((r.ctx.floor?.tables || []).map(t => [t.id, t.label]))
+    return json({
+      reservation: shape(res.booking, r.ctx.company, null, (res.tables || []).map(id => ({ id, label: labels.get(id) || 'Table' }))),
+      // Seating by table and none was free: booked on covers alone, so the team can sort a table.
+      noTable: !!res.noTable,
+    })
   } catch (e: any) {
     if (isMissingRestaurantSchema(e)) return setupNeeded()
     return json({ error: e?.message || 'Could not make the reservation.' }, 500)
@@ -211,10 +241,11 @@ export async function PATCH(req: NextRequest) {
     if (!b) return json({ error: 'Reservation not found.' }, 404)
     const origin = req.nextUrl.origin
     const now = new Date().toISOString()
-    const reply = async (note?: string) => {
+    const reply = async (note?: string, extra?: any) => {
       const { data: fresh } = await db.from('bookings').select(RES_COLS).eq('id', b.id).maybeSingle()
       if (note) await systemNote(db, { ...b, ...(fresh || {}) }, note)
-      return json({ reservation: shape(fresh || b, company) })
+      const tabs = await tablesFor(db, r.ctx!, [b.id])
+      return json({ reservation: shape(fresh || b, company, null, tabs.get(b.id)), ...(extra || {}) })
     }
     // Only from the expected state, so two people tapping at once can't both act.
     const claim = async (patch: any, from: string[], seated?: boolean) => {
@@ -228,9 +259,20 @@ export async function PATCH(req: NextRequest) {
     const who = access.name || 'The team'
 
     switch (String(body.action)) {
-      case 'seat':
+      case 'seat': {
+        // Seat at a particular table (from the floor plan) — give it that table first.
+        if (Array.isArray(body.tables) && body.tables.length && r.ctx.floor) {
+          const a = await assignTables(db, r.ctx, b, body.tables)
+          if (!a.ok) return json({ error: a.error, reason: a.reason || null }, a.status || 409)
+        }
         if (!(await claim({ seated_at: now }, ['confirmed'], false))) return json({ error: b.seated_at ? 'That table is already seated.' : 'Only a booked table can be seated.' }, 409)
         return reply(`🍽️ ${b.service_name} seated by ${who}`)
+      }
+      case 'assign': {
+        const a = await assignTables(db, r.ctx, b, Array.isArray(body.tables) ? body.tables : null)
+        if (!a.ok) return json({ error: a.error, reason: a.reason || null }, a.status || 409)
+        return reply(undefined, { noTable: !!a.noTable })
+      }
       case 'unseat':
         if (!(await claim({ seated_at: null }, ['confirmed'], true))) return json({ error: 'That table isn’t seated.' }, 409)
         return reply()
@@ -250,15 +292,21 @@ export async function PATCH(req: NextRequest) {
         await calendar('confirmed')
         return reply()
       case 'cancel': {
-        const c = await cancelBooking(db, b.id, { by: 'business', reason: clip(body.reason, 500) || null, refund: false, notifyCustomer: body.notify !== false, origin })
+        // Giving a deposit back is a refund: the same permission and PIN as any other.
+        const refund = body.refund === true && b.payment_status === 'paid'
+        if (refund) {
+          const g = await guardRefund(req, db, companyId, { pin: body.refundPin })
+          if (isRefused(g)) return json(guardBody(g), g.status)
+        }
+        const c = await cancelBooking(db, b.id, { by: 'business', reason: clip(body.reason, 500) || null, refund, notifyCustomer: body.notify !== false, origin })
         if (!c.ok) return json({ error: c.error }, 409)
-        await audit(req, db, companyId, 'reservation_cancelled', `${b.service_name} for ${b.customer_name} cancelled — ${whenText(b)}`, { booking_id: b.id })
-        return reply()
+        await audit(req, db, companyId, 'reservation_cancelled', `${b.service_name} for ${b.customer_name} cancelled — ${whenText(b)}${refund ? (c.refunded ? ` (deposit of $${(c.refunded / 100).toFixed(2)} refunded)` : ' (deposit refund failed)') : ''}`, { booking_id: b.id, refunded_cents: c.refunded || 0 })
+        return reply(undefined, { refunded: c.refunded || 0, refundError: c.refundError || null })
       }
       case 'move': {
         const startMs = body.startsAt ? Date.parse(String(body.startsAt)) : Date.parse(b.starts_at)
         if (!Number.isFinite(startMs)) return json({ error: 'Pick a time.' }, 400)
-        const m = await moveReservation(db, b, { startMs, party: body.party != null ? Number(body.party) : b.seats, by: 'business', force: body.force === true, notify: body.notify !== false, origin })
+        const m = await moveReservation(db, b, { startMs, party: body.party != null ? Number(body.party) : b.seats, by: 'business', force: body.force === true, notify: body.notify !== false, origin, tables: Array.isArray(body.tables) ? body.tables : null })
         if (!m.ok) return json({ error: m.error, full: !!m.full }, m.status || 400)
         await audit(req, db, companyId, 'reservation_updated', `${m.booking.service_name} for ${b.customer_name} moved to ${whenText(m.booking)}`, { booking_id: b.id })
         return reply()

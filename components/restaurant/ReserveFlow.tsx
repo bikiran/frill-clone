@@ -13,6 +13,9 @@ import Turnstile, { TURNSTILE_SITE_KEY, type TurnstileHandle } from '@/component
 type Restaurant = {
   name: string; slug: string; logo: string | null; accent: string | null; timezone: string; title: string; intro: string; confirmationNote: string
   partyMin: number; partyMax: number; largePartyNote: string; maxDaysAhead: number; requirePhone: boolean; requireEmail: boolean; seating: string[]
+  /** Phase 2: a deposit to book (only when the restaurant takes card payments). */
+  deposit?: { mode: 'per_person' | 'per_booking'; cents: number; minParty: number; days: string[] } | null
+  cancelHours?: number; allowChanges?: boolean
 }
 type Done = { startsAt: string; party: number; name: string; seating: string | null; manageUrl: string }
 
@@ -27,6 +30,14 @@ const timeIn = (iso: string, tz: string) => {
   try { return new Intl.DateTimeFormat('en-AU', { timeZone: tz, hour: 'numeric', minute: '2-digit' }).format(new Date(iso)).replace(' ', '').toLowerCase() } catch { return '' }
 }
 const dateIn = (iso: string, tz: string) => new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(iso))
+const DOW = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
+const dollars = (c: number) => `$${(c / 100).toFixed(c % 100 ? 2 : 0)}`
+/** The deposit this party would pay on this day (the same rule as lib/restaurant/settings depositFor). */
+function depositOf(d: Restaurant['deposit'], party: number, date: string): number {
+  if (!d || d.cents <= 0 || party < d.minParty) return 0
+  if (d.days.length && !d.days.includes(DOW[new Date(`${date}T12:00:00Z`).getUTCDay()])) return 0
+  return d.mode === 'per_person' ? d.cents * party : d.cents
+}
 
 async function get(path: string) {
   const r = await fetch(path)
@@ -54,6 +65,7 @@ export default function ReserveFlow({ slug }: { slug: string }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [done, setDone] = useState<Done | null>(null)
+  const [paying, setPaying] = useState('')
   const top = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -116,6 +128,15 @@ export default function ReserveFlow({ slug }: { slug: string }) {
         body: JSON.stringify({ slug, startsAt: start, party, name: f.name, phone: f.phone, email: f.email, notes: f.notes, seating: f.seating || null, occasion: f.occasion, marketing: f.marketing, website: f.website, openedAt: opened.current, turnstileToken: token }),
       })
       const d = await res.json().catch(() => ({}))
+      if (res.ok && d.checkoutUrl) {
+        // A deposit: the table is held while they pay on Stripe, then they land on their booking.
+        setPaying(d.checkoutUrl)
+        let framed = false
+        try { framed = window.self !== window.top } catch { framed = true }
+        if (framed) window.open(d.checkoutUrl, '_blank', 'noopener')
+        else window.location.assign(d.checkoutUrl)
+        return
+      }
       if (!res.ok) {
         human.current?.reset(); setToken('')
         if (d?.full) {
@@ -138,6 +159,7 @@ export default function ReserveFlow({ slug }: { slug: string }) {
   const viewerTz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone } catch { return tz } })()
   const parties = Array.from({ length: Math.min(r.partyMax, 12) - r.partyMin + 1 }, (_, i) => r.partyMin + i)
   const lastDay = today ? addDays(today, r.maxDaysAhead) : ''
+  const deposit = depositOf(r.deposit, party, date)
 
   return (
     <Shell accent={accent}>
@@ -216,6 +238,18 @@ export default function ReserveFlow({ slug }: { slug: string }) {
           <form className="rv-in" onSubmit={submit} noValidate>
             <button type="button" className="rv-back" onClick={() => go('when')}>‹ Change time</button>
             <div className="rv-pick"><b>Table for {party}</b><span>{longDay(date)} at {timeIn(start, tz)}</span></div>
+            {deposit > 0 && (
+              <div className="rv-dep">
+                <b>{dollars(deposit)} deposit to book</b>
+                <span>{r.deposit?.mode === 'per_person' ? `${dollars(r.deposit.cents)} a guest, ` : ''}paid by card on the next screen. {r.allowChanges && r.cancelHours != null ? `You get it back if you cancel at least ${r.cancelHours} hours before.` : `Call ${r.name} to change your booking.`}</span>
+              </div>
+            )}
+            {paying && (
+              <div className="rv-dep" role="status">
+                <b>Your table is held for 30 minutes</b>
+                <span>Finish paying the deposit to confirm it. <a href={paying} target="_blank" rel="noopener noreferrer">Open the payment page</a></span>
+              </div>
+            )}
             <div className="bk-fields">
               <label className="rv-f" style={{ gridColumn: '1 / -1' }}><span>Name <i>*</i></span><input className="bk-in" value={f.name} onChange={e => setF({ ...f, name: e.target.value })} autoComplete="name" maxLength={120} /></label>
               <label className="rv-f"><span>Mobile {r.requirePhone && <i>*</i>}</span><input className="bk-in" value={f.phone} onChange={e => setF({ ...f, phone: e.target.value })} type="tel" autoComplete="tel" inputMode="tel" maxLength={40} /></label>
@@ -238,8 +272,8 @@ export default function ReserveFlow({ slug }: { slug: string }) {
             <Turnstile ref={human} onToken={setToken} action="reserve" />
             {err && <div className="rv-err" role="alert">{err}</div>}
             <div className="rv-cta">
-              <span className="rv-sum">{party} · {timeIn(start, tz)}</span>
-              <button type="submit" className="bk-primary" disabled={busy}>{busy ? 'Booking…' : 'Book table'}</button>
+              <span className="rv-sum">{party} · {timeIn(start, tz)}{deposit > 0 ? ` · ${dollars(deposit)} deposit` : ''}</span>
+              <button type="submit" className="bk-primary" disabled={busy || !!paying}>{busy ? 'Booking…' : paying ? 'Waiting for payment…' : deposit > 0 ? 'Book and pay deposit' : 'Book table'}</button>
             </div>
           </form>
         )}
@@ -312,6 +346,9 @@ const CSS = `
 .rv-check{display:flex;align-items:flex-start;gap:10px;font-size:14px;color:#374151;cursor:pointer;line-height:1.45}
 .rv-check input{width:18px;height:18px;margin:1px 0 0;accent-color:var(--bk-accent);flex-shrink:0}
 .rv-err{padding:10px 12px;border-radius:12px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;font-size:13.5px}
+.rv-dep{display:flex;flex-direction:column;gap:3px;padding:12px 14px;border-radius:14px;background:color-mix(in srgb,var(--accent,#ff7a6b) 10%,#fff);font-size:13.5px;line-height:1.45;color:#3f3f46}
+.rv-dep b{font-size:14.5px;color:#18181b}
+.rv-dep a{color:inherit;font-weight:650}
 .rv-p{margin:0;font-size:15px;line-height:1.55;color:#374151}
 .rv-ok{width:58px;height:58px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--bk-accent) 14%,#fff);color:var(--bk-accent);animation:rvPop .5s cubic-bezier(.34,1.56,.64,1) both}
 @keyframes rvPop{from{transform:scale(.5);opacity:0}to{transform:none;opacity:1}}

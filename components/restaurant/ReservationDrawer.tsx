@@ -7,20 +7,21 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import { useRefundAccess, RefundPinField, RefundNotAllowed, isPinError } from '@/components/RefundPin'
 import {
-  apiRaw, Icon, PartyStepper, PeopleIcon, StateTag, addDays, dayLabel, dayShort, dayNum, timeOf, fmtDay, dayKeyIn, SEATING, SOURCE, RS_CSS, type Reservation,
+  apiRaw, Icon, PartyStepper, PeopleIcon, StateTag, TableChip, TablePicker, money, tablesText, addDays, dayLabel, dayShort, dayNum, timeOf, fmtDay, dayKeyIn, SEATING, SOURCE, RS_CSS, type Reservation,
 } from '@/components/restaurant/shared'
 
 type Guest = { guest: { id: string; name: string; phone: string; email: string; profile: any; birthday: string | null }; stats: any; reservations: Reservation[] }
 type Slot = { start: string; period: string; ok: boolean; reason: string | null; coversLeft: number | null }
 
-export default function ReservationDrawer({ companyId, tz, today, res, seatingOptions, onClose, onChange, toast }: {
-  companyId: string; tz: string; today: string; res: Reservation; seatingOptions: string[]
+export default function ReservationDrawer({ companyId, tz, today, res, seatingOptions, useTables, onClose, onChange, toast }: {
+  companyId: string; tz: string; today: string; res: Reservation; seatingOptions: string[]; useTables?: boolean
   onClose: () => void; onChange: (r: Reservation) => void; toast: (m: string) => void
 }) {
   const [busy, setBusy] = useState('')
   const [err, setErr] = useState('')
-  const [mode, setMode] = useState<'view' | 'move' | 'edit'>('view')
+  const [mode, setMode] = useState<'view' | 'move' | 'edit' | 'table' | 'cancel'>('view')
   const [guest, setGuest] = useState<Guest | null>(null)
   const panel = useRef<HTMLDivElement>(null)
 
@@ -49,6 +50,8 @@ export default function ReservationDrawer({ companyId, tz, today, res, seatingOp
     } finally { setBusy('') }
   }
   const cancel = async () => {
+    // A paid deposit: choose whether to give it back (a refund, so the refund PIN applies).
+    if (res.deposit?.status === 'paid') { setMode('cancel'); return }
     const ok = await confirmDialog({ title: `Cancel ${res.name}’s table?`, message: `${dayLabel(dayKeyIn(res.startsAt, tz), today, true)} at ${timeOf(res.startsAt, tz)} for ${res.party}. ${res.phone || res.email ? 'We’ll let them know.' : ''}`, confirmLabel: 'Cancel reservation', cancelLabel: 'Keep it', tone: 'danger' })
     if (ok) await act('cancel', { notify: true }, 'Reservation cancelled')
   }
@@ -88,6 +91,11 @@ export default function ReservationDrawer({ companyId, tz, today, res, seatingOp
                 <dl className="rd-kv">
                   {res.seatedAt && <><dt>Seated</dt><dd>{timeOf(res.seatedAt, tz)}</dd></>}
                   <dt>Until</dt><dd>{timeOf(res.endsAt, tz)}</dd>
+                  {(useTables || !!res.tables?.length) && (live || !!res.tables?.length) && <><dt>Table</dt><dd className="rd-table">
+                    {res.tables?.length ? <TableChip tables={res.tables} /> : <span className="rd-muted">None yet</span>}
+                    {live && useTables && <button type="button" className="ak-btn sm ghost" onClick={() => setMode('table')}>{res.tables?.length ? 'Change' : 'Choose'}</button>}
+                  </dd></>}
+                  {res.deposit && <><dt>Deposit</dt><dd>{money(res.deposit.cents)} · {res.deposit.status === 'paid' ? 'paid' : res.deposit.status === 'refunded' ? 'refunded' : res.deposit.status === 'partially_refunded' ? 'partly refunded' : 'not paid yet'}</dd></>}
                   {res.seating && <><dt>Seating</dt><dd>{SEATING[res.seating] || res.seating}</dd></>}
                   {res.occasion && <><dt>Occasion</dt><dd>{res.occasion}</dd></>}
                   {res.phone && <><dt>Mobile</dt><dd><a href={`tel:${res.phone}`}>{res.phone}</a></dd></>}
@@ -110,6 +118,8 @@ export default function ReservationDrawer({ companyId, tz, today, res, seatingOp
             </>
           )}
           {mode === 'move' && <MoveForm companyId={companyId} tz={tz} today={today} res={res} onBack={() => setMode('view')} onMoved={r => { onChange(r); setMode('view'); toast('Reservation moved') }} />}
+          {mode === 'table' && <TableForm companyId={companyId} res={res} onBack={() => setMode('view')} onSaved={(r, noTable) => { onChange(r); setMode('view'); toast(noTable ? 'No table is free for them then' : r.tables?.length ? `${tablesText(r.tables)} for ${r.name}` : 'Table taken off') }} />}
+          {mode === 'cancel' && <CancelForm companyId={companyId} res={res} onBack={() => setMode('view')} onCancelled={(r, msg) => { onChange(r); setMode('view'); toast(msg) }} />}
           {mode === 'edit' && <EditForm companyId={companyId} res={res} seatingOptions={seatingOptions} onBack={() => setMode('view')} onSaved={r => { onChange(r); setMode('view'); toast('Saved') }} />}
         </div>
       </aside>
@@ -172,6 +182,63 @@ function GuestCard({ companyId, tz, res, data, onSaved }: { companyId: string; t
         </div>
       )}
     </section>
+  )
+}
+
+function TableForm({ companyId, res, onBack, onSaved }: { companyId: string; res: Reservation; onBack: () => void; onSaved: (r: Reservation, noTable: boolean) => void }) {
+  const current = (res.tables || []).map(t => t.id)
+  const [value, setValue] = useState<string[] | null>(current.length ? current : null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const save = async () => {
+    setBusy(true); setErr('')
+    try {
+      const r = await apiRaw('/api/reservations', { method: 'PATCH', json: { companyId, id: res.id, action: 'assign', tables: value } })
+      if (!r.ok) { setErr(r.data?.error || 'Could not change the table.'); return }
+      onSaved(r.data.reservation, !!r.data.noTable && value === null)
+    } finally { setBusy(false) }
+  }
+  return (
+    <div className="rd-form">
+      <h3 style={{ margin: 0 }}>Table for {res.party}</h3>
+      <TablePicker companyId={companyId} at={res.startsAt} party={res.party} excludeId={res.id} value={value} onChange={setValue} allowNone currentIds={current} />
+      {err && <div className="ak-note bad" role="alert">{err}</div>}
+      <div className="rd-form-f"><button type="button" className="ak-btn ghost" onClick={onBack}>Back</button><button type="button" className="ak-btn go" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save table'}</button></div>
+    </div>
+  )
+}
+
+/** Cancelling a reservation with a paid deposit: refund it or keep it. */
+function CancelForm({ companyId, res, onBack, onCancelled }: { companyId: string; res: Reservation; onBack: () => void; onCancelled: (r: Reservation, msg: string) => void }) {
+  const access = useRefundAccess(companyId)
+  const [refund, setRefund] = useState(true)
+  const [pin, setPin] = useState('')
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const cents = res.deposit?.cents || 0
+  const canRefund = access.canRefund && !access.locked
+  const go = async () => {
+    setBusy(true); setErr('')
+    try {
+      const giveBack = refund && canRefund
+      const r = await apiRaw('/api/reservations', { method: 'PATCH', json: { companyId, id: res.id, action: 'cancel', notify: true, reason, refund: giveBack, ...(giveBack && pin ? { refundPin: pin } : {}) } })
+      if (!r.ok) { if (isPinError(r.data?.code)) setPin(''); setErr(r.data?.error || 'Could not cancel.'); return }
+      onCancelled(r.data.reservation, r.data.refundError ? `Cancelled. The refund didn’t go through: ${r.data.refundError}` : r.data.refunded ? `Cancelled and ${money(r.data.refunded)} refunded` : 'Reservation cancelled, deposit kept')
+    } finally { setBusy(false) }
+  }
+  return (
+    <div className="rd-form">
+      <h3 style={{ margin: 0 }}>Cancel {res.name}’s table?</h3>
+      <p className="ak-hint" style={{ margin: 0 }}>They paid a {money(cents)} deposit. {res.phone || res.email ? 'We’ll let them know it’s cancelled.' : ''}</p>
+      {canRefund ? (
+        <label className="rs-check"><input type="checkbox" checked={refund} onChange={e => setRefund(e.target.checked)} /><span>Refund the {money(cents)} deposit to their card</span></label>
+      ) : access.loading ? null : !access.canRefund ? <RefundNotAllowed /> : <p className="ak-hint" style={{ margin: 0, color: '#b45309' }}>Refunds are locked for a while after wrong PINs. Cancel now and refund later from Payments, or try again soon.</p>}
+      {refund && canRefund && access.pinSet && <RefundPinField value={pin} onChange={setPin} id="rd-pin" />}
+      <div><label className="ak-label" htmlFor="rd-why">Reason (optional)</label><input id="rd-why" className="ak-field" value={reason} onChange={e => setReason(e.target.value)} maxLength={500} placeholder="e.g. They called to cancel" /></div>
+      {err && <div className="ak-note bad" role="alert">{err}</div>}
+      <div className="rd-form-f"><button type="button" className="ak-btn ghost" onClick={onBack}>Keep it</button><button type="button" className="ak-btn dark" onClick={go} disabled={busy || (refund && canRefund && access.pinSet && pin.length < 4)}>{busy ? 'Cancelling…' : refund && canRefund ? 'Cancel and refund' : 'Cancel, keep deposit'}</button></div>
+    </div>
   )
 }
 
@@ -282,6 +349,8 @@ function EditForm({ companyId, res, seatingOptions, onBack, onSaved }: { company
 }
 
 const RD_CSS = `
+.rd-table{display:flex;align-items:center;gap:8px}
+.rd-muted{color:var(--soft)}
 .rd-ov{position:fixed;inset:0;z-index:900;display:flex;justify-content:flex-end;background:rgba(15,15,20,.22);animation:jbFade .18s ease both}
 .rd{--f:#f4f4f5;--f2:#ececef;--line:#ececee;--mut:#71717a;--soft:#8e8e93;width:min(440px,100%);height:100%;display:flex;flex-direction:column;background:var(--card,#fff);color:var(--ink);box-shadow:-20px 0 60px rgba(0,0,0,.16);outline:none;animation:rdIn .34s cubic-bezier(.22,1,.36,1) both}
 [data-theme="dark"] .rd{--f:#2a2a2e;--f2:#333337;--line:#2e2e33;--mut:#a1a1aa;--soft:#8b8b90}

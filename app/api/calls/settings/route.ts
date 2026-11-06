@@ -4,8 +4,12 @@ import { createClient } from '@supabase/supabase-js'
 import { loadBusinessHours, weekText, type BusinessHours } from '@/lib/business-hours'
 import { resolveSmsSender } from '@/lib/sms-provider'
 import {
-  missedCallTextSettings, MISSED_CALL_TEXT_DEFAULT, MISSED_CALL_TEXT_MAX, type MissedCallTextSettings,
+  missedCallTextSettings, cleanMissedCallHours, MISSED_CALL_TEXT_DEFAULT, MISSED_CALL_TEXT_RESTAURANT, MISSED_CALL_TEXT_MAX, type MissedCallTextSettings,
 } from '@/lib/missed-call-text-settings'
+import { missedCallLink } from '@/lib/missed-call-text'
+import { restaurantEnabled } from '@/lib/modules'
+
+const CO_COLS = 'name, slug, inbox_settings, modules, industry, booking_settings'
 
 export const dynamic = 'force-dynamic'
 
@@ -62,13 +66,16 @@ export async function GET(req: NextRequest) {
   const table = await providerTable(db, companyId)
   const [{ data }, { data: co }, hours, sender] = await Promise.all([
     db.from(table).select('ring_seconds, voicemail_enabled, voicemail_greeting').eq('company_id', companyId).maybeSingle(),
-    db.from('companies').select('name, inbox_settings').eq('id', companyId).maybeSingle(),
+    db.from('companies').select(CO_COLS).eq('id', companyId).maybeSingle(),
     openingHours(db, companyId),
     resolveSmsSender(db, companyId).catch(() => null),
   ])
   const extra = {
-    missedCallText: missedCallTextSettings(co?.inbox_settings),
+    missedCallText: missedCallTextSettings(co?.inbox_settings, { restaurant: restaurantEnabled(co) }),
     businessName: co?.name || '',
+    // What {booking_link} becomes (null: no booking page is on, so it's left out).
+    bookingLink: missedCallLink(co),
+    restaurant: restaurantEnabled(co),
     hours,
     // No texting number → nothing would be sent; the screen says so.
     smsReady: !!sender,
@@ -102,7 +109,7 @@ export async function PATCH(req: NextRequest) {
       const message = String(m.message ?? '').trim()
       if (message.length > MISSED_CALL_TEXT_MAX) return NextResponse.json({ error: `Keep the text under ${MISSED_CALL_TEXT_MAX} characters.` }, { status: 400 })
       if (m.when !== undefined && m.when !== 'always' && m.when !== 'after_hours') return NextResponse.json({ error: 'Choose when to send the text.' }, { status: 400 })
-      text = { enabled: m.enabled === true, message: message || MISSED_CALL_TEXT_DEFAULT, when: m.when === 'after_hours' ? 'after_hours' : 'always' }
+      text = { enabled: m.enabled === true, message, when: m.when === 'after_hours' ? 'after_hours' : 'always', hours: cleanMissedCallHours(m.hours) }
     }
     if (!Object.keys(patch).length && !text) return NextResponse.json({ error: 'Nothing to save' }, { status: 400 })
 
@@ -115,8 +122,9 @@ export async function PATCH(req: NextRequest) {
     if (text) {
       // Merged into the latest settings, so automatic replies saved elsewhere
       // in the meantime are kept.
-      const { data: co, error: readErr } = await db.from('companies').select('inbox_settings').eq('id', companyId).maybeSingle()
+      const { data: co, error: readErr } = await db.from('companies').select(CO_COLS).eq('id', companyId).maybeSingle()
       if (readErr) return NextResponse.json({ error: readErr.message }, { status: 500 })
+      if (!text.message) text.message = restaurantEnabled(co) ? MISSED_CALL_TEXT_RESTAURANT : MISSED_CALL_TEXT_DEFAULT
       const merged = { ...(co?.inbox_settings && typeof co.inbox_settings === 'object' ? co.inbox_settings : {}), missed_call_text: text }
       const { error } = await db.from('companies').update({ inbox_settings: merged }).eq('id', companyId)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -124,9 +132,9 @@ export async function PATCH(req: NextRequest) {
 
     const [{ data: row }, { data: co }] = await Promise.all([
       db.from(table).select('ring_seconds, voicemail_enabled, voicemail_greeting').eq('company_id', companyId).maybeSingle(),
-      db.from('companies').select('inbox_settings').eq('id', companyId).maybeSingle(),
+      db.from('companies').select(CO_COLS).eq('id', companyId).maybeSingle(),
     ])
-    return NextResponse.json({ ok: true, ...shape(row), missedCallText: missedCallTextSettings(co?.inbox_settings) })
+    return NextResponse.json({ ok: true, ...shape(row), missedCallText: missedCallTextSettings(co?.inbox_settings, { restaurant: restaurantEnabled(co) }) })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Could not save' }, { status: 500 })
   }

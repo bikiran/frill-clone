@@ -7,7 +7,7 @@ import { verifyTurnstile, requestIp, TURNSTILE_FAILED } from '@/lib/turnstile'
 import { restaurantEnabled } from '@/lib/modules'
 import { reservationSlots } from '@/lib/restaurant/availability'
 import {
-  restaurantDb, loadRestaurant, settingsOf, ensureReservationService, liveReservations, slotsFor, createReservation, publicRestaurant,
+  restaurantDb, loadRestaurant, ctxOf, liveReservations, tableHolds, slotsFor, createReservation, publicRestaurant,
   json, isMissingRestaurantSchema, RESTAURANT_HINT, type ResCtx,
 } from '@/lib/restaurant/server'
 
@@ -20,6 +20,7 @@ export const dynamic = 'force-dynamic'
 //   GET  ?slug|domain&op=slots&date&party          the times with room
 //   POST { slug|domain, startsAt, party, name, phone, email?, notes?, seating?, occasion?,
 //          marketing?, website (hidden), openedAt, turnstileToken }
+//        → { reservation, checkoutUrl? } — with a deposit, the table is held while they pay.
 // Spam: a hidden field, a minimum time on the page, per-IP and per-restaurant
 // limits, and Cloudflare Turnstile once its keys are set.
 
@@ -29,9 +30,7 @@ async function ctxFor(db: any, q: { slug: string | null; domain: string | null }
   const { company, error } = await loadRestaurant(db, pub.id)
   if (error) return { status: isMissingRestaurantSchema(error) ? 503 : 500, error: isMissingRestaurantSchema(error) ? RESTAURANT_HINT : 'Something went wrong.' }
   if (!company || !restaurantEnabled(company)) return { status: 404, error: 'This restaurant isn’t taking bookings online.' }
-  const { rs, bs, tz } = settingsOf(company)
-  const service = await ensureReservationService(db, company, rs)
-  return { ctx: { company, rs, bs, tz, service } }
+  return { ctx: await ctxOf(db, company) }
 }
 
 const partyOf = (v: any, max: number) => Math.max(1, Math.min(max, Math.round(Number(v)) || 2))
@@ -57,9 +56,10 @@ export async function GET(req: NextRequest) {
       const n = Math.min(21, rs.max_days_ahead + 1)
       const to = addDays(from, n - 1)
       const live = await liveReservations(db, company.id, c.ctx.service.id, Date.parse(`${from}T00:00:00Z`) - 36 * 3600e3, Date.parse(`${to}T00:00:00Z`) + 60 * 3600e3)
+      const floor = c.ctx.byTable && c.ctx.floor ? { floor: c.ctx.floor, holds: await tableHolds(db, company.id, live), onlineOnly: true } : null
       const days: { date: string; open: boolean }[] = []
       for (let d = from, i = 0; i < n; d = addDays(d, 1), i++) {
-        const slots = reservationSlots({ settings: rs, tz, date: d, party, live, now: Date.now() })
+        const slots = reservationSlots({ settings: rs, tz, date: d, party, live, now: Date.now(), floor })
         days.push({ date: d, open: slots.some(s => s.ok) })
       }
       return json({ days, timezone: tz })
@@ -103,10 +103,13 @@ export async function POST(req: NextRequest) {
       seating: body.seating, occasion: body.occasion, source: 'page', byTeam: false, notify: true,
       marketingOptIn: body.marketing === true, origin: req.nextUrl.origin,
     })
-    if (!res.ok) return json({ error: res.error, full: !!res.full }, res.status || 400)
+    if (!res.ok) return json({ error: res.error, full: !!res.full, blocked: res.reason === 'blocked' }, res.status || 400)
     const b = res.booking
     return json({
       ok: true,
+      // A deposit to pay: the page sends them to Stripe; the table is held for half an hour.
+      checkoutUrl: res.checkoutUrl || null,
+      deposit: b.amount_due_cents && b.payment_status !== 'paid' ? b.amount_due_cents : null,
       reservation: { startsAt: b.starts_at, party: b.seats, name: b.customer_name, seating: b.seating_pref || null, manageUrl: manageUrl(c.ctx.company, b.manage_token) },
     })
   } catch (e: any) {

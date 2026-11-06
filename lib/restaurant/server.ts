@@ -10,12 +10,14 @@ import { randomBytes } from 'crypto'
 import { bearerToken, verifyToken, SUPER_ADMIN } from '@/lib/company-access'
 import {
   PUBLIC_COMPANY_COLS, resolveBookingSettings, confirmBooking, customerMessage, systemNote, whenText,
-  bookingEvent, type BookingSettings,
+  bookingEvent, manageUrl, type BookingSettings,
 } from '@/lib/booking'
-import { dateInTz } from '@/lib/booking-time'
+import { dateInTz, fmtDateTime } from '@/lib/booking-time'
+import { createChatCheckoutSession } from '@/lib/chat-checkout'
 import { notifyCompany } from '@/lib/notify'
 import { emitIntegrationEvent } from '@/lib/integration-events'
-import { resolveRestaurantSettings, durationFor, reservationName, SEATING_OPTIONS, type RestaurantSettings } from '@/lib/restaurant/settings'
+import { resolveRestaurantSettings, durationFor, reservationName, depositFor, SEATING_OPTIONS, type RestaurantSettings } from '@/lib/restaurant/settings'
+import { seatsByTable, type Floor, type FloorTable, type FloorCombo, type TableHold } from '@/lib/restaurant/tables'
 import { reservationSlots, onGrid, fits, type LiveRes } from '@/lib/restaurant/availability'
 import { checkReservationsAccess } from '@/lib/restaurant/access-core'
 import { isJobsManager } from '@/lib/jobs/server'
@@ -37,6 +39,14 @@ export function isMissingRestaurantSchema(e: any): boolean {
   const m = `${e?.message || ''} ${e?.code || ''} ${e?.details || ''}`
   return /42P01|42703|42883|PGRST202|PGRST204|PGRST205|does not exist|could not find the|schema cache/i.test(m)
     && /restaurant_settings|claim_reservation|seated_at|seating_pref|occasion|internal_notes|guest_profile|birthday|modules/i.test(m)
+}
+
+export const TABLES_HINT = 'Tables need one database update: run migrations/COLVY_V430_RESTAURANT_TABLES.sql in the Supabase SQL editor.'
+/** V430 not run yet (the tables or the table claim are missing). */
+export function isMissingTablesSchema(e: any): boolean {
+  const m = `${e?.message || ''} ${e?.code || ''} ${e?.details || ''} ${e?.hint || ''}`
+  return /42P01|42703|42883|PGRST202|PGRST204|PGRST205|does not exist|could not find the|schema cache/i.test(m)
+    && /restaurant_tables|restaurant_areas|restaurant_table_combos|reservation_tables|claim_table_reservation/i.test(m)
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -96,7 +106,33 @@ export async function loadRestaurant(db: any, companyId: string): Promise<{ comp
   return { company: data || null, error }
 }
 
-export type ResCtx = { company: any; rs: RestaurantSettings; bs: BookingSettings; tz: string; service: any }
+export type ResCtx = {
+  company: any; rs: RestaurantSettings; bs: BookingSettings; tz: string; service: any
+  /** The floor plan (Phase 2), when V430 is in. */
+  floor: Floor | null
+  /** Seating by table now: the setting is on and there are tables. */
+  byTable: boolean
+}
+
+export const FLOOR_TABLE_COLS = 'id, area_id, label, min_party, max_party, x, y, w, h, shape, rotation, combinable, online, active, unavailable_until, unavailable_note, sort'
+
+/** Areas, tables and combos (active ones). `missing`: V430 isn't in yet. */
+export async function loadFloor(db: any, companyId: string): Promise<{ floor: Floor; areas: any[]; missing: boolean }> {
+  const [t, c, a] = await Promise.all([
+    db.from('restaurant_tables').select(FLOOR_TABLE_COLS).eq('company_id', companyId).eq('active', true).order('sort').limit(500),
+    db.from('restaurant_table_combos').select('id, name, table_ids, min_party, max_party, online, active').eq('company_id', companyId).eq('active', true).limit(200),
+    db.from('restaurant_areas').select('id, name, sort, active').eq('company_id', companyId).eq('active', true).order('sort').limit(50),
+  ])
+  const err = t.error || c.error || a.error
+  if (err) {
+    if (isMissingTablesSchema(err)) return { floor: { tables: [], combos: [] }, areas: [], missing: true }
+    throw err
+  }
+  const num = (v: any, d: number) => (Number.isFinite(Number(v)) ? Number(v) : d)
+  const tables: FloorTable[] = (t.data || []).map((r: any) => ({ ...r, x: num(r.x, 0), y: num(r.y, 0), w: num(r.w, 2), h: num(r.h, 2), min_party: num(r.min_party, 1), max_party: num(r.max_party, 2), sort: num(r.sort, 0) }))
+  const combos: FloorCombo[] = (c.data || []).map((r: any) => ({ ...r, table_ids: Array.isArray(r.table_ids) ? r.table_ids : [], min_party: num(r.min_party, 1), max_party: num(r.max_party, 2) }))
+  return { floor: { tables, combos }, areas: a.data || [], missing: false }
+}
 
 export function settingsOf(company: any) {
   const bs = resolveBookingSettings(company?.booking_settings)
@@ -137,14 +173,23 @@ export async function resContext(db: any, companyId: string): Promise<{ ctx?: Re
   const { company, error } = await loadRestaurant(db, companyId)
   if (error) return { response: isMissingRestaurantSchema(error) ? setupNeeded() : json({ error: error.message }, 500) }
   if (!company) return { response: json({ error: 'Workspace not found.' }, 404) }
+  return { ctx: await ctxOf(db, company) }
+}
+
+/** The context for a loaded restaurant: its settings, reservation service and floor plan. */
+export async function ctxOf(db: any, company: any): Promise<ResCtx> {
   const { rs, bs, tz } = settingsOf(company)
-  const service = await ensureReservationService(db, company, rs)
-  return { ctx: { company, rs, bs, tz, service } }
+  const [service, fl] = await Promise.all([
+    ensureReservationService(db, company, rs),
+    loadFloor(db, company.id).catch(() => ({ floor: { tables: [], combos: [] }, areas: [], missing: true })),
+  ])
+  const floor = fl.missing ? null : fl.floor
+  return { company, rs, bs, tz, service, floor, byTable: seatsByTable(rs.use_tables, floor) }
 }
 
 // ── Reading reservations ────────────────────────────────────────────────────
 
-export const RES_COLS = 'id, company_id, service_id, service_name, starts_at, ends_at, status, seats, customer_name, customer_email, customer_phone, notes, internal_notes, seating_pref, occasion, seated_at, completed_at, contact_id, conversation_id, source, created_at, cancelled_at, cancel_reason, reschedule_count, customer_confirmed_at, manage_token, hold_expires_at'
+export const RES_COLS = 'id, company_id, service_id, service_name, starts_at, ends_at, status, seats, customer_name, customer_email, customer_phone, notes, internal_notes, seating_pref, occasion, seated_at, completed_at, contact_id, conversation_id, source, created_at, cancelled_at, cancel_reason, reschedule_count, customer_confirmed_at, manage_token, hold_expires_at, amount_due_cents, payment_status, payment_mode'
 
 /** Live reservations overlapping [from, to): what takes seats. */
 export async function liveReservations(db: any, companyId: string, serviceId: string, fromMs: number, toMs: number): Promise<LiveRes[]> {
@@ -158,13 +203,46 @@ export async function liveReservations(db: any, companyId: string, serviceId: st
     .map((b: any) => ({ id: b.id, starts: Date.parse(b.starts_at), ends: Date.parse(b.ends_at), seats: b.seats || 1 }))
 }
 
+/** Which tables the live reservations hold (for picking tables like the claim does). */
+export async function tableHolds(db: any, companyId: string, live: LiveRes[]): Promise<TableHold[]> {
+  const ids = live.map(l => l.id).filter(Boolean) as string[]
+  if (!ids.length) return []
+  const byId = new Map(live.map(l => [l.id, l]))
+  const out: TableHold[] = []
+  for (let i = 0; i < ids.length; i += 300) {
+    const { data, error } = await db.from('reservation_tables').select('table_id, booking_id').eq('company_id', companyId).eq('active', true).in('booking_id', ids.slice(i, i + 300))
+    if (error) { if (isMissingTablesSchema(error)) return []; throw error }
+    for (const r of data || []) { const l = byId.get(r.booking_id); if (l) out.push({ table_id: r.table_id, booking_id: r.booking_id, starts: l.starts, ends: l.ends }) }
+  }
+  return out
+}
+
+/** The tables each reservation has: booking id → [{ id, label }]. */
+export async function tablesFor(db: any, ctx: ResCtx, bookingIds: string[]): Promise<Map<string, { id: string; label: string }[]>> {
+  const out = new Map<string, { id: string; label: string }[]>()
+  if (!ctx.floor || !bookingIds.length) return out
+  const label = new Map(ctx.floor.tables.map(t => [t.id, t.label]))
+  for (let i = 0; i < bookingIds.length; i += 300) {
+    const { data, error } = await db.from('reservation_tables').select('table_id, booking_id').eq('company_id', ctx.company.id).eq('active', true).in('booking_id', bookingIds.slice(i, i + 300))
+    if (error) { if (isMissingTablesSchema(error)) return out; throw error }
+    for (const r of data || []) {
+      const list = out.get(r.booking_id) || []
+      list.push({ id: r.table_id, label: label.get(r.table_id) || 'Table' })
+      out.set(r.booking_id, list)
+    }
+  }
+  for (const list of out.values()) list.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }))
+  return out
+}
+
 /** The times a party can book on a day (with why the others can't). */
 export async function slotsFor(db: any, ctx: ResCtx, date: string, party: number, opts: { excludeId?: string | null; team?: boolean } = {}) {
   const now = Date.now()
   const rs = opts.team ? { ...ctx.rs, min_notice_mins: 0, max_days_ahead: 365 } : ctx.rs
   const span = [Date.parse(`${date}T00:00:00Z`) - 36 * 3600e3, Date.parse(`${date}T00:00:00Z`) + 60 * 3600e3]
   const live = await liveReservations(db, ctx.company.id, ctx.service.id, span[0], span[1])
-  return reservationSlots({ settings: rs, tz: ctx.tz, date, party, live, now, excludeId: opts.excludeId })
+  const floor = ctx.byTable && ctx.floor ? { floor: ctx.floor, holds: await tableHolds(db, ctx.company.id, live), onlineOnly: !opts.team } : null
+  return reservationSlots({ settings: rs, tz: ctx.tz, date, party, live, now, excludeId: opts.excludeId, floor })
 }
 
 /**
@@ -226,10 +304,64 @@ export type CreateRes = {
   origin: string
 }
 
-export type ResResult = { ok: boolean; booking?: any; error?: string; status?: number; full?: boolean; reason?: string }
+export type ResResult = { ok: boolean; booking?: any; error?: string; status?: number; full?: boolean; reason?: string; checkoutUrl?: string | null; tables?: string[]; noTable?: boolean }
 
-export async function createReservation(db: any, ctx: ResCtx, input: CreateRes): Promise<ResResult> {
-  const { company, rs, tz, service } = ctx
+// ── The claim (covers, pacing, tables) ──────────────────────────────────────
+// claim_table_reservation (V430) when it's there; before V430 the Phase 1
+// claim_reservation (covers only), so reservations keep working either way.
+let v430MissingAt = 0
+type ClaimIn = { start: number; end: number; party: number; maxCovers: number; paceCovers: number; row: any; exclude?: string | null; tables?: string[] | null; requireTable?: boolean; onlineOnly?: boolean; area?: string | null; useTables?: boolean }
+type ClaimOut = { ok: boolean; id?: string; tables?: string[]; reason?: 'full' | 'pace' | 'no_table' | 'table_busy' | 'bad_table' | 'not_found' | 'invalid'; error?: any }
+
+export async function claimSeats(db: any, ctx: ResCtx, c: ClaimIn): Promise<ClaimOut> {
+  const base = {
+    p_company: ctx.company.id, p_service: ctx.service.id, p_starts: new Date(c.start).toISOString(), p_ends: new Date(c.end).toISOString(),
+    p_party: c.party, p_max_covers: c.maxCovers, p_pace_covers: c.paceCovers, p_pace_mins: ctx.rs.interval_mins, p_row: c.row || {}, p_exclude: c.exclude || null,
+  }
+  if (Date.now() - v430MissingAt > 10 * MIN) {
+    const useTables = c.useTables ?? (ctx.byTable || (Array.isArray(c.tables) && c.tables.length > 0))
+    const { data, error } = await db.rpc('claim_table_reservation', {
+      ...base, p_tables: Array.isArray(c.tables) ? c.tables : null, p_use_tables: useTables,
+      p_require_table: useTables && !!c.requireTable && !Array.isArray(c.tables), p_online_only: !!c.onlineOnly, p_area: c.area || null,
+    })
+    if (!error) {
+      const r = typeof data === 'string' ? JSON.parse(data) : data
+      if (r?.ok) return { ok: true, id: r.id, tables: Array.isArray(r.tables) ? r.tables : [] }
+      return { ok: false, reason: r?.reason || 'full' }
+    }
+    if (!isMissingTablesSchema(error)) return { ok: false, error }
+    v430MissingAt = Date.now()
+  }
+  const { data: id, error } = await db.rpc('claim_reservation', base)
+  if (error) return { ok: false, error }
+  return id ? { ok: true, id, tables: [] } : { ok: false, reason: 'full' }
+}
+
+const FULL_TEXT = (rs: RestaurantSettings, reason: string | undefined, team: boolean, coversLeft?: number) => {
+  if (reason === 'no_table') return team ? 'No table is free for that party then.' : 'Sorry, there’s no table for that party then. Please pick another time.'
+  if (reason === 'table_busy') return 'That table is taken then. Pick another table, or let Colvy choose.'
+  if (reason === 'bad_table') return 'That table isn’t on the floor plan any more.'
+  if (!team) return 'Sorry, that time just filled up. Please pick another.'
+  if (reason === 'pace') return `Too many guests arriving at that time (pacing ${rs.pace_covers}).`
+  return `That time is full${coversLeft != null ? ` (${Math.max(0, coversLeft)} seats left of ${rs.max_covers})` : ''}.`
+}
+
+/** Past no-shows for whoever's booking, matched by their mobile or email. */
+export async function noShowsFor(db: any, ctx: ResCtx, phone: string, email: string): Promise<number> {
+  const tail = String(phone || '').replace(/\D/g, '').slice(-9)
+  if (tail.length < 8 && !email) return 0
+  try {
+    let q = db.from('bookings').select('id').eq('company_id', ctx.company.id).eq('service_id', ctx.service.id).eq('status', 'no_show').limit(20)
+    q = email && tail.length >= 8 ? q.or(`customer_email.eq.${email.replace(/[,()]/g, '')},customer_phone.ilike.%${tail}`) : email ? q.eq('customer_email', email) : q.ilike('customer_phone', `%${tail}`)
+    const { data } = await q
+    return (data || []).length
+  } catch { return 0 }
+}
+
+const stripeReady = (company: any) => !!(company?.stripe_connected && company?.stripe_account_id)
+
+export async function createReservation(db: any, ctx: ResCtx, input: CreateRes & { tables?: string[] | null }): Promise<ResResult> {
+  const { company, rs, tz } = ctx
   const party = Math.round(Number(input.party))
   const maxParty = input.byTeam ? 500 : rs.party_max
   const minParty = input.byTeam ? 1 : rs.party_min
@@ -248,42 +380,62 @@ export async function createReservation(db: any, ctx: ResCtx, input: CreateRes):
   const date = dateInTz(start, tz)
   const end = start + durationFor(rs, party) * MIN
 
+  // Online: on the grid, bookable now, and — for guests who keep not turning up — not blocked.
+  let deposit = 0, depositWhy: string | null = null
   if (!input.byTeam) {
     if (!onGrid(rs, tz, date, start)) return { ok: false, error: 'That time isn’t available. Please pick another.', status: 409 }
     const slot = (await slotsFor(db, ctx, date, party)).find(s => s.start === start)
-    if (!slot || !slot.ok) return { ok: false, error: slot?.reason === 'notice' ? 'That time is too soon to book online. Please pick a later time or call us.' : 'Sorry, that time is now full. Please pick another.', status: 409, full: true, reason: slot?.reason }
+    if (!slot || !slot.ok) return { ok: false, error: slot?.reason === 'notice' ? 'That time is too soon to book online. Please pick a later time or call us.' : slot?.reason === 'no_table' ? FULL_TEXT(rs, 'no_table', false) : 'Sorry, that time is now full. Please pick another.', status: 409, full: true, reason: slot?.reason }
+    const noShows = rs.no_show.block_after > 0 || rs.no_show.deposit_after > 0 ? await noShowsFor(db, ctx, phone, email) : 0
+    if (rs.no_show.block_after > 0 && noShows >= rs.no_show.block_after) {
+      return { ok: false, error: `Please call ${company.name} to book this table${company.business_mobile ? ` on ${company.business_mobile}` : ''}.`, status: 403, reason: 'blocked' }
+    }
+    const d = depositFor(rs, { party, date, noShows })
+    if (d.cents > 0 && stripeReady(company)) { deposit = d.cents; depositWhy = d.why }
   }
 
   const force = !!input.force && input.byTeam
   const row = {
     service_name: reservationName(party), timezone: tz, status: 'pending',
-    hold_expires_at: new Date(Date.now() + 5 * MIN).toISOString(),
+    // A deposit has half an hour to pay (Stripe Checkout's window); otherwise five minutes to confirm.
+    hold_expires_at: new Date(Date.now() + (deposit ? 31 : 5) * MIN).toISOString(),
     customer_name: name, customer_email: email || null, customer_phone: phone || null,
     notes: clip(input.notes, 1000) || null, manage_token: randomBytes(18).toString('base64url'),
     source: input.source, seating_pref: cleanSeating(input.seating), occasion: clip(input.occasion, 80) || null,
     internal_notes: input.byTeam ? (clip(input.internalNotes, 1000) || null) : null,
     contact_id: isUuid(input.contactId) ? input.contactId : null, currency: 'aud',
+    ...(deposit ? { payment_mode: 'deposit', amount_due_cents: deposit, payment_status: 'pending' } : {}),
   }
-  const { data: id, error } = await db.rpc('claim_reservation', {
-    p_company: company.id, p_service: service.id, p_starts: new Date(start).toISOString(), p_ends: new Date(end).toISOString(),
-    p_party: party, p_max_covers: force ? 0 : rs.max_covers, p_pace_covers: force ? 0 : rs.pace_covers, p_pace_mins: rs.interval_mins,
-    p_row: row, p_exclude: null,
+  const tables = Array.isArray(input.tables) ? input.tables.filter(isUuid).slice(0, 8) : null
+  const c = await claimSeats(db, ctx, {
+    start, end, party, maxCovers: force ? 0 : rs.max_covers, paceCovers: force ? 0 : rs.pace_covers, row,
+    tables: tables && tables.length ? tables : null, requireTable: !input.byTeam, onlineOnly: !input.byTeam,
   })
-  if (error) {
-    if (isMissingRestaurantSchema(error)) return { ok: false, error: RESTAURANT_HINT, status: 503 }
-    return { ok: false, error: error.message, status: 500 }
+  if (c.error) {
+    if (isMissingRestaurantSchema(c.error)) return { ok: false, error: RESTAURANT_HINT, status: 503 }
+    return { ok: false, error: c.error.message, status: 500 }
   }
-  if (!id) {
-    // Why: so the team can choose to book over the top.
-    const live = await liveReservations(db, company.id, service.id, start - 12 * 3600e3, end + 12 * 3600e3)
+  if (!c.ok || !c.id) {
+    // Why: so the team can choose to book over the top (or another table).
+    const live = await liveReservations(db, company.id, ctx.service.id, start - 12 * 3600e3, end + 12 * 3600e3)
     const f = fits(rs, live, start, party)
-    return { ok: false, full: true, reason: f.reason || 'full', status: 409, error: input.byTeam
-      ? (f.reason === 'pace' ? `Too many guests arriving at that time (pacing ${rs.pace_covers}).` : `That time is full (${Math.max(0, f.coversLeft === Infinity ? 0 : f.coversLeft)} seats left of ${rs.max_covers}).`)
-      : 'Sorry, that time just filled up. Please pick another.' }
+    const reason = c.reason === 'full' || c.reason === 'pace' ? (f.reason || c.reason) : c.reason
+    return { ok: false, full: true, reason: reason || 'full', status: 409, error: FULL_TEXT(rs, reason, input.byTeam, f.coversLeft === Infinity ? undefined : f.coversLeft) }
+  }
+  const id = c.id
+
+  if (deposit) {
+    const pay = await startDeposit(db, ctx, id, { cents: deposit, party, start, name, email, why: depositWhy })
+    if (!pay.ok) {
+      await db.from('bookings').update({ status: 'expired', payment_status: 'failed' }).eq('id', id).eq('company_id', company.id)
+      return { ok: false, error: pay.error || 'Couldn’t start the deposit payment. Please try again.', status: 502 }
+    }
+    const { data: held } = await db.from('bookings').select(RES_COLS).eq('id', id).maybeSingle()
+    return { ok: true, booking: held, checkoutUrl: pay.url, tables: c.tables }
   }
 
-  const c = await confirmBooking(db, id as string, { origin: input.origin, byTeam: input.byTeam, notifyCustomer: input.notify, reservation: true })
-  if (!c.ok) return { ok: false, error: 'That time was just taken. Please pick another.', status: 409, full: true }
+  const conf = await confirmBooking(db, id as string, { origin: input.origin, byTeam: input.byTeam, notifyCustomer: input.notify, reservation: true })
+  if (!conf.ok) return { ok: false, error: 'That time was just taken. Please pick another.', status: 409, full: true }
   const patch: any = {}
   if (input.seatNow) patch.seated_at = new Date().toISOString()
   if (Object.keys(patch).length) await db.from('bookings').update(patch).eq('id', id).eq('company_id', company.id)
@@ -295,15 +447,40 @@ export async function createReservation(db: any, ctx: ResCtx, input: CreateRes):
     } catch {}
   }
   emitIntegrationEvent(company.id, 'booking.created', bookingEvent(fresh || { id }, `New reservation: ${reservationName(party)} · ${name}`, { Guests: party }), { db })
-  return { ok: true, booking: fresh }
+  return { ok: true, booking: fresh, tables: c.tables, noTable: ctx.byTable && !(c.tables || []).length }
 }
 
 /**
- * Move a reservation (time and/or party size), atomically. `by: 'customer'`
- * keeps them to the online rules (seating times, notice, covers); the team can
- * pick any time and book over the top with `force`.
+ * Take a deposit for a held reservation: a chat_payments row (Payments page,
+ * receipts, refunds) and Stripe Checkout on the restaurant's own account. The
+ * Stripe webhook (booking_payment) or the return page confirms the booking.
  */
-export async function moveReservation(db: any, b: any, opts: { startMs: number; party?: number; by: 'customer' | 'business'; force?: boolean; notify: boolean; origin: string }): Promise<ResResult> {
+async function startDeposit(db: any, ctx: ResCtx, bookingId: string, d: { cents: number; party: number; start: number; name: string; email: string; why: string | null }): Promise<{ ok: boolean; url?: string; error?: string }> {
+  const { company, tz } = ctx
+  const description = `Deposit — ${reservationName(d.party)}, ${fmtDateTime(d.start, tz)}`
+  const { data: pay } = await db.from('chat_payments').insert({
+    company_id: company.id, conversation_id: null, message_id: null, amount_cents: d.cents, currency: 'aud', description, status: 'pending',
+  }).select('id').maybeSingle()
+  if (!pay?.id) return { ok: false }
+  const { data: b } = await db.from('bookings').select('manage_token').eq('id', bookingId).maybeSingle()
+  const url = manageUrl(company, b?.manage_token || '')
+  try {
+    const session = await createChatCheckoutSession(company, {
+      cents: d.cents, currency: 'aud', description, companyId: company.id, conversationId: '',
+      kind: 'booking_payment', extraMetadata: { bookingId, paymentId: pay.id, reservation: '1', depositWhy: d.why || '' },
+      successUrl: `${url}?paid=1&session_id={CHECKOUT_SESSION_ID}`, cancelUrl: `${url}?payment=cancelled`, pageUrl: url,
+      expiresAt: Math.floor(Date.now() / 1000) + 31 * 60, customerEmail: d.email || undefined,
+    })
+    await db.from('chat_payments').update({ stripe_session_id: session.id, checkout_url: session.url }).eq('id', pay.id)
+    await db.from('bookings').update({ chat_payment_id: pay.id, stripe_session_id: session.id }).eq('id', bookingId)
+    return { ok: true, url: session.url }
+  } catch (e: any) {
+    try { await db.from('chat_payments').update({ status: 'failed' }).eq('id', pay.id) } catch {}
+    return { ok: false, error: e?.message }
+  }
+}
+
+export async function moveReservation(db: any, b: any, opts: { startMs: number; party?: number; by: 'customer' | 'business'; force?: boolean; notify: boolean; origin: string; tables?: string[] | null }): Promise<ResResult> {
   if (b.status !== 'confirmed') return { ok: false, error: 'Only a booked table can be moved.', status: 400 }
   const r = await resContext(db, b.company_id)
   if (!r.ctx) return { ok: false, error: 'Reservations aren’t set up here.', status: 503 }
@@ -322,13 +499,23 @@ export async function moveReservation(db: any, b: any, opts: { startMs: number; 
   }
   const end = start + durationFor(rs, party) * MIN
   const force = team && !!opts.force
-  const { data: moved, error } = await db.rpc('claim_reservation', {
-    p_company: b.company_id, p_service: service.id, p_starts: new Date(start).toISOString(), p_ends: new Date(end).toISOString(),
-    p_party: party, p_max_covers: force ? 0 : rs.max_covers, p_pace_covers: force ? 0 : rs.pace_covers, p_pace_mins: rs.interval_mins,
-    p_row: { service_name: reservationName(party) }, p_exclude: b.id,
+  const tables = Array.isArray(opts.tables) ? opts.tables.filter(isUuid).slice(0, 8) : null
+  const claimWith = (t: string[] | null) => claimSeats(db, ctx, {
+    start, end, party, maxCovers: force ? 0 : rs.max_covers, paceCovers: force ? 0 : rs.pace_covers,
+    row: { service_name: reservationName(party) }, exclude: b.id, tables: t, requireTable: !team, onlineOnly: !team,
   })
-  if (error) return { ok: false, error: isMissingRestaurantSchema(error) ? RESTAURANT_HINT : error.message, status: isMissingRestaurantSchema(error) ? 503 : 500 }
-  if (!moved) return { ok: false, error: team ? 'That time is full. Book over the limit, or pick another time.' : 'Sorry, that time was just taken. Please pick another.', status: 409, full: true }
+  // Same party: keep their table if it's still free at the new time.
+  let c: ClaimOut | null = null
+  if (!tables && ctx.floor && party === b.seats) {
+    const cur = ((await tablesFor(db, ctx, [b.id])).get(b.id) || []).map(t => t.id)
+    if (cur.length) {
+      c = await claimWith(cur)
+      if (!c.ok && !c.error && (c.reason === 'table_busy' || c.reason === 'bad_table')) c = null
+    }
+  }
+  if (!c) c = await claimWith(tables)
+  if (c.error) return { ok: false, error: isMissingRestaurantSchema(c.error) ? RESTAURANT_HINT : c.error.message, status: isMissingRestaurantSchema(c.error) ? 503 : 500 }
+  if (!c.ok) return { ok: false, error: c.reason === 'full' || c.reason === 'pace' ? (team ? 'That time is full. Book over the limit, or pick another time.' : 'Sorry, that time was just taken. Please pick another.') : FULL_TEXT(rs, c.reason, team), status: 409, full: true, reason: c.reason }
 
   const oldWhen = whenText(b), oldParty = b.seats
   const timeChanged = start !== Date.parse(b.starts_at)
@@ -341,24 +528,40 @@ export async function moveReservation(db: any, b: any, opts: { startMs: number; 
     try { await db.from('calendar_events').update({ starts_at: bk.starts_at, ends_at: bk.ends_at, title: `${bk.service_name} — ${bk.customer_name || 'Guest'}`, status: 'confirmed', reminded_at: null, customer_reminded_at: null }).eq('id', b.calendar_event_id) }
     catch { try { await db.from('calendar_events').update({ starts_at: bk.starts_at, ends_at: bk.ends_at }).eq('id', b.calendar_event_id) } catch {} }
   }
+  if (!timeChanged && party === oldParty) return { ok: true, booking: bk, tables: c.tables }
   const what = [timeChanged ? `was ${oldWhen}, now ${whenText(bk)}` : '', party !== oldParty ? `party ${oldParty} → ${party}` : ''].filter(Boolean).join('; ')
   await systemNote(db, bk, `🔁 Reservation changed by ${team ? 'the team' : 'the guest'}: ${what || 'no change'}`)
   if (!team) await notifyCompany({ db, companyId: b.company_id, type: 'booking', conversationId: b.conversation_id || undefined, message: `🔁 ${b.customer_name || 'A guest'} changed their table: ${what}` })
   emitIntegrationEvent(b.company_id, 'booking.rescheduled', bookingEvent(bk, `Reservation changed: ${bk.service_name} · ${b.customer_name || 'a guest'}`, { Was: oldWhen, 'Moved by': team ? 'Team' : 'Guest' }), { db })
   if (opts.notify && (timeChanged || party !== oldParty)) await customerMessage(db, company, ctx.bs, bk, 'rescheduled', { service, origin: opts.origin })
-  return { ok: true, booking: bk }
+  return { ok: true, booking: bk, tables: c.tables }
 }
 
-/** Re-take a reservation's seats (its hold lapsed before it was confirmed). */
-export async function reclaimReservation(db: any, b: any): Promise<boolean> {
-  const { company } = await loadRestaurant(db, b.company_id)
-  if (!company) return false
-  const { rs } = settingsOf(company)
-  const { data } = await db.rpc('claim_reservation', {
-    p_company: b.company_id, p_service: b.service_id, p_starts: b.starts_at, p_ends: b.ends_at, p_party: b.seats || 1,
-    p_max_covers: rs.max_covers, p_pace_covers: rs.pace_covers, p_pace_mins: rs.interval_mins, p_row: {}, p_exclude: b.id,
+/**
+ * Give a reservation particular tables (the team's pick), let Colvy choose
+ * (null), or none ([]). Same time and party; covers aren't re-checked.
+ */
+export async function assignTables(db: any, ctx: ResCtx, b: any, tables: string[] | null): Promise<ResResult> {
+  if (b.status !== 'confirmed' && b.status !== 'pending') return { ok: false, error: 'Only a live reservation can have a table.', status: 400 }
+  if (!ctx.floor) return { ok: false, error: TABLES_HINT, status: 503 }
+  const c = await claimSeats(db, ctx, {
+    start: Date.parse(b.starts_at), end: Date.parse(b.ends_at), party: b.seats || 1, maxCovers: 0, paceCovers: 0, row: {}, exclude: b.id,
+    tables: Array.isArray(tables) ? tables.filter(isUuid).slice(0, 8) : null, requireTable: false, useTables: true,
   })
-  return !!data
+  if (c.error) return { ok: false, error: isMissingTablesSchema(c.error) ? TABLES_HINT : c.error.message, status: isMissingTablesSchema(c.error) ? 503 : 500 }
+  if (!c.ok) return { ok: false, error: FULL_TEXT(ctx.rs, c.reason, true), status: 409, reason: c.reason }
+  return { ok: true, tables: c.tables, noTable: !(c.tables || []).length }
+}
+
+/** Re-take a reservation's seats (and a table) when its hold lapsed before it was confirmed (a late deposit). */
+export async function reclaimReservation(db: any, b: any): Promise<boolean> {
+  const r = await resContext(db, b.company_id)
+  if (!r.ctx) return false
+  const c = await claimSeats(db, r.ctx, {
+    start: Date.parse(b.starts_at), end: Date.parse(b.ends_at), party: b.seats || 1,
+    maxCovers: r.ctx.rs.max_covers, paceCovers: r.ctx.rs.pace_covers, row: {}, exclude: b.id, requireTable: false,
+  })
+  return c.ok
 }
 
 /** The public view of the restaurant for its booking page. */
@@ -369,5 +572,9 @@ export function publicRestaurant(company: any, rs: RestaurantSettings, tz: strin
     partyMin: rs.party_min, partyMax: rs.party_max, largePartyNote: rs.large_party_note, maxDaysAhead: rs.max_days_ahead,
     requirePhone: rs.require_phone, requireEmail: rs.require_email, seating: rs.seating,
     hours: rs.hours, closed: rs.closed.map(c => c.date),
+    // A deposit, when the restaurant takes card payments (the page shows it before they book).
+    deposit: stripeReady(company) && rs.deposit.mode !== 'off' && rs.deposit.cents > 0
+      ? { mode: rs.deposit.mode, cents: rs.deposit.cents, minParty: rs.deposit.min_party, days: rs.deposit.days } : null,
+    allowChanges: rs.allow_changes, cancelHours: rs.cancel_hours,
   }
 }

@@ -4,7 +4,8 @@
 // pills, the party stepper, day labels in the business's time zone and the
 // styles that sit on top of AdminKit's ak-* pieces and the Jobs dialog.
 
-import { fmtTime } from '@/components/jobs/shared'
+import { useEffect, useRef, useState } from 'react'
+import { fmtTime, apiRaw as _apiRaw } from '@/components/jobs/shared'
 export { api, apiRaw, Dialog, useToast, Toast, SetupNote, Icon, JB_CSS, useJobsCompany as useResCompany, fmtTime, fmtDay, dayKeyIn } from '@/components/jobs/shared'
 
 export type ResState = 'booked' | 'due' | 'late' | 'seated' | 'completed' | 'no_show' | 'cancelled' | 'pending'
@@ -14,6 +15,86 @@ export type Reservation = {
   seatedAt: string | null; completedAt: string | null; contactId: string | null; conversationId: string | null
   source: string; createdAt: string; cancelledAt: string | null; cancelReason: string | null; confirmedByGuest: boolean
   manageUrl: string | null; guest: { visits: number; noShows: number; lastVisit: string | null } | null
+  /** Phase 2: the table(s) it has, and a deposit (cents, 'pending' | 'paid' | 'refunded'…). */
+  tables?: { id: string; label: string }[]
+  deposit?: { cents: number; status: string } | null
+}
+
+export const money = (cents: number) => `$${(cents / 100).toLocaleString('en-AU', { minimumFractionDigits: cents % 100 ? 2 : 0, maximumFractionDigits: 2 })}`
+/** "T4", "T4 + T5": short table names for chips. A label that's a number gets a T. */
+export const tableName = (label: string) => (/^\d+[a-z]?$/i.test(label) ? `T${label}` : label)
+export const tablesText = (t?: { label: string }[] | null) => (t || []).map(x => tableName(x.label)).join(' + ')
+
+export function TableChip({ tables, missing }: { tables?: { id: string; label: string }[]; missing?: boolean }) {
+  if (tables && tables.length) return <span className="rs-tbl" title={`Table ${tables.map(t => t.label).join(' + ')}`}>{tablesText(tables)}</span>
+  if (missing) return <span className="rs-tbl none" title="No table yet">No table</span>
+  return null
+}
+
+type Choice = { id: string; label: string; area_id: string | null; min_party: number; max_party: number; free: boolean; fits: boolean; unavailable: boolean }
+
+/**
+ * Pick the table(s) for a party at a time: "Colvy chooses" (null: the
+ * smallest free table that fits, as online), or particular tables — several
+ * pushed together if needed. Taken tables are shown but can't be picked.
+ */
+export function TablePicker({ companyId, at, party, excludeId, value, onChange, allowNone, currentIds }: {
+  companyId: string; at: string | null; party: number; excludeId?: string | null
+  value: string[] | null; onChange: (v: string[] | null) => void; allowNone?: boolean; currentIds?: string[]
+}) {
+  const [list, setList] = useState<Choice[] | null>(null)
+  const [suggested, setSuggested] = useState<string[] | null>(null)
+  const [setup, setSetup] = useState(false)
+  const seq = useRef(0)
+  useEffect(() => {
+    if (!at) { setList([]); return }
+    const mine = ++seq.current
+    setList(null)
+    const t = setTimeout(async () => {
+      const r = await _apiRaw(`/api/reservations?companyId=${companyId}&op=tables&at=${encodeURIComponent(at)}&party=${party}${excludeId ? `&exclude=${excludeId}` : ''}`)
+      if (mine !== seq.current) return
+      if (!r.ok) { setList([]); return }
+      setSetup(!!r.data.setup); setList(r.data.tables || []); setSuggested(r.data.suggested || null)
+    }, 150)
+    return () => clearTimeout(t)
+  }, [companyId, at, party, excludeId])
+  if (setup) return null
+  if (list === null) return <div className="rs-tpick" aria-busy="true"><span className="rs-tsk" /><span className="rs-tsk" /><span className="rs-tsk" /></div>
+  if (!list.length) return <p className="ak-hint" style={{ margin: 0 }}>{at ? 'No tables on your floor plan yet.' : 'Pick a time to see the tables.'}</p>
+  const byId = new Map(list.map(t => [t.id, t]))
+  const sugText = suggested ? suggested.map(id => tableName(byId.get(id)?.label || '')).join(' + ') : ''
+  const toggle = (id: string) => {
+    const cur = value || []
+    onChange(cur.includes(id) ? (cur.length > 1 ? cur.filter(x => x !== id) : null) : [...cur, id])
+  }
+  const seats = (value || []).reduce((n, id) => n + (byId.get(id)?.max_party || 0), 0)
+  return (
+    <div className="rs-tpick-w">
+      <div className="rs-tpick" role="group" aria-label="Table">
+        <button type="button" className={`rs-tp auto${value === null ? ' on' : ''}`} onClick={() => onChange(null)} aria-pressed={value === null}>
+          <b>Colvy chooses</b><small>{sugText ? `Best fit: ${sugText}` : 'No table free that fits'}</small>
+        </button>
+        {allowNone && (
+          <button type="button" className={`rs-tp${value && !value.length ? ' on' : ''}`} onClick={() => onChange([])} aria-pressed={!!value && !value.length}>
+            <b>No table</b><small>Sort it later</small>
+          </button>
+        )}
+        {list.map(t => {
+          const on = !!value?.includes(t.id)
+          const mine = !!currentIds?.includes(t.id)
+          const off = !t.free && !mine
+          return (
+            <button key={t.id} type="button" className={`rs-tp${on ? ' on' : ''}${off ? ' taken' : ''}${!t.fits ? ' nofit' : ''}`} disabled={off} onClick={() => toggle(t.id)} aria-pressed={on}
+              title={off ? (t.unavailable ? 'Out of action' : 'Taken then') : `${t.min_party}–${t.max_party} guests`}>
+              <b>{tableName(t.label)}</b><small>{off ? (t.unavailable ? 'Out' : 'Taken') : `${t.min_party === t.max_party ? t.max_party : `${t.min_party}–${t.max_party}`} seats`}</small>
+            </button>
+          )
+        })}
+      </div>
+      {value && value.length > 0 && seats < party && <p className="ak-hint" style={{ margin: '6px 0 0', color: '#b45309' }}>Those tables seat {seats}, for a party of {party}. Add another table, or squeeze in.</p>}
+      {value && value.length > 1 && seats >= party && <p className="ak-hint" style={{ margin: '6px 0 0' }}>Pushed together: {value.map(id => tableName(byId.get(id)?.label || '')).join(' + ')}.</p>}
+    </div>
+  )
 }
 
 export const STATE_LABEL: Record<ResState, string> = {
@@ -95,4 +176,26 @@ export const RS_CSS = `
 .rs-check input{width:18px;height:18px;margin:1px 0 0;accent-color:var(--ink);flex-shrink:0}
 .rs-warn{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:14px;background:color-mix(in srgb,#f59e0b 13%,var(--card,#fff));color:color-mix(in srgb,#b45309 85%,var(--ink));font-size:13.5px;line-height:1.5}
 .rs-warn svg{flex-shrink:0;margin-top:1px}
+.rs-nav{display:flex;align-items:center;gap:6px}
+.rs-nav .ak-icon-btn{font-size:20px;line-height:1}
+.rs-date{position:relative;display:inline-flex;align-items:center;height:40px;padding:0 16px;border-radius:999px;background:var(--f);cursor:pointer}
+.rs-date b{font-size:14.5px;font-weight:650;white-space:nowrap}
+.rs-date input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
+.rs-count{font-size:12.5px;font-weight:600;color:var(--mut);white-space:nowrap}
+.rs-tbl{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:7px;background:color-mix(in srgb,#e26d3d 14%,var(--card,#fff));color:color-mix(in srgb,#c2410c 88%,var(--ink));font-size:12px;font-weight:750;letter-spacing:.01em;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rs-tbl.none{background:transparent;box-shadow:inset 0 0 0 1.5px color-mix(in srgb,#f59e0b 55%,transparent);color:color-mix(in srgb,#b45309 85%,var(--ink))}
+.rs-tpick{display:flex;flex-wrap:wrap;gap:6px}
+.rs-tp{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-width:64px;height:50px;padding:0 12px;border:none;border-radius:14px;background:var(--f);font:inherit;color:var(--ink);cursor:pointer;transition:background .15s,transform .12s}
+.rs-tp b{font-size:14px;font-weight:750;font-variant-numeric:tabular-nums}
+.rs-tp small{font-size:11px;font-weight:600;color:var(--soft);white-space:nowrap}
+.rs-tp.auto{align-items:flex-start;min-width:150px}
+.rs-tp:hover:not(:disabled){background:var(--f2)}
+.rs-tp:active:not(:disabled){transform:scale(.97)}
+.rs-tp.on,.rs-tp.on:hover:not(:disabled){background:var(--ink);color:var(--card,#fff)}
+.rs-tp.on small{color:color-mix(in srgb,var(--card,#fff) 70%,transparent)}
+.rs-tp.nofit:not(.on) b{color:var(--mut)}
+.rs-tp.taken{background:transparent;box-shadow:inset 0 0 0 1.5px var(--f2);color:var(--soft);cursor:default}
+.rs-tp.taken b{text-decoration:line-through;text-decoration-thickness:1.5px}
+.rs-tsk{width:70px;height:50px;border-radius:14px;background:linear-gradient(90deg,var(--f) 25%,var(--f2) 50%,var(--f) 75%);background-size:200% 100%;animation:rsSk 1.2s linear infinite}
+@keyframes rsSk{to{background-position:-200% 0}}
 `

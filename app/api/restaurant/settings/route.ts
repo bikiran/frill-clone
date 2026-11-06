@@ -4,7 +4,7 @@ import { reservePageUrl } from '@/lib/booking'
 import { readModules, restaurantEnabled } from '@/lib/modules'
 import { resolveRestaurantSettings } from '@/lib/restaurant/settings'
 import {
-  restaurantDb, reservationsAccess, loadRestaurant, settingsOf, ensureReservationService, json, setupNeeded, isMissingRestaurantSchema, isManager,
+  restaurantDb, reservationsAccess, loadRestaurant, settingsOf, ensureReservationService, json, setupNeeded, isMissingRestaurantSchema, isManager, loadFloor,
 } from '@/lib/restaurant/server'
 
 export const dynamic = 'force-dynamic'
@@ -23,9 +23,13 @@ export async function GET(req: NextRequest) {
     if (error) return isMissingRestaurantSchema(error) ? setupNeeded() : json({ error: error.message }, 500)
     if (!company) return json({ error: 'Workspace not found.' }, 404)
     const { rs, tz } = settingsOf(company)
+    const fl = await loadFloor(db, companyId!).catch(() => ({ floor: { tables: [], combos: [] }, areas: [], missing: true }))
     return json({
       settings: rs, enabled: restaurantEnabled(company), modules: readModules(company.modules), industry: company.industry || null, name: company.name || '',
       timezone: tz, pageUrl: reservePageUrl(company), canManage: isManager(access.role),
+      // Phase 2: deposits need Stripe; tables need V430 and a floor plan.
+      stripeReady: !!(company.stripe_connected && company.stripe_account_id),
+      tables: fl.missing ? null : fl.floor.tables.length,
     })
   } catch (e: any) {
     if (isMissingRestaurantSchema(e)) return setupNeeded()

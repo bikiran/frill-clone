@@ -14,7 +14,10 @@
 //   • to a customer who opted out (replied STOP) or is blocked, or a
 //     conversation marked as spam;
 //   • while the business is open, if it only wants it when closed;
-//   • more than once per caller every 12 hours (missed_call_texts, V362).
+//   • more than once per caller every 12 hours, or the gap the business chose
+//     (missed_call_texts, V362).
+// {booking_link} in the text becomes the booking page: the table booking page
+// for a restaurant (lib/restaurant), else the appointment booking page.
 // The text is stored in the caller's conversation like any outgoing text,
 // marked metadata.auto + metadata.missed_call_text, so reports can count it and
 // the "has the team replied yet?" checks ignore it.
@@ -28,6 +31,8 @@ import { isExternalSendBlocked } from '@/lib/demo-guard'
 import { loadBusinessHours, hoursOutlook } from '@/lib/business-hours'
 import { log } from '@/lib/log'
 import { textOptOut, smsKeywordTimes, isTextedOptIn, resolveAutomatedSmsSender } from '@/lib/sms-consent'
+import { bookingPageUrl, reservePageUrl, resolveBookingSettings } from '@/lib/booking'
+import { restaurantEnabled } from '@/lib/modules'
 import {
   missedCallTextSettings, renderMissedCallText, textableCaller, canTextFrom,
   MISSED_CALL_TEXT_HOURS, type CallerSkip,
@@ -60,9 +65,9 @@ const isMissingTable = (e: any) =>
  * single webhook only. 'unavailable' means V362 hasn't been run, and the caller
  * relies on the conversation check alone.
  */
-export async function claimMissedCallText(db: any, companyId: string, phone: string, callId: string, now: Date = new Date()): Promise<'claimed' | 'recent' | 'unavailable' | 'error'> {
+export async function claimMissedCallText(db: any, companyId: string, phone: string, callId: string, now: Date = new Date(), hours: number = MISSED_CALL_TEXT_HOURS): Promise<'claimed' | 'recent' | 'unavailable' | 'error'> {
   const sentAt = now.toISOString()
-  const cutoff = new Date(now.getTime() - MISSED_CALL_TEXT_HOURS * 3600_000).toISOString()
+  const cutoff = new Date(now.getTime() - hours * 3600_000).toISOString()
   try {
     const { error } = await db.from('missed_call_texts').insert({ company_id: companyId, phone, sent_at: sentAt, call_id: callId })
     if (!error) return 'claimed'
@@ -181,6 +186,16 @@ async function openNow(db: any, companyId: string, at: Date): Promise<boolean> {
   } catch { return false }
 }
 
+/** What {booking_link} becomes: the table booking page, else the booking page when it's on, else nothing. */
+export function missedCallLink(co: any): string | null {
+  if (!co?.slug) return null
+  try {
+    if (restaurantEnabled(co)) return reservePageUrl(co)
+    if (resolveBookingSettings(co.booking_settings).enabled) return bookingPageUrl(co)
+  } catch {}
+  return null
+}
+
 /**
  * Text the caller of a missed call, if the business wants it and every rule
  * above allows. Returns what happened, for logs and tests. Never throws.
@@ -190,8 +205,8 @@ export async function sendMissedCallText(p: { db: any; companyId: string; callId
   const now = p.now || new Date()
   try {
     if (!companyId || !callId) return 'not_found'
-    const { data: co } = await db.from('companies').select('name, inbox_settings').eq('id', companyId).maybeSingle()
-    const settings = missedCallTextSettings(co?.inbox_settings)
+    const { data: co } = await db.from('companies').select('name, slug, inbox_settings, modules, industry, booking_settings').eq('id', companyId).maybeSingle()
+    const settings = missedCallTextSettings(co?.inbox_settings, { restaurant: restaurantEnabled(co) })
     if (!settings.enabled) return 'off'
 
     // The row as it stands now, after the webhook that queued this finished.
@@ -221,12 +236,12 @@ export async function sendMissedCallText(p: { db: any; companyId: string; callId
 
     // Already texted in this conversation lately. Cheap, and the only guard
     // until V362 adds the claim table below.
-    const cutoff = new Date(now.getTime() - MISSED_CALL_TEXT_HOURS * 3600_000).toISOString()
+    const cutoff = new Date(now.getTime() - settings.hours * 3600_000).toISOString()
     const { data: recent } = await db.from('messages').select('metadata')
       .eq('conversation_id', conv.id).eq('sender_type', 'agent').gte('created_at', cutoff).limit(200)
     if ((recent || []).some((m: any) => m?.metadata?.missed_call_text)) return 'recent'
 
-    const claim = await claimMissedCallText(db, companyId, to, callId, now)
+    const claim = await claimMissedCallText(db, companyId, to, callId, now, settings.hours)
     if (claim === 'recent') return 'recent'
     if (claim === 'error') return 'failed'
     const claimed = claim === 'claimed'
@@ -235,7 +250,7 @@ export async function sendMissedCallText(p: { db: any; companyId: string; callId
     const sender = await resolveAutomatedSmsSender(db, companyId, { contactId: call.contact_id || null })
     if (!sender) { if (claimed) await releaseClaim(db, companyId, to, callId); return 'no_sms' }
 
-    const text = renderMissedCallText(settings.message, co?.name || '')
+    const text = renderMissedCallText(settings.message, co?.name || '', missedCallLink(co))
     // From the line they rang, when it's one of the business's numbers that can
     // text (an Australian landline can't); otherwise the usual texting number.
     const called = toE164(call.to_number || '')
