@@ -9,6 +9,84 @@ const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c'
 
 export const LATEST_POSTS: BlogPost[] = [
   {
+    slug: 'why-you-can-trust-colvy',
+    cover: '/ai/human-in-control.jpg',
+    title: 'Why you can trust Colvy with your customer conversations',
+    excerpt: 'Your inbox holds your customers’ numbers, messages and orders. Here’s exactly how Colvy looks after them: who you’re dealing with, what we do with your data, how the AI stays in check, and what we won’t claim.',
+    category: 'Buyer’s guide', accent: CORAL, icon: 'lock',
+    date: '2026-11-06T17:00:00+11:00', dateLabel: 'Nov 6, 2026', readTime: '6 min read', author: 'The Colvy Team',
+    takeaways: [
+      'Colvy is run by a team in Australia, with published AUD pricing, month-to-month plans and a 14-day free trial.',
+      'Your data is encrypted in transit and at rest, card payments go through Stripe, and you can export your contacts and conversations at any time.',
+      'Connected Gmail is used only to run your inbox: never sold, never used for ads, never used to train general AI models.',
+      'AI agents draft first. You decide, agent by agent, what they may send on their own, and one switch pauses them all.',
+      'Refund permissions, a refund PIN and locked connection keys keep a growing team in check.',
+    ],
+    content: `Moving your customer conversations into new software is a big decision. Your inbox holds your customers’ phone numbers, their messages, their orders and sometimes their complaints. Before you hand that to anyone, you should know exactly who they are and what they’ll do with it.
+
+So here it is, plainly. No badges we haven’t earned, no made-up reviews, just what Colvy does.
+
+## You’re dealing with real people, in Australia
+
+Colvy is built and supported by a team in Australia. When you need help, you talk to a person who knows the product, not a ticket queue.
+
+- Call or text us on **0485 059 215**, or email **support@colvy.com**.
+- Or leave your name and number in the [Let’s talk form](#lets-talk) at the bottom of this page and we’ll get back to you.
+
+## Pricing you can see before you sign up
+
+Every plan is on our [pricing page](/pricing) in Australian dollars. Plans are month to month, there’s a 14-day free trial, and you can cancel whenever you like. No contract to get out of, and no per-seat surprises: the Inbox and Everything plans include unlimited team members.
+
+Texts beyond your monthly allowance use prepaid credits that you top up yourself, with optional auto top-up, so a busy month can’t turn into a surprise bill.
+
+## Your data stays yours
+
+- **Encrypted.** Traffic is encrypted in transit with TLS, and your data is encrypted at rest on managed cloud infrastructure, with automated, regular backups.
+- **Limited access.** Inside Colvy, access to customer data is limited and role-based, and only granted when it’s genuinely needed.
+- **Yours to take with you.** Export your contacts and conversations at any time, and ask us to delete your data when you leave.
+- **Cards never touch Colvy.** Payments go through Stripe, a PCI DSS Level 1 provider. We never see or store card numbers.
+
+## Your Gmail, handled with care
+
+If you connect a Gmail account, Colvy asks Google for exactly two permissions: to read messages, so your customers’ emails appear in your inbox, and to send the replies your team writes or approves. Colvy can’t delete or change anything in your Gmail.
+
+We don’t sell Gmail data, use it for advertising, or use it to train general AI models. People at Colvy don’t read it unless you ask us to (in a support request, say), it’s needed for security, or the law requires it. You can disconnect at any time, and the full details are in our [privacy policy](/privacy).
+
+## AI that asks first
+
+Colvy’s AI agents can answer questions, follow up carts and move bookings. Every agent starts by **drafting** replies for your team to send, edit or discard. You decide, agent by agent and topic by topic, when one may send on its own, and one switch pauses them all.
+
+Customers hear from your business, in the tone you set in Business Memory, whoever wrote the message.
+
+## Controls for a growing team
+
+More staff shouldn’t mean less control.
+
+- **Who sees what.** You decide what each person on your team can see and do.
+- **Refunds with a PIN.** Choose who can refund, and require a refund PIN for the rest.
+- **Locked keys.** Connection keys for your phone numbers, Meta, email and Google stay locked away from team members.
+
+Read more in [Growing team, same control](/blog/refund-security-for-growing-teams).
+
+## Marketing the right way
+
+Messages you send to customers should be ones they’re happy to get. Campaign emails carry unsubscribe and preference links, and contacts who reach you through Colvy aren’t treated as signed up for marketing unless they’ve agreed to it. Our guide to [SMS marketing consent in Australia](/blog/sms-marketing-consent-australia) explains the rules in plain English.
+
+## Out in the open
+
+- A public [changelog](/changelog), so you can see what’s changed and when.
+- A [status page](/status) for how Colvy is running right now.
+- A [security page](/security), with how to report a security issue to us responsibly.
+
+## What we won’t claim
+
+You won’t find badges here for certifications we haven’t earned, or testimonials we wrote ourselves. If your business needs specific security or compliance answers, ask us and we’ll answer them straight.
+
+## The easiest way to decide
+
+Try it with your own customers. [Start free](/signup) for 14 days with no card, or [leave your number](#lets-talk) and someone from our team will walk you through it.`,
+  },
+  {
     slug: 'best-crm-software-or-most-capable',
     cover: '/photos/crm.jpg',
     title: 'Do you want the best CRM software, or the most capable CRM software?',

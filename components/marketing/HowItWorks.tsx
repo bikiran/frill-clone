@@ -63,10 +63,10 @@ const REV_FROM = 12840, SALE = 385
 // The shop's tank photos in the gallery and the chat: real aquarium photos,
 // public domain (CC0, from rawpixel and the WordPress photo directory, found
 // through Openverse). Small files, loaded lazily.
-const TANKS = [1, 2, 3, 4, 5, 6].map(n => `/demo/tanks/tank-${n}.jpg`)
+const TANKS = ['tank-1', 'tank-clownfish', 'tank-3', 'tank-4', 'tank-5', 'tank-6'].map(n => `/demo/tanks/${n}.jpg`)
 const Tank = ({ i, big }: { i: number; big?: boolean }) => (
   <span className={`hw-tank${big ? ' big' : ''}`}>
-    <img src={big ? '/demo/tanks/reef-wide.jpg' : TANKS[i]} alt={big ? 'The 4ft reef tank, set up in the shop' : ''} loading="lazy" decoding="async" draggable={false} />
+    <img src={big ? '/demo/tanks/reef-tank.jpg' : TANKS[i]} alt={big ? 'The 4ft reef tank, set up in the shop' : ''} loading="lazy" decoding="async" draggable={false} />
   </span>
 )
 
