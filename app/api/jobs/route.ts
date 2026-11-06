@@ -22,10 +22,13 @@ export async function GET(req: NextRequest) {
     const db = jobsDb()
     const sp = req.nextUrl.searchParams
     const companyId = sp.get('companyId')
-    const access = await jobsAccess(req, db, companyId)
+    // The access check and the company (whose settings decide what this
+    // person may see) are read together; the list follows.
+    const [access, company] = await Promise.all([
+      jobsAccess(req, db, companyId),
+      isUuid(companyId) ? loadCompany(db, companyId!) : Promise.resolve(null),
+    ])
     if (!access.ok) return access.response
-
-    const company = await loadCompany(db, companyId!)
     const settings = companySettings(company)
     const view = viewFor(access, settings)
 
@@ -46,7 +49,8 @@ export async function GET(req: NextRequest) {
       const n = Number(search.replace(/^[A-Za-z]+-?/, ''))
       q = Number.isInteger(n) && n > 0 ? q.or(`title.ilike.%${search}%,number.eq.${n}`) : q.ilike('title', `%${search}%`)
     }
-    const { data: jobs, error } = await q.order('updated_at', { ascending: false }).limit(500)
+    const listRes = await q.order('updated_at', { ascending: false }).limit(500)
+    const { data: jobs, error } = listRes as any
     if (error) { if (isMissingJobsSchema(error)) return setupNeeded(); throw error }
 
     const list = jobs || []

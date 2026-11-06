@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from 'react'
 import { api } from '@/components/booking/admin/shared'
+import Link from 'next/link'
 
 export default function ModulesCard({ companyId }: { companyId: string }) {
   const [st, setSt] = useState<{ on: boolean; auto: boolean; industry: string | null; canManage: boolean } | null>(null)
@@ -40,7 +41,7 @@ export default function ModulesCard({ companyId }: { companyId: string }) {
         <b>Jobs &amp; quotes</b>
         <small>{st?.auto && st.on ? `On for ${st.industry || 'your type of business'}. ` : ''}Itemised quotes with GST that customers accept online, deposits, and a jobs board, for trades, cleaners and removalists.</small>
         {msg && <small className="mc-msg">{msg}</small>}
-        {st?.on && <a href="/admin/jobs" className="mc-link">Open Jobs →</a>}
+        {st?.on && <Link href="/admin/jobs" className="mc-link">Open Jobs →</Link>}
       </div>
       <button type="button" role="switch" aria-checked={!!st?.on} aria-label="Jobs & quotes" disabled={!st || !st.canManage || busy} onClick={toggle} className={`mc-sw${st?.on ? ' on' : ''}`}><span /></button>
       <style>{`

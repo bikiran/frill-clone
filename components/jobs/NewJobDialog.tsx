@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import DateTimeField from '@/components/ui/DateTimeField'
+import AddressAutocomplete from '@/components/AddressAutocomplete'
 import { api, Dialog, localToIso, newKey } from '@/components/jobs/shared'
 
 type Contact = { id: string; name: string | null; phone: string | null; email: string | null }
@@ -113,7 +114,7 @@ export default function NewJobDialog({ companyId, onClose, onCreated }: { compan
 
       <div>
         <label className="ak-label" htmlFor="nj-addr">Address</label>
-        <input id="nj-addr" className="ak-field" value={address} onChange={e => setAddress(e.target.value)} maxLength={300} placeholder="Where the work is" />
+        <AddressAutocomplete id="nj-addr" className="ak-field" value={address} onChange={setAddress} onSelect={p => setAddress(p.formatted || address)} maxLength={300} placeholder="Where the work is" />
       </div>
 
       <div className="jbn-grid">

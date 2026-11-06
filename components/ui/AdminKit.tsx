@@ -18,6 +18,8 @@
 //   ak-empty                                      an empty state
 //   ak-grid2 / ak-tiles + ak-tile                 layouts
 
+import Link from 'next/link'
+
 export function AdminPage({ title, sub, actions, back, width = 'md', className, children }: {
   title: React.ReactNode
   sub?: React.ReactNode
@@ -35,10 +37,10 @@ export function AdminPage({ title, sub, actions, back, width = 'md', className, 
       <header className="ak-head">
         <div style={{ minWidth: 0 }}>
           {back && (
-            <a href={back.href} className="ak-back">
+            <Link href={back.href} className="ak-back">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="15 18 9 12 15 6" /></svg>
               {back.label}
-            </a>
+            </Link>
           )}
           <h1>{title}</h1>
           {sub && <p>{sub}</p>}

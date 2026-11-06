@@ -48,10 +48,31 @@ export const isUuid = (v: any) => typeof v === 'string' && UUID.test(v)
  * admin, or a member whose permissions allow "jobs"). Enforced here on the
  * server, not just by hiding the nav item.
  */
+// A yes is remembered for a few seconds per token + workspace, so the burst of
+// requests one screen makes (and the next screen straight after) don't each
+// ask the database again. Only a yes: a refusal is always checked afresh. The
+// window matches lib/company-access's own token cache.
+const ACCESS_TTL_MS = 20_000
+const granted = new Map<string, { caller: JobsCaller; at: number }>()
+
 export async function jobsAccess(req: Request, db: any, companyId: any): Promise<JobsCaller> {
   const deny = (status: number, error: string): JobsCaller => ({ ok: false, response: json({ error }, status) })
   if (!isUuid(companyId)) return deny(400, 'A workspace is needed.')
-  const user = await verifyToken(db, bearerToken(req as any)).catch(() => null)
+  const token = bearerToken(req as any)
+  if (!token) return deny(401, 'Please sign in again.')
+  const ck = `${token}:${companyId}`
+  const hit = granted.get(ck)
+  if (hit && Date.now() - hit.at < ACCESS_TTL_MS) return hit.caller
+  const caller = await checkAccess(db, token, companyId, deny)
+  if (caller.ok) {
+    if (granted.size > 500) granted.clear()
+    granted.set(ck, { caller, at: Date.now() })
+  } else granted.delete(ck)
+  return caller
+}
+
+async function checkAccess(db: any, token: string, companyId: string, deny: (status: number, error: string) => JobsCaller): Promise<JobsCaller> {
+  const user = await verifyToken(db, token).catch(() => null)
   if (!user) return deny(401, 'Please sign in again.')
   const email = String(user.email || '')
   const fallbackName = String(user.user_metadata?.display_name || user.user_metadata?.full_name || email.split('@')[0] || 'Team')

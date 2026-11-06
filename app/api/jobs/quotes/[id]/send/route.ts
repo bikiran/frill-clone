@@ -49,7 +49,16 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const label = `${settings.quote_prefix}-${quote.number}${quote.revision > 1 ? ` (rev ${quote.revision})` : ''}`
     const { data: contact } = job.contact_id ? await db.from('contacts').select('id, name, email, phone').eq('company_id', companyId).eq('id', job.contact_id).maybeSingle() : { data: null }
 
-    const token = quote.public_token || newPublicToken()
+    // The private link is made once and kept, so the message the send dialog
+    // previews (with its link) is the one that goes. A draft's link doesn't
+    // open anything until the quote is sent (/api/q refuses drafts).
+    let token = quote.public_token as string | null
+    if (!token) {
+      await db.from('job_quotes').update({ public_token: newPublicToken() }).eq('company_id', companyId).eq('id', id).is('public_token', null)
+      const { data: t } = await db.from('job_quotes').select('public_token').eq('company_id', companyId).eq('id', id).maybeSingle()
+      token = t?.public_token || null
+      if (!token) return json({ error: 'Couldn’t make the quote’s link. Please try again.' }, 500)
+    }
     const url = quoteUrl(company, token)
     const to = clip(body.to, 200) || (channel === 'sms' ? contact?.phone : channel === 'email' ? contact?.email : '') || ''
     const message = clip(body.message, 1500) || quoteMessage({ company, contact, quote, url, prefix: settings.quote_prefix })
