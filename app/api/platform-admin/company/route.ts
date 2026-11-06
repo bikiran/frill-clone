@@ -32,9 +32,8 @@ async function actor(req: NextRequest, db: any): Promise<{ id: string | null; em
   } catch { return { id: null, email: null } }
 }
 
-// GET ?companyId= : a compact summary for the in-workspace Super-Admin bar —
-// the plan, trial state, and a few live usage counts. Super-admin only; returns
-// 403 for everyone else so the bar simply doesn't render for normal admins.
+// GET ?companyId= : a compact summary of one company: the plan, trial state,
+// and a few live usage counts. Super-admin only; 403 for everyone else.
 export async function GET(req: NextRequest) {
   try {
     const db = admin()
