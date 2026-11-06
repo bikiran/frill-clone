@@ -21,7 +21,7 @@ export const jobsDb = () => createClient(
   { auth: { autoRefreshToken: false, persistSession: false } },
 )
 
-export const MIGRATION_HINT = 'Jobs & quotes needs one database update: run migrations/COLVY_V427_JOBS.sql in the Supabase SQL editor.'
+export const MIGRATION_HINT = 'Jobs & quotes needs a database update: run migrations/COLVY_V427_JOBS.sql (if you haven’t yet), then migrations/COLVY_V428_JOBS_PHASE2.sql, in the Supabase SQL editor.'
 
 /** The jobs tables or functions aren't there yet (V427 not run). */
 export function isMissingJobsSchema(e: any): boolean {
@@ -82,8 +82,8 @@ export const isJobsManager = (role: string) => role === 'owner' || hasFullAccess
 export const clip = (v: any, n: number) => (v == null ? '' : String(v)).trim().slice(0, n)
 export const isoOrNull = (v: any) => { if (!v) return null; const t = Date.parse(String(v)); return Number.isFinite(t) ? new Date(t).toISOString() : null }
 
-const COMPANY_COLS = 'id, name, slug, logo_url, accent_color, industry, modules, job_settings, booking_settings, business_mobile, business_email, business_address, abn_acn, website, stripe_mode, stripe_connected, stripe_account_id'
-const COMPANY_COLS_OLD = 'id, name, slug, logo_url, accent_color, industry, booking_settings, business_mobile, business_email, business_address, abn_acn, website, stripe_mode, stripe_connected, stripe_account_id'
+const COMPANY_COLS = 'id, name, slug, owner_id, logo_url, accent_color, industry, modules, job_settings, booking_settings, business_mobile, business_email, business_address, abn_acn, website, stripe_mode, stripe_connected, stripe_account_id'
+const COMPANY_COLS_OLD = 'id, name, slug, owner_id, logo_url, accent_color, industry, booking_settings, business_mobile, business_email, business_address, abn_acn, website, stripe_mode, stripe_connected, stripe_account_id'
 
 export async function loadCompany(db: any, companyId: string): Promise<any | null> {
   const first = await db.from('companies').select(COMPANY_COLS).eq('id', companyId).maybeSingle()

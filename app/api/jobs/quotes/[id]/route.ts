@@ -6,6 +6,7 @@ import {
   jobsDb, jobsAccess, json, setupNeeded, isMissingJobsSchema, isUuid, logJobEvent,
   loadCompany, companySettings, companyTz, todayIn, quoteMoney, quoteUrl, clip,
 } from '@/lib/jobs/server'
+import { moneyAllowed, MONEY_DENIED } from '@/lib/jobs/field'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,6 +25,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     const companyId = req.nextUrl.searchParams.get('companyId')
     const access = await jobsAccess(req, db, companyId)
     if (!access.ok) return access.response
+    if (!(await moneyAllowed(db, access, String(companyId)))) return json({ error: MONEY_DENIED }, 403)
     if (!isUuid(id)) return json({ error: 'Quote not found.' }, 404)
     const { data: quote, error } = await db.from('job_quotes').select('*').eq('company_id', companyId!).eq('id', id).maybeSingle()
     if (error) { if (isMissingJobsSchema(error)) return setupNeeded(); throw error }
@@ -59,6 +61,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     const companyId = String(body.companyId || '')
     const access = await jobsAccess(req, db, companyId)
     if (!access.ok) return access.response
+    if (!(await moneyAllowed(db, access, String(companyId)))) return json({ error: MONEY_DENIED }, 403)
     if (!isUuid(id)) return json({ error: 'Quote not found.' }, 404)
     const { data: quote, error } = await db.from('job_quotes').select('*').eq('company_id', companyId).eq('id', id).maybeSingle()
     if (error) { if (isMissingJobsSchema(error)) return setupNeeded(); throw error }
@@ -100,6 +103,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     const companyId = req.nextUrl.searchParams.get('companyId')
     const access = await jobsAccess(req, db, companyId)
     if (!access.ok) return access.response
+    if (!(await moneyAllowed(db, access, String(companyId)))) return json({ error: MONEY_DENIED }, 403)
     if (!isUuid(id)) return json({ error: 'Quote not found.' }, 404)
     const { data: quote } = await db.from('job_quotes').select('id, job_id, number, revision, status').eq('company_id', companyId!).eq('id', id).maybeSingle()
     if (!quote) return json({ error: 'Quote not found.' }, 404)

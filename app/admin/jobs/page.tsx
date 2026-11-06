@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { AdminPage } from '@/components/ui/AdminKit'
 import NewJobDialog from '@/components/jobs/NewJobDialog'
 import { confirmDialog } from '@/components/ConfirmDialog'
+import EmptyScroll from '@/components/EmptyScroll'
 import {
   api, useJobsCompany, StatusTag, QuoteTag, fmtWhen, fmtTime, fmtAgo, dayKeyIn, useToast, Toast, SetupNote, Icon, JB_CSS,
 } from '@/components/jobs/shared'
@@ -131,16 +132,22 @@ export default function JobsPage() {
 
       {loading ? (
         <div className="jb-skel">{Array.from({ length: 4 }).map((_, i) => <div key={i} />)}</div>
-      ) : err && jobs.length === 0 ? null : !setup && jobs.length === 0 && !q ? (
-        <div className="ak-panel"><div className="ak-empty">
-          <b>No jobs yet</b>
-          <span>Create one here, or turn an enquiry into a job from the Inbox, a booking or a form response.</span>
-          <button type="button" className="ak-btn go" style={{ marginTop: 12 }} onClick={() => setShowNew(true)}>{Icon.plus}New job</button>
-        </div></div>
+      ) : err && jobs.length === 0 ? null : !setup && jobs.length === 0 && !q.trim() ? (
+        <div className="ak-panel jb-empty">
+          <EmptyScroll title="No jobs yet" kinds={['job', 'quote', 'calendar']}
+            line="Create one here, or turn an enquiry into a job from the Inbox, a booking or a form response."
+            action={<button type="button" className="ak-btn go" onClick={() => setShowNew(true)}>{Icon.plus}New job</button>} />
+        </div>
+      ) : !setup && jobs.length === 0 ? (
+        <div className="ak-panel jb-empty">
+          <EmptyScroll title="Nothing found" kinds={['job', 'contact', 'quote']}
+            line={<>No jobs match “{q.trim()}”. Try a customer’s name, a title or a {prefix}-number.</>}
+            action={<button type="button" className="ak-btn" onClick={() => setQ('')}>Clear search</button>} />
+        </div>
       ) : view === 'board' ? (
         <Board jobs={jobs} tz={tz} prefix={prefix} qPrefix={qPrefix} onMove={move} onOpen={open} />
       ) : view === 'list' ? (
-        <ListView jobs={shown} tz={tz} prefix={prefix} qPrefix={qPrefix} onOpen={open} />
+        <ListView jobs={shown} tz={tz} prefix={prefix} qPrefix={qPrefix} onOpen={open} onShowAll={filter !== 'open' ? () => setFilter('open') : undefined} />
       ) : (
         <CalendarView jobs={jobs} tz={tz} prefix={prefix} onOpen={open} />
       )}
@@ -325,8 +332,12 @@ function MoveMenu({ job, onMove }: { job: any; onMove: (j: any, to: JobStatus) =
 
 // ── List ─────────────────────────────────────────────────────────────────────
 
-function ListView({ jobs, tz, prefix, qPrefix, onOpen }: { jobs: any[]; tz: string; prefix: string; qPrefix: string; onOpen: (j: any) => void }) {
-  if (!jobs.length) return <div className="ak-panel"><div className="ak-empty"><b>No jobs match</b><span>Try another filter or search.</span></div></div>
+function ListView({ jobs, tz, prefix, qPrefix, onOpen, onShowAll }: { jobs: any[]; tz: string; prefix: string; qPrefix: string; onOpen: (j: any) => void; onShowAll?: () => void }) {
+  if (!jobs.length) return (
+    <div className="ak-panel jb-empty">
+      <EmptyScroll title="Nothing here" kinds={['job', 'quote', 'calendar']} line="No jobs with this status. Try another filter." action={onShowAll ? <button type="button" className="ak-btn" onClick={onShowAll}>Show open jobs</button> : undefined} />
+    </div>
+  )
   return (
     <div className="ak-panel flush">
       <div className="jb-list">
@@ -413,6 +424,9 @@ function CalendarView({ jobs, tz, prefix, onOpen }: { jobs: any[]; tz: string; p
 }
 
 const PAGE_CSS = `
+.jb-empty{padding:28px 20px 34px}
+.jb-empty .es-title{font-size:16px}
+.jb-empty .es-line{max-width:380px;font-size:13.5px}
 .jb-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px}
 .jb-search{display:flex;align-items:center;gap:8px;flex:1;max-width:340px;min-width:200px;height:40px;padding:0 14px;border-radius:999px;background:var(--f);color:var(--mut)}
 .jb-search input{flex:1;min-width:0;border:none;background:none;outline:none;font:inherit;font-size:14px;color:var(--ink)}

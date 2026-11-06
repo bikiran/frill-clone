@@ -6,12 +6,16 @@ import {
   jobsDb, jobsAccess, json, setupNeeded, isMissingJobsSchema, isUuid, isJobsManager,
   logJobEvent, emitJobEvent, loadCompany, companySettings, companyTz, clip, isoOrNull,
 } from '@/lib/jobs/server'
+import { viewFor, callerSeesJob, busyFor, describeConflicts, syncJob, closeOpenEntries, notifyPeople, whenText } from '@/lib/jobs/field'
+import { assigneesOf, findConflicts, jobWindow, timeTotals } from '@/lib/jobs/work'
 
 export const dynamic = 'force-dynamic'
 
 // One job.
-//   GET    ?companyId   the job, who it's for, where it came from, its quotes and activity
-//   PATCH  { companyId, ... }   edit details, or move its status (compare-and-set)
+//   GET    ?companyId   the job, who it's for, where it came from, its quotes and activity,
+//                       and (Phase 2) its people, clashes, checklist, photos and time
+//   PATCH  { companyId, ... }   edit details, or move its status (compare-and-set);
+//                       keeps its Calendar entry in step and tells the people on it
 //   DELETE ?companyId   owners and admins, and only while no quote has gone out
 
 type Ctx = { params: Promise<{ id: string }> }
@@ -25,12 +29,17 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     if (!access.ok) return access.response
     if (!isUuid(id)) return json({ error: 'Job not found.' }, 404)
 
-    const { data: job, error } = await db.from('jobs').select('*').eq('company_id', companyId!).eq('id', id).maybeSingle()
+    const [{ data: job, error }, company] = await Promise.all([
+      db.from('jobs').select('*').eq('company_id', companyId!).eq('id', id).maybeSingle(),
+      loadCompany(db, companyId!),
+    ])
     if (error) { if (isMissingJobsSchema(error)) return setupNeeded(); throw error }
-    if (!job) return json({ error: 'Job not found.' }, 404)
+    const settings = companySettings(company)
+    const view = viewFor(access, settings)
+    if (!job || !callerSeesJob(view, job)) return json({ error: 'Job not found.' }, 404)
 
     const none = Promise.resolve({ data: null })
-    const [contact, conversation, booking, form, quotes, events, company] = await Promise.all([
+    const [contact, conversation, booking, form, quotes, events, checklist, attachments, entries] = await Promise.all([
       job.contact_id ? db.from('contacts').select('id, name, email, phone, address').eq('company_id', companyId!).eq('id', job.contact_id).maybeSingle() : none,
       job.conversation_id ? db.from('conversations').select('id, channel, subject, status').eq('company_id', companyId!).eq('id', job.conversation_id).maybeSingle() : none,
       job.booking_id ? db.from('bookings').select('id, service_name, starts_at, ends_at, status').eq('company_id', companyId!).eq('id', job.booking_id).maybeSingle() : none,
@@ -38,19 +47,37 @@ export async function GET(req: NextRequest, ctx: Ctx) {
       db.from('job_quotes').select('id, number, revision, status, title, total_cents, tax_cents, deposit_cents, deposit_status, valid_until, public_token, sent_at, sent_via, viewed_at, accepted_at, declined_at, decided_name, decided_note, decided_by_type, created_at, updated_at')
         .eq('company_id', companyId!).eq('job_id', id).order('created_at', { ascending: false }),
       db.from('job_events').select('id, quote_id, type, actor_type, actor_id, actor_name, summary, data, created_at').eq('company_id', companyId!).eq('job_id', id).order('created_at', { ascending: false }).limit(150),
-      loadCompany(db, companyId!),
+      db.from('job_checklist_items').select('id, text, done, done_by_id, done_by_name, done_at, sort_order').eq('company_id', companyId!).eq('job_id', id).order('sort_order').limit(200),
+      db.from('job_attachments').select('id, kind, url, name, mime, caption, uploaded_by_id, uploaded_by_name, created_at').eq('company_id', companyId!).eq('job_id', id).order('created_at').limit(300),
+      db.from('job_time_entries').select('id, user_id, user_name, started_at, ended_at, seconds').eq('company_id', companyId!).eq('job_id', id).order('started_at', { ascending: false }).limit(300),
     ])
-    const settings = companySettings(company)
+    const tz = companyTz(company)
+    // Clashes for the people on it, live (bookings and other jobs change).
+    let conflicts: any[] = []
+    const people = assigneesOf(job)
+    const w = jobWindow(job.scheduled_start, job.scheduled_end)
+    if (people.length && w && job.status !== 'completed' && job.status !== 'cancelled') {
+      try {
+        const busy = await busyFor(db, companyId!, people.map(p => p.id), w[0], w[1], settings.job_prefix)
+        conflicts = describeConflicts(findConflicts({ userIds: people.map(p => p.id), start: job.scheduled_start, end: job.scheduled_end, busy, excludeRefId: job.id }), new Map(people.map(p => [p.id, p.name])), tz)
+      } catch {}
+    }
+    const time = timeTotals(entries.data || [])
     return json({
-      job,
+      job: view.money ? job : { ...job, value_cents: null },
       contact: contact.data || null,
       conversation: conversation.data || null,
       booking: booking.data || null,
       form: form.data && (form.data as any).company_id === companyId ? { id: (form.data as any).id, title: (form.data as any).title } : null,
-      quotes: quotes.data || [],
-      events: events.data || [],
+      quotes: view.money ? (quotes.data || []) : [],
+      events: (events.data || []).filter((e: any) => view.money || !String(e.type || '').startsWith('quote') && e.type !== 'deposit_paid' && e.type !== 'deposit_requested'),
+      checklist: checklist.data || [],
+      attachments: attachments.data || [],
+      time: { entries: entries.data || [], totalSeconds: time.totalSeconds, byUser: time.byUser, running: time.runningUserIds, mineRunning: time.runningUserIds.includes(view.userId) },
+      conflicts,
+      me: view.userId, seesMoney: view.money, restricted: view.restrict && !view.isManager,
       settings,
-      timezone: companyTz(company),
+      timezone: tz,
       quoteBase: companyBase(company).base,
       paymentsReady: stripeReady(company),
       canManage: isJobsManager(access.role),
@@ -75,12 +102,18 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     if (!access.ok) return access.response
     if (!isUuid(id)) return json({ error: 'Job not found.' }, 404)
 
-    const { data: job, error } = await db.from('jobs').select('*').eq('company_id', companyId).eq('id', id).maybeSingle()
+    const [{ data: job, error }, company] = await Promise.all([
+      db.from('jobs').select('*').eq('company_id', companyId).eq('id', id).maybeSingle(),
+      loadCompany(db, companyId),
+    ])
     if (error) { if (isMissingJobsSchema(error)) return setupNeeded(); throw error }
-    if (!job) return json({ error: 'Job not found.' }, 404)
+    const settings = companySettings(company)
+    const view = viewFor(access, settings)
+    if (!job || !callerSeesJob(view, job)) return json({ error: 'Job not found.' }, 404)
     const now = new Date().toISOString()
-    const pf = companySettings(await loadCompany(db, companyId)).job_prefix
+    const pf = settings.job_prefix
     const label = `${pf}-${job.number}`
+    const tz = companyTz(company)
 
     // ── Status: only the allowed moves, and only from the status the caller saw ──
     if (body.status !== undefined) {
@@ -95,12 +128,24 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
       else patch.closed_at = null
       if (to === 'cancelled') patch.cancel_reason = clip(body.cancelReason, 500) || null
       if (from === 'cancelled') patch.cancel_reason = null
+      if (to === 'in_progress' && !job.started_at) patch.started_at = now
+      if (to === 'completed') {
+        if (settings.require_signature && !job.signature) return json({ error: 'Get the customer’s signature before completing this job.', needsSignature: true }, 409)
+        patch.completed_at = now
+      }
+      if (from === 'completed') patch.completed_at = null
       if (typeof body.sortOrder === 'number' && Number.isFinite(body.sortOrder)) patch.sort_order = body.sortOrder
       const { data: moved, error: mErr } = await db.from('jobs').update(patch).eq('company_id', companyId).eq('id', id).eq('status', from).select('*')
       if (mErr) throw mErr
       if (!moved?.length) {
         const { data: latest } = await db.from('jobs').select('*').eq('company_id', companyId).eq('id', id).maybeSingle()
         return json({ error: 'Someone else just changed this job. Here’s the latest.', job: latest, conflict: true }, 409)
+      }
+      // Finishing or cancelling stops anyone's running timer; the Calendar entry follows.
+      if (to === 'completed' || to === 'cancelled') await closeOpenEntries(db, moved[0])
+      await syncJob(db, moved[0], company)
+      if (to === 'completed' && job.created_by && job.created_by !== access.userId) {
+        await notifyPeople(db, { companyId, userIds: [job.created_by], exclude: access.userId, type: 'job_completed', title: `${access.name} completed ${label}`, body: job.title, link: `/admin/jobs/${id}`, origin: req.nextUrl.origin })
       }
       const summary = `Moved from ${JOB_STATUS_LABEL[from as JobStatus]} to ${JOB_STATUS_LABEL[to as JobStatus]}${to === 'cancelled' && patch.cancel_reason ? `: ${patch.cancel_reason}` : ''}`
       await logJobEvent(db, { companyId, jobId: id, type: 'status_changed', actorId: access.userId, actorName: access.name, summary, data: { from, to } })
@@ -139,11 +184,30 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     patch.updated_at = now
     const { data: updated, error: uErr } = await db.from('jobs').update(patch).eq('company_id', companyId).eq('id', id).select('*').maybeSingle()
     if (uErr) throw uErr
+    // The Calendar entry follows; the people on it hear about a new time or place.
+    let warnings: any[] = []
+    if (changed.some(k => ['title', 'address', 'scheduled_start', 'scheduled_end', 'contact_id'].includes(k))) await syncJob(db, updated, company)
+    const people = assigneesOf(updated)
+    if (people.length && changed.some(k => ['scheduled_start', 'scheduled_end', 'address'].includes(k))) {
+      const moved = changed.includes('scheduled_start') || changed.includes('scheduled_end')
+      await notifyPeople(db, {
+        companyId, userIds: people.map(p => p.id), exclude: access.userId, type: 'job_changed',
+        title: moved ? `${label} is now ${whenText(updated.scheduled_start, tz)}` : `${label} has a new address`,
+        body: `${updated.title}${updated.address ? ` · ${updated.address}` : ''}`, link: `/admin/jobs/${id}`, origin: req.nextUrl.origin,
+      })
+      const w = jobWindow(updated.scheduled_start, updated.scheduled_end)
+      if (moved && w) {
+        try {
+          const busy = await busyFor(db, companyId, people.map(p => p.id), w[0], w[1], pf)
+          warnings = describeConflicts(findConflicts({ userIds: people.map(p => p.id), start: updated.scheduled_start, end: updated.scheduled_end, busy, excludeRefId: id }), new Map(people.map(p => [p.id, p.name])), tz)
+        } catch {}
+      }
+    }
     const what = changed.map(k => DETAIL_LABEL[k] || k)
     const summary = `Updated the ${what.length > 1 ? `${what.slice(0, -1).join(', ')} and ${what[what.length - 1]}` : what[0]}`
     await logJobEvent(db, { companyId, jobId: id, type: 'updated', actorId: access.userId, actorName: access.name, summary, data: { fields: changed } })
     await audit(req, db, companyId, 'job_updated', `${label}: ${summary.toLowerCase()}`, { job_id: id, fields: changed })
-    return json({ job: updated })
+    return json({ job: updated, warnings })
   } catch (e: any) {
     if (isMissingJobsSchema(e)) return setupNeeded()
     return json({ error: e?.message || 'Could not save the job.' }, 500)
@@ -159,13 +223,14 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     if (!access.ok) return access.response
     if (!isJobsManager(access.role)) return json({ error: 'Only owners and admins can delete jobs. You can cancel it instead.' }, 403)
     if (!isUuid(id)) return json({ error: 'Job not found.' }, 404)
-    const { data: job } = await db.from('jobs').select('id, number, title').eq('company_id', companyId!).eq('id', id).maybeSingle()
+    const { data: job } = await db.from('jobs').select('id, number, title, calendar_event_id').eq('company_id', companyId!).eq('id', id).maybeSingle()
     if (!job) return json({ error: 'Job not found.' }, 404)
     // A quote the customer has seen stays on record: cancel the job instead.
     const { data: out } = await db.from('job_quotes').select('id').eq('company_id', companyId!).eq('job_id', id).neq('status', 'draft').limit(1)
     if (out?.length) return json({ error: 'A quote for this job has been sent, so it stays on record. Cancel the job instead.' }, 409)
     const { error } = await db.from('jobs').delete().eq('company_id', companyId!).eq('id', id)
     if (error) throw error
+    if (job.calendar_event_id) { try { await db.from('calendar_events').update({ status: 'cancelled' }).eq('company_id', companyId!).eq('id', job.calendar_event_id) } catch {} }
     const pf = companySettings(await loadCompany(db, companyId!)).job_prefix
     await audit(req, db, companyId!, 'job_updated', `Deleted job ${pf}-${job.number}: ${job.title}`, { job_id: id, deleted: true })
     return json({ ok: true })
