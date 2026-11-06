@@ -665,7 +665,7 @@ async function loadBookingCtx(db: any, bookingId: string) {
 // `byTeam`: the team added it (a phone booking, a walk-in): no "new booking"
 // alert to the team, and the guest hears only if `notifyCustomer` isn't false.
 // `reservation`: a table reservation (lib/restaurant/server.ts).
-export async function confirmBooking(db: any, bookingId: string, opts: { origin: string; paymentIntent?: string | null; paid?: boolean; clickRef?: string | null; quiet?: boolean; byTeam?: boolean; notifyCustomer?: boolean; reservation?: boolean }): Promise<{ ok: boolean; conflict?: boolean; already?: boolean }> {
+export async function confirmBooking(db: any, bookingId: string, opts: { origin: string; paymentIntent?: string | null; paid?: boolean; clickRef?: string | null; quiet?: boolean; byTeam?: boolean; notifyCustomer?: boolean; reservation?: boolean; later?: (job: () => Promise<unknown>) => void }): Promise<{ ok: boolean; conflict?: boolean; already?: boolean; booking?: any }> {
   const ctx = await loadBookingCtx(db, bookingId)
   if (!ctx) return { ok: false }
   const { b, company, service, settings } = ctx
@@ -742,71 +742,81 @@ export async function confirmBooking(db: any, bookingId: string, opts: { origin:
   bk.contact_id = contactId; bk.conversation_id = conversationId
   if (b.chat_payment_id && conversationId) { try { await db.from('chat_payments').update({ conversation_id: conversationId }).eq('id', b.chat_payment_id) } catch {} }
 
-  // Smart links: credit the booking (and what was paid online, once paid) to
-  // the link that led to it — the Reel / QR click the page was opened through,
-  // or else a tracked link this customer clicked in the last 7 days. The click
-  // gets the contact, so their orders that week are credited too. Analytics only.
-  if (!opts.quiet) try {
-    const clickRef = opts.clickRef || b.source_click_id || null
-    if (clickRef) await stitchLinkClick(db, { companyId: b.company_id, clickRef, contactId, contactIsNew: !!made.created, at: Date.parse(b.created_at) || Date.now() })
-    await attributeBookingToLinks({
-      db, companyId: b.company_id, contactId, bookingId: b.id, clickRef,
-      paidCents: b.amount_due_cents || 0, paid: !!opts.paid, currency: b.currency, bookedAt: b.created_at,
-    })
-  } catch {}
+  // The rest can wait until the reply has gone when the caller says so (`later`:
+  // a reservation the team or a guest just made): link analytics, the calendar
+  // entry, the note in the conversation, alerts and the guest's confirmation.
+  // The booking itself is confirmed and linked to its customer by then.
+  const rest = async () => {
+    // Smart links: credit the booking (and what was paid online, once paid) to
+    // the link that led to it — the Reel / QR click the page was opened through,
+    // or else a tracked link this customer clicked in the last 7 days. The click
+    // gets the contact, so their orders that week are credited too. Analytics only.
+    if (!opts.quiet) try {
+      const clickRef = opts.clickRef || b.source_click_id || null
+      if (clickRef) await stitchLinkClick(db, { companyId: b.company_id, clickRef, contactId, contactIsNew: !!made.created, at: Date.parse(b.created_at) || Date.now() })
+      await attributeBookingToLinks({
+        db, companyId: b.company_id, contactId, bookingId: b.id, clickRef,
+        paidCents: b.amount_due_cents || 0, paid: !!opts.paid, currency: b.currency, bookedAt: b.created_at,
+      })
+    } catch {}
 
-  // Calendar
-  const answers = (Array.isArray(b.answers) ? b.answers : []).filter((a: any) => a?.value)
-  const notes = [
-    b.source === 'repeat' ? 'Regular booking, added by the team.' : opts.byTeam ? `Added by the team${b.source === 'phone' ? ' (phone booking)' : b.source === 'walk_in' ? ' (walk-in)' : ''}.` : `Booked online${b.source === 'waitlist' ? ' from the waitlist' : ''}${b.staff_choice === 'any' && b.staff_name ? ' (any staff)' : ''}.`,
-    isTable ? `Party of ${b.seats || 1}${b.seating_pref && b.seating_pref !== 'any' ? `, ${b.seating_pref} seating` : ''}${b.occasion ? ` · ${b.occasion}` : ''}` : '',
-    b.customer_phone ? `Phone: ${b.customer_phone}` : '',
-    b.customer_email ? `Email: ${b.customer_email}` : '',
-    ...answers.map((a: any) => `${a.label}: ${a.value}`),
-    b.notes ? `Notes: ${b.notes}` : '',
-    b.amount_due_cents ? `${b.payment_mode === 'deposit' ? 'Deposit' : 'Paid'} online: ${fmtMoney(b.amount_due_cents, b.currency)}${b.price_cents && b.payment_mode === 'deposit' ? ` of ${fmtMoney(b.price_cents, b.currency)}` : ''}` : (b.price_cents ? `Price: ${fmtMoney(b.price_cents, b.currency)} (pay on the day)` : ''),
-  ].filter(Boolean).join('\n')
-  const ev: any = {
-    company_id: b.company_id,
-    event_type: service?.kind === 'booking' ? 'booking' : 'appointment',
-    title: `${b.service_name || 'Booking'} — ${b.customer_name || 'Customer'}`,
-    starts_at: b.starts_at, ends_at: b.ends_at, is_all_day: false, status: 'confirmed',
-    location_id: b.location_id || null, address: b.address || b.location_label || null,
-    contact_id: contactId, conversation_id: conversationId, notes,
-    external_source: 'booking', external_id: b.id,
-    assigned_to_id: b.staff_id || null, assigned_to_name: b.staff_name || null,
-    assignees: b.staff_id ? [{ id: b.staff_id, name: b.staff_name || '' }] : [],
-    // Booking reminders come from the booking sweep, not the calendar's own.
-    notify_customer: false, customer_contact_id: contactId,
-  }
-  let calendarEventId: string | null = null
-  {
-    const { data, error } = await db.from('calendar_events').insert(ev).select('id').maybeSingle()
-    if (!error) calendarEventId = data?.id || null
-    else {
-      const { assigned_to_id, assigned_to_name, assignees, notify_customer, customer_contact_id, ...minimal } = ev
-      void assigned_to_id; void assigned_to_name; void assignees; void notify_customer; void customer_contact_id
-      const r2 = await db.from('calendar_events').insert(minimal).select('id').maybeSingle()
-      calendarEventId = r2.data?.id || null
+    // Calendar
+    const answers = (Array.isArray(b.answers) ? b.answers : []).filter((a: any) => a?.value)
+    const notes = [
+      b.source === 'repeat' ? 'Regular booking, added by the team.' : opts.byTeam ? `Added by the team${b.source === 'phone' ? ' (phone booking)' : b.source === 'walk_in' ? ' (walk-in)' : ''}.` : `Booked online${b.source === 'waitlist' ? ' from the waitlist' : ''}${b.staff_choice === 'any' && b.staff_name ? ' (any staff)' : ''}.`,
+      isTable ? `Party of ${b.seats || 1}${b.seating_pref && b.seating_pref !== 'any' ? `, ${b.seating_pref} seating` : ''}${b.occasion ? ` · ${b.occasion}` : ''}` : '',
+      b.customer_phone ? `Phone: ${b.customer_phone}` : '',
+      b.customer_email ? `Email: ${b.customer_email}` : '',
+      ...answers.map((a: any) => `${a.label}: ${a.value}`),
+      b.notes ? `Notes: ${b.notes}` : '',
+      b.amount_due_cents ? `${b.payment_mode === 'deposit' ? 'Deposit' : 'Paid'} online: ${fmtMoney(b.amount_due_cents, b.currency)}${b.price_cents && b.payment_mode === 'deposit' ? ` of ${fmtMoney(b.price_cents, b.currency)}` : ''}` : (b.price_cents ? `Price: ${fmtMoney(b.price_cents, b.currency)} (pay on the day)` : ''),
+    ].filter(Boolean).join('\n')
+    const ev: any = {
+      company_id: b.company_id,
+      event_type: service?.kind === 'booking' ? 'booking' : 'appointment',
+      title: `${b.service_name || 'Booking'} — ${b.customer_name || 'Customer'}`,
+      starts_at: b.starts_at, ends_at: b.ends_at, is_all_day: false, status: 'confirmed',
+      location_id: b.location_id || null, address: b.address || b.location_label || null,
+      contact_id: contactId, conversation_id: conversationId, notes,
+      external_source: 'booking', external_id: b.id,
+      assigned_to_id: b.staff_id || null, assigned_to_name: b.staff_name || null,
+      assignees: b.staff_id ? [{ id: b.staff_id, name: b.staff_name || '' }] : [],
+      // Booking reminders come from the booking sweep, not the calendar's own.
+      notify_customer: false, customer_contact_id: contactId,
     }
-  }
-  await db.from('bookings').update({ contact_id: contactId, conversation_id: conversationId, calendar_event_id: calendarEventId }).eq('id', b.id)
-  bk.calendar_event_id = calendarEventId
+    let calendarEventId: string | null = null
+    {
+      const { data, error } = await db.from('calendar_events').insert(ev).select('id').maybeSingle()
+      if (!error) calendarEventId = data?.id || null
+      else {
+        const { assigned_to_id, assigned_to_name, assignees, notify_customer, customer_contact_id, ...minimal } = ev
+        void assigned_to_id; void assigned_to_name; void assignees; void notify_customer; void customer_contact_id
+        const r2 = await db.from('calendar_events').insert(minimal).select('id').maybeSingle()
+        calendarEventId = r2.data?.id || null
+      }
+    }
+    await db.from('bookings').update({ contact_id: contactId, conversation_id: conversationId, calendar_event_id: calendarEventId }).eq('id', b.id)
+    bk.calendar_event_id = calendarEventId
 
-  const who = b.staff_name ? ` with ${b.staff_name}` : ''
-  if (opts.quiet) {
-    emitIntegrationEvent(b.company_id, 'booking.created', bookingEvent(bk, `New booking: ${b.service_name} · ${b.customer_name || 'a customer'}`), { db })
-    return { ok: true }
+    const who = b.staff_name ? ` with ${b.staff_name}` : ''
+    if (opts.quiet) {
+      emitIntegrationEvent(b.company_id, 'booking.created', bookingEvent(bk, `New booking: ${b.service_name} · ${b.customer_name || 'a customer'}`), { db })
+      return
+    }
+    if (opts.byTeam) {
+      await systemNote(db, bk, `📅 ${isTable ? 'Table booked' : 'Booked'} by the team: ${b.service_name}${who} — ${whenText(b)}`)
+    } else {
+      await systemNote(db, bk, `📅 ${isTable ? 'Table booked online' : 'Booked online'}: ${b.service_name}${who} — ${whenText(b)}`)
+      await notifyCompany({ db, companyId: b.company_id, type: 'booking', conversationId: conversationId || undefined, message: `${isTable ? '🍽️ New reservation' : '📅 New booking'}: ${b.customer_name || 'A customer'} — ${b.service_name}${who}, ${whenText(b)}` })
+    }
+    if (!isTable) emitIntegrationEvent(b.company_id, 'booking.created', bookingEvent(bk, `New booking: ${b.service_name} · ${b.customer_name || 'a customer'}`), { db })
+    if (opts.notifyCustomer !== false) await customerMessage(db, company, settings, bk, 'confirmed', { service, origin: opts.origin })
   }
-  if (opts.byTeam) {
-    await systemNote(db, bk, `📅 ${isTable ? 'Table booked' : 'Booked'} by the team: ${b.service_name}${who} — ${whenText(b)}`)
-  } else {
-    await systemNote(db, bk, `📅 ${isTable ? 'Table booked online' : 'Booked online'}: ${b.service_name}${who} — ${whenText(b)}`)
-    await notifyCompany({ db, companyId: b.company_id, type: 'booking', conversationId: conversationId || undefined, message: `${isTable ? '🍽️ New reservation' : '📅 New booking'}: ${b.customer_name || 'A customer'} — ${b.service_name}${who}, ${whenText(b)}` })
-  }
-  if (!isTable) emitIntegrationEvent(b.company_id, 'booking.created', bookingEvent(bk, `New booking: ${b.service_name} · ${b.customer_name || 'a customer'}`), { db })
-  if (opts.notifyCustomer !== false) await customerMessage(db, company, settings, bk, 'confirmed', { service, origin: opts.origin })
-  return { ok: true }
+  if (opts.later) {
+    await db.from('bookings').update({ contact_id: contactId, conversation_id: conversationId }).eq('id', b.id)
+    opts.later(() => rest().catch((e: any) => console.error('[booking] after confirming', b.id, e?.message || e)))
+  } else await rest()
+  return { ok: true, booking: bk }
 }
 
 // ── Refund / cancel / reschedule ─────────────────────────────────────────────

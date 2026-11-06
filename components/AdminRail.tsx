@@ -105,7 +105,7 @@ function RailEntry({ s, open, aim, onLocked }: { s: RailSection; open: boolean; 
           <RailGlyph name={s.glyph} active={active} />
           {count > 0 && <Badge n={count} tone={tone} />}
         </span>
-        <span className="rail-label">{s.label}</span>
+        <span className={`rail-label${s.label.length > 10 ? ' long' : ''}`}>{s.label}</span>
       </Link>
       {items.length > 1 && <div className="rail-fly">
         <div className="rail-fly-card" role="group" aria-label={s.label}>
@@ -236,6 +236,10 @@ export default function AdminRail({ workspace, sections, settings, search, ring,
         .rail-tile:active .rail-ic { transform: scale(.94); }
         .rail-label { font-size: 11.5px; line-height: 14px; font-weight: 600; color: #52525b; letter-spacing: -0.005em; white-space: nowrap; }
         .rail-tile.on .rail-label { color: #111; font-weight: 700; }
+        /* Long names (Reservations) a touch smaller and tighter, so they sit inside the tile. */
+        .rail-label { max-width: 68px; }
+        .rail-label.long { font-size: 10.5px; letter-spacing: -0.03em; }
+        .rail-tile.on .rail-label.long { font-weight: 650; }
         .rail-badge { position: absolute; top: -6px; left: 14px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; border: 2px solid #f4f4f6; color: #fff; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center; box-sizing: border-box; }
         .rail-tile.on .rail-badge { border-color: #fff; }
         /* The panel beside the rail. Fixed, so the rail's scrolling can't clip it;

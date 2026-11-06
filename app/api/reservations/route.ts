@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server'
+import { NextRequest, after } from 'next/server'
 import { audit } from '@/lib/activity-logging'
 import { cancelBooking, manageUrl, systemNote, whenText } from '@/lib/booking'
 import { addDays, dateInTz, isDate, dayKeyOf, zonedToUtc } from '@/lib/booking-time'
@@ -210,9 +210,12 @@ export async function POST(req: NextRequest) {
       source: walkIn ? 'walk_in' : body.source === 'manual' ? 'manual' : 'phone', byTeam: true, force: body.force === true,
       notify: !walkIn && body.notify !== false, seatNow: walkIn, origin: req.nextUrl.origin,
       tables: Array.isArray(body.tables) ? body.tables : null,
+      // The guest's text and email, the conversation note and the calendar entry follow the reply.
+      later: job => after(job),
     })
     if (!res.ok) return json({ error: res.error, full: !!res.full, reason: res.reason || null }, res.status || 400)
-    await audit(req, db, companyId, 'reservation_created', `${res.booking.service_name} for ${res.booking.customer_name} — ${whenText(res.booking)}${body.force ? ' (over the covers limit)' : ''}`, { booking_id: res.booking.id, party: res.booking.seats, walk_in: walkIn })
+    const made = res.booking
+    after(() => audit(req, db, companyId, 'reservation_created', `${made.service_name} for ${made.customer_name} — ${whenText(made)}${body.force ? ' (over the covers limit)' : ''}`, { booking_id: made.id, party: made.seats, walk_in: walkIn }).catch(() => {}))
     const labels = new Map((r.ctx.floor?.tables || []).map(t => [t.id, t.label]))
     return json({
       reservation: shape(res.booking, r.ctx.company, null, (res.tables || []).map(id => ({ id, label: labels.get(id) || 'Table' }))),

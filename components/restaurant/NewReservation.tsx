@@ -7,13 +7,12 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { isTime, zonedToUtc } from '@/lib/booking-time'
-import { apiRaw, Dialog, PartyStepper, Icon, TablePicker, addDays, dayLabel, dayShort, dayNum, timeOf, SEATING, RS_CSS, type Reservation } from '@/components/restaurant/shared'
+import { isTime, zonedToUtc, zonedParts } from '@/lib/booking-time'
+import { apiRaw, Dialog, PartyStepper, Icon, TablePicker, TimePick, OccasionPick, addDays, dayLabel, dayShort, dayNum, timeOf, SEATING, RS_CSS, type Reservation } from '@/components/restaurant/shared'
 
 type Slot = { start: string; period: string; ok: boolean; reason: 'full' | 'pace' | 'no_table' | 'notice' | 'far' | null; coversLeft: number | null }
 type Contact = { id: string; name: string | null; phone: string | null; email: string | null }
 
-const OCCASIONS = ['Birthday', 'Anniversary', 'Date night', 'Business', 'Celebration']
 const REASON: Record<string, string> = { full: 'Full', pace: 'Busy', no_table: 'No table', notice: 'Soon', far: 'Far' }
 
 function useContactSearch(companyId: string, term: string) {
@@ -180,9 +179,9 @@ export default function NewReservation({ companyId, tz, today, date: initialDate
             ))}
           </div>
         )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
-          <label className="ak-hint" htmlFor="nr-other" style={{ margin: 0 }}>Or another time</label>
-          <input id="nr-other" type="time" className="ak-field" style={{ width: 130, height: 38 }} value={otherTime} onChange={e => setOtherTime(e.target.value)} />
+        <div className="rs-other">
+          <span className="ak-hint">Or another time</span>
+          <TimePick value={otherTime} onChange={setOtherTime} label="Pick a time" suggest={start ? (() => { const p = zonedParts(Date.parse(start), tz); return `${String(p.h).padStart(2, '0')}:${String(p.mi).padStart(2, '0')}` })() : ''} />
         </div>
       </div>
 
@@ -232,9 +231,8 @@ export default function NewReservation({ companyId, tz, today, date: initialDate
       )}
 
       <div>
-        <label className="ak-label" htmlFor="nr-occ">Occasion</label>
-        <input id="nr-occ" className="ak-field" value={occasion} onChange={e => setOccasion(e.target.value)} maxLength={80} placeholder="Optional" list="nr-occasions" />
-        <datalist id="nr-occasions">{OCCASIONS.map(o => <option key={o} value={o} />)}</datalist>
+        <span className="ak-label">Occasion <small className="rs-opt">optional</small></span>
+        <OccasionPick id="nr-occ" value={occasion} onChange={setOccasion} />
       </div>
 
       <div className="rs-two">

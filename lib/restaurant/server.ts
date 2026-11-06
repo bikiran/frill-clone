@@ -302,6 +302,8 @@ export type CreateRes = {
   seatNow?: boolean
   marketingOptIn?: boolean
   origin: string
+  /** Run the slow follow-ups (the guest's confirmation, notes, alerts, calendar) after the reply: next/server after(). */
+  later?: (job: () => Promise<unknown>) => void
 }
 
 export type ResResult = { ok: boolean; booking?: any; error?: string; status?: number; full?: boolean; reason?: string; checkoutUrl?: string | null; tables?: string[]; noTable?: boolean }
@@ -434,12 +436,13 @@ export async function createReservation(db: any, ctx: ResCtx, input: CreateRes &
     return { ok: true, booking: held, checkoutUrl: pay.url, tables: c.tables }
   }
 
-  const conf = await confirmBooking(db, id as string, { origin: input.origin, byTeam: input.byTeam, notifyCustomer: input.notify, reservation: true })
+  const conf = await confirmBooking(db, id as string, { origin: input.origin, byTeam: input.byTeam, notifyCustomer: input.notify, reservation: true, later: input.later })
   if (!conf.ok) return { ok: false, error: 'That time was just taken. Please pick another.', status: 409, full: true }
   const patch: any = {}
   if (input.seatNow) patch.seated_at = new Date().toISOString()
   if (Object.keys(patch).length) await db.from('bookings').update(patch).eq('id', id).eq('company_id', company.id)
-  const { data: fresh } = await db.from('bookings').select(RES_COLS).eq('id', id).maybeSingle()
+  // The confirmed row as confirmBooking left it (no second read), unless someone else confirmed it first.
+  const fresh = conf.booking ? { ...conf.booking, ...patch } : (await db.from('bookings').select(RES_COLS).eq('id', id).maybeSingle()).data
   if (input.marketingOptIn && fresh?.contact_id) {
     try {
       await db.from('contacts').update({ subscribed_to_marketing: true, consent_basis: 'express', consent_source: `${company.name} table booking page (ticked “Send me news and offers”)` })

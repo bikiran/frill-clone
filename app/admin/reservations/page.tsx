@@ -164,11 +164,11 @@ export default function ReservationsPage() {
       {showNew && companyId && (
         <NewReservation companyId={companyId} tz={tz} today={today || date} date={date || today} seatingOptions={meta?.seating || []} useTables={!!day?.useTables}
           onClose={() => setShowNew(false)}
-          onCreated={(r, noTable) => { setShowNew(false); setToast(`Booked: ${r.name}, ${r.party} at ${timeOf(r.startsAt, tz)}${r.tables?.length ? ` · ${tablesText(r.tables)}` : noTable ? ' · no table free yet' : ''}`); const d = r.startsAt ? new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(r.startsAt)) : date; if (tab !== 'day') switchTab('day'); if (d !== date) setDate(d); else if (companyId) loadDay(companyId, d, true) }} />
+          onCreated={(r, noTable) => { setShowNew(false); setToast(`Booked: ${r.name}, ${r.party} at ${timeOf(r.startsAt, tz)}${r.tables?.length ? ` · ${tablesText(r.tables)}` : noTable ? ' · no table free yet' : ''}`); const d = r.startsAt ? new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(r.startsAt)) : date; if (tab !== 'day') switchTab('day'); if (d !== date) setDate(d); else if (companyId) { setDay(x => (x && x.from === d ? withNew(x, r) : x)); loadDay(companyId, d, true) } }} />
       )}
       {showWalkIn && companyId && (
         <WalkIn companyId={companyId} useTables={!!day?.useTables} onClose={() => setShowWalkIn(false)}
-          onCreated={r => { setShowWalkIn(false); setToast(`${r.name === 'Walk-in' ? 'Walk-in' : r.name} seated, ${r.party}${r.tables?.length ? ` at ${tablesText(r.tables)}` : ''}`); if (tab !== 'day') switchTab('day'); if (today && date !== today) setDate(today); else if (companyId) loadDay(companyId, date, true) }} />
+          onCreated={r => { setShowWalkIn(false); setToast(`${r.name === 'Walk-in' ? 'Walk-in' : r.name} seated, ${r.party}${r.tables?.length ? ` at ${tablesText(r.tables)}` : ''}`); if (tab !== 'day') switchTab('day'); if (today && date !== today) setDate(today); else if (companyId) { setDay(x => (x && x.from === date ? withNew(x, r) : x)); loadDay(companyId, date, true) } }} />
       )}
       {open && companyId && (
         <ReservationDrawer companyId={companyId} tz={tz} today={today} res={open} seatingOptions={meta?.seating || []} useTables={!!day?.hasFloor}
@@ -286,13 +286,27 @@ function Row({ r, tz, isToday, onOpen, onQuick, useTables }: { r: Reservation; t
 const FLOOR_ICON = (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="3" y="3" width="7" height="7" rx="1.5" /><circle cx="17" cy="6.5" r="3.5" /><rect x="3" y="14" width="18" height="7" rx="1.5" /></svg>
 )
+/** A reservation the team just made, added to the sheet straight away (the quiet reload that follows tidies up). */
+function withNew(d: Day, r: Reservation): Day {
+  if (d.reservations.some(x => x.id === r.id)) return d
+  const seated = r.state === 'seated', toCome = r.state === 'booked' || r.state === 'due' || r.state === 'late'
+  return {
+    ...d,
+    reservations: [...d.reservations, r].sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt)),
+    counts: {
+      ...d.counts, reservations: d.counts.reservations + 1, covers: d.counts.covers + r.party,
+      seated: d.counts.seated + (seated ? r.party : 0), toCome: d.counts.toCome + (toCome ? r.party : 0),
+    },
+  }
+}
 const ord = (n: number) => (n % 100 >= 11 && n % 100 <= 13 ? 'th' : n % 10 === 1 ? 'st' : n % 10 === 2 ? 'nd' : n % 10 === 3 ? 'rd' : 'th')
 
 /** Guests seated through a service, against the most the room takes. */
 function CoversStrip({ name, points, max, tz }: { name: string; points: { at: number; covers: number }[]; max: number; tz: string }) {
   const [hover, setHover] = useState<number | null>(null)
   const peak = Math.max(0, ...points.map(p => p.covers))
-  const top = Math.max(max || 0, peak, 1)
+  // Headroom above the limit line, so its label sits inside the chart, clear of the heading.
+  const top = Math.max(1, Math.ceil(Math.max(max || 0, peak) * 1.3))
   const h = 72
   const label = (i: number) => {
     const p = points[i]
@@ -437,7 +451,7 @@ const PAGE_CSS = `
 .rs-b.on i{background:var(--coral)}
 .rs-b.over i{background:#d97706}
 .rs-cap{position:absolute;left:0;right:0;height:0;border-top:1.5px solid color-mix(in srgb,var(--ink) 35%,transparent);z-index:1;pointer-events:none}
-.rs-cap span{position:absolute;right:0;bottom:2px;font-size:11px;font-weight:650;color:var(--mut);background:var(--card,#fff);padding:0 0 0 4px}
+.rs-cap span{position:absolute;right:0;bottom:3px;font-size:11px;line-height:13px;font-weight:650;color:var(--mut);background:var(--card,#fff);padding:0 0 0 6px;border-radius:4px}
 .rs-tip{position:absolute;bottom:calc(100% + 6px);transform:translateX(-50%);z-index:3;padding:5px 9px;border-radius:9px;background:var(--ink);color:var(--card,#fff);font-size:12px;font-weight:600;white-space:nowrap;pointer-events:none}
 .rs-axis{display:flex;gap:2px;margin-top:6px;padding-top:4px;box-shadow:0 -1px 0 var(--line)}
 .rs-axis span{flex:1;min-width:0;font-size:10.5px;color:var(--soft);white-space:nowrap;overflow:visible}
