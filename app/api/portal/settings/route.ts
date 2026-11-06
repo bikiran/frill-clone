@@ -25,7 +25,7 @@ async function stats(db: any, companyId: string) {
     visits: n('visit'),
     signIns: n(['sign_in', 'link_sign_in']),
     people: new Set(rows.filter((r: any) => r.contact_id && (r.kind === 'sign_in' || r.kind === 'link_sign_in')).map((r: any) => r.contact_id)).size,
-    actions: n(['reply', 'prefs', 'open_booking', 'open_quote', 'pay', 'open_order']),
+    actions: n(['reply', 'prefs', 'open_booking', 'open_quote', 'pay', 'open_order', 'open_receipt']),
     messages: n('reply'),
     duplicates: n('duplicate_contacts'),
   }

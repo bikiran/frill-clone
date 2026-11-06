@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Shell } from '@/components/booking/BookingFlow'
 import type { PortalPublic, PortalMe, PortalComing, PortalOrder } from '@/lib/portal/types'
+import type { PortalReceipt } from '@/lib/portal/receipts'
 
 const KEY = (slug: string) => `colvy-portal:${slug}`
 const money = (cents: number, cur = 'aud') => {
@@ -195,6 +196,7 @@ function Account({ biz, me, setMe, call, track, signOut }: {
     on('messages') && { id: 'pt-msgs', label: 'Messages', n: null },
   ].filter(Boolean) as { id: string; label: string; n: number | null; hot?: boolean }[]
   const go = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  const [receipt, setReceipt] = useState<string | null>(null)
 
   return (
     <>
@@ -251,13 +253,14 @@ function Account({ biz, me, setMe, call, track, signOut }: {
       {on('orders') && (
         <section id="pt-orders" className="pt-card bk-rise">
           <h2><span className="pt-ic"><Ic.bag /></span>Orders and receipts</h2>
-          {!orders.length ? <p className="pt-none">No orders yet.</p> : orders.map(o => <OrderRow key={`${o.kind}:${o.id}`} o={o} track={track} />)}
+          {!orders.length ? <p className="pt-none">No orders yet.</p> : orders.map(o => <OrderRow key={`${o.kind}:${o.id}`} o={o} track={track} onReceipt={setReceipt} />)}
         </section>
       )}
 
       {on('messages') && me.messages !== undefined && <Messages biz={biz} me={me} setMe={setMe} call={call} />}
 
       {on('preferences') && <Prefs biz={biz} me={me} setMe={setMe} call={call} />}
+      {receipt && <ReceiptSheet slug={biz.slug} rkey={receipt} call={call} onClose={() => setReceipt(null)} />}
     </>
   )
 }
@@ -276,7 +279,7 @@ function ComingRow({ c, track }: { c: PortalComing; track: (k: string, id?: stri
   )
 }
 
-function OrderRow({ o, track }: { o: PortalOrder; track: (k: string, id?: string) => void }) {
+function OrderRow({ o, track, onReceipt }: { o: PortalOrder; track: (k: string, id?: string) => void; onReceipt: (key: string) => void }) {
   return (
     <div className="pt-item">
       <span className={`pt-src ${o.kind}`} title={o.kind === 'online' ? 'Online order' : o.kind === 'payment' ? 'Payment' : 'In store'}>{o.kind === 'online' ? <Ic.globe /> : o.kind === 'payment' ? <Ic.card /> : <Ic.store />}</span>
@@ -286,7 +289,93 @@ function OrderRow({ o, track }: { o: PortalOrder; track: (k: string, id?: string
       </div>
       <strong className="pt-amt">{money(o.cents, o.currency)}</strong>
       <span className={`pt-pill ${o.paid ? 'ok' : 'hot'}`}>{o.statusLabel}</span>
-      {o.url && <a className="pt-btn" href={o.url} target="_blank" rel="noreferrer" onClick={() => track('open_order', o.id)}>{o.kind === 'online' ? 'View in shop' : 'Receipt'}</a>}
+      {o.receipt
+        ? <button type="button" className="pt-btn" onClick={() => onReceipt(o.receipt!)}><Ic.doc />Receipt</button>
+        : o.url && <a className="pt-btn" href={o.url} target="_blank" rel="noreferrer" onClick={() => track('open_order', o.id)}>{o.kind === 'online' ? 'View in shop' : 'Receipt'}</a>}
+    </div>
+  )
+}
+
+/**
+ * A receipt (or tax invoice) over the page, like paper: the business, what was
+ * bought, GST, how it was paid. "Print or save as PDF" prints just the receipt.
+ */
+function ReceiptSheet({ slug, rkey, call, onClose }: { slug: string; rkey: string; call: (m: 'GET' | 'POST', q: string, b?: any) => Promise<any>; onClose: () => void }) {
+  const [r, setR] = useState<PortalReceipt | null>(null)
+  const [err, setErr] = useState('')
+  useEffect(() => {
+    let live = true
+    call('GET', `?slug=${encodeURIComponent(slug)}&op=receipt&key=${encodeURIComponent(rkey)}`).then(x => {
+      if (!live) return
+      if (x.ok) setR(x.data); else setErr(x.data?.error || 'Couldn’t open that receipt.')
+    })
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', esc)
+    document.body.classList.add('pt-printing')
+    return () => { live = false; document.removeEventListener('keydown', esc); document.body.classList.remove('pt-printing') }
+  }, [rkey]) // eslint-disable-line react-hooks/exhaustive-deps
+  // A receipt always shows cents ($12.00, not $12).
+  const m = (c: number) => { try { return new Intl.NumberFormat('en-AU', { style: 'currency', currency: String(r?.currency || 'aud').toUpperCase(), minimumFractionDigits: 2 }).format((c || 0) / 100) } catch { return `$${((c || 0) / 100).toFixed(2)}` } }
+  const day =(iso: string | null) => (iso ? new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' }) : '')
+  const at = (iso: string | null) => (iso ? `${day(iso)}, ${time(iso)}` : '')
+  return (
+    <div className="pt-rc-wrap" role="dialog" aria-modal="true" aria-label="Receipt" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="pt-rc-bar">
+        <button type="button" className="pt-btn" onClick={onClose}>Close</button>
+        {r && <button type="button" className="bk-primary pt-sm" onClick={() => window.print()}><Ic.print />Print or save as PDF</button>}
+      </div>
+      {!r && !err && <div className="pt-rc"><div className="bk-skel" style={{ height: 30, width: '50%' }} /><div className="bk-skel" style={{ height: 160, marginTop: 24, borderRadius: 12 }} /></div>}
+      {err && <div className="pt-rc"><p className="pt-none">{err}</p></div>}
+      {r && (
+        <article className="pt-rc" id="pt-receipt">
+          <header className="pt-rc-head">
+            <div className="pt-rc-biz">
+              {r.business.logoUrl ? <img src={r.business.logoUrl} alt={r.business.name} /> : <b>{r.business.name}</b>}
+              <span>
+                {r.business.logoUrl && <><b>{r.business.name}</b><br /></>}
+                {r.business.abn && <>ABN {r.business.abn}<br /></>}
+                {r.business.address && <>{r.business.address}<br /></>}
+                {[r.business.phone, r.business.email].filter(Boolean).join(' · ')}
+                {r.business.website && <><br />{r.business.website.replace(/^https?:\/\//, '')}</>}
+              </span>
+            </div>
+            <div className="pt-rc-title">
+              <h2>{r.title}</h2>
+              <span>No. <b>{r.number}</b></span>
+              {r.ref && <span>{r.ref}</span>}
+              <span>{at(r.date)}</span>
+            </div>
+          </header>
+          {(r.customer || r.where) && (
+            <div className="pt-rc-meta">
+              {r.customer && <div><small>Customer</small><b>{r.customer}</b></div>}
+              {r.where && <div><small>Where</small><b>{r.where}</b></div>}
+            </div>
+          )}
+          <table className="pt-rc-t">
+            <thead><tr><th>Item</th><th className="n">Qty</th><th className="n">Amount</th></tr></thead>
+            <tbody>
+              {r.lines.map((l, i) => <tr key={i}><td>{l.name}</td><td className="n">{l.qty}</td><td className="n">{l.cents == null ? '' : m(l.cents)}</td></tr>)}
+            </tbody>
+          </table>
+          <div className="pt-rc-sum">
+            {r.adjustments.map((a, i) => <div key={i}><span>{a.label}</span><span>{a.cents < 0 ? `−${m(-a.cents)}` : m(a.cents)}</span></div>)}
+            <div className="tot"><span>Total{r.currency !== 'AUD' ? ` (${r.currency})` : ''}</span><span>{m(r.totalCents)}</span></div>
+            {r.gstCents ? <div className="gst"><span>Includes GST of</span><span>{m(r.gstCents)}</span></div> : null}
+          </div>
+          <div className={`pt-rc-paid ${r.status}`}>
+            <b>{r.statusLabel}</b>
+            <span>{[r.paymentMethod, r.paidAt && r.status === 'paid' ? `on ${day(r.paidAt)}` : ''].filter(Boolean).join(' ')}</span>
+          </div>
+          {(r.shopUrl || r.cardReceiptUrl) && (
+            <p className="pt-rc-links">
+              {r.shopUrl && <a href={r.shopUrl} target="_blank" rel="noreferrer">Returns or changes: this order in the shop ↗</a>}
+              {r.cardReceiptUrl && <a href={r.cardReceiptUrl} target="_blank" rel="noreferrer">Card receipt from Stripe ↗</a>}
+            </p>
+          )}
+          <footer className="pt-rc-foot">Thank you for your business{r.business.name ? `, from everyone at ${r.business.name}` : ''}.</footer>
+        </article>
+      )}
     </div>
   )
 }
@@ -395,6 +484,7 @@ const Ic = {
   gear: S(<><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" /></>),
   globe: S(<><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></>),
   store: S(<><path d="M4 10v10h16V10M3 4h18l-1 6H4L3 4Z" /><path d="M10 20v-5h4v5" /></>),
+  print: S(<><path d="M6 9V3h12v6" /><rect x="3" y="9" width="18" height="8" rx="2" /><path d="M7 14h10v7H7z" /></>),
 }
 
 const PT_CSS = `
@@ -479,7 +569,54 @@ const PT_CSS = `
 .pt-tog.locked{cursor:default}
 .pt-foot{text-align:center;font-size:12px;color:#9ca3af;margin:18px 0 8px}
 .pt-foot a{color:#9ca3af}
+.pt-btn svg{width:15px;height:15px;margin-right:6px}
+.pt-rc-wrap{position:fixed;inset:0;z-index:1000;display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px;overflow-y:auto;background:rgba(17,17,17,.45);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);animation:ptFade .2s ease}
+@keyframes ptFade{from{opacity:0}}
+.pt-rc-bar{width:100%;max-width:640px;display:flex;justify-content:space-between;gap:10px;position:sticky;top:0;z-index:1}
+.pt-rc-bar .pt-btn,.pt-rc-bar .bk-primary{box-shadow:0 6px 18px -8px rgba(0,0,0,.35)}
+.pt-rc-bar .bk-primary svg{width:16px;height:16px}
+.pt-rc{width:100%;max-width:640px;box-sizing:border-box;background:#fff;border-radius:18px;padding:30px 32px 26px;color:#111;box-shadow:0 30px 70px -30px rgba(0,0,0,.45);animation:ptRise .28s cubic-bezier(.22,1,.36,1)}
+@keyframes ptRise{from{opacity:0;transform:translateY(10px)}}
+.pt-rc-head{display:flex;justify-content:space-between;gap:20px;padding-bottom:18px;border-bottom:2px solid var(--bk-accent,#111)}
+.pt-rc-biz{display:flex;flex-direction:column;gap:8px;min-width:0}
+.pt-rc-biz img{height:40px;max-width:170px;object-fit:contain;object-position:left}
+.pt-rc-biz>b{font-size:19px;font-weight:800}
+.pt-rc-biz span{font-size:12.5px;line-height:1.55;color:#4b5563}
+.pt-rc-biz span b{color:#111;font-size:13.5px}
+.pt-rc-title{display:flex;flex-direction:column;align-items:flex-end;gap:3px;text-align:right;flex-shrink:0}
+.pt-rc-title h2{margin:0 0 4px;font-size:22px;font-weight:800;letter-spacing:-.01em;text-transform:uppercase}
+.pt-rc-title span{font-size:12.5px;color:#4b5563;font-variant-numeric:tabular-nums}
+.pt-rc-title span b{color:#111}
+.pt-rc-meta{display:flex;gap:28px;flex-wrap:wrap;padding:14px 0 4px}
+.pt-rc-meta div{display:flex;flex-direction:column;gap:2px}
+.pt-rc-meta small{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#9ca3af}
+.pt-rc-meta b{font-size:14px}
+.pt-rc-t{width:100%;border-collapse:collapse;margin-top:14px;font-size:14px}
+.pt-rc-t th{padding:8px 0;border-bottom:1px solid #111;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#6b7280;text-align:left}
+.pt-rc-t td{padding:10px 0;border-bottom:1px solid #f0f0f2;vertical-align:top}
+.pt-rc-t .n{text-align:right;white-space:nowrap;padding-left:14px;font-variant-numeric:tabular-nums}
+.pt-rc-sum{margin:10px 0 0 auto;max-width:300px;display:flex;flex-direction:column;gap:6px;font-size:14px;font-variant-numeric:tabular-nums}
+.pt-rc-sum div{display:flex;justify-content:space-between;gap:16px;color:#4b5563}
+.pt-rc-sum .tot{margin-top:4px;padding-top:10px;border-top:2px solid #111;color:#111;font-size:18px;font-weight:800}
+.pt-rc-sum .gst{font-size:13px}
+.pt-rc-paid{display:flex;align-items:center;gap:10px;margin-top:20px;padding:12px 14px;border-radius:12px;background:#ecfdf5;color:#065f46;font-size:13.5px}
+.pt-rc-paid b{font-size:14px}
+.pt-rc-paid.unpaid{background:#fff7ed;color:#9a3412}
+.pt-rc-paid.refunded,.pt-rc-paid.cancelled{background:#f4f4f5;color:#3f3f46}
+.pt-rc-links{display:flex;flex-direction:column;gap:6px;margin:16px 0 0;font-size:13.5px}
+.pt-rc-links a{color:#111;font-weight:650}
+.pt-rc-foot{margin-top:22px;padding-top:14px;border-top:1px solid #f0f0f2;font-size:12.5px;color:#6b7280;text-align:center}
+@media print{
+  body.pt-printing *{visibility:hidden!important}
+  body.pt-printing #pt-receipt,body.pt-printing #pt-receipt *{visibility:visible!important}
+  body.pt-printing #pt-receipt{position:absolute;left:0;top:0;width:100%;max-width:none;box-shadow:none;border-radius:0;padding:0;animation:none}
+  body.pt-printing .pt-rc-links{display:none}
+  .pt-rc-wrap{position:static;background:none;padding:0;overflow:visible}
+}
 @media(max-width:560px){
+  .pt-rc{padding:22px 18px 20px;border-radius:16px}
+  .pt-rc-head{flex-direction:column}
+  .pt-rc-title{align-items:flex-start;text-align:left}
   .pt-card{padding:18px 16px;border-radius:20px}
   .pt-sign{padding:26px 20px;margin-top:2vh}
   .pt-card h1{font-size:24px}
