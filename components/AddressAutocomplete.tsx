@@ -36,11 +36,21 @@ function newToken(): string {
 }
 
 // ── Google Places (New) ──────────────────────────────────────────────────────
+// The browser's region (en-AU → "au") nudges Google towards local addresses
+// without ruling out the rest of the world.
+function browserRegion(): string | undefined {
+  try {
+    const r = (navigator.language || '').split('-')[1]
+    return r && /^[a-z]{2}$/i.test(r) ? r.toLowerCase() : undefined
+  } catch { return undefined }
+}
+
 async function googleSuggest(q: string, token: string): Promise<Suggestion[]> {
+  const regionCode = browserRegion()
   const res = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': GKEY! },
-    body: JSON.stringify({ input: q, sessionToken: token }),
+    body: JSON.stringify({ input: q, sessionToken: token, ...(regionCode ? { regionCode } : {}) }),
   })
   if (!res.ok) throw new Error(`google autocomplete ${res.status}`)
   const d = await res.json()
@@ -99,7 +109,7 @@ async function photonSuggest(q: string): Promise<Suggestion[]> {
 }
 
 export default function AddressAutocomplete({
-  value, onChange, onSelect, placeholder, style, className, required,
+  value, onChange, onSelect, placeholder, style, className, required, id, ariaLabel, maxLength,
 }: {
   value: string
   onChange: (v: string) => void
@@ -108,11 +118,21 @@ export default function AddressAutocomplete({
   required?: boolean
   style?: React.CSSProperties
   className?: string
+  /** For a <label htmlFor>. */
+  id?: string
+  ariaLabel?: string
+  maxLength?: number
 }) {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [openList, setOpenList] = useState(false)
+  const [active, setActive] = useState(-1)
   const debRef = useRef<any>(null)
   const tokenRef = useRef<string>(newToken())
+  // Only the newest lookup may fill the list, so a slow answer for "5 c"
+  // can't replace the one for "5 co".
+  const seqRef = useRef(0)
+  const nameRef = useRef(`addr-${Math.random().toString(36).slice(2, 9)}`)
+  const listId = useRef(`addr-list-${Math.random().toString(36).slice(2, 9)}`).current
   // Once a Google request fails we stop trying it for this field and use Photon.
   const googleOk = useRef<boolean>(!!GKEY)
 
@@ -129,15 +149,18 @@ export default function AddressAutocomplete({
   const onType = (v: string) => {
     onChange(v)
     if (debRef.current) clearTimeout(debRef.current)
-    if (!v.trim() || v.trim().length < 3) { setSuggestions([]); setOpenList(false); return }
+    const mine = ++seqRef.current
+    if (!v.trim() || v.trim().length < 3) { setSuggestions([]); setOpenList(false); setActive(-1); return }
     debRef.current = setTimeout(async () => {
       const s = await fetchSuggestions(v.trim())
-      setSuggestions(s); setOpenList(s.length > 0)
-    }, 250)
+      if (mine !== seqRef.current) return
+      setSuggestions(s); setOpenList(s.length > 0); setActive(-1)
+    }, 200)
   }
 
   const pick = async (s: Suggestion) => {
-    setSuggestions([]); setOpenList(false)
+    ++seqRef.current
+    setSuggestions([]); setOpenList(false); setActive(-1)
     // Photon suggestions already carry structured parts.
     if (s.parts) { onChange(s.parts.formatted); onSelect?.(s.parts); return }
     // Google: show the label immediately, then resolve structured parts.
@@ -146,7 +169,7 @@ export default function AddressAutocomplete({
       try {
         const parts = await googleDetails(s.placeId, tokenRef.current)
         onChange(parts.formatted || s.label)
-        onSelect?.(parts)
+        onSelect?.({ ...parts, formatted: parts.formatted || s.label })
       } catch {
         onSelect?.({ formatted: s.label })
       }
@@ -157,38 +180,58 @@ export default function AddressAutocomplete({
     }
   }
 
+  const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!openList || !suggestions.length) return
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive(a => (a + 1) % suggestions.length) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(a => (a <= 0 ? suggestions.length - 1 : a - 1)) }
+    else if (e.key === 'Enter' && active >= 0) { e.preventDefault(); pick(suggestions[active]) }
+    else if (e.key === 'Escape') { e.preventDefault(); setOpenList(false); setActive(-1) }
+  }
+
+  const shown = openList && suggestions.length > 0
   return (
     <div style={{ position: 'relative' }}>
       <input
+        id={id}
+        aria-label={ariaLabel}
         value={value}
         onChange={(e) => onType(e.target.value)}
+        onKeyDown={onKey}
         onFocus={() => { if (suggestions.length) setOpenList(true) }}
         onBlur={() => setTimeout(() => setOpenList(false), 150)}
         placeholder={placeholder || 'Start typing an address…'}
         required={required}
+        maxLength={maxLength}
         style={style}
         className={className}
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={shown}
+        aria-controls={listId}
+        aria-activedescendant={shown && active >= 0 ? `${listId}-${active}` : undefined}
         // Keep the browser's / a password manager's own address autofill from
         // covering the dropdown with a "!" bubble.
         autoComplete="off"
         autoCorrect="off"
         autoCapitalize="off"
         spellCheck={false}
-        name={`addr-${Math.random().toString(36).slice(2, 9)}`}
+        name={nameRef.current}
         data-1p-ignore="true"
         data-lpignore="true"
         data-form-type="other"
       />
-      {openList && suggestions.length > 0 && (
-        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 60, marginTop: 4, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.14)', overflow: 'hidden', maxHeight: 240, overflowY: 'auto' }}>
+      {shown && (
+        <div id={listId} role="listbox" className="addr-ac-list" style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 60, marginTop: 6, background: 'var(--card, #fff)', border: '1px solid var(--line, var(--border))', borderRadius: 14, boxShadow: '0 14px 36px rgba(0,0,0,0.14)', padding: 4, maxHeight: 260, overflowY: 'auto' }}>
           {suggestions.map((a, i) => (
-            <button key={i} type="button" onMouseDown={(e) => { e.preventDefault(); pick(a) }}
-              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', background: 'none', border: 'none', borderBottom: i < suggestions.length - 1 ? '1px solid var(--border)' : 'none', fontSize: 13.5, color: 'var(--ink)', cursor: 'pointer', fontFamily: 'inherit' }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--canvas)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}>
-              {a.label}
+            <button key={i} id={`${listId}-${i}`} type="button" role="option" aria-selected={i === active} tabIndex={-1}
+              onMouseDown={(e) => { e.preventDefault(); pick(a) }}
+              onMouseEnter={() => setActive(i)}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '9px 10px', background: i === active ? 'var(--f, var(--canvas, #f4f4f5))' : 'none', border: 'none', borderRadius: 10, fontSize: 14, lineHeight: 1.35, color: 'var(--ink)', cursor: 'pointer', fontFamily: 'inherit' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0, opacity: 0.55 }}><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z" /><circle cx="12" cy="9.5" r="2.5" /></svg>
+              <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{a.label}</span>
             </button>
           ))}
+          {GKEY && googleOk.current && <div aria-hidden style={{ padding: '6px 10px 4px', fontSize: 11, color: 'var(--mut, #71717a)', textAlign: 'right' }}>Powered by Google</div>}
         </div>
       )}
     </div>

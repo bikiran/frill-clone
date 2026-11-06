@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createJobFrom, useJobsEnabled } from '@/components/jobs/createJob'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth-fetch'
@@ -47,12 +47,13 @@ export default function FormResults() {
   const formId = String(params.id || '')
 
   const [form, setForm] = useState<any>(null)
+  const router = useRouter()
   // Jobs & quotes: a response becomes a job (the same response always gives the same job).
   const jobsOn = useJobsEnabled(form?.company_id)
   const makeJob = async (responseId: string) => {
     try {
       const d = await createJobFrom(form.company_id, { source: 'form', formResponseId: responseId })
-      window.location.href = `/admin/jobs/${d.job.id}`
+      router.push(`/admin/jobs/${d.job.id}`)
     } catch (e: any) { alertDialog({ title: 'Couldn’t create the job', message: e?.message || 'Please try again.' }) }
   }
   const [formState, setFormState] = useState<'loading' | 'ready' | 'missing'>('loading')

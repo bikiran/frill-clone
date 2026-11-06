@@ -8,7 +8,10 @@ import DateTimeField from '@/components/ui/DateTimeField'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import {
   api, useJobsCompany, StatusTag, QuoteTag, fmtWhen, fmtAgo, fmtDate, isoToLocal, localToIso, useToast, Toast, SetupNote, Icon, JB_CSS,
+  cacheKeys, readJobsCache, writeJobsCache, prefetchQuote,
 } from '@/components/jobs/shared'
+import AddressAutocomplete from '@/components/AddressAutocomplete'
+import Link from 'next/link'
 import { JOB_STATUS_LABEL, nextStatuses, fmtJobNumber, fmtQuoteNumber, type JobStatus } from '@/lib/jobs/status'
 import { fmtMoney } from '@/lib/jobs/quote-math'
 
@@ -19,7 +22,9 @@ export default function JobPage() {
   const { id } = useParams() as { id: string }
   const router = useRouter()
   const { companyId, ready } = useJobsCompany()
-  const [d, setD] = useState<any>(null)
+  // What we already know about this job (its last full load, or the card the
+  // board handed over) paints at once; the full copy follows.
+  const [d, setD] = useState<any>(() => (companyId ? seedJob(companyId, id) : null))
   const [err, setErr] = useState('')
   const [setup, setSetup] = useState('')
   const [toast, setToast] = useToast()
@@ -38,12 +43,30 @@ export default function JobPage() {
     try {
       const r = await api(`/api/jobs/${id}?companyId=${companyId}`)
       setD(r); setErr('')
+      writeJobsCache(cacheKeys.job(companyId, id), r)
     } catch (e: any) { if (/COLVY_V427/.test(e.message)) setSetup(e.message); else setErr(e.message) }
   }, [companyId, id])
-  useEffect(() => { if (ready) load() }, [ready, load])
-  useEffect(() => { supabase.auth.getUser().then(({ data }) => setMe(data?.user?.id || '')).catch(() => {}) }, [])
-
+  useEffect(() => {
+    if (!ready || !companyId) return
+    setD((x: any) => x || seedJob(companyId, id))
+    load()
+  }, [ready, companyId, load]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Keep the cached copy (and the board's) in step with changes made here.
+  useEffect(() => {
+    if (!companyId || !d || d.partial) return
+    writeJobsCache(cacheKeys.job(companyId, id), d)
+    const list = readJobsCache<any>(cacheKeys.list(companyId))
+    if (list?.jobs && d.job) {
+      const i = list.jobs.findIndex((j: any) => j.id === id)
+      if (i >= 0) {
+        const j = list.jobs[i]
+        const merged = { ...j, title: d.job.title, status: d.job.status, address: d.job.address, scheduled_start: d.job.scheduled_start, scheduled_end: d.job.scheduled_end, value_cents: d.job.value_cents, updated_at: d.job.updated_at }
+        writeJobsCache(cacheKeys.list(companyId), { ...list, jobs: list.jobs.map((x: any, k: number) => (k === i ? merged : x)) })
+      }
+    }
+  }, [d]) // eslint-disable-line react-hooks/exhaustive-deps
   const job = d?.job
+  const partial = !!d?.partial
   const tz = d?.timezone || 'Australia/Melbourne'
   const pf = d?.settings?.job_prefix || 'J'
   const qpf = d?.settings?.quote_prefix || 'Q'
@@ -56,7 +79,7 @@ export default function JobPage() {
     setSaving(true)
     try {
       const r = await api(`/api/jobs/${id}`, { method: 'PATCH', json: { companyId, title: form.title, description: form.description, address: form.address, scheduledStart: localToIso(form.start), scheduledEnd: localToIso(form.end) } })
-      setD((x: any) => ({ ...x, job: r.job })); setEditing(false); setToast('Saved'); load()
+      setD((x: any) => ({ ...x, job: { ...x.job, ...r.job } })); setEditing(false); setToast('Saved'); load()
     } catch (e: any) { setToast(e.message) } finally { setSaving(false) }
   }
 
@@ -68,23 +91,33 @@ export default function JobPage() {
       if (!ok) return
       cancelReason = note.trim()
     }
+    // Show the new stage straight away; put it back if the server says no.
+    const before = job.status
+    setD((x: any) => ({ ...x, job: { ...x.job, status: to } }))
     try {
-      const r = await api(`/api/jobs/${id}`, { method: 'PATCH', json: { companyId, status: to, expectedStatus: job.status, cancelReason } })
-      setD((x: any) => ({ ...x, job: r.job })); setToast(`Moved to ${JOB_STATUS_LABEL[to]}`); if (cancelReason) setNote(''); load()
-    } catch (e: any) { setToast(e.message); load() }
+      const r = await api(`/api/jobs/${id}`, { method: 'PATCH', json: { companyId, status: to, expectedStatus: before, cancelReason } })
+      setD((x: any) => ({ ...x, job: { ...x.job, ...r.job } })); setToast(`Moved to ${JOB_STATUS_LABEL[to]}`); if (cancelReason) setNote(''); load()
+    } catch (e: any) { setD((x: any) => ({ ...x, job: { ...x.job, status: before } })); setToast(e.message); load() }
   }
 
   const addNote = async () => {
-    if (!note.trim()) return
-    setBusy(true)
+    const text = note.trim()
+    if (!text) return
+    // The note shows at once; it's swapped for the saved one when it lands.
+    const temp = { id: `tmp-${Date.now()}`, type: 'note', actor_type: 'staff', actor_id: me, actor_name: 'You', summary: text, data: { text }, created_at: new Date().toISOString(), pending: true }
+    setD((x: any) => ({ ...x, events: [temp, ...(x.events || [])] })); setNote('')
     try {
-      const r = await api(`/api/jobs/${id}/notes`, { method: 'POST', json: { companyId, text: note } })
-      setD((x: any) => ({ ...x, events: [r.note, ...(x.events || [])] })); setNote('')
-    } catch (e: any) { setToast(e.message) } finally { setBusy(false) }
+      const r = await api(`/api/jobs/${id}/notes`, { method: 'POST', json: { companyId, text } })
+      setD((x: any) => ({ ...x, events: (x.events || []).map((e: any) => (e.id === temp.id ? r.note : e)) }))
+    } catch (e: any) {
+      setD((x: any) => ({ ...x, events: (x.events || []).filter((ev: any) => ev.id !== temp.id) })); setNote(text); setToast(e.message)
+    }
   }
   const deleteNote = async (ev: any) => {
     if (!(await confirmDialog({ title: 'Delete this note?', confirmLabel: 'Delete', tone: 'danger' }))) return
-    try { await api(`/api/jobs/${id}/notes?companyId=${companyId}&noteId=${ev.id}`, { method: 'DELETE' }); setD((x: any) => ({ ...x, events: x.events.filter((e: any) => e.id !== ev.id) })) } catch (e: any) { setToast(e.message) }
+    const was = d.events
+    setD((x: any) => ({ ...x, events: x.events.filter((e: any) => e.id !== ev.id) }))
+    try { await api(`/api/jobs/${id}/notes?companyId=${companyId}&noteId=${ev.id}`, { method: 'DELETE' }) } catch (e: any) { setD((x: any) => ({ ...x, events: was })); setToast(e.message) }
   }
 
   const newQuote = async (templateId?: string) => {
@@ -92,6 +125,7 @@ export default function JobPage() {
     try {
       const r = await api('/api/jobs/quotes', { method: 'POST', json: { companyId, jobId: id, templateId } })
       router.push(`/admin/jobs/quotes/${r.quote.id}`)
+      prefetchQuote(companyId, r.quote.id)
     } catch (e: any) { setToast(e.message); setBusy(false) }
   }
   const openQuoteMenu = async () => {
@@ -106,7 +140,12 @@ export default function JobPage() {
   }
   const del = async () => {
     if (!(await confirmDialog({ title: `Delete ${fmtJobNumber(job.number, pf)}?`, message: 'The job and its draft quotes are removed for good.', confirmLabel: 'Delete job', tone: 'danger' }))) return
-    try { await api(`/api/jobs/${id}?companyId=${companyId}`, { method: 'DELETE' }); router.push('/admin/jobs') } catch (e: any) { setToast(e.message) }
+    try {
+      await api(`/api/jobs/${id}?companyId=${companyId}`, { method: 'DELETE' })
+      const list = readJobsCache<any>(cacheKeys.list(companyId))
+      if (list?.jobs) writeJobsCache(cacheKeys.list(companyId), { ...list, jobs: list.jobs.filter((j: any) => j.id !== id) })
+      router.push('/admin/jobs')
+    } catch (e: any) { setToast(e.message) }
   }
 
   if (setup) return <AdminPage title="Job" back={{ href: '/admin/jobs', label: 'Jobs' }}><style>{JB_CSS}</style><SetupNote text={setup} /></AdminPage>
@@ -127,7 +166,7 @@ export default function JobPage() {
       sub={<span className="jbp-sub"><b>{fmtJobNumber(job.number, pf)}</b><span>Created {fmtAgo(job.created_at)}{job.created_by_name ? ` by ${job.created_by_name}` : ''}{source ? ` from ${source}` : ''}</span></span>}
       actions={
         <div style={{ position: 'relative' }}>
-          <button type="button" className="ak-btn" aria-haspopup="menu" aria-expanded={statusOpen} onClick={() => setStatusOpen(o => !o)}>
+          <button type="button" className="ak-btn" aria-haspopup="menu" aria-expanded={statusOpen} onClick={() => setStatusOpen(o => !o)} disabled={partial}>
             <StatusTag status={job.status} />{Icon.chev}
           </button>
           {statusOpen && (
@@ -143,11 +182,11 @@ export default function JobPage() {
 
       <div className="jb-two">
         <div style={{ minWidth: 0 }}>
-          <Panel title="Details" right={!editing && <button type="button" className="ak-btn sm ghost" onClick={startEdit}>Edit</button>}>
+          <Panel title="Details" right={!editing && !partial && <button type="button" className="ak-btn sm ghost" onClick={startEdit}>Edit</button>}>
             {editing ? (
               <div className="jbp-form">
                 <div><label className="ak-label" htmlFor="jd-t">Title</label><input id="jd-t" className="ak-field" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} maxLength={160} /></div>
-                <div><label className="ak-label" htmlFor="jd-a">Address</label><input id="jd-a" className="ak-field" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} maxLength={300} /></div>
+                <div><label className="ak-label" htmlFor="jd-a">Address</label><AddressAutocomplete id="jd-a" className="ak-field" value={form.address} onChange={v => setForm((f: any) => ({ ...f, address: v }))} onSelect={p => setForm((f: any) => ({ ...f, address: p.formatted || f.address }))} maxLength={300} placeholder="Start typing an address" /></div>
                 <div className="jbp-2">
                   <div><span className="ak-label">Starts</span><DateTimeField label="Job starts" value={form.start} onChange={v => setForm({ ...form, start: v })} placeholder="Not scheduled" /></div>
                   <div><span className="ak-label">Finishes</span><DateTimeField label="Job finishes" value={form.end} onChange={v => setForm({ ...form, end: v })} min={form.start || undefined} placeholder="Optional" /></div>
@@ -162,13 +201,13 @@ export default function JobPage() {
               <dl className="jb-kv">
                 <dt>When</dt><dd>{job.scheduled_start ? fmtWhen(job.scheduled_start, job.scheduled_end, tz) : <span className="jb-muted">Not scheduled</span>}</dd>
                 <dt>Address</dt><dd>{job.address ? <a href={`https://maps.google.com/?q=${encodeURIComponent(job.address)}`} target="_blank" rel="noreferrer">{job.address}</a> : <span className="jb-muted">—</span>}</dd>
-                <dt>Details</dt><dd>{job.description ? <p className="jb-pre">{job.description}</p> : <span className="jb-muted">No details yet</span>}</dd>
+                <dt>Details</dt><dd>{job.description ? <p className="jb-pre">{job.description}</p> : partial ? <span className="jbp-skel" style={{ width: '70%', height: 16 }} /> : <span className="jb-muted">No details yet</span>}</dd>
               </dl>
             )}
           </Panel>
 
           <Panel title="Quotes" sub="Itemised quotes with GST, sent as a link the customer accepts online."
-            right={job.status !== 'cancelled' && job.status !== 'completed' && (
+            right={!partial && job.status !== 'cancelled' && job.status !== 'completed' && (
               <div style={{ position: 'relative' }}>
                 <button type="button" className="ak-btn sm go" onClick={openQuoteMenu} disabled={busy} aria-haspopup="menu" aria-expanded={quoteMenu}>{Icon.plus}New quote</button>
                 {quoteMenu && (
@@ -182,7 +221,9 @@ export default function JobPage() {
                 )}
               </div>
             )}>
-            {d.quotes.length === 0 ? (
+            {partial ? (
+              <div className="jbp-skel-rows"><span /><span /></div>
+            ) : d.quotes.length === 0 ? (
               <div className="jbp-empty">No quotes yet.</div>
             ) : (
               <div className="jbp-quotes">
@@ -190,7 +231,7 @@ export default function JobPage() {
                   const expired = q.status === 'sent' && q.valid_until && q.valid_until < new Date().toISOString().slice(0, 10)
                   return (
                     <div key={q.id} className="jbp-q">
-                      <a href={`/admin/jobs/quotes/${q.id}`} className="jbp-q-main">
+                      <Link href={`/admin/jobs/quotes/${q.id}`} className="jbp-q-main" onPointerEnter={() => prefetchQuote(companyId, q.id)} onPointerDown={() => prefetchQuote(companyId, q.id)} onFocus={() => prefetchQuote(companyId, q.id)}>
                         <div className="jbp-q-top"><b>{fmtQuoteNumber(q.number, q.revision, qpf)}</b><QuoteTag status={q.status} expired={!!expired} />{q.deposit_status === 'paid' && <span className="ak-tag green">Deposit paid</span>}</div>
                         <span className="jbp-q-t">{q.title || 'Quote'}</span>
                         <span className="jbp-q-s">
@@ -200,7 +241,7 @@ export default function JobPage() {
                           {q.status === 'declined' && `Declined ${fmtAgo(q.declined_at)}${q.decided_note ? `: “${q.decided_note}”` : ''}`}
                           {q.status === 'withdrawn' && 'Withdrawn'}
                         </span>
-                      </a>
+                      </Link>
                       <div className="jbp-q-side">
                         <b className="jb-num">{fmtMoney(q.total_cents)}</b>
                         {q.public_token && q.status !== 'withdrawn' && <button type="button" className="ak-icon-btn" onClick={() => copyLink(q)} title="Copy the customer’s link" aria-label="Copy quote link">{Icon.link}</button>}
@@ -218,9 +259,10 @@ export default function JobPage() {
                 onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addNote() }} aria-label="Add a note" />
               <button type="button" className="ak-btn dark sm" onClick={addNote} disabled={busy || !note.trim()}>Add note</button>
             </div>
+            {partial && <div className="jbp-skel-rows"><span /><span /><span /></div>}
             <ol className="jbp-tl">
-              {d.events.map((ev: any) => (
-                <li key={ev.id} className={`t-${ev.type}`}>
+              {(d.events || []).map((ev: any) => (
+                <li key={ev.id} className={`t-${ev.type}${ev.pending ? ' pending' : ''}`}>
                   <span className="jbp-dot" aria-hidden />
                   <div style={{ minWidth: 0, flex: 1 }}>
                     {ev.type === 'note'
@@ -228,7 +270,7 @@ export default function JobPage() {
                       : <span className="jbp-tl-s">{ev.summary}</span>}
                     <span className="jbp-tl-m">{ev.actor_type === 'customer' ? 'Customer' : ev.actor_type === 'system' ? 'Colvy' : ev.actor_name || 'Team'} · {fmtAgo(ev.created_at)}</span>
                   </div>
-                  {ev.type === 'note' && (ev.actor_id === me || d.canManage) && <button type="button" className="ak-icon-btn danger jbp-del" onClick={() => deleteNote(ev)} aria-label="Delete note">{Icon.trash}</button>}
+                  {ev.type === 'note' && !ev.pending && (ev.actor_id === me || d.canManage) && <button type="button" className="ak-icon-btn danger jbp-del" onClick={() => deleteNote(ev)} aria-label="Delete note">{Icon.trash}</button>}
                 </li>
               ))}
             </ol>
@@ -237,23 +279,27 @@ export default function JobPage() {
 
         <aside className="jb-side">
           <Panel title="Customer">
-            {d.contact ? (
+            {partial ? (
+              job.contact ? <div className="jbp-cust"><b>{job.contact.name || 'Unnamed contact'}</b>{job.contact.phone && <span>{job.contact.phone}</span>}{job.contact.email && <span>{job.contact.email}</span>}</div> : <div className="jbp-skel-rows"><span /></div>
+            ) : d.contact ? (
               <div className="jbp-cust">
                 <b>{d.contact.name || 'Unnamed contact'}</b>
                 {d.contact.phone && <a href={`tel:${d.contact.phone}`}>{d.contact.phone}</a>}
                 {d.contact.email && <a href={`mailto:${d.contact.email}`}>{d.contact.email}</a>}
-                <a className="ak-btn sm" href={`/admin/customers/profile?id=${d.contact.id}`} style={{ marginTop: 8, alignSelf: 'flex-start' }}>Open profile</a>
+                <Link className="ak-btn sm" href={`/admin/customers/profile?id=${d.contact.id}`} style={{ marginTop: 8, alignSelf: 'flex-start' }}>Open profile</Link>
               </div>
             ) : <LinkCustomer companyId={companyId} jobId={id} onLinked={() => load()} onError={setToast} />}
           </Panel>
 
-          <Panel title="Linked">
-            <div className="jbp-links">
-              {d.conversation ? <a href={`/admin/inbox?conversation=${d.conversation.id}`}>Conversation{d.conversation.subject ? `: ${d.conversation.subject}` : ''}{Icon.ext}</a> : <span className="jb-muted">No conversation</span>}
-              {d.booking && <a href="/admin/bookings?tab=bookings">Booking: {d.booking.service_name || 'Booking'}, {fmtWhen(d.booking.starts_at, null, tz)}{Icon.ext}</a>}
-              {d.form && <a href={`/admin/forms/${d.form.id}/results`}>Form: {d.form.title || 'Form response'}{Icon.ext}</a>}
-            </div>
-          </Panel>
+          {!partial && (
+            <Panel title="Linked">
+              <div className="jbp-links">
+                {d.conversation ? <Link href={`/admin/inbox?conversation=${d.conversation.id}`}>Conversation{d.conversation.subject ? `: ${d.conversation.subject}` : ''}{Icon.ext}</Link> : <span className="jb-muted">No conversation</span>}
+                {d.booking && <Link href="/admin/bookings?tab=bookings">Booking: {d.booking.service_name || 'Booking'}, {fmtWhen(d.booking.starts_at, null, tz)}{Icon.ext}</Link>}
+                {d.form && <Link href={`/admin/forms/${d.form.id}/results`}>Form: {d.form.title || 'Form response'}{Icon.ext}</Link>}
+              </div>
+            </Panel>
+          )}
 
           {job.value_cents != null && (
             <Panel title="Value">
@@ -270,6 +316,15 @@ export default function JobPage() {
       <Toast text={toast} />
     </AdminPage>
   )
+}
+
+/** The job's last full load, or the board's card for it (marked partial). */
+function seedJob(companyId: string, id: string) {
+  const c = readJobsCache<any>(cacheKeys.job(companyId, id))
+  if (!c) return null
+  if (!c.partial) return c
+  const list = readJobsCache<any>(cacheKeys.list(companyId))
+  return { job: c.job, quotes: [], events: [], partial: true, timezone: list?.timezone, settings: list?.settings }
 }
 
 function LinkCustomer({ companyId, jobId, onLinked, onError }: { companyId: string; jobId: string; onLinked: () => void; onError: (m: string) => void }) {
@@ -305,6 +360,11 @@ function LinkCustomer({ companyId, jobId, onLinked, onError }: { companyId: stri
 
 const PAGE_CSS = `
 .jbp-skel{display:inline-block;height:34px;border-radius:12px;background:var(--f,#f4f4f5)}
+.jbp-skel-rows{display:flex;flex-direction:column;gap:8px}
+.jbp-skel-rows span{display:block;height:58px;border-radius:16px;background:var(--f,#f4f4f5);animation:jbp-pulse 1.2s ease-in-out infinite}
+@keyframes jbp-pulse{50%{opacity:.55}}
+@media (prefers-reduced-motion:reduce){.jbp-skel-rows span{animation:none}}
+.jbp-tl li.pending{opacity:.6}
 .jbp-sub{display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap}
 .jbp-sub b{font-variant-numeric:tabular-nums;color:var(--ink)}
 .jbp-form{display:flex;flex-direction:column;gap:14px}

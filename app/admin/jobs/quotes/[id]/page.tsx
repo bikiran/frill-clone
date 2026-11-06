@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { AdminPage, Panel } from '@/components/ui/AdminKit'
 import DateTimeField from '@/components/ui/DateTimeField'
 import { confirmDialog } from '@/components/ConfirmDialog'
-import { api, useJobsCompany, QuoteTag, fmtAgo, fmtDate, Dialog, useToast, Toast, SetupNote, Icon, JB_CSS } from '@/components/jobs/shared'
+import { api, useJobsCompany, QuoteTag, fmtAgo, fmtDate, Dialog, useToast, Toast, SetupNote, Icon, JB_CSS, cacheKeys, readJobsCache, writeJobsCache } from '@/components/jobs/shared'
 import { computeQuote, centsToInput, inputToCents, fmtMoney, LINE_KINDS, LINE_KIND_LABEL, MAX_LINES, type LineKind } from '@/lib/jobs/quote-math'
 import { effectiveTaxRate } from '@/lib/jobs/settings'
 import { fmtJobNumber, fmtQuoteNumber } from '@/lib/jobs/status'
@@ -27,20 +27,25 @@ export default function QuoteEditorPage() {
   const { id } = useParams() as { id: string }
   const router = useRouter()
   const { companyId, ready } = useJobsCompany()
-  const [d, setD] = useState<any>(null)
+  // The quote as it was last seen paints at once (then the server's copy).
+  const seed = useRef<any>(companyId ? readJobsCache(cacheKeys.quote(companyId, id)) : undefined)
+  const sq = seed.current?.quote
+  const [d, setD] = useState<any>(() => seed.current || null)
   const [err, setErr] = useState('')
   const [setup, setSetup] = useState('')
   const [toast, setToast] = useToast()
 
   // Draft fields
-  const [rows, setRows] = useState<Row[]>([])
-  const [title, setTitle] = useState('')
-  const [intro, setIntro] = useState('')
-  const [terms, setTerms] = useState('')
-  const [validUntil, setValidUntil] = useState('')
-  const [incl, setIncl] = useState(false)
-  const [discount, setDiscount] = useState<Amount>({ type: 'none', input: '' })
-  const [deposit, setDeposit] = useState<Amount>({ type: 'none', input: '' })
+  const [rows, setRows] = useState<Row[]>(() => (Array.isArray(sq?.items) ? sq.items.map(rowFrom) : []))
+  const [title, setTitle] = useState(() => sq?.title || '')
+  const [intro, setIntro] = useState(() => sq?.intro || '')
+  const [terms, setTerms] = useState(() => sq?.terms || '')
+  const [validUntil, setValidUntil] = useState(() => sq?.valid_until || '')
+  const [incl, setIncl] = useState(() => !!sq?.prices_include_tax)
+  const [discount, setDiscount] = useState<Amount>(() => (sq ? amountFrom(sq.discount_type, sq.discount_value) : { type: 'none', input: '' }))
+  const [deposit, setDeposit] = useState<Amount>(() => (sq ? amountFrom(sq.deposit_type, sq.deposit_value) : { type: 'none', input: '' }))
+  // Set once the person edits; a late server copy then won't wipe their typing.
+  const touched = useRef(false)
   const [saveState, setSaveState] = useState<'idle' | 'dirty' | 'saving' | 'saved' | 'error'>('idle')
   const hydrated = useRef(false)
   const saveTimer = useRef<any>(null)
@@ -64,10 +69,22 @@ export default function QuoteEditorPage() {
     if (!companyId) return
     try {
       const r = await api(`/api/jobs/quotes/${id}?companyId=${companyId}`)
-      setD(r); hydrate(r); setErr('')
+      // Edits made while it loaded stay (autosave sends them) unless the quote
+      // stopped being a draft meanwhile.
+      if (!touched.current || r.quote?.status !== 'draft') hydrate(r)
+      setD(r); setErr('')
+      writeJobsCache(cacheKeys.quote(companyId, id), r)
     } catch (e: any) { if (/COLVY_V427/.test(e.message)) setSetup(e.message); else setErr(e.message) }
   }, [companyId, id])
-  useEffect(() => { if (ready) load() }, [ready, load])
+  useEffect(() => {
+    if (!ready || !companyId) return
+    if (!d) {
+      const c = readJobsCache<any>(cacheKeys.quote(companyId, id))
+      if (c) { setD(c); hydrate(c) }
+    }
+    load()
+  }, [ready, load]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (companyId && d?.quote) writeJobsCache(cacheKeys.quote(companyId, id), d) }, [d]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const q = d?.quote
   const draft = q?.status === 'draft'
@@ -107,6 +124,7 @@ export default function QuoteEditorPage() {
   useEffect(() => {
     if (!hydrated.current) { hydrated.current = true; return }
     if (!draft) return
+    touched.current = true
     setSaveState('dirty')
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => { save({ quiet: true }) }, 1100)

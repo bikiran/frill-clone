@@ -21,24 +21,33 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     const { id } = await ctx.params
     const db = jobsDb()
     const companyId = req.nextUrl.searchParams.get('companyId')
-    const access = await jobsAccess(req, db, companyId)
-    if (!access.ok) return access.response
-    if (!isUuid(id)) return json({ error: 'Job not found.' }, 404)
+    if (!isUuid(id)) {
+      const access = await jobsAccess(req, db, companyId)
+      return access.ok ? json({ error: 'Job not found.' }, 404) : access.response
+    }
 
-    const { data: job, error } = await db.from('jobs').select('*').eq('company_id', companyId!).eq('id', id).maybeSingle()
+    // Everything that doesn't depend on the job row is asked for at the same
+    // time as the access check; nothing is sent back unless it says yes.
+    const ok = isUuid(companyId)
+    const none = Promise.resolve({ data: null, error: null })
+    const [access, jobRes, quotes, events, company] = await Promise.all([
+      jobsAccess(req, db, companyId),
+      ok ? db.from('jobs').select('*').eq('company_id', companyId!).eq('id', id).maybeSingle() : none,
+      ok ? db.from('job_quotes').select('id, number, revision, status, title, total_cents, tax_cents, deposit_cents, deposit_status, valid_until, public_token, sent_at, sent_via, viewed_at, accepted_at, declined_at, decided_name, decided_note, decided_by_type, created_at, updated_at')
+        .eq('company_id', companyId!).eq('job_id', id).order('created_at', { ascending: false }) : none,
+      ok ? db.from('job_events').select('id, quote_id, type, actor_type, actor_id, actor_name, summary, data, created_at').eq('company_id', companyId!).eq('job_id', id).order('created_at', { ascending: false }).limit(150) : none,
+      ok ? loadCompany(db, companyId!) : Promise.resolve(null),
+    ])
+    if (!access.ok) return access.response
+    const { data: job, error } = jobRes as any
     if (error) { if (isMissingJobsSchema(error)) return setupNeeded(); throw error }
     if (!job) return json({ error: 'Job not found.' }, 404)
 
-    const none = Promise.resolve({ data: null })
-    const [contact, conversation, booking, form, quotes, events, company] = await Promise.all([
+    const [contact, conversation, booking, form] = await Promise.all([
       job.contact_id ? db.from('contacts').select('id, name, email, phone, address').eq('company_id', companyId!).eq('id', job.contact_id).maybeSingle() : none,
       job.conversation_id ? db.from('conversations').select('id, channel, subject, status').eq('company_id', companyId!).eq('id', job.conversation_id).maybeSingle() : none,
       job.booking_id ? db.from('bookings').select('id, service_name, starts_at, ends_at, status').eq('company_id', companyId!).eq('id', job.booking_id).maybeSingle() : none,
       job.form_id ? db.from('forms').select('id, title, company_id').eq('id', job.form_id).maybeSingle() : none,
-      db.from('job_quotes').select('id, number, revision, status, title, total_cents, tax_cents, deposit_cents, deposit_status, valid_until, public_token, sent_at, sent_via, viewed_at, accepted_at, declined_at, decided_name, decided_note, decided_by_type, created_at, updated_at')
-        .eq('company_id', companyId!).eq('job_id', id).order('created_at', { ascending: false }),
-      db.from('job_events').select('id, quote_id, type, actor_type, actor_id, actor_name, summary, data, created_at').eq('company_id', companyId!).eq('job_id', id).order('created_at', { ascending: false }).limit(150),
-      loadCompany(db, companyId!),
     ])
     const settings = companySettings(company)
     return json({
@@ -47,8 +56,8 @@ export async function GET(req: NextRequest, ctx: Ctx) {
       conversation: conversation.data || null,
       booking: booking.data || null,
       form: form.data && (form.data as any).company_id === companyId ? { id: (form.data as any).id, title: (form.data as any).title } : null,
-      quotes: quotes.data || [],
-      events: events.data || [],
+      quotes: (quotes as any).data || [],
+      events: (events as any).data || [],
       settings,
       timezone: companyTz(company),
       quoteBase: companyBase(company).base,
@@ -71,15 +80,22 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     const db = jobsDb()
     const body = await req.json().catch(() => ({}))
     const companyId = String(body.companyId || '')
-    const access = await jobsAccess(req, db, companyId)
+    // A drag on the board lands here: the access check, the job and the
+    // company are read together (nothing changes unless access says yes).
+    const ok = isUuid(companyId) && isUuid(id)
+    const [access, jobRes, company] = await Promise.all([
+      jobsAccess(req, db, companyId),
+      ok ? db.from('jobs').select('*').eq('company_id', companyId).eq('id', id).maybeSingle() : Promise.resolve({ data: null, error: null }),
+      ok ? loadCompany(db, companyId) : Promise.resolve(null),
+    ])
     if (!access.ok) return access.response
     if (!isUuid(id)) return json({ error: 'Job not found.' }, 404)
 
-    const { data: job, error } = await db.from('jobs').select('*').eq('company_id', companyId).eq('id', id).maybeSingle()
+    const { data: job, error } = jobRes as any
     if (error) { if (isMissingJobsSchema(error)) return setupNeeded(); throw error }
     if (!job) return json({ error: 'Job not found.' }, 404)
     const now = new Date().toISOString()
-    const pf = companySettings(await loadCompany(db, companyId)).job_prefix
+    const pf = companySettings(company).job_prefix
     const label = `${pf}-${job.number}`
 
     // ── Status: only the allowed moves, and only from the status the caller saw ──

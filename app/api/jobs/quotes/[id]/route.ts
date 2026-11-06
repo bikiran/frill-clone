@@ -22,24 +22,31 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     const { id } = await ctx.params
     const db = jobsDb()
     const companyId = req.nextUrl.searchParams.get('companyId')
-    const access = await jobsAccess(req, db, companyId)
+    // The access check runs alongside the reads that don't depend on the
+    // quote; nothing is sent back unless it says yes.
+    const ok = isUuid(companyId) && isUuid(id)
+    const none = Promise.resolve({ data: null, error: null })
+    const [access, quoteRes, priceItems, templates, company] = await Promise.all([
+      jobsAccess(req, db, companyId),
+      ok ? db.from('job_quotes').select('*').eq('company_id', companyId!).eq('id', id).maybeSingle() : none,
+      ok ? db.from('job_price_items').select('*').eq('company_id', companyId!).eq('active', true).order('sort_order').order('name').limit(500) : none,
+      ok ? db.from('job_quote_templates').select('id, name, title').eq('company_id', companyId!).order('name').limit(200) : none,
+      ok ? loadCompany(db, companyId!) : Promise.resolve(null),
+    ])
     if (!access.ok) return access.response
     if (!isUuid(id)) return json({ error: 'Quote not found.' }, 404)
-    const { data: quote, error } = await db.from('job_quotes').select('*').eq('company_id', companyId!).eq('id', id).maybeSingle()
+    const { data: quote, error } = quoteRes as any
     if (error) { if (isMissingJobsSchema(error)) return setupNeeded(); throw error }
     if (!quote) return json({ error: 'Quote not found.' }, 404)
     const { data: job } = await db.from('jobs').select('id, number, title, status, address, contact_id, conversation_id, scheduled_start').eq('company_id', companyId!).eq('id', quote.job_id).maybeSingle()
-    const [contact, priceItems, templates, company, conv] = await Promise.all([
-      job?.contact_id ? db.from('contacts').select('id, name, email, phone').eq('company_id', companyId!).eq('id', job.contact_id).maybeSingle() : Promise.resolve({ data: null }),
-      db.from('job_price_items').select('*').eq('company_id', companyId!).eq('active', true).order('sort_order').order('name').limit(500),
-      db.from('job_quote_templates').select('id, name, title').eq('company_id', companyId!).order('name').limit(200),
-      loadCompany(db, companyId!),
-      job?.conversation_id ? db.from('conversations').select('id, channel').eq('company_id', companyId!).eq('id', job.conversation_id).maybeSingle() : Promise.resolve({ data: null }),
+    const [contact, conv] = await Promise.all([
+      job?.contact_id ? db.from('contacts').select('id, name, email, phone').eq('company_id', companyId!).eq('id', job.contact_id).maybeSingle() : none,
+      job?.conversation_id ? db.from('conversations').select('id, channel').eq('company_id', companyId!).eq('id', job.conversation_id).maybeSingle() : none,
     ])
     const settings = companySettings(company)
     return json({
       quote, job, contact: contact.data || null, conversation: conv.data || null,
-      priceItems: priceItems.data || [], templates: templates.data || [],
+      priceItems: (priceItems as any).data || [], templates: (templates as any).data || [],
       settings, timezone: companyTz(company), today: todayIn(companyTz(company)),
       company: company ? { name: company.name, logo_url: company.logo_url, accent_color: company.accent_color, abn: company.abn_acn || null } : null,
       url: quote.public_token ? quoteUrl(company, quote.public_token) : null,
@@ -57,16 +64,24 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     const db = jobsDb()
     const body = await req.json().catch(() => ({}))
     const companyId = String(body.companyId || '')
-    const access = await jobsAccess(req, db, companyId)
+    // Autosave runs this on every pause in typing: the access check, the quote
+    // and the company's tax settings are read together (nothing is written or
+    // sent back unless the access check says yes).
+    const ok = isUuid(companyId) && isUuid(id)
+    const [access, quoteRes, company] = await Promise.all([
+      jobsAccess(req, db, companyId),
+      ok ? db.from('job_quotes').select('*').eq('company_id', companyId).eq('id', id).maybeSingle() : Promise.resolve({ data: null, error: null }),
+      ok ? loadCompany(db, companyId) : Promise.resolve(null),
+    ])
     if (!access.ok) return access.response
     if (!isUuid(id)) return json({ error: 'Quote not found.' }, 404)
-    const { data: quote, error } = await db.from('job_quotes').select('*').eq('company_id', companyId).eq('id', id).maybeSingle()
+    const { data: quote, error } = quoteRes as any
     if (error) { if (isMissingJobsSchema(error)) return setupNeeded(); throw error }
     if (!quote) return json({ error: 'Quote not found.' }, 404)
     // A sent quote is what the customer saw: change it with a revision.
     if (quote.status !== 'draft') return json({ error: 'This quote has been sent, so it can’t be edited. Start a revision instead.', quote }, 409)
 
-    const settings = companySettings(await loadCompany(db, companyId))
+    const settings = companySettings(company)
     const items = body.items !== undefined ? body.items : quote.items
     const discount = body.discount !== undefined ? body.discount : { type: quote.discount_type, value: Number(quote.discount_value) }
     const deposit = body.deposit !== undefined ? body.deposit : { type: quote.deposit_type, value: Number(quote.deposit_value) }

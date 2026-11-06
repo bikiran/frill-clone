@@ -21,9 +21,6 @@ export async function GET(req: NextRequest) {
     const db = jobsDb()
     const sp = req.nextUrl.searchParams
     const companyId = sp.get('companyId')
-    const access = await jobsAccess(req, db, companyId)
-    if (!access.ok) return access.response
-
     let q = db.from('jobs')
       .select('id, number, title, status, source, contact_id, conversation_id, booking_id, address, scheduled_start, scheduled_end, value_cents, accepted_quote_id, sort_order, created_at, updated_at')
       .eq('company_id', companyId!)
@@ -39,16 +36,23 @@ export async function GET(req: NextRequest) {
       const n = Number(search.replace(/^[A-Za-z]+-?/, ''))
       q = Number.isInteger(n) && n > 0 ? q.or(`title.ilike.%${search}%,number.eq.${n}`) : q.ilike('title', `%${search}%`)
     }
-    const { data: jobs, error } = await q.order('updated_at', { ascending: false }).limit(500)
+    // The access check, the list and the company are asked for together;
+    // nothing is sent back unless the access check says yes.
+    const [access, listRes, company] = await Promise.all([
+      jobsAccess(req, db, companyId),
+      isUuid(companyId) ? q.order('updated_at', { ascending: false }).limit(500) : Promise.resolve({ data: [], error: null }),
+      isUuid(companyId) ? loadCompany(db, companyId!) : Promise.resolve(null),
+    ])
+    if (!access.ok) return access.response
+    const { data: jobs, error } = listRes as any
     if (error) { if (isMissingJobsSchema(error)) return setupNeeded(); throw error }
 
     const list = jobs || []
     const contactIds = Array.from(new Set(list.map((j: any) => j.contact_id).filter(Boolean)))
     const jobIds = list.map((j: any) => j.id)
-    const [contacts, quotes, company] = await Promise.all([
+    const [contacts, quotes] = await Promise.all([
       contactIds.length ? db.from('contacts').select('id, name, phone, email').eq('company_id', companyId!).in('id', contactIds) : Promise.resolve({ data: [] }),
       jobIds.length ? db.from('job_quotes').select('id, job_id, number, revision, status, total_cents, created_at').eq('company_id', companyId!).in('job_id', jobIds).order('created_at', { ascending: false }) : Promise.resolve({ data: [] }),
-      loadCompany(db, companyId!),
     ])
     const byContact = new Map((contacts.data || []).map((c: any) => [c.id, c]))
     const latestQuote = new Map<string, any>()
