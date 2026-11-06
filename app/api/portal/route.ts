@@ -12,6 +12,7 @@ import {
   contactFromLink, portalEvent, maskEmail, maskPhone, isMissingPortalSchema, PORTAL_HINT, CODE_TTL_MS,
 } from '@/lib/portal/auth'
 import { portalData, savePrefs, loadContact, mainConversation } from '@/lib/portal/data'
+import { portalReceipt } from '@/lib/portal/receipts'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,6 +20,7 @@ export const dynamic = 'force-dynamic'
 // customers, signed in with a one-time code or a link the business sent.
 //   GET  ?slug&op=company                         the business (name, logo, colour, sections), when it's on
 //   GET  ?slug&op=me                       Bearer  everything on the page for the signed-in customer
+//   GET  ?slug&op=receipt&key=woo:<id>|shop:<id>|pay:<id>   Bearer  a receipt, if that order is theirs
 //   POST { slug, action: 'code', to }              send a code to that email or mobile (if it's a customer's)
 //   POST { slug, action: 'verify', to, code }      → { token, expiresAt } (30 days unused)
 //   POST { slug, action: 'link', booking | quote } → { token } from a booking / quote link (a day)
@@ -59,6 +61,16 @@ export async function GET(req: NextRequest) {
       const data = await portalData(db, pc, s.contactId, s)
       if (!data) { await endSession(db, s.id); return json({ error: 'Please sign in.' }, 401) }
       return json(data)
+    }
+    if (op === 'receipt') {
+      if (!pc.settings.sections.orders) return json({ error: 'Not available.' }, 403)
+      const s = await sessionFor(db, req, pc.company.id)
+      if (!s) return json({ error: 'Please sign in.' }, 401)
+      const contact = await loadContact(db, pc.company.id, s.contactId)
+      const r = contact ? await portalReceipt(db, pc, contact, String(sp.get('key') || '')) : null
+      if (!r) return json({ error: 'Receipt not found.' }, 404)
+      after(() => portalEvent(db, pc.company.id, s.contactId, 'open_receipt', { key: String(sp.get('key') || '').slice(0, 80) }))
+      return json(r)
     }
     return json({ error: 'Unknown request' }, 400)
   } catch (e: any) {

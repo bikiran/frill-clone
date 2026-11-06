@@ -154,22 +154,29 @@ async function orders(db: any, pc: PortalCompany, contact: any, convIds: string[
           at: o.order_date || o.created_at, cents: Math.round((Number(o.total) || 0) * 100), currency: String(o.currency || 'aud').toLowerCase(), paid, statusLabel: label, items,
           // Online orders: the shop's own account page (returns and changes happen there).
           url: !pos && store && o.woo_order_id != null ? `${store}/my-account/view-order/${o.woo_order_id}/` : null,
+          receipt: o.id ? `woo:${o.id}` : null,
         })
       }
     }, undefined),
     // Shopify.
     safe(async () => {
       if (!email && tail.length < 9) return
-      let q = db.from('orders').select('id, order_number, status, payment_status, total, currency, order_date, created_at, line_items').eq('company_id', companyId).eq('sales_channel', 'shopify').gte('created_at', since)
+      let q = db.from('orders').select('id, order_number, status, payment_status, total, currency, order_date, created_at').eq('company_id', companyId).eq('sales_channel', 'shopify').gte('created_at', since)
       q = email ? q.eq('customer_email', email) : q.eq('customer_phone_norm', tail)
       const { data } = await q.order('created_at', { ascending: false }).limit(10)
+      // What's in each (order_items: the orders table has no line items of its own).
+      const itemsBy = new Map<string, string>()
+      if ((data || []).length) {
+        const { data: its } = await db.from('order_items').select('order_id, product_name, quantity').eq('company_id', companyId).in('order_id', (data || []).map((o: any) => o.id)).limit(200)
+        for (const i of its || []) { const was = itemsBy.get(i.order_id); const s = `${i.quantity || 1}× ${String(i.product_name || '').slice(0, 60)}`; itemsBy.set(i.order_id, was ? `${was}, ${s}` : s) }
+      }
       for (const o of data || []) {
         const pay = String(o.payment_status || '').toLowerCase()
         out.push({
           id: String(o.id), kind: 'online', platform: 'shopify', number: o.order_number ? String(o.order_number) : '', at: o.order_date || o.created_at,
           cents: Math.round((Number(o.total) || 0) * 100), currency: String(o.currency || 'aud').toLowerCase(), paid: ['paid', 'captured', 'succeeded'].includes(pay),
           statusLabel: pay === 'paid' ? 'Paid' : pay ? pay.charAt(0).toUpperCase() + pay.slice(1).replace(/_/g, ' ') : (o.status || 'Ordered'),
-          items: Array.isArray(o.line_items) ? o.line_items.slice(0, 4).map((i: any) => `${i.quantity || 1}× ${String(i.name || i.title || '').slice(0, 60)}`).join(', ') : '', url: null,
+          items: itemsBy.get(o.id) || '', url: null, receipt: `shop:${o.id}`,
         })
       }
     }, undefined),
@@ -181,6 +188,7 @@ async function orders(db: any, pc: PortalCompany, contact: any, convIds: string[
       for (const p of data || []) out.push({
         id: p.id, kind: 'payment', platform: 'stripe', number: '', at: p.paid_at || p.created_at, cents: Number(p.amount_cents) || 0, currency: p.currency || 'aud',
         paid: p.status === 'paid', statusLabel: p.status === 'refunded' ? 'Refunded' : 'Paid', items: String(p.description || 'Payment').slice(0, 120), url: p.receipt_url || null,
+        receipt: `pay:${p.id}`,
       })
     }, undefined),
   ])

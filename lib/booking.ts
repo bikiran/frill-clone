@@ -18,6 +18,7 @@ import {
   type WeekHours, type SlotResource, type Busy, type Slot, type SlotService,
 } from '@/lib/booking-time'
 import { buildIcs, buildIcsMany, googleCalendarUrl, type InviteEvent } from '@/lib/booking-ics'
+import { bookingEmailHtml } from '@/lib/booking-email'
 import { createChatCheckoutSession, chatStripe } from '@/lib/chat-checkout'
 import { notifyCompany } from '@/lib/notify'
 import { emitIntegrationEvent } from '@/lib/integration-events'
@@ -1374,19 +1375,19 @@ export async function customerMessage(db: any, company: any, settings: BookingSe
       rebook: `Time for your next ${b.service_name}?`,
     }
     const headlines: Record<MsgKind, string> = {
-      confirmed: 'You’re booked in ✓', rescheduled: 'Your booking has moved', cancelled: 'Your booking is cancelled', conflict: 'That time was just taken',
+      confirmed: 'You’re booked in', rescheduled: 'Your booking has moved', cancelled: 'Your booking is cancelled', conflict: 'That time was just taken',
       reminder: `See you ${rel.replace(/ at .*/, '')}`, noshow: 'We missed you', rebook: 'Ready for the next one?',
     }
     if (isTable) {
       Object.assign(subjects, tableSubjects)
-      Object.assign(headlines, { confirmed: 'Your table is booked ✓', rescheduled: 'Your table has changed', cancelled: 'Your table is cancelled' })
+      Object.assign(headlines, { confirmed: 'Your table is booked', rescheduled: 'Your table has changed', cancelled: 'Your table is cancelled' })
     }
     const invite = {
       uid: b.id, title: `${b.service_name} — ${business}`, startMs: Date.parse(b.starts_at), endMs: Date.parse(b.ends_at),
       location: where || null, description: `Manage your booking: ${manage}`, url: manage,
       cancelled: kind === 'cancelled' || kind === 'conflict', sequence: (b.reschedule_count || 0) + (kind === 'cancelled' ? 1 : 0),
     }
-    const accent = /^#[0-9a-f]{6}$/i.test(company.accent_color || '') ? company.accent_color : '#ff7a6b'
+    const accent = company.accent_color || null
     const rows: [string, string][] = kind === 'noshow' || kind === 'rebook' ? [] : isTable ? [
       ['Table for', `${party} ${party === 1 ? 'person' : 'people'}`],
       ['When', when],
@@ -1408,25 +1409,19 @@ export async function customerMessage(db: any, company: any, settings: BookingSe
       noshow: `Hi ${esc(first)}, we missed you at your ${esc(b.service_name)} today. No worries — pick another time that suits you.`,
       rebook: `Hi ${esc(first)}, it’s been a while since your ${esc(b.service_name)} with ${esc(business)}. Book your next one in a few taps.`,
     }
-    const buttons = live
-      ? `<a href="${manage}" style="display:inline-block;background:${accent};color:#fff;text-decoration:none;font-weight:700;padding:11px 20px;border-radius:10px;margin:0 8px 8px 0">${kind === 'reminder' ? 'View or change' : isTable ? 'Change or cancel' : 'Manage booking'}</a>${kind === 'reminder' ? '' : `<a href="${googleCalendarUrl(invite)}" style="display:inline-block;background:#fff;color:#111;border:1px solid #e5e7eb;text-decoration:none;font-weight:600;padding:10px 18px;border-radius:10px;margin:0 8px 8px 0">Add to Google Calendar</a>`}`
-      : `<a href="${rebook}" style="display:inline-block;background:${accent};color:#fff;text-decoration:none;font-weight:700;padding:11px 20px;border-radius:10px">${isTable ? 'Book a table' : kind === 'cancelled' || kind === 'conflict' ? 'Book another time' : 'Book now'}</a>`
     const noteText = isTable ? tableNote : settings.confirmation_note
-    const note = (kind === 'confirmed' || kind === 'reminder') && noteText ? `<p style="margin:16px 0 0;color:#374151;font-size:14px;line-height:1.55;white-space:pre-line">${esc(noteText)}</p>` : ''
-    const html = `<!doctype html><html><body style="margin:0;background:#f6f6f7;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
-<div style="max-width:520px;margin:0 auto;padding:28px 16px">
-  <div style="background:#fff;border-radius:16px;padding:28px;border:1px solid #eee">
-    ${company.logo_url ? `<img src="${esc(company.logo_url)}" alt="" style="height:36px;margin-bottom:14px">` : `<div style="font-weight:800;font-size:16px;margin-bottom:14px">${esc(business)}</div>`}
-    <h1 style="margin:0 0 8px;font-size:22px;color:#111">${headlines[kind]}</h1>
-    <p style="margin:0 0 18px;color:#4b5563;font-size:14.5px;line-height:1.55">${intro[kind]}</p>
-    ${rows.length ? `<table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:20px">
-      ${rows.map(([k, v]) => `<tr><td style="padding:8px 0;color:#6b7280;width:90px;vertical-align:top;border-top:1px solid #f1f1f1">${k}</td><td style="padding:8px 0;color:#111;font-weight:600;border-top:1px solid #f1f1f1">${esc(v)}</td></tr>`).join('')}
-    </table>` : ''}
-    ${buttons}
-    ${note}
-  </div>
-  <p style="text-align:center;color:#9ca3af;font-size:12px;margin-top:14px">${esc(business)}${hideBadge ? '' : ' · Powered by Colvy'}</p>
-</div></body></html>`
+    const calendar = kind === 'confirmed' || kind === 'rescheduled'
+    const html = bookingEmailHtml({
+      kind, isTable, business, logoUrl: company.logo_url || null, accent, headline: headlines[kind], intro: intro[kind], rows,
+      startMs: Date.parse(b.starts_at), endMs: Date.parse(b.ends_at), timezone: b.timezone || 'Australia/Melbourne',
+      primaryUrl: live ? manage : rebook,
+      primaryLabel: live ? (kind === 'reminder' ? 'View or change' : isTable ? 'Change or cancel' : 'Manage booking') : (isTable ? 'Book a table' : kind === 'cancelled' || kind === 'conflict' ? 'Book another time' : 'Book now'),
+      googleUrl: calendar ? googleCalendarUrl(invite) : null,
+      icsUrl: calendar && b.manage_token ? `${companyBase(company).base}/api/book/manage?token=${encodeURIComponent(b.manage_token)}&op=ics` : null,
+      note: (kind === 'confirmed' || kind === 'reminder') && noteText ? String(noteText) : null,
+      preheader: rows.length ? `${isTable ? `Table for ${party}` : b.service_name} · ${when}` : `${business}: book your next ${isTable ? 'table' : b.service_name}`,
+      hideBadge,
+    })
     const text = `${headlines[kind]}\n\n${rows.map(([k, v]) => `${k}: ${v}`).join('\n')}\n\n${live ? `Manage your booking: ${manage}` : `Book: ${rebook}`}`
     const withIcs = kind === 'confirmed' || kind === 'rescheduled' || kind === 'cancelled'
     sent.email = await sendCustomerEmail(db, company, {

@@ -17,6 +17,8 @@ export type PortalJob = { id: string; title: string; status: string; statusLabel
 export type PortalOrder = {
   id: string; kind: 'in_store' | 'online' | 'payment'; platform: string | null; number: string; at: string; cents: number; currency: string
   paid: boolean; statusLabel: string; items: string; url: string | null
+  /** Opens its receipt (GET /api/portal?op=receipt&key=…). */
+  receipt: string | null
 }
 export type PortalMessage = { id: string; mine: boolean; text: string; at: string; by: string | null }
 
