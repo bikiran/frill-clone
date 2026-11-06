@@ -196,6 +196,7 @@ export default function PublicQuotePage() {
           <button type="button" className="pq-btn ghost sm pq-print" onClick={() => window.print()}>Print or save as PDF</button>
         </footer>
       </div>
+      {d?.accountUrl && <p className="pq-acct"><a href={d.accountUrl}>See all your quotes, jobs and payments in your account →</a></p>}
       <p className="pq-by">Sent with <a href="https://colvy.com" target="_blank" rel="noreferrer">Colvy</a></p>
     </main>
   )
@@ -256,6 +257,9 @@ textarea.pq-in{resize:vertical;line-height:1.5}
 .pq-btn.sm{min-height:36px;padding:0 14px;font-size:13.5px}
 .pq-foot{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:28px;padding-top:18px;border-top:1px solid #ececee;font-size:13.5px}
 .pq-foot div{display:flex;flex-direction:column;gap:2px}
+.pq-acct{text-align:center;margin:16px 0 0;font-size:14px}
+.pq-acct a{color:#111;font-weight:650}
+@media print{.pq-acct{display:none}}
 .pq-foot a{color:#111}
 .pq-foot span{color:#71717a}
 .pq-by{max-width:760px;margin:16px auto 0;text-align:center;font-size:12px;color:#a1a1aa}

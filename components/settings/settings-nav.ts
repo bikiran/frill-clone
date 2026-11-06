@@ -19,6 +19,7 @@ export const SETTINGS_NAV: SettingsGroup[] = [
     { label: 'Overview', href: '/admin/settings#overview', icon: 'grid' },
     { label: 'Team', href: '/admin/team', icon: 'users' },
     { label: 'Users & customers', href: '/admin/users', icon: 'contact' },
+    { label: 'Customer accounts', href: '/admin/crm-settings/customer-accounts', icon: 'user' },
     { label: 'Locations', href: '/admin/locations', icon: 'pin' },
     { label: 'Billing', href: '/admin/billing', icon: 'card' },
     { label: 'Integrations', href: '/admin/integrations', icon: 'plug' },

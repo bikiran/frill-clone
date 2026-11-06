@@ -91,7 +91,9 @@ export async function GET(req: NextRequest, ctx: Ctx) {
       }
     }
     const { data: contact } = job.contact_id ? await db.from('contacts').select('name').eq('id', job.contact_id).eq('company_id', quote.company_id).maybeSingle() : { data: null }
-    return json({ ...view(quote, job, company, contact), justPaid: paid })
+    const { accountLink } = await import('@/lib/portal/auth')
+    const accountUrl = job.contact_id ? await accountLink(db, company, { q: quote.public_token }) : null
+    return json({ ...view(quote, job, company, contact), justPaid: paid, accountUrl })
   } catch (e: any) {
     if (isMissingJobsSchema(e)) return setupNeeded()
     return json({ error: 'This quote couldn’t be loaded. Please try again.' }, 500)

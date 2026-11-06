@@ -102,7 +102,7 @@ export function toTenantBrand(company: any, settings?: any): TenantBrand | null 
 export type TenantPage =
   | 'board' | 'roadmap' | 'announcements' | 'feedback'
   | 'help' | 'help-article' | 'help-ticket'
-  | 'book' | 'booking' | 'reserve'
+  | 'book' | 'booking' | 'reserve' | 'account'
   | 'poll' | 'survey' | 'form' | 'contact-form'
   | 'profile' | 'note' | 'media'
   | 'redirect'
@@ -196,6 +196,7 @@ function titleFor(input: TenantMetaInput): { title: string; siteName: string } {
     case 'book': return { title: join(rec ? `Book ${rec}` : 'Book online', name), siteName: name || 'Book online' }
     case 'booking': return { title: join('Your booking', name), siteName: name || 'Your booking' }
     case 'reserve': return { title: join('Book a table', name), siteName: name || 'Book a table' }
+    case 'account': return { title: join('Your account', name), siteName: name || 'Your account' }
     case 'poll': return { title: join(rec || 'Poll', name), siteName: name || 'Poll' }
     case 'survey': return { title: join(rec || 'Survey', name), siteName: name || 'Survey' }
     case 'form':
@@ -226,6 +227,7 @@ function descriptionFor(input: TenantMetaInput): string {
     case 'book': return name ? `Book an appointment with ${name} online.` : 'Book an appointment online.'
     case 'booking': return name ? `View, change or cancel your booking with ${name}.` : 'View, change or cancel your booking.'
     case 'reserve': return name ? `Book a table at ${name} online.` : 'Book a table online.'
+    case 'account': return name ? `Your bookings, orders, quotes and payments with ${name}.` : 'Your bookings, orders, quotes and payments.'
     case 'poll': return `Have your say in this poll${of}.`
     case 'survey': return `Share your thoughts in this survey${of}.`
     case 'form':
