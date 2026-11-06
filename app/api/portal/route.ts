@@ -12,7 +12,7 @@ import {
   portalDb, portalCompany, parseIdentifier, contactsFor, makeCode, checkCode, startSession, sessionFor, endSession,
   contactFromLink, portalEvent, maskEmail, maskPhone, isMissingPortalSchema, PORTAL_HINT, CODE_TTL_MS,
 } from '@/lib/portal/auth'
-import { portalData, savePrefs, loadContact, mainConversation } from '@/lib/portal/data'
+import { portalData, savePrefs, loadContact, mainConversation, bookAgainLink, quoteDepositLink } from '@/lib/portal/data'
 import { portalReceipt } from '@/lib/portal/receipts'
 
 export const dynamic = 'force-dynamic'
@@ -28,6 +28,8 @@ export const dynamic = 'force-dynamic'
 //   POST { slug, action: 'reply', text }   Bearer  a message into their conversation
 //   POST { slug, action: 'prefs', name?, marketingEmail?, marketingSms? }   Bearer
 //   POST { slug, action: 'track', kind, id? }      Bearer  "opened a booking / quote / pay link" (pilot numbers)
+//   POST { slug, action: 'again', id }     Bearer  Book again: a personal booking link for a past booking's service → { url }
+//   POST { slug, action: 'pay', id }       Bearer  pay an accepted quote's deposit → { url } (card payment)
 //   POST { slug, action: 'signout' }       Bearer
 
 const json = (d: any, status = 200) => NextResponse.json(d, { status, headers: { 'Cache-Control': 'no-store' } })
@@ -171,6 +173,28 @@ export async function POST(req: NextRequest) {
       const kind = String(body.kind || '')
       if (TRACK.has(kind)) after(() => portalEvent(db, companyId, s.contactId, kind, body.id ? { id: String(body.id).slice(0, 64) } : null))
       return json({ ok: true })
+    }
+
+    // Book again: their details filled in, the same service (or party size).
+    if (action === 'again') {
+      if (!pc.settings.sections.coming_up) return json({ error: 'Not available.' }, 403)
+      if (!checkBurst(`portal-again:${s.id}`, 10)) return json({ error: 'Please wait a moment and try again.' }, 429)
+      const id = String(body.id || '').slice(0, 64)
+      const r = await bookAgainLink(db, pc, s.contactId, id)
+      if ('error' in r) return json({ error: r.error }, r.status)
+      after(() => portalEvent(db, companyId, s.contactId, 'book_again', { id }))
+      return json({ url: r.url })
+    }
+
+    // A deposit on an accepted quote, straight to the card payment.
+    if (action === 'pay') {
+      if (!pc.settings.sections.quotes) return json({ error: 'Not available.' }, 403)
+      if (!checkBurst(`portal-pay:${s.id}`, 10)) return json({ error: 'Please wait a moment and try again.' }, 429)
+      const id = String(body.id || '').slice(0, 64)
+      const r = await quoteDepositLink(db, pc, s.contactId, id)
+      if ('error' in r) return json({ error: r.error }, r.status)
+      after(() => portalEvent(db, companyId, s.contactId, 'pay_deposit', { id }))
+      return json({ url: r.url })
     }
 
     if (action === 'prefs') {

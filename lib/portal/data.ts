@@ -5,16 +5,18 @@
 // column a business doesn't have) just leaves that part empty.
 
 import { phoneKey, ilikeExact } from '@/lib/phone'
-import { manageUrl } from '@/lib/booking'
-import { quoteUrl } from '@/lib/jobs/server'
+import { manageUrl, phoneVariants, stripeReady, amountDue, createInvite, bookingPageUrl, reservePageUrl } from '@/lib/booking'
+import { quoteUrl, quoteDepositCheckout, loadCompany } from '@/lib/jobs/server'
+import { restaurantEnabled } from '@/lib/modules'
 import { JOB_STATUS_LABEL, QUOTE_STATUS_LABEL, fmtJobNumber } from '@/lib/jobs/status'
 import { resolveJobSettings } from '@/lib/jobs/settings'
 import { preferenceState, applyPreferences } from '@/lib/email-preferences'
 import { maskEmail, maskPhone, type PortalCompany } from '@/lib/portal/auth'
-import type { PortalMe, PortalComing, PortalPayment, PortalQuote, PortalJob, PortalOrder, PortalMessage } from '@/lib/portal/types'
+import type { PortalMe, PortalComing, PortalAgain, PortalPayment, PortalQuote, PortalJob, PortalOrder, PortalMessage } from '@/lib/portal/types'
 
 const safe = async <T>(fn: () => Promise<T>, fallback: T): Promise<T> => { try { return await fn() } catch { return fallback } }
 const DAY = 86_400_000
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const strip = (s: any) => String(s || '').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;|&rsquo;/g, '’').replace(/&quot;/g, '"').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim()
 
 export async function loadContact(db: any, companyId: string, contactId: string) {
@@ -29,20 +31,43 @@ async function conversationsOf(db: any, companyId: string, contactId: string): P
 }
 
 // ── Coming up ─────────────────────────────────────────────────────────────
-async function comingUp(db: any, pc: PortalCompany, contactId: string): Promise<PortalComing[]> {
+async function comingUp(db: any, pc: PortalCompany, contact: any): Promise<PortalComing[]> {
   const out: PortalComing[] = []
+  const contactId = contact.id
   const nowIso = new Date(Date.now() - 2 * 3600e3).toISOString()
   await Promise.all([
     safe(async () => {
-      const { data } = await db.from('bookings').select('id, service_id, service_name, starts_at, ends_at, status, seats, manage_token, hold_expires_at, location_label, payment_status, amount_due_cents, seated_at, completed_at')
-        .eq('company_id', pc.company.id).eq('contact_id', contactId).in('status', ['confirmed', 'pending']).gte('ends_at', nowIso).order('starts_at').limit(20)
+      const cols = 'id, service_id, service_name, starts_at, ends_at, status, seats, manage_token, hold_expires_at, location_label, payment_status, amount_due_cents, seated_at, completed_at, chat_payment_id, contact_id, customer_email, customer_phone'
+      const reads: PromiseLike<any>[] = [db.from('bookings').select(cols)
+        .eq('company_id', pc.company.id).eq('contact_id', contactId).in('status', ['confirmed', 'pending']).gte('ends_at', nowIso).order('starts_at').limit(20)]
+      // A booking held while its deposit is paid isn't linked to a customer
+      // until it's confirmed, so live holds are also found by the email and
+      // mobile on their record (exact matches only, as for shop orders).
+      const email = String(contact.email || '').trim().toLowerCase()
+      const key = phoneKey(contact.phone)
+      const holds = () => db.from('bookings').select(cols).eq('company_id', pc.company.id).eq('status', 'pending').is('contact_id', null)
+        .gt('hold_expires_at', new Date().toISOString()).order('starts_at').limit(5)
+      if (email) reads.push(holds().ilike('customer_email', ilikeExact(email)))
+      if (key.length >= 9) reads.push(holds().in('customer_phone', phoneVariants(contact.phone)))
+      const found = new Map<string, any>()
+      for (const r of await Promise.all(reads)) for (const b of r?.data || []) {
+        if (b.contact_id ? b.contact_id === contactId : ((email && String(b.customer_email || '').trim().toLowerCase() === email) || (key.length >= 9 && phoneKey(b.customer_phone) === key))) found.set(b.id, b)
+      }
       // Still to come: not already seated or finished (a visit in progress isn't "coming up").
-      const rows = (data || []).filter((b: any) => !b.seated_at && !b.completed_at && (b.status === 'confirmed' || (b.hold_expires_at && Date.parse(b.hold_expires_at) > Date.now())))
+      const rows = [...found.values()].filter((b: any) => !b.seated_at && !b.completed_at && (b.status === 'confirmed' || (b.hold_expires_at && Date.parse(b.hold_expires_at) > Date.now())))
       const svcIds = [...new Set(rows.map((b: any) => b.service_id).filter(Boolean))]
       const kinds = new Map<string, string>()
       if (svcIds.length) { const { data: s } = await db.from('booking_services').select('id, kind').in('id', svcIds); for (const x of s || []) kinds.set(x.id, x.kind) }
+      // A deposit to pay on a held booking: its card payment page (while it's open).
+      const owing = rows.filter((b: any) => b.status === 'pending' && b.payment_status === 'pending' && b.amount_due_cents && b.chat_payment_id)
+      const payLinks = new Map<string, string>()
+      if (owing.length) {
+        const { data: ps } = await db.from('chat_payments').select('id, status, checkout_url').eq('company_id', pc.company.id).in('id', owing.map((b: any) => b.chat_payment_id))
+        for (const x of ps || []) if (x.status === 'pending' && x.checkout_url) payLinks.set(x.id, x.checkout_url)
+      }
       for (const b of rows) {
         const table = kinds.get(b.service_id) === 'reservation'
+        const payUrl = (b.status === 'pending' && b.chat_payment_id && payLinks.get(b.chat_payment_id)) || null
         out.push({
           id: b.id, kind: table ? 'reservation' : 'booking', title: b.service_name || (table ? 'Table' : 'Booking'),
           startsAt: b.starts_at, endsAt: b.ends_at, party: table ? b.seats || null : null,
@@ -50,6 +75,7 @@ async function comingUp(db: any, pc: PortalCompany, contactId: string): Promise<
           where: b.location_label || null,
           status: b.status, statusLabel: b.status === 'pending' ? (b.payment_status === 'pending' && b.amount_due_cents ? 'Deposit to pay' : 'Holding') : 'Booked',
           manageUrl: b.manage_token ? manageUrl(pc.company, b.manage_token) : null,
+          ...(payUrl ? { payUrl, payCents: Number(b.amount_due_cents) || 0 } : {}),
         })
       }
     }, undefined),
@@ -71,6 +97,75 @@ async function comingUp(db: any, pc: PortalCompany, contactId: string): Promise<
   return out.sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt)).slice(0, 20)
 }
 
+// ── Book again ────────────────────────────────────────────────────────────
+// What they've booked before (visits that have finished, in the last 18
+// months), newest first, one per service and up to three, while that service
+// still takes bookings online.
+async function bookAgain(db: any, pc: PortalCompany, contactId: string): Promise<PortalAgain[]> {
+  const { data } = await db.from('bookings').select('id, service_id, service_name, starts_at, seats, status')
+    .eq('company_id', pc.company.id).eq('contact_id', contactId).in('status', ['confirmed', 'completed'])
+    .lt('ends_at', new Date().toISOString()).gte('starts_at', new Date(Date.now() - 548 * DAY).toISOString())
+    .order('starts_at', { ascending: false }).limit(60)
+  const seen = new Set<string>()
+  const last = (data || []).filter((b: any) => b.service_id && !seen.has(b.service_id) && seen.add(b.service_id))
+  if (!last.length) return []
+  const svc = await bookableServices(db, pc, last.map((b: any) => b.service_id))
+  return last.filter((b: any) => svc.has(b.service_id)).slice(0, 3).map((b: any) => {
+    const s = svc.get(b.service_id)
+    const table = s.kind === 'reservation'
+    return { id: b.id, kind: table ? 'reservation' : 'booking', title: s.name || b.service_name || (table ? 'Table' : 'Booking'), lastAt: b.starts_at, party: table ? Number(b.seats) || null : null }
+  })
+}
+
+/** Those of these services the booking (or table) page will still take online. */
+async function bookableServices(db: any, pc: PortalCompany, ids: string[]): Promise<Map<string, any>> {
+  const { data } = await db.from('booking_services').select('id, name, slug, kind, active, payment_mode, price_cents, deposit_cents').eq('company_id', pc.company.id).in('id', ids)
+  // A paid service is hidden from the booking page until card payments are set up.
+  const list = (data || []).filter((s: any) => s.active && (amountDue(s) === 0 || stripeReady(pc.company)))
+  let tables = true
+  if (list.some((s: any) => s.kind === 'reservation')) {
+    const { data: co } = await db.from('companies').select('modules, industry').eq('id', pc.company.id).maybeSingle()
+    tables = restaurantEnabled(co)
+  }
+  return new Map(list.filter((s: any) => tables || s.kind !== 'reservation').map((s: any) => [s.id, s]))
+}
+
+/**
+ * Book again: a personal link to the booking page for that service (or the
+ * table page, for the same party size) with their details filled in. The
+ * link's invite also ties the new booking to them.
+ */
+export async function bookAgainLink(db: any, pc: PortalCompany, contactId: string, bookingId: string): Promise<{ url: string } | { error: string; status: number }> {
+  const gone = { error: 'That can’t be booked online any more. Send us a message and we’ll sort it out.', status: 410 }
+  if (!UUID.test(bookingId)) return { error: 'Booking not found.', status: 404 }
+  const { data: b } = await db.from('bookings').select('id, service_id, seats').eq('id', bookingId).eq('company_id', pc.company.id).eq('contact_id', contactId).maybeSingle()
+  if (!b) return { error: 'Booking not found.', status: 404 }
+  if (!b.service_id) return gone
+  const s = (await bookableServices(db, pc, [b.service_id])).get(b.service_id)
+  if (!s) return gone
+  const table = s.kind === 'reservation'
+  const inv = await createInvite(db, { companyId: pc.company.id, contactId, serviceId: table ? null : s.id })
+  if (table) return { url: `${reservePageUrl(pc.company)}?i=${encodeURIComponent(inv.token)}&party=${Math.max(1, Number(b.seats) || 2)}` }
+  return { url: `${bookingPageUrl(pc.company, s.slug || undefined)}?i=${encodeURIComponent(inv.token)}` }
+}
+
+/**
+ * Pay an accepted quote's deposit from the account page: a card payment link
+ * (the same one the quote page makes). Only their own quotes.
+ */
+export async function quoteDepositLink(db: any, pc: PortalCompany, contactId: string, quoteId: string): Promise<{ url: string } | { error: string; status: number }> {
+  const none = { error: 'Quote not found.', status: 404 }
+  if (!UUID.test(quoteId)) return none
+  const { data: quote } = await db.from('job_quotes').select('*').eq('id', quoteId).eq('company_id', pc.company.id).maybeSingle()
+  if (!quote) return none
+  const { data: job } = await db.from('jobs').select('id, contact_id, conversation_id').eq('id', quote.job_id).eq('company_id', pc.company.id).maybeSingle()
+  if (!job || job.contact_id !== contactId) return none
+  if (quote.status !== 'accepted') return { error: 'Accept the quote first, then pay the deposit.', status: 409 }
+  const company = await loadCompany(db, pc.company.id)
+  if (!company) return none
+  return quoteDepositCheckout(db, company, quote, job)
+}
+
 // ── Payments due ──────────────────────────────────────────────────────────
 async function paymentsDue(db: any, pc: PortalCompany, convIds: string[]): Promise<PortalPayment[]> {
   if (!convIds.length) return []
@@ -85,23 +180,27 @@ async function paymentsDue(db: any, pc: PortalCompany, convIds: string[]): Promi
 }
 
 // ── Quotes and jobs ───────────────────────────────────────────────────────
-async function quotesAndJobs(db: any, pc: PortalCompany, contactId: string): Promise<{ quotes: PortalQuote[]; jobs: PortalJob[] }> {
+async function quotesAndJobs(db: any, pc: PortalCompany, contactId: string): Promise<{ quotes: PortalQuote[]; jobs: PortalJob[]; depositPayments: string[] }> {
   const { data: jobs } = await db.from('jobs').select('id, number, title, status, scheduled_start, updated_at, created_at')
     .eq('company_id', pc.company.id).eq('contact_id', contactId).order('created_at', { ascending: false }).limit(20)
   const list = jobs || []
-  if (!list.length) return { quotes: [], jobs: [] }
+  if (!list.length) return { quotes: [], jobs: [], depositPayments: [] }
   const ids = list.map((j: any) => j.id)
-  const { data: qs } = await db.from('job_quotes').select('id, job_id, number, revision, status, total_cents, public_token, sent_at, accepted_at, valid_until, created_at')
+  const { data: qs } = await db.from('job_quotes').select('id, job_id, number, revision, status, total_cents, public_token, sent_at, accepted_at, valid_until, created_at, deposit_cents, deposit_status, deposit_payment_id')
     .eq('company_id', pc.company.id).in('job_id', ids).in('status', ['sent', 'accepted']).order('created_at', { ascending: false }).limit(20)
   const title = new Map(list.map((j: any) => [j.id, j.title || '']))
   const js = resolveJobSettings(pc.company.job_settings)
   const quotes: PortalQuote[] = (qs || []).filter((q: any) => q.public_token).map((q: any) => {
     const expired = q.status === 'sent' && q.valid_until && Date.parse(q.valid_until) < Date.now() - DAY
+    // A deposit on an accepted quote can be paid by card here (once the business takes cards).
+    const dep = Number(q.deposit_cents) > 0 ? { cents: Number(q.deposit_cents), paid: q.deposit_status === 'paid' } : null
+    const owing = !!dep && !dep.paid && q.status === 'accepted'
     return {
       id: q.id, number: fmtJobNumber(q.number, js.quote_prefix || 'Q') + (q.revision > 1 ? ` (rev ${q.revision})` : ''), title: String(title.get(q.job_id) || ''),
       cents: Number(q.total_cents) || 0, status: q.status, waiting: q.status === 'sent' && !expired,
-      statusLabel: q.status === 'sent' ? (expired ? 'Expired' : 'Waiting for you') : (QUOTE_STATUS_LABEL as any)[q.status] || q.status,
+      statusLabel: q.status === 'sent' ? (expired ? 'Expired' : 'Waiting for you') : owing ? 'Deposit to pay' : (QUOTE_STATUS_LABEL as any)[q.status] || q.status,
       url: quoteUrl(pc.company, q.public_token), sentAt: q.sent_at || q.created_at,
+      deposit: dep ? { ...dep, due: owing && stripeReady(pc.company) } : null,
     }
   })
   // Jobs still going (or finished in the last month).
@@ -110,7 +209,9 @@ async function quotesAndJobs(db: any, pc: PortalCompany, contactId: string): Pro
     id: j.id, title: j.title || fmtJobNumber(j.number, js.job_prefix || 'J') || 'Job', status: j.status, statusLabel: (JOB_STATUS_LABEL as any)[j.status] || j.status,
     nextVisit: j.scheduled_start && Date.parse(j.scheduled_start) > Date.now() - 6 * 3600e3 ? j.scheduled_start : null,
   }))
-  return { quotes, jobs: jobsOut }
+  // A deposit link they opened and didn't finish is also a pending payment;
+  // it shows on its quote, not twice.
+  return { quotes, jobs: jobsOut, depositPayments: (qs || []).map((q: any) => q.deposit_payment_id).filter(Boolean) }
 }
 
 // ── Orders and receipts ───────────────────────────────────────────────────
@@ -227,18 +328,20 @@ export async function portalData(db: any, pc: PortalCompany, contactId: string, 
   const on = pc.settings.sections
   const convs = await safe(() => conversationsOf(db, pc.company.id, contactId), [])
   const convIds = convs.map(c => c.id)
-  const [prefs, coming, pay, qj, ords, msgs] = await Promise.all([
+  const [prefs, coming, again, pay, qj, ords, msgs] = await Promise.all([
     safe(() => preferenceState(db, pc.company.id, contact), { email: false, sms: null, emailCanTurnOn: false, everythingOff: false }),
-    on.coming_up ? safe(() => comingUp(db, pc, contactId), []) : Promise.resolve(undefined),
+    on.coming_up ? safe(() => comingUp(db, pc, contact), []) : Promise.resolve(undefined),
+    on.coming_up ? safe(() => bookAgain(db, pc, contactId), []) : Promise.resolve(undefined),
     on.payments ? safe(() => paymentsDue(db, pc, convIds), []) : Promise.resolve(undefined),
-    on.quotes ? safe(() => quotesAndJobs(db, pc, contactId), { quotes: [], jobs: [] }) : Promise.resolve(undefined),
+    on.quotes ? safe(() => quotesAndJobs(db, pc, contactId), { quotes: [], jobs: [], depositPayments: [] as string[] }) : Promise.resolve(undefined),
     on.orders ? safe(() => orders(db, pc, contact, convIds), []) : Promise.resolve(undefined),
     on.messages ? safe(() => messages(db, pc, convs[0] || null), { items: [], canReply: true }) : Promise.resolve(undefined),
   ])
   return {
     me: meOf(contact, prefs, session),
     ...(coming ? { comingUp: coming } : {}),
-    ...(pay ? { payments: pay } : {}),
+    ...(again ? { bookAgain: again } : {}),
+    ...(pay ? { payments: qj?.depositPayments.length ? pay.filter(p => !qj.depositPayments.includes(p.id)) : pay } : {}),
     ...(qj ? { quotes: qj.quotes, jobs: qj.jobs } : {}),
     ...(ords ? { orders: ords } : {}),
     ...(msgs ? { messages: msgs } : {}),
