@@ -211,9 +211,9 @@ html,body{background:#f4f4f5}
 .pq-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding-bottom:20px;border-bottom:1px solid #ececee}
 .pq-biz{display:flex;align-items:center;gap:12px;min-width:0}
 .pq-logo{width:48px;height:48px;border-radius:12px;object-fit:contain}
-.pq-mono{width:48px;height:48px;border-radius:12px;background:var(--acc);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px;flex-shrink:0}
+.pq-biz .pq-mono{display:flex;font-size:20px;color:#fff;width:48px;height:48px;border-radius:12px;background:var(--acc);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px;flex-shrink:0}
 .pq-biz b{display:block;font-size:17px}
-.pq-biz span{display:block;font-size:12.5px;color:#71717a}
+.pq-biz div span{display:block;font-size:12.5px;color:#71717a}
 .pq-no{text-align:right;flex-shrink:0}
 .pq-no span{display:block;font-size:12px;font-weight:600;color:#71717a;text-transform:uppercase;letter-spacing:.06em}
 .pq-no b{font-size:17px;font-variant-numeric:tabular-nums}
@@ -231,8 +231,8 @@ html,body{background:#f4f4f5}
 .pq-items td b{font-weight:600}
 .pq-items small{display:block;margin-top:2px;font-size:12px;color:#71717a}
 .pq-items .r{text-align:right;white-space:nowrap}
-.pq-tot{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 18px;max-width:340px;margin:16px 0 0 auto;font-size:14px;font-variant-numeric:tabular-nums}
-.pq-tot dt{color:#52525b}.pq-tot dd{margin:0;text-align:right}
+.pq-tot{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 0;max-width:340px;margin:16px 0 0 auto;font-size:14px;font-variant-numeric:tabular-nums}
+.pq-tot dt{color:#52525b}.pq-tot dd{margin:0;padding-left:18px;text-align:right}
 .pq-tot .big{padding-top:10px;border-top:1px solid #ececee;font-size:18px;font-weight:750;color:#111}
 .pq-small{margin:10px 0 0;font-size:12.5px;color:#71717a;text-align:right}
 .pq-terms{margin-top:26px;padding-top:18px;border-top:1px solid #ececee}

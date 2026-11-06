@@ -75,7 +75,7 @@ export default function JobSettingsPage() {
       {d && !canManage && <div className="ak-note info"><span>Only owners and admins can change these settings.</span></div>}
 
       {d && s && <>
-        <Panel title="Jobs & quotes" sub={d.modules?.jobs === undefined ? `On by default for ${d.industry || 'your type of business'}.` : 'Shows Jobs in the menu for everyone on your team.'}
+        <Panel className="js-mod" title="Jobs & quotes" sub={d.modules?.jobs === undefined ? `On by default for ${d.industry || 'your type of business'}.` : 'Shows Jobs in the menu for everyone on your team.'}
           right={<Toggle on={!!d.jobsEnabled} onChange={setModule} label="Jobs & quotes" disabled={!canManage} />} />
 
         <Panel title="GST">
@@ -200,6 +200,7 @@ const fromForm = (f: any) => ({
 })
 
 const PAGE_CSS = `
+.js-mod .ak-panel-h{margin-bottom:0}
 .js-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0}
 .js-row+.js-row{box-shadow:0 -1px 0 var(--line)}
 .js-row>div:first-child{display:flex;flex-direction:column;gap:2px;min-width:0}

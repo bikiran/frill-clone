@@ -216,7 +216,21 @@ export default function QuoteEditorPage() {
               {pickList && <PriceListMenu items={d.priceItems} onPick={it => { addRow({ kind: it.kind, description: it.name, unit: it.unit, price: centsToInput(it.unit_price_cents), taxable: it.taxable, qty: '1' }); setPickList(false) }} onClose={() => setPickList(false)} />}
             </div>
           )}>
-            <div className={`qe-lines${draft ? '' : ' ro'}`}>
+            {!draft ? (
+              <div className="qe-ro">
+                {lines.map((r: Row) => (
+                  <div key={r.id} className="qe-ro-line">
+                    <div style={{ minWidth: 0 }}>
+                      <b>{r.description || LINE_KIND_LABEL[r.kind]}</b>
+                      <small>{LINE_KIND_LABEL[r.kind]} · {Number(r.qty) || 0}{r.unit && r.unit !== 'each' ? ` ${r.unit}` : ''} × ${r.price}{gst && !r.taxable ? ' · GST-free' : ''}</small>
+                    </div>
+                    <b className="jb-num">{fmtMoney(totalsByLine.get(r.id) ?? 0)}</b>
+                  </div>
+                ))}
+                {!lines.length && <div className="qe-empty">No items.</div>}
+              </div>
+            ) : (
+            <div className="qe-lines">
               <div className="qe-lh" aria-hidden>
                 <span>Item</span><span>Qty</span><span>Unit</span><span>Price</span>{gst && <span>GST</span>}<span style={{ textAlign: 'right' }}>Total</span><span />
               </div>
@@ -243,6 +257,7 @@ export default function QuoteEditorPage() {
               ))}
               {!lines.length && <div className="qe-empty">No items yet. Add labour, materials, travel or fees.</div>}
             </div>
+            )}
             {draft && <button type="button" className="ak-btn sm" onClick={() => addRow()} disabled={rows.length >= MAX_LINES} style={{ marginTop: 10 }}>{Icon.plus}Add item</button>}
           </Panel>
 
@@ -469,6 +484,11 @@ const PAGE_CSS = `
 .qe-row-acts{display:flex;justify-content:flex-end;gap:0}
 .qe-sm{width:30px;height:30px;font-size:14px}
 .qe-lines.ro .ak-field:disabled,.qe-lines.ro .ak-select:disabled{background-color:transparent!important;opacity:1;color:var(--ink)!important;-webkit-text-fill-color:var(--ink);background-image:none!important}
+.qe-ro{display:flex;flex-direction:column}
+.qe-ro-line{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 2px}
+.qe-ro-line+.qe-ro-line{box-shadow:0 -1px 0 var(--line)}
+.qe-ro-line b{font-size:14.5px;font-weight:650}
+.qe-ro-line small{display:block;margin-top:2px;font-size:12.5px;color:var(--mut)}
 .qe-empty{padding:16px;border-radius:14px;background:var(--f);font-size:14px;color:var(--mut);text-align:center}
 @media(max-width:760px){
   .qe-lh{display:none}
@@ -477,9 +497,9 @@ const PAGE_CSS = `
   .qe-lt{grid-column:1/3;text-align:left}
 }
 .qe-seg{width:100%;margin-bottom:12px}.qe-seg button{flex:1;justify-content:center}
-.qe-tot{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 12px;margin:0;font-size:14px}
+.qe-tot{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 0;margin:0;font-size:14px}
 .qe-tot dt{color:var(--mut)}
-.qe-tot dd{margin:0;text-align:right}
+.qe-tot dd{margin:0;padding-left:12px;text-align:right}
 .qe-tot .big{padding-top:10px;box-shadow:0 -1px 0 var(--line);font-size:17px;font-weight:700;color:var(--ink)}
 .qe-opts{display:flex;flex-direction:column;gap:14px;margin-top:16px;padding-top:14px;box-shadow:0 -1px 0 var(--line)}
 .qe-amt{display:grid;grid-template-columns:minmax(0,1fr) 110px;gap:8px}

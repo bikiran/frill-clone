@@ -6,7 +6,7 @@ import { AdminPage } from '@/components/ui/AdminKit'
 import NewJobDialog from '@/components/jobs/NewJobDialog'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import {
-  api, useJobsCompany, StatusTag, QuoteTag, fmtWhen, fmtAgo, dayKeyIn, useToast, Toast, SetupNote, Icon, JB_CSS,
+  api, useJobsCompany, StatusTag, QuoteTag, fmtWhen, fmtTime, fmtAgo, dayKeyIn, useToast, Toast, SetupNote, Icon, JB_CSS,
 } from '@/components/jobs/shared'
 import { JOB_STATUSES, JOB_STATUS_LABEL, canMoveJob, nextStatuses, fmtJobNumber, isOpenJob, type JobStatus } from '@/lib/jobs/status'
 import { fmtMoney } from '@/lib/jobs/quote-math'
@@ -131,7 +131,7 @@ export default function JobsPage() {
 
       {loading ? (
         <div className="jb-skel">{Array.from({ length: 4 }).map((_, i) => <div key={i} />)}</div>
-      ) : !setup && jobs.length === 0 && !q ? (
+      ) : err && jobs.length === 0 ? null : !setup && jobs.length === 0 && !q ? (
         <div className="ak-panel"><div className="ak-empty">
           <b>No jobs yet</b>
           <span>Create one here, or turn an enquiry into a job from the Inbox, a booking or a form response.</span>
@@ -186,6 +186,7 @@ function Board({ jobs, tz, prefix, qPrefix, onMove, onOpen }: { jobs: any[]; tz:
     window.removeEventListener('pointerup', d.h.up)
     window.removeEventListener('pointercancel', d.h.cancel)
     window.removeEventListener('touchmove', d.h.block)
+    document.documentElement.classList.remove('jb-dragging')
     drag.current = null
     setDragId(null); setOver(null)
   }
@@ -203,6 +204,8 @@ function Board({ jobs, tz, prefix, qPrefix, onMove, onOpen }: { jobs: any[]; tz:
     Object.assign(g.style, { width: `${r.width}px`, left: `${r.left}px`, top: `${r.top}px` })
     document.body.appendChild(g)
     d.ghost = g; d.dx = x - r.left; d.dy = y - r.top; d.left = r.left; d.top = r.top
+    try { window.getSelection()?.removeAllRanges() } catch {}
+    document.documentElement.classList.add('jb-dragging')
     setDragId(d.job.id)
     window.addEventListener('touchmove', d.h.block, { passive: false })
     try { navigator.vibrate?.(8) } catch {}
@@ -214,6 +217,8 @@ function Board({ jobs, tz, prefix, qPrefix, onMove, onOpen }: { jobs: any[]; tz:
     cleanup()
     const el = e.currentTarget as HTMLElement
     const touch = e.pointerType === 'touch'
+    // A mouse drag mustn't start selecting the page's text.
+    if (!touch) e.preventDefault()
     const d: any = { job, el, x0: e.clientX, y0: e.clientY, touch, active: false }
     d.h = {
       block: (ev: TouchEvent) => { if (drag.current?.active) ev.preventDefault() },
@@ -394,7 +399,7 @@ function CalendarView({ jobs, tz, prefix, onOpen }: { jobs: any[]; tz: string; p
               <span className="jb-cal-d">{d}</span>
               {list.slice(0, 3).map(j => (
                 <button key={j.id} type="button" className={`jb-cal-j s-${j.status}`} onClick={() => onOpen(j)} title={`${fmtJobNumber(j.number, prefix)} ${j.title} · ${fmtWhen(j.scheduled_start, j.scheduled_end, tz)}`}>
-                  <span className="jb-num">{fmtWhen(j.scheduled_start, null, tz).split(', ')[1]}</span> {j.title}
+                  <span className="jb-num">{fmtTime(j.scheduled_start, tz)}</span> {j.title}
                 </button>
               ))}
               {list.length > 3 && <span className="jb-cal-more">+{list.length - 3} more</span>}
@@ -413,16 +418,17 @@ const PAGE_CSS = `
 .jb-search input{flex:1;min-width:0;border:none;background:none;outline:none;font:inherit;font-size:14px;color:var(--ink)}
 .jb-chips{display:flex;gap:6px;overflow-x:auto;margin:0 0 14px;padding-bottom:2px;scrollbar-width:none}
 .jb-chips::-webkit-scrollbar{display:none}
-@media(max-width:600px){.jb-hide-sm{display:none}.jb-search{max-width:none;flex-basis:100%}}
+@media(max-width:600px){.jb-board{grid-auto-columns:84%}.jb-hide-sm{display:none}.jb-search{max-width:none;flex-basis:100%}}
 .jb-skel{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
 .jb-skel div{height:150px;border-radius:20px;background:linear-gradient(90deg,var(--f) 25%,var(--f2) 50%,var(--f) 75%);background-size:200% 100%;animation:jbSk 1.2s linear infinite}
 @keyframes jbSk{to{background-position:-200% 0}}
-.jb-board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(264px,1fr);gap:12px;overflow-x:auto;padding:2px 2px 16px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
+.jb-board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(200px,1fr);gap:12px;overflow-x:auto;padding:2px 2px 16px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
 .jb-col{display:flex;flex-direction:column;min-width:0;border-radius:22px;background:var(--f);padding:10px;scroll-snap-align:start;transition:box-shadow .15s,background .15s,opacity .15s}
 .jb-col.over{box-shadow:inset 0 0 0 2px var(--coral);background:color-mix(in srgb,var(--coral) 7%,var(--f))}
 .jb-col.nope{box-shadow:inset 0 0 0 2px #fca5a5}
 .jb-col.dim{opacity:.55}
-.jb-col header{display:flex;align-items:center;justify-content:space-between;padding:4px 6px 10px}
+.jb-dragging,.jb-dragging *{user-select:none!important;-webkit-user-select:none!important;cursor:grabbing!important}
+.jb-col header{user-select:none;-webkit-user-select:none;display:flex;align-items:center;justify-content:space-between;padding:4px 6px 10px}
 .jb-count{font-size:12.5px;font-weight:650;color:var(--mut)}
 .jb-col-b{display:flex;flex-direction:column;gap:8px;min-height:80px}
 .jb-col-empty{display:flex;align-items:center;justify-content:center;min-height:72px;border-radius:16px;box-shadow:inset 0 0 0 1.5px var(--f2);font-size:13px;color:var(--soft)}
@@ -435,8 +441,9 @@ const PAGE_CSS = `
 .jb-mini{width:28px;height:28px}
 .jb-title{font-size:14.5px;font-weight:650;line-height:1.35;color:var(--ink);overflow-wrap:anywhere}
 .jb-ell{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block!important}
-.jb-card-f{display:flex;align-items:center;gap:6px;justify-content:space-between;margin-top:2px;padding-top:8px;box-shadow:0 -1px 0 var(--line);font-size:12.5px}
+.jb-card-f{display:flex;flex-wrap:wrap;row-gap:4px;align-items:center;gap:6px;justify-content:space-between;margin-top:2px;padding-top:8px;box-shadow:0 -1px 0 var(--line);font-size:12.5px}
 .jb-card-f>span{display:inline-flex;align-items:center;gap:6px}
+.jb-card-f>b{margin-left:auto}
 .jb-list{display:flex;flex-direction:column}
 .jb-li{display:flex;align-items:center;gap:14px;width:100%;padding:14px 20px;border:none;background:none;font:inherit;text-align:left;cursor:pointer;color:var(--ink)}
 .jb-li+.jb-li{box-shadow:0 -1px 0 var(--line)}

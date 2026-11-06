@@ -9,7 +9,7 @@ This plan covers removalists, cleaners, electricians, plumbers and other trades.
 | Need | Existing piece |
 |---|---|
 | Tenancy and auth | `requireCompanyAccess` (`lib/company-access.ts`). Service-role routes filter `company_id`. |
-| Permissions | `PERMISSION_SUITES` (`lib/permissions.ts`) plus `canUseFeature`. Jobs adds a `jobs` key (`restrictedDefault:false`). **Enforced on the server** in every jobs route (`lib/jobs/access.ts`), not only in the nav. |
+| Permissions | `PERMISSION_SUITES` (`lib/permissions.ts`) plus `canUseFeature`. Jobs adds a `jobs` key (`restrictedDefault:false`). **Enforced on the server** in every jobs route (`jobsAccess` in `lib/jobs/server.ts`, decision in `lib/jobs/access-core.ts`), not only in the nav. |
 | Navigation | `SECTIONS` in `app/admin/layout.tsx` plus `canUseNavItem`. A module predicate (`lib/modules.ts`) shows Jobs only to businesses that use it. |
 | Business type | `companies.industry`. Jobs is on by default for *Trades & Home Services* and *Logistics* (removalists), and can be switched on or off by anyone (`companies.modules.jobs`). |
 | Customers | `contacts`. Conversions take the contact from the conversation, booking or form. New customers are matched by email, then phone (the same rules as bookings, `ensureContact`). |

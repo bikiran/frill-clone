@@ -6,6 +6,7 @@ import SlotPicker from '@/components/booking/SlotPicker'
 import { api, money, card, input, Modal, Toggle } from './shared'
 import { PinIcon, CheckIcon, ChatIcon, CalendarIcon, XIcon, LinkIcon } from '@/components/booking/icons'
 import EmptyScroll from '@/components/EmptyScroll'
+import { createJobFrom, useJobsEnabled } from '@/components/jobs/createJob'
 
 // The team's list of online bookings, grouped by day: filters (status, date
 // range, search, sort), a roomy card per booking, and its actions — chat,
@@ -45,6 +46,14 @@ export default function BookingsList({ companyId, bookings, timezone, scope, set
   const [moving, setMoving] = useState<any | null>(null)
   const [noShow, setNoShow] = useState<any | null>(null)
   const [repeating, setRepeating] = useState<any | null>(null)
+  // Jobs & quotes: a booking becomes a job (the same booking always gives the same job).
+  const jobsOn = useJobsEnabled(companyId)
+  const makeJob = async (b: any) => {
+    try {
+      const d = await createJobFrom(companyId, { source: 'booking', bookingId: b.id })
+      window.location.href = `/admin/jobs/${d.job.id}`
+    } catch (e: any) { flash(e?.message || 'Couldn’t create the job') }
+  }
 
   const dayOf = (iso: string | number) => new Date(iso).toLocaleDateString('en-CA', { timeZone: timezone })
   const today = dayOf(Date.now())
@@ -137,7 +146,7 @@ export default function BookingsList({ companyId, bookings, timezone, scope, set
                 )}
               </div>
               <div style={{ display: 'grid', gap: 10 }}>
-                {list.map((b, i) => <Row key={b.id} b={b} i={i} t={t} dayChip={dayChip} onAct={act} onMove={setMoving} onCancel={setCancelling} onNoShow={setNoShow} onRepeat={setRepeating} canRepeat={!hasLater.has(b.id)} flash={flash} />)}
+                {list.map((b, i) => <Row key={b.id} b={b} i={i} t={t} dayChip={dayChip} onAct={act} onMove={setMoving} onCancel={setCancelling} onNoShow={setNoShow} onRepeat={setRepeating} canRepeat={!hasLater.has(b.id)} flash={flash} onJob={jobsOn ? makeJob : undefined} />)}
               </div>
             </section>
           ))}
@@ -152,9 +161,10 @@ export default function BookingsList({ companyId, bookings, timezone, scope, set
   )
 }
 
-function Row({ b, i, t, dayChip, onAct, onMove, onCancel, onNoShow, onRepeat, canRepeat, flash }: {
+function Row({ b, i, t, dayChip, onAct, onMove, onCancel, onNoShow, onRepeat, canRepeat, flash, onJob }: {
   b: any; i: number; t: (iso: string) => string; dayChip: (iso: string) => string[]
   onAct: (b: any, a: string) => void; onMove: (b: any) => void; onCancel: (b: any) => void; onNoShow: (b: any) => void; onRepeat: (b: any) => void; canRepeat: boolean; flash: (m: string) => void
+  onJob?: (b: any) => void
 }) {
   // A time the waitlist is holding for someone ("in order") isn't awaiting payment.
   const st = b.status === 'pending' && b.source === 'waitlist_hold' ? { ...STATUS.pending, label: 'Held for the waitlist' } : STATUS[b.status] || STATUS.confirmed
@@ -205,6 +215,7 @@ function Row({ b, i, t, dayChip, onAct, onMove, onCancel, onNoShow, onRepeat, ca
               {menu && (
                 <div className="bl-menu" role="menu">
                   {b.manage_url && <button onClick={() => { navigator.clipboard?.writeText(b.manage_url).then(() => flash('Customer’s booking link copied')); setMenu(false) }}><LinkIcon size={14} /> Copy customer’s link</button>}
+                  {onJob && b.status !== 'expired' && <button onClick={() => { setMenu(false); onJob(b) }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Create job</button>}
                   {(b.status === 'confirmed' || b.status === 'completed') && b.service_id && canRepeat && <button onClick={() => { setMenu(false); onRepeat(b) }}><RepeatIcon /> {b.series_id ? 'Extend regular booking' : 'Repeat every few weeks'}</button>}
                   {b.status === 'confirmed' && past && <button onClick={() => { setMenu(false); onNoShow(b) }}><XIcon size={13} /> Mark no-show</button>}
                   {b.status === 'confirmed' && !past && <button onClick={() => { setMenu(false); onAct(b, 'complete') }}><CheckIcon size={14} /> Mark done</button>}
