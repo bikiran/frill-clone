@@ -49,7 +49,7 @@ const hint: React.CSSProperties = { margin: '0 0 12px', fontSize: 12.5, color: '
 const field: React.CSSProperties = { width: '100%', boxSizing: 'border-box', minHeight: 44, padding: '10px 14px', borderRadius: 14, border: 0, fontSize: 14, background: 'var(--ck-fill)', color: 'var(--ink)', fontFamily: 'inherit', minWidth: 0 }
 const small: React.CSSProperties = { ...field, width: 'auto', minHeight: 38, padding: '7px 12px', fontSize: 13.5, borderRadius: 12 }
 const iconBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: 999, border: 0, background: 'var(--ck-fill)', color: 'var(--ink)', cursor: 'pointer', flexShrink: 0, padding: 0 }
-const addBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, height: 36, padding: '0 15px', borderRadius: 999, border: '1.5px dashed var(--ck-fill-2)', background: 'var(--card, #fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 650, cursor: 'pointer' }
+const addBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, height: 36, padding: '0 15px', borderRadius: 999, border: '1px solid var(--ck-fill-2)', background: 'var(--card, #fff)', color: 'var(--ink)', fontSize: 13, fontWeight: 650, cursor: 'pointer' }
 const box: React.CSSProperties = { borderRadius: 18, padding: 14, marginBottom: 10, background: 'var(--card, #fff)', boxShadow: '0 0 0 1px var(--ck-fill-2)', minWidth: 0 }
 
 function Check({ on, onChange, text, sub, disabled }: { on: boolean; onChange: (v: boolean) => void; text: React.ReactNode; sub?: React.ReactNode; disabled?: boolean }) {

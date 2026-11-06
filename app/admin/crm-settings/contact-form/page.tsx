@@ -57,7 +57,7 @@ export default function ContactFormSettings() {
       {loading ? (
         <div style={{ textAlign: 'center', padding: 40, color: 'var(--slate)' }}>Loading…</div>
       ) : forms.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 56, color: 'var(--slate)', border: '1px dashed var(--border)', borderRadius: 14 }}>
+        <div style={{ textAlign: 'center', padding: 56, color: 'var(--slate)', border: '1px solid var(--border)', borderRadius: 14 }}>
           No forms found. Click &ldquo;Add form&rdquo; above to create your first one.
         </div>
       ) : (

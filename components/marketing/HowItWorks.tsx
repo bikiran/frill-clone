@@ -60,25 +60,15 @@ const TYPING: { step: number; from: number; item: string }[] = [
 const PAID_AT = 3100
 const REV_FROM = 12840, SALE = 385
 
-// Little aquariums for the gallery (no photos to load).
-const TANKS: { w: [string, string]; f: string[] }[] = [
-  { w: ['#38bdf8', '#0369a1'], f: ['🐠', '🐟'] },
-  { w: ['#2dd4bf', '#0f766e'], f: ['🐡', '🐠', '🐟'] },
-  { w: ['#60a5fa', '#1e3a8a'], f: ['🐟', '🐠'] },
-  { w: ['#22d3ee', '#155e75'], f: ['🐠'] },
-  { w: ['#818cf8', '#312e81'], f: ['🐟', '🐡'] },
-  { w: ['#34d399', '#065f46'], f: ['🐟', '🐠'] },
-]
-const FISH_AT = [[18, 26], [58, 44], [34, 58]]
-const Tank = ({ i, big }: { i: number; big?: boolean }) => {
-  const t = TANKS[i]
-  return (
-    <span className={`hw-tank${big ? ' big' : ''}`} style={{ background: `linear-gradient(180deg, ${t.w[0]}, ${t.w[1]})` }}>
-      <i className="hw-plant" style={{ left: '12%', height: '42%' }} /><i className="hw-plant" style={{ left: '22%', height: '30%' }} /><i className="hw-plant" style={{ right: '14%', height: '36%' }} />
-      {t.f.map((f, k) => <b key={k} style={{ left: `${FISH_AT[k][0]}%`, top: `${FISH_AT[k][1]}%`, animationDelay: `${k * 0.7}s` }}>{f}</b>)}
-    </span>
-  )
-}
+// The shop's tank photos in the gallery and the chat: real aquarium photos,
+// public domain (CC0, from rawpixel and the WordPress photo directory, found
+// through Openverse). Small files, loaded lazily.
+const TANKS = [1, 2, 3, 4, 5, 6].map(n => `/demo/tanks/tank-${n}.jpg`)
+const Tank = ({ i, big }: { i: number; big?: boolean }) => (
+  <span className={`hw-tank${big ? ' big' : ''}`}>
+    <img src={big ? '/demo/tanks/reef-wide.jpg' : TANKS[i]} alt={big ? 'The 4ft reef tank, set up in the shop' : ''} loading="lazy" decoding="async" draggable={false} />
+  </span>
+)
 
 const P: Record<string, string> = {
   task: 'M9 11l3 3L22 4 M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11',
@@ -462,7 +452,7 @@ const HW_CSS = `
 .hw-it.img{justify-content:flex-end}
 .hw-it.pay{justify-content:flex-end}
 .hw-it.sched{justify-content:flex-end}
-.hw-it.sched>div{border-radius:16px 16px 5px 16px;border:1.5px dashed color-mix(in srgb,${CORAL} 55%,transparent);color:#3f3f46;background:color-mix(in srgb,${CORAL} 6%,#fff)}
+.hw-it.sched>div{border-radius:16px 16px 5px 16px;border:1px solid color-mix(in srgb,${CORAL} 30%,transparent);color:#3f3f46;background:color-mix(in srgb,${CORAL} 6%,#fff)}
 .hw-it.sched small{display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;color:${CORAL};margin-bottom:3px}
 
 .hw-pay{width:186px;padding:11px 12px 12px;border-radius:16px 16px 5px 16px;background:#fff;box-shadow:0 0 0 1px #ececef,0 6px 16px rgba(15,17,25,.06);display:flex;flex-direction:column;gap:2px}
@@ -472,13 +462,9 @@ const HW_CSS = `
 .hw-pay em{margin-top:8px;display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:8px;border-radius:999px;background:${CORAL};color:#fff;font-style:normal;font-size:12px;font-weight:700;animation:hwPop .45s cubic-bezier(.34,1.56,.64,1) both}
 .hw-pay.paid em{background:#dcfce7;color:#15803d}
 
-.hw-tank{position:relative;display:block;width:100%;height:100%;overflow:hidden;border-radius:inherit}
-.hw-tank::after{content:"";position:absolute;left:0;right:0;bottom:0;height:18%;background:linear-gradient(180deg,#e7d3a8,#c9a96e)}
-.hw-tank::before{content:"";position:absolute;inset:0;background:linear-gradient(115deg,rgba(255,255,255,.28),transparent 40%)}
-.hw-tank b{position:absolute;font-size:15px;line-height:1;animation:hwSwim 3.2s ease-in-out infinite alternate}
-.hw-tank.big b{font-size:24px}
-.hw-plant{position:absolute;bottom:12%;width:7%;border-radius:999px 999px 0 0;background:linear-gradient(180deg,#4ade80,#15803d)}
-.hw-it.img .hw-tank{width:178px;height:126px;border-radius:16px 16px 5px 16px;box-shadow:0 6px 16px rgba(15,17,25,.12)}
+.hw-tank{position:relative;display:block;width:100%;height:100%;overflow:hidden;border-radius:inherit;background:#0b3b4a}
+.hw-tank img{display:block;width:100%;height:100%;object-fit:cover;user-select:none}
+.hw-it.img .hw-tank{width:190px;height:136px;border-radius:16px 16px 5px 16px;box-shadow:0 6px 16px rgba(15,17,25,.12)}
 
 .hw-comp{display:flex;align-items:center;gap:7px;padding:9px 10px 16px;border-top:1px solid #f0f0f2;background:#fff}
 .hw-plus,.hw-send{position:relative;width:32px;height:32px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;transition:transform .15s}
@@ -529,7 +515,6 @@ const HW_CSS = `
 .hw-chans>span.on{opacity:1;filter:none;transform:none}
 .hw-mini{display:flex;gap:5px}
 .hw-mini .hw-tank{width:52px;height:52px;border-radius:9px}
-.hw-mini .hw-tank b{font-size:12px}
 .hw-bars{display:flex;align-items:flex-end;gap:5px;height:46px}
 .hw-bars i{flex:1;border-radius:4px 4px 2px 2px;background:#e4e4e7}
 .hw-bars i.up{background:${CORAL}}
@@ -541,7 +526,6 @@ const HW_CSS = `
 @keyframes hwDrop{from{opacity:0;transform:translateY(-24px) scale(.96)}to{opacity:1;transform:none}}
 @keyframes hwSat{from{opacity:0;transform:translateY(16px) scale(.94)}to{opacity:1;transform:none}}
 @keyframes hwRipple{from{transform:scale(.3);opacity:1}to{transform:scale(6);opacity:0}}
-@keyframes hwSwim{from{transform:translateX(0)}to{transform:translateX(14px)}}
 @keyframes hwBlink{50%{opacity:0}}
 
 @media (max-width:1320px){.hw-sat{display:none}}
@@ -551,6 +535,6 @@ const HW_CSS = `
 }
 @media (prefers-reduced-motion:reduce){
   .hw-panes,.hw-sheet,.hw-cell{transition:none}
-  .hw-row.in,.hw-it.in,.hw-badge,.hw-banner,.hw-sat,.hw-pay em,.hw-cell em,.hw-tank b,.hw-caret{animation:none}
+  .hw-row.in,.hw-it.in,.hw-badge,.hw-banner,.hw-sat,.hw-pay em,.hw-cell em,.hw-caret{animation:none}
 }
 `

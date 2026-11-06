@@ -38,7 +38,7 @@ textarea.eg-input { height: auto; padding: 10px 12px; line-height: 1.45; resize:
 .eg-pill { font-size: 12px; padding: 3px 10px; border-radius: 999px; font-weight: 600; flex-shrink: 0; }
 .eg-pill.is-live { background: #dcfce7; color: #15803d; }
 .eg-pill.is-closed { background: #f1f5f9; color: #475569; }
-.eg-pill.is-draft { background: transparent; color: var(--slate); border: 1px dashed var(--fr-strong, #e4e4e7); }
+.eg-pill.is-draft { background: transparent; color: var(--slate); border: 1px solid var(--fr-strong, #e4e4e7); }
 [data-theme="dark"] .eg-pill.is-live { background: rgba(34,197,94,.16); color: #4ade80; }
 [data-theme="dark"] .eg-pill.is-closed { background: rgba(148,163,184,.14); color: #cbd5e1; }
 .eg-sub { margin: 8px 0 0; font-size: 13.5px; color: var(--slate); overflow-wrap: anywhere; }
@@ -112,7 +112,7 @@ textarea.eg-input { height: auto; padding: 10px 12px; line-height: 1.45; resize:
 .eg-tpl b { font-size: 14px; }
 .eg-tpl span { font-size: 12.5px; color: var(--slate); line-height: 1.4; }
 .eg-tpl[disabled] { opacity: .6; cursor: default; }
-.eg-tpl.is-ai { border-style: dashed; }
+.eg-tpl.is-ai { border-style:solid; }
 
 .eg-toast { position: fixed; z-index: 80; left: 50%; transform: translateX(-50%); bottom: 20px; max-width: calc(100% - 32px); padding: 12px 16px; border-radius: 12px; background: #111827; color: #fff; font-size: 13.5px; font-weight: 500; box-shadow: 0 10px 30px rgba(0,0,0,.3); }
 `

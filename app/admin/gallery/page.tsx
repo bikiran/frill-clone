@@ -942,7 +942,7 @@ export default function GalleryPage() {
           {dragOver && (items.length > 0 || pending.length > 0) && (
             <div style={{
               position: 'absolute', inset: 0, zIndex: 20, pointerEvents: 'none',
-              borderRadius: 16, border: '2px dashed var(--coral)',
+              borderRadius: 16, border: '1.5px solid var(--coral)',
               background: 'rgba(255,244,241,0.82)', backdropFilter: 'blur(1px)',
               display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10,
             }}>
@@ -992,7 +992,7 @@ export default function GalleryPage() {
               onClick={() => fileRef.current?.click()}
               style={{
                 position: 'relative', textAlign: 'center', padding: '54px 24px', cursor: 'pointer', overflow: 'hidden',
-                borderRadius: 24, border: `2px dashed ${dragOver ? 'var(--coral)' : '#e4e4e7'}`,
+                borderRadius: 24, border: `1.5px solid ${dragOver ? 'var(--coral)' : '#e4e4e7'}`,
                 background: dragOver ? 'var(--peach)' : 'linear-gradient(160deg, #fffdfc 0%, #fff4f1 100%)',
                 transition: 'all 0.2s',
               }}>

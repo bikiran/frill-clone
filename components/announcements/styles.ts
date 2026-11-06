@@ -118,7 +118,7 @@ export const ADMIN_CSS = `
 .an-menu-sep { height: 1px; margin: 5px 4px; background: var(--an-line); }
 
 /* Empty / loading */
-.an-empty { width: 100%; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 64px 20px; border: 1px dashed var(--an-strong); border-radius: 16px; background: var(--an-card); }
+.an-empty { width: 100%; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 64px 20px; border: 1px solid var(--an-strong); border-radius: 16px; background: var(--an-card); }
 .an-empty-art { display: inline-flex; align-items: center; justify-content: center; width: 64px; height: 64px; border-radius: 18px; background: var(--peach, #fff4f1); color: var(--coral); margin-bottom: 16px; }
 .an-empty-title { margin: 0; font-size: 18px; font-weight: 700; color: var(--ink); }
 .an-empty-text { margin: 6px 0 0; font-size: 14px; color: var(--slate); line-height: 1.5; max-width: 520px; }

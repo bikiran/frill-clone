@@ -77,7 +77,7 @@ export default function CustomFieldsSettings() {
           </div>
         </div>
       ) : fields.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '48px', color: 'var(--slate)', border: '1px dashed var(--border)', borderRadius: 14 }}>
+        <div style={{ textAlign: 'center', padding: '48px', color: 'var(--slate)', border: '1px solid var(--border)', borderRadius: 14 }}>
           No custom fields yet. Click &ldquo;Add field&rdquo; to create one.
         </div>
       ) : (

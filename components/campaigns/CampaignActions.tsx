@@ -194,7 +194,7 @@ function PickTime({ current, quietHours, name, onDone }: { current: string | nul
         </div>
         {past && <p style={{ margin: '10px 0 0', fontSize: 12.5, color: '#dc2626' }}>That time is in the past. Pick a future date and time.</p>}
         {!past && quiet && (
-          <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 9, background: '#fffbeb', border: '1px dashed #f59e0b', fontSize: 12.5, color: '#78350f', lineHeight: 1.5 }}>
+          <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 9, background: '#fffbeb', border: '1px solid #f59e0b', fontSize: 12.5, color: '#78350f', lineHeight: 1.5 }}>
             <strong>That&apos;s outside normal contact hours.</strong> With quiet-hour protection on, it&apos;s held until 9am.
           </div>
         )}

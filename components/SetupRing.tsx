@@ -91,7 +91,7 @@ export default function SetupRing({ companyId, collapsed, rail }: { companyId: s
           .sr-row { display: flex; align-items: center; gap: 12px; padding: 9px 8px; border-radius: 12px; text-decoration: none; color: #1c1c1e; font-size: 14.5px; }
           .sr-row:hover { background: #f2f2f7; }
           .sr-row.done { color: #8e8e93; text-decoration: line-through; pointer-events: none; }
-          .sr-circle { width: 22px; height: 22px; border-radius: 50%; border: 1.5px dashed #c7c7cc; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+          .sr-circle { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid #d4d4d8; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
           .sr-circle.done { border: none; background: #34c759; }
           .sr-circle.waiting { border-style: solid; border-color: #ff9f0a; }
           .sr-go { margin-left: auto; color: #c7c7cc; flex-shrink: 0; }

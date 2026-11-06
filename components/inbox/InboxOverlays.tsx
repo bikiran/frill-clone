@@ -1243,7 +1243,7 @@ const CP_CSS = `
 .cp-ticket::before,.cp-ticket::after{content:'';position:absolute;top:50%;width:22px;height:22px;margin-top:-11px;border-radius:50%;background:var(--card,#fff)}
 .cp-ticket::before{left:-11px}.cp-ticket::after{right:-11px}
 .cp-ticket-off{font-family:var(--font-display),-apple-system,sans-serif;font-size:30px;font-weight:800;letter-spacing:-.03em;line-height:1.05}
-.cp-ticket-code{margin-top:4px;padding:5px 14px;border-radius:999px;border:1.5px dashed rgba(255,255,255,.7);font-size:13px;font-weight:700;letter-spacing:.08em;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cp-ticket-code{margin-top:4px;padding:5px 14px;border-radius:999px;border:1px solid rgba(255,255,255,.7);font-size:13px;font-weight:700;letter-spacing:.08em;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cp-ticket-meta{font-size:12px;font-weight:600;opacity:.9}
 .cp-disc .sk-seg{flex:0 0 150px;height:50px;box-sizing:border-box}
 .cp-disc .sk-seg button{height:42px}

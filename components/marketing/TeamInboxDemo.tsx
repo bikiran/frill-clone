@@ -422,7 +422,7 @@ const TID_CSS = `
 .tid-card h5{margin:0 0 6px;font-size:11.5px;font-weight:600;color:#8e8e93}
 .tid-cr{display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12.5px;color:#27272a;animation:tidFade .4s ease both}
 .tid-cr svg{color:#9ca3af}
-.tid-dash{width:16px;height:16px;border-radius:50%;border:1.5px dashed #c4c4cc}
+.tid-dash{width:16px;height:16px;border-radius:50%;border:1.5px solid #d4d4d8}
 .tid-cxh{display:flex;justify-content:space-between;font-size:12.5px}
 .tid-cxh span{color:#8e8e93}
 .tid-bar{position:relative;height:8px;margin-top:6px;border-radius:999px;background:linear-gradient(90deg,#f43f5e,#f59e0b 45%,#22c55e);overflow:hidden}

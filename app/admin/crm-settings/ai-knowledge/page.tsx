@@ -254,7 +254,7 @@ export default function AiKnowledgePage() {
         .akn-iconbtn{width:32px;height:32px;border-radius:9px;border:none;background:transparent;color:#71717a;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;transition:background .15s ease,color .15s ease}
         .akn-iconbtn:hover{background:#f4f4f5;color:#111827}
         .akn-iconbtn.danger:hover{background:#fef2f2;color:#dc2626}
-        .akn-drop{border:1.5px dashed #e4e4e7;border-radius:16px;padding:22px;text-align:center;cursor:pointer;transition:border-color .2s ease,background .2s ease}
+        .akn-drop{border:1px solid #e4e4e7;border-radius:16px;padding:22px;text-align:center;cursor:pointer;transition:border-color .2s ease,background .2s ease}
         .akn-drop.over,.akn-drop:hover{border-color:#ffb4a6;background:#fff8f6}
         .akn-in{animation:aknIn .3s cubic-bezier(.22,1,.36,1) both}
         @keyframes aknIn{from{opacity:0;transform:translate3d(0,6px,0)}to{opacity:1;transform:none}}

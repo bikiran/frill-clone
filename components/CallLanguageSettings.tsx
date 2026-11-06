@@ -112,7 +112,7 @@ export default function CallLanguageSettings({ companyId }: { companyId: string 
 }
 
 const CLS_CSS = `
-.ck-card .ck-chips select.cls-add{min-height:36px;padding:0 14px;border:1.5px dashed var(--ck-fill-2)!important;border-radius:999px!important;background-color:var(--card,#fff)!important;font:inherit;font-size:13.5px;font-weight:600;color:var(--ink);cursor:pointer}
+.ck-card .ck-chips select.cls-add{min-height:36px;padding:0 14px;border:1px solid var(--ck-fill-2)!important;border-radius:999px!important;background-color:var(--card,#fff)!important;font:inherit;font-size:13.5px;font-weight:600;color:var(--ink);cursor:pointer}
 .cls-grid{display:flex;flex-wrap:wrap;gap:16px;margin-top:18px}
 .cls-grid>div{flex:1 1 240px;min-width:0}
 `

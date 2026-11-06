@@ -458,7 +458,7 @@ li:hover {
     rgba(255, 122, 107, 0.14),
     rgba(255, 184, 77, 0.08)
   ) !important;
-  border: 2px dashed var(--coral) !important;
+  border: 1.5px solid var(--coral) !important;
   box-shadow: 
     inset 0 0 60px rgba(255, 122, 107, 0.15), 
     0 0 0 4px rgba(255, 122, 107, 0.08),

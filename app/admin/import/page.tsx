@@ -565,7 +565,7 @@ const CSS = `
 .im-seg{display:inline-flex;padding:3px;border-radius:999px;background:#f4f4f5;margin-bottom:14px}
 .im-seg button{padding:7px 16px;border:none;border-radius:999px;background:transparent;font-size:13px;font-weight:600;color:var(--slate);cursor:pointer;font-family:inherit;transition:background .25s ${EASE},color .2s ease,box-shadow .25s ${EASE}}
 .im-seg button.on{background:#fff;color:#111;box-shadow:0 1px 3px rgba(15,23,42,.12)}
-.im-drop{display:flex;flex-direction:column;align-items:center;gap:6px;padding:28px 16px;border-radius:16px;border:1.5px dashed #e4e4e7;background:#fafafa;cursor:pointer;transition:border-color .2s ease,background .2s ease,transform .25s ${EASE}}
+.im-drop{display:flex;flex-direction:column;align-items:center;gap:6px;padding:28px 16px;border-radius:16px;border:1px solid #e4e4e7;background:#fafafa;cursor:pointer;transition:border-color .2s ease,background .2s ease,transform .25s ${EASE}}
 .im-drop:hover,.im-drop.over{border-color:var(--coral);background:color-mix(in srgb,var(--coral) 5%,#fff)}
 .im-drop.over{transform:scale(1.01)}
 .im-file{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:14px;background:#f6f6f7;font-size:13.5px;color:#111}

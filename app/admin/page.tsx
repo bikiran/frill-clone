@@ -632,7 +632,7 @@ function RevenueChart({ daily }: { daily: Summary['perf']['daily'] }) {
           {/* Recessive grid: baseline, midline and a labelled top line. */}
           <div className="absolute inset-x-0 top-0 h-36 pointer-events-none">
             {[0, 0.5, 1].map(f => (
-              <div key={f} className="absolute inset-x-0 border-t" style={{ top: `${(1 - f) * 100}%`, borderColor: f === 0 ? '#e4e4e7' : '#f4f4f5', borderStyle: f === 0 ? 'solid' : 'dashed' }}>
+              <div key={f} className="absolute inset-x-0 border-t" style={{ top: `${(1 - f) * 100}%`, borderColor: f === 0 ? '#e4e4e7' : '#f4f4f5', borderStyle: 'solid' }}>
                 {f > 0 && <span className="absolute right-0 -top-4 text-[10.5px] tabular-nums" style={{ color: '#a1a1aa' }}>{money(top * f)}</span>}
               </div>
             ))}

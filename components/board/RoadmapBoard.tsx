@@ -472,7 +472,7 @@ const RMB_CSS = `
 .rmb-card-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;font-size:12px}
 .rmb-by{color:var(--soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .rmb-topic{flex-shrink:0;height:22px;padding:0 9px;border-radius:999px;display:inline-flex;align-items:center;background:var(--f);color:var(--ink);font-weight:600;font-size:11.5px;white-space:nowrap}
-.rmb-empty{padding:22px 10px;border-radius:16px;border:1.5px dashed color-mix(in srgb,var(--mut) 28%,transparent);text-align:center}
+.rmb-empty{padding:22px 10px;border-radius:16px;border:1px solid color-mix(in srgb,var(--mut) 28%,transparent);text-align:center}
 .rmb-empty p{margin:0;font-size:13px;color:var(--mut)}
 .rmb-empty small{display:block;margin-top:3px;font-size:12px;color:var(--soft)}
 .rmb-drop{height:3px;margin:2px 4px 8px;border-radius:999px;background:var(--coral);box-shadow:0 0 0 3px color-mix(in srgb,var(--coral) 18%,transparent)}

@@ -265,7 +265,7 @@ const CSS = `
 .lc-chev{margin-left:auto;color:#9ca3af;transition:transform .25s cubic-bezier(.22,1,.36,1)}
 .lc-chev.up{transform:rotate(180deg)}
 .lc-list{padding:4px 12px 10px;background:#fafafa}
-.lc-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 0 6px 0;border-top:1px dashed #ececef;animation:lcIn .3s cubic-bezier(.22,1,.36,1) backwards}
+.lc-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 0 6px 0;border-top:1px solid #ececef;animation:lcIn .3s cubic-bezier(.22,1,.36,1) backwards}
 .lc-up{display:flex;align-items:center;gap:7px;padding:7px 12px;border-top:1px solid #f1f1f3;font-size:12px;font-weight:700;color:#6b7280}
 .lc-up.on{color:#15803d;background:#f0fdf4}
 .lc-updot{width:7px;height:7px;border-radius:50%;background:#d1d5db;flex-shrink:0}

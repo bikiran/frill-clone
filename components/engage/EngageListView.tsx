@@ -273,14 +273,14 @@ export default function EngageListView(p: EngageListViewProps) {
 const CSS = `
 .fl-pill.is-closed { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
 [data-theme="dark"] .fl-pill.is-closed { background: rgba(148,163,184,.14); color: #cbd5e1; border-color: transparent; }
-.fl-pill.is-draft { border-style: dashed; }
+.fl-pill.is-draft { border-style:solid; }
 .eg-head-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 .eg-tile { background: var(--peach, #fff4f1); color: var(--coral); }
 .eg-tile.is-closed { background: var(--fl-soft); color: var(--slate); }
-.eg-tile.is-draft { background: transparent; border: 1.5px dashed var(--fl-strong); color: var(--slate); }
+.eg-tile.is-draft { background: transparent; border: 1px solid var(--fl-strong); color: var(--slate); }
 .eg-card-preview { background: linear-gradient(135deg, var(--coral) 0%, #ff9f7a 100%); color: #fff; }
 .eg-card-preview.is-closed { background: linear-gradient(135deg, #64748b 0%, #94a3b8 100%); }
-.eg-card-preview.is-draft { background: var(--fl-soft); color: var(--slate); border-bottom: 1px dashed var(--fl-strong); }
+.eg-card-preview.is-draft { background: var(--fl-soft); color: var(--slate); border-bottom: 1px solid var(--fl-strong); }
 .eg-list .fl-list-head, .eg-list .fl-row { grid-template-columns: minmax(0, 3.2fr) minmax(90px, .9fr) minmax(120px, 1fr) minmax(130px, 1fr) minmax(120px, 1fr) 48px; }
 @media (max-width: 760px) {
   .eg-list .fl-row { grid-template-columns: minmax(0, 1fr) 40px; }

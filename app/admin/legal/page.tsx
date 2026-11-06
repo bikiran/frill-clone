@@ -104,7 +104,7 @@ export default function LegalAdminPage() {
             </div>
           ))}
 
-          <button onClick={addSection} style={{ padding: '10px', borderRadius: 9, border: '1px dashed var(--border)', background: '#fff', color: 'var(--coral)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>+ Add section</button>
+          <button onClick={addSection} style={{ padding: '10px', borderRadius: 9, border: '1px solid var(--border)', background: '#fff', color: 'var(--coral)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>+ Add section</button>
         </div>
       )}
     </div>

@@ -51,7 +51,7 @@ export default function ProGate({ feature, plan = 'free', children, inline }: Pr
   }
 
   return (
-    <div className="rounded-2xl border-2 border-dashed p-6 text-center" style={{ borderColor: 'var(--border)' }}>
+    <div className="rounded-2xl border-2 p-6 text-center" style={{ borderColor: 'var(--border)' }}>
       <div className="text-3xl mb-2">⭐</div>
       <p className="font-bold mb-1" style={{ color: 'var(--ink)' }}>{FEATURE_LABELS[feature] || feature}</p>
       <p className="text-sm mb-4" style={{ color: 'var(--slate)' }}>This feature is available on the Pro plan</p>

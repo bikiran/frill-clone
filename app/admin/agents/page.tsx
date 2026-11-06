@@ -1381,7 +1381,7 @@ const CSS = `
 .ag-mate.on .ag-mate-state i::after{content:"";position:absolute;inset:0;border-radius:50%;background:#22c55e;animation:agPing 1.8s cubic-bezier(0,0,.2,1) infinite}
 .ag-mate.paused .ag-mate-state{color:#b45309}
 .ag-mate.paused .ag-mate-state i{background:#f59e0b}
-.ag-mate-line{display:flex;flex-direction:column;gap:2px;margin-top:4px;padding-top:8px;border-top:1px dashed #e4e4e7;width:100%;font-size:12.5px;line-height:1.45;color:#52525b}
+.ag-mate-line{display:flex;flex-direction:column;gap:2px;margin-top:4px;padding-top:8px;border-top:1px solid #e4e4e7;width:100%;font-size:12.5px;line-height:1.45;color:#52525b}
 .ag-mate-line .t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;animation:agType 1.1s steps(28,end) .25s both}
 .ag-mate-line .w{font-size:11.5px;color:#a1a1aa}
 @media (max-width:560px){.ag-team{padding:14px}.ag-team-grid{grid-template-columns:1fr 1fr;gap:8px}.ag-mate{padding:12px}}

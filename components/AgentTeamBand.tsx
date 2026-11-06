@@ -47,7 +47,7 @@ export default function AgentTeamBand({ dark = false, title = 'Five AI agents. O
                 </div>
                 <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.01em', marginBottom: 6 }}>{a.name}</div>
                 <p style={{ fontSize: 14, lineHeight: 1.5, color: muted, margin: '0 0 16px', flex: 1 }}>{a.role}</p>
-                <div style={{ fontFamily: MONO, fontSize: 11.5, lineHeight: 1.5, color: muted, borderTop: `1px dashed ${line}`, paddingTop: 12 }}>
+                <div style={{ fontFamily: MONO, fontSize: 11.5, lineHeight: 1.5, color: muted, borderTop: `1px solid ${line}`, paddingTop: 12 }}>
                   <span style={{ color: a.color }}>✓</span> {a.example.checks[0]}
                 </div>
               </a>

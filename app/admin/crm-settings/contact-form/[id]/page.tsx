@@ -247,7 +247,7 @@ const CFB_CSS = `
 .cfb-req.on{background:var(--ink);color:var(--card,#fff);box-shadow:none}
 .cfb-frow2 .ak-icon-btn{width:30px;height:30px}
 .cfb-frow2 .ak-icon-btn:disabled{opacity:.3;cursor:default;background:none}
-.cfb-add{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)}
+.cfb-add{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 .cfb-add>span{margin-right:2px;font-size:12.5px;font-weight:650;color:var(--soft)}
 .cfb-add .ak-chip{height:32px;padding:0 12px 0 9px;font-size:13px}
 .cfb-chip-ic{display:inline-flex;opacity:1!important}

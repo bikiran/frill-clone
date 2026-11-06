@@ -330,7 +330,7 @@ export default function OrderItemsPanel({
                   </button>
                 ))}
                 <button type="button" role="menuitem" className="ord-reassign-opt" onClick={() => moveTo(it, (Math.max(...groupNums)) + 1)} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '7px 9px', borderRadius: 8, border: 'none', background: 'none', fontSize: 12.5, fontWeight: 700, color: ACCENT, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: 5, border: `1.5px dashed ${ACCENT}`, boxSizing: 'border-box' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: 5, border: `1px solid ${ACCENT}`, boxSizing: 'border-box' }}>
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
                   </span>
                   New shipment

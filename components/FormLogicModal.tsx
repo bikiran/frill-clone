@@ -1373,7 +1373,7 @@ const CSS = `
 .fb-lg-kw { font-size: 11px; font-weight: 700; color: var(--slate); text-transform: uppercase; letter-spacing: .06em; margin: 0; }
 .fb-lg-word { font-size: 13px; color: var(--slate); }
 .fb-lg-ans { color: var(--ink); font-weight: 600; }
-.fb-lg-then { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
+.fb-lg-then { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
 .fb-lg-in { height: 32px; padding: 0 9px; border-radius: 8px; border: 1px solid var(--border); background: #fff; font: inherit; font-size: 13px; color: var(--ink); min-width: 0; max-width: 100%; box-sizing: border-box; }
 select.fb-lg-in { cursor: pointer; }
 .fb-lg-in:disabled { background: #f4f4f5; color: #a1a1aa; cursor: not-allowed; }
@@ -1398,7 +1398,7 @@ select.fb-lg-in { cursor: pointer; }
 .fb-lg-issues li svg { flex-shrink: 0; margin-top: 1px; }
 .fb-lg-issues li.error { color: #dc2626; }
 .fb-lg-issues li.warning { color: #b45309; }
-.fb-lg-fixed { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; border-radius: 10px; border: 1px dashed var(--border); font-size: 13px; color: var(--ink); }
+.fb-lg-fixed { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); font-size: 13px; color: var(--ink); }
 .fb-lg-warn { display: flex; align-items: center; gap: 8px; padding: 10px 12px; margin-bottom: 12px; border-radius: 10px; border: 1px solid #fde68a; background: #fffbeb; color: #92400e; font-size: 12.5px; }
 .fb-lg-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .fb-lg-tchip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: #fff; font: inherit; font-size: 12.5px; color: var(--ink); cursor: pointer; transition: background .15s, border-color .15s; }

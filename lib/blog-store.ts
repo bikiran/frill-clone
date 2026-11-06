@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { coverFor } from '@/lib/blog-covers'
 import { POSTS, type BlogPost } from '@/lib/blog'
 import { renderMarkdown, readingMinutes } from '@/lib/markdown'
 
@@ -46,7 +47,7 @@ function seedToArticle(p: BlogPost): Article {
   }
   return {
     slug: p.slug, title: p.title, excerpt: p.excerpt, category: p.category,
-    accent: p.accent, icon: p.icon, cover: p.cover || null,
+    accent: p.accent, icon: p.icon, cover: coverFor(p.slug, p.cover),
     date: p.date, dateLabel: p.dateLabel, readTime: p.readTime, author: p.author,
     bodyHtml, takeaways: p.takeaways || [],
   }
@@ -57,7 +58,7 @@ function rowToArticle(r: any): Article {
   const mins = r.reading_minutes || readingMinutes(r.content || '')
   return {
     slug: r.slug, title: r.title, excerpt: r.excerpt || '', category: r.category || 'Playbooks',
-    accent: r.accent || '#ff6a4d', icon: r.icon || 'inbox', cover: r.cover_url || null,
+    accent: r.accent || '#ff6a4d', icon: r.icon || 'inbox', cover: coverFor(r.slug, r.cover_url),
     date, dateLabel: fmtDate(date), readTime: `${mins} min read`,
     author: r.author_name || 'The Colvy Team', authorAvatar: r.author_avatar || null,
     bodyHtml: renderMarkdown(r.content || ''), takeaways: [],

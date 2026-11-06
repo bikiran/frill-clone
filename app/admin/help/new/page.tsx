@@ -328,7 +328,7 @@ export default function NewHelpArticlePage() {
               </div>
             </div>
             {mediaItems.length === 0 ? (
-              <div className="border-2 border-dashed rounded-xl py-8 text-center cursor-pointer hover:bg-gray-50 transition-all"
+              <div className="border-2 rounded-xl py-8 text-center cursor-pointer hover:bg-gray-50 transition-all"
                 style={{ borderColor: 'var(--border)' }}
                 onClick={() => fileInputRef.current?.click()}>
                 <p className="text-2xl mb-2">🖼️</p>
@@ -364,7 +364,7 @@ export default function NewHelpArticlePage() {
                     </div>
                   </div>
                 ))}
-                <label className="w-32 h-24 rounded-xl border-2 border-dashed flex items-center justify-center cursor-pointer hover:bg-gray-50 transition-all"
+                <label className="w-32 h-24 rounded-xl border-2 flex items-center justify-center cursor-pointer hover:bg-gray-50 transition-all"
                   style={{ borderColor: 'var(--border)' }}>
                   <input type="file" accept="image/*,video/*,.gif" multiple className="hidden" onChange={e => handleFileUpload(e.target.files)} />
                   <div className="text-center">

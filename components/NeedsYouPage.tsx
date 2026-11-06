@@ -474,7 +474,7 @@ const CSS = `
 .nyp-more::before{display:none}
 
 .nyp-detail{min-width:0;background:#fff;border:1px solid var(--border);border-radius:20px;padding:18px;animation:nyIn .35s ${EASE} both}
-.nyp-detail.inline{margin:2px 0 12px;padding:14px 12px 4px;border:none;border-top:1px dashed var(--border);border-radius:0;background:transparent}
+.nyp-detail.inline{margin:2px 0 12px;padding:14px 12px 4px;border:none;border-top:1px solid var(--border);border-radius:0;background:transparent}
 .nyp-d-head{display:flex;align-items:center;gap:12px}
 .nyp-d-name{margin:0;font-size:16px;font-weight:800;color:var(--ink);line-height:1.3;overflow:hidden;text-overflow:ellipsis}
 .nyp-d-meta{margin:2px 0 0;font-size:13px;color:var(--slate)}

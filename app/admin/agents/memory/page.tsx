@@ -523,7 +523,7 @@ const CSS = `
 .bm-glance-v{margin-left:auto;font-weight:700;color:var(--ink);text-align:right}
 .bm-glance-note{display:flex;gap:8px;align-items:center;margin:10px 0 0;padding:9px 11px;border-radius:12px;background:color-mix(in srgb,var(--coral) 8%,#fff);color:var(--ink);font-size:12.5px;font-weight:600}
 .bm-glance-note svg{width:15px;height:15px;color:var(--coral);flex-shrink:0}
-.bm-tip{display:flex;gap:9px;align-items:flex-start;padding:12px 14px;border-radius:16px;border:1px dashed var(--border);font-size:12.5px;line-height:1.5;color:var(--slate)}
+.bm-tip{display:flex;gap:9px;align-items:flex-start;padding:12px 14px;border-radius:16px;border:1px solid var(--border);font-size:12.5px;line-height:1.5;color:var(--slate)}
 .bm-tip svg{flex-shrink:0;margin-top:1px}
 .bm-num-badge{width:26px;height:26px;flex-shrink:0;margin-top:9px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:var(--coral);background:color-mix(in srgb,var(--coral) 10%,#fff)}
 .bm-preview{margin-top:12px;padding:12px 14px;border-radius:16px;background:color-mix(in srgb,var(--coral) 4%,#fff);border:1px solid color-mix(in srgb,var(--coral) 14%,var(--border))}
@@ -561,7 +561,7 @@ textarea.bm-input{min-height:44px}
 .bm-item{padding:14px;border-radius:16px;border:1px solid var(--border);animation:bmFade .4s ${EASE} both}
 .bm-item-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
 .bm-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
-.bm-chip{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;border:1px dashed color-mix(in srgb,var(--slate) 45%,var(--border));background:#fff;font-size:13px;font-weight:600;color:var(--ink);cursor:pointer;font-family:inherit;transition:border-color .2s ease,background .2s ease}
+.bm-chip{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;border:1px solid color-mix(in srgb,var(--slate) 45%,var(--border));background:#fff;font-size:13px;font-weight:600;color:var(--ink);cursor:pointer;font-family:inherit;transition:border-color .2s ease,background .2s ease}
 .bm-chip:hover{border-color:var(--coral);background:color-mix(in srgb,var(--coral) 5%,#fff)}
 .bm-tones{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
 @media (min-width:560px){.bm-tones{grid-template-columns:repeat(3,minmax(0,1fr))}}

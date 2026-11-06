@@ -192,7 +192,7 @@ export default function BlogAdminPage() {
       {posts === null ? (
         <p style={{ color: 'var(--sa-muted)', fontSize: 14 }}>Loading…</p>
       ) : posts.length === 0 ? (
-        <div style={{ padding: '34px 24px', borderRadius: 12, border: '1px dashed var(--sa-border)', textAlign: 'center', color: 'var(--sa-muted)' }}>
+        <div style={{ padding: '34px 24px', borderRadius: 12, border: '1px solid var(--sa-border)', textAlign: 'center', color: 'var(--sa-muted)' }}>
           <p style={{ margin: 0, fontWeight: 700, color: 'var(--sa-text)' }}>No posts yet</p>
           <p style={{ margin: '4px 0 0', fontSize: 13 }}>Create your first article — it goes live on colvy.com/blog when published.</p>
         </div>

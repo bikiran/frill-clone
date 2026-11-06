@@ -9,7 +9,98 @@ const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c'
 
 export const LATEST_POSTS: BlogPost[] = [
   {
+    slug: 'best-crm-software-or-most-capable',
+    cover: '/photos/crm.jpg',
+    title: 'Do you want the best CRM software, or the most capable CRM software?',
+    excerpt: 'Most “best CRM software” lists count features. For a small team, the CRM that wins is the one that does the most work on an ordinary day: it fills itself in, lives where the conversations happen, and follows up for you.',
+    category: 'Buyer’s guide', accent: CORAL, icon: 'idea',
+    date: '2026-11-06T15:00:00+11:00', dateLabel: 'Nov 6, 2026', readTime: '5 min read', author: 'The Colvy Team',
+    takeaways: [
+      '“Best CRM software” lists rank tools by how many features they have. Capability is how much work the CRM does on an ordinary day.',
+      'A capable CRM fills itself in from every text, call, email, DM and order, without anyone typing it up.',
+      'Your team should reply from inside it, so it’s never a step behind the real conversations.',
+      'Try the Tuesday afternoon test: can everyone see the customer’s whole story without anyone logging it?',
+      'A traditional enterprise CRM still suits a large sales team with a dedicated CRM admin.',
+    ],
+    content: `Type “best CRM software” into a search bar and you get the same lists every year: a dozen tools, each with a star rating and a long grid of ticks. Pipelines, custom fields, workflow builders, forecasting, a marketplace of add-ons.
+
+Those lists answer one question well: *which CRM has the most features?* That isn’t always the question a small business is asking. The better one is: **which CRM will do the most work for us on an ordinary Tuesday?**
+
+That’s the difference between the best CRM on paper and the most capable CRM in practice.
+
+## “Best” usually means “most features”
+
+A long feature list is a promise of what you *could* do. To get there, someone has to design the pipeline stages, decide on the fields, build the automations and keep everyone logging their calls and emails. Big companies hire a CRM admin for exactly that.
+
+Most growing businesses don’t have one. So the CRM gets set up on a quiet weekend, used keenly for a fortnight, and then slowly falls behind the real conversations happening in text messages, Instagram DMs and on the shop phone.
+
+A CRM that’s behind is worse than no CRM at all, because people stop trusting it.
+
+## “Capable” means it does the work
+
+A capable CRM is judged by what happens without anyone remembering to do it:
+
+- **It fills itself in.** Every text, call, email, Instagram DM, Messenger chat and website chat lands on the customer’s profile by itself. Orders from your online store or point of sale do too.
+- **It’s where the conversation happens.** Your team replies from inside it, so there’s nothing to copy across later. If your CRM is a separate app from the one you talk to customers in, it will always be a step behind.
+- **It follows up.** Reminders are a start. Better is a reply already drafted, a cart followed up or a booking moved, with you deciding what goes out on its own.
+- **People actually open it.** On a phone, behind the counter, between jobs. If it only works at a desk, half your team will never see it.
+
+## The Tuesday afternoon test
+
+Here’s a quick way to compare any two CRMs. Picture a made-up bike shop, Harbour Bike Co., on a normal Tuesday:
+
+1. At 1pm a customer texts to ask whether their bike service is done.
+2. At 3pm the same customer calls, and someone else answers.
+3. At 5pm they send an Instagram DM asking for new brake pads too.
+
+Now ask of each CRM: did the person who took the call see the text? Does whoever opens the DM see both? And did anyone have to type anything into the CRM for that to be true?
+
+\`\`\`chat
+title: Harbour Bike Co. · Instagram
+them: Hey, can you put new brake pads on while it’s in?
+event: Texted at 1:04pm · Called at 3:12pm, call summary on the timeline
+draft: Sure thing, Alex. We’ll fit the pads and it’ll be ready by 10am tomorrow. Want a text when it’s done?
+\`\`\`
+
+If the honest answer starts with “well, if Sam logged it”, that CRM may be the best on paper, but it isn’t capable in practice.
+
+## Best on paper vs capable in practice
+
+| What to look at | Best on a features list | Most capable in practice |
+|---|---|---|
+| Where conversations live | In other apps, logged by hand | In the CRM itself: SMS, calls, email, Instagram, Messenger, live chat |
+| Customer records | Updated when someone remembers | Filled in from every message, call and order |
+| Follow-ups | Reminders you set yourself | Drafted for you, sent when you say so |
+| Getting started | Pipelines and fields to design first | Connect your channels and start replying |
+| Who uses it | People at a desk | Everyone, on their phone too |
+
+None of this means features don’t matter. If you run a large sales team with territories, forecasting and a dedicated CRM admin, a traditional enterprise CRM may well be the right call. The point is to choose for how your business actually talks to customers.
+
+## Six questions to ask before you choose
+
+1. Can my team reply to customers from inside it, on every channel we use today?
+2. Do calls show up on the customer’s record without anyone typing notes?
+3. Can it see orders from our online store and point of sale?
+4. Can it draft replies and follow-ups, and can I decide what it sends on its own?
+5. Will my team use it on their phones?
+6. What will it cost when we add three more people?
+
+> [!TIP] Test it with a real week
+> Pick three recent customers and replay their messages through each CRM you’re considering. The one that tells their whole story with the least typing is your most capable option.
+
+## Where Colvy fits
+
+We built Colvy to be the capable kind. It’s one inbox for SMS, calls, Instagram, Messenger, email and live chat (WhatsApp is coming soon), with a business phone number, an AI CRM that builds each customer’s profile from their conversations and orders, email and SMS campaigns, and AI agents that draft replies first and only send on their own when you say so.
+
+It won’t replace an enterprise CRM on a 200-person sales floor. For a team that lives in its messages, it means the CRM finally keeps up.
+
+## Have questions? Let’s talk
+
+Not sure which kind your business needs? [Leave your name and number](#lets-talk) at the bottom of this page and someone from our team will get back to you, or [start free](/signup) and connect your channels today.`,
+  },
+  {
     slug: 'name-your-ai-agents',
+    cover: '/solutions/hub.jpg',
     title: 'Give your AI agents a name and a face',
     excerpt: 'Five agents working in one inbox read better as a team than as job titles. Give each one its own name, shape and colour (or a photo) and see at a glance which agent did what.',
     category: 'Product', accent: PURPLE, icon: 'ai',
@@ -64,6 +155,7 @@ None of this changes how much an agent does on its own. Every agent starts by dr
   },
   {
     slug: 'phone-calls-written-up',
+    cover: '/channels/phones.jpg',
     title: 'Every phone call, written up: summaries, to-dos and a transcript',
     excerpt: 'A call ends and the details are already in the customer’s conversation: a short summary, the to-dos it raised, the recording and a transcript by speaker. Here’s how to get the most out of it.',
     category: 'Product', accent: BLUE, icon: 'phone',
@@ -118,6 +210,7 @@ The Colvy app shows the same card: summary, to-dos, recording and transcript. Yo
   },
   {
     slug: 'schedule-deliveries-in-the-chat',
+    cover: '/blog/online-store-wheres-my-order/tags.jpg',
     title: 'Book the delivery where the conversation is',
     excerpt: 'Big, heavy or local orders need a delivery day, not a tracking number. Schedule it from the customer’s conversation, keep the whole team on the same calendar, and follow it through to delivered.',
     category: 'Industry guides', accent: GREEN, icon: 'map',
@@ -174,6 +267,7 @@ The same deliveries show on the **Calendar** and in the bell, so the person load
   },
   {
     slug: 'refund-security-for-growing-teams',
+    cover: '/integrations/stripe.jpg',
     title: 'Growing team, same control: refund permissions, a refund PIN and locked keys',
     excerpt: 'As more people answer customers, refunds and connection keys need a lock. Decide who can refund, ask for a PIN on every refund, and keep your store and channel keys out of reach.',
     category: 'Product', accent: CORAL, icon: 'lock',
@@ -224,6 +318,7 @@ The keys that connect Colvy to your store, your phone numbers, Facebook and Inst
   },
   {
     slug: 'files-in-every-conversation',
+    cover: '/channels/forms.jpg',
     title: 'Quotes, labels and photos: files that look like files',
     excerpt: 'A PDF a customer emails you, a quote you text them, photos of a damaged delivery: every file now shows as a proper card in the conversation, opens in place and is named in your conversation list.',
     category: 'Product', accent: TEAL, icon: 'inbox',

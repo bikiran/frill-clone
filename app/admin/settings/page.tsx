@@ -1981,7 +1981,7 @@ export default function SettingsPage() {
               </div>
 
               {/* Email preview */}
-              <div className="mt-4 p-4 rounded-lg border-2 border-dashed" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
+              <div className="mt-4 p-4 rounded-lg border-2" style={{ borderColor: 'var(--border)', background: 'var(--canvas)' }}>
                 <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--slate)' }}>Email Preview</p>
                 <div className="bg-white rounded-lg p-4 shadow-sm">
                   <div className="text-xs mb-3 pb-2 border-b" style={{ color: 'var(--slate)', borderColor: 'var(--border)' }}>

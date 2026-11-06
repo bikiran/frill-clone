@@ -3,15 +3,20 @@
 import { useMemo, useState } from 'react'
 import FeatureIcon from '@/components/FeatureIcon'
 import type { Article } from '@/lib/blog-store'
+import { coverFor, fallbackCover } from '@/lib/blog-covers'
 
 // Foxiz-style magazine index: a large featured story, category filter chips, and
-// a responsive card grid. Cards show a real cover image when present, otherwise
-// an accent-gradient tile with the post's icon.
+// a responsive card grid. Every card shows a real photo: the post's cover, else
+// a stand-in photo (lib/blog-covers.ts).
 
 function Cover({ a, tall = false }: { a: Article; tall?: boolean }) {
+  // Its own cover, else a stand-in photo (lib/blog-covers); the tile below
+  // only if both fail to load.
+  const [src, setSrc] = useState(() => coverFor(a.slug, a.cover))
   const [failed, setFailed] = useState(false)
-  if (a.cover && !failed) {
-    return <img src={a.cover} alt="" aria-hidden onError={() => setFailed(true)} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+  if (!failed) {
+    const fallback = fallbackCover(a.slug)
+    return <img src={src} alt="" aria-hidden onError={() => (src !== fallback ? setSrc(fallback) : setFailed(true))} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
   }
   return (
     <div aria-hidden style={{ position: 'absolute', inset: 0, background: `linear-gradient(150deg, ${a.accent} 0%, ${a.accent}cc 48%, #171a2b 125%)` }}>

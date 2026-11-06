@@ -159,7 +159,7 @@ const TM_CSS = `
 .tm-card figcaption small{font-size:13px;color:var(--sub)}
 .tm-av{width:46px;height:46px;border-radius:50%;object-fit:cover;flex-shrink:0}
 .tm-av-ini{display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,${CORAL} 14%,transparent);color:${CORAL};font-weight:800}
-.tm-empty{max-width:620px;margin:0 auto;padding:44px 32px;border-radius:24px;border:1.5px dashed var(--line);text-align:center}
+.tm-empty{max-width:620px;margin:0 auto;padding:44px 32px;border-radius:24px;border:1px solid var(--line);text-align:center}
 .tm-empty h2{margin:14px 0 8px;font-size:22px;font-weight:800;letter-spacing:-.02em}
 .tm-empty p{margin:0;font-size:15.5px;line-height:1.6;color:var(--sub)}
 .tm-add{padding:40px 24px clamp(64px,9vw,110px)}

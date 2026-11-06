@@ -283,7 +283,7 @@ export default function UploadPage() {
                   style={{
                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8,
                     padding: '30px 20px', borderRadius: 16, cursor: 'pointer', textAlign: 'center',
-                    border: `2px dashed ${dragOver ? accent : '#d7dbe0'}`,
+                    border: `1.5px solid ${dragOver ? accent : '#d7dbe0'}`,
                     background: dragOver ? hexA(accent, 0.08) : '#fafbfc', transition: 'all 0.15s',
                   }}>
                   <div style={{ width: 46, height: 46, borderRadius: 14, background: hexA(accent, 0.12), display: 'flex', alignItems: 'center', justifyContent: 'center', color: accent }}>

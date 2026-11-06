@@ -58,7 +58,7 @@ export const BLOG_PROSE_CSS = `
   .blog-prose .chat-row.in .chat-bubble { background: var(--blog-bg, #fff); border: 1px solid var(--blog-border, rgba(15,17,25,0.1)); border-bottom-left-radius: 6px; }
   .blog-prose .chat-row.out .chat-bubble { background: ${CORAL}; color: #fff; border-bottom-right-radius: 6px; }
   .blog-prose .chat-row.out .chat-bubble.ai { background: #7c5cff; }
-  .blog-prose .chat-row.out .chat-bubble.draft { background: transparent; color: var(--blog-text, #0f1119); border: 1.5px dashed #7c5cff; }
+  .blog-prose .chat-row.out .chat-bubble.draft { background: transparent; color: var(--blog-text, #0f1119); border: 1px solid #7c5cff; }
   .blog-prose .chat-bubble a { color: inherit; }
   .blog-prose .chat-tag { display: block; margin-bottom: 3px; font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.85; }
   .blog-prose .chat-bubble.draft .chat-tag { color: #7c5cff; opacity: 1; }
