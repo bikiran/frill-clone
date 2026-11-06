@@ -548,18 +548,6 @@ export function CallGlyph({ kind }: { kind: CallKind }) {
   return <svg {...common}><polyline points="16 2 16 8 22 8"/><line x1="23" y1="1" x2="16" y2="8"/>{handset}</svg>
 }
 
-// Phrases that suggest a payment just happened — drives the "record this sale?"
-// prompt. Lower-cased substring match against recent messages.
-export const PAYMENT_SIGNAL_PHRASES = [
-  'i have paid', "i've paid", 'ive paid', 'just paid', 'paid the invoice', 'invoice paid',
-  'payment sent', 'sent the payment', 'sent payment', 'sent you the payment', 'made the payment',
-  'made payment', 'bank transfer', 'transferred the', 'transferred it', 'sent the money',
-  'paid via', 'payment done', 'paid it', 'paid now', 'have paid', 'thank you for the payment',
-  'thanks for the payment', 'thanks for your payment', 'receipt attached', 'uploaded the receipt',
-  'sent the receipt', 'sent you the receipt', 'here is the receipt', "here's the receipt",
-  'deposited', 'e-transfer', 'etransfer', 'payment made',
-]
-
 // Review-request card wrapper: feeds the tracked link's live stats (opens,
 // last device / city) into the card's render function.
 export function ReviewCard({ msg, companyId, render }: { msg: any; companyId: string | null; render: (s: any) => React.ReactNode }) {
