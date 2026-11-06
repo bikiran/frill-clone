@@ -8,6 +8,7 @@ import { NextResponse } from 'next/server'
 import { randomBytes } from 'crypto'
 import { bearerToken, verifyToken, SUPER_ADMIN } from '@/lib/company-access'
 import { checkJobsAccess } from '@/lib/jobs/access-core'
+import { hasFullAccess } from '@/lib/permissions'
 import { resolveJobSettings, effectiveTaxRate, type JobSettings } from '@/lib/jobs/settings'
 import { computeQuote, cleanDiscount, cleanDeposit, fmtMoney } from '@/lib/jobs/quote-math'
 import { companyBase, stripeReady } from '@/lib/booking'
@@ -32,7 +33,12 @@ export function isMissingJobsSchema(e: any): boolean {
 export const json = (body: any, status = 200) => NextResponse.json(body, { status, headers: { 'Cache-Control': 'no-store' } })
 export const setupNeeded = () => json({ setupNeeded: true, error: MIGRATION_HINT }, 503)
 
-export type JobsCaller = { ok: true; userId: string; name: string; role: string } | { ok: false; response: NextResponse }
+// Both shapes carry every key so callers can read access.response after an
+// `if (!access.ok)` check (the project doesn't use strictNullChecks, which
+// discriminated-union narrowing needs).
+export type JobsCaller =
+  | { ok: true; userId: string; name: string; role: string; response?: undefined }
+  | { ok: false; response: NextResponse; userId?: undefined; name?: undefined; role?: undefined }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 export const isUuid = (v: any) => typeof v === 'string' && UUID.test(v)
@@ -69,6 +75,12 @@ export async function jobsAccess(req: Request, db: any, companyId: any): Promise
     return deny(503, 'Colvy couldn’t check your access just now. Please try again.')
   }
 }
+
+/** Owners and admins: business-wide settings, deleting jobs. */
+export const isJobsManager = (role: string) => role === 'owner' || hasFullAccess(role)
+
+export const clip = (v: any, n: number) => (v == null ? '' : String(v)).trim().slice(0, n)
+export const isoOrNull = (v: any) => { if (!v) return null; const t = Date.parse(String(v)); return Number.isFinite(t) ? new Date(t).toISOString() : null }
 
 const COMPANY_COLS = 'id, name, slug, logo_url, accent_color, industry, modules, job_settings, booking_settings, business_mobile, business_email, business_address, abn_acn, website, stripe_mode, stripe_connected, stripe_account_id'
 const COMPANY_COLS_OLD = 'id, name, slug, logo_url, accent_color, industry, booking_settings, business_mobile, business_email, business_address, abn_acn, website, stripe_mode, stripe_connected, stripe_account_id'
@@ -175,8 +187,9 @@ export async function quoteDepositCheckout(db: any, company: any, quote: any, jo
   if (quote.deposit_payment_id) {
     const { data: pay } = await db.from('chat_payments').select('id, status, checkout_url, stripe_session_id, created_at').eq('id', quote.deposit_payment_id).maybeSingle()
     if (pay?.status === 'paid') return { error: 'The deposit is already paid.', status: 409 }
-    // Checkout links last 23 hours; reuse a fresh one.
-    if (pay?.status === 'pending' && pay.checkout_url && Date.now() - Date.parse(pay.created_at) < 22 * 3600_000) return { url: pay.checkout_url }
+    // Checkout links last 23 hours; reuse one until 10 minutes before it
+    // expires (a new link replaces it, and only the newest one settles).
+    if (pay?.status === 'pending' && pay.checkout_url && Date.now() - Date.parse(pay.created_at) < 23 * 3600_000 - 10 * 60_000) return { url: pay.checkout_url }
   }
 
   const description = `Deposit — Quote ${companySettings(company).quote_prefix}-${quote.number}`.slice(0, 200)
@@ -215,20 +228,19 @@ export async function settleQuoteDeposit(db: any, quoteId: string, session: any)
   const meta = session.metadata || {}
   if (meta.kind !== 'quote_deposit' || meta.quoteId !== quoteId) return { settled: false }
   const { data: quote } = await db.from('job_quotes').select('id, company_id, job_id, number, deposit_cents, deposit_payment_id, deposit_status').eq('id', quoteId).maybeSingle()
-  if (!quote) return { settled: false }
-  const paymentId = String(meta.paymentId || quote.deposit_payment_id || '')
+  if (!quote?.deposit_payment_id) return { settled: false }
+  // Only the Checkout session Colvy made for this quote's deposit counts, so a
+  // session made anywhere else with copied metadata can't mark it paid.
+  const { data: pay } = await db.from('chat_payments').select('id, company_id, conversation_id, message_id, amount_cents, stripe_session_id').eq('id', quote.deposit_payment_id).maybeSingle()
+  if (!pay || pay.company_id !== quote.company_id || !pay.stripe_session_id || pay.stripe_session_id !== session.id) return { settled: false }
+  const paymentId = String(pay.id)
   const now = new Date().toISOString()
   const { data: claimed } = await db.from('job_quotes').update({ deposit_status: 'paid', deposit_paid_at: now, updated_at: now })
     .eq('id', quoteId).in('deposit_status', ['none', 'requested']).select('id')
   const pi = (typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id) || null
-  if (paymentId) {
-    const { data: pay } = await db.from('chat_payments').select('id, company_id, conversation_id, message_id, amount_cents').eq('id', paymentId).maybeSingle()
-    if (pay) {
-      const card = session?.payment_intent?.latest_charge?.payment_method_details?.card || null
-      const { confirmChatPayment } = await import('@/lib/chat-payment-confirm')
-      await confirmChatPayment(db, pay, { receiptUrl: session?.receipt_url || null, paymentIntent: pi, cardBrand: card?.brand || null, cardLast4: card?.last4 || null })
-    }
-  }
+  const card = session?.payment_intent?.latest_charge?.payment_method_details?.card || null
+  const { confirmChatPayment } = await import('@/lib/chat-payment-confirm')
+  await confirmChatPayment(db, pay, { receiptUrl: session?.payment_intent?.latest_charge?.receipt_url || session?.receipt_url || null, paymentIntent: pi, cardBrand: card?.brand || null, cardLast4: card?.last4 || null })
   const settled = Array.isArray(claimed) && claimed.length > 0
   if (settled) {
     const amount = Number(session.amount_total ?? quote.deposit_cents)
@@ -236,7 +248,8 @@ export async function settleQuoteDeposit(db: any, quoteId: string, session: any)
       companyId: quote.company_id, jobId: quote.job_id, quoteId, type: 'deposit_paid', actorType: 'customer',
       summary: `Deposit of ${fmtMoney(amount)} paid`, data: { amount_cents: amount, payment_id: paymentId || null },
     })
-    emitJobEvent(quote.company_id, 'quote.deposit_paid', { title: `Deposit paid on quote Q-${quote.number}`, summary: fmtMoney(amount), jobId: quote.job_id, dedupeKey: `quote_deposit:${quoteId}` }, db)
+    const pf = companySettings(await loadCompany(db, quote.company_id)).quote_prefix
+    emitJobEvent(quote.company_id, 'quote.deposit_paid', { title: `Deposit paid on quote ${pf}-${quote.number}`, summary: fmtMoney(amount), jobId: quote.job_id, dedupeKey: `quote_deposit:${quoteId}` }, db)
   }
   return { settled }
 }

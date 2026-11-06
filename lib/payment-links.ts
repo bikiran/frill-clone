@@ -122,6 +122,11 @@ export async function reconcilePayments(db: any, pending: any[]): Promise<{ chec
           try { await captureFromPayLink(db, { companyId: pay.company_id, sessionId, paymentId: pay.id }) } catch {}
         }
       }
+      // A quote deposit (Jobs & quotes): mark the quote's deposit paid too, if
+      // the webhook hasn't already. Idempotent, and only for this exact session.
+      if (session?.metadata?.kind === 'quote_deposit' && session?.metadata?.quoteId) {
+        try { const { settleQuoteDeposit } = await import('@/lib/jobs/server'); await settleQuoteDeposit(db, String(session.metadata.quoteId), session) } catch {}
+      }
       results.push({ id: pay.id, status: res.confirmed ? 'paid' : 'already-confirmed' })
     } catch (e: any) {
       results.push({ id: pay.id, error: e?.message || 'failed' })

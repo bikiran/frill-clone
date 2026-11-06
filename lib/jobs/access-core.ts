@@ -5,7 +5,7 @@
 import { canUseFeature, hasFullAccess } from '@/lib/permissions'
 import { isStaffRow } from '@/lib/company-access'
 
-export type JobsAccessDecision = { ok: true; role: string } | { ok: false; status: 403; reason: 'not_member' | 'no_permission' }
+export type JobsAccessDecision = { ok: true; role: string; status?: undefined; reason?: undefined } | { ok: false; status: 403; reason: 'not_member' | 'no_permission'; role?: undefined }
 
 /**
  * The owner always gets in. Otherwise the caller needs a staff row in THIS

@@ -162,6 +162,27 @@ export async function POST(req: NextRequest) {
           break
         }
 
+        // Jobs & quotes: a quote's deposit (lib/jobs/server.ts). Settles once,
+        // and only for the Checkout session Colvy made for that quote.
+        if (meta.kind === 'quote_deposit' && meta.quoteId) {
+          try {
+            if (session.payment_status === 'paid') {
+              let s: any = session
+              const piId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id
+              if (piId) {
+                try {
+                  const acctOpt: any = event.account ? { stripeAccount: event.account } : undefined
+                  const pi: any = await stripe.paymentIntents.retrieve(piId, { expand: ['latest_charge'] }, acctOpt)
+                  s = { ...session, payment_intent: pi }
+                } catch {}
+              }
+              const { settleQuoteDeposit } = await import('@/lib/jobs/server')
+              await settleQuoteDeposit(supabase, String(meta.quoteId), s)
+            }
+          } catch (e) { console.error('[webhook] quote_deposit failed', e) }
+          break
+        }
+
         // In-chat payment (on a connected account) — mark paid + confirm in chat
         if (meta.kind === 'chat_payment' && meta.conversationId) {
           const receiptUrl = session.receipt_url || null
