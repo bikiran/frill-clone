@@ -135,7 +135,7 @@ export async function GET(req: NextRequest) {
         const c: any = byId.get(id) || {}, b = seen.get(id), st = stats.get(id) || { visits: 0, noShows: 0, cancelled: 0, covers: 0, lastVisit: null, nextVisit: null, upcoming: 0 }
         return { id, name: c.name || b.customer_name || 'Guest', phone: c.phone || b.customer_phone || '', email: c.email || b.customer_email || '', vip: !!c.guest_profile?.vip, allergies: c.guest_profile?.allergies || '', birthday: c.birthday || null, ...st }
       })
-      return json({ guests })
+      return json({ guests, timezone: tz })
     }
 
     if (op === 'guest') {

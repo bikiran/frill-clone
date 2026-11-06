@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     if (!company) return json({ error: 'Workspace not found.' }, 404)
     const { rs, tz } = settingsOf(company)
     return json({
-      settings: rs, enabled: restaurantEnabled(company), modules: readModules(company.modules), industry: company.industry || null,
+      settings: rs, enabled: restaurantEnabled(company), modules: readModules(company.modules), industry: company.industry || null, name: company.name || '',
       timezone: tz, pageUrl: reservePageUrl(company), canManage: isManager(access.role),
     })
   } catch (e: any) {
