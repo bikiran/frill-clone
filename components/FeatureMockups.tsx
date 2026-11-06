@@ -11,6 +11,7 @@ export type MockKind =
   | 'inbox' | 'crm' | 'gallery' | 'notes' | 'orders' | 'payments' | 'links'
   | 'insights' | 'calendar' | 'tasks' | 'broadcasts' | 'automation'
   | 'ideas' | 'roadmap' | 'announcements' | 'kb' | 'booking' | 'waitlist' | 'carts' | 'voice'
+  | 'reservations' | 'checkin' | 'jobs' | 'portal' | 'receipt'
 
 const TITLES: Record<MockKind, string> = {
   inbox: 'Shared inbox', crm: 'Customer profile', gallery: 'Media gallery', notes: 'Internal notes',
@@ -18,6 +19,7 @@ const TITLES: Record<MockKind, string> = {
   calendar: 'Calendar', tasks: 'Tasks', broadcasts: 'Broadcast', automation: 'Automation',
   ideas: 'Ideas board', roadmap: 'Roadmap', announcements: 'Changelog', kb: 'Help centre', booking: 'Book online',
   waitlist: 'Back-in-stock waitlists', carts: 'Abandoned carts', voice: 'Colvy Voice',
+  reservations: 'Reservations · Friday', checkin: 'Your booking', jobs: 'Jobs & quotes', portal: 'Your account', receipt: 'Orders and receipts',
 }
 
 interface Theme { bg: string; panel: string; ink: string; sub: string; border: string; accent: string; soft: string; dark: boolean }
@@ -297,6 +299,202 @@ function Carts(T: Theme) {
   )
 }
 
+const GOOD = '#10b981', WARN = '#f59e0b'
+const goodInk = (T: Theme) => (T.dark ? '#34d399' : '#047857')
+const warnInk = (T: Theme) => (T.dark ? '#fbbf24' : '#b45309')
+const Glyph = ({ d, c, s = 12 }: { d: React.ReactNode; c: string; s?: number }) =>
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">{d}</svg>
+const HAND = <><path d="M18 11V6a2 2 0 0 0-4 0" /><path d="M14 10V4a2 2 0 0 0-4 0v2" /><path d="M10 10.5V6a2 2 0 0 0-4 0v8" /><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" /></>
+const BELL = <><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></>
+const TICK = <polyline points="20 6 9 17 4 12" />
+
+// Table reservations: the covers strip, the live floor and the evening's sheet.
+function Reservations(T: Theme) {
+  type St = 'seated' | 'here' | 'soon' | 'free' | 'out'
+  const tables: { l: string; c: string; r: string; round?: boolean; st: St }[] = [
+    { l: 'T1', c: '1', r: '1', round: true, st: 'seated' },
+    { l: 'T2', c: '2', r: '1', round: true, st: 'free' },
+    { l: 'T3', c: '3', r: '1', round: true, st: 'soon' },
+    { l: 'T4', c: '1 / span 2', r: '2', st: 'here' },
+    { l: 'T6', c: '3', r: '2 / span 2', st: 'seated' },
+    { l: 'B1', c: '1', r: '3', st: 'free' },
+    { l: 'B2', c: '2', r: '3', st: 'out' },
+  ]
+  const look = (st: St) => st === 'seated' ? { bg: T.accent, fg: '#fff', bd: T.accent }
+    : st === 'here' ? { bg: hex(GOOD, '26'), fg: goodInk(T), bd: GOOD }
+    : st === 'soon' ? { bg: hex(WARN, '22'), fg: warnInk(T), bd: WARN }
+    : st === 'out' ? { bg: T.panel, fg: T.sub, bd: T.border }
+    : { bg: T.bg, fg: T.ink, bd: T.border }
+  const rows: [string, string, string, string, string, string][] = [
+    ['6:30', 'Mia · 4', 'T1', 'Seated', hex(T.accent, '22'), T.accent],
+    ['7:00', 'Ava · 2', 'T4', 'Here 6:57', hex(GOOD, '22'), goodInk(T)],
+    ['7:30', 'Leo · 3', 'T3', 'Due soon', hex(WARN, '22'), warnInk(T)],
+    ['8:00', 'Noah · 8', 'T7 + T8', 'Deposit ✓', T.panel, T.ink],
+  ]
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 11, fontWeight: 800, color: T.ink }}>Dinner</span>
+        <div style={{ flex: 1, height: 7, borderRadius: 4, background: T.panel, overflow: 'hidden' }}><div style={{ width: '43%', height: '100%', borderRadius: 4, background: T.accent }} /></div>
+        <span style={{ fontSize: 9.5, fontWeight: 800, color: T.sub, whiteSpace: 'nowrap' }}>34 of 80 covers</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 0.9fr) minmax(0, 1.1fr)', gap: 10 }}>
+        <Card T={T} style={{ padding: 8, background: T.panel, display: 'flex' }}>
+          <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gridTemplateRows: 'repeat(3, minmax(32px, 1fr))', gap: 7 }}>
+            {tables.map(t => {
+              const k = look(t.st)
+              return <div key={t.l} style={{ gridColumn: t.c, gridRow: t.r, borderRadius: t.round ? 999 : 7, background: k.bg, border: `1.5px solid ${k.bd}`, color: k.fg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9.5, fontWeight: 900, boxShadow: t.st === 'here' ? `0 0 0 3px ${hex(GOOD, '30')}, 0 0 16px ${hex(GOOD, '77')}` : 'none' }}>{t.l}</div>
+            })}
+          </div>
+        </Card>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
+          {rows.map(([time, who, table, label, bg, fg]) => (
+            <div key={who} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 7px', borderRadius: 8, border: `1px solid ${T.border}`, background: T.bg, minWidth: 0 }}>
+              <span style={{ fontSize: 9, fontWeight: 800, color: T.sub, width: 24, flexShrink: 0 }}>{time}</span>
+              <div style={{ minWidth: 0, flex: 1 }}><div style={{ fontSize: 10, fontWeight: 800, color: T.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{who}</div><div style={{ fontSize: 8.5, color: T.sub }}>{table}</div></div>
+              <Chip bg={bg} fg={fg}>{label}</Chip>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+        {[['Seated', T.accent], ['Here', GOOD], ['Due soon', WARN], ['Free', T.border]].map(([l, c]) => (
+          <span key={l} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 9, fontWeight: 700, color: T.sub }}><span style={{ width: 8, height: 8, borderRadius: 3, background: c }} />{l}</span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// "I'm here": the guest's booking page, then what the team sees.
+function Checkin(T: Theme) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+      <Card T={T} style={{ padding: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ width: 40, borderRadius: 9, overflow: 'hidden', border: `1px solid ${T.border}`, textAlign: 'center', flexShrink: 0 }}>
+          <div style={{ background: T.accent, color: '#fff', fontSize: 8, fontWeight: 900, padding: '2px 0', letterSpacing: '0.06em' }}>FRI</div>
+          <div style={{ fontSize: 15, fontWeight: 900, color: T.ink, padding: '3px 0' }}>14</div>
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink }}>Table for 2 · 7:30pm</div>
+          <div style={{ fontSize: 9.5, color: T.sub }}>Inside · Birthday</div>
+        </div>
+        <span style={{ marginLeft: 'auto' }}><Chip bg={hex(GOOD, '22')} fg={goodInk(T)}>Confirmed</Chip></span>
+      </Card>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px 10px 10px', borderRadius: 14, background: T.accent, color: '#fff', boxShadow: `0 12px 26px ${hex(T.accent, '55')}` }}>
+        <span style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(255,255,255,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Glyph d={HAND} c="#fff" s={17} /></span>
+        <span style={{ minWidth: 0 }}><span style={{ display: 'block', fontSize: 13.5, fontWeight: 900 }}>I’m here</span><span style={{ display: 'block', fontSize: 9.5, opacity: 0.92 }}>Tap when you arrive and we’ll let them know.</span></span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '2px 0' }}><span style={{ flex: 1, height: 1, background: T.border }} /><span style={{ fontSize: 8.5, fontWeight: 800, color: T.sub, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Your team sees</span><span style={{ flex: 1, height: 1, background: T.border }} /></div>
+      <Card T={T} style={{ padding: 9, display: 'flex', alignItems: 'center', gap: 8, background: T.panel }}>
+        <span style={{ width: 24, height: 24, borderRadius: '50%', background: hex(GOOD, '26'), display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Glyph d={BELL} c={goodInk(T)} /></span>
+        <div style={{ minWidth: 0, flex: 1 }}><div style={{ fontSize: 10.5, fontWeight: 800, color: T.ink }}>Ava is here</div><div style={{ fontSize: 9, color: T.sub }}>Table for 2, 7:30pm · T4</div></div>
+        <span style={{ fontSize: 9, color: T.sub }}>now</span>
+      </Card>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <Chip bg={hex(GOOD, '22')} fg={goodInk(T)}>Here · 7:27pm</Chip>
+        <Chip bg={T.panel} fg={T.sub}>Push sent to the team</Chip>
+        <Chip bg={T.panel} fg={T.sub}>Note in the chat</Chip>
+      </div>
+    </div>
+  )
+}
+
+// Jobs & quotes: an accepted quote with GST, and the job it became.
+function Jobs(T: Theme) {
+  const lines = [['Labour · 3 hrs', '$330.00'], ['Hot water unit, installed', '$1,480.00'], ['Call-out', '$90.00']]
+  const checks = [true, true, false, false]
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+      <Card T={T} style={{ padding: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 7 }}>
+          <span style={{ fontSize: 10.5, fontWeight: 900, color: T.ink }}>Q-1042 · Hot water replacement</span>
+          <span style={{ marginLeft: 'auto' }}><Chip bg={hex(GOOD, '22')} fg={goodInk(T)}>Accepted</Chip></span>
+        </div>
+        {lines.map(([a, b]) => (
+          <div key={a} style={{ display: 'flex', fontSize: 9.5, color: T.sub, padding: '2px 0' }}><span>{a}</span><span style={{ marginLeft: 'auto', color: T.ink, fontWeight: 700 }}>{b}</span></div>
+        ))}
+        <div style={{ display: 'flex', fontSize: 11, fontWeight: 900, color: T.ink, borderTop: `1px solid ${T.border}`, marginTop: 6, paddingTop: 6 }}><span>Total incl. GST</span><span style={{ marginLeft: 'auto' }}>$1,900.00</span></div>
+        <div style={{ display: 'flex', fontSize: 9, color: T.sub, marginTop: 2 }}><span>Includes GST</span><span style={{ marginLeft: 'auto' }}>$172.73</span></div>
+        <div style={{ fontSize: 9, color: T.sub, marginTop: 6 }}>Accepted online by Liam · deposit paid</div>
+      </Card>
+      <Card T={T} style={{ padding: 10, background: T.panel }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+          <span style={{ fontSize: 10.5, fontWeight: 900, color: T.ink }}>J-1018</span>
+          <Chip bg={hex(T.accent, '22')} fg={T.accent}>Scheduled · Thu 8:00am</Chip>
+          <span style={{ marginLeft: 'auto', display: 'flex' }}>{['S', 'R'].map((t, i) => <span key={t} style={{ marginLeft: i ? -6 : 0, border: `2px solid ${T.panel}`, borderRadius: '50%' }}><Avatar t={t} c={AV[i + 3]} s={20} /></span>)}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+          <span style={{ fontSize: 9, fontWeight: 800, color: T.sub }}>Checklist 2/4</span>
+          <div style={{ flex: 1, display: 'flex', gap: 3 }}>{checks.map((c, i) => <span key={i} style={{ flex: 1, height: 6, borderRadius: 3, background: c ? T.accent : T.border }} />)}</div>
+        </div>
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+          <Chip bg={T.bg} fg={T.ink}>3 photos</Chip>
+          <Chip bg={T.bg} fg={T.ink}>Timer 1:24</Chip>
+          <Chip bg={hex(GOOD, '22')} fg={goodInk(T)}>No clashes</Chip>
+          <Chip bg={T.bg} fg={T.sub}>Signature on completion</Chip>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
+// Customer accounts: what a signed-in customer sees.
+function Portal(T: Theme) {
+  const rows: [string, string, string][] = [
+    ['Coming up', 'Tank service · Thu 10 Dec, 10:00am', 'Change or cancel'],
+    ['Quotes and jobs', 'Q-1042 · Reef tank install', 'View and accept'],
+    ['Payments due', 'Payment link · $120.00', 'Pay'],
+    ['Orders and receipts', '#5012 · In store · $86.40', 'Receipt'],
+    ['Messages', '“Thanks, see you Thursday!”', 'Reply'],
+  ]
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Avatar t="M" c={AV[4]} s={26} />
+        <div style={{ minWidth: 0 }}><div style={{ fontSize: 12, fontWeight: 900, color: T.ink }}>Hi Mia</div><div style={{ fontSize: 9, color: T.sub }}>Signed in with a code · no password</div></div>
+        <span style={{ marginLeft: 'auto' }}><Chip bg={T.panel} fg={T.sub}>Preferences</Chip></span>
+      </div>
+      {rows.map(([sec, what, act], i) => (
+        <Card key={sec} T={T} style={{ padding: '7px 9px', display: 'flex', alignItems: 'center', gap: 8, background: i === 0 ? T.soft : T.bg, borderColor: i === 0 ? hex(T.accent, '55') : T.border }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 8.5, fontWeight: 800, color: T.sub, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{sec}</div>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: T.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{what}</div>
+          </div>
+          <span style={{ fontSize: 9.5, fontWeight: 800, color: i === 2 ? '#fff' : T.accent, background: i === 2 ? T.accent : 'transparent', borderRadius: 7, padding: i === 2 ? '4px 10px' : 0, whiteSpace: 'nowrap' }}>{act}</span>
+        </Card>
+      ))}
+    </div>
+  )
+}
+
+// A receipt opened from the customer's account: a tax invoice with GST shown.
+function Receipt(T: Theme) {
+  const lines = [['Canister filter', '1', '$289.00'], ['Water conditioner 500ml', '2', '$39.90']]
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+      <Card T={T} style={{ padding: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, marginBottom: 10 }}>
+          <span style={{ width: 26, height: 26, borderRadius: 8, background: T.accent, flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <Line w="60%" h={9} c={T.ink} style={{ opacity: 0.85 }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5 }}><span style={{ fontSize: 8.5, fontWeight: 800, color: T.sub }}>ABN</span><Line w={64} h={6} c={T.border} /></div>
+          </div>
+          <div style={{ textAlign: 'right' }}><div style={{ fontSize: 11, fontWeight: 900, color: T.ink, letterSpacing: '0.04em' }}>TAX INVOICE</div><div style={{ fontSize: 9, color: T.sub }}>#5012 · 14 Nov</div></div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '4px 12px', fontSize: 9.5, color: T.sub, borderTop: `1px solid ${T.border}`, paddingTop: 8 }}>
+          <span style={{ fontWeight: 800 }}>Item</span><span style={{ fontWeight: 800 }}>Qty</span><span style={{ fontWeight: 800, textAlign: 'right' }}>Amount</span>
+          {lines.map(([a, q, b]) => <React.Fragment key={a}><span style={{ color: T.ink }}>{a}</span><span style={{ color: T.ink }}>{q}</span><span style={{ color: T.ink, fontWeight: 700, textAlign: 'right' }}>{b}</span></React.Fragment>)}
+        </div>
+        <div style={{ display: 'flex', fontSize: 12, fontWeight: 900, color: T.ink, borderTop: `1px solid ${T.border}`, marginTop: 8, paddingTop: 7 }}><span>Total</span><span style={{ marginLeft: 'auto' }}>$328.90</span></div>
+        <div style={{ display: 'flex', fontSize: 9.5, color: T.sub, marginTop: 2 }}><span>Includes GST of</span><span style={{ marginLeft: 'auto' }}>$29.90</span></div>
+        <div style={{ display: 'flex', gap: 5, marginTop: 9, flexWrap: 'wrap' }}><Chip bg={hex(GOOD, '22')} fg={goodInk(T)}>Paid</Chip><Chip bg={T.panel} fg={T.sub}>Card</Chip><Chip bg={T.panel} fg={T.sub}>In store</Chip></div>
+      </Card>
+      <div style={{ background: T.accent, color: '#fff', borderRadius: 9, padding: '9px 0', textAlign: 'center', fontSize: 11.5, fontWeight: 800 }}>Print or save as PDF</div>
+    </div>
+  )
+}
+
 function Kanban(T: Theme, cols: [string, string][], cards: Record<number, number>) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols.length},1fr)`, gap: 8 }}>
@@ -387,6 +585,7 @@ const RENDER: Record<MockKind, (T: Theme) => React.ReactNode> = {
   inbox: Inbox, crm: Crm, gallery: Gallery, notes: Notes, orders: Orders, payments: Payments,
   links: Links, insights: Insights, calendar: Calendar, broadcasts: Broadcasts, automation: Automation,
   ideas: Ideas, announcements: Announcements, kb: Kb, booking: Booking, waitlist: Waitlist, carts: Carts, voice: Voice,
+  reservations: Reservations, checkin: Checkin, jobs: Jobs, portal: Portal, receipt: Receipt,
   tasks: (T) => Kanban(T, [['To do', '#6b7280'], ['Doing', T.accent], ['Done', '#10b981']], { 0: 2, 1: 2, 2: 1 }),
   roadmap: (T) => Kanban(T, [['Planned', '#6b7280'], ['Building', T.accent], ['Shipped', '#10b981']], { 0: 2, 1: 1, 2: 2 }),
 }

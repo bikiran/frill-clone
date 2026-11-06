@@ -8,7 +8,7 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
 export const metadata: Metadata = pageMeta({
   title: 'Features: Shared Inbox, Business Phone, CRM, AI Agents & Feedback',
-  description: 'Everything in Colvy: a shared inbox for every channel, a CRM, business phone and SMS, store orders and payments, AI agents, and feedback boards, roadmaps and changelogs.',
+  description: 'Everything in Colvy: a shared inbox, CRM, business phone and SMS, orders and payments, bookings, table reservations, jobs and quotes, customer accounts, AI agents and feedback boards.',
   path: 'product',
 })
 
