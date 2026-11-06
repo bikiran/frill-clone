@@ -2,6 +2,8 @@ import { NextRequest } from 'next/server'
 import { audit } from '@/lib/activity-logging'
 import { internalHeaders } from '@/lib/internal-call'
 import { sendCustomerEmail } from '@/lib/customer-email'
+import { quoteEmailHtml } from '@/lib/booking-email'
+import { hidesPoweredBy } from '@/lib/branding'
 import { isExternalSendBlocked } from '@/lib/demo-guard'
 import { fmtMoney } from '@/lib/jobs/quote-math'
 import {
@@ -20,7 +22,6 @@ export const dynamic = 'force-dynamic'
 // message and where it would go, sending nothing.
 
 type Ctx = { params: Promise<{ id: string }> }
-const esc = (s: string) => String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as any)[c])
 
 export async function POST(req: NextRequest, ctx: Ctx) {
   try {
@@ -101,11 +102,17 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         if (!delivered) deliveryError = d?.optedOut ? 'This customer has opted out of texts. Email the quote or copy the link.' : (d?.error || `The text didn’t send (${r.status}).`)
       } catch (e: any) { deliveryError = e?.message || 'The text didn’t send.' }
     } else if (channel === 'email') {
-      const accent = /^#[0-9a-f]{3,8}$/i.test(String(company?.accent_color || '')) ? company.accent_color : '#111111'
-      const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#111">
-<p style="font-size:15px;line-height:1.6;white-space:pre-line">${esc(message.replace(url, '').trim())}</p>
-<p style="margin:24px 0"><a href="${esc(url)}" style="display:inline-block;background:${accent};color:#fff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:999px">View quote ${esc(label)} · ${esc(fmtMoney(quote.total_cents))}</a></p>
-<p style="font-size:12px;color:#777">Or open this link: ${esc(url)}</p></div>`
+      // The team's words (without the link and its "View and accept it here:"
+      // lead-in), then the quote's summary and a button, on the customer email layout.
+      const words = message.split(url).join('').replace(/\s*(view and accept it here|view it here|open it here|see it here)\s*:?\s*$/i, '').replace(/[\s:]+$/, '').trim()
+      const validUntil = sent[0]?.valid_until || quote.valid_until
+      const html = quoteEmailHtml({
+        business: company?.name || 'us', logoUrl: company?.logo_url || null, accent: company?.accent_color || null,
+        hideBadge: await hidesPoweredBy(db, companyId, company).catch(() => false),
+        message: words, label, title: job.title || null, total: fmtMoney(quote.total_cents),
+        validUntil: validUntil ? new Date(`${String(validUntil).slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-AU', { timeZone: 'UTC', day: 'numeric', month: 'long', year: 'numeric' }) : null,
+        url, resent: !wasDraft,
+      })
       delivered = await sendCustomerEmail(db, company, { to, subject, text: message, html })
       if (!delivered) deliveryError = 'The email didn’t send. Check the email settings, or copy the link instead.'
     }

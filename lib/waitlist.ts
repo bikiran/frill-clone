@@ -7,6 +7,8 @@ import { internalHeaders } from '@/lib/internal-call'
 
 import { isWithinSendingHours } from '@/lib/campaign-sender'
 import { sendCustomerEmail } from '@/lib/customer-email'
+import { backInStockEmailHtml } from '@/lib/booking-email'
+import { hidesPoweredBy } from '@/lib/branding'
 import { shortenUrl } from '@/lib/short-link'
 import { phoneKey } from '@/lib/phone'
 export { requireCompanyAccess } from '@/lib/company-access'
@@ -166,7 +168,7 @@ export async function notifyWaitlist(db: any, opts: {
 }): Promise<NotifyResult> {
   const result: NotifyResult = { sent: 0, failed: 0, queued: 0, skipped: 0 }
   const { companyId } = opts
-  const { data: co } = await db.from('companies').select('id, name, slug, waitlist_settings').eq('id', companyId).maybeSingle()
+  const { data: co } = await db.from('companies').select('id, name, slug, waitlist_settings, logo_url, accent_color, plan, trial_ends_at').eq('id', companyId).maybeSingle()
   const settings = resolveWaitlistSettings(co?.waitlist_settings)
   const business = co?.name || 'us'
 
@@ -256,7 +258,11 @@ export async function notifyWaitlist(db: any, opts: {
       }
       if (!ok && email) {
         via = 'email'
-        ok = await sendCustomerEmail(db, co || { id: companyId, name: business }, { to: email, subject: `${row.item_name} is back in stock`, text })
+        const html = backInStockEmailHtml({
+          business, logoUrl: co?.logo_url || null, accent: co?.accent_color || null, hideBadge: await hidesPoweredBy(db, companyId, co || undefined).catch(() => false),
+          item: row.item_name, image: row.item_image || null, link: link || null, message: link ? text.split(link).join('').replace(/[\s:]+$/, '').trim() : text,
+        })
+        ok = await sendCustomerEmail(db, co || { id: companyId, name: business }, { to: email, subject: `${row.item_name} is back in stock`, text, html })
         if (!ok) err = err || 'Email failed'
       }
 

@@ -1,14 +1,16 @@
-// The emails a customer gets about a booking: booked, moved, reminder,
-// cancelled…, the "here's your booking" link, a regular (repeating) booking
-// and a waitlist offer. One look for all of them: a calm card on soft grey, a
-// status pill, a big headline, a ticket with a date tile and the details, one
-// wide button.
+// The emails a customer gets from a business through Colvy: about a booking
+// (booked, moved, reminder, cancelled…, the "here's your booking" link, a
+// regular booking, a waitlist offer), a quote, a sign-in code for their
+// account, a back-in-stock alert. In the business's colours, not Colvy's
+// (Colvy's own emails to a team are lib/colvy-email). One look for all of
+// them: a calm card on soft grey, a status pill, a big headline, a ticket or
+// summary panel, one wide button.
 //
 // Email-safe on purpose: tables, inline styles, no images except the
-// business's logo, text that still reads if images are off. Clients that
-// honour prefers-color-scheme (Apple Mail, iOS Mail, Outlook for Mac) get a
-// proper dark version; Gmail's own dark mode inverts the light one, so the
-// logo sits on a white chip it doesn't invert.
+// business's logo (and a product's photo), text that still reads if images
+// are off. Clients that honour prefers-color-scheme (Apple Mail, iOS Mail,
+// Outlook for Mac) get a proper dark version; Gmail's own dark mode inverts
+// the light one, so the logo sits on a white chip it doesn't invert.
 //
 // Pure: no database, so every email can be rendered on its own.
 
@@ -207,6 +209,58 @@ function finePrint(k: Kit, text: string) {
           </td></tr>`
 }
 
+/** A summary panel: a small label line, a big figure (e.g. a total), then label/value rows. */
+function summaryBlock(k: Kit, o: { label: string; big?: string | null; bigNote?: string | null; rows: [string, string][] }) {
+  return `
+          <tr><td style="padding-top:24px">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="cv-panel" style="background:${k.panel};border:1px solid ${k.line};border-radius:20px">
+              <tr><td style="padding:18px 18px ${o.rows.length ? 14 : 18}px">
+                <div class="cv-acc" style="font:800 11.5px/1.4 ${k.font};letter-spacing:0.08em;text-transform:uppercase;color:${k.accentInk}">${esc(o.label)}</div>
+                ${o.big ? `<div class="cv-ink" style="padding-top:6px;font:800 30px/1.1 ${k.font};letter-spacing:-0.02em;color:${k.ink}">${esc(o.big)}</div>` : ''}
+                ${o.bigNote ? `<div class="cv-muted" style="padding-top:4px;font:500 13px/1.4 ${k.font};color:${k.muted}">${esc(o.bigNote)}</div>` : ''}
+              </td></tr>
+              ${o.rows.length ? `${dashed()}
+              <tr><td style="padding:8px 18px 12px">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                  ${detailRows(k, o.rows)}
+                </table>
+              </td></tr>` : ''}
+            </table>
+          </td></tr>`
+}
+
+/** A one-time code, big, on the business's tint. */
+function codeBlock(k: Kit, code: string) {
+  return `
+          <tr><td style="padding-top:24px">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+              <td align="center" class="cv-note" bgcolor="${k.accentTint}" style="background:${k.accentTint};border-radius:20px;padding:26px 12px">
+                <div class="cv-acc cv-code" style="font:800 40px/46px ${k.font};letter-spacing:10px;color:${k.accentInk}">${esc(code)}</div>
+              </td>
+            </tr></table>
+          </td></tr>`
+}
+
+/** A product card: its photo (when there is one) and its name. */
+function productBlock(k: Kit, o: { name: string; image?: string | null; note?: string | null }) {
+  const img = /^https:\/\/[^\s"'<>]+$/i.test(String(o.image || '')) ? String(o.image) : null
+  return `
+          <tr><td style="padding-top:24px">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="cv-panel" style="background:${k.panel};border:1px solid ${k.line};border-radius:20px">
+              <tr>
+                ${img ? `<td width="88" valign="middle" style="width:88px;padding:14px 0 14px 14px"><img src="${esc(img)}" alt="" width="74" height="74" style="display:block;width:74px;height:74px;object-fit:cover;border-radius:14px;border:0;background:#ffffff"></td>` : ''}
+                <td valign="middle" style="padding:16px 18px">
+                  <div class="cv-ink" style="font:800 17px/1.3 ${k.font};letter-spacing:-0.01em;color:${k.ink}">${esc(o.name)}</div>
+                  ${o.note ? `<div style="padding-top:8px"><span class="cv-soon" style="display:inline-block;background:${k.accentTint};color:${k.accentInk};border-radius:999px;padding:3px 10px;font:700 12px/1.5 ${k.font}">${esc(o.note)}</span></div>` : ''}
+                </td>
+              </tr>
+            </table>
+          </td></tr>`
+}
+
+/** The business's own words (plain text, newlines kept) as the opening paragraph. */
+const paragraphs = (s: string) => esc(String(s || '').trim()).replace(/\r?\n/g, '<br>')
+
 // ── The shell ────────────────────────────────────────────────────────────────
 
 type Shell = {
@@ -244,7 +298,7 @@ function shell(k: Kit, s: Shell): string {
 <meta name="color-scheme" content="light dark"><meta name="supported-color-schemes" content="light dark">
 <title>${esc(s.headline)}</title>
 <style>
-  @media (max-width:600px){ .cv-card-td{padding:26px 20px 24px!important} .cv-h1{font-size:25px!important} .cv-wrap{padding:20px 10px!important} }
+  @media (max-width:600px){ .cv-card-td{padding:26px 20px 24px!important} .cv-h1{font-size:25px!important} .cv-wrap{padding:20px 10px!important} .cv-code{font-size:32px!important;letter-spacing:7px!important} }
   @media (prefers-color-scheme:dark){
     .cv-bg{background:${dark.bg}!important}
     .cv-card{background:${dark.card}!important;border-color:${dark.line}!important}
@@ -443,5 +497,86 @@ export function waitlistOfferEmailHtml(i: WaitlistOfferEmailInput): string {
     headline: 'A spot opened up',
     intro: `Hi ${esc(i.first || 'there')}, a time you were waiting for is free. ${held ? `It’s held for you for ${esc(i.holdMins)} minutes.` : 'It goes to whoever books first.'}`,
     blocks, preheader: `${i.serviceName} · ${parts(i.startMs, i.timezone).long}, ${parts(i.startMs, i.timezone).time(i.startMs)}`,
+  })
+}
+
+// ── A quote (app/api/jobs/quotes/[id]/send) ─────────────────────────────────
+
+export type QuoteEmailInput = {
+  business: string; logoUrl?: string | null; accent?: string | null; hideBadge?: boolean
+  /** The message the team wrote (plain text; the quote link is taken out of it). */
+  message: string
+  /** "Q-0007" */
+  label: string
+  /** What it's for (the job's title). */
+  title?: string | null
+  /** "$1,450.00" */
+  total: string
+  /** "14 November 2026" */
+  validUntil?: string | null
+  url: string
+  /** Sent before (a new revision or a reminder). */
+  resent?: boolean
+}
+
+export function quoteEmailHtml(i: QuoteEmailInput): string {
+  const k = kit(i.accent)
+  const blocks = [
+    summaryBlock(k, {
+      label: `Quote ${i.label}`, big: i.total, bigNote: 'Total',
+      rows: [...(i.title ? [['For', i.title] as [string, string]] : []), ...(i.validUntil ? [['Valid until', i.validUntil] as [string, string]] : [])],
+    }),
+    buttonBlock(k, i.url, `View and accept quote ${i.label}`),
+    finePrint(k, `Or open this link: ${i.url}`),
+  ]
+  return shell(k, {
+    business: i.business, logoUrl: i.logoUrl, hideBadge: i.hideBadge,
+    pill: { tone: 'accent', text: i.resent ? 'Updated quote' : 'New quote', mark: '●' },
+    headline: `Your quote ${i.label}`,
+    intro: paragraphs(i.message) || `Here’s your quote from ${esc(i.business)}.`,
+    blocks, preheader: `${i.label}${i.title ? ` · ${i.title}` : ''} · ${i.total}`,
+  })
+}
+
+// ── A sign-in code for the customer's account (app/api/portal) ──────────────
+
+export type AccountCodeEmailInput = { business: string; logoUrl?: string | null; accent?: string | null; hideBadge?: boolean; code: string; mins: number }
+
+export function accountCodeEmailHtml(i: AccountCodeEmailInput): string {
+  const k = kit(i.accent)
+  return shell(k, {
+    business: i.business, logoUrl: i.logoUrl, hideBadge: i.hideBadge,
+    pill: null,
+    headline: 'Your sign-in code',
+    intro: `Enter this code on your account page with ${esc(i.business)}.`,
+    blocks: [codeBlock(k, i.code), finePrint(k, `It expires in ${i.mins} minutes. If you didn’t ask for it, you can ignore this email: nobody can sign in without the code.`)],
+    preheader: `${i.code} is your sign-in code. It expires in ${i.mins} minutes.`,
+  })
+}
+
+// ── Back in stock (lib/waitlist) ─────────────────────────────────────────────
+
+export type BackInStockEmailInput = {
+  business: string; logoUrl?: string | null; accent?: string | null; hideBadge?: boolean
+  item: string; image?: string | null
+  /** The product page (a tracked short link), when there is one. */
+  link?: string | null
+  /** The business's message (their template, filled in; the link is taken out of it). */
+  message: string
+}
+
+export function backInStockEmailHtml(i: BackInStockEmailInput): string {
+  const k = kit(i.accent)
+  const blocks = [
+    productBlock(k, { name: i.item, image: i.image }),
+    i.link ? buttonBlock(k, i.link, 'View it now') : '',
+    finePrint(k, `You asked ${i.business} to let you know when this was back. You won’t get another message about it.`),
+  ]
+  return shell(k, {
+    business: i.business, logoUrl: i.logoUrl, hideBadge: i.hideBadge,
+    pill: { tone: 'good', text: 'Back in stock', mark: '✓' },
+    headline: `${i.item} is back`,
+    intro: paragraphs(i.message),
+    blocks, preheader: `${i.item} is back in stock at ${i.business}.`,
   })
 }
