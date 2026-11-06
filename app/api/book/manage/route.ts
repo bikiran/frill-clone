@@ -10,6 +10,7 @@ import {
   cancelBooking, rescheduleBooking, settleBookingPayment, isMissingBookingSchema, manageUrl, whereText,
   checkInState, announceArrival,
 } from '@/lib/booking'
+import { accountLink } from '@/lib/portal/auth'
 import { isMissingColumn } from '@/lib/email-db'
 import { fmtTime } from '@/lib/booking-time'
 import { bookingTimeFreed } from '@/lib/booking-waitlist-queue'
@@ -117,7 +118,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ timezone: tz, slots: slots.map(s => ({ start: new Date(s.start).toISOString() })) }, { headers: { 'Cache-Control': 'no-store' } })
     }
 
-    return NextResponse.json({ booking: publicBooking(b, company, service, settings, await hidesPoweredBy(db, company.id, company)) }, { headers: { 'Cache-Control': 'no-store' } })
+    const [hide, account] = await Promise.all([hidesPoweredBy(db, company.id, company), b.contact_id ? accountLink(db, company, { b: b.manage_token }) : null])
+    return NextResponse.json({ booking: { ...publicBooking(b, company, service, settings, hide), account_url: account } }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (e: any) {
     if (isMissingBookingSchema(e)) return NextResponse.json({ error: 'Booking not found' }, { status: 404 })
     return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })

@@ -197,6 +197,12 @@ export default function ManageBooking({ token }: { token: string }) {
         .mb-pad{padding-left:28px;padding-right:28px}
         @media(max-width:480px){.mb-pad{padding-left:18px;padding-right:18px}}
         .mb-panel{animation:bkRise .45s cubic-bezier(.22,1,.36,1) backwards}
+        .mb-acct{display:flex;align-items:center;gap:12px;max-width:620px;box-sizing:border-box;margin:14px auto 0;padding:14px 18px;border-radius:18px;background:rgba(255,255,255,.9);border:1px solid rgba(0,0,0,.06);color:#111;text-decoration:none;transition:transform .2s cubic-bezier(.22,1,.36,1),box-shadow .2s}
+        .mb-acct:hover{transform:translate3d(0,-1px,0);box-shadow:0 10px 24px -16px rgba(0,0,0,.3)}
+        .mb-acct span{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+        .mb-acct b{font-size:14.5px}
+        .mb-acct small{font-size:12.5px;color:#6b7280}
+        .mb-acct svg{color:var(--bk-accent)}
         .mb-here{position:relative;display:flex;align-items:center;gap:14px;width:100%;min-height:76px;padding:14px 18px 14px 14px;border:none;border-radius:20px;background:var(--bk-accent,#ff7a6b);color:#fff;font-family:inherit;text-align:left;cursor:pointer;box-shadow:0 16px 30px -18px var(--bk-accent,#ff7a6b),inset 0 1px 0 rgba(255,255,255,.25);transition:transform .22s cubic-bezier(.22,1,.36,1),box-shadow .25s,filter .2s}
         .mb-here:hover{transform:translate3d(0,-2px,0);filter:saturate(1.08)}
         .mb-here:active{transform:scale(.98);transition-duration:.08s}
@@ -336,6 +342,12 @@ export default function ManageBooking({ token }: { token: string }) {
           )}
         </div>
       </div>
+      {b.account_url && (
+        <a className="mb-acct bk-shell-foot" href={b.account_url}>
+          <span><b>Your account with {b.company.name}</b><small>All your bookings, orders, quotes and payments in one place</small></span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M9 6l6 6-6 6" /></svg>
+        </a>
+      )}
       {!b.company?.hide_powered_by && <div className="bk-shell-foot" style={{ textAlign: 'center', fontSize: 12, color: '#9ca3af', margin: '18px 0 8px' }}>Powered by <a href="https://colvy.com" style={{ color: '#9ca3af' }}>Colvy</a></div>}
     </Shell>
   )
