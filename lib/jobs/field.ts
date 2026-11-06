@@ -194,8 +194,9 @@ export async function closeOpenEntries(db: any, job: { id: string; company_id: s
 }
 
 /** Quotes and prices: not for field staff when the business limits them to their own jobs. */
-export async function moneyAllowed(db: any, access: JobsCaller, companyId: string): Promise<boolean> {
-  return viewFor(access, companySettings(await loadCompany(db, companyId))).money
+/** Pass the company when the route already has it, to skip reading it again. */
+export async function moneyAllowed(db: any, access: JobsCaller, companyId: string, company?: any): Promise<boolean> {
+  return viewFor(access, companySettings(company !== undefined ? company : await loadCompany(db, companyId))).money
 }
 export const MONEY_DENIED = 'Quotes and prices are for owners and admins in this workspace.'
 
