@@ -26,6 +26,11 @@ const admin = () => createClient(
 // PATCH { companyId, id, action: 'cancel' | 'reschedule' | 'complete' | 'no_show' | 'confirm',
 //         refund?, notify?, reason?, startsAt?, series? }
 // PATCH { companyId, id, action: 'repeat', everyWeeks, count, dryRun?, notify? } → { plan, created }
+// Table reservations live in Reservations (/admin/reservations), not here.
+async function tableServiceIds(db: any, companyId: string | null): Promise<Set<string>> {
+  try { const { data } = await db.from('booking_services').select('id').eq('company_id', companyId).eq('kind', 'reservation'); return new Set((data || []).map((r: any) => r.id)) } catch { return new Set() }
+}
+
 export async function GET(req: NextRequest) {
   try {
     const db = admin()
@@ -76,7 +81,8 @@ export async function GET(req: NextRequest) {
         if (isMissingBookingSchema(error) || /column/i.test(error.message)) return NextResponse.json({ today: [], stats: null, setupNeeded: true, hint: 'Run migrations V323 + V324 in Supabase.' })
         throw error
       }
-      const all = rows || []
+      const tables = await tableServiceIds(db, companyId)
+      const all = (rows || []).filter((b: any) => !tables.has(b.service_id))
       const live = (b: any) => ['confirmed', 'completed', 'no_show'].includes(b.status)
       const todays = all.filter(b => live(b) && Date.parse(b.starts_at) >= dayStart && Date.parse(b.starts_at) < dayEnd)
       const week = all.filter(b => live(b) && Date.parse(b.starts_at) >= now && Date.parse(b.starts_at) < now + 7 * DAY)
@@ -128,7 +134,8 @@ export async function GET(req: NextRequest) {
       throw error
     }
     // Lapsed unpaid holds are noise in "upcoming" — hide them.
-    const rows = (data || []).filter((b: any) => b.status !== 'pending' || (b.hold_expires_at && b.hold_expires_at > nowIso))
+    const tables = await tableServiceIds(db, companyId)
+    const rows = (data || []).filter((b: any) => !tables.has(b.service_id) && (b.status !== 'pending' || (b.hold_expires_at && b.hold_expires_at > nowIso)))
     const company = await loadCompanyPublic(db, { id: companyId })
     // Earlier kept appointments per customer — "New customer" vs "Returning · 3 visits".
     const contactIds = [...new Set(rows.map((b: any) => b.contact_id).filter(Boolean))]

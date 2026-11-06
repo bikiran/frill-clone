@@ -34,7 +34,7 @@ async function bookingCtx(ctx: ActionContext) {
 
 async function findService(ctx: ActionContext, name: string) {
   const q = String(name || '').trim()
-  const { data } = await ctx.db.from('booking_services').select('*').eq('company_id', ctx.companyId).eq('active', true).limit(50)
+  const { data } = await ctx.db.from('booking_services').select('*').eq('company_id', ctx.companyId).eq('active', true).neq('kind', 'reservation').limit(50)
   const all = data || []
   if (!q) return all.length === 1 ? all[0] : null
   return all.find((s: any) => lc(s.name) === lc(q)) || all.find((s: any) => lc(s.name).includes(lc(q)) || lc(q).includes(lc(s.name))) || null
@@ -48,7 +48,7 @@ export const listServices: ActionDef = {
   async run(ctx) {
     const bc = await bookingCtx(ctx)
     if (!bc || bc.settings.enabled === false) return { ok: true, data: { services: [], note: 'Online booking isn’t switched on for this business.' } }
-    const { data } = await ctx.db.from('booking_services').select('name, description, kind, duration_mins, price_cents, payment_mode, deposit_cents, currency, capacity').eq('company_id', ctx.companyId).eq('active', true).limit(50)
+    const { data } = await ctx.db.from('booking_services').select('name, description, kind, duration_mins, price_cents, payment_mode, deposit_cents, currency, capacity').eq('company_id', ctx.companyId).eq('active', true).neq('kind', 'reservation').limit(50)
     const services = (data || []).map((s: any) => ({
       name: s.name, about: s.description ? String(s.description).slice(0, 300) : null, minutes: s.duration_mins,
       price: s.price_cents ? money(s.price_cents, s.currency) : 'free', payUpfront: s.payment_mode === 'full' ? 'full price' : s.payment_mode === 'deposit' ? `deposit ${money(s.deposit_cents, s.currency)}` : 'nothing',

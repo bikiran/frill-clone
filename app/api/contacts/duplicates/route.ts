@@ -154,6 +154,8 @@ export async function POST(req: NextRequest) {
       ['chat_payments', 'contact_id'],
       ['tasks', 'contact_id'],
       ['jobs', 'contact_id'],
+      // Bookings and table reservations (their visits and no-shows are counted per contact).
+      ['bookings', 'contact_id'],
     ]
     for (const [table, col] of tables) {
       try {

@@ -205,6 +205,11 @@ export function bookingPageUrl(company: any, serviceSlug?: string) {
   return serviceSlug ? `${root}/${serviceSlug}` : root
 }
 export const manageUrl = (company: any, token: string) => `${companyBase(company).base}/booking/${token}`
+/** A restaurant's table booking page (/reserve, docs/plans/restaurants.md). */
+export function reservePageUrl(company: any) {
+  const { base, onSubdomain } = companyBase(company)
+  return onSubdomain ? `${base}/reserve` : `${base}/reserve/${company.slug}`
+}
 
 // ── Lookups ──────────────────────────────────────────────────────────────────
 
@@ -303,10 +308,17 @@ export async function loadBusy(db: any, companyId: string, resources: SlotResour
     .eq('company_id', companyId).in('status', ['pending', 'confirmed'])
     .lt('busy_from', toIso).gt('busy_until', fromIso)
   if (error) throw error
+  // Table reservations (staff-less, on the 'reservation' service) never block
+  // an appointment; only "solo" mode (no bookable staff) could see them.
+  let tables = new Set<string>()
+  if (solo && (bks || []).some((b: any) => !b.staff_id)) {
+    try { const { data: rs } = await db.from('booking_services').select('id').eq('company_id', companyId).eq('kind', 'reservation'); tables = new Set((rs || []).map((r: any) => r.id)) } catch {}
+  }
   for (const b of bks || []) {
     if (excludeBookingId && b.id === excludeBookingId) continue
     if (b.status === 'pending' && !(b.hold_expires_at && b.hold_expires_at > nowIso)) continue
     if (!ids.has(b.staff_id ?? null)) continue
+    if (b.service_id && tables.has(b.service_id)) continue
     push(b.staff_id ?? null, { from: Date.parse(b.busy_from), until: Date.parse(b.busy_until), serviceId: b.service_id, startMs: Date.parse(b.starts_at), seats: b.seats || 1 })
   }
 
@@ -429,7 +441,7 @@ async function ensureConversation(db: any, companyId: string, contactId: string 
   } catch { return null }
 }
 
-async function systemNote(db: any, b: any, content: string) {
+export async function systemNote(db: any, b: any, content: string) {
   if (!b.conversation_id) return
   try {
     await db.from('messages').insert({ conversation_id: b.conversation_id, company_id: b.company_id, sender_type: 'system', content, metadata: { booking_id: b.id } })
@@ -445,12 +457,12 @@ export function whereText(b: any, service?: any): string {
   return b.location_label || ''
 }
 
-function whenText(b: any) {
+export function whenText(b: any) {
   return fmtDateTime(Date.parse(b.starts_at), b.timezone || 'Australia/Melbourne', { withTz: true })
 }
 
 // The booking as integrations (Slack, webhooks, Zapier…) see it.
-function bookingEvent(b: any, title: string, extra: Record<string, any> = {}) {
+export function bookingEvent(b: any, title: string, extra: Record<string, any> = {}) {
   return {
     title, path: '/admin/bookings',
     customer: { name: b.customer_name, email: b.customer_email, phone: b.customer_phone },
@@ -650,7 +662,10 @@ async function loadBookingCtx(db: any, bookingId: string) {
 // `quiet`: a visit the team added (a repeat of a regular booking) — the
 // calendar, contact and integrations get it as usual, but the customer and the
 // team hear about the whole series once, from repeatBooking().
-export async function confirmBooking(db: any, bookingId: string, opts: { origin: string; paymentIntent?: string | null; paid?: boolean; clickRef?: string | null; quiet?: boolean }): Promise<{ ok: boolean; conflict?: boolean; already?: boolean }> {
+// `byTeam`: the team added it (a phone booking, a walk-in): no "new booking"
+// alert to the team, and the guest hears only if `notifyCustomer` isn't false.
+// `reservation`: a table reservation (lib/restaurant/server.ts).
+export async function confirmBooking(db: any, bookingId: string, opts: { origin: string; paymentIntent?: string | null; paid?: boolean; clickRef?: string | null; quiet?: boolean; byTeam?: boolean; notifyCustomer?: boolean; reservation?: boolean }): Promise<{ ok: boolean; conflict?: boolean; already?: boolean }> {
   const ctx = await loadBookingCtx(db, bookingId)
   if (!ctx) return { ok: false }
   const { b, company, service, settings } = ctx
@@ -665,7 +680,16 @@ export async function confirmBooking(db: any, bookingId: string, opts: { origin:
   }
 
   const holdLapsed = b.status !== 'pending' || !b.hold_expires_at || Date.parse(b.hold_expires_at) <= Date.now()
-  if (holdLapsed) {
+  const isTable = opts.reservation || service?.kind === 'reservation'
+  if (holdLapsed && isTable) {
+    // A table: re-take its seats with the reservation claim (covers, not staff).
+    const { reclaimReservation } = await import('@/lib/restaurant/server')
+    if (!(await reclaimReservation(db, b))) {
+      await db.from('bookings').update({ status: 'cancelled', cancelled_at: new Date().toISOString(), cancelled_by: 'system', cancel_reason: 'The time filled up before the booking finished' }).eq('id', b.id)
+      return { ok: false, conflict: true }
+    }
+    if (b.status !== 'pending') await db.from('bookings').update({ status: 'pending' }).eq('id', b.id)
+  } else if (holdLapsed) {
     // Re-check the slot is still free (ignoring this booking's own row).
     const { data: still } = await db.rpc('claim_booking_slot', {
       p_company: b.company_id, p_service: b.service_id, p_staff: b.staff_id,
@@ -734,7 +758,8 @@ export async function confirmBooking(db: any, bookingId: string, opts: { origin:
   // Calendar
   const answers = (Array.isArray(b.answers) ? b.answers : []).filter((a: any) => a?.value)
   const notes = [
-    b.source === 'repeat' ? 'Regular booking, added by the team.' : `Booked online${b.source === 'waitlist' ? ' from the waitlist' : ''}${b.staff_choice === 'any' && b.staff_name ? ' (any staff)' : ''}.`,
+    b.source === 'repeat' ? 'Regular booking, added by the team.' : opts.byTeam ? `Added by the team${b.source === 'phone' ? ' (phone booking)' : b.source === 'walk_in' ? ' (walk-in)' : ''}.` : `Booked online${b.source === 'waitlist' ? ' from the waitlist' : ''}${b.staff_choice === 'any' && b.staff_name ? ' (any staff)' : ''}.`,
+    isTable ? `Party of ${b.seats || 1}${b.seating_pref && b.seating_pref !== 'any' ? `, ${b.seating_pref} seating` : ''}${b.occasion ? ` · ${b.occasion}` : ''}` : '',
     b.customer_phone ? `Phone: ${b.customer_phone}` : '',
     b.customer_email ? `Email: ${b.customer_email}` : '',
     ...answers.map((a: any) => `${a.label}: ${a.value}`),
@@ -773,10 +798,14 @@ export async function confirmBooking(db: any, bookingId: string, opts: { origin:
     emitIntegrationEvent(b.company_id, 'booking.created', bookingEvent(bk, `New booking: ${b.service_name} · ${b.customer_name || 'a customer'}`), { db })
     return { ok: true }
   }
-  await systemNote(db, bk, `📅 Booked online: ${b.service_name}${who} — ${whenText(b)}`)
-  await notifyCompany({ db, companyId: b.company_id, type: 'booking', conversationId: conversationId || undefined, message: `📅 New booking: ${b.customer_name || 'A customer'} — ${b.service_name}${who}, ${whenText(b)}` })
-  emitIntegrationEvent(b.company_id, 'booking.created', bookingEvent(bk, `New booking: ${b.service_name} · ${b.customer_name || 'a customer'}`), { db })
-  await customerMessage(db, company, settings, bk, 'confirmed', { service, origin: opts.origin })
+  if (opts.byTeam) {
+    await systemNote(db, bk, `📅 ${isTable ? 'Table booked' : 'Booked'} by the team: ${b.service_name}${who} — ${whenText(b)}`)
+  } else {
+    await systemNote(db, bk, `📅 ${isTable ? 'Table booked online' : 'Booked online'}: ${b.service_name}${who} — ${whenText(b)}`)
+    await notifyCompany({ db, companyId: b.company_id, type: 'booking', conversationId: conversationId || undefined, message: `${isTable ? '🍽️ New reservation' : '📅 New booking'}: ${b.customer_name || 'A customer'} — ${b.service_name}${who}, ${whenText(b)}` })
+  }
+  if (!isTable) emitIntegrationEvent(b.company_id, 'booking.created', bookingEvent(bk, `New booking: ${b.service_name} · ${b.customer_name || 'a customer'}`), { db })
+  if (opts.notifyCustomer !== false) await customerMessage(db, company, settings, bk, 'confirmed', { service, origin: opts.origin })
   return { ok: true }
 }
 
@@ -870,6 +899,12 @@ export async function rescheduleBooking(db: any, bookingId: string, opts: { star
   const ctx = await loadBookingCtx(db, bookingId)
   if (!ctx) return { ok: false, error: 'Booking not found' }
   const { b, company, service, settings } = ctx
+  if (service?.kind === 'reservation') {
+    // A table: moved by covers (lib/restaurant/server.ts), same party size.
+    const { moveReservation } = await import('@/lib/restaurant/server')
+    const r = await moveReservation(db, b, { startMs: opts.startMs, by: opts.by, notify: opts.notifyCustomer, origin: opts.origin })
+    return { ok: r.ok, error: r.error, status: r.status }
+  }
   if (!service) return { ok: false, error: 'This service is no longer offered — please contact the business.' }
   if (b.status !== 'confirmed') return { ok: false, error: 'Only confirmed bookings can be moved.' }
   const tz = settings.timezone
@@ -1261,8 +1296,14 @@ export async function customerMessage(db: any, company: any, settings: BookingSe
     } catch { return url }
   }
   const live = kind === 'confirmed' || kind === 'rescheduled' || kind === 'reminder'
+  // A table reservation (lib/restaurant): restaurant wording and the table page.
+  const isTable = extra.service?.kind === 'reservation'
+  const party = Math.max(1, Number(b.seats) || 1)
+  let tableNote = ''
+  if (isTable) { try { const { data: rc } = await db.from('companies').select('restaurant_settings').eq('id', company.id).maybeSingle(); tableNote = String(rc?.restaurant_settings?.confirmation_note || '').slice(0, 1000) } catch {} }
+  const pageUrl = isTable ? reservePageUrl(company) : bookingPageUrl(company, extra.service?.active ? extra.service.slug : undefined)
   const manage = live ? await short(manageUrl(company, b.manage_token), 'booking') : manageUrl(company, b.manage_token)
-  const rebook = live ? bookingPageUrl(company, extra.service?.active ? extra.service.slug : undefined) : await short(bookingPageUrl(company, extra.service?.active ? extra.service.slug : undefined), 'booking')
+  const rebook = live ? pageUrl : await short(pageUrl, 'booking')
   const refundAmt = typeof extra.refunded === 'number' ? extra.refunded : 0
   const refundLine = (refundAmt ? ` We've refunded ${fmtMoney(refundAmt, b.currency)}.` : (extra.refunded === true ? ' Your payment has been refunded.' : ''))
     + (kind === 'cancelled' && extra.alsoCancelled ? ` Your ${extra.alsoCancelled} later visit${extra.alsoCancelled === 1 ? '' : 's'} in this series ${extra.alsoCancelled === 1 ? 'is' : 'are'} cancelled too.` : '')
@@ -1275,6 +1316,18 @@ export async function customerMessage(db: any, company: any, settings: BookingSe
     reminder: `Reminder: ${b.service_name}${who} at ${business} ${rel}.${where ? ` ${where}.` : ''} Reply C to confirm or R to reschedule. ${manage}`,
     noshow: `Hi ${first}, we missed you at your ${b.service_name} with ${business} today. Want to pick another time? ${rebook}`,
     rebook: `Hi ${first}, it's been a while since your ${b.service_name} at ${business} — ready for the next one? Book a time: ${rebook}`,
+  }
+
+  if (isTable) {
+    const people = `${party} ${party === 1 ? 'person' : 'people'}`
+    Object.assign(sms, {
+      confirmed: `Hi ${first}, your table for ${people} at ${business} is booked for ${when}. See you then! Change or cancel: ${manage}`,
+      rescheduled: `Hi ${first}, your table at ${business} is now for ${people} on ${when}. Change or cancel: ${manage}`,
+      cancelled: `Hi ${first}, your table for ${people} at ${business} on ${when} has been cancelled.${refundLine} Book again: ${rebook}`,
+      reminder: `Reminder: your table for ${people} at ${business} ${rel}. Reply C to confirm or R to change it. ${manage}`,
+      noshow: `Hi ${first}, we missed you at ${business} today. We'd love to see you another time: ${rebook}`,
+      rebook: `Hi ${first}, it's been a while! Book a table at ${business}: ${rebook}`,
+    })
   }
 
   const origin = extra.origin || String(process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com').replace(/\/$/, '')
@@ -1297,6 +1350,10 @@ export async function customerMessage(db: any, company: any, settings: BookingSe
   }
 
   if (settings.notify_email && allow('email') && b.customer_email && !(kind === 'rebook' && optedOut)) {
+    const tableSubjects: Partial<Record<MsgKind, string>> = isTable ? {
+      confirmed: `Your table is booked: ${party} at ${when}`, rescheduled: `Table changed: ${party} at ${when}`,
+      cancelled: `Table cancelled: ${when}`, reminder: `See you ${rel}: table for ${party}`,
+    } : {}
     const subjects: Record<MsgKind, string> = {
       confirmed: `Booking confirmed: ${b.service_name}, ${when}`,
       rescheduled: `Booking moved: ${b.service_name}, now ${when}`,
@@ -1310,13 +1367,23 @@ export async function customerMessage(db: any, company: any, settings: BookingSe
       confirmed: 'You’re booked in ✓', rescheduled: 'Your booking has moved', cancelled: 'Your booking is cancelled', conflict: 'That time was just taken',
       reminder: `See you ${rel.replace(/ at .*/, '')}`, noshow: 'We missed you', rebook: 'Ready for the next one?',
     }
+    if (isTable) {
+      Object.assign(subjects, tableSubjects)
+      Object.assign(headlines, { confirmed: 'Your table is booked ✓', rescheduled: 'Your table has changed', cancelled: 'Your table is cancelled' })
+    }
     const invite = {
       uid: b.id, title: `${b.service_name} — ${business}`, startMs: Date.parse(b.starts_at), endMs: Date.parse(b.ends_at),
       location: where || null, description: `Manage your booking: ${manage}`, url: manage,
       cancelled: kind === 'cancelled' || kind === 'conflict', sequence: (b.reschedule_count || 0) + (kind === 'cancelled' ? 1 : 0),
     }
     const accent = /^#[0-9a-f]{6}$/i.test(company.accent_color || '') ? company.accent_color : '#ff7a6b'
-    const rows: [string, string][] = kind === 'noshow' || kind === 'rebook' ? [] : [
+    const rows: [string, string][] = kind === 'noshow' || kind === 'rebook' ? [] : isTable ? [
+      ['Table for', `${party} ${party === 1 ? 'person' : 'people'}`],
+      ['When', when],
+      ...(b.seating_pref && b.seating_pref !== 'any' ? [['Seating', ({ indoor: 'Inside', outdoor: 'Outside', bar: 'At the bar' } as any)[b.seating_pref] || b.seating_pref] as [string, string]] : []),
+      ...(b.occasion ? [['Occasion', String(b.occasion)] as [string, string]] : []),
+      ...(where ? [['Where', where] as [string, string]] : []),
+    ] : [
       ['What', b.service_name + who],
       ['When', when],
       ...(where ? [['Where', where] as [string, string]] : []),
@@ -1332,9 +1399,10 @@ export async function customerMessage(db: any, company: any, settings: BookingSe
       rebook: `Hi ${esc(first)}, it’s been a while since your ${esc(b.service_name)} with ${esc(business)}. Book your next one in a few taps.`,
     }
     const buttons = live
-      ? `<a href="${manage}" style="display:inline-block;background:${accent};color:#fff;text-decoration:none;font-weight:700;padding:11px 20px;border-radius:10px;margin:0 8px 8px 0">${kind === 'reminder' ? 'View or change' : 'Manage booking'}</a>${kind === 'reminder' ? '' : `<a href="${googleCalendarUrl(invite)}" style="display:inline-block;background:#fff;color:#111;border:1px solid #e5e7eb;text-decoration:none;font-weight:600;padding:10px 18px;border-radius:10px;margin:0 8px 8px 0">Add to Google Calendar</a>`}`
-      : `<a href="${rebook}" style="display:inline-block;background:${accent};color:#fff;text-decoration:none;font-weight:700;padding:11px 20px;border-radius:10px">${kind === 'cancelled' || kind === 'conflict' ? 'Book another time' : 'Book now'}</a>`
-    const note = (kind === 'confirmed' || kind === 'reminder') && settings.confirmation_note ? `<p style="margin:16px 0 0;color:#374151;font-size:14px;line-height:1.55;white-space:pre-line">${esc(settings.confirmation_note)}</p>` : ''
+      ? `<a href="${manage}" style="display:inline-block;background:${accent};color:#fff;text-decoration:none;font-weight:700;padding:11px 20px;border-radius:10px;margin:0 8px 8px 0">${kind === 'reminder' ? 'View or change' : isTable ? 'Change or cancel' : 'Manage booking'}</a>${kind === 'reminder' ? '' : `<a href="${googleCalendarUrl(invite)}" style="display:inline-block;background:#fff;color:#111;border:1px solid #e5e7eb;text-decoration:none;font-weight:600;padding:10px 18px;border-radius:10px;margin:0 8px 8px 0">Add to Google Calendar</a>`}`
+      : `<a href="${rebook}" style="display:inline-block;background:${accent};color:#fff;text-decoration:none;font-weight:700;padding:11px 20px;border-radius:10px">${isTable ? 'Book a table' : kind === 'cancelled' || kind === 'conflict' ? 'Book another time' : 'Book now'}</a>`
+    const noteText = isTable ? tableNote : settings.confirmation_note
+    const note = (kind === 'confirmed' || kind === 'reminder') && noteText ? `<p style="margin:16px 0 0;color:#374151;font-size:14px;line-height:1.55;white-space:pre-line">${esc(noteText)}</p>` : ''
     const html = `<!doctype html><html><body style="margin:0;background:#f6f6f7;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
 <div style="max-width:520px;margin:0 auto;padding:28px 16px">
   <div style="background:#fff;border-radius:16px;padding:28px;border:1px solid #eee">
