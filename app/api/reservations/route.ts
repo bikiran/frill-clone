@@ -294,13 +294,18 @@ export async function PATCH(req: NextRequest) {
       case 'cancel': {
         // Giving a deposit back is a refund: the same permission and PIN as any other.
         const refund = body.refund === true && b.payment_status === 'paid'
+        let guard: any = null
         if (refund) {
-          const g = await guardRefund(req, db, companyId, { pin: body.refundPin })
-          if (isRefused(g)) return json(guardBody(g), g.status)
+          guard = await guardRefund(req, db, companyId, { pin: body.refundPin })
+          if (isRefused(guard)) return json(guardBody(guard), guard.status)
         }
         const c = await cancelBooking(db, b.id, { by: 'business', reason: clip(body.reason, 500) || null, refund, notifyCustomer: body.notify !== false, origin })
         if (!c.ok) return json({ error: c.error }, 409)
         await audit(req, db, companyId, 'reservation_cancelled', `${b.service_name} for ${b.customer_name} cancelled — ${whenText(b)}${refund ? (c.refunded ? ` (deposit of $${(c.refunded / 100).toFixed(2)} refunded)` : ' (deposit refund failed)') : ''}`, { booking_id: b.id, refunded_cents: c.refunded || 0 })
+        if (c.refunded) {
+          await audit(req, db, companyId, 'refund_issued', `${guard?.actor?.name ? `${guard.actor.name} refunded` : 'Refunded'} a $${(c.refunded / 100).toFixed(2)} deposit on cancelling ${b.service_name} for ${b.customer_name || 'a guest'}${guard?.pinRequired ? ' (PIN checked)' : ''}`,
+            { booking_id: b.id, amount_cents: c.refunded, conversation_id: b.conversation_id || null, by: guard?.actor?.userId || null })
+        }
         return reply(undefined, { refunded: c.refunded || 0, refundError: c.refundError || null })
       }
       case 'move': {

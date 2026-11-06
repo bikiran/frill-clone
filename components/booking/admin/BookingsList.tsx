@@ -7,6 +7,7 @@ import SlotPicker from '@/components/booking/SlotPicker'
 import { api, money, card, input, Modal, Toggle } from './shared'
 import { PinIcon, CheckIcon, ChatIcon, CalendarIcon, XIcon, LinkIcon } from '@/components/booking/icons'
 import EmptyScroll from '@/components/EmptyScroll'
+import { useRefundAccess, RefundPinField, RefundNotAllowed, isPinError } from '@/components/RefundPin'
 import { createJobFrom, useJobsEnabled } from '@/components/jobs/createJob'
 
 // The team's list of online bookings, grouped by day: filters (status, date
@@ -330,30 +331,39 @@ const CSS = `
 
 function CancelDialog({ companyId, b, laterInSeries, onClose, onDone }: { companyId: string; b: any; laterInSeries: number; onClose: () => void; onDone: (m: string) => void }) {
   const paid = b.payment_status === 'paid'
+  // Refunds need "Issue refunds" and, when the workspace has one, the refund PIN (checked on the server too).
+  const access = useRefundAccess(companyId)
+  const mayRefund = paid && access.canRefund && !access.locked
   const [refund, setRefund] = useState(paid)
+  const [pin, setPin] = useState('')
   const [notify, setNotify] = useState(true)
   const [series, setSeries] = useState(false)
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const giveBack = refund && mayRefund
+  const needPin = giveBack && access.pinSet
   const go = async () => {
     setBusy(true); setError('')
     try {
-      const d = await api('/api/bookings', { method: 'PATCH', json: { companyId, id: b.id, action: 'cancel', refund, notify, reason, series } })
+      const d = await api('/api/bookings', { method: 'PATCH', json: { companyId, id: b.id, action: 'cancel', refund: giveBack, notify, reason, series, ...(needPin ? { refundPin: pin } : {}) } })
       const also = d.alsoCancelled ? ` (and ${d.alsoCancelled} later visit${d.alsoCancelled === 1 ? '' : 's'})` : ''
       onDone(d.refundError ? `Cancelled${also} — refund failed: ${d.refundError}` : d.refunded ? `Cancelled${also} and refunded ${money(d.refunded, b.currency)}` : `Booking cancelled${also}`)
-    } catch (e: any) { setError(e.message); setBusy(false) }
+    } catch (e: any) { if (isPinError(e.code)) setPin(''); setError(e.message); setBusy(false) }
   }
   return (
     <Modal title="Cancel booking" onClose={onClose} width={460} footer={<>
       <button onClick={onClose} className="cv-btn">Keep it</button>
-      <button onClick={go} disabled={busy} className="cv-btn bk-danger">{busy ? 'Cancelling…' : 'Cancel booking'}</button>
+      <button onClick={go} disabled={busy || (needPin && pin.length < 4)} className="cv-btn bk-danger">{busy ? 'Cancelling…' : giveBack ? 'Cancel and refund' : 'Cancel booking'}</button>
     </>}>
       <div style={{ fontSize: 14, marginBottom: 14 }}><b>{b.customer_name}</b> · {b.service_name}</div>
       <div style={{ display: 'grid', gap: 12 }}>
-        {paid && (
+        {mayRefund && (
           <label style={row}><Toggle on={refund} onChange={setRefund} /> Refund {money(b.amount_due_cents - (b.refunded_cents || 0), b.currency)} to their card</label>
         )}
+        {needPin && <RefundPinField value={pin} onChange={setPin} id="bk-refund-pin" />}
+        {paid && !access.loading && !access.canRefund && <RefundNotAllowed />}
+        {paid && !access.loading && access.canRefund && access.locked && <div style={{ fontSize: 13, color: '#b45309' }}>Refunds are locked for a while after wrong PINs. You can cancel now and refund later from Payments.</div>}
         <label style={row}><Toggle on={notify} onChange={setNotify} /> Let the customer know (SMS / email)</label>
         {laterInSeries > 0 && <label style={row}><Toggle on={series} onChange={setSeries} /> Also cancel the {laterInSeries} later visit{laterInSeries === 1 ? '' : 's'} in this regular booking</label>}
         <textarea value={reason} onChange={e => setReason(e.target.value)} rows={2} placeholder="Reason (optional, included in the note on the conversation)" style={input} />

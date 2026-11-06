@@ -13,7 +13,7 @@ export async function api(path: string, init?: RequestInit & { json?: any }) {
     body: init?.json !== undefined ? JSON.stringify(init.json) : init?.body,
   })
   const d = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(d.error || `Request failed (${res.status})`)
+  if (!res.ok) { const err: any = new Error(d.error || `Request failed (${res.status})`); err.code = d.code || null; err.status = res.status; throw err }
   return d
 }
 
