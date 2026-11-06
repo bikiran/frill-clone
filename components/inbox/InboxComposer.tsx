@@ -28,7 +28,7 @@ export default function InboxComposer() {
     expiryDeleteMode, expiryMenuFor, fileInputRef, fmtRec, handleFileUpload, internalMode, isMobile,
     lastInboundId, liveTyping, loadConversations, logAiUpdate, mComposerOpen, mentionIndex,
     mentionMatches, mentionQuery, messages, myName, openMediaPicker, openMobileComposer,
-    openScheduleMsg, openTicket, outboundChannel, paymentSignal, quickIndex, quickMatches,
+    openScheduleMsg, openTicket, outboundChannel, saleSuggestion, setSalePrefill, quickIndex, quickMatches,
     quickMenuRef, recSeconds, recording, reloadThread, renderLinkTools, renderModeHead,
     renderSendMenu, reply, replyRev, typeReply, replyTo, replyTr, saleDismissed, scheduledBusy, scheduledList,
     scheduledWhen, scrollBottom, selected, sendAndClose, sendChannel, sendReply, sendScheduledNow,
@@ -553,16 +553,52 @@ export default function InboxComposer() {
           <WhatsAppComposerBar conversationId={selected.id} refreshKey={lastInboundId} contactName={contact?.name || null} agentName={myName}
             onSent={async () => { if (await reloadThread(selected.id)) scrollBottom() }} onError={t => showToast(t)} />
         )}
-        {selected && paymentSignal && !saleDismissed.has(selected.id) && !convHasSale && wooOrders.length === 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 8px', padding: '9px 12px', borderRadius: 10, background: '#ecfdf5', border: '1px solid #a7f3d0' }}>
-            <span style={{ fontSize: 16, flexShrink: 0 }}>💰</span>
-            <span style={{ flex: 1, fontSize: 12.5, color: '#065f46', fontWeight: 600 }}>Looks like a payment — did this convert to a sale?</span>
-            <button type="button" onClick={() => { dismissSalePrompt(selected.id); setShowRecordSale(true) }}
-              style={{ padding: '6px 12px', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>Yes, record</button>
-            <button type="button" onClick={() => dismissSalePrompt(selected.id)}
-              style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #a7f3d0', background: '#fff', color: '#065f46', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>Not now</button>
-          </div>
-        )}
+        {selected && saleSuggestion && !saleDismissed.has(`${selected.id}:${saleSuggestion.messageId}`) && (() => {
+          const key = `${selected.id}:${saleSuggestion.messageId}`
+          const amt = saleSuggestion.amount != null ? new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(saleSuggestion.amount) : null
+          return (
+            <div className="snd" role="status">
+              <span className="snd-ic" aria-hidden>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
+              </span>
+              <div className="snd-t">
+                <b>Record this as a Colvy sale?</b>
+                <span>{saleSuggestion.summary}</span>
+                {(amt || saleSuggestion.method || saleSuggestion.note) && (
+                  <span className="snd-chips">
+                    {amt && <i>{amt}</i>}
+                    {saleSuggestion.method && <i>{saleSuggestion.method}</i>}
+                    {saleSuggestion.note && <i>{saleSuggestion.note}</i>}
+                  </span>
+                )}
+              </div>
+              <div className="snd-acts">
+                <button type="button" className="snd-go" onClick={() => { dismissSalePrompt(key); setSalePrefill({ amount: saleSuggestion.amount, method: saleSuggestion.method, note: saleSuggestion.note }); setShowRecordSale(true) }}>Record sale</button>
+                <button type="button" className="snd-no" onClick={() => dismissSalePrompt(key)}>Not now</button>
+              </div>
+              <style>{`
+                .snd{display:flex;align-items:center;gap:12px;margin:0 0 10px;padding:12px 12px 12px 14px;border-radius:18px;background:var(--card,#fff);box-shadow:0 0 0 1px rgba(22,163,74,.22),0 6px 18px -10px rgba(22,163,74,.45);animation:sndIn .35s cubic-bezier(.22,1,.36,1) both}
+                .snd-ic{width:36px;height:36px;flex-shrink:0;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;background:#dcfce7;color:#15803d}
+                .snd-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+                .snd-t b{font-size:13.5px;font-weight:700;color:var(--ink,#111)}
+                .snd-t>span{font-size:12.5px;color:#52525b;line-height:1.45}
+                .snd-chips{display:flex!important;flex-wrap:wrap;gap:5px;margin-top:3px}
+                .snd-chips i{font-style:normal;height:22px;padding:0 9px;border-radius:999px;background:#f4f4f5;color:#27272a;font-size:11.5px;font-weight:650;display:inline-flex;align-items:center;white-space:nowrap}
+                .snd-acts{display:flex;gap:6px;flex-shrink:0}
+                .snd-go,.snd-no{height:34px;padding:0 14px;border-radius:999px;font:inherit;font-size:13px;font-weight:650;cursor:pointer;white-space:nowrap}
+                .snd-go{border:none;background:#16a34a;color:#fff}
+                .snd-go:hover{background:#15803d}
+                .snd-no{border:none;background:#f4f4f5;color:#3f3f46}
+                .snd-no:hover{background:#e4e4e7}
+                [data-theme="dark"] .snd-ic{background:color-mix(in srgb,#16a34a 22%,var(--card));color:#4ade80}
+                [data-theme="dark"] .snd-t>span{color:#a1a1aa}
+                [data-theme="dark"] .snd-chips i,[data-theme="dark"] .snd-no{background:#2a2a2e;color:#e4e4e7}
+                @media(max-width:600px){.snd{flex-wrap:wrap}.snd-acts{width:100%;justify-content:flex-end}}
+                @keyframes sndIn{from{opacity:0;transform:translate3d(0,6px,0)}to{opacity:1;transform:none}}
+              `}</style>
+            </div>
+          )
+        })()}
         {!internalMode && <AiDraftInfo info={aiDraft.info} error={aiDraft.error} busy={aiDraft.busy} onRedo={i => aiDraft.run(i)} onClose={aiDraft.clear} />}
         {!internalMode && <TranslateStrip t={replyTr} suggested={customerLanguage(messages)} hasText={!!text.trim()} />}
 

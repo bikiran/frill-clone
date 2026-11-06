@@ -46,7 +46,7 @@ export default function InboxOverlays() {
     schedulingMsg, searchForwardTargets, searchProducts, selectConversation, selected,
     sendCoupon, sendInteractive, sendInvoiceInChat, sendMediaRequest, sendPayment, sendPicker,
     sendPickupReady, sendProductMessage, sendProofOfDelivery, sendTrackingMessage,
-    setAbandonedCarts, setChargeAmount, setChargeCardId, setChargeDesc, setContact, setConvHasSale,
+    setAbandonedCarts, setChargeAmount, setChargeCardId, setChargeDesc, setContact, setConvHasSale, salePrefill, setSalePrefill,
     setCouponAmount, setCouponCode, setCouponExpiry, setCouponOneTime, setCouponType, setCtxMenu,
     setEditOrder, setEditOrderData, setEditingScheduled, setFilters, setFiltersCustomDates,
     setForwardPicked, setForwarding, setGalleryIndex, setGallerySearch, setGallerySelected,
@@ -977,7 +977,8 @@ export default function InboxOverlays() {
           teamMembers={teamMembers as any}
           currentUser={{ id: user?.id, name: myName }}
           currency="AUD"
-          onClose={() => setShowRecordSale(false)}
+          initial={salePrefill}
+          onClose={() => { setShowRecordSale(false); setSalePrefill(null) }}
           onSaved={() => { setConvHasSale(true); if (selected) loadConversationExtras(selected.id) }}
         />
       )}

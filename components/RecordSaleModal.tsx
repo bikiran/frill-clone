@@ -21,7 +21,7 @@ type Sale = {
 }
 
 export default function RecordSaleModal({
-  companyId, conversation, contact, teamMembers, currentUser, currency = 'AUD', onClose, onSaved,
+  companyId, conversation, contact, teamMembers, currentUser, currency = 'AUD', initial, onClose, onSaved,
 }: {
   companyId: string
   conversation: any
@@ -29,6 +29,8 @@ export default function RecordSaleModal({
   teamMembers: Member[]
   currentUser: { id?: string; name?: string | null }
   currency?: string
+  /** Filled in from the chat ("Record this as a Colvy sale?"): amount, how they paid, a note naming the receipt. */
+  initial?: { amount?: number | null; method?: string | null; note?: string | null } | null
   onClose: () => void
   onSaved?: () => void
 }) {
@@ -42,10 +44,11 @@ export default function RecordSaleModal({
   })()
 
   const [sales, setSales] = useState<Sale[] | null>(null)
-  const [amount, setAmount] = useState('')
-  const [method, setMethod] = useState('')
+  const [amount, setAmount] = useState(initial?.amount ? String(initial.amount) : '')
+  const [method, setMethod] = useState(initial?.method || '')
   const [soldBy, setSoldBy] = useState(defaultSoldBy)
-  const [note, setNote] = useState('')
+  const [note, setNote] = useState(initial?.note || '')
+  const prefilled = !!(initial && (initial.amount || initial.method || initial.note))
   const [saving, setSaving] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
   const [err, setErr] = useState('')
@@ -153,6 +156,11 @@ export default function RecordSaleModal({
           <SkClose onClick={onClose} />
         </div>
 
+        {prefilled && !editing && (
+          <p className="sk-sub" style={{ margin: '0 0 6px', padding: '9px 12px', borderRadius: 12, background: '#f0fdf4', color: '#166534' }}>
+            Filled in from the chat. Check the amount and how they paid before you save.
+          </p>
+        )}
         <label className="sk-lbl" htmlFor="rs-amount">Amount</label>
         <span className="sk-field">
           <span className="sk-pre">{currency === 'AUD' || currency === 'USD' || currency === 'NZD' || currency === 'CAD' ? '$' : currency}</span>
