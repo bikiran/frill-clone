@@ -6,8 +6,9 @@ import { confirmDialog } from '@/components/ConfirmDialog'
 import { api, useJobsCompany, Dialog, useToast, Toast, SetupNote, Icon, JB_CSS } from '@/components/jobs/shared'
 import { centsToInput, inputToCents, fmtMoney, LINE_KINDS, LINE_KIND_LABEL, type LineKind } from '@/lib/jobs/quote-math'
 
-// Jobs & quotes settings: the module switch, GST, numbering, a quote's
-// default terms, validity and deposit, the price list and saved templates.
+// Jobs & quotes settings: the module switch, the field team (who sees which
+// jobs, signatures), GST, numbering, a quote's default terms, validity and
+// deposit, the price list, saved templates and saved checklists.
 // Owners and admins change these; everyone with Jobs access can see them.
 
 export default function JobSettingsPage() {
@@ -20,6 +21,8 @@ export default function JobSettingsPage() {
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useToast()
   const [item, setItem] = useState<any>(null)   // price-list item being edited
+  const [lists, setLists] = useState<any[] | null>(null)   // saved checklists
+  const [list, setList] = useState<any>(null)    // checklist being edited
 
   const load = useCallback(async () => {
     if (!companyId) return
@@ -29,6 +32,10 @@ export default function JobSettingsPage() {
     } catch (e: any) { if (/COLVY_V427/.test(e.message)) setSetup(e.message); else setErr(e.message) }
   }, [companyId])
   useEffect(() => { if (ready) load() }, [ready, load])
+  useEffect(() => {
+    if (!ready || !companyId) return
+    api(`/api/jobs/checklists?companyId=${companyId}`).then(r => setLists(r.checklists || [])).catch(() => setLists([]))
+  }, [ready, companyId])
 
   const canManage = !!d?.canManage
   const dirty = s && JSON.stringify(s) !== saved
@@ -60,6 +67,17 @@ export default function JobSettingsPage() {
     if (!(await confirmDialog({ title: `Remove “${it.name}”?`, message: 'Quotes that already use it keep their lines.', confirmLabel: 'Remove', tone: 'danger' }))) return
     try { await api(`/api/jobs/price-items?companyId=${companyId}&id=${it.id}`, { method: 'DELETE' }); setD((x: any) => ({ ...x, priceItems: x.priceItems.filter((p: any) => p.id !== it.id) })) } catch (e: any) { setToast(e.message) }
   }
+  const saveList = async () => {
+    try {
+      const r = await api('/api/jobs/checklists', { method: 'POST', json: { companyId, checklist: { id: list.id, name: list.name, items: list.text } } })
+      setLists(ls => (list.id ? (ls || []).map(x => (x.id === list.id ? r.checklist : x)) : [...(ls || []), r.checklist]).sort((a, b) => a.name.localeCompare(b.name)))
+      setList(null); setToast('Checklist saved')
+    } catch (e: any) { setToast(e.message) }
+  }
+  const delList = async (c: any) => {
+    if (!(await confirmDialog({ title: `Delete “${c.name}”?`, message: 'Jobs that already use it keep their steps.', confirmLabel: 'Delete', tone: 'danger' }))) return
+    try { await api(`/api/jobs/checklists?companyId=${companyId}&id=${c.id}`, { method: 'DELETE' }); setLists(ls => (ls || []).filter(x => x.id !== c.id)) } catch (e: any) { setToast(e.message) }
+  }
   const delTpl = async (t: any) => {
     if (!(await confirmDialog({ title: `Delete template “${t.name}”?`, confirmLabel: 'Delete', tone: 'danger' }))) return
     try { await api(`/api/jobs/templates?companyId=${companyId}&id=${t.id}`, { method: 'DELETE' }); setD((x: any) => ({ ...x, templates: x.templates.filter((p: any) => p.id !== t.id) })) } catch (e: any) { setToast(e.message) }
@@ -67,7 +85,7 @@ export default function JobSettingsPage() {
 
   return (
     <AdminPage title="Quote Settings" back={{ href: '/admin/jobs', label: 'Jobs' }} width="md"
-      sub="GST, numbering, the price list and templates for your quotes."
+      sub="Your field team, GST, numbering, the price list, templates and checklists."
       actions={canManage && dirty ? <button type="button" className="ak-btn go" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button> : null}>
       <style>{JB_CSS + PAGE_CSS}</style>
       {setup && <SetupNote text={setup} />}
@@ -77,6 +95,17 @@ export default function JobSettingsPage() {
       {d && s && <>
         <Panel className="js-mod" title="Jobs & quotes" sub={d.modules?.jobs === undefined ? `On by default for ${d.industry || 'your type of business'}.` : 'Shows Jobs in the menu for everyone on your team.'}
           right={<Toggle on={!!d.jobsEnabled} onChange={setModule} label="Jobs & quotes" disabled={!canManage} />} />
+
+        <Panel title="Field team" sub="How your team works on jobs.">
+          <div className="js-row">
+            <div><b>Team members only see their own jobs</b><span>Anyone who isn’t an owner or admin sees only the jobs they’re on, without prices or quotes.</span></div>
+            <Toggle on={s.restrict_to_assigned} onChange={v => setS({ ...s, restrict_to_assigned: v })} label="Team members only see their own jobs" disabled={!canManage} />
+          </div>
+          <div className="js-row">
+            <div><b>Customer signs before a job is finished</b><span>A job can’t be completed until the customer has signed on the team member’s screen.</span></div>
+            <Toggle on={s.require_signature} onChange={v => setS({ ...s, require_signature: v })} label="Customer signs before a job is finished" disabled={!canManage} />
+          </div>
+        </Panel>
 
         <Panel title="GST">
           <div className="js-row">
@@ -164,7 +193,38 @@ export default function JobSettingsPage() {
             </div>
           ) : <div className="ak-empty" style={{ padding: '24px 20px 28px' }}><span>No templates yet.</span></div>}
         </Panel>
+
+        <Panel title="Checklists" sub="Steps your team ticks off on a job, added in one go from the job’s Checklist." flush
+          right={canManage && <button type="button" className="ak-btn sm go" onClick={() => setList({ name: '', text: '' })}>{Icon.plus}Add</button>}>
+          {lists === null ? <div className="ak-empty" style={{ padding: '24px 20px 28px' }}><span>Loading…</span></div> : lists.length ? (
+            <div className="js-list">
+              {lists.map((c: any) => (
+                <div key={c.id} className="js-li">
+                  <div style={{ minWidth: 0, flex: 1 }}><b>{c.name}</b><span>{(c.items || []).length} step{(c.items || []).length === 1 ? '' : 's'} · {(c.items || []).slice(0, 3).join(' · ')}{(c.items || []).length > 3 ? ' …' : ''}</span></div>
+                  {canManage && <>
+                    <button type="button" className="ak-btn sm ghost" onClick={() => setList({ id: c.id, name: c.name, text: (c.items || []).join('\n') })}>Edit</button>
+                    <button type="button" className="ak-icon-btn danger" onClick={() => delList(c)} aria-label={`Delete ${c.name}`}>{Icon.trash}</button>
+                  </>}
+                </div>
+              ))}
+            </div>
+          ) : <div className="ak-empty" style={{ padding: '24px 20px 28px' }}><span>No checklists yet. Add one for jobs you do often, like a switchboard upgrade or an end-of-lease clean.</span></div>}
+        </Panel>
       </>}
+
+      {list && (
+        <Dialog title={list.id ? 'Edit checklist' : 'New checklist'} onClose={() => setList(null)} width={520} footer={<>
+          <button type="button" className="ak-btn ghost" onClick={() => setList(null)}>Cancel</button>
+          <button type="button" className="ak-btn go" disabled={!list.name.trim() || !list.text.trim()} onClick={saveList}>Save</button>
+        </>}>
+          <div><label className="ak-label" htmlFor="cl-n">Name</label><input id="cl-n" className="ak-field" autoFocus value={list.name} onChange={e => setList({ ...list, name: e.target.value })} maxLength={120} placeholder="e.g. Switchboard upgrade" /></div>
+          <div>
+            <label className="ak-label" htmlFor="cl-t">Steps</label>
+            <textarea id="cl-t" className="ak-field" rows={9} value={list.text} onChange={e => setList({ ...list, text: e.target.value })} placeholder={'One step per line, e.g.\nIsolate power at the main switch\nTest and tag\nPhoto of the finished board'} />
+            <p className="ak-hint">One step per line, up to 100.</p>
+          </div>
+        </Dialog>
+      )}
 
       {item && (
         <Dialog title={item.id ? 'Edit item' : 'Add to price list'} onClose={() => setItem(null)} width={480} footer={<>
@@ -191,12 +251,14 @@ const toForm = (st: any) => ({
   deposit_type: st.default_deposit?.type || 'none',
   deposit_value: st.default_deposit?.type === 'fixed' ? centsToInput(st.default_deposit.value) : String(st.default_deposit?.value || ''),
   job_prefix: st.job_prefix || 'J', quote_prefix: st.quote_prefix || 'Q',
+  restrict_to_assigned: st.restrict_to_assigned === true, require_signature: st.require_signature === true,
 })
 const fromForm = (f: any) => ({
   gst_registered: f.gst_registered, tax_rate: Number(f.tax_rate) || 0, prices_include_tax: f.prices_include_tax,
   quote_valid_days: Number(f.quote_valid_days) || 30, default_terms: f.default_terms,
   default_deposit: { type: f.deposit_type, value: f.deposit_type === 'fixed' ? inputToCents(f.deposit_value) : Number(f.deposit_value) || 0 },
   job_prefix: f.job_prefix, quote_prefix: f.quote_prefix,
+  restrict_to_assigned: !!f.restrict_to_assigned, require_signature: !!f.require_signature,
 })
 
 const PAGE_CSS = `

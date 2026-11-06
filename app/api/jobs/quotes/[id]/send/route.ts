@@ -8,6 +8,7 @@ import {
   jobsDb, jobsAccess, json, setupNeeded, isMissingJobsSchema, isUuid, logJobEvent, emitJobEvent,
   loadCompany, companySettings, companyTz, quoteDefaults, quoteUrl, quoteMessage, newPublicToken, clip,
 } from '@/lib/jobs/server'
+import { moneyAllowed, MONEY_DENIED } from '@/lib/jobs/field'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,6 +30,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const companyId = String(body.companyId || '')
     const access = await jobsAccess(req, db, companyId)
     if (!access.ok) return access.response
+    if (!(await moneyAllowed(db, access, String(companyId)))) return json({ error: MONEY_DENIED }, 403)
     if (!isUuid(id)) return json({ error: 'Quote not found.' }, 404)
     const channel = ['sms', 'email', 'link'].includes(body.channel) ? body.channel as 'sms' | 'email' | 'link' : 'link'
 

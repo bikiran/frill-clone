@@ -4,6 +4,7 @@ import { resolveJobSettings } from '@/lib/jobs/settings'
 import { readModules, jobsEnabled } from '@/lib/modules'
 import { stripeReady } from '@/lib/booking'
 import { jobsDb, jobsAccess, json, setupNeeded, isMissingJobsSchema, isJobsManager, loadCompany } from '@/lib/jobs/server'
+import { viewFor } from '@/lib/jobs/field'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,13 +26,16 @@ export async function GET(req: NextRequest) {
       db.from('job_quote_templates').select('id, name, title, intro, terms, items, discount_type, discount_value, deposit_type, deposit_value, updated_at').eq('company_id', companyId!).order('name').limit(200),
     ])
     if (items.error && isMissingJobsSchema(items.error)) return setupNeeded()
+    // Field staff limited to their own jobs don't see prices.
+    const money = viewFor(access, resolveJobSettings(company.job_settings)).money
     return json({
       settings: resolveJobSettings(company.job_settings),
       modules: readModules(company.modules),
       jobsEnabled: jobsEnabled(company),
       industry: company.industry || null,
-      priceItems: items.data || [],
-      templates: templates.data || [],
+      priceItems: money ? (items.data || []) : [],
+      templates: money ? (templates.data || []) : [],
+      seesMoney: money,
       paymentsReady: stripeReady(company),
       canManage: isJobsManager(access.role),
     })

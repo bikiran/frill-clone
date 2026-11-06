@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
-import { jobsDb, jobsAccess, json, setupNeeded, isMissingJobsSchema, isUuid, isJobsManager, clip } from '@/lib/jobs/server'
+import { jobsDb, jobsAccess, json, setupNeeded, isMissingJobsSchema, isUuid, isJobsManager, clip, loadCompany, companySettings } from '@/lib/jobs/server'
+import { viewFor, callerSeesJob } from '@/lib/jobs/field'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,9 +21,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const text = clip(body.text, 4000)
     if (!text) return json({ error: 'Write a note first.' }, 400)
     if (!isUuid(id)) return json({ error: 'Job not found.' }, 404)
-    const { data: job, error } = await db.from('jobs').select('id').eq('company_id', companyId).eq('id', id).maybeSingle()
+    const { data: job, error } = await db.from('jobs').select('id, assignees').eq('company_id', companyId).eq('id', id).maybeSingle()
     if (error) { if (isMissingJobsSchema(error)) return setupNeeded(); throw error }
-    if (!job) return json({ error: 'Job not found.' }, 404)
+    if (!job || !callerSeesJob(viewFor(access, companySettings(await loadCompany(db, companyId))), job)) return json({ error: 'Job not found.' }, 404)
     const { data: note, error: iErr } = await db.from('job_events').insert({
       company_id: companyId, job_id: id, type: 'note', actor_type: 'staff', actor_id: access.userId, actor_name: access.name,
       summary: text.slice(0, 300), data: { text },

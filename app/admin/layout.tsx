@@ -128,6 +128,7 @@ const SECTIONS: NavSection[] = [
   // Trades & Home Services and Logistics, switchable in Settings).
   { key: 'jobs', label: 'Jobs', glyph: 'jobs', groups: [{ items: [
     { label: 'Jobs', href: '/admin/jobs', icon: 'jobs', match: ['/admin/jobs/quotes'] },
+    { label: 'My jobs', href: '/admin/jobs/my', icon: 'scheduled' },
     { label: 'Quote Settings', href: '/admin/jobs/settings', icon: 'quote' },
   ] }] },
   { key: 'tasks', label: 'Tasks', glyph: 'tasks', groups: [{ items: [
@@ -931,6 +932,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   // Nav visibility for the current member.
   const canUseNavItem = (item: { href: string; label: string }) => {
+    // Quote settings are changed by owners and admins only; keep it out of
+    // everyone else's menu (the page still opens, read-only, by its link).
+    if (item.href === '/admin/jobs/settings' && permsLoaded && !hasFullAccess(myRole)) return false
     const featKey = item.label === 'Ideas' ? 'ideas' : featureForPath(item.href.split(/[?#]/)[0])?.key
     if (!storeAllowsPage(item.href, storeStatus)) return false
     if (!moduleAllowsPage(item.href, moduleStatus)) return false

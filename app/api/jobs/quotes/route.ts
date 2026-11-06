@@ -5,6 +5,7 @@ import {
   jobsDb, jobsAccess, json, setupNeeded, isMissingJobsSchema, isUuid, nextNumber, logJobEvent,
   loadCompany, companySettings, companyTz, quoteMoney, quoteDefaults, clip,
 } from '@/lib/jobs/server'
+import { moneyAllowed, MONEY_DENIED } from '@/lib/jobs/field'
 import { effectiveTaxRate } from '@/lib/jobs/settings'
 
 export const dynamic = 'force-dynamic'
@@ -21,6 +22,7 @@ export async function POST(req: NextRequest) {
     const companyId = String(body.companyId || '')
     const access = await jobsAccess(req, db, companyId)
     if (!access.ok) return access.response
+    if (!(await moneyAllowed(db, access, String(companyId)))) return json({ error: MONEY_DENIED }, 403)
     if (!isUuid(body.jobId)) return json({ error: 'Which job?' }, 400)
 
     const { data: job, error } = await db.from('jobs').select('id, number, title, status').eq('company_id', companyId).eq('id', body.jobId).maybeSingle()

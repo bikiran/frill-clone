@@ -1,5 +1,6 @@
-// Tests for Jobs & Services (Phase 1): quote maths and GST, status moves,
-// settings, the module switch and the "jobs" permission. Zero dependencies,
+// Tests for Jobs & Services: Phase 1 (quote maths and GST, status moves,
+// settings, the module switch and the "jobs" permission) and Phase 2 (who's
+// assigned, clashes, time on the job, checklists, what field staff see). Zero dependencies,
 // same harness as the other scripts here:
 //
 //   npx tsx scripts/jobs.test.mjs
@@ -12,6 +13,7 @@ import { resolveJobSettings, effectiveTaxRate } from '../lib/jobs/settings.ts'
 import { jobsEnabled, moduleAllowsPage, readModules } from '../lib/modules.ts'
 import { canUseFeature, featureForPath, ALL_FEATURE_KEYS } from '../lib/permissions.ts'
 import { checkJobsAccess } from '../lib/jobs/access-core.ts'
+import { cleanAssignees, isAssigned, overlaps, jobWindow, findConflicts, entrySeconds, timeTotals, fmtDuration, canSeeJob, canSeeMoney, cleanChecklistItems, cleanChecklistText, isPhotoKind, jobFileUrlOk, MAX_ASSIGNEES, MAX_CHECKLIST_ITEMS } from '../lib/jobs/work.ts'
 
 let passed = 0, failed = 0
 function ok(name, cond) {
@@ -190,6 +192,107 @@ console.log('Server access check (tenancy + permission)')
   eq('removed member → 403', checkJobsAccess({ isOwner: false, rows: rowsFor('A', 'u-removed') }).ok, false)
   eq('board viewer → 403', checkJobsAccess({ isOwner: false, rows: rowsFor('A', 'u-viewer') }).ok, false)
   eq('owner of B cannot reach A (no rows in A)', checkJobsAccess({ isOwner: false, rows: rowsFor('A', 'u-other') }), { ok: false, status: 403, reason: 'not_member' })
+}
+
+console.log('Phase 2: assignees')
+{
+  const A = '11111111-1111-4111-8111-111111111111', B = '22222222-2222-4222-8222-222222222222', X = '99999999-9999-4999-8999-999999999999'
+  const staff = [{ id: A, name: 'Sam Rivera' }, { id: B, name: 'Alex Chen' }]
+  eq('keeps team members, named by the team', cleanAssignees([A, { id: B, name: 'spoofed' }], staff), [{ id: A, name: 'Sam Rivera' }, { id: B, name: 'Alex Chen' }])
+  eq('drops someone not on this team', cleanAssignees([X, A], staff), [{ id: A, name: 'Sam Rivera' }])
+  eq('drops duplicates and junk', cleanAssignees([A, A, 'x', null, 42, { id: '' }], staff), [{ id: A, name: 'Sam Rivera' }])
+  eq('not an array → none', cleanAssignees('nope', staff), [])
+  const many = Array.from({ length: 20 }, (_, i) => ({ id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, name: 'P' + i }))
+  eq(`at most ${MAX_ASSIGNEES}`, cleanAssignees(many.map(m => m.id), many).length, MAX_ASSIGNEES)
+  ok('isAssigned true', isAssigned({ assignees: [{ id: A, name: 'x' }] }, A))
+  ok('isAssigned false', !isAssigned({ assignees: [{ id: A, name: 'x' }] }, B))
+  ok('isAssigned with no assignees', !isAssigned({ assignees: null }, A))
+}
+
+console.log('Phase 2: clashes')
+{
+  const t = h => Date.parse(`2026-11-20T${String(h).padStart(2, '0')}:00:00Z`)
+  ok('overlap', overlaps(t(9), t(11), t(10), t(12)))
+  ok('touching ends do not overlap', !overlaps(t(9), t(11), t(11), t(12)))
+  ok('inside', overlaps(t(9), t(17), t(10), t(11)))
+  eq('job with no finish takes 2h', jobWindow('2026-11-20T09:00:00Z', null), [t(9), t(11)])
+  eq('finish before start → 2h', jobWindow('2026-11-20T09:00:00Z', '2026-11-20T08:00:00Z'), [t(9), t(11)])
+  eq('no start → no window', jobWindow(null, null), null)
+  const U1 = 'u1', U2 = 'u2'
+  const busy = [
+    { userId: U1, from: t(10), until: t(11), kind: 'booking', label: 'Booking: Inspection' },
+    { userId: U1, from: t(12), until: t(13), kind: 'job', label: 'J-1002', refId: 'job-2' },
+    { userId: U2, from: t(9), until: t(10), kind: 'event', label: 'Delivery' },
+    { userId: U1, from: t(9), until: t(12), kind: 'job', label: 'this job', refId: 'job-1' },
+  ]
+  const c = findConflicts({ userIds: [U1], start: '2026-11-20T09:30:00Z', end: '2026-11-20T12:30:00Z', busy, excludeRefId: 'job-1' })
+  eq('clashes for the assignee, in time order, not the job itself', c.map(x => x.label), ['Booking: Inspection', 'J-1002'])
+  eq('someone else’s busy time is not a clash', findConflicts({ userIds: [U1], start: '2026-11-20T09:00:00Z', end: '2026-11-20T09:30:00Z', busy: [busy[2]] }), [])
+  eq('unscheduled job → no clashes', findConflicts({ userIds: [U1], start: null, end: null, busy }), [])
+}
+
+console.log('Phase 2: time on the job')
+{
+  const now = Date.parse('2026-11-20T12:00:00Z')
+  eq('closed entry', entrySeconds({ user_id: 'a', started_at: '2026-11-20T09:00:00Z', ended_at: '2026-11-20T10:30:00Z' }, now), 5400)
+  eq('running entry counts to now', entrySeconds({ user_id: 'a', started_at: '2026-11-20T11:00:00Z', ended_at: null }, now), 3600)
+  eq('bad date → 0', entrySeconds({ user_id: 'a', started_at: 'x' }, now), 0)
+  const tt = timeTotals([
+    { user_id: 'a', user_name: 'Sam', started_at: '2026-11-20T08:00:00Z', ended_at: '2026-11-20T09:00:00Z' },
+    { user_id: 'a', user_name: 'Sam', started_at: '2026-11-20T11:30:00Z', ended_at: null },
+    { user_id: 'b', user_name: 'Alex', started_at: '2026-11-20T10:00:00Z', ended_at: '2026-11-20T10:45:00Z' },
+  ], now)
+  eq('total', tt.totalSeconds, 3600 + 1800 + 2700)
+  eq('per person', tt.byUser.a.seconds, 5400)
+  eq('who is on the clock', tt.runningUserIds, ['a'])
+  eq('fmt 2h 05m', fmtDuration(7500), '2h 05m')
+  eq('fmt 45m', fmtDuration(2700), '45m')
+  eq('fmt under a minute', fmtDuration(20), 'under a minute')
+  eq('fmt zero', fmtDuration(0), '0m')
+}
+
+console.log('Phase 2: who sees what')
+{
+  const job = { assignees: [{ id: 'tech', name: 'T' }] }
+  ok('restriction off: everyone sees it', canSeeJob({ isManager: false, userId: 'other', restrict: false, job }))
+  ok('restriction on: the assignee sees it', canSeeJob({ isManager: false, userId: 'tech', restrict: true, job }))
+  ok('restriction on: someone else does not', !canSeeJob({ isManager: false, userId: 'other', restrict: true, job }))
+  ok('restriction on: managers see everything', canSeeJob({ isManager: true, userId: 'other', restrict: true, job }))
+  ok('prices hidden from field staff when restricted', !canSeeMoney({ isManager: false, restrict: true }))
+  ok('prices shown to managers', canSeeMoney({ isManager: true, restrict: true }))
+  ok('prices shown when not restricted', canSeeMoney({ isManager: false, restrict: false }))
+  const st = resolveJobSettings({})
+  ok('restriction off by default', st.restrict_to_assigned === false && st.require_signature === false)
+  ok('settings keep the switches', resolveJobSettings({ restrict_to_assigned: true, require_signature: true }).restrict_to_assigned === true)
+  ok('only true turns them on', resolveJobSettings({ restrict_to_assigned: 'yes' }).restrict_to_assigned === false)
+}
+
+console.log('Phase 2: checklists and photos')
+{
+  eq('tidies text', cleanChecklistText('  Isolate   power  '), 'Isolate power')
+  eq('lines from text, blanks dropped', cleanChecklistItems('Isolate power\n\n  Test RCDs \n'), ['Isolate power', 'Test RCDs'])
+  eq('from an array', cleanChecklistItems(['a', '', 'b']), ['a', 'b'])
+  eq(`at most ${MAX_CHECKLIST_ITEMS}`, cleanChecklistItems(Array.from({ length: 150 }, (_, i) => 'item ' + i)).length, MAX_CHECKLIST_ITEMS)
+  eq('long text cut to 300', cleanChecklistText('x'.repeat(500)).length, 300)
+  ok('photo kinds', isPhotoKind('before') && isPhotoKind('after') && isPhotoKind('other') && !isPhotoKind('signature'))
+}
+
+console.log('Phase 2: only files from this job\'s own folder')
+{
+  const co = 'c0000000-0000-4000-8000-000000000001', job = 'j0000000-0000-4000-8000-000000000001'
+  const bases = ['https://media.example.test', 'https://abc.supabase.co/storage/v1/object/public/chat-attachments']
+  const f = `chat-attachments/${co}/jobs/${job}/123-photo.jpg`
+  ok('R2 file in the job folder', jobFileUrlOk(`https://media.example.test/${f}`, co, job, bases))
+  ok('Supabase file in the job folder', jobFileUrlOk(`https://abc.supabase.co/storage/v1/object/public/chat-attachments/${f}`, co, job, bases))
+  ok('another host refused', !jobFileUrlOk(`https://evil.test/${f}`, co, job, bases))
+  ok('look-alike host refused', !jobFileUrlOk(`https://media.example.test.evil.test/${f}`, co, job, bases))
+  ok('folder in the query refused', !jobFileUrlOk(`https://evil.test/x?u=https://media.example.test/${f}`, co, job, bases))
+  ok('another job refused', !jobFileUrlOk(`https://media.example.test/chat-attachments/${co}/jobs/other/1.jpg`, co, job, bases))
+  ok('another workspace refused', !jobFileUrlOk(`https://media.example.test/chat-attachments/other/jobs/${job}/1.jpg`, co, job, bases))
+  ok('../ refused', !jobFileUrlOk(`https://media.example.test/chat-attachments/${co}/jobs/${job}/../../x/1.jpg`, co, job, bases))
+  ok('the bare folder refused', !jobFileUrlOk(`https://media.example.test/chat-attachments/${co}/jobs/${job}/`, co, job, bases))
+  ok('javascript: refused', !jobFileUrlOk(`javascript:alert(1)//media.example.test/${f}`, co, job, bases))
+  ok('not a string refused', !jobFileUrlOk(null, co, job, bases))
 }
 
 console.log(`\n${passed} passed, ${failed} failed`)

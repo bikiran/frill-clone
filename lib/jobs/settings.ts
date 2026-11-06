@@ -13,6 +13,10 @@ export type JobSettings = {
   default_deposit: Deposit
   job_prefix: string
   quote_prefix: string
+  /** Field staff (not owners or admins) see only jobs they're assigned to, and no prices. */
+  restrict_to_assigned: boolean
+  /** Completing a job asks for the customer's signature first. */
+  require_signature: boolean
 }
 
 export const DEFAULT_JOB_SETTINGS: JobSettings = {
@@ -24,6 +28,8 @@ export const DEFAULT_JOB_SETTINGS: JobSettings = {
   default_deposit: { type: 'none', value: 0 },
   job_prefix: 'J',
   quote_prefix: 'Q',
+  restrict_to_assigned: false,
+  require_signature: false,
 }
 
 const prefix = (v: any, d: string) => {
@@ -44,6 +50,8 @@ export function resolveJobSettings(raw: any): JobSettings {
     default_deposit: cleanDeposit(r.default_deposit),
     job_prefix: prefix(r.job_prefix, 'J'),
     quote_prefix: prefix(r.quote_prefix, 'Q'),
+    restrict_to_assigned: r.restrict_to_assigned === true,
+    require_signature: r.require_signature === true,
   }
 }
 

@@ -180,9 +180,70 @@ export const Icon = {
   trash: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg>,
   ext: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><path d="M15 3h6v6" /><path d="M10 14 21 3" /></svg>,
   chev: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>,
+  play: <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" /></svg>,
+  pause: <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4.2" height="14" rx="1.2" /><rect x="13.8" y="5" width="4.2" height="14" rx="1.2" /></svg>,
+  check: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>,
+  camera: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 8h3l1.6-2.4A1.5 1.5 0 0 1 9.85 5h4.3a1.5 1.5 0 0 1 1.25.6L17 8h3a1 1 0 0 1 1 1v9.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5V9a1 1 0 0 1 1-1z" /><circle cx="12" cy="13" r="3.6" /></svg>,
+  pen: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z" /><path d="M13.5 6.5l4 4" /></svg>,
+  people: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0" /><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14.2A6.5 6.5 0 0 1 21.5 20" /></svg>,
+  warn: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9v4M12 17h.01" /></svg>,
+  x: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M6 6l12 12M18 6 6 18" /></svg>,
+}
+
+// ── Answers with their body, for the 409s the field screens act on ──────────
+// (a clash to confirm, a signature to collect).
+export async function apiRaw(path: string, init?: RequestInit & { json?: any }): Promise<{ ok: boolean; status: number; data: any }> {
+  const { data: sess } = await supabase.auth.getSession()
+  const t = sess?.session?.access_token
+  const res = await fetch(path, {
+    ...init,
+    headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: `Bearer ${t}` } : {}), ...(init?.headers || {}) },
+    body: init?.json !== undefined ? JSON.stringify(init.json) : init?.body,
+  })
+  const data = await res.json().catch(() => ({}))
+  return { ok: res.ok, status: res.status, data }
+}
+
+/** Upload a file to this job's own folder; returns its public URL. */
+export async function putJobFile(companyId: string, jobId: string, file: File | Blob, name = 'file'): Promise<string> {
+  const { data: sess } = await supabase.auth.getSession()
+  const t = sess?.session?.access_token
+  const fd = new FormData()
+  fd.append('file', file instanceof File ? file : new File([file], name, { type: file.type || 'application/octet-stream' }))
+  fd.append('prefix', `chat-attachments/${companyId}/jobs/${jobId}`)
+  const res = await fetch('/api/storage/put', { method: 'POST', body: fd, headers: t ? { Authorization: `Bearer ${t}` } : {} })
+  const d = await res.json().catch(() => ({}))
+  if (!res.ok || !d?.url) throw new Error(d?.error || (res.status === 413 ? 'That file is too large.' : 'Upload failed. Please try again.'))
+  return d.url as string
+}
+
+// ── People ──────────────────────────────────────────────────────────────────
+const AV_TONES = ['#4f6bed', '#13a07e', '#e26d3d', '#9b5de5', '#d6457a', '#2a9d8f', '#c08a1e', '#5a6acf']
+export const initialsOf = (name: string) => (String(name || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('') || '?').toUpperCase()
+const toneOf = (id: string) => { let h = 0; for (const ch of String(id || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return AV_TONES[h % AV_TONES.length] }
+export function Avatar({ id, name, url, size = 28, ring }: { id: string; name: string; url?: string | null; size?: number; ring?: boolean }) {
+  const st: React.CSSProperties = { width: size, height: size, fontSize: Math.round(size * 0.4), background: url ? undefined : toneOf(id), boxShadow: ring ? '0 0 0 2px var(--card,#fff)' : undefined }
+  return url
+    ? <img className="jb-av" src={url} alt="" width={size} height={size} style={st} title={name} />
+    : <span className="jb-av" style={st} title={name} aria-hidden>{initialsOf(name)}</span>
+}
+export function AvatarStack({ people, max = 3, size = 24 }: { people: { id: string; name: string; avatar_url?: string | null }[]; max?: number; size?: number }) {
+  if (!people?.length) return null
+  const shown = people.slice(0, max)
+  return (
+    <span className="jb-avs" aria-label={people.map(p => p.name).join(', ')}>
+      {shown.map(p => <Avatar key={p.id} id={p.id} name={p.name} url={p.avatar_url} size={size} ring />)}
+      {people.length > max && <span className="jb-av jb-av-more" style={{ width: size, height: size, fontSize: Math.round(size * 0.38) }}>+{people.length - max}</span>}
+    </span>
+  )
 }
 
 export const JB_CSS = `
+.jb-av{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;border-radius:50%;color:#fff;font-weight:700;letter-spacing:-.02em;object-fit:cover;user-select:none}
+.jb-avs{display:inline-flex;align-items:center}
+.jb-avs .jb-av+.jb-av{margin-left:-7px}
+.jb-av-more{background:var(--f2,#e4e4e7);color:var(--ink)}
+
 .jb-ov{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:4vh 12px;background:rgba(15,15,20,.38);overflow-y:auto;animation:jbFade .18s ease both}
 .jb-dlg{width:100%;max-height:92vh;display:flex;flex-direction:column;border-radius:24px;background:var(--card,#fff);color:var(--ink);box-shadow:0 24px 64px rgba(0,0,0,.24);animation:jbIn .32s cubic-bezier(.22,1,.36,1) both}
 .jb-dlg-h{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 20px 6px}

@@ -7,6 +7,7 @@ import {
   jobsDb, jobsAccess, json, setupNeeded, isMissingJobsSchema, isUuid,
   nextNumber, logJobEvent, emitJobEvent, loadCompany, companySettings, clip, isoOrNull,
 } from '@/lib/jobs/server'
+import { viewFor } from '@/lib/jobs/field'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,9 +22,23 @@ export async function GET(req: NextRequest) {
     const db = jobsDb()
     const sp = req.nextUrl.searchParams
     const companyId = sp.get('companyId')
+    // The access check and the company (whose settings decide what this
+    // person may see) are read together; the list follows.
+    const [access, company] = await Promise.all([
+      jobsAccess(req, db, companyId),
+      isUuid(companyId) ? loadCompany(db, companyId!) : Promise.resolve(null),
+    ])
+    if (!access.ok) return access.response
+    const settings = companySettings(company)
+    const view = viewFor(access, settings)
+
     let q = db.from('jobs')
-      .select('id, number, title, status, source, contact_id, conversation_id, booking_id, address, scheduled_start, scheduled_end, value_cents, accepted_quote_id, sort_order, created_at, updated_at')
+      .select('id, number, title, status, source, contact_id, conversation_id, booking_id, address, scheduled_start, scheduled_end, value_cents, accepted_quote_id, sort_order, assignees, time_seconds, completed_at, created_at, updated_at')
       .eq('company_id', companyId!)
+    // Field staff (when the business limits them) see only their own jobs; anyone can ask for "mine".
+    // JSON text, not an array: supabase-js turns an array into a Postgres array
+    // literal ({…}), which doesn't match a jsonb column.
+    if ((view.restrict && !view.isManager) || sp.get('mine') === '1') q = q.contains('assignees', JSON.stringify([{ id: view.userId }]))
     const status = sp.get('status')
     if (status && isJobStatus(status)) q = q.eq('status', status)
     const contactId = sp.get('contactId')
@@ -36,14 +51,7 @@ export async function GET(req: NextRequest) {
       const n = Number(search.replace(/^[A-Za-z]+-?/, ''))
       q = Number.isInteger(n) && n > 0 ? q.or(`title.ilike.%${search}%,number.eq.${n}`) : q.ilike('title', `%${search}%`)
     }
-    // The access check, the list and the company are asked for together;
-    // nothing is sent back unless the access check says yes.
-    const [access, listRes, company] = await Promise.all([
-      jobsAccess(req, db, companyId),
-      isUuid(companyId) ? q.order('updated_at', { ascending: false }).limit(500) : Promise.resolve({ data: [], error: null }),
-      isUuid(companyId) ? loadCompany(db, companyId!) : Promise.resolve(null),
-    ])
-    if (!access.ok) return access.response
+    const listRes = await q.order('updated_at', { ascending: false }).limit(500)
     const { data: jobs, error } = listRes as any
     if (error) { if (isMissingJobsSchema(error)) return setupNeeded(); throw error }
 
@@ -52,16 +60,16 @@ export async function GET(req: NextRequest) {
     const jobIds = list.map((j: any) => j.id)
     const [contacts, quotes] = await Promise.all([
       contactIds.length ? db.from('contacts').select('id, name, phone, email').eq('company_id', companyId!).in('id', contactIds) : Promise.resolve({ data: [] }),
-      jobIds.length ? db.from('job_quotes').select('id, job_id, number, revision, status, total_cents, created_at').eq('company_id', companyId!).in('job_id', jobIds).order('created_at', { ascending: false }) : Promise.resolve({ data: [] }),
+      jobIds.length && view.money ? db.from('job_quotes').select('id, job_id, number, revision, status, total_cents, created_at').eq('company_id', companyId!).in('job_id', jobIds).order('created_at', { ascending: false }) : Promise.resolve({ data: [] }),
     ])
     const byContact = new Map((contacts.data || []).map((c: any) => [c.id, c]))
     const latestQuote = new Map<string, any>()
     for (const qt of quotes.data || []) if (!latestQuote.has(qt.job_id)) latestQuote.set(qt.job_id, qt)
-    const settings = companySettings(company)
     return json({
-      jobs: list.map((j: any) => ({ ...j, contact: byContact.get(j.contact_id) || null, quote: latestQuote.get(j.id) || null })),
+      jobs: list.map((j: any) => ({ ...j, value_cents: view.money ? j.value_cents : null, contact: byContact.get(j.contact_id) || null, quote: latestQuote.get(j.id) || null })),
       settings: { job_prefix: settings.job_prefix, quote_prefix: settings.quote_prefix },
       timezone: company?.booking_settings?.timezone || 'Australia/Melbourne',
+      me: view.userId, canManage: view.isManager, seesMoney: view.money, restricted: view.restrict && !view.isManager,
     })
   } catch (e: any) {
     return json({ error: e?.message || 'Could not load jobs.' }, 500)
@@ -166,7 +174,9 @@ export async function POST(req: NextRequest) {
     if (!title) title = 'New job'
     if (start && end && Date.parse(end) < Date.parse(start)) return json({ error: 'The job can’t finish before it starts.' }, 400)
 
-    const pf = companySettings(await loadCompany(db, companyId)).job_prefix
+    const coRow = await loadCompany(db, companyId)
+    const pf = companySettings(coRow).job_prefix
+    const view = viewFor(access, companySettings(coRow))
     const number = await nextNumber(db, companyId, 'job')
     const status = start ? 'scheduled' : 'new'
     const row = {
@@ -174,6 +184,8 @@ export async function POST(req: NextRequest) {
       contact_id: contactId, conversation_id: conversationId, booking_id: bookingId, form_id: formId, form_response_id: formResponseId,
       address, scheduled_start: start, scheduled_end: end, create_key: createKey, sort_order: Date.now() / 1000,
       created_by: access.userId, created_by_name: access.name,
+      // Field staff who only see their own jobs are put on the jobs they create.
+      ...(view.restrict && !view.isManager ? { assignees: [{ id: access.userId, name: access.name }] } : {}),
     }
     const { data: job, error } = await db.from('jobs').insert(row).select('*').maybeSingle()
     if (error) {
