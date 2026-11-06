@@ -85,10 +85,16 @@ export async function GET(req: NextRequest) {
         // longest dining time after its last.
         const liveRes = live.map((b: any) => ({ id: b.id, starts: Date.parse(b.starts_at), ends: Date.parse(b.ends_at), seats: b.seats || 1 }))
         const longest = Math.max(rs.duration_mins, ...rs.durations.map(d => d.mins))
-        out.strips = windows.map(w => ({
-          name: periodName(w.start),
-          points: coversTimeline(liveRes, zonedToUtc(from, w.start, tz), zonedToUtc(from, w.end, tz) + longest * 60_000, rs.interval_mins),
-        }))
+        // A service's strip stops where the next one starts, so lunch's last
+        // tables don't show up again under dinner.
+        const step = rs.interval_mins * 60_000
+        out.strips = windows.map((w, i) => {
+          const next = windows[i + 1] ? zonedToUtc(from, windows[i + 1].start, tz) - step : Infinity
+          return {
+            name: periodName(w.start),
+            points: coversTimeline(liveRes, zonedToUtc(from, w.start, tz), Math.min(zonedToUtc(from, w.end, tz) + longest * 60_000, next), rs.interval_mins),
+          }
+        })
       } else {
         const byDay: Record<string, { reservations: number; covers: number }> = {}
         for (const b of live) {
@@ -210,8 +216,12 @@ export async function PATCH(req: NextRequest) {
       if (note) await systemNote(db, { ...b, ...(fresh || {}) }, note)
       return json({ reservation: shape(fresh || b, company) })
     }
-    const claim = async (patch: any, from: string[]) => {
-      const { data } = await db.from('bookings').update({ ...patch, updated_at: now }).eq('id', b.id).eq('company_id', companyId).in('status', from).select('id')
+    // Only from the expected state, so two people tapping at once can't both act.
+    const claim = async (patch: any, from: string[], seated?: boolean) => {
+      let q = db.from('bookings').update({ ...patch, updated_at: now }).eq('id', b.id).eq('company_id', companyId).in('status', from)
+      if (seated === false) q = q.is('seated_at', null)
+      if (seated === true) q = q.not('seated_at', 'is', null)
+      const { data } = await q.select('id')
       return !!data?.length
     }
     const calendar = async (status: string) => { if (b.calendar_event_id) { try { await db.from('calendar_events').update({ status }).eq('id', b.calendar_event_id) } catch {} } }
@@ -219,10 +229,10 @@ export async function PATCH(req: NextRequest) {
 
     switch (String(body.action)) {
       case 'seat':
-        if (!(await claim({ seated_at: now }, ['confirmed']))) return json({ error: 'Only a booked table can be seated.' }, 409)
+        if (!(await claim({ seated_at: now }, ['confirmed'], false))) return json({ error: b.seated_at ? 'That table is already seated.' : 'Only a booked table can be seated.' }, 409)
         return reply(`🍽️ ${b.service_name} seated by ${who}`)
       case 'unseat':
-        if (!(await claim({ seated_at: null }, ['confirmed']))) return json({ error: 'That table isn’t seated.' }, 409)
+        if (!(await claim({ seated_at: null }, ['confirmed'], true))) return json({ error: 'That table isn’t seated.' }, 409)
         return reply()
       case 'complete':
         if (!(await claim({ status: 'completed', completed_at: now, seated_at: b.seated_at || now }, ['confirmed']))) return json({ error: 'Only a booked or seated table can be finished.' }, 409)

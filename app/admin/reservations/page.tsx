@@ -252,6 +252,9 @@ function DaySheet({ day, tz, onOpen, onQuick, onNew }: { day: Day; tz: string; o
 function Row({ r, tz, isToday, onOpen, onQuick }: { r: Reservation; tz: string; isToday: boolean; onOpen: (r: Reservation) => void; onQuick: (r: Reservation, a: 'seat' | 'complete') => void }) {
   const live = r.status === 'confirmed'
   const [busy, setBusy] = useState(false)
+  // Visits before this one (the guest's count includes a table that's seated or done).
+  const counted = r.status === 'completed' || (r.status === 'confirmed' && (!!r.seatedAt || Date.parse(r.endsAt) < Date.now()))
+  const prior = r.guest ? r.guest.visits - (counted ? 1 : 0) : 0
   const go = async (e: React.MouseEvent, a: 'seat' | 'complete') => { e.stopPropagation(); setBusy(true); try { await onQuick(r, a) } finally { setBusy(false) } }
   return (
     <div className={`rs-row s-${r.state}`} role="button" tabIndex={0} onClick={() => onOpen(r)} onKeyDown={e => { if (e.key === 'Enter') onOpen(r) }} aria-label={`${timeOf(r.startsAt, tz)}, ${r.name}, ${r.party}`}>
@@ -260,12 +263,12 @@ function Row({ r, tz, isToday, onOpen, onQuick }: { r: Reservation; tz: string; 
       <div className="rs-main">
         <b>{r.name || 'Guest'}</b>
         <div className="rs-meta">
-          {r.guest && r.guest.visits > 0 && <span>{r.guest.visits === 1 ? '2nd visit' : `${r.guest.visits + 1}${ord(r.guest.visits + 1)} visit`}</span>}
+          {prior > 0 && <span>{`${prior + 1}${ord(prior + 1)} visit`}</span>}
           {r.guest && r.guest.noShows > 0 && <span className="warn">{r.guest.noShows} no-show{r.guest.noShows === 1 ? '' : 's'}</span>}
           {r.occasion && <span>🎉 {r.occasion}</span>}
           {r.seating && <span>{SEATING[r.seating] || r.seating}</span>}
           {r.notes && <span className="rs-ell" title={r.notes}>“{r.notes}”</span>}
-          {r.source === 'walk_in' && <span>Walk-in</span>}
+          {r.source === 'walk_in' && r.name !== 'Walk-in' && <span>Walk-in</span>}
         </div>
       </div>
       <div className="rs-side">
@@ -410,6 +413,7 @@ const PAGE_CSS = `
 .rs-date b{font-size:14.5px;font-weight:650;white-space:nowrap}
 .rs-date input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
 .rs-hide-sm{display:inline}
+@media(max-width:600px){.ak-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.ak-tile{padding:14px}.ak-tile-v{font-size:22px}}
 @media(max-width:600px){.rs-hide-sm{display:none}.rs-bar{flex-direction:column;align-items:stretch}.rs-nav{justify-content:space-between}}
 .rs-skel{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 .rs-skel div{height:92px;border-radius:20px;background:linear-gradient(90deg,var(--f) 25%,var(--f2) 50%,var(--f) 75%);background-size:200% 100%;animation:jbSk 1.2s linear infinite}
