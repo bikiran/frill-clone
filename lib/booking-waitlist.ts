@@ -435,7 +435,7 @@ async function candidateSlots(db: any, job: any, company: any, settings: Booking
   // service's staff / length / buffers / hours edited): just that service.
   if ((job.kind === 'manual' || job.kind === 'advance' || job.kind === 'availability') && job.service_id) serviceIds = serviceIds.filter(id => id === job.service_id)
   if (!serviceIds.length) return []
-  const { data: services } = await db.from('booking_services').select('*').eq('company_id', company.id).in('id', serviceIds).eq('active', true)
+  const { data: services } = await db.from('booking_services').select('*').eq('company_id', company.id).in('id', serviceIds).eq('active', true).neq('kind', 'reservation')
   if (!services?.length) return []
   const staff = await loadStaff(db, company)
   const today = dateInTz(now, tz)

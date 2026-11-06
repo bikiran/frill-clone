@@ -132,6 +132,8 @@ export const PERMISSION_SUITES: SuiteDef[] = [
       { key: 'bookings', label: 'Bookings', paths: ['/admin/bookings'], restrictedDefault: false },
       // Jobs & quotes (V427). Off for restricted members until switched on.
       { key: 'jobs', label: 'Jobs & quotes', paths: ['/admin/jobs'], restrictedDefault: false },
+      // Table reservations (V429). Front-of-house staff need it, so on by default.
+      { key: 'reservations', label: 'Reservations', paths: ['/admin/reservations'] },
       { key: 'scheduled', label: 'Scheduled', paths: ['/admin/scheduled'] },
       { key: 'calls', label: 'Call Logs', paths: ['/admin/calls'] },
     ],

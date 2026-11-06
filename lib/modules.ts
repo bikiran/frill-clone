@@ -24,11 +24,25 @@ export function jobsEnabled(company: { modules?: any; industry?: string | null }
   return JOB_INDUSTRIES.includes(String(company.industry || ''))
 }
 
+/** Business types that get table reservations by default. */
+export const RESTAURANT_INDUSTRIES = ['Restaurant & Hospitality']
+
+/** Table reservations (docs/plans/restaurants.md): on for restaurants, switchable by anyone. */
+export function restaurantEnabled(company: { modules?: any; industry?: string | null } | null | undefined): boolean {
+  if (!company) return false
+  const m = readModules(company.modules)
+  if (typeof m.restaurant === 'boolean') return m.restaurant
+  return RESTAURANT_INDUSTRIES.includes(String(company.industry || ''))
+}
+
 /** Admin pages that belong to a module, for the nav and the route guard. */
 export const JOB_PAGES = ['/admin/jobs']
-export function moduleAllowsPage(href: string, status: { jobs: boolean; known: boolean }): boolean {
+export const RESTAURANT_PAGES = ['/admin/reservations']
+export function moduleAllowsPage(href: string, status: { jobs: boolean; restaurant?: boolean; known: boolean }): boolean {
   if (!status.known) return true
   const path = String(href || '').split(/[?#]/)[0]
-  if (!status.jobs && JOB_PAGES.some(p => path === p || path.startsWith(p + '/'))) return false
+  const under = (pages: string[]) => pages.some(p => path === p || path.startsWith(p + '/'))
+  if (!status.jobs && under(JOB_PAGES)) return false
+  if (!status.restaurant && under(RESTAURANT_PAGES)) return false
   return true
 }

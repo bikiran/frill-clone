@@ -80,7 +80,7 @@ export function runEnd(to: string, now = new Date()) {
 
 // Public pages that never get dressed up: the chat widget and forms live on
 // customers' own websites, and checkout and sign-in should stay plain.
-const PLAIN = ['/widget', '/embed', '/pay/', '/oauth', '/auth', '/u/', '/f/', '/forms/', '/book', '/signin', '/signup', '/reset-password', '/forgot-password', '/platform-admin']
+const PLAIN = ['/widget', '/embed', '/pay/', '/oauth', '/auth', '/u/', '/f/', '/forms/', '/book', '/reserve', '/signin', '/signup', '/reset-password', '/forgot-password', '/platform-admin']
 const isTeamPath = (path: string) => path === '/admin' || path.startsWith('/admin/')
 
 export type ActiveSeason = { def: SeasonDef; prefs: SeasonPrefs }

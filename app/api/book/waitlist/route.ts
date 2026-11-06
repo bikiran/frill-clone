@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
     // A bot filled the hidden field: say yes, do nothing.
     if (b.website) return NextResponse.json({ ok: true, wants: '', smsBlocked: false })
     if (b.consent !== true) return NextResponse.json({ error: 'Please tick the box so we can text you when a spot opens.' }, { status: 400 })
-    const { data: service } = await db.from('booking_services').select('*').eq('id', b.serviceId).eq('company_id', company.id).eq('active', true).maybeSingle()
+    const { data: service } = await db.from('booking_services').select('*').eq('id', b.serviceId).eq('company_id', company.id).eq('active', true).neq('kind', 'reservation').maybeSingle()
     if (!service || (!stripeReady(company) && amountDue(service) > 0)) return NextResponse.json({ error: 'That service is no longer available.' }, { status: 404 })
     const r = await joinWaitlist(db, {
       company, settings, service,

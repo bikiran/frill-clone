@@ -27,6 +27,7 @@ import { useInbox } from '@/components/inbox/InboxContext'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import ContactTags from '@/components/inbox/ContactTags'
+import GuestGlance from '@/components/restaurant/GuestGlance'
 
 export default function ContactPanelBody() {
   const {
@@ -563,6 +564,9 @@ export default function ContactPanelBody() {
                       onChange={tags => setContact((c: any) => (c ? { ...c, tags } : c))} />
                   </div>
                 )}
+
+                {/* ── Tables ── a restaurant's history with this guest (hidden otherwise). */}
+                {companyId && contact?.id && <GuestGlance companyId={companyId} contactId={contact.id} />}
 
                 <SuperAdminContactWorkspaces email={(contact as any)?.email || null} />
 

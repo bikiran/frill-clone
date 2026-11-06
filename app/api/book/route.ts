@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
     const { company, settings } = p
 
     if (op === 'page') {
-      const { data: services, error } = await db.from('booking_services').select('*').eq('company_id', company.id).eq('active', true).order('sort_order').order('created_at')
+      const { data: services, error } = await db.from('booking_services').select('*').eq('company_id', company.id).eq('active', true).neq('kind', 'reservation').order('sort_order').order('created_at')
       if (error) {
         if (isMissingBookingSchema(error)) return NextResponse.json({ error: 'Online booking isn’t set up yet.' }, { status: 404 })
         throw error
@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
 
     if (op === 'slots') {
       const serviceId = sp.get('service')
-      const { data: service } = await db.from('booking_services').select('*').eq('id', serviceId).eq('company_id', company.id).eq('active', true).maybeSingle()
+      const { data: service } = await db.from('booking_services').select('*').eq('id', serviceId).eq('company_id', company.id).eq('active', true).neq('kind', 'reservation').maybeSingle()
       if (!service) return NextResponse.json({ error: 'Service not found' }, { status: 404 })
       const tz = settings.timezone
       const today = dateInTz(Date.now(), tz)
@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
     if (p.error) return NextResponse.json({ error: p.error }, { status: p.status })
     const { company, settings } = p
 
-    const { data: service } = await db.from('booking_services').select('*').eq('id', b.serviceId).eq('company_id', company.id).eq('active', true).maybeSingle()
+    const { data: service } = await db.from('booking_services').select('*').eq('id', b.serviceId).eq('company_id', company.id).eq('active', true).neq('kind', 'reservation').maybeSingle()
     if (!service) return NextResponse.json({ error: 'That service is no longer available.' }, { status: 404 })
 
     const name = clean(b.name, 120)

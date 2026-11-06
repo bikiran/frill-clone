@@ -10,6 +10,8 @@ import {
   cancelBooking, rescheduleBooking, settleBookingPayment, isMissingBookingSchema, manageUrl, whereText,
 } from '@/lib/booking'
 import { bookingTimeFreed } from '@/lib/booking-waitlist-queue'
+import { resolveRestaurantSettings } from '@/lib/restaurant/settings'
+import { resContext, slotsFor } from '@/lib/restaurant/server'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,7 +39,17 @@ async function load(db: any, token: string | null) {
   const company = await loadCompanyPublic(db, { id: b.company_id })
   if (!company) return null
   const { data: service } = b.service_id ? await db.from('booking_services').select('*').eq('id', b.service_id).maybeSingle() : { data: null }
-  return { b, company, service, settings: resolveBookingSettings(company.booking_settings) }
+  const settings = resolveBookingSettings(company.booking_settings)
+  if (service?.kind === 'reservation') {
+    // A table: the restaurant's own window for changes; cancelling is always
+    // allowed online (a restaurant would rather know than get a no-show).
+    try {
+      const { data: rc } = await db.from('companies').select('restaurant_settings').eq('id', company.id).maybeSingle()
+      const rs = resolveRestaurantSettings(rc?.restaurant_settings)
+      Object.assign(settings, { cancel_hours: rs.cancel_hours, allow_reschedule: rs.allow_changes, late_cancel: 'allow', refund_on_cancel: false })
+    } catch {}
+  }
+  return { b, company, service, settings }
 }
 
 export async function GET(req: NextRequest) {
@@ -58,6 +70,26 @@ export async function GET(req: NextRequest) {
       })
       // inline → iOS Safari shows "Add to Calendar"; desktops open Calendar / Outlook.
       return new NextResponse(ics, { headers: { 'Content-Type': 'text/calendar; charset=utf-8', 'Content-Disposition': 'inline; filename="booking.ics"', 'Cache-Control': 'no-store' } })
+    }
+
+    if (sp.get('op') === 'slots' && service?.kind === 'reservation') {
+      // A table: same party, times with room (this booking's own seats freed).
+      if (!policyFor(b, settings).canReschedule) return NextResponse.json({ timezone: settings.timezone, slots: [] })
+      const r = await resContext(db, b.company_id)
+      if (!r.ctx) return NextResponse.json({ timezone: settings.timezone, slots: [] })
+      const tz = r.ctx.tz
+      const today = dateInTz(Date.now(), tz)
+      let from = isDate(sp.get('from')) ? sp.get('from')! : today
+      if (from < today) from = today
+      let to = isDate(sp.get('to')) ? sp.get('to')! : addDays(from, 13)
+      const last = addDays(today, r.ctx.rs.max_days_ahead)
+      if (to > last) to = last
+      if (to > addDays(from, 20)) to = addDays(from, 20)
+      const out: { start: string }[] = []
+      for (let d = from; d <= to; d = addDays(d, 1)) {
+        for (const x of await slotsFor(db, r.ctx, d, b.seats || 1, { excludeId: b.id })) if (x.ok) out.push({ start: new Date(x.start).toISOString() })
+      }
+      return NextResponse.json({ timezone: tz, slots: out }, { headers: { 'Cache-Control': 'no-store' } })
     }
 
     if (sp.get('op') === 'slots') {

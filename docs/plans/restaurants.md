@@ -167,3 +167,18 @@ Each phase ships behind the module flag and is tested before the next one starts
 | 3 | Analytics, review/birthday/inactive automations, POS attribution | **Medium** |
 
 **Recommendation:** approve Phase 1 first. Most of its risk is in `claim_reservation` and the `seated` status change, so those get the most tests.
+
+## 8. Phase 1 — as built
+
+Shipped behind the `restaurant` module (on by default for **Restaurant & Hospitality**, switchable in Business → Features and in Reservation Settings). Migration: `migrations/COLVY_V429_RESTAURANT_RESERVATIONS.sql`.
+
+- **Where reservations live.** One `booking_services` row per restaurant with `kind = 'reservation'` ("Table reservation"), made on first use and kept in step with the settings. Each reservation is a `bookings` row on it: party size in `seats`, "Table for N" as `service_name`, plus `seating_pref`, `occasion`, `internal_notes` and `seated_at`.
+- **Seated is not a new status.** The plan suggested a `seated` status; instead a seated table stays `confirmed` with `seated_at` set. Every existing query that reads `confirmed` (reminders, auto-complete, Calendar, reports) keeps working unchanged, and there is no status migration to get wrong. The day sheet shows Booked / Arriving soon / Late / Seated from the times.
+- **Capacity by covers** (tables are Phase 2): most guests seated at once (`max_covers`) and, optionally, most guests arriving per interval (`pace_covers`). `claim_reservation()` takes a per-restaurant advisory lock and checks both before inserting or moving, so two guests can't take the last seats. `lib/restaurant/availability.ts` mirrors the same rules for the times shown. The team can book over the limit after a warning; the public page can't.
+- **Kept apart from appointments.** Appointment pages, Services, the Bookings list, the waitlist, the AI tools and `claim_booking_slot` all skip the table service.
+- **Messages.** Confirmations, reminders and the guest's change/cancel link reuse the booking pipeline with restaurant wording. The change window and "allow changes" come from the restaurant settings.
+- **Screens.** Reservations (Day sheet with covers strips, Upcoming, Guests), a reservation sheet (seat, finish, no-show, undo, move, cancel, guest profile: VIP, allergies, birthday, notes), New reservation and Walk-in dialogs, Reservation Settings, the public page at `/reserve/<slug>` (and `<slug>.colvy.com/reserve`), an iframe embed snippet (instead of a separate `reserve.js`), and a guest row in the Inbox contact panel.
+- **Spam.** Hidden field, minimum time on the page, per-visitor and per-restaurant burst limits, then Turnstile once its keys are set.
+- **Tests.** `scripts/restaurant.test.mjs` (settings, durations, covers, pacing, time zones, module switch) and an end-to-end run against a mock database (concurrent claims, full times, moves, states, guest profiles, public page and spam checks, tenancy, appointments unaffected, desktop and phone screens).
+
+Not in Phase 1: tables and floor plan, deposits, missed-call recovery and analytics (Phases 2 and 3).

@@ -1503,7 +1503,7 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     if (!company?.slug) return { ok: false, error: 'Set up your workspace address first.' }
     let serviceId: string | null = null, serviceSlug: string | undefined
     if (args?.service) {
-      const { data: svcs } = await D.from('booking_services').select('id, slug, name, active').eq('company_id', ctx.companyId).eq('active', true).ilike('name', `%${String(args.service).replace(/[%,()]/g, '')}%`).limit(2)
+      const { data: svcs } = await D.from('booking_services').select('id, slug, name, active').eq('company_id', ctx.companyId).eq('active', true).neq('kind', 'reservation').ilike('name', `%${String(args.service).replace(/[%,()]/g, '')}%`).limit(2)
       if (svcs?.length === 1) { serviceId = svcs[0].id; serviceSlug = svcs[0].slug }
     }
     let url = ''
