@@ -299,7 +299,7 @@ export const FOR_CONTENT: Record<string, ForContent> = {
     steps: [
       { title: 'Text back missed calls', body: 'Switch on missed-call text back and every caller you miss gets a text from your business number.', uses: 'Business phone', href: '/business-phone-number-australia' },
       { title: 'Get photos before you quote', body: 'Send an upload link; photos and video arrive at full quality in the conversation.', uses: 'Upload links', href: '/inbox-crm' },
-      { title: 'Quote and take a deposit', body: 'Send the quote and a payment link in one thread. Unanswered quotes can be followed up.', uses: 'Payment links', href: '/product/payments' },
+      { title: 'Quote it, then run the job', body: 'Send a quote with GST that the customer accepts online, then assign the job with clash checks and finish it with photos and a signature.', uses: 'Jobs & quotes', href: '/product/jobs' },
       { title: 'Online booking with reminders', body: 'Customers book real availability, pay a deposit if you ask, and get SMS reminders.', uses: 'Online booking', href: '/product/booking' },
       { title: 'Ask for the review', body: 'A review request goes out when the booking is completed.', uses: 'Reviews', href: '/solutions/reviews' },
       { title: 'Never lose a job in the inbox', body: 'Tasks, assignments and reminders make sure every enquiry gets a reply.', uses: 'Tasks', href: '/product/tasks' },
@@ -367,8 +367,10 @@ export const FOR_CONTENT: Record<string, ForContent> = {
     },
     order: ['textback', 'missed', 'fbm', 'dm', 'answer', 'deposit', 'form', 'review2', 'review', 'report', 'broadcast'],
     steps: [
+      { title: 'Table bookings online', body: 'Guests book a table with party size, seating and occasion. Your team runs the night from the day sheet and floor plan, with deposits for bigger groups.', uses: 'Table reservations', href: '/product/reservations' },
+      { title: 'Know who’s arrived', body: 'Guests tap “I’m here” on their booking page, and their table lights up on the floor plan.', uses: '“I’m here” check-in', href: '/product/check-in' },
       { title: 'One inbox for the floor', body: 'Calls, Instagram, Facebook, texts and email in one place your whole team can check.', uses: 'Shared inbox', href: '/inbox-crm' },
-      { title: 'Text back missed calls', body: 'Callers you miss during service get an automatic text so they don’t book elsewhere.', uses: 'Business phone', href: '/business-phone-number-australia' },
+      { title: 'Text back missed calls', body: 'Callers you miss during service get an automatic text with your table booking link, so they don’t book elsewhere.', uses: 'Business phone', href: '/business-phone-number-australia' },
       { title: 'Instant answers', body: 'The AI answers hours, holiday hours and menu questions from your notes.', uses: 'AI agents', href: '/ai-agents' },
       { title: 'Functions with deposits', body: 'Collect function details with a form, then take the deposit with a payment link.', uses: 'Forms & payments', href: '/product/payments' },
       { title: 'Reply to every review', body: 'Google reviews in one list, with AI-drafted replies in your voice.', uses: 'Reviews', href: '/solutions/reviews' },

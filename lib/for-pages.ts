@@ -51,17 +51,18 @@ export const FOR_PAGES: Record<string, ForMeta> = {
       { q: 'Can customers send me photos of the job?', a: 'Yes. Send an upload link and the customer can send photos or videos at full quality, straight into the conversation.' },
       { q: 'Can I take a deposit?', a: 'Yes. Send a payment link in the conversation, or ask for a deposit on your booking page when they book.' },
       { q: 'Does Colvy send booking reminders?', a: 'Yes. Customers get SMS reminders the day before and two hours before, with a link to reschedule or cancel.' },
+      { q: 'Can I send quotes and run jobs in Colvy?', a: 'Yes. Send quotes with GST that customers accept online, then run each job on a list, board or calendar. Assign your team with clash checks, and add checklists, photos, a work timer and the customer’s signature on the job.' },
     ],
   },
   restaurants: {
     name: 'Restaurants',
     title: 'Colvy for Restaurants: nothing missed during service',
-    description: 'Calls, Instagram, Facebook and texts in one inbox, instant answers about hours and menus, function enquiries with deposits, replies to every review and SMS to regulars who opted in.',
+    description: 'Table bookings with a live floor plan, plus calls, Instagram, Facebook and texts in one inbox, instant answers about hours and menus, function deposits, replies to every review and SMS to regulars.',
     faqs: [
+      { q: 'Can guests book a table online?', a: 'Yes. Colvy has table reservations: a booking page where guests choose the party size, date, time, seating and occasion, a day sheet and live floor plan for your team, covers and pacing limits, deposits for bigger groups and no-show tools. Guests can change or cancel from their booking page, and tap “I’m here” when they arrive.' },
       { q: 'Can the AI answer questions about our hours?', a: 'Yes. Colvy’s AI can answer opening hours, including holiday hours from your Google Business Profile, and questions covered in your knowledge such as menus and dietary notes. Anything it can’t answer goes to your team.' },
       { q: 'How do function enquiries work?', a: 'Send an enquiry form with the details you need, then a payment link for the deposit, all in the same conversation so the whole booking is in one place.' },
       { q: 'Can we text our regulars?', a: 'Yes, to customers who have agreed to hear from you. Send an SMS broadcast, see who clicked, and replies come straight into your inbox.' },
-      { q: 'Does Colvy replace our table booking system?', a: 'No. Colvy handles the conversations around bookings: enquiries, functions, deposits, reminders and reviews. Keep your table booking system for covers and floor plans.' },
     ],
   },
 }

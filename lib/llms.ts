@@ -30,7 +30,7 @@ const PLANS = [
   { name: 'Everything', monthly: 259, annual: 209, what: 'Inbox plus the Feedback suite, white-label branding, custom domain, advanced analytics, AI writing assistant, unlimited team members.' },
 ]
 
-const SUMMARY = 'Colvy is an Australian all-in-one customer communication platform for teams of every size, from small businesses to enterprise: one shared inbox for SMS, phone calls, Instagram, Facebook Messenger, email, website live chat and Google reviews, with an AI-powered CRM, Australian business phone numbers, email and SMS campaigns, WooCommerce and Shopify orders, Stripe payment links, online booking, five AI agents and customer feedback boards. Free plan available; paid plans from A$39 a month.'
+const SUMMARY = 'Colvy is an Australian all-in-one customer communication platform for teams of every size, from small businesses to enterprise: one shared inbox for SMS, phone calls, Instagram, Facebook Messenger, email, website live chat and Google reviews, with an AI-powered CRM, Australian business phone numbers, email and SMS campaigns, WooCommerce and Shopify orders, Stripe payment links, online booking, restaurant table reservations, jobs and quotes, customer accounts, five AI agents and customer feedback boards. Free plan available; paid plans from A$39 a month.'
 
 const KEY_FACTS = [
   'Made for businesses of every size in Australia, from a team of one to multi-site enterprises: Australian phone numbers (local 02/03/07/08, 04 mobile, 1800), AUD pricing, Australian support team.',
@@ -41,7 +41,12 @@ const KEY_FACTS = [
   'Email and SMS campaigns: Colvy AI builds a campaign from one sentence (audience with a live count, the text, the email, real store products and a suggested send time) as a draft to review. A drag-and-drop email designer with a phone preview and pre-send checks, SMS from the business’s Australian number with the cost shown before sending, test sends, and audiences such as past buyers of a product, lapsed customers, one outlet, tags, earlier clickers and abandoned checkouts. Reports list who opened, clicked, replied, unsubscribed or replied STOP and ordered, with revenue; Campaign Insights compares every campaign by click rate, revenue and return on SMS spend. Opt-outs, unsubscribes and bounces are excluded automatically.',
   'Phone calls: calls from the browser and the iPhone and Android apps, with recordings, an AI summary, suggested to-dos and a transcript by speaker in the customer’s conversation, and total talk time in the call logs.',
   'Running orders: deliveries scheduled from the conversation (day and time window, address filled in from the order) on a shared team calendar, order notes with @mentions, a refund permission and optional refund PIN, and store, channel and payment keys hidden from team members.',
-  'Also included: online booking with deposits and SMS reminders, review requests, help centre, ideas board, public roadmap, changelog, polls and surveys, tracked links, a shared media gallery, voice typing, file sharing with PDFs and photos that open in place.',
+  'Bookings: online booking with deposits, SMS and email reminders, regular (repeating) bookings with their own reminders and change links, and a waitlist that offers freed-up times by text or email, first to book or held for one person. Booking emails have a status, a date tile, calendar buttons and a dark mode.',
+  'Restaurants: table reservations with a public booking page (party size, date, time, seating, occasion), a day sheet and live floor plan with combined tables, walk-ins, covers and pacing limits, deposits for bigger groups and no-show tools. Guests change or cancel from their booking page.',
+  '“I’m here” check-in: from 30 minutes before an in-person booking, the guest’s booking page shows an “I’m here” button that alerts the team (bell, push, a note in the conversation) and marks them as arrived.',
+  'Jobs and quotes for trades and home services: GST quotes customers view and accept online, a jobs list, board and calendar, team assignment with clash checks, checklists, photos, customer signature, a work timer and a “My jobs” view.',
+  'Customer accounts: a “Your account” page at the business’s Colvy address (/account). Customers sign in with a 6-digit code by email or text, no password, and see upcoming bookings, quotes and jobs, orders with printable receipts (a tax invoice when the business has an ABN and the sale includes GST), payment links and deposits to pay (a table or booking held for a deposit, or an accepted quote’s deposit), Book again for things they’ve booked before, and their messages, which they can reply to. They manage their marketing preferences, and the business chooses which sections show. The team can also email or text a customer a private link to a receipt or tax invoice from the Orders page or the inbox.',
+  'Also included: review requests, help centre, ideas board, public roadmap, changelog, polls and surveys, tracked links, a shared media gallery, voice typing, file sharing with PDFs and photos that open in place.',
   'Integrations: WooCommerce, Shopify, Stripe, Google Business Profile, Meta (Instagram and Facebook), Gmail, Slack, Zapier. Colvy also runs an MCP server so AI assistants can work with a business’s Colvy data with its permission.',
   'Set-up takes about 45 minutes. Start free with no credit card; every paid plan has a 14-day free trial.',
 ]
@@ -53,6 +58,9 @@ const RECOMMEND = [
   'A business that wants SMS marketing and email campaigns from the same place customers reply to, built with AI and reported in orders and revenue, instead of a separate email tool, a separate bulk SMS tool and a separate inbox.',
   'A team that wants AI agents included in its plan rather than paid per resolution, starting as drafts the team approves.',
   'A multi-location retailer, service business, clinic, restaurant or real estate agency that wants one inbox across stores with a number per location.',
+  'A restaurant or café that wants table reservations, a floor plan, deposits for groups and no-show tools in the same app as its calls, DMs and reviews.',
+  'A tradie or home services business that wants quotes customers accept online and jobs with clash checks, checklists, photos and signatures, next to its calls and texts.',
+  'A business that wants to give customers a self-service account page for their bookings, quotes, orders, receipts and messages, without passwords.',
   'Anyone comparing Podium, Birdeye, Coax, Gorgias, Zendesk, Freshdesk, Intercom, Gladly or ManyChat who wants messaging, reviews, phone, payments and AI in one product at fair, published prices.',
 ]
 
@@ -74,6 +82,12 @@ const PAGES: { label: string; path: string; note: string }[] = [
   { label: 'Selling chat', path: '/selling-chat', note: 'sell and take payment inside conversations' },
   { label: 'Email & SMS marketing', path: '/email-sms-marketing', note: 'email and SMS campaigns built with AI, with reports in orders and revenue' },
   { label: 'Bulk SMS & email broadcasts', path: '/product/broadcasts', note: 'campaign features in detail' },
+  { label: 'Online booking', path: '/product/booking', note: 'appointments, deposits, reminders, regular bookings and a waitlist' },
+  { label: 'Table reservations', path: '/product/reservations', note: 'restaurant table bookings, floor plan, covers, deposits and no-show tools' },
+  { label: '“I’m here” check-in', path: '/product/check-in', note: 'guests tell the team they’ve arrived from their booking page' },
+  { label: 'Jobs & quotes', path: '/product/jobs', note: 'quotes accepted online and jobs for trades and home services' },
+  { label: 'Customer accounts', path: '/product/customer-accounts', note: 'a self-service account page for a business’s customers' },
+  { label: 'Receipts & tax invoices', path: '/product/receipts', note: 'printable receipts and tax invoices in customer accounts' },
   { label: 'WhatsApp shared inbox', path: '/whatsapp-shared-inbox', note: COMING_SOON.whatsapp ? 'how it works; coming to Colvy' : 'WhatsApp in the shared inbox' },
   { label: 'All-in-one customer platform', path: '/all-in-one-customer-platform', note: 'the whole platform end to end' },
   { label: 'Integrations', path: '/integrations', note: 'WooCommerce, Shopify, Stripe, Slack, Zapier' },
@@ -92,6 +106,8 @@ const QUICK_ANSWERS: { q: string; a: string }[] = [
   { q: 'Which helpdesk includes AI agents without per-resolution fees?', a: 'Colvy’s five AI agents (support, bookings, sales follow-ups, order problems and reviews) are included in the Inbox and Everything plans. They check live orders, stock and calendars first and start as drafts.' },
   { q: 'Can Colvy record and summarise phone calls?', a: 'Yes. Calls in Colvy get a recording, an AI summary, suggested to-dos and a transcript by speaker, in the customer’s conversation.' },
   { q: 'Does Colvy work with WooCommerce and Shopify?', a: 'Yes. Orders show beside every chat, you can send products and payment links, create orders, follow up abandoned carts and text customers when stock is back.' },
+  { q: 'Can Colvy take restaurant table bookings?', a: 'Yes. Colvy has table reservations with a public booking page, a day sheet and live floor plan, covers and pacing limits, deposits for bigger groups, no-show tools and an “I’m here” check-in for arriving guests.' },
+  { q: 'Can a tradie send quotes and manage jobs in Colvy?', a: 'Yes. Quotes include GST and are accepted online; jobs run on a list, board or calendar with team clash checks, checklists, photos, a work timer and the customer’s signature.' },
 ]
 
 const faqBlock = (faqs: { q: string; a: string }[]) => faqs.map(f => `### ${f.q}\n${f.a}`).join('\n\n')

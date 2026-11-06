@@ -248,7 +248,7 @@ const PAGES: Record<string, any> = {
   booking: {
     icon: 'calendar', color: CORAL, mock: 'booking', subtitle: 'Online booking',
     title: 'Bookings that fill themselves',
-    hero: 'A booking page on your own address. Customers pick a service, a time and a team member, pay a deposit, and get SMS reminders. Every booking lands in the inbox beside the customer.',
+    hero: 'A booking page on your own address. Customers pick a service, a time and a team member, pay a deposit, and get reminders. Regulars rebook on repeat, a waitlist fills the gaps, and every booking lands in the inbox beside the customer.',
     features: [
       { icon: 'calendar', title: 'Your own booking page', desc: 'Services, prices and live availability at yourname.colvy.com/book, or in your chat widget.' },
       { icon: 'user', title: 'Staff & locations', desc: 'Set hours per person and per outlet. Customers only see times someone is free.' },
@@ -256,11 +256,144 @@ const PAGES: Record<string, any> = {
       { icon: 'bell', title: 'SMS & email reminders', desc: 'Confirmation straight away, then reminders 24 hours and 2 hours before.' },
       { icon: 'link', title: 'Reschedule & cancel links', desc: 'Customers change their own booking within your policy, with automatic refunds.' },
       { icon: 'inbox', title: 'Booked from the chat', desc: 'Send a booking link from any conversation, or let Colvy AI do it.' },
+      { icon: 'repeat', title: 'Regular bookings', desc: 'Repeat a booking every week, every 2 weeks or up to every 12. Each visit gets its own reminders and its own link to change it.' },
+      { icon: 'send', title: 'A waitlist that fills gaps', desc: 'Customers join from a full day. When a time frees up, Colvy offers it by text or email: first to book gets it, or one person at a time with the time held for them.' },
+      { icon: 'hand', title: '“I’m here” check-in', desc: 'From 30 minutes before, the booking page shows “I’m here”. One tap and your team knows they’ve arrived.' },
+      { icon: 'mail', title: 'Booking emails that look the part', desc: 'A status, a date tile, the details, Google, Apple and Outlook calendar buttons, and a proper dark mode.' },
       { icon: 'pen', title: 'Intake questions', desc: 'Ask what you need to know up front, so the appointment starts ready.' },
       { icon: 'star', title: 'Review follow-up', desc: 'After the visit, ask for a Google review automatically.' },
-      { icon: 'send', title: 'Waitlist for full days', desc: 'Customers join from a full day. When a time frees up, the people waiting get a text to book it: first in gets it, or one at a time with the slot held.' },
     ],
+    steps: [
+      { title: 'They book', desc: 'From your booking page, your website, the chat widget or a link you send. Real availability only.' },
+      { title: 'They’re reminded', desc: 'A confirmation with calendar buttons, then reminders before the visit with a link to change it.' },
+      { title: 'They arrive', desc: 'A tap on “I’m here” tells the team, so nobody waits at an empty counter.' },
+      { title: 'They come back', desc: 'Set up a regular booking, and let the waitlist offer any time that frees up.' },
+    ],
+    related: [{ label: '“I’m here” check-in', href: '/product/check-in' }, { label: 'Table reservations', href: '/product/reservations' }, { label: 'Customer accounts', href: '/product/customer-accounts' }],
     cta: 'Start taking bookings',
+  },
+  reservations: {
+    icon: 'utensils', color: PINK, mock: 'reservations', subtitle: 'Table reservations', isNew: true,
+    title: 'Every table booked, every guest expected',
+    hero: 'A table booking page on your own address, a day sheet and a live floor plan for the team, deposits for bigger groups and tools that cut no-shows. Every booking sits beside the guest’s messages.',
+    features: [
+      { icon: 'calendar', title: 'A booking page for tables', desc: 'Guests choose party size, date and time, where they’d like to sit and the occasion, and add a note. Embed it on your website too.' },
+      { icon: 'kanban', title: 'The night on one sheet', desc: 'Bookings by time with a covers strip, showing who’s booked, arriving soon, late, here and seated.' },
+      { icon: 'layout', title: 'A live floor plan', desc: 'Draw your rooms and tables, set which ones push together, and see what’s free, booked, seated or out of action.' },
+      { icon: 'users', title: 'Covers and pacing', desc: 'Cap the guests seated at once and the guests arriving each interval, so the kitchen isn’t hit all at once.' },
+      { icon: 'target', title: 'The right table, picked for you', desc: 'Each booking gets the smallest free table that fits, or tables pushed together for bigger groups. Or pick one yourself.' },
+      { icon: 'door', title: 'Walk-ins in a tap', desc: 'Seat a walk-in at a free table straight from the floor plan.' },
+      { icon: 'bolt', title: 'Deposits for bigger groups', desc: 'Per guest or per booking, from the party size and on the days you choose, paid by card through your own Stripe account.' },
+      { icon: 'userx', title: 'No-show tools', desc: 'Mark unseated tables as no-shows after a set time, ask repeat no-shows for a deposit, or have them call to book.' },
+      { icon: 'mail', title: 'Confirmations and reminders', desc: 'A confirmation email with change, cancel and add-to-calendar buttons, then a reminder before they come.' },
+      { icon: 'hand', title: '“I’m here” arrivals', desc: 'Guests tap “I’m here” on their booking page. The team gets an alert and the table glows on the floor plan.' },
+      { icon: 'user', title: 'Guest notes that stay put', desc: 'VIP, allergies, birthday and notes on the guest’s profile, with their visits and no-shows beside every conversation.' },
+      { icon: 'phone', title: 'Missed calls get your booking link', desc: 'Callers you miss during service get a text with your table booking link, so they can book while they’re keen.' },
+    ],
+    steps: [
+      { title: 'A guest books', desc: 'Party size, date, time, seating and occasion, on your page or your website. Online bookings stay within your covers and pacing.' },
+      { title: 'They get the details', desc: 'A confirmation email with buttons to change, cancel or add it to their calendar, then a reminder before they come.' },
+      { title: 'You run the night', desc: 'The day sheet and floor plan show who’s due, who’s late and which tables are free, including walk-ins.' },
+      { title: 'They arrive', desc: 'A tap on “I’m here” marks them as arrived and lights up their table, so the host can seat them straight away.' },
+    ],
+    related: [{ label: '“I’m here” check-in', href: '/product/check-in' }, { label: 'Colvy for restaurants', href: '/for/restaurants' }, { label: 'Online booking', href: '/product/booking' }],
+    cta: 'Start taking table bookings',
+  },
+  'check-in': {
+    icon: 'hand', color: GREEN, mock: 'checkin', subtitle: '“I’m here” check-in', isNew: true,
+    title: 'Know the moment they walk in',
+    hero: 'From 30 minutes before an in-person booking, the guest’s booking page shows an “I’m here” button. One tap alerts your team and marks them as arrived, so nobody waits at an empty counter.',
+    features: [
+      { icon: 'hand', title: 'One big button', desc: 'On the booking page linked from their confirmation. No app, no sign-in, nothing to download.' },
+      { icon: 'timer', title: 'Shows at the right time', desc: 'From 30 minutes before an in-person booking until it ends. Earlier that day, the page says when it’ll appear.' },
+      { icon: 'bell', title: 'Your team hears about it', desc: 'A bell alert and a push to the team’s phones, which opens the guest’s conversation so you can reply.' },
+      { icon: 'chat', title: 'A note in the conversation', desc: 'The arrival is written into the guest’s thread, so anyone looking at it knows they’re here.' },
+      { icon: 'layout', title: 'Marked as arrived', desc: 'Tables show “Here” with the time on the day sheet and glow on the floor plan. Appointments get a “Here” chip.' },
+      { icon: 'lock', title: 'Told once', desc: 'A second tap, or a second phone, doesn’t alert the team again. The page tells the guest you know they’re here.' },
+    ],
+    steps: [
+      { title: 'They book', desc: 'A table or an in-person appointment, online or by your team. Their confirmation links to their booking page.' },
+      { title: 'They arrive', desc: 'From 30 minutes before, the page shows “I’m here”. They tap it from the car park or the door.' },
+      { title: 'You know', desc: 'The bell, a push and a note in the chat. Their table or booking shows them as here.' },
+      { title: 'You’re ready', desc: 'Seat them, call them through or pop out to say hello, without anyone queuing at the desk.' },
+    ],
+    related: [{ label: 'Table reservations', href: '/product/reservations' }, { label: 'Online booking', href: '/product/booking' }],
+    cta: 'Turn on online bookings',
+  },
+  jobs: {
+    icon: 'briefcase', color: BLUE, mock: 'jobs', subtitle: 'Jobs & quotes', isNew: true,
+    title: 'From quote to sign-off, in one place',
+    hero: 'Send quotes customers view and accept online, then run every job on a list, a board or a calendar. Assign the team with clash checks, and capture checklists, photos, signatures and time on site.',
+    features: [
+      { icon: 'pen', title: 'Quotes with GST', desc: 'Labour, materials, travel and fees from your price list or a template, with GST included or added, a discount and your terms.' },
+      { icon: 'send', title: 'Accepted online', desc: 'Send by text, email or link. Customers see every line and the GST, then accept with their name or decline with a reason.' },
+      { icon: 'bolt', title: 'A deposit on accept', desc: 'Ask for a deposit with the quote and the customer pays it by card when they accept, through your Stripe account.' },
+      { icon: 'kanban', title: 'List, board and calendar', desc: 'See every job as a list, drag it across a board from New to Completed, or plan the month on a calendar.' },
+      { icon: 'users', title: 'Assign with clash checks', desc: 'Colvy checks each person’s other jobs, bookings and calendar first, and the job blocks their time once it’s set.' },
+      { icon: 'clipboard', title: 'Checklists', desc: 'Add a saved checklist in one go. Each tick records who did it and when.' },
+      { icon: 'image', title: 'Before and after photos', desc: 'Photos go on the job, with a copy in your media gallery.' },
+      { icon: 'pen', title: 'Customer signature', desc: 'The customer signs on your screen. You can require it before a job is completed.' },
+      { icon: 'timer', title: 'Work timer', desc: 'Start puts the job in progress. Finish stops the clock and completes it.' },
+      { icon: 'mappin', title: 'My jobs', desc: 'Each person sees their own jobs by day, with directions to the address.' },
+      { icon: 'inbox', title: 'Started from the chat', desc: 'Turn a conversation, a booking or a form response into a job, with the customer’s details carried over.' },
+      { icon: 'lock', title: 'Prices for the office only', desc: 'A setting limits field staff to the jobs they’re on, without prices or quotes.' },
+    ],
+    steps: [
+      { title: 'Quote', desc: 'Build it from your price list, add GST and terms, and send it by text, email or link.' },
+      { title: 'Accept', desc: 'The customer accepts online, pays a deposit if you asked for one, and the job moves to Scheduled.' },
+      { title: 'Assign', desc: 'Pick the team. Colvy flags a clash, and everyone added gets a notification.' },
+      { title: 'Do the job', desc: 'Timer, checklist, photos and the customer’s signature, all on the job from your phone.' },
+    ],
+    related: [{ label: 'Colvy for service businesses', href: '/for/service-businesses' }, { label: 'Payments', href: '/product/payments' }, { label: 'Customer accounts', href: '/product/customer-accounts' }],
+    cta: 'Start sending quotes',
+  },
+  'customer-accounts': {
+    icon: 'key', color: CYAN, mock: 'portal', subtitle: 'Customer accounts', isNew: true,
+    title: 'Give every customer their own account',
+    hero: 'A “Your account” page at your own address. Customers sign in with a code, no password, and see what’s coming up, their quotes and jobs, orders and receipts, payments due and their messages with you.',
+    features: [
+      { icon: 'smartphone', title: 'Sign in with a code', desc: 'A 6-digit code by email or text to the address you have for them. No password to forget.' },
+      { icon: 'calendar', title: 'Coming up', desc: 'Bookings, table reservations and deliveries, with a link to change or cancel.' },
+      { icon: 'briefcase', title: 'Quotes and jobs', desc: 'Quotes waiting for them, to view and accept, and how their jobs are going.' },
+      { icon: 'receipt', title: 'Orders and receipts', desc: 'In-store and online orders, each with a printable receipt or tax invoice.' },
+      { icon: 'link', title: 'Payments due', desc: 'Payment links still waiting, deposits for a table or booking being held, and an accepted quote’s deposit, all paid by card.' },
+      { icon: 'repeat', title: 'Book again', desc: 'What they’ve booked before, with one tap to book it again, details filled in. For tables, the same party size.' },
+      { icon: 'chat', title: 'Messages', desc: 'Their conversation with you, and they can reply. Your team is alerted like any other message.' },
+      { icon: 'bell', title: 'Marketing preferences', desc: 'They choose whether they get your marketing by email and by text, and update their name.' },
+      { icon: 'shield', title: 'Private, and yours to shape', desc: 'Only what’s linked to their own email or mobile, with no card numbers shown. Switch each section on or off.' },
+    ],
+    steps: [
+      { title: 'Turn it on', desc: 'In Settings, switch on customer accounts and choose the sections. Copy your link.' },
+      { title: 'Share the link', desc: 'Your booking and quote pages link to it, or send yourname.colvy.com/account yourself.' },
+      { title: 'They sign in', desc: 'With a code by email or text, or straight from a booking or quote link you sent.' },
+      { title: 'They help themselves', desc: 'Book again, pay a deposit, accept a quote, open a receipt or reply to you, any time.' },
+    ],
+    related: [{ label: 'Receipts & tax invoices', href: '/product/receipts' }, { label: 'Jobs & quotes', href: '/product/jobs' }, { label: 'Online booking', href: '/product/booking' }],
+    cta: 'Open customer accounts',
+  },
+  receipts: {
+    icon: 'receipt', color: INDIGO, mock: 'receipt', subtitle: 'Receipts & tax invoices', isNew: true,
+    title: 'Every receipt, ready when they need it',
+    hero: 'Every order opens a receipt your customer can print or save as a PDF, in their account or from a private link you send them. When you have an ABN and the sale includes GST, it’s a tax invoice, with the GST shown.',
+    features: [
+      { icon: 'tag', title: 'In-store sales', desc: 'Sales through Prexty POS on your WooCommerce store, with the outlet they bought at.' },
+      { icon: 'cart', title: 'Online orders', desc: 'WooCommerce and Shopify orders. A WooCommerce order also links to the order in your shop, for returns or changes.' },
+      { icon: 'link', title: 'Paid payment links', desc: 'A receipt for every payment link they’ve paid, with the card receipt from Stripe.' },
+      { icon: 'receipt', title: 'Tax invoice or receipt', desc: 'Titled “Tax invoice” with your ABN when the sale includes GST. Otherwise it’s a receipt.' },
+      { icon: 'chart', title: 'GST shown', desc: 'Prices include GST, as Australian customers expect, with the GST on its own line.' },
+      { icon: 'printer', title: 'Print or save as PDF', desc: 'One button, a clean page with your logo and details, ready for their records.' },
+      { icon: 'send', title: 'Send a receipt', desc: 'From the Orders page or an order in the inbox, email or text the customer a private link to their receipt or tax invoice.' },
+      { icon: 'key', title: 'Always in their account', desc: 'With customer accounts on, every receipt waits under Orders and receipts, so nobody has to ask for a copy.' },
+      { icon: 'user', title: 'Matched to the customer', desc: 'Orders are matched by the customer’s email or mobile, so add one to in-store sales and they’ll find it later.' },
+    ],
+    steps: [
+      { title: 'Add your ABN', desc: 'In your business details. It’s what turns a receipt with GST into a tax invoice.' },
+      { title: 'Turn on accounts', desc: 'Switch on customer accounts with the Orders and receipts section.' },
+      { title: 'They sign in', desc: 'With a 6-digit code by email or text. Their orders are matched to their email or mobile.' },
+      { title: 'They print it', desc: 'Open any order and print it or save it as a PDF, whenever they need it.' },
+    ],
+    related: [{ label: 'Customer accounts', href: '/product/customer-accounts' }, { label: 'Orders', href: '/product/orders' }, { label: 'Payments', href: '/product/payments' }],
+    cta: 'Open customer accounts',
   },
   calendar: {
     icon: 'calendar', color: BLUE, mock: 'calendar', subtitle: 'Calendar',
@@ -335,6 +468,11 @@ const ALL = [
   { label: 'Link Reports', href: '/product/links', icon: 'link', color: CYAN },
   { label: 'Insights', href: '/product/insights', icon: 'chart', color: INDIGO },
   { label: 'Booking', href: '/product/booking', icon: 'calendar', color: CORAL },
+  { label: 'Table reservations', href: '/product/reservations', icon: 'utensils', color: PINK },
+  { label: '“I’m here” check-in', href: '/product/check-in', icon: 'hand', color: GREEN },
+  { label: 'Jobs & quotes', href: '/product/jobs', icon: 'briefcase', color: BLUE },
+  { label: 'Customer accounts', href: '/product/customer-accounts', icon: 'key', color: CYAN },
+  { label: 'Receipts & tax invoices', href: '/product/receipts', icon: 'receipt', color: INDIGO },
   { label: 'Calendar', href: '/product/calendar', icon: 'calendar', color: BLUE },
   { label: 'Tasks', href: '/product/tasks', icon: 'kanban', color: PURPLE },
   { label: 'Broadcasts', href: '/product/broadcasts', icon: 'megaphone', color: CORAL },
@@ -438,7 +576,7 @@ export default function FeaturePage() {
         <div style={{ position: 'relative', zIndex: 2, maxWidth: 1200, margin: '0 auto', width: '100%' }}>
           <div className="fp-hero" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'center' }}>
             <div style={{ maxWidth: 560 }}>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 15px', borderRadius: 999, marginBottom: 22, background: color + '1a', border: `1px solid ${color}44`, color, fontSize: 13, fontWeight: 800 }}><FeatureIcon name={page.icon} color={color} size={15} /> {page.subtitle}</div>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 15px', borderRadius: 999, marginBottom: 22, background: color + '1a', border: `1px solid ${color}44`, color, fontSize: 13, fontWeight: 800 }}><FeatureIcon name={page.icon} color={color} size={15} /> {page.subtitle}{page.isNew && <span style={{ marginLeft: 2, padding: '2px 8px', borderRadius: 999, background: color, color: '#fff', fontSize: 11, fontWeight: 800, letterSpacing: '0.02em' }}>New</span>}</div>
               <h1 style={{ fontSize: 'clamp(40px, 5.6vw, 74px)', fontWeight: 900, lineHeight: 1.0, letterSpacing: '-0.035em', margin: '0 0 22px' }}><BigReveal text={page.title} /></h1>
               <p style={{ fontSize: 'clamp(16px, 1.7vw, 20px)', color: muted, lineHeight: 1.6, maxWidth: 520, margin: '0 0 32px' }}>{page.hero}</p>
               <div className="fp-hero-cta" style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
@@ -476,6 +614,39 @@ export default function FeaturePage() {
           </div>
         </div>
       </section>
+
+      {/* HOW IT WORKS — the feature from the customer's side, in a few steps */}
+      {page.steps && (
+        <section style={{ padding: 'clamp(64px, 9vw, 100px) 24px clamp(30px, 5vw, 50px)', background: bg }}>
+          <div style={{ maxWidth: 1160, margin: '0 auto' }}>
+            <Reveal><div style={{ textAlign: 'center', marginBottom: 44 }}>
+              <h2 style={{ fontSize: 'clamp(30px, 4.6vw, 52px)', fontWeight: 900, letterSpacing: '-0.03em', margin: '0 0 12px', color: text }}>How it works</h2>
+              <p style={{ fontSize: 18, color: muted, margin: 0 }}>Set it up once. It runs every day.</p>
+            </div></Reveal>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(230px, 100%), 1fr))', gap: 16 }}>
+              {page.steps.map((s: any, i: number) => (
+                <Reveal key={s.title} delay={(i % 4) * 0.06}>
+                  <div className="fp-card" style={{ height: '100%', boxSizing: 'border-box', padding: 24, borderRadius: 20, background: cardBg, border: `1px solid ${cardBorder}` }}>
+                    <span style={{ width: 38, height: 38, borderRadius: 12, background: color, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: 16, marginBottom: 14 }}>{i + 1}</span>
+                    <h3 style={{ fontSize: 18, fontWeight: 800, color: text, margin: '0 0 8px' }}>{s.title}</h3>
+                    <p style={{ fontSize: 14.5, lineHeight: 1.6, color: muted, margin: 0 }}>{s.desc}</p>
+                  </div>
+                </Reveal>
+              ))}
+            </div>
+            {page.related && (
+              <Reveal delay={0.1}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'center', marginTop: 32 }}>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: muted, marginRight: 4 }}>Goes well with</span>
+                  {page.related.map((r: any) => (
+                    <a key={r.href} href={r.href} className="fp-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13.5, fontWeight: 700, padding: '8px 14px', borderRadius: 999, border: `1px solid ${cardBorder}`, background: cardBg, color: text, textDecoration: 'none' }}>{r.label} <ArrowRight s={13} /></a>
+                  ))}
+                </div>
+              </Reveal>
+            )}
+          </div>
+        </section>
+      )}
 
       <SeoFaqSection path={`product/${feature}`} accent={color} dark={dark} />
 

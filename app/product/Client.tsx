@@ -22,8 +22,50 @@ const AREAS = [
   { icon: 'phone', color: GREEN, title: 'Business phone & AI receptionist', desc: 'Local numbers, browser and mobile calling, recordings and transcripts. AI answers when you can’t and texts the caller back.', href: '/phones' },
   { icon: 'cart', color: BLUE, title: 'Orders & payments', desc: 'WooCommerce and Shopify orders in the chat. Send payment links, refund and update orders without switching tabs.', href: '/solutions/payments' },
   { icon: 'ai', color: PURPLE, title: 'AI agents', desc: 'Agents that answer questions, chase carts, reply to reviews and hand off to your team, within limits you set.', href: '/ai-agents' },
-  { icon: 'calendar', color: CYAN, title: 'Bookings', desc: 'Online booking with deposits and reminders, in the same place as the conversation.', href: '/product/booking' },
+  { icon: 'calendar', color: CYAN, title: 'Bookings, tables & jobs', desc: 'Online booking with deposits and reminders, table reservations with a floor plan, and jobs and quotes for trades.', href: '#all-features' },
   { icon: 'idea', color: PINK, title: 'Feedback, roadmap & help center', desc: 'Idea boards, a public roadmap, a changelog and a help center your customers can use themselves.', href: '#feedback' },
+]
+
+// Every feature page, grouped by the job it does. `isNew` marks what just shipped.
+const INDIGO = '#4f46e5', TEAL = '#0d9488', AMBER = '#d97706'
+const GROUPS: { title: string; desc: string; items: { icon: string; color: string; title: string; desc: string; href: string; isNew?: boolean }[] }[] = [
+  { title: 'Talk to customers', desc: 'Every channel in one place, with the customer’s story beside it.', items: [
+    { icon: 'inbox', color: TEAL, title: 'Shared inbox', desc: 'SMS, calls, Instagram, Messenger, email and chat', href: '/product/inbox' },
+    { icon: 'user', color: BLUE, title: 'Contacts & CRM', desc: 'A profile that fills itself in', href: '/product/crm' },
+    { icon: 'phone', color: GREEN, title: 'Business phone', desc: 'Australian numbers, calls in the app', href: '/phones' },
+    { icon: 'ai', color: PURPLE, title: 'AI agents', desc: 'Answer, book and follow up, with limits', href: '/ai-agents' },
+    { icon: 'pen', color: PINK, title: 'Notes', desc: 'Private team notes on any thread', href: '/product/notes' },
+    { icon: 'folder', color: PURPLE, title: 'Media gallery', desc: 'Photos and videos, ready to send', href: '/product/gallery' },
+    { icon: 'mic', color: TEAL, title: 'Voice typing', desc: 'Speak a reply, send it polished', href: '/product/voice-typing' },
+    { icon: 'target', color: TEAL, title: 'Automation', desc: 'Routing, follow-ups and triggers', href: '/product/automation' },
+  ] },
+  { title: 'Bookings, tables & jobs', desc: 'Appointments, restaurant tables and trade jobs, beside the conversation.', items: [
+    { icon: 'calendar', color: CORAL, title: 'Online booking', desc: 'Deposits, reminders, regular bookings, waitlist', href: '/product/booking' },
+    { icon: 'utensils', color: PINK, title: 'Table reservations', desc: 'Booking page, floor plan, covers, deposits', href: '/product/reservations', isNew: true },
+    { icon: 'hand', color: GREEN, title: '“I’m here” check-in', desc: 'Guests tell you they’ve arrived', href: '/product/check-in', isNew: true },
+    { icon: 'briefcase', color: BLUE, title: 'Jobs & quotes', desc: 'Quotes accepted online, jobs with sign-off', href: '/product/jobs', isNew: true },
+    { icon: 'calendar', color: BLUE, title: 'Calendar', desc: 'Bookings and events in one view', href: '/product/calendar' },
+    { icon: 'kanban', color: PURPLE, title: 'Tasks', desc: 'Turn any chat into a to-do', href: '/product/tasks' },
+  ] },
+  { title: 'Sell and get paid', desc: 'Orders, payments and recovered sales, right in the chat.', items: [
+    { icon: 'tag', color: CORAL, title: 'Orders', desc: 'WooCommerce and Shopify in the inbox', href: '/product/orders' },
+    { icon: 'bolt', color: GREEN, title: 'Payments', desc: 'Pay-by-link with Stripe', href: '/product/payments' },
+    { icon: 'receipt', color: INDIGO, title: 'Receipts & tax invoices', desc: 'Sent by link or in their account, GST shown', href: '/product/receipts', isNew: true },
+    { icon: 'cart', color: AMBER, title: 'Abandoned carts', desc: 'Win back the checkouts you lose', href: '/product/abandoned-carts' },
+    { icon: 'bell', color: PURPLE, title: 'Back-in-stock waitlists', desc: 'Text everyone when it’s back', href: '/product/waitlists' },
+  ] },
+  { title: 'Keep them coming back', desc: 'Campaigns, self-service and the numbers behind them.', items: [
+    { icon: 'key', color: CYAN, title: 'Customer accounts', desc: 'Bookings, quotes, orders, deposits, book again', href: '/product/customer-accounts', isNew: true },
+    { icon: 'megaphone', color: CORAL, title: 'Email & SMS campaigns', desc: 'Built with AI, reported in revenue', href: '/product/broadcasts' },
+    { icon: 'link', color: CYAN, title: 'Link reports', desc: 'Who clicked, and what they bought', href: '/product/links' },
+    { icon: 'chart', color: INDIGO, title: 'Insights', desc: 'Volume, response times and revenue', href: '/product/insights' },
+  ] },
+  { title: 'Feedback and help', desc: 'Hear what customers want, and answer before they ask.', items: [
+    { icon: 'idea', color: CORAL, title: 'Ideas board', desc: 'Collect and vote on requests', href: '/product/ideas' },
+    { icon: 'map', color: BLUE, title: 'Public roadmap', desc: 'Show what’s planned and shipped', href: '/product/roadmap' },
+    { icon: 'megaphone', color: GREEN, title: 'Announcements', desc: 'A changelog that notifies voters', href: '/product/announcements' },
+    { icon: 'book', color: YELLOW, title: 'Help centre', desc: 'A self-serve knowledge base', href: '/product/knowledgebase' },
+  ] },
 ]
 
 // The four headline pillars, each with its own deep-dive page.
@@ -183,6 +225,40 @@ export default function ProductPage() {
                 <span className="pd-explore" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14, fontWeight: 800, color: a.color, transition: 'gap 0.22s' }}>Explore <ArrowRight s={15} /></span>
               </a>
             </Reveal>
+          ))}
+        </div>
+      </section>
+
+      {/* EVERY FEATURE — grouped by the job it does, each with its own page */}
+      <section id="all-features" style={{ maxWidth: 1160, margin: '0 auto', padding: '10px 24px 56px', scrollMarginTop: 80 }}>
+        <Reveal>
+          <span style={{ display: 'block', textAlign: 'center', fontSize: 12.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: ACCENT, marginBottom: 8 }}>Every feature</span>
+          <h2 style={{ fontSize: 'clamp(24px, 3.4vw, 38px)', fontWeight: 900, letterSpacing: '-0.02em', textAlign: 'center', margin: '0 0 8px' }}>All of Colvy, <span style={{ color: ACCENT }}>grouped by the job it does</span></h2>
+          <p style={{ fontSize: 16, color: muted, maxWidth: 560, margin: '0 auto 34px', lineHeight: 1.55, textAlign: 'center' }}>Each feature has its own page. The ones marked New have just shipped.</p>
+        </Reveal>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 34 }}>
+          {GROUPS.map(g => (
+            <div key={g.title}>
+              <Reveal>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px 12px', flexWrap: 'wrap', margin: '0 0 14px' }}>
+                  <h3 style={{ fontSize: 19, fontWeight: 900, letterSpacing: '-0.01em', margin: 0, color: text }}>{g.title}</h3>
+                  <span style={{ fontSize: 14.5, color: muted }}>{g.desc}</span>
+                </div>
+              </Reveal>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(250px, 100%), 1fr))', gap: 12 }}>
+                {g.items.map((f, i) => (
+                  <Reveal key={f.href} delay={(i % 4) * 0.04}>
+                    <a href={f.href} className="pd-card" style={{ display: 'flex', alignItems: 'center', gap: 12, height: '100%', boxSizing: 'border-box', borderRadius: 16, padding: '14px 16px', background: cardBg, border: `1px solid ${cardBorder}`, textDecoration: 'none', color: text }}>
+                      <span style={{ width: 40, height: 40, borderRadius: 12, background: f.color + '16', border: `1px solid ${f.color}33`, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><FeatureIcon name={f.icon} color={f.color} size={20} /></span>
+                      <span style={{ minWidth: 0, flex: 1 }}>
+                        <span style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '2px 7px', fontSize: 15, fontWeight: 800, color: text }}>{f.title}{f.isNew && <span style={{ padding: '2px 7px', borderRadius: 999, background: ACCENT, color: '#fff', fontSize: 10.5, fontWeight: 800, letterSpacing: '0.02em' }}>New</span>}</span>
+                        <span style={{ display: 'block', fontSize: 13, lineHeight: 1.45, color: muted, marginTop: 2 }}>{f.desc}</span>
+                      </span>
+                    </a>
+                  </Reveal>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </section>
