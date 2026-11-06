@@ -169,6 +169,7 @@ html[data-mm-open] .colvy-chat-launcher{opacity:0 !important;pointer-events:none
 .mm-top.on,.mm-item.on .mm-lbl,.mm-more a.on{color:#ff6a4d}
 .mm-rule{height:1px;background:var(--mm-line);margin:6px 0}
 .mm-sec-head{display:flex;align-items:center;justify-content:space-between;width:100%;padding:16px 2px 10px;background:none;border:0;cursor:pointer;font:inherit;font-size:13.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--mm-ink)}
+.mm-root button::before{content:none}
 .mm-sec-head svg{color:var(--mm-muted);transition:transform .3s cubic-bezier(.16,1,.3,1)}
 .mm-sec.open .mm-sec-head svg{transform:rotate(180deg)}
 .mm-sec-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows .32s cubic-bezier(.16,1,.3,1)}

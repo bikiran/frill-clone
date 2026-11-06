@@ -104,8 +104,12 @@ button::before {
   transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   pointer-events: none;
 }
-button:hover::before {
-  opacity: 0.05;
+/* Only where there's a real pointer: a phone keeps :hover on the last thing
+   tapped, which left a grey band on it (e.g. the marketing phone menu). */
+@media (hover: hover) {
+  button:hover::before {
+    opacity: 0.05;
+  }
 }
 
 /* ── SMOOTH COLLAPSE (components/Collapse) ── */
