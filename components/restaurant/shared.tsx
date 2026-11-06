@@ -18,6 +18,8 @@ export type Reservation = {
   /** Phase 2: the table(s) it has, and a deposit (cents, 'pending' | 'paid' | 'refunded'…). */
   tables?: { id: string; label: string }[]
   deposit?: { cents: number; status: string } | null
+  /** When the guest tapped "I'm here" on their booking page (not seated yet). */
+  arrivedAt?: string | null
 }
 
 export const money = (cents: number) => `$${(cents / 100).toLocaleString('en-AU', { minimumFractionDigits: cents % 100 ? 2 : 0, maximumFractionDigits: 2 })}`
@@ -105,6 +107,11 @@ const STATE_TONE: Record<ResState, string> = {
 }
 export function StateTag({ state }: { state: ResState }) {
   return <span className={`ak-tag ${STATE_TONE[state] || ''}`}>{STATE_LABEL[state] || state}</span>
+}
+
+/** The guest tapped "I'm here": shown in place of Arriving soon / Late until they're seated. */
+export function HereTag({ at, tz }: { at: string; tz: string }) {
+  return <span className="ak-tag green rs-here" title={`Tapped “I’m here” at ${fmtTime(at, tz)}`}><i aria-hidden />Here · {fmtTime(at, tz)}</span>
 }
 
 export const SEATING: Record<string, string> = { indoor: 'Inside', outdoor: 'Outside', bar: 'At the bar' }
@@ -250,6 +257,10 @@ export const RS_CSS = `
 .rs-chip{height:36px;padding:0 14px;border:none;border-radius:999px;background:var(--f);font:inherit;font-size:13.5px;font-weight:600;color:var(--ink);cursor:pointer;transition:background .15s,box-shadow .15s}
 .rs-chip:hover{background:var(--f2)}
 .rs-chip.on{background:var(--ink);color:var(--card,#fff)}
+.rs-here{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.rs-here i{width:7px;height:7px;border-radius:50%;background:#16a34a;box-shadow:0 0 0 0 rgba(22,163,74,.5);animation:rsHere 1.8s ease-out infinite}
+@keyframes rsHere{70%{box-shadow:0 0 0 7px rgba(22,163,74,0)}100%{box-shadow:0 0 0 0 rgba(22,163,74,0)}}
+@media (prefers-reduced-motion:reduce){.rs-here i{animation:none}}
 .rs-occ{display:flex;flex-direction:column;gap:8px}
 .rs-opt{margin-left:4px;font-size:12px;font-weight:500;color:var(--soft)}
 .rs-occ-chip{display:inline-flex;align-items:center;gap:7px}

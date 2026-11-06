@@ -8,7 +8,7 @@ import { coversTimeline, daySpan } from '@/lib/restaurant/availability'
 import { pickTable, tableChoices } from '@/lib/restaurant/tables'
 import {
   restaurantDb, reservationsAccess, resContext, json, setupNeeded, isMissingRestaurantSchema, isUuid, isManager,
-  RES_COLS, liveReservations, slotsFor, guestStats, createReservation, moveReservation, assignTables, tableHolds, tablesFor,
+  RES_COLS, liveReservations, slotsFor, guestStats, createReservation, moveReservation, assignTables, tableHolds, tablesFor, arrivalsFor,
   clip, cleanPhone, cleanEmail, cleanSeating,
 } from '@/lib/restaurant/server'
 
@@ -42,6 +42,8 @@ function shape(b: any, company: any, stats?: any, tables?: { id: string; label: 
     confirmedByGuest: !!b.customer_confirmed_at, manageUrl: company && b.manage_token ? manageUrl(company, b.manage_token) : null,
     guest: stats ? { visits: stats.visits, noShows: stats.noShows, lastVisit: stats.lastVisit } : null,
     tables: tables || [],
+    // Tapped "I'm here" on their booking page (and not seated yet).
+    arrivedAt: b.status === 'confirmed' && !b.seated_at ? (b.arrived_at || null) : null,
     deposit: b.payment_mode === 'deposit' && b.amount_due_cents ? { cents: b.amount_due_cents, status: b.payment_status || 'pending' } : null,
   }
 }
@@ -72,11 +74,12 @@ export async function GET(req: NextRequest) {
       if (error) { if (isMissingRestaurantSchema(error)) return setupNeeded(); throw error }
       const nowIso = new Date().toISOString()
       const rows = (data || []).filter((b: any) => b.status !== 'pending' || (b.hold_expires_at && b.hold_expires_at > nowIso))
-      const [stats, tabs] = await Promise.all([
+      const [stats, tabs, here] = await Promise.all([
         guestStats(db, companyId!, service.id, rows.map((b: any) => b.contact_id).filter(Boolean)),
         tablesFor(db, r.ctx, rows.filter((b: any) => b.status === 'confirmed' || b.status === 'pending').map((b: any) => b.id)),
+        arrivalsFor(db, rows.filter((b: any) => b.status === 'confirmed' && !b.seated_at).map((b: any) => b.id)),
       ])
-      const list = rows.map((b: any) => shape(b, company, b.contact_id ? stats.get(b.contact_id) : null, tabs.get(b.id)))
+      const list = rows.map((b: any) => shape({ ...b, arrived_at: here.get(b.id) || null }, company, b.contact_id ? stats.get(b.contact_id) : null, tabs.get(b.id)))
       const live = rows.filter((b: any) => b.status === 'confirmed' || b.status === 'pending')
       const counts = {
         reservations: live.length + rows.filter((b: any) => b.status === 'completed').length,
@@ -248,7 +251,7 @@ export async function PATCH(req: NextRequest) {
       const { data: fresh } = await db.from('bookings').select(RES_COLS).eq('id', b.id).maybeSingle()
       if (note) await systemNote(db, { ...b, ...(fresh || {}) }, note)
       const tabs = await tablesFor(db, r.ctx!, [b.id])
-      return json({ reservation: shape(fresh || b, company, null, tabs.get(b.id)), ...(extra || {}) })
+      return json({ reservation: shape(fresh ? { ...fresh, arrived_at: b.arrived_at ?? null } : b, company, null, tabs.get(b.id)), ...(extra || {}) })
     }
     // Only from the expected state, so two people tapping at once can't both act.
     const claim = async (patch: any, from: string[], seated?: boolean) => {

@@ -249,6 +249,17 @@ export async function slotsFor(db: any, ctx: ResCtx, date: string, party: number
  * Visits, no-shows and the next table for each guest, worked out from their
  * reservations (never copied onto the contact, so it can't drift).
  */
+/** When guests tapped "I'm here" on their booking page (V431); empty until it's run. */
+export async function arrivalsFor(db: any, bookingIds: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  if (!bookingIds.length) return out
+  try {
+    const { data, error } = await db.from('bookings').select('id, arrived_at').in('id', bookingIds.slice(0, 1000)).not('arrived_at', 'is', null)
+    if (!error) for (const r of data || []) if (r.arrived_at) out.set(r.id, r.arrived_at)
+  } catch {}
+  return out
+}
+
 export async function guestStats(db: any, companyId: string, serviceId: string, contactIds: string[]) {
   const out = new Map<string, { visits: number; noShows: number; cancelled: number; covers: number; lastVisit: string | null; nextVisit: string | null; nextId: string | null; upcoming: number }>()
   const ids = Array.from(new Set(contactIds.filter(isUuid))).slice(0, 500)

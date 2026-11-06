@@ -9,7 +9,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { useRefundAccess, RefundPinField, RefundNotAllowed, isPinError } from '@/components/RefundPin'
 import {
-  apiRaw, Icon, PartyStepper, PeopleIcon, StateTag, TableChip, TablePicker, OccasionPick, money, tablesText, addDays, dayLabel, dayShort, dayNum, timeOf, fmtDay, dayKeyIn, SEATING, SOURCE, RS_CSS, type Reservation,
+  apiRaw, Icon, PartyStepper, PeopleIcon, StateTag, HereTag, TableChip, TablePicker, OccasionPick, money, tablesText, addDays, dayLabel, dayShort, dayNum, timeOf, fmtDay, dayKeyIn, SEATING, SOURCE, RS_CSS, type Reservation,
 } from '@/components/restaurant/shared'
 
 type Guest = { guest: { id: string; name: string; phone: string; email: string; profile: any; birthday: string | null }; stats: any; reservations: Reservation[] }
@@ -67,7 +67,7 @@ export default function ReservationDrawer({ companyId, tz, today, res, seatingOp
         <style>{RS_CSS + RD_CSS}</style>
         <header className="rd-h">
           <div style={{ minWidth: 0 }}>
-            <div className="rd-tags"><StateTag state={res.state} />{guest?.guest.profile?.vip && <span className="ak-tag violet">VIP</span>}{res.source && <span className="ak-tag">{SOURCE[res.source] || res.source}</span>}</div>
+            <div className="rd-tags">{res.status === 'confirmed' && res.arrivedAt && !res.seatedAt ? <HereTag at={res.arrivedAt} tz={tz} /> : <StateTag state={res.state} />}{guest?.guest.profile?.vip && <span className="ak-tag violet">VIP</span>}{res.source && <span className="ak-tag">{SOURCE[res.source] || res.source}</span>}</div>
             <h2>{res.name || 'Guest'}</h2>
             <p className="rd-when"><b>{timeOf(res.startsAt, tz)}</b> · {dayLabel(day, today, true)} · <PeopleIcon /> {res.party}</p>
           </div>
@@ -101,6 +101,7 @@ export default function ReservationDrawer({ companyId, tz, today, res, seatingOp
                   {res.phone && <><dt>Mobile</dt><dd><a href={`tel:${res.phone}`}>{res.phone}</a></dd></>}
                   {res.email && <><dt>Email</dt><dd><a href={`mailto:${res.email}`}>{res.email}</a></dd></>}
                   {res.confirmedByGuest && <><dt>Confirmed</dt><dd>The guest confirmed</dd></>}
+                  {res.arrivedAt && !res.seatedAt && <><dt>Arrived</dt><dd>{timeOf(res.arrivedAt, tz)} · tapped “I’m here”</dd></>}
                   {res.cancelReason && <><dt>Reason</dt><dd>{res.cancelReason}</dd></>}
                 </dl>
                 {res.notes && <div className="rd-note"><b>Guest’s requests</b><p>{res.notes}</p></div>}
