@@ -69,6 +69,18 @@ export default function ReserveFlow({ slug }: { slug: string }) {
   const top = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    // From Book again on their account page: ?party=4 (the same size as last
+    // time) and ?i=<invite>, a personal link that fills in their details.
+    const sp = new URLSearchParams(window.location.search)
+    const want = Math.round(Number(sp.get('party')))
+    if (want >= 1 && want <= 99) setParty(want)
+    const invite = sp.get('i')
+    if (invite) {
+      get(`/api/reserve?${q}&op=invite&token=${encodeURIComponent(invite)}`).then(d => {
+        const p = d?.prefill
+        if (p) setF(x => ({ ...x, name: x.name || p.name || '', phone: x.phone || p.phone || '', email: x.email || p.email || '' }))
+      }).catch(() => {})
+    }
     get(`/api/reserve?${q}&op=page`).then(d => {
       setR(d.restaurant); setToday(d.today); setPoweredBy(!d.hidePoweredBy)
       setParty(p => Math.max(d.restaurant.partyMin, Math.min(d.restaurant.partyMax, p)))

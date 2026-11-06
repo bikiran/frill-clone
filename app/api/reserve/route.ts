@@ -1,6 +1,6 @@
 import { NextRequest, after } from 'next/server'
 import { hidesPoweredBy } from '@/lib/branding'
-import { loadCompanyPublic, manageUrl } from '@/lib/booking'
+import { loadCompanyPublic, manageUrl, loadInvite, invitePrefill } from '@/lib/booking'
 import { addDays, dateInTz, isDate } from '@/lib/booking-time'
 import { checkBurst, callerKey } from '@/lib/rate-limit'
 import { verifyTurnstile, requestIp, TURNSTILE_FAILED } from '@/lib/turnstile'
@@ -18,6 +18,7 @@ export const dynamic = 'force-dynamic'
 //   GET  ?slug|domain&op=page                     the restaurant, its page text and rules
 //   GET  ?slug|domain&op=days&party&from           which of the next days have a table
 //   GET  ?slug|domain&op=slots&date&party          the times with room
+//   GET  ?slug|domain&op=invite&token              their details, from a personal link (Book again on their account page)
 //   POST { slug|domain, startsAt, party, name, phone, email?, notes?, seating?, occasion?,
 //          marketing?, website (hidden), openedAt, turnstileToken }
 //        → { reservation, checkoutUrl? } — with a deposit, the table is held while they pay.
@@ -63,6 +64,12 @@ export async function GET(req: NextRequest) {
         days.push({ date: d, open: slots.some(s => s.ok) })
       }
       return json({ days, timezone: tz })
+    }
+    if (op === 'invite') {
+      const inv = await loadInvite(db, sp.get('token'))
+      if (!inv || inv.company_id !== company.id) return json({ prefill: null })
+      const p = await invitePrefill(db, inv)
+      return json({ prefill: { name: p.name, phone: p.phone, email: p.email } })
     }
     if (op === 'slots') {
       const party = partyOf(sp.get('party'), rs.party_max)

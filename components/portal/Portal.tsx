@@ -1,16 +1,17 @@
 'use client'
 
-// "Your account" — a business's page for its customers (the customer portal,
-// version 1): what's coming up (with Change or Cancel), payments due (Pay),
-// quotes and jobs, orders and receipts, the conversation with the business,
-// and their preferences. No password: a one-time code to the email or mobile
+// "Your account" — a business's page for its customers (the customer portal):
+// what's coming up (with Change or Cancel, and a deposit to pay on a held
+// booking), Book again (what they've booked before), payments due (Pay),
+// quotes and jobs (an accepted quote's deposit can be paid here), orders and
+// receipts, the conversation with the business, and their preferences. No password: a one-time code to the email or mobile
 // the business has for them, or a link the business sent (?b= a booking's
 // manage token, ?q= a quote's token), which signs them in for a day.
 // The session token lives in this browser only (localStorage, per business).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Shell } from '@/components/booking/BookingFlow'
-import type { PortalPublic, PortalMe, PortalComing, PortalOrder } from '@/lib/portal/types'
+import type { PortalPublic, PortalMe, PortalComing, PortalAgain, PortalQuote, PortalOrder } from '@/lib/portal/types'
 import type { PortalReceipt } from '@/lib/portal/receipts'
 import ReceiptDoc, { RECEIPT_CSS } from '@/components/portal/ReceiptDoc'
 
@@ -187,17 +188,31 @@ function Account({ biz, me, setMe, call, track, signOut }: {
 }) {
   const first = (me.me.name || '').trim().split(/\s+/)[0]
   const on = (k: string) => biz.sections[k] !== false
-  const coming = me.comingUp || [], pay = me.payments || [], quotes = me.quotes || [], jobs = me.jobs || [], orders = me.orders || []
+  const coming = me.comingUp || [], pay = me.payments || [], quotes = me.quotes || [], jobs = me.jobs || [], orders = me.orders || [], again = me.bookAgain || []
   const waiting = quotes.filter(q => q.waiting)
+  // Deposits to pay live on their own booking or quote; "To pay" counts them too.
+  const holdsDue = coming.filter(c => c.payUrl), depositsDue = quotes.filter(q => q.deposit?.due)
+  const toPay = pay.length + holdsDue.length + depositsDue.length
+  const payAt = pay.length ? 'pt-pay' : holdsDue.length ? 'pt-coming' : 'pt-quotes'
   const chips = [
     on('coming_up') && { id: 'pt-coming', label: 'Coming up', n: coming.length },
-    on('payments') && { id: 'pt-pay', label: 'To pay', n: pay.length, hot: pay.length > 0 },
-    on('quotes') && { id: 'pt-quotes', label: 'Quotes', n: waiting.length, hot: waiting.length > 0 },
+    on('payments') && { id: payAt, label: 'To pay', n: toPay, hot: toPay > 0 },
+    on('quotes') && { id: 'pt-quotes', label: 'Quotes', n: waiting.length + depositsDue.length, hot: waiting.length + depositsDue.length > 0 },
     on('orders') && { id: 'pt-orders', label: 'Orders', n: orders.length },
     on('messages') && { id: 'pt-msgs', label: 'Messages', n: null },
   ].filter(Boolean) as { id: string; label: string; n: number | null; hot?: boolean }[]
   const go = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   const [receipt, setReceipt] = useState<string | null>(null)
+  // Book again / Pay deposit: the server makes the link, then off they go.
+  const [going, setGoing] = useState('')
+  const [goErr, setGoErr] = useState<{ id: string; text: string } | null>(null)
+  const goTo = async (id: string, body: any) => {
+    if (going) return
+    setGoing(id); setGoErr(null)
+    const r = await call('POST', '', body)
+    if (r.ok && r.data?.url) { window.location.href = r.data.url; return }
+    setGoing(''); setGoErr({ id, text: r.data?.error || 'Something went wrong. Please try again.' })
+  }
 
   return (
     <>
@@ -228,20 +243,19 @@ function Account({ biz, me, setMe, call, track, signOut }: {
         <section id="pt-coming" className="pt-card bk-rise">
           <h2><span className="pt-ic"><Ic.cal /></span>Coming up</h2>
           {!coming.length ? <p className="pt-none">Nothing booked right now.</p> : coming.map(c => <ComingRow key={`${c.kind}:${c.id}`} c={c} track={track} />)}
+          {again.length > 0 && (
+            <div className="pt-again">
+              <h3>Book again</h3>
+              {again.map(a => <AgainRow key={a.id} a={a} busy={going === `again:${a.id}`} err={goErr?.id === `again:${a.id}` ? goErr.text : ''} onGo={() => goTo(`again:${a.id}`, { action: 'again', id: a.id })} />)}
+            </div>
+          )}
         </section>
       )}
 
       {on('quotes') && (quotes.length > 0 || jobs.length > 0) && (
         <section id="pt-quotes" className="pt-card bk-rise">
           <h2><span className="pt-ic"><Ic.doc /></span>Quotes and jobs</h2>
-          {quotes.map(q => (
-            <div key={q.id} className="pt-item">
-              <div className="pt-main"><b>{q.title || `Quote ${q.number}`}</b><span>Quote {q.number}{q.sentAt ? ` · ${dateLong(q.sentAt)}` : ''}</span></div>
-              <strong className="pt-amt">{money(q.cents)}</strong>
-              <span className={`pt-pill ${q.waiting ? 'hot' : q.status === 'accepted' ? 'ok' : ''}`}>{q.statusLabel}</span>
-              <a className={q.waiting ? 'bk-primary pt-sm' : 'pt-btn'} href={q.url} onClick={() => track('open_quote', q.id)}>{q.waiting ? 'View and accept' : 'View'}</a>
-            </div>
-          ))}
+          {quotes.map(q => <QuoteRow key={q.id} q={q} track={track} busy={going === `pay:${q.id}`} err={goErr?.id === `pay:${q.id}` ? goErr.text : ''} onPay={() => goTo(`pay:${q.id}`, { action: 'pay', id: q.id })} />)}
           {jobs.map(j => (
             <div key={j.id} className="pt-item">
               <div className="pt-main"><b>{j.title}</b><span>{j.nextVisit ? `Next visit ${dateLong(j.nextVisit)}, ${time(j.nextVisit)}` : 'Job'}</span></div>
@@ -275,7 +289,46 @@ function ComingRow({ c, track }: { c: PortalComing; track: (k: string, id?: stri
         <span>{c.allDay ? dateLong(c.startsAt) : `${dateLong(c.startsAt)}, ${time(c.startsAt)}`}{c.where ? ` · ${c.where}` : ''}</span>
       </div>
       <span className={`pt-pill ${c.status === 'pending' ? 'hot' : c.kind === 'delivery' ? 'blue' : 'ok'}`}>{c.statusLabel}</span>
-      {c.manageUrl && <a className="pt-btn" href={c.manageUrl} onClick={() => track('open_booking', c.id)}>Change or cancel</a>}
+      {c.payUrl
+        ? <a className="bk-primary pt-sm" href={c.payUrl} onClick={() => track('pay', c.id)}>Pay {money(c.payCents || 0)} deposit</a>
+        : c.manageUrl && <a className="pt-btn" href={c.manageUrl} onClick={() => track('open_booking', c.id)}>Change or cancel</a>}
+    </div>
+  )
+}
+
+/** Something they've booked before: one tap to the booking page, details filled in. */
+function AgainRow({ a, busy, err, onGo }: { a: PortalAgain; busy: boolean; err: string; onGo: () => void }) {
+  return (
+    <div className="pt-item">
+      <span className="pt-src again" aria-hidden><Ic.again /></span>
+      <div className="pt-main">
+        <b>{a.title}</b>
+        <span>Last time {dateLong(a.lastAt)}{a.party ? ` · ${a.party} ${a.party === 1 ? 'guest' : 'guests'}` : ''}</span>
+        {err && <em className="pt-rowerr" role="alert">{err}</em>}
+      </div>
+      <button type="button" className="pt-btn" disabled={busy} onClick={onGo}>{busy ? 'Opening…' : a.kind === 'reservation' ? 'Book a table' : 'Book again'}</button>
+    </div>
+  )
+}
+
+function QuoteRow({ q, track, busy, err, onPay }: { q: PortalQuote; track: (k: string, id?: string) => void; busy: boolean; err: string; onPay: () => void }) {
+  const dep = q.deposit
+  const depLine = dep && q.status === 'accepted' ? (dep.paid ? ` · Deposit paid` : ` · Deposit ${money(dep.cents)}`) : ''
+  return (
+    <div className="pt-item">
+      <div className="pt-main">
+        <b>{q.title || `Quote ${q.number}`}</b>
+        <span>Quote {q.number}{q.sentAt ? ` · ${dateLong(q.sentAt)}` : ''}{depLine}</span>
+        {err && <em className="pt-rowerr" role="alert">{err}</em>}
+      </div>
+      <strong className="pt-amt">{money(q.cents)}</strong>
+      <span className={`pt-pill ${q.waiting || dep?.due ? 'hot' : q.status === 'accepted' ? 'ok' : ''}`}>{q.statusLabel}</span>
+      {dep?.due
+        ? <span className="pt-acts">
+            <a className="pt-btn" href={q.url} onClick={() => track('open_quote', q.id)}>View</a>
+            <button type="button" className="bk-primary pt-sm" disabled={busy} onClick={onPay}>{busy ? 'Opening…' : `Pay ${money(dep.cents)} deposit`}</button>
+          </span>
+        : <a className={q.waiting ? 'bk-primary pt-sm' : 'pt-btn'} href={q.url} onClick={() => track('open_quote', q.id)}>{q.waiting ? 'View and accept' : 'View'}</a>}
     </div>
   )
 }
@@ -434,6 +487,7 @@ const Ic = {
   globe: S(<><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></>),
   store: S(<><path d="M4 10v10h16V10M3 4h18l-1 6H4L3 4Z" /><path d="M10 20v-5h4v5" /></>),
   print: S(<><path d="M6 9V3h12v6" /><rect x="3" y="9" width="18" height="8" rx="2" /><path d="M7 14h10v7H7z" /></>),
+  again: S(<><path d="M3 12a9 9 0 0 1 15.4-6.4L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-15.4 6.4L3 16" /><path d="M3 21v-5h5" /></>),
 }
 
 const PT_CSS = `
@@ -489,6 +543,14 @@ const PT_CSS = `
 .pt-sm{height:36px!important;padding:0 16px!important;font-size:13.5px!important;text-decoration:none;white-space:nowrap}
 .pt-src{flex:0 0 40px;height:40px;border-radius:13px;display:flex;align-items:center;justify-content:center;background:#f4f4f5;color:#52525b}
 .pt-src.online{background:#eff6ff;color:#1d4ed8}
+.pt-src.again{background:color-mix(in srgb,var(--bk-accent) 10%,#fff);color:color-mix(in srgb,var(--bk-accent) 80%,#111)}
+.pt-src svg{width:18px;height:18px}
+.pt-again{margin-top:10px;padding-top:12px;border-top:1px solid #f1f1f3}
+.pt-again h3{margin:0;font-size:12px;font-weight:750;letter-spacing:.06em;text-transform:uppercase;color:#9ca3af}
+.pt-again .pt-item:first-of-type{border-top:none}
+.pt-acts{display:inline-flex;gap:8px;align-items:center}
+.pt-rowerr{font-style:normal;font-size:12.5px;color:#b91c1c}
+button.bk-primary.pt-sm:disabled{opacity:.7;cursor:default}
 .pt-none{margin:6px 0 0;font-size:14px;color:#9ca3af}
 .pt-thread{display:flex;flex-direction:column;gap:10px;max-height:360px;overflow-y:auto;margin:10px 0 12px;padding:4px 2px;scrollbar-width:thin}
 .pt-msg{display:flex;flex-direction:column;align-items:flex-start;gap:3px;max-width:82%}
@@ -525,7 +587,7 @@ const PT_CSS = `
   .pt-card h1{font-size:24px}
   .pt-item{flex-wrap:wrap;gap:8px 12px}
   .pt-item .pt-main{flex-basis:calc(100% - 120px)}
-  .pt-item>.pt-btn,.pt-item>.bk-primary{margin-left:auto}
+  .pt-item>.pt-btn,.pt-item>.bk-primary,.pt-item>.pt-acts{margin-left:auto}
   .pt-reply{flex-direction:column;align-items:stretch}
 }
 `
