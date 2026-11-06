@@ -69,6 +69,7 @@ export function buildDigest(opts: { companyName: string; base: string; results: 
   const { html, text } = colvyEmail({
     preheader: `${handled} handled, ${brought} brought to you${waiting ? `, ${waiting} waiting for your approval` : ''}.`,
     kicker: `${companyName} · last 7 days`,
+    pill: { tone: 'accent', text: 'Weekly summary' },
     title: 'Here’s what your agents did',
     blocks,
     cta: { label: 'See all results', url: `${base}/admin/agents/results` },
