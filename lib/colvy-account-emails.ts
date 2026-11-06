@@ -85,6 +85,7 @@ export const ROLE_LABELS: Record<string, string> = {
 export function teamInviteEmail(o: { companyName: string; inviterName: string; role: string; inviteLink: string; email: string }): Mail {
   const { html, text } = colvyEmail({
     preheader: `${o.inviterName} has invited you to join ${o.companyName} on Colvy.`,
+    pill: { tone: 'accent', text: 'You’re invited' },
     title: `Join ${o.companyName} on Colvy`,
     intro: [
       'Hi there,',
@@ -108,19 +109,23 @@ export function trialNudgeEmail(kind: string, business: string, billingUrl: stri
     preheader: `Pick a plan to keep ${business} running without a break.`,
     intro: `Keep your inbox, orders, calls and everything you’ve set up for ${business} running without interruption. Pick a plan before your trial ends and nothing skips a beat.`,
     label: 'Choose a plan',
+    pill: { tone: 'warn' as const, text: 'Trial ends in 3 days' },
   } : kind === 't_zero' ? {
     subject: 'Your Colvy trial has ended',
     preheader: 'Your data is safe. Upgrade to pick up where you left off.',
     intro: `Your trial for ${business} has finished, but your data is safe. Upgrade now to pick up exactly where you left off: inbox, orders, calls and all.`,
     label: 'Upgrade and keep going',
+    pill: { tone: 'warn' as const, text: 'Trial ended' },
   } : {
     subject: 'Still time to bring Colvy back',
     preheader: 'Your workspace and data are still here.',
     intro: `${business}’s trial ended a few days ago. Your workspace and data are still here. Upgrade any time to switch everything back on.`,
     label: 'Reactivate Colvy',
+    pill: { tone: 'neutral' as const, text: 'Your data is still here' },
   }
   const { html, text } = colvyEmail({
     preheader: copy.preheader,
+    pill: copy.pill,
     title: copy.subject,
     intro: copy.intro,
     cta: { label: copy.label, url: billingUrl },
@@ -138,6 +143,7 @@ export function mentionEmail(o: { name: string; mentionedBy?: string | null; whe
   const { html, text } = colvyEmail({
     preheader: preview ? `${by}: ${preview.slice(0, 90)}` : `${by} mentioned you in ${o.where}.`,
     kicker: o.companyName,
+    pill: { tone: 'accent', text: `${by} mentioned you`, mark: '@' },
     title: 'You were mentioned',
     intro: [`Hi ${o.name},`, `**${by}** mentioned you in ${o.where} at ${o.companyName}.`],
     blocks: preview ? [{ type: 'quote', text: preview }] : [],
@@ -154,6 +160,7 @@ export function memberNotifyEmail(o: { title: string; body: string; link: string
   const { html, text } = colvyEmail({
     preheader: paras[0] ? paras[0].slice(0, 120) : o.title,
     kicker: o.companyName || undefined,
+    pill: { tone: 'accent', text: 'For you' },
     title: o.title,
     blocks: paras.length ? [{ type: 'quote', text: paras.join('\n') }] : [],
     cta: { label: 'Open in Colvy', url: o.link },
@@ -190,6 +197,7 @@ export function smsAutoTopUpOffEmail(o: { business: string; error: string; balan
       ? `Shopify didn’t accept two top-ups in a row, so auto top-up is off. Balance: ${balance}.`
       : `We couldn’t charge your card twice, so auto top-up is off. Balance: ${balance}.`,
     kicker: o.business,
+    pill: { tone: 'warn', text: 'Action needed' },
     title: 'Auto top-up for SMS credits is off',
     intro: [
       o.viaShopify
@@ -213,6 +221,7 @@ export function taxInvoiceEmail(o: { business: string; title: string; number: st
   const { html, text } = colvyEmail({
     preheader: `${o.title} ${o.number}: ${o.total}${isTax ? `, including GST of ${o.gst}` : ''}. Paid, thank you.`,
     kicker: o.business,
+    pill: { tone: 'good', text: 'Paid' },
     title: `Your ${word} ${o.number}`,
     intro: `Thanks for your payment. Your ${word} is ready to view, print or save as a PDF.`,
     blocks: [{ type: 'facts', rows: [
@@ -239,6 +248,7 @@ export function taxCreditNoteEmail(o: { business: string; title: string; number:
   const { html, text } = colvyEmail({
     preheader: `${o.title} ${o.number}: ${o.amount} credited${isNote ? `, GST adjustment ${o.gst}` : ''}.`,
     kicker: o.business,
+    pill: { tone: 'neutral', text: 'Refunded' },
     title: `Your ${word} ${o.number}`,
     intro: `We’ve refunded ${o.amount} on ${o.original}. Your ${word} is ready to view, print or save as a PDF.`,
     blocks: [{ type: 'facts', rows: [
@@ -265,6 +275,7 @@ export function colvyTeamAlertEmail(subject: string, text: string): Mail {
   const mail = colvyEmail({
     preheader: paras[0] ? paras[0].slice(0, 140) : subject,
     kicker: 'Colvy team alert',
+    pill: { tone: 'warn', text: 'Alert' },
     title: subject,
     intro: paras,
     cta: { label: 'Open super admin', url: 'https://colvy.com/platform-admin' },
@@ -279,6 +290,7 @@ export function salesEnquiryEmail(o: { name: string; email: string; company?: st
   const { html, text } = colvyEmail({
     preheader: `${o.name}${o.company ? ` from ${o.company}` : ''} sent a sales enquiry.`,
     kicker: 'Sales enquiry',
+    pill: { tone: 'accent', text: 'New enquiry' },
     title: `${o.name}${o.company ? ` from ${o.company}` : ''}`,
     intro: 'Reply to this email to answer them directly.',
     blocks: [
@@ -288,4 +300,22 @@ export function salesEnquiryEmail(o: { name: string; email: string; company?: st
     footerNote: 'Sent from the contact form on colvy.com.',
   })
   return { subject: `Sales enquiry — ${o.name}${o.company ? ` (${o.company})` : ''}`, html, text }
+}
+
+// ── A new response to a form (app/api/form-notifications), to the owner ─────
+
+export function formResponseEmail(o: { formTitle: string; companyName: string; responses: number; link: string }): Mail {
+  const title = String(o.formTitle || 'Your form').slice(0, 120)
+  const n = Math.max(0, Number(o.responses) || 0)
+  const { html, text } = colvyEmail({
+    preheader: `Someone just filled in ${title}. ${n} response${n === 1 ? '' : 's'} so far.`,
+    kicker: o.companyName,
+    pill: { tone: 'accent', text: 'New response' },
+    title: `New response to ${title}`,
+    intro: 'Someone just filled in your form.',
+    blocks: [{ type: 'facts', rows: [['Form', title], ['Responses so far', n.toLocaleString('en-AU')]] }],
+    cta: { label: 'View responses', url: o.link },
+    footerNote: 'You’re receiving this because you own this form on Colvy.',
+  })
+  return { subject: `New response to "${title}" • ${String(o.companyName || '').slice(0, 80)}`, html, text }
 }

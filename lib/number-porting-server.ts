@@ -363,6 +363,11 @@ export function portEmail(o: { business: string; request: PortRow; kind: 'submit
   const { html, text } = colvyEmail({
     preheader: `${nums}: ${PORT_STATUS_LABEL[status]}`,
     kicker: o.business,
+    pill: o.kind === 'submitted' ? { tone: 'accent', text: 'Request received' }
+      : status === 'completed' ? { tone: 'good', text: 'Number moved' }
+      : status === 'rejected' ? { tone: 'bad', text: 'Needs attention' }
+      : status === 'cancelled' ? { tone: 'neutral', text: 'Cancelled' }
+      : { tone: 'neutral', text: PORT_STATUS_LABEL[status] || 'Update' },
     title,
     intro: o.kind === 'submitted' ? `Thanks for asking to move ${nums} to Colvy. Our team will check the details and handle the paperwork with the carriers.` : undefined,
     blocks,
