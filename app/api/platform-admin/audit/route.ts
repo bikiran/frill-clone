@@ -23,8 +23,7 @@ async function requireSuperAdmin(req: NextRequest, db: any): Promise<boolean> {
 }
 
 // GET ?companyId= (optional) — the most recent super-admin actions, either for
-// one company or platform-wide. Super-admin only; used by the in-workspace
-// Super-Admin bar's Audit view and the platform console.
+// one company or platform-wide. Super-admin only; used by the platform console.
 export async function GET(req: NextRequest) {
   try {
     const db = admin()

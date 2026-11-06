@@ -37,7 +37,6 @@ import { useRouter } from 'next/navigation'
 import MobileNav from '@/components/MobileNav'
 import FeedbackButton from '@/components/FeedbackButton'
 import ColvyAssistant from '@/components/ColvyAssistant'
-import SuperAdminBar from '@/components/SuperAdminBar'
 import RouteScrollTop from '@/components/RouteScrollTop'
 import SetupRing from '@/components/SetupRing'
 import AdminRail, { RAIL_W, RailGlyph, type RailSection } from '@/components/AdminRail'
@@ -329,9 +328,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     const el = bannersEl
     if (!el || typeof ResizeObserver === 'undefined') return
     const root = document.documentElement
-    // Plus the super admin bar at the foot while it's open (--sab-h, set by
-    // components/SuperAdminBar), so full-height screens stop above it too.
-    const set = () => root.style.setProperty('--admin-banners-h', `calc(${Math.round(el.getBoundingClientRect().height)}px + var(--sab-h, 0px))`)
+    const set = () => root.style.setProperty('--admin-banners-h', `${Math.round(el.getBoundingClientRect().height)}px`)
     const ro = new ResizeObserver(set)
     ro.observe(el); set()
     return () => { ro.disconnect(); root.style.removeProperty('--admin-banners-h') }
@@ -1314,7 +1311,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       )}
 
       {/* Main content — offset by sidebar width on desktop, full width on mobile */}
-      <div className={`admin-main ${reportFonts}`} style={{ marginLeft: desktop ? RAIL_W : 0, flex: 1, minWidth: 0, overflowY: 'auto', minHeight: 'calc(100vh - 56px)', paddingBottom: 'var(--sab-h, 0px)' }}>
+      <div className={`admin-main ${reportFonts}`} style={{ marginLeft: desktop ? RAIL_W : 0, flex: 1, minWidth: 0, overflowY: 'auto', minHeight: 'calc(100vh - 56px)' }}>
         {/* The banners' total height is published as --admin-banners-h so
             full-height screens (the inbox) can fit below them instead of
             running under the phone's bottom nav. */}
@@ -1346,10 +1343,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <ColvyAssistant companyId={company?.id || null} userId={user?.id || null} agentName={user?.user_metadata?.display_name || user?.email?.split('@')[0]} />
       {/* Background uploads keep running as you move around the app. */}
       <UploadQueueIndicator />
-      {/* In-workspace Super-Admin bar — renders only for a platform super-admin
-          (the summary API 403s for everyone else). Lets us see/act on this
-          company's plan, trial and usage without leaving their admin. */}
-      <SuperAdminBar companyId={company?.id || null} />
     </div>
   )
 }
