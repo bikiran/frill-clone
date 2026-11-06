@@ -153,6 +153,7 @@ export async function POST(req: NextRequest) {
       ['customer_identity_audit', 'contact_id'],
       ['chat_payments', 'contact_id'],
       ['tasks', 'contact_id'],
+      ['jobs', 'contact_id'],
     ]
     for (const [table, col] of tables) {
       try {

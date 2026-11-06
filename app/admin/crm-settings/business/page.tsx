@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { useCompanyUser, S } from '../_shared'
 import { PLAN_NAMES, effectivePlan } from '@/lib/plan'
+import ModulesCard from '@/components/jobs/ModulesCard'
 
 const FONTS = ['Public Sans', 'Inter', 'Roboto', 'Open Sans', 'Lato', 'Montserrat', 'Poppins']
 // Brand colours to pick from in one tap (any other through the colour picker).
@@ -274,6 +275,13 @@ export default function BusinessSettings() {
         })()}
       </div>
       <style>{BZ_CSS}</style>
+
+      {/* Features this business can switch on */}
+      <div className="st-sec">
+        <h2 style={S.h2}>Features</h2>
+        <p style={S.sub}>Extra tools for your type of business.</p>
+        {companyId && <ModulesCard companyId={companyId} />}
+      </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 24, borderTop: '1px solid #f0f0f2' }}>
         <button onClick={save} disabled={saving} style={S.btn}>{saving ? 'Saving…' : 'Save changes'}</button>

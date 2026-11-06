@@ -5,12 +5,15 @@
 // Moved out of app/admin/inbox/page.tsx unchanged. Its names come from the
 // inbox controller through useInbox().
 
+import { useState } from 'react'
 import { MOODS, MOOD_COLOR, MOOD_LABEL, MoodBadge, MoodFace, isMood, launchMood } from '@/components/inbox/Mood'
 import { decodeEntities as dec } from '@/lib/decode-entities'
 import { supabase } from '@/lib/supabase'
 import CustomerGlance from '@/components/inbox/CustomerGlance'
 import { CHANNEL_NAME, STATUS_COLOR, STATUS_ICON, assigneeName, initials, timeAgo } from '@/components/inbox/inbox-shared'
 import { useInbox } from '@/components/inbox/InboxContext'
+import { createJobFrom, useJobsEnabled } from '@/components/jobs/createJob'
+import { confirmDialog, alertDialog } from '@/components/ConfirmDialog'
 
 export default function ThreadTop() {
   const {
@@ -26,6 +29,19 @@ export default function ThreadTop() {
   } = useInbox()
   // The teammate's current name, not the copy taken at assignment.
   const assignee = assigneeName(selected, teamMembers)
+  // Jobs & quotes: turn this enquiry into a job (only when the module is on).
+  const jobsOn = useJobsEnabled(companyId)
+  const [makingJob, setMakingJob] = useState(false)
+  const createJob = async () => {
+    if (!selected?.id || !companyId || makingJob) return
+    const ok = await confirmDialog({ title: 'Create a job from this conversation?', message: 'The customer and their latest messages are added to a new job, linked back here.', confirmLabel: 'Create job' })
+    if (!ok) return
+    setMakingJob(true)
+    try {
+      const d = await createJobFrom(companyId, { source: 'conversation', conversationId: selected.id })
+      window.location.href = `/admin/jobs/${d.job.id}`
+    } catch (e: any) { setMakingJob(false); alertDialog({ title: 'Couldn’t create the job', message: e?.message || 'Please try again.' }) }
+  }
   return (
     <>
       {/* Detected contact details are auto-saved silently to empty fields;
@@ -295,6 +311,11 @@ export default function ThreadTop() {
               <button type="button" onClick={() => { setShowActions(false); setShowMergePicker(true) }} className="th-menu-row">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8L22 12L18 16"/><path d="M2 12H22"/><path d="M6 8L2 12L6 16"/></svg> Merge conversation
               </button>
+              {jobsOn && (
+                <button type="button" onClick={() => { setShowActions(false); createJob() }} className="th-menu-row" disabled={makingJob}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M3 12.5h18"/></svg> {makingJob ? 'Creating job…' : 'Create job'}
+                </button>
+              )}
               <button type="button" onClick={() => { generateAiSummary(); setActivePanel('info'); setShowActions(false) }} className="th-menu-row">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3z"/></svg> AI summary &amp; to-dos
               </button>

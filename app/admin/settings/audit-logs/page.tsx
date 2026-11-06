@@ -94,11 +94,12 @@ type Entry = {
   ip?: string | null
 }
 
-const CATS = ['Conversations', 'Tasks', 'AI agents', 'Orders & money', 'Team', 'Settings']
+const CATS = ['Conversations', 'Tasks', 'AI agents', 'Orders & money', 'Jobs & quotes', 'Team', 'Settings']
 
 // activity_logs (what Colvy's server records) → filter group.
 const logCat = (t: string) =>
-  /refund|coupon|order|card_charged|payment|doa/.test(t) ? 'Orders & money'
+  /^(job|quote)_/.test(t) ? 'Jobs & quotes'
+  : /refund|coupon|order|card_charged|payment|doa/.test(t) ? 'Orders & money'
   : /ai_agent/.test(t) ? 'AI agents'
   : /team_member/.test(t) ? 'Team'
   : 'Settings'

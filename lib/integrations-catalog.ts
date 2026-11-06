@@ -50,6 +50,14 @@ export const EVENT_GROUPS: { group: string; events: { id: string; label: string;
     { id: 'booking.rescheduled', label: 'Booking rescheduled' },
     { id: 'booking.cancelled', label: 'Booking cancelled' },
   ] },
+  { group: 'Jobs & quotes', events: [
+    { id: 'job.created', label: 'New job' },
+    { id: 'job.status_changed', label: 'Job status changed' },
+    { id: 'quote.sent', label: 'Quote sent' },
+    { id: 'quote.accepted', label: 'Quote accepted' },
+    { id: 'quote.declined', label: 'Quote declined' },
+    { id: 'quote.deposit_paid', label: 'Quote deposit paid' },
+  ] },
   { group: 'Payments', events: [
     { id: 'payment.received', label: 'Payment received', hint: 'Payment links, invoices, bookings and forms' },
   ] },

@@ -11,7 +11,7 @@ function Chip({ icon, children, title }: { icon: IconName; children: ReactNode; 
 }
 
 /** The side drawer: full response, the path taken (from the saved path) and the variables. */
-export function ResponseDrawer({ row, logic, verify, color, onClose, onPrev, onNext, onDelete, deleting, position }: {
+export function ResponseDrawer({ row, logic, verify, color, onClose, onPrev, onNext, onDelete, deleting, position, onCreateJob }: {
   row: ResultRow
   logic: LogicForm
   verify: VerifyContext | null
@@ -22,6 +22,8 @@ export function ResponseDrawer({ row, logic, verify, color, onClose, onPrev, onN
   onDelete: (id: string) => void
   deleting: boolean
   position?: { index: number; total: number }
+  /** Jobs & quotes is on: "Create job" from this response. */
+  onCreateJob?: (id: string) => void
 }) {
   const ref = useRef<HTMLDivElement | null>(null)
   const [showSkipped, setShowSkipped] = useState(false)
@@ -77,6 +79,11 @@ export function ResponseDrawer({ row, logic, verify, color, onClose, onPrev, onN
           </div>
           <button type="button" className="fr-icon-btn" onClick={onPrev || undefined} disabled={!onPrev} aria-label="Previous response" title="Previous"><Icon name="left" size={17} /></button>
           <button type="button" className="fr-icon-btn" onClick={onNext || undefined} disabled={!onNext} aria-label="Next response" title="Next"><Icon name="right" size={17} /></button>
+          {onCreateJob && (
+            <button type="button" className="fr-icon-btn" onClick={() => onCreateJob(row.id)} aria-label="Create a job from this response" title="Create job">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M3 12.5h18"/></svg>
+            </button>
+          )}
           <button type="button" className="fr-icon-btn" onClick={() => onDelete(row.id)} disabled={deleting} aria-label="Delete response" title="Delete" style={{ color: '#dc2626' }}><Icon name="trash" size={16} /></button>
           <button type="button" className="fr-icon-btn" onClick={onClose} aria-label="Close" title="Close"><Icon name="x" size={17} /></button>
         </div>

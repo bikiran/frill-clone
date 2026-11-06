@@ -46,6 +46,7 @@ import { SETTINGS_NAV } from '@/components/settings/settings-nav'
 import { canUseFeature, canAccessPath, featureForPath, hasFullAccess, type PermissionMap } from '@/lib/permissions'
 import { reportFonts } from '@/lib/fonts'
 import { useStoreStatus, storeAllowsPage } from '@/lib/store-status'
+import { jobsEnabled, moduleAllowsPage } from '@/lib/modules'
 import AiBuddy from '@/components/AiBuddy'
 
 const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
@@ -90,6 +91,8 @@ const icons: Record<string, React.JSX.Element> = {
   widget: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 3H8a2 2 0 0 0-2 2v2h12V5a2 2 0 0 0-2-2z"/></svg>,
   upgrade: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 11 12 6 7 11"/><line x1="12" y1="18" x2="12" y2="6"/></svg>,
   command: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49"/><path d="M7.76 16.24a6 6 0 0 1 0-8.49"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 19.07a10 10 0 0 1 0-14.14"/></svg>,
+  jobs: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M3 12.5h18"/></svg>,
+  quote: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>,
   orders: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>,
   shipping: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>,
   payments: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/><line x1="6" y1="15" x2="10" y2="15"/></svg>,
@@ -120,6 +123,12 @@ const SECTIONS: NavSection[] = [
   { key: 'contacts', label: 'Contacts', glyph: 'contacts', groups: [{ items: [
     { label: 'Contacts', href: '/admin/contacts', icon: 'users', match: ['/admin/customers/profile'] },
     { label: 'Customer Segments', href: '/admin/customers/segments', icon: 'segments' },
+  ] }] },
+  // Jobs & quotes, for trades and services (lib/modules: on by default for
+  // Trades & Home Services and Logistics, switchable in Settings).
+  { key: 'jobs', label: 'Jobs', glyph: 'jobs', groups: [{ items: [
+    { label: 'Jobs', href: '/admin/jobs', icon: 'jobs', match: ['/admin/jobs/quotes'] },
+    { label: 'Quote Settings', href: '/admin/jobs/settings', icon: 'quote' },
   ] }] },
   { key: 'tasks', label: 'Tasks', glyph: 'tasks', groups: [{ items: [
     { label: 'Tasks', href: '/admin/tasks', icon: 'check' },
@@ -451,6 +460,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // already shipped/cancelled/refunded.
   // Store tools (Orders, Shipping, Waitlists, Order automation) show only with a store.
   const storeStatus = useStoreStatus(company?.id)
+  // Per-business modules (Jobs & quotes): from the company row, updated
+  // straight away when Settings switches one (colvy:modules-changed).
+  const moduleStatus = { jobs: jobsEnabled(company), known: !!company && ('industry' in company || 'modules' in company) }
+  useEffect(() => {
+    const on = (e: any) => { const m = e?.detail?.modules; if (m && typeof m === 'object') setCompany((c: any) => (c ? { ...c, modules: m } : c)) }
+    window.addEventListener('colvy:modules-changed', on)
+    return () => window.removeEventListener('colvy:modules-changed', on)
+  }, [])
   const [ordersNew, setOrdersNew] = useState(0)
   useEffect(() => {
     if (!company?.id) return
@@ -916,6 +933,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const canUseNavItem = (item: { href: string; label: string }) => {
     const featKey = item.label === 'Ideas' ? 'ideas' : featureForPath(item.href.split(/[?#]/)[0])?.key
     if (!storeAllowsPage(item.href, storeStatus)) return false
+    if (!moduleAllowsPage(item.href, moduleStatus)) return false
     return !featKey || canUseFeature(myRole, myPerms, featKey)
   }
 

@@ -130,6 +130,8 @@ export const PERMISSION_SUITES: SuiteDef[] = [
       { key: 'gallery', label: 'Gallery', paths: ['/admin/gallery'] },
       { key: 'calendar', label: 'Calendar', paths: ['/admin/calendar'] },
       { key: 'bookings', label: 'Bookings', paths: ['/admin/bookings'], restrictedDefault: false },
+      // Jobs & quotes (V427). Off for restricted members until switched on.
+      { key: 'jobs', label: 'Jobs & quotes', paths: ['/admin/jobs'], restrictedDefault: false },
       { key: 'scheduled', label: 'Scheduled', paths: ['/admin/scheduled'] },
       { key: 'calls', label: 'Call Logs', paths: ['/admin/calls'] },
     ],
