@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
     const view = viewFor(access, settings)
 
     let q = db.from('jobs')
-      .select('id, number, title, status, source, contact_id, conversation_id, booking_id, address, scheduled_start, scheduled_end, value_cents, accepted_quote_id, sort_order, assignees, time_seconds, created_at, updated_at')
+      .select('id, number, title, status, source, contact_id, conversation_id, booking_id, address, scheduled_start, scheduled_end, value_cents, accepted_quote_id, sort_order, assignees, time_seconds, completed_at, created_at, updated_at')
       .eq('company_id', companyId!)
     // Field staff (when the business limits them) see only their own jobs; anyone can ask for "mine".
     if ((view.restrict && !view.isManager) || sp.get('mine') === '1') q = q.contains('assignees', [{ id: view.userId }])

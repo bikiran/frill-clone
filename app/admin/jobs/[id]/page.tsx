@@ -7,16 +7,18 @@ import { AdminPage, Panel } from '@/components/ui/AdminKit'
 import DateTimeField from '@/components/ui/DateTimeField'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import {
-  api, useJobsCompany, StatusTag, QuoteTag, fmtWhen, fmtAgo, fmtDate, isoToLocal, localToIso, useToast, Toast, SetupNote, Icon, JB_CSS,
+  api, apiRaw, useJobsCompany, StatusTag, QuoteTag, fmtWhen, fmtAgo, fmtDate, isoToLocal, localToIso, useToast, Toast, SetupNote, Icon, JB_CSS,
   cacheKeys, readJobsCache, writeJobsCache, prefetchQuote,
 } from '@/components/jobs/shared'
 import AddressAutocomplete from '@/components/AddressAutocomplete'
 import Link from 'next/link'
+import { PeoplePanel, WorkPanel, ChecklistPanel, PhotosPanel, SignaturePanel, SignatureDialog, FIELD_CSS } from '@/components/jobs/Field'
 import { JOB_STATUS_LABEL, nextStatuses, fmtJobNumber, fmtQuoteNumber, type JobStatus } from '@/lib/jobs/status'
 import { fmtMoney } from '@/lib/jobs/quote-math'
 
-// One job: its stage, details, who it's for and where it came from, its
-// quotes, and everything that's happened (with team notes).
+// One job: its stage, details, who it's for and where it came from, who's on
+// it (with clash checks), the work timer, its checklist and photos, the
+// customer's sign-off, its quotes, and everything that's happened.
 
 export default function JobPage() {
   const { id } = useParams() as { id: string }
@@ -37,6 +39,7 @@ export default function JobPage() {
   const [templates, setTemplates] = useState<any[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [me, setMe] = useState('')
+  const [signing, setSigning] = useState(false)
 
   const load = useCallback(async () => {
     if (!companyId) return
@@ -94,10 +97,14 @@ export default function JobPage() {
     // Show the new stage straight away; put it back if the server says no.
     const before = job.status
     setD((x: any) => ({ ...x, job: { ...x.job, status: to } }))
-    try {
-      const r = await api(`/api/jobs/${id}`, { method: 'PATCH', json: { companyId, status: to, expectedStatus: before, cancelReason } })
-      setD((x: any) => ({ ...x, job: { ...x.job, ...r.job } })); setToast(`Moved to ${JOB_STATUS_LABEL[to]}`); if (cancelReason) setNote(''); load()
-    } catch (e: any) { setD((x: any) => ({ ...x, job: { ...x.job, status: before } })); setToast(e.message); load() }
+    const r = await apiRaw(`/api/jobs/${id}`, { method: 'PATCH', json: { companyId, status: to, expectedStatus: before, cancelReason } }).catch((e: any) => ({ ok: false, status: 0, data: { error: e.message } }))
+    if (r.ok) {
+      setD((x: any) => ({ ...x, job: { ...x.job, ...r.data.job } })); setToast(`Moved to ${JOB_STATUS_LABEL[to]}`); if (cancelReason) setNote('')
+    } else {
+      setD((x: any) => ({ ...x, job: { ...x.job, status: before } })); setToast(r.data.error || 'That didn’t work. Please try again.')
+      if (r.status === 409 && r.data.needsSignature) setSigning(true)
+    }
+    load()
   }
 
   const addNote = async () => {
@@ -177,7 +184,7 @@ export default function JobPage() {
           )}
         </div>
       }>
-      <style>{JB_CSS + PAGE_CSS}</style>
+      <style>{JB_CSS + PAGE_CSS + FIELD_CSS}</style>
       {job.status === 'cancelled' && <div className="ak-note bad"><span><b>Cancelled</b>{job.cancel_reason ? `: ${job.cancel_reason}` : ''}. Move it to New to reopen it.</span></div>}
 
       <div className="jb-two">
@@ -206,6 +213,16 @@ export default function JobPage() {
             )}
           </Panel>
 
+          {!partial && <>
+            <WorkPanel companyId={companyId} job={job} time={d.time} me={d.me || me} toast={setToast} onNeedSignature={() => setSigning(true)}
+              onChange={n => { setD((x: any) => ({ ...x, ...(n.job ? { job: { ...x.job, ...n.job } } : {}), ...(n.time ? { time: n.time } : {}) })); if (n.job) load() }} />
+            <ChecklistPanel companyId={companyId} jobId={id} items={d.checklist || []} toast={setToast}
+              onChange={items => setD((x: any) => ({ ...x, checklist: items }))} />
+            <PhotosPanel companyId={companyId} jobId={id} attachments={d.attachments || []} me={d.me || me} canManage={!!d.canManage} toast={setToast}
+              onChange={list => setD((x: any) => ({ ...x, attachments: list }))} />
+          </>}
+
+          {d.seesMoney !== false && (
           <Panel title="Quotes" sub="Itemised quotes with GST, sent as a link the customer accepts online."
             right={!partial && job.status !== 'cancelled' && job.status !== 'completed' && (
               <div style={{ position: 'relative' }}>
@@ -252,6 +269,7 @@ export default function JobPage() {
               </div>
             )}
           </Panel>
+          )}
 
           <Panel title="Activity">
             <div className="jbp-note">
@@ -291,6 +309,12 @@ export default function JobPage() {
             ) : <LinkCustomer companyId={companyId} jobId={id} onLinked={() => load()} onError={setToast} />}
           </Panel>
 
+          {!partial && <>
+            <PeoplePanel companyId={companyId} job={job} conflicts={d.conflicts || []} canAssign={!!d.canManage || !d.restricted} toast={setToast}
+              onSaved={(j, c) => { setD((x: any) => ({ ...x, job: { ...x.job, ...j }, conflicts: c })); load() }} />
+            <SignaturePanel job={job} required={!!d.settings?.require_signature} onSign={() => setSigning(true)} />
+          </>}
+
           {!partial && (
             <Panel title="Linked">
               <div className="jbp-links">
@@ -313,6 +337,10 @@ export default function JobPage() {
           )}
         </aside>
       </div>
+      {signing && !partial && (
+        <SignatureDialog companyId={companyId} jobId={id} defaultName={d.contact?.name || ''} toast={setToast} onClose={() => setSigning(false)}
+          onSaved={j => { setSigning(false); setD((x: any) => ({ ...x, job: { ...x.job, ...j } })); load() }} />
+      )}
       <Toast text={toast} />
     </AdminPage>
   )

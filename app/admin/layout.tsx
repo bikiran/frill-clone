@@ -128,6 +128,7 @@ const SECTIONS: NavSection[] = [
   // Trades & Home Services and Logistics, switchable in Settings).
   { key: 'jobs', label: 'Jobs', glyph: 'jobs', groups: [{ items: [
     { label: 'Jobs', href: '/admin/jobs', icon: 'jobs', match: ['/admin/jobs/quotes'] },
+    { label: 'My jobs', href: '/admin/jobs/my', icon: 'scheduled' },
     { label: 'Quote Settings', href: '/admin/jobs/settings', icon: 'quote' },
   ] }] },
   { key: 'tasks', label: 'Tasks', glyph: 'tasks', groups: [{ items: [

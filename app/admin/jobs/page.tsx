@@ -8,7 +8,7 @@ import NewJobDialog from '@/components/jobs/NewJobDialog'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import EmptyScroll from '@/components/EmptyScroll'
 import {
-  api, useJobsCompany, StatusTag, QuoteTag, fmtWhen, fmtTime, fmtAgo, dayKeyIn, useToast, Toast, SetupNote, Icon, JB_CSS,
+  api, useJobsCompany, StatusTag, QuoteTag, fmtWhen, fmtTime, fmtAgo, dayKeyIn, useToast, Toast, SetupNote, Icon, JB_CSS, AvatarStack,
   cacheKeys, readJobsCache, writeJobsCache, prefetchJob,
 } from '@/components/jobs/shared'
 import { JOB_STATUSES, JOB_STATUS_LABEL, canMoveJob, nextStatuses, fmtJobNumber, isOpenJob, type JobStatus } from '@/lib/jobs/status'
@@ -35,6 +35,10 @@ export default function JobsPage() {
   const [prefix, setPrefix] = useState(() => seed.current?.settings?.job_prefix || 'J')
   const [qPrefix, setQPrefix] = useState(() => seed.current?.settings?.quote_prefix || 'Q')
   const [loading, setLoading] = useState(() => !seed.current)
+  // Who's asking: their id (for "Mine"), whether they manage Jobs, and whether
+  // the business limits field staff to their own jobs (the server filters then).
+  const [meta, setMeta] = useState<{ me: string; canManage: boolean | null; restricted: boolean }>(() => ({ me: seed.current?.me || '', canManage: seed.current?.canManage ?? null, restricted: !!seed.current?.restricted }))
+  const [who, setWho] = useState<'all' | 'mine'>('all')
   const [setup, setSetup] = useState('')
   const [err, setErr] = useState('')
   const [showNew, setShowNew] = useState(false)
@@ -44,6 +48,7 @@ export default function JobsPage() {
     try {
       const v = new URLSearchParams(window.location.search).get('view') || localStorage.getItem('colvy-jobs-view')
       if (v === 'board' || v === 'list' || v === 'calendar') setView(v)
+      if (localStorage.getItem('colvy-jobs-who') === 'mine') setWho('mine')
       if (new URLSearchParams(window.location.search).get('new') === '1') setShowNew(true)
     } catch {}
   }, [])
@@ -64,8 +69,9 @@ export default function JobsPage() {
       if (mine !== seq.current) return
       setJobs(d.jobs || []); setTz(d.timezone || 'Australia/Melbourne')
       setPrefix(d.settings?.job_prefix || 'J'); setQPrefix(d.settings?.quote_prefix || 'Q')
+      setMeta({ me: d.me || '', canManage: !!d.canManage, restricted: !!d.restricted })
       setSetup(''); setErr('')
-      if (!search) writeJobsCache(cacheKeys.list(cid), { jobs: d.jobs || [], timezone: d.timezone, settings: { job_prefix: d.settings?.job_prefix, quote_prefix: d.settings?.quote_prefix } })
+      if (!search) writeJobsCache(cacheKeys.list(cid), { jobs: d.jobs || [], timezone: d.timezone, settings: { job_prefix: d.settings?.job_prefix, quote_prefix: d.settings?.quote_prefix }, me: d.me, canManage: !!d.canManage, restricted: !!d.restricted })
     } catch (e: any) {
       if (mine !== seq.current) return
       if (/COLVY_V427/.test(e.message)) setSetup(e.message); else setErr(e.message)
@@ -111,16 +117,19 @@ export default function JobsPage() {
     }
   }, [companyId, prefix, q, load, setToast])
 
+  const mineOnly = who === 'mine' && !meta.restricted && !!meta.me
+  const visible = useMemo(() => (mineOnly ? jobs.filter(j => (j.assignees || []).some((a: any) => a.id === meta.me)) : jobs), [jobs, mineOnly, meta.me])
+  const switchWho = (w: 'all' | 'mine') => { setWho(w); try { localStorage.setItem('colvy-jobs-who', w) } catch {} }
   const shown = useMemo(() => {
-    if (filter === 'all') return jobs
-    if (filter === 'open') return jobs.filter(j => isOpenJob(j.status))
-    return jobs.filter(j => j.status === filter)
-  }, [jobs, filter])
+    if (filter === 'all') return visible
+    if (filter === 'open') return visible.filter(j => isOpenJob(j.status))
+    return visible.filter(j => j.status === filter)
+  }, [visible, filter])
   const counts = useMemo(() => {
-    const c: Record<string, number> = { open: 0, all: jobs.length }
-    for (const j of jobs) { c[j.status] = (c[j.status] || 0) + 1; if (isOpenJob(j.status)) c.open++ }
+    const c: Record<string, number> = { open: 0, all: visible.length }
+    for (const j of visible) { c[j.status] = (c[j.status] || 0) + 1; if (isOpenJob(j.status)) c.open++ }
     return c
-  }, [jobs])
+  }, [visible])
 
   const open = (j: any) => {
     // Hand the job page what we already know so it can paint at once.
@@ -135,9 +144,9 @@ export default function JobsPage() {
 
   return (
     <AdminPage title="Jobs" width="xl"
-      sub="Quotes and jobs, from the first enquiry to done."
+      sub={meta.restricted ? 'The jobs you’re on.' : 'Quotes and jobs, from the first enquiry to done.'}
       actions={<>
-        <Link href="/admin/jobs/settings" className="ak-btn" title="Quote settings, price list and templates">{Icon.gear}<span className="jb-hide-sm">Settings</span></Link>
+        {meta.canManage !== false && <Link href="/admin/jobs/settings" className="ak-btn" title="Quote settings, price list, templates and checklists">{Icon.gear}<span className="jb-hide-sm">Settings</span></Link>}
         <button type="button" className="ak-btn go" onClick={() => setShowNew(true)} disabled={!companyId || !!setup}>{Icon.plus}New job</button>
       </>}>
       <style>{JB_CSS + PAGE_CSS}</style>
@@ -150,6 +159,12 @@ export default function JobsPage() {
             <button key={v} type="button" role="tab" aria-selected={view === v} className={view === v ? 'on' : ''} onClick={() => switchView(v)}>{v === 'board' ? 'Board' : v === 'list' ? 'List' : 'Calendar'}</button>
           ))}
         </div>
+        {!meta.restricted && meta.me && (
+          <div className="ak-seg" role="tablist" aria-label="Whose jobs">
+            <button type="button" role="tab" aria-selected={who === 'all'} className={who === 'all' ? 'on' : ''} onClick={() => switchWho('all')}>Everyone</button>
+            <button type="button" role="tab" aria-selected={who === 'mine'} className={who === 'mine' ? 'on' : ''} onClick={() => switchWho('mine')}>Mine</button>
+          </div>
+        )}
         <label className="jb-search">
           {Icon.search}
           <input value={q} onChange={e => setQ(e.target.value)} placeholder={`Search jobs or ${prefix}-number`} aria-label="Search jobs" />
@@ -170,8 +185,8 @@ export default function JobsPage() {
         <div className="jb-skel">{Array.from({ length: 4 }).map((_, i) => <div key={i} />)}</div>
       ) : err && jobs.length === 0 ? null : !setup && jobs.length === 0 && !q.trim() ? (
         <div className="ak-panel jb-empty">
-          <EmptyScroll title="No jobs yet" kinds={['job', 'quote', 'calendar']}
-            line="Create one here, or turn an enquiry into a job from the Inbox, a booking or a form response."
+          <EmptyScroll title={meta.restricted ? 'Nothing on your plate' : 'No jobs yet'} kinds={['job', 'quote', 'calendar']}
+            line={meta.restricted ? 'Jobs show here when someone puts you on them.' : 'Create one here, or turn an enquiry into a job from the Inbox, a booking or a form response.'}
             action={<button type="button" className="ak-btn go" onClick={() => setShowNew(true)}>{Icon.plus}New job</button>} />
         </div>
       ) : !setup && jobs.length === 0 ? (
@@ -180,12 +195,18 @@ export default function JobsPage() {
             line={<>No jobs match “{q.trim()}”. Try a customer’s name, a title or a {prefix}-number.</>}
             action={<button type="button" className="ak-btn" onClick={() => setQ('')}>Clear search</button>} />
         </div>
+      ) : mineOnly && visible.length === 0 ? (
+        <div className="ak-panel jb-empty">
+          <EmptyScroll title="Nothing on your plate" kinds={['job', 'calendar', 'contact']}
+            line="You’re not on any of these jobs. Jobs show here when someone puts you on them."
+            action={<button type="button" className="ak-btn" onClick={() => switchWho('all')}>Show everyone’s</button>} />
+        </div>
       ) : view === 'board' ? (
-        <Board jobs={jobs} tz={tz} prefix={prefix} qPrefix={qPrefix} onMove={move} onOpen={open} onWarm={warm} />
+        <Board jobs={visible} tz={tz} prefix={prefix} qPrefix={qPrefix} onMove={move} onOpen={open} onWarm={warm} />
       ) : view === 'list' ? (
         <ListView jobs={shown} tz={tz} prefix={prefix} qPrefix={qPrefix} onOpen={open} onWarm={warm} onShowAll={filter !== 'open' ? () => setFilter('open') : undefined} />
       ) : (
-        <CalendarView jobs={jobs} tz={tz} prefix={prefix} onOpen={open} onWarm={warm} />
+        <CalendarView jobs={visible} tz={tz} prefix={prefix} onOpen={open} onWarm={warm} />
       )}
 
       {showNew && companyId && (
@@ -312,7 +333,7 @@ function Board({ jobs, tz, prefix, qPrefix, onMove, onOpen, onWarm }: { jobs: an
                   tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') onOpen(j) }} aria-label={`${fmtJobNumber(j.number, prefix)} ${j.title}`}>
                   <div className="jb-card-t">
                     <span className="jb-no">{fmtJobNumber(j.number, prefix)}</span>
-                    <MoveMenu job={j} onMove={onMove} />
+                    <span className="jb-card-r"><AvatarStack people={j.assignees || []} size={22} /><MoveMenu job={j} onMove={onMove} /></span>
                   </div>
                   <b className="jb-title">{j.title}</b>
                   <div className="jb-meta">
@@ -389,6 +410,7 @@ function ListView({ jobs, tz, prefix, qPrefix, onOpen, onWarm, onShowAll }: { jo
               </div>
             </div>
             <div className="jb-li-side">
+              <AvatarStack people={j.assignees || []} size={22} />
               {j.quote && <span className="jb-q">{qPrefix}-{j.quote.number} <QuoteTag status={j.quote.status} /></span>}
               {(j.value_cents != null || j.quote) && <b className="jb-num">{fmtMoney(j.value_cents ?? j.quote?.total_cents)}</b>}
               <span className="jb-muted" style={{ fontSize: 12 }}>Updated {fmtAgo(j.updated_at)}</span>
@@ -464,6 +486,7 @@ const PAGE_CSS = `
 .jb-empty .es-title{font-size:16px}
 .jb-empty .es-line{max-width:380px;font-size:13.5px}
 .jb-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.jb-card-r{display:inline-flex;align-items:center;gap:4px}
 .jb-search{display:flex;align-items:center;gap:8px;flex:1;max-width:340px;min-width:200px;height:40px;padding:0 14px;border-radius:999px;background:var(--f);color:var(--mut)}
 .jb-search input{flex:1;min-width:0;border:none;background:none;outline:none;font:inherit;font-size:14px;color:var(--ink)}
 .jb-chips{display:flex;gap:6px;overflow-x:auto;margin:0 0 14px;padding-bottom:2px;scrollbar-width:none}
