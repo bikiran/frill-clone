@@ -2,6 +2,8 @@
 // original, practical pieces on customer communication for SMBs. No fabricated
 // third-party stats, quotes or customer names; advice is general and honest.
 
+import { LATEST_POSTS } from '@/lib/blog-latest'
+
 const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c', TEAL = '#0d9488'
 
 export type BlogSection = { h: string; p: string[] }
@@ -26,7 +28,8 @@ export type BlogPost = {
   content?: string      // Markdown body (takes precedence when present)
 }
 
-export const POSTS: BlogPost[] = [
+// The newest articles live in lib/blog-latest.ts, ahead of these.
+const EARLIER_POSTS: BlogPost[] = [
   {
     slug: 'how-to-reply-to-google-reviews',
     cover: '/channels/google-reviews.jpg',
@@ -1723,6 +1726,8 @@ WhatsApp support is coming to Colvy, but it isn’t available yet. Today Colvy g
 More on how it works: [WhatsApp shared inbox for teams](/whatsapp-shared-inbox).`,
   },
 ]
+
+export const POSTS: BlogPost[] = [...LATEST_POSTS, ...EARLIER_POSTS]
 
 export function getPost(slug: string): BlogPost | undefined {
   return POSTS.find(p => p.slug === slug)

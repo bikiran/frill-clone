@@ -4,7 +4,10 @@ import { useEffect, useState } from 'react'
 import Collapse from '@/components/Collapse'
 import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
+import AiBuddy from '@/components/AiBuddy'
 import FeatureIcon from '@/components/FeatureIcon'
+import AgentCustomiser from '@/components/marketing/AgentCustomiser'
+import { DEFAULT_AGENT_FACES } from '@/lib/agent-faces'
 import InviteCta from '@/components/InviteCta'
 import { AGENTS, AGENT_PILLARS, AGENT_PLANS_LABEL, CONTROL_STEPS, type MarketingAgent } from '@/lib/agents-marketing'
 
@@ -21,6 +24,7 @@ const FAQ = [
   { q: 'Where do the facts come from?', a: 'From your own systems, at the moment it answers: your WooCommerce or Shopify orders and stock, carrier tracking, your booking calendar, Google Business Profile hours, your help centre and the knowledge you add. If it can’t check something, it says it will ask the team.' },
   { q: 'What happens when it can’t help?', a: 'It hands the conversation to your team with a short note: what the customer wants, what it checked, and what it found. The hand-over shows in the inbox and in Needs you, so nobody has to read the whole thread.' },
   { q: 'Can I see why it did something?', a: 'Yes. Every reply, hand-off and task has a “Why?” link: what came in, what the agent looked up, what it decided, which permission allowed it, and who approved it.' },
+  { q: 'Can I rename the agents or change how they look?', a: 'Yes. On the AI agents page, give each agent its own name (“Kai” instead of “Support Agent”), pick one of 12 shapes and slide its colour, or upload a photo such as your logo. Your team sees that name and face on its drafts and replies across Colvy. Customers still hear from your business, in your voice.' },
   { q: 'Does it learn from my team?', a: 'When someone edits a draft before sending, Colvy may suggest a lesson for Business Memory, like “we don’t ship live fish to WA”. Nothing changes until the owner keeps it. The agents never teach themselves.' },
 ]
 
@@ -46,7 +50,7 @@ function Console({ dark }: { dark: boolean }) {
   return (
     <div aria-label={`${a.name} example`} style={{ borderRadius: 22, background: '#0d0f16', border: `1px solid ${line}`, boxShadow: dark ? 'none' : '0 40px 90px rgba(15,17,25,0.25)', overflow: 'hidden', color: '#e8eaf2' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: `1px solid ${line}` }}>
-        <span style={{ width: 8, height: 8, borderRadius: '50%', background: a.color, boxShadow: `0 0 12px ${a.color}` }} />
+        <span key={a.key} className="ag-con-face"><AiBuddy size={26} color={DEFAULT_AGENT_FACES[a.key]?.color || a.color} shape={DEFAULT_AGENT_FACES[a.key]?.shape || 'star'} /></span>
         <span style={{ fontFamily: MONO, fontSize: 12, letterSpacing: '0.06em' }}>{a.name}</span>
         <span style={{ marginLeft: 'auto', fontFamily: MONO, fontSize: 11, color: 'rgba(232,234,242,0.5)' }}>{a.example.channel}</span>
       </div>
@@ -72,7 +76,7 @@ function AgentSection({ a, i, text, muted, line, card }: { a: MarketingAgent; i:
     <article id={a.key} className="ag-row" style={{ scrollMarginTop: 90, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'clamp(28px, 5vw, 64px)', alignItems: 'center', padding: 'clamp(40px, 6vw, 70px) 0', borderTop: `1px solid ${line}` }}>
       <div style={{ order: i % 2 ? 2 : 1 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-          <span style={{ width: 42, height: 42, borderRadius: 13, background: a.color + '1f', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><FeatureIcon name={a.icon} color={a.color} size={20} /></span>
+          <span className="ag-face"><AiBuddy size={58} color={DEFAULT_AGENT_FACES[a.key]?.color || a.color} shape={DEFAULT_AGENT_FACES[a.key]?.shape || 'star'} shadow /></span>
           <span style={{ fontFamily: MONO, fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', color: muted }}>{String(i + 1).padStart(2, '0')} · {a.where}</span>
         </div>
         <h2 style={{ fontSize: 'clamp(28px, 3.6vw, 42px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.05, margin: '0 0 12px', color: text }}>{a.name}</h2>
@@ -116,6 +120,12 @@ export default function AiAgentsPage() {
         .ag-faq::before{ display:none }
         .ag-faq:hover{ color:${CORAL} !important }
         .ag-faq:focus-visible{ outline:2px solid ${CORAL}; outline-offset:4px; border-radius:6px }
+        .ag-face{ display:inline-flex }
+        .ag-face > svg{ animation:agBob 4.4s ease-in-out infinite }
+        .ag-con-face{ display:inline-flex; animation:agPop .45s cubic-bezier(.34,1.56,.64,1) }
+        @keyframes agBob{ 0%,100%{ transform:translateY(0) rotate(0) } 50%{ transform:translateY(-5px) rotate(-3deg) } }
+        @keyframes agPop{ 0%{ transform:scale(.6) } 100%{ transform:scale(1) } }
+        @media (prefers-reduced-motion: reduce){ .ag-face > svg, .ag-con-face{ animation:none } }
         @media (max-width: 900px){ .ag-hero{ grid-template-columns:1fr !important } .ag-row{ grid-template-columns:1fr !important } .ag-row > *{ order:0 !important } .ag-steps{ grid-template-columns:1fr !important } }
       `}</style>
       <MarketingNav dark={dark} onToggleDark={() => setDark(v => !v)} />
@@ -142,6 +152,9 @@ export default function AiAgentsPage() {
           {AGENTS.map((a, i) => <AgentSection key={a.key} a={a} i={i} text={text} muted={muted} line={line} card={card} />)}
         </div>
       </section>
+
+      {/* MAKE THEM YOURS */}
+      <AgentCustomiser dark={dark} id="customise" />
 
       {/* CONTROL */}
       <section id="control" style={{ background: '#0a0b10', color: '#f4f5fb', padding: 'clamp(64px, 9vw, 110px) 24px', scrollMarginTop: 80 }}>
