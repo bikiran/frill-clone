@@ -121,13 +121,19 @@ export default function LegalPage({ slug, children }: { slug: 'privacy' | 'terms
         .lg-body .lg-legal{ margin:18px 0 0 !important; font-size:13px !important; line-height:1.5 !important; color:var(--muted) !important; }
         @media (max-width:900px){
           .lg-grid{ grid-template-columns:minmax(0,1fr); gap:18px; }
-          .lg-toc{ position:static; border:1px solid var(--line); border-radius:18px; background:var(--soft); padding:4px 16px; }
+          .lg-toc{ position:static; border:1px solid var(--line); border-radius:18px; background:var(--soft); padding:0 8px; overflow:hidden; }
           .lg-toc h3{ display:none; }
-          .lg-toc-btn{ display:flex; width:100%; align-items:center; justify-content:space-between; padding:13px 0; border:0; background:none; font:inherit; font-size:14.5px; font-weight:700; color:var(--ink); cursor:pointer; }
-          .lg-toc-btn svg{ transition:transform .2s; }
+          /* The site-wide button hover tint (globals.css button::before) sticks
+             after a tap on phones and painted a grey block here: not on this one. */
+          .lg-toc .lg-toc-btn{ display:flex; width:100%; align-items:center; justify-content:space-between; padding:14px 8px; border:0; border-radius:12px; background:transparent; font:inherit; font-size:14.5px; font-weight:700; color:var(--ink); cursor:pointer; -webkit-tap-highlight-color:transparent; }
+          .lg-toc .lg-toc-btn::before{ display:none !important; }
+          .lg-toc-btn svg{ transition:transform .2s; color:var(--muted); }
           .lg-toc.open .lg-toc-btn svg{ transform:rotate(180deg); }
-          .lg-toc ol{ display:none; padding-bottom:10px; }
+          /* A plain list on phones (the desktop rail line and its indent go). */
+          .lg-toc ol{ display:none; gap:2px; border-left:0; padding:6px 0 10px; border-top:1px solid var(--line); }
           .lg-toc.open ol{ display:grid; }
+          .lg-toc a{ margin:0; padding:10px 8px; border-left:0; border-radius:10px; font-size:14.5px; -webkit-tap-highlight-color:transparent; }
+          .lg-toc a.on{ background:var(--bg); box-shadow:0 1px 2px rgba(0,0,0,.05); }
           .lg-contact-acts{ margin-left:0; width:100%; }
           .lg-contact-acts .lg-pill{ flex:1 1 0; justify-content:center; }
         }
