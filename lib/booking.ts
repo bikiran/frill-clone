@@ -377,7 +377,7 @@ const tail9 = (s: string) => (s || '').replace(/\D/g, '').slice(-9)
 
 // `out.created` says whether a brand-new contact was made (a new lead, for
 // smart-link reporting).
-async function ensureContact(db: any, companyId: string, c: { name: string; email: string | null; phone: string | null }, knownId?: string, out?: { created?: boolean }) {
+export async function ensureContact(db: any, companyId: string, c: { name: string; email: string | null; phone: string | null }, knownId?: string, out?: { created?: boolean }, source = 'booking') {
   let hit: any = null
   try {
     if (knownId) {
@@ -403,7 +403,7 @@ async function ensureContact(db: any, companyId: string, c: { name: string; emai
     return hit.id as string
   }
   try {
-    const { data } = await db.from('contacts').insert({ company_id: companyId, name: c.name || null, email: c.email, phone: c.phone, source: 'booking' }).select('id').maybeSingle()
+    const { data } = await db.from('contacts').insert({ company_id: companyId, name: c.name || null, email: c.email, phone: c.phone, source }).select('id').maybeSingle()
     if (data?.id && out) out.created = true
     return (data?.id as string) || null
   } catch { return null }
