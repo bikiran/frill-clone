@@ -20,6 +20,7 @@ export const STATIC_MARKETING_ROUTES: string[] = [
   'business-phone-number-australia',
   'all-in-one-customer-platform',
   'selling-chat',
+  'email-sms-marketing',
   'whatsapp-shared-inbox',
   'integrations',
   'ai-assistant',

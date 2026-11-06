@@ -60,7 +60,7 @@ const MENUS: Menu[] = [
         { icon: 'tag', title: 'Sales & conversions', desc: 'Sell right in the chat', href: '/solutions/sales' },
       ] },
       { heading: 'Grow', items: [
-        { icon: 'megaphone', title: 'Marketing & campaigns', desc: 'Broadcasts that get replies', href: '/solutions/marketing' },
+        { icon: 'megaphone', title: 'Marketing & campaigns', desc: 'Email and SMS campaigns that get replies', href: '/solutions/marketing' },
         { icon: 'star', title: 'Reviews & reputation', desc: 'More reviews, less chasing', href: '/solutions/reviews' },
       ] },
       { heading: 'Build & get paid', items: [
@@ -163,7 +163,7 @@ const MENUS: Menu[] = [
       { heading: 'Organise', items: [
         { icon: 'calendar', title: 'Calendar', desc: 'Events & reminders', href: '/product/calendar' },
         { icon: 'kanban', title: 'Tasks', desc: 'Turn chats into to-dos', href: '/product/tasks' },
-        { icon: 'megaphone', title: 'Broadcasts', desc: 'Reach everyone at once', href: '/product/broadcasts' },
+        { icon: 'megaphone', title: 'Email & SMS campaigns', desc: 'Built with AI, measured in sales', href: '/email-sms-marketing' },
         { icon: 'target', title: 'Automation', desc: 'Trigger actions on events', href: '/product/automation' },
         { icon: 'chart', title: 'Insights', desc: 'Conversations & revenue', href: '/product/insights' },
       ] },

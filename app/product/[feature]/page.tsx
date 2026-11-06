@@ -26,7 +26,7 @@ const META: Record<string, { title: string; description: string }> = {
   booking: { title: 'Online Booking System with Deposits & SMS Reminders', description: 'Let customers book services online with Colvy: live staff availability, deposits with Stripe, SMS reminders and self-serve rescheduling, all in your inbox.' },
   calendar: { title: 'Shared Calendar & Appointment Reminders', description: 'Schedule and manage appointments alongside your conversations in Colvy.' },
   tasks: { title: 'Tasks & Follow-ups from Customer Chats', description: 'Turn conversations into tasks and never drop a follow-up with Colvy.' },
-  broadcasts: { title: 'Bulk SMS & Email Broadcasts', description: 'Send targeted SMS and email broadcasts and handle replies in your Colvy inbox.' },
+  broadcasts: { title: 'Email & SMS Campaigns and Bulk SMS Broadcasts', description: 'Email and SMS campaigns built with Colvy AI: smart audiences, a drag-and-drop email designer, texts from your Australian number, and reports in clicks, replies, orders and revenue.' },
   automation: { title: 'Customer Messaging Automation', description: 'Automate replies, routing and follow-ups so your team focuses on the conversations that matter, with Colvy.' },
 }
 

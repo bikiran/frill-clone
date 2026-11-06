@@ -31,7 +31,7 @@ export const metadata: Metadata = {
     template: '%s · Colvy',
   },
   description:
-    'Colvy is the all-in-one customer platform for teams of every size, from small businesses to enterprise: one shared inbox for Instagram, Messenger, email, SMS and live chat, with an AI-powered CRM, business phone and SMS, store orders, payments, AI agents and customer feedback built in.',
+    'Colvy is the all-in-one customer platform for teams of every size, from small businesses to enterprise: one shared inbox for Instagram, Messenger, email, SMS and live chat, with an AI-powered CRM, business phone and SMS, email and SMS campaigns, store orders, payments, AI agents and customer feedback built in.',
   applicationName: 'Colvy',
   keywords: [
     'shared inbox', 'omnichannel inbox', 'AI CRM', 'business phone', 'business SMS',
@@ -40,6 +40,8 @@ export const metadata: Metadata = {
     'Instagram DM inbox', 'Facebook Messenger', 'Google reviews management',
     'live chat', 'help desk', 'online booking', 'WooCommerce', 'Shopify',
     'abandoned cart recovery', 'AI agents', 'customer feedback', 'Podium alternative',
+    'SMS marketing', 'bulk SMS Australia', 'email marketing', 'email and SMS campaigns',
+    'call recording and transcription', 'help centre', 'delivery scheduling',
   ],
   // The black rounded tile (the app icon), so the mark stays visible on dark
   // browser tabs. Google shows the favicon beside every result and wants a
