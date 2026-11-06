@@ -27,6 +27,7 @@ import { barcodeSVG } from '@/lib/barcode'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { notifyIntegrations } from '@/lib/integrations-notify'
 import { authFetch } from '@/lib/auth-fetch'
+import SendReceipt from '@/components/orders/SendReceipt'
 import MentionInput, { resolveMentions } from '@/components/MentionInput'
 import { enrichNames } from '@/lib/team-names'
 import { loadStaffRows } from '@/lib/team-list'
@@ -2154,6 +2155,8 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
   const [refunds, setRefunds] = useState<OrderRefund[] | null>(null)
   const [pickMode, setPickMode] = useState(false)
   const [showRefund, setShowRefund] = useState(false)
+  // Send receipt (email or text the customer their receipt / tax invoice).
+  const [sendReceipt, setSendReceipt] = useState(false)
   const [notes, setNotes] = useState<any[]>([])
   const [events, setEvents] = useState<any[]>([])
   const [tasks, setTasks] = useState<any[]>([])
@@ -2920,6 +2923,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
               {order.tracking_number && act(<svg {...I}><polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" /></svg>, 'Reprint', () => labelAction('reprint'))}
               {order.tracking_number && act(<svg {...I}><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>, 'Void label', () => labelAction('void'))}
               {act(<svg {...I}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><path d="M9 15h6" /></svg>, 'Slip', () => onPrintSlip(order.id))}
+              {companyId && act(<svg {...I}><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" /><path d="M8 8h8M8 12h8M8 16h5" /></svg>, 'Receipt', () => setSendReceipt(true))}
               {act(<svg {...I}><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M9 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3" /><path d="m9 14 2 2 4-4" /></svg>, 'Pick', () => { setPickMode(v => { const n = !v; if (n) { const el = document.getElementById('ord-items-panel'); el?.scrollIntoView({ behavior: 'smooth', block: 'start' }); onFlash('Picking — tap each item as you pick it') } return n }) }, { on: pickMode })}
               {act(<svg {...I}><path d="M20 6 9 17l-5-5" /></svg>, order.status === 'packed' ? 'Packed' : 'Pack', () => {
                 const wasPacked = order.status === 'packed'
@@ -3270,6 +3274,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
         </div>
       </div>
 
+      {sendReceipt && companyId && <SendReceipt companyId={companyId} target={{ orderId: order.id }} onClose={() => setSendReceipt(false)} onSent={(m: string) => onFlash(m)} />}
       {/* Full itemised refund (WooCommerce) */}
       {showRefund && companyId && (
         <RefundOrderModal companyId={companyId} order={order} accent={ACCENT}

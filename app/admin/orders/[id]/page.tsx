@@ -7,6 +7,7 @@ import { peekCompanyUser } from '@/lib/client-cache'
 import { statusMeta, displayStatus, channelMeta, orderAge, fmtMoney, isClickCollect, variationFromMeta } from '@/lib/orders'
 import { ChannelIcon, CopyBtn, copyToClipboard, TagMenu, CreateLabelModal, TagChip, hashColor, PrintModal } from '../page'
 import OrderItemsPanel from '@/components/OrderItemsPanel'
+import SendReceipt from '@/components/orders/SendReceipt'
 import { barcodeSVG } from '@/lib/barcode'
 import { notifyIntegrations } from '@/lib/integrations-notify'
 
@@ -37,6 +38,7 @@ export default function OrderDetailPage() {
   const [galleryIdx, setGalleryIdx] = useState<number | null>(null)
   const [showLabel, setShowLabel] = useState(false)
   const [printModal, setPrintModal] = useState<{ doc: 'packing_slip' | 'label'; title: string } | null>(null)
+  const [sendReceipt, setSendReceipt] = useState(false)
 
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(''), 2400) }
   const orderId = typeof window !== 'undefined' ? decodeURIComponent(window.location.pathname.split('/').filter(Boolean).pop() || '') : ''
@@ -233,6 +235,7 @@ export default function OrderDetailPage() {
           <button type="button" onClick={() => openPrint('packing_slip')} style={btn}>Packing Slip</button>
           <button type="button" onClick={() => { setPickMode(v => { const n = !v; if (n) { document.getElementById('ord-items-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); flash('Picking — click each item as you pick it') } return n }) }} style={pickMode ? { ...btn, background: ACCENT, color: '#fff', border: 'none' } : btn}>{pickMode ? 'Picking…' : 'Pick'}</button>
           <button type="button" onClick={() => openPrint('label')} style={btn}>Print Label</button>
+          {companyId && <button type="button" onClick={() => setSendReceipt(true)} style={btn}>Send receipt</button>}
           {order.status !== 'shipped' && (order.status === 'packed'
             ? <button type="button" onClick={() => patchOrder({ status: 'awaiting_shipment' }, { type: 'unpacked', detail: 'Marked unpacked' })} style={{ ...btn, background: ACCENT, color: '#fff', border: 'none' }}>✓ Packed — Unpack</button>
             : <button type="button" onClick={() => patchOrder({ status: 'packed' }, { type: 'packed', detail: 'Marked packed' })} style={btn}>Mark Packed</button>)}
@@ -387,6 +390,7 @@ export default function OrderDetailPage() {
       {showLabel && <CreateLabelModal order={order} companyId={companyId!} accent={ACCENT} onClose={() => setShowLabel(false)} onDone={(patch: any) => { patchOrder(patch); setShowLabel(false); loadRelated(orderId, companyId!) }} onFlash={flash} onPrintLabel={() => openPrint('label')} />}
 
       {printModal && <PrintModal doc={printModal.doc} companyId={companyId!} ids={[orderId]} title={printModal.title} accent={ACCENT} onClose={() => setPrintModal(null)} />}
+      {sendReceipt && companyId && <SendReceipt companyId={companyId} target={{ orderId }} onClose={() => setSendReceipt(false)} onSent={flash} />}
 
       {/* Item gallery */}
       {galleryIdx != null && items[galleryIdx] && (() => {
