@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 import FeatureIcon from '@/components/FeatureIcon'
 import ComingSoonPill from '@/components/ComingSoonPill'
+import MarketingMobileMenu from '@/components/MarketingMobileMenu'
 import type { ComingSoonKey } from '@/lib/feature-availability'
 
 /**
@@ -234,7 +235,6 @@ export default function MarketingNav({ dark = false, onToggleDark }: { dark?: bo
   const [lastKey, setLastKey] = useState<string | null>(null)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
-  const [mobileSection, setMobileSection] = useState<string | null>(null)
   const [user, setUser] = useState<any>(null)
   const [par, setPar] = useState({ x: 0, y: 0 })   // mouse parallax, -0.5..0.5
   const closeTimer = useRef<any>(null)
@@ -267,7 +267,7 @@ export default function MarketingNav({ dark = false, onToggleDark }: { dark?: bo
   const cardBorder = dark ? 'rgba(255,255,255,0.10)' : 'rgba(15,17,25,0.09)'
   const panelBg = dark ? '#12131d' : '#ffffff'
   const hoverBg = dark ? 'rgba(255,255,255,0.05)' : 'rgba(15,17,25,0.035)'
-  const solid = scrolled || !!open || mobileOpen
+  const solid = scrolled || !!open
   const navBg = solid ? (dark ? 'rgba(10,11,18,0.85)' : 'rgba(255,255,255,0.88)') : 'transparent'
 
   const openNow = (k: string) => { if (closeTimer.current) clearTimeout(closeTimer.current); setLastKey(k); setOpen(k); setMoreOpen(false) }
@@ -432,36 +432,20 @@ export default function MarketingNav({ dark = false, onToggleDark }: { dark?: bo
         </div>
       )}
 
-      {/* Mobile sheet */}
+      {/* Phone / tablet menu: a floating card over the page (components/MarketingMobileMenu) */}
       {mobileOpen && (
-        <div className="mn-sheet" style={{ background: bg, borderTop: `1px solid ${cardBorder}`, padding: '10px 20px 22px', maxHeight: 'calc(100dvh - 68px)', overflowY: 'auto' }}>
-          {MENUS.map(m => (
-            <div key={m.key} style={{ borderBottom: `1px solid ${cardBorder}` }}>
-              <button type="button" onClick={() => setMobileSection(mobileSection === m.key ? null : m.key)}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '15px 0', fontSize: 16, fontWeight: 700, color: text, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
-                {m.label}<Chevron open={mobileSection === m.key} />
-              </button>
-              {mobileSection === m.key && (
-                <div style={{ paddingBottom: 10 }}>
-                  {m.columns.flatMap(c => c.items).map(it => (
-                    <a key={it.title} href={it.href} onClick={() => setMobileOpen(false)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 6px', textDecoration: 'none' }}>
-                      <span style={{ width: 34, height: 34, borderRadius: 9, background: m.accent + '16', color: m.accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><FeatureIcon name={it.icon} color={m.accent} size={17} /></span>
-                      <span>
-                        <span style={{ display: 'block', fontSize: 14.5, fontWeight: 600, color: text }}>{it.title}{it.soon && <ComingSoonPill feature={it.soon} style={{ marginLeft: 6, fontSize: 9.5, padding: '2px 7px' }} />}</span>
-                        <span style={{ display: 'block', fontSize: 12, color: muted }}>{it.desc}</span>
-                      </span>
-                    </a>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-          {[...LINKS, ...MORE_LINKS].map(n => (
-            <a key={n.label} href={n.href} onClick={() => setMobileOpen(false)} style={{ display: 'block', padding: '15px 0', fontSize: 16, fontWeight: 700, color: text, textDecoration: 'none', borderBottom: `1px solid ${cardBorder}` }}>{n.label}</a>
-          ))}
-          {!user && <a href="/signin" onClick={() => setMobileOpen(false)} style={{ display: 'block', padding: '15px 0', fontSize: 16, fontWeight: 600, color: muted, textDecoration: 'none', borderBottom: `1px solid ${cardBorder}` }}>Sign in</a>}
-          <button onClick={handleDashboard} data-cta="nav_get_started" data-cta-location="nav_mobile" style={{ ...primaryBtn, marginTop: 16, width: '100%', justifyContent: 'center', padding: '13px 0', fontSize: 15 }}>{user ? 'Dashboard →' : 'Get started free'}</button>
-        </div>
+        <MarketingMobileMenu
+          sections={MENUS.map(m => ({ key: m.key, label: m.label, columns: m.columns }))}
+          links={LINKS}
+          moreLinks={MORE_LINKS}
+          openKey={MENUS.find(m => isActive(m.key))?.key || 'features'}
+          dark={dark}
+          onToggleDark={onToggleDark}
+          signedIn={!!user}
+          onPrimary={handleDashboard}
+          onClose={() => setMobileOpen(false)}
+          pathname={pathname}
+        />
       )}
     </nav>
   )
