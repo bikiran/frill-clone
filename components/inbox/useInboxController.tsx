@@ -43,7 +43,8 @@ import { tagVoice, voiceKind } from '@/lib/voice-typed'
 import { SMS_MAX_CHARS, smsTooLongReason } from '@/lib/sms-segments'
 import { useStoreStatus } from '@/lib/store-status'
 import { agentChannel, useAgentTeam } from '@/components/agents/useAgentTeam'
-import { Contact, Conversation, Highlight, INBOX_HOUR12, Icon, Message, PAYMENT_SIGNAL_PHRASES, THREAD_PAGE, TeamMember, extractFromText, initialsOf, makeSnippet, parseTs, runPool, sendChannelGlyph, setInboxHour12, isFailureToast, threadCacheGet, threadCacheSet, toolBtn, tsOf, videoPoster } from '@/components/inbox/inbox-shared'
+import { suggestSale } from '@/lib/sale-signal'
+import { Contact, Conversation, Highlight, INBOX_HOUR12, Icon, Message, THREAD_PAGE, TeamMember, extractFromText, initialsOf, makeSnippet, parseTs, runPool, sendChannelGlyph, setInboxHour12, isFailureToast, threadCacheGet, threadCacheSet, toolBtn, tsOf, videoPoster } from '@/components/inbox/inbox-shared'
 
 // The contacts behind the list's rows, by id. One failed query used to blank
 // every name in the inbox (the rows fell back to their phone numbers): a column
@@ -210,7 +211,13 @@ export function useInboxController() {
   const [showRecordSale, setShowRecordSale] = useState(false)
   // Whether this conversation already has a recorded sale — used to suppress the
   // "did this convert to a sale?" nudge so it isn't recorded twice.
-  const [convHasSale, setConvHasSale] = useState(false)
+  // When a sale was last recorded for the open conversation (conversation_sales).
+  // A newer payment message or Colvy-assisted in-store sale still asks.
+  const [convLastSaleAt, setConvLastSaleAt] = useState<string | null>(null)
+  const convHasSale = !!convLastSaleAt
+  const setConvHasSale = useCallback((v: boolean) => setConvLastSaleAt(v ? new Date().toISOString() : null), [])
+  // What the Record sale sheet opens with when it's opened from the prompt.
+  const [salePrefill, setSalePrefill] = useState<{ amount: number | null; method: string | null; note: string | null } | null>(null)
   const [showMediaRequest, setShowMediaRequest] = useState(false)
   const [mrPrompt, setMrPrompt] = useState('')
   const [mrAccept, setMrAccept] = useState<string[]>(['image', 'video', 'pdf'])
@@ -350,28 +357,31 @@ export function useInboxController() {
     try { sessionStorage.setItem('colvy_sale_prompt_dismissed', JSON.stringify([...n])) } catch {}
     return n
   })
-  const paymentSignal = useMemo(() => {
-    const recent = messages.slice(-6)
-    return recent.some(m => { const t = String((m as any).content || '').toLowerCase(); return PAYMENT_SIGNAL_PHRASES.some(p => t.includes(p)) })
-  }, [messages])
 
   // Has a sale already been recorded for the open conversation? If so (or if the
   // customer already matches an ecommerce order), the payment is on record and
   // the "record a sale" nudge would double-count — so it's suppressed below.
   useEffect(() => {
     const id = selected?.id
-    if (!id) { setConvHasSale(false); return }
+    if (!id) { setConvLastSaleAt(null); return }
     let cancelled = false
     ;(async () => {
       try {
-        const { count } = await (supabase as any).from('conversation_sales').select('id', { count: 'exact', head: true }).eq('conversation_id', id)
-        if (!cancelled) setConvHasSale((count || 0) > 0)
-      } catch { if (!cancelled) setConvHasSale(false) }
+        const { data } = await (supabase as any).from('conversation_sales').select('created_at').eq('conversation_id', id).order('created_at', { ascending: false }).limit(1)
+        if (!cancelled) setConvLastSaleAt(data?.[0]?.created_at || null)
+      } catch { if (!cancelled) setConvLastSaleAt(null) }
     })()
     return () => { cancelled = true }
   }, [selected?.id])
   const [contact, setContact] = useState<Contact | null>(null)
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
+  // "Record this as a Colvy sale?": the customer says they've paid, or an
+  // in-store sale lands after they chatted or called through Colvy
+  // (lib/sale-signal). Website orders and walk-in shop sales never ask.
+  const saleSuggestion = useMemo(
+    () => suggestSale(messages as any, { lastSaleAt: convLastSaleAt, contactName: contact?.name || null }),
+    [messages, convLastSaleAt, contact?.name],
+  )
   // Owners, admins and the platform super admin: they see why an email's text
   // couldn't be loaded, and how to install the chat widget.
   const isManager = String(user?.email || '').toLowerCase() === 'bishalstha76@gmail.com'
@@ -6716,7 +6726,7 @@ export function useInboxController() {
     openEmailMedia, openForward, openMediaPicker, openMobileComposer, openOrderEditor,
     openScheduleMsg, openTicket, orderBilling, orderDateFrom, orderDateTo, orderGallery,
     orderPrefillCart, orderSearch, outboundChannel, outlets, payAddress,
-    payAmount, payDesc, paySending, paymentSignal, pickerItems, pickupModal, pickupSending,
+    payAmount, payDesc, paySending, saleSuggestion, salePrefill, setSalePrefill, pickerItems, pickupModal, pickupSending,
     pinnedIds, podFiles, podNote, podSending, prextyCustomer, productError, productQuery, productSearchedFor,
     productSearching, productSent, products, protectionBusy, quickIndex, quickMatches, quickMenuRef,
     quickMrBusy, reactToMessage, recSeconds, recording, refundOrder, reloadThread, renderLinkTools,
