@@ -1,0 +1,185 @@
+'use client'
+
+// Shared bits for the Jobs & quotes screens (app/admin/jobs/*): the
+// workspace, the API helper, status pills, dates in the business's time zone,
+// a dialog, a toast and the styles that sit on top of AdminKit's ak-* pieces.
+
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
+import { resolveCompanyUser } from '@/lib/client-cache'
+import { JOB_STATUS_LABEL, JOB_STATUS_TONE, QUOTE_STATUS_LABEL, QUOTE_STATUS_TONE, type JobStatus, type QuoteStatus } from '@/lib/jobs/status'
+export { api } from '@/components/booking/admin/shared'
+
+/** The workspace the signed-in person is working in. */
+export function useJobsCompany(): { companyId: string; ready: boolean } {
+  const router = useRouter()
+  const [s, setS] = useState({ companyId: '', ready: false })
+  useEffect(() => {
+    let live = true
+    ;(async () => {
+      const { companyId: cidRaw, user } = await resolveCompanyUser()
+      if (!user) { router.push('/signin'); return }
+      let cid = cidRaw
+      if (!cid) {
+        const { data: tm } = await (supabase as any).from('team_members').select('company_id').eq('user_id', user.id).limit(1)
+        cid = tm?.[0]?.company_id || null
+      }
+      if (live) setS({ companyId: cid || '', ready: true })
+    })()
+    return () => { live = false }
+  }, [router])
+  return s
+}
+
+export function StatusTag({ status }: { status: string }) {
+  const s = status as JobStatus
+  return <span className={`ak-tag ${JOB_STATUS_TONE[s] || ''}`}>{JOB_STATUS_LABEL[s] || status}</span>
+}
+export function QuoteTag({ status, expired }: { status: string; expired?: boolean }) {
+  const s = status as QuoteStatus
+  if (expired && s === 'sent') return <span className="ak-tag red">Expired</span>
+  return <span className={`ak-tag ${QUOTE_STATUS_TONE[s] || ''}`}>{QUOTE_STATUS_LABEL[s] || status}</span>
+}
+
+// ── Dates (shown in the business's time zone) ───────────────────────────────
+
+export const dayKeyIn = (iso: string | Date, tz: string) => {
+  try { return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso)) } catch { return String(iso).slice(0, 10) }
+}
+export const fmtDay = (iso: string | null | undefined, tz: string) => {
+  if (!iso) return ''
+  try { return new Intl.DateTimeFormat('en-AU', { timeZone: tz, weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(iso)) } catch { return '' }
+}
+export const fmtTime = (iso: string | null | undefined, tz: string) => {
+  if (!iso) return ''
+  try { return new Intl.DateTimeFormat('en-AU', { timeZone: tz, hour: 'numeric', minute: '2-digit' }).format(new Date(iso)).replace(' ', '').toLowerCase() } catch { return '' }
+}
+export const fmtWhen = (start: string | null | undefined, end: string | null | undefined, tz: string) => {
+  if (!start) return ''
+  const day = fmtDay(start, tz), t1 = fmtTime(start, tz)
+  if (!end) return `${day}, ${t1}`
+  return dayKeyIn(start, tz) === dayKeyIn(end, tz) ? `${day}, ${t1}–${fmtTime(end, tz)}` : `${day}, ${t1} – ${fmtDay(end, tz)}, ${fmtTime(end, tz)}`
+}
+/** A plain date ("2026-11-20") as "Fri 20 Nov 2026". */
+export const fmtDate = (ymd: string | null | undefined) => {
+  if (!ymd) return ''
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ymd)
+  if (!m) return ''
+  return new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+}
+export const fmtAgo = (iso: string | null | undefined) => {
+  if (!iso) return ''
+  const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000)
+  if (s < 60) return 'just now'
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`
+  if (s < 7 * 86400) return `${Math.floor(s / 86400)}d ago`
+  return new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
+}
+/** DateTimeField's local "YYYY-MM-DDTHH:mm" ↔ an ISO time. */
+const pad = (n: number) => String(n).padStart(2, '0')
+export const isoToLocal = (iso: string | null | undefined) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return Number.isFinite(d.getTime()) ? `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}` : ''
+}
+export const localToIso = (v: string) => { if (!v) return null; const d = new Date(v); return Number.isFinite(d.getTime()) ? d.toISOString() : null }
+
+export const newKey = () => {
+  try { return crypto.randomUUID() } catch { return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}` }
+}
+
+// ── Dialog and toast ────────────────────────────────────────────────────────
+
+export function Dialog({ title, onClose, children, footer, width = 520 }: { title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; width?: number }) {
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', k)
+    return () => window.removeEventListener('keydown', k)
+  }, [onClose])
+  return (
+    <div className="jb-ov" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="jb-dlg" role="dialog" aria-modal="true" aria-label={title} style={{ maxWidth: width }}>
+        <div className="jb-dlg-h">
+          <h2>{title}</h2>
+          <button type="button" className="ak-icon-btn" onClick={onClose} aria-label="Close">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+        <div className="jb-dlg-b">{children}</div>
+        {footer && <div className="jb-dlg-f">{footer}</div>}
+      </div>
+    </div>
+  )
+}
+
+export function useToast(): [string, (m: string) => void] {
+  const [t, setT] = useState('')
+  useEffect(() => { if (!t) return; const id = setTimeout(() => setT(''), 4200); return () => clearTimeout(id) }, [t])
+  return [t, setT]
+}
+export const Toast = ({ text }: { text: string }) => (text ? <div className="jb-toast" role="status">{text}</div> : null)
+
+export function SetupNote({ text }: { text: string }) {
+  return (
+    <div className="ak-note warn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}><path d="M12 9v4" /><path d="M12 17h.01" /><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /></svg>
+      <span>{text}</span>
+    </div>
+  )
+}
+
+export const Icon = {
+  plus: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>,
+  gear: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>,
+  search: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>,
+  dots: <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>,
+  pin: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z" /><circle cx="12" cy="10" r="3" /></svg>,
+  clock: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>,
+  user: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>,
+  doc: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></svg>,
+  link: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>,
+  send: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m22 2-7 20-4-9-9-4z" /><path d="M22 2 11 13" /></svg>,
+  trash: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg>,
+  ext: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><path d="M15 3h6v6" /><path d="M10 14 21 3" /></svg>,
+  chev: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>,
+}
+
+export const JB_CSS = `
+.jb-ov{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:4vh 12px;background:rgba(15,15,20,.38);overflow-y:auto;animation:jbFade .18s ease both}
+.jb-dlg{width:100%;max-height:92vh;display:flex;flex-direction:column;border-radius:24px;background:var(--card,#fff);color:var(--ink);box-shadow:0 24px 64px rgba(0,0,0,.24);animation:jbIn .32s cubic-bezier(.22,1,.36,1) both}
+.jb-dlg-h{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 20px 6px}
+.jb-dlg-h h2{margin:0;font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:19px;font-weight:700;letter-spacing:-.03em}
+.jb-dlg-b{padding:10px 20px 18px;overflow-y:auto;display:flex;flex-direction:column;gap:14px}
+.jb-dlg-f{display:flex;justify-content:flex-end;gap:8px;padding:12px 20px 18px;box-shadow:0 -1px 0 var(--line,#ececee)}
+.jb-dlg{--f:#f4f4f5;--f2:#ececef;--line:#ececee;--mut:#71717a;--soft:#8e8e93}
+[data-theme="dark"] .jb-dlg{--f:#2a2a2e;--f2:#333337;--line:#2e2e33;--mut:#a1a1aa;--soft:#8b8b90}
+.jb-dlg .ak-field,.jb-dlg .ak-select{width:100%;height:44px;padding:0 14px;border-radius:14px;border:1.5px solid transparent;background-color:var(--f);outline:none;font:inherit;font-size:14.5px;color:var(--ink);box-sizing:border-box}
+.jb-dlg textarea.ak-field{height:auto;min-height:96px;padding:11px 14px;line-height:1.5;resize:vertical}
+.jb-dlg .ak-field:focus{background-color:var(--card,#fff);border-color:var(--f2)}
+.jb-dlg .ak-label{display:block;margin:0 0 7px;font-size:13px;font-weight:650}
+.jb-dlg .ak-hint{margin:6px 0 0;font-size:12.5px;line-height:1.5;color:var(--soft)}
+@media(max-width:600px){.jb-ov{padding:0;align-items:flex-end}.jb-dlg{border-radius:24px 24px 0 0;max-height:94dvh;animation-name:jbUp}}
+@keyframes jbFade{from{opacity:0}to{opacity:1}}
+@keyframes jbIn{from{opacity:0;transform:translate3d(0,12px,0) scale(.98)}to{opacity:1;transform:none}}
+@keyframes jbUp{from{transform:translate3d(0,100%,0)}to{transform:none}}
+.jb-toast{position:fixed;left:50%;bottom:28px;z-index:1100;transform:translateX(-50%);max-width:min(92vw,460px);padding:11px 18px;border-radius:999px;background:var(--ink);color:var(--card,#fff);font-size:14px;font-weight:600;box-shadow:0 10px 30px rgba(0,0,0,.2);animation:jbIn .3s cubic-bezier(.22,1,.36,1) both}
+.jb-two{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start}
+.jb-side{position:sticky;top:16px;display:flex;flex-direction:column;gap:14px}
+.jb-side>.ak-panel{margin:0}
+@media(max-width:1000px){.jb-two{grid-template-columns:minmax(0,1fr)}.jb-side{position:static}}
+.jb-kv{display:grid;grid-template-columns:120px minmax(0,1fr);gap:10px 14px;font-size:14px}
+.jb-kv dt{color:var(--mut)}
+.jb-kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.jb-meta{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12.5px;color:var(--mut)}
+.jb-meta span{display:inline-flex;align-items:center;gap:5px;min-width:0}
+.jb-num{font-variant-numeric:tabular-nums}
+.jb-menu{position:absolute;z-index:60;min-width:200px;padding:6px;border-radius:16px;background:var(--card,#fff);box-shadow:0 0 0 1px rgba(0,0,0,.06),0 16px 40px rgba(0,0,0,.16);animation:jbIn .2s cubic-bezier(.22,1,.36,1) both}
+.jb-menu button{display:flex;align-items:center;gap:9px;width:100%;padding:9px 11px;border:none;border-radius:11px;background:none;font:inherit;font-size:14px;font-weight:550;color:var(--ink);text-align:left;cursor:pointer}
+.jb-menu button:hover,.jb-menu button:focus-visible{background:var(--f)}
+.jb-menu button.danger{color:#b91c1c}
+.jb-menu .jb-menu-l{padding:6px 11px 4px;font-size:11.5px;font-weight:650;letter-spacing:.02em;text-transform:uppercase;color:var(--soft)}
+.jb-pre{white-space:pre-wrap;font-size:14px;line-height:1.6;color:var(--ink);margin:0}
+.jb-muted{color:var(--mut)}
+`

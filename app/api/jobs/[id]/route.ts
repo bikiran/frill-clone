@@ -37,7 +37,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
       job.form_id ? db.from('forms').select('id, title, company_id').eq('id', job.form_id).maybeSingle() : none,
       db.from('job_quotes').select('id, number, revision, status, title, total_cents, tax_cents, deposit_cents, deposit_status, valid_until, public_token, sent_at, sent_via, viewed_at, accepted_at, declined_at, decided_name, decided_note, decided_by_type, created_at, updated_at')
         .eq('company_id', companyId!).eq('job_id', id).order('created_at', { ascending: false }),
-      db.from('job_events').select('id, quote_id, type, actor_type, actor_name, summary, data, created_at').eq('company_id', companyId!).eq('job_id', id).order('created_at', { ascending: false }).limit(150),
+      db.from('job_events').select('id, quote_id, type, actor_type, actor_id, actor_name, summary, data, created_at').eq('company_id', companyId!).eq('job_id', id).order('created_at', { ascending: false }).limit(150),
       loadCompany(db, companyId!),
     ])
     const settings = companySettings(company)

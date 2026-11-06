@@ -26,7 +26,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const { data: note, error: iErr } = await db.from('job_events').insert({
       company_id: companyId, job_id: id, type: 'note', actor_type: 'staff', actor_id: access.userId, actor_name: access.name,
       summary: text.slice(0, 300), data: { text },
-    }).select('id, quote_id, type, actor_type, actor_name, summary, data, created_at').maybeSingle()
+    }).select('id, quote_id, type, actor_type, actor_id, actor_name, summary, data, created_at').maybeSingle()
     if (iErr) throw iErr
     await db.from('jobs').update({ updated_at: new Date().toISOString() }).eq('company_id', companyId).eq('id', id)
     return json({ note })
