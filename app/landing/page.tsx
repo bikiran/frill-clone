@@ -2,6 +2,7 @@
 
 import InviteCta from '@/components/InviteCta'
 import AgentTeamBand from '@/components/AgentTeamBand'
+import AgentCustomiser from '@/components/marketing/AgentCustomiser'
 import { useEffect, useState, useRef, ReactNode } from 'react'
 import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin } from '@/lib/redirect'
@@ -592,6 +593,8 @@ export default function LandingPage() {
 
       {/* AI TEAM — the five agents, linking to /ai-agents */}
       <AgentTeamBand dark={dark} />
+      {/* MAKE THEM YOURS — name, shape and colour each agent (try-it studio) */}
+      <AgentCustomiser dark={dark} />
 
       {/* SUPPORT THAT FITS YOUR INDUSTRY — a photo per trade, with a customer
           question and Colvy AI's answer playing over it. */}
