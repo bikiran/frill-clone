@@ -9,6 +9,7 @@ import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
 import SeoFaqSection from '@/components/marketing/SeoFaqSection'
 import FeatureIcon from '@/components/FeatureIcon'
+import { SellioStyles, SPill, SGhost, STrust, SHead, SBento, SStory, SStats, SCta, SSteps, SPains, SChannels } from '@/components/marketing/Sellio'
 import ComingSoonPill from '@/components/ComingSoonPill'
 import { COMING_SOON, soonLabel, type ComingSoonKey } from '@/lib/feature-availability'
 
@@ -276,6 +277,7 @@ export default function ChannelPage() {
         @media (prefers-reduced-motion:reduce){ [style*="chFloat"]{ animation:none !important } }
       `}</style>
 
+      <SellioStyles />
       <MarketingNav dark={dark} onToggleDark={() => setDark(v => !v)} />
 
       {/* HERO */}
@@ -286,10 +288,11 @@ export default function ChannelPage() {
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: accent + '18', color: accent, fontSize: 12.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 18 }}><FeatureIcon name={ch.features[0].icon} color={accent} size={15} />{ch.eyebrow}</span>{ch.comingSoon && <ComingSoonPill feature={ch.comingSoon} style={{ marginLeft: 8, marginBottom: 18, fontSize: 12, padding: '6px 12px' }} />}
             <h1 style={{ fontSize: 'clamp(38px, 5.4vw, 64px)', fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 1.04, margin: '0 0 18px' }}>{ch.title}</h1>
             <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: muted, maxWidth: 520, lineHeight: 1.6, margin: '0 0 30px' }}>{ch.sub}</p>
-            <div className="ch-hero-cta" style={{ display: 'flex', gap: 12 }}>
-              <button onClick={go} className="ch-btn" style={btnPrimary}>Start free — no card →</button>
-              <a href="/pricing" className="ch-btn" style={btnGhost}>See pricing</a>
+            <div className="sl-ctas">
+              <SPill accent={accent} onClick={go} cta="hero_start_free">Start free — no card</SPill>
+              <SGhost href="/pricing">See pricing</SGhost>
             </div>
+            <STrust accent={accent} />
           </Reveal>
         </div>
         <Reveal delay={0.1}>
@@ -306,92 +309,31 @@ export default function ChannelPage() {
         </Reveal>
       </section>
 
-      {/* FEATURE GRID */}
-      <section style={{ maxWidth: 1280, margin: '0 auto', padding: '10px 24px 40px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(280px, 100%), 1fr))', gap: 18 }}>
-          {ch.features.map((f, i) => (
-            <Reveal key={f.title} delay={(i % 3) * 0.05}>
-              <div className="ch-card" style={{ height: '100%', borderRadius: 20, padding: 26, background: cardBg, border: `1px solid ${cardBorder}` }}>
-                <span style={{ width: 46, height: 46, borderRadius: 13, background: accent + '16', color: accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><FeatureIcon name={f.icon} color={accent} size={23} /></span>
-                <h3 style={{ fontSize: 17.5, fontWeight: 800, margin: '0 0 6px', color: text }}>{f.title}</h3>
-                <p style={{ fontSize: 14.5, lineHeight: 1.6, color: muted, margin: 0 }}>{f.desc}</p>
-              </div>
-            </Reveal>
-          ))}
+      {/* FEATURES — bento */}
+      <section style={{ padding: 'clamp(56px, 8vw, 100px) 24px', background: dark ? '#0d0e17' : `linear-gradient(180deg, #ffffff, ${accent}0a)` }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+          <SHead eyebrow="What you get" title="Everything in one place" grey="Built in, not bolted on" accent={accent} dark={dark} />
+          <SBento items={ch.features} accent={accent} dark={dark} />
         </div>
       </section>
 
-      {/* BANDS */}
+      {/* STORY BANDS — like the landing's colour bands */}
       {ch.bands.map((b, i) => (
-        <section key={b.title} style={{ background: i % 2 ? (dark ? 'rgba(255,255,255,0.02)' : accent + '08') : 'transparent', padding: 'clamp(40px, 6vw, 80px) 24px' }}>
-          <div className="ch-band" style={{ maxWidth: 1160, margin: '0 auto', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'center', direction: i % 2 ? 'rtl' : 'ltr' }}>
-            <div style={{ direction: 'ltr' }}>
-              <Reveal>
-                <span style={{ fontSize: 12.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: accent }}>{b.tag}</span>
-                <h2 style={{ fontSize: 'clamp(26px, 3.4vw, 40px)', fontWeight: 900, letterSpacing: '-0.02em', lineHeight: 1.08, margin: '10px 0 14px', color: text }}>{b.title}</h2>
-                <p style={{ fontSize: 16.5, lineHeight: 1.65, color: muted, margin: '0 0 20px' }}>{b.body}</p>
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 11 }}>
-                  {b.bullets.map(bl => (
-                    <li key={bl} style={{ display: 'flex', alignItems: 'flex-start', gap: 11, fontSize: 15, fontWeight: 600, color: text }}>
-                      <span style={{ width: 22, height: 22, borderRadius: '50%', background: accent + '1a', color: accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg></span>{bl}
-                    </li>
-                  ))}
-                </ul>
-              </Reveal>
-            </div>
-            <div style={{ direction: 'ltr' }}>
-              <Reveal delay={0.1}>
-                <div style={{ position: 'relative', borderRadius: 24, minHeight: 280, overflow: 'hidden', background: `linear-gradient(140deg, ${accent}22, ${accent}05)`, border: `1px solid ${cardBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: gridImg, backgroundSize: '32px 32px', opacity: 0.5 }} />
-                  <div style={{ position: 'relative', width: 96, height: 96, borderRadius: 26, background: accent, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 20px 50px ${accent}55`, animation: 'chFloat 6s ease-in-out infinite' }}>
-                    <FeatureIcon name={ch.features[Math.min(i + 2, ch.features.length - 1)].icon} color="#fff" size={44} />
-                  </div>
-                </div>
-              </Reveal>
-            </div>
-          </div>
-        </section>
+        <SStory key={b.title} tag={b.tag} title={b.title} body={b.body} bullets={b.bullets} accent={accent} tone={i % 2 ? 'soft' : 'deep'} flip={i % 2 === 1} dark={dark}
+          icons={ch.features.slice(i * 3, i * 3 + 3).map(f => f.icon)} />
       ))}
 
       {/* EVERY CHANNEL */}
-      <section style={{ maxWidth: 1000, margin: '0 auto', padding: '30px 24px 20px', textAlign: 'center' }}>
-        <Reveal>
-          <h2 style={{ fontSize: 'clamp(24px, 3.4vw, 38px)', fontWeight: 900, letterSpacing: '-0.02em', margin: '0 0 8px' }}>Every channel, <span style={{ color: accent }}>one thread</span></h2>
-          <p style={{ fontSize: 16, color: muted, maxWidth: 560, margin: '0 auto 22px', lineHeight: 1.55 }}>{ch.comingSoon ? `${ch.name} is on the way; the rest work today.` : `${ch.name} is one of many.`} Customers reach out however they like — Colvy brings it together, one conversation per customer.</p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center' }}>
-            {CHANNELS.map(c => (
-              <span key={c} style={{ fontSize: 13.5, fontWeight: 700, color: text, background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: 999, padding: '8px 16px' }}>{c}</span>
-            ))}
-          </div>
-        </Reveal>
-      </section>
+      <SChannels channels={CHANNELS} note={`${ch.comingSoon ? `${ch.name} is on the way; the rest work today.` : `${ch.name} is one of many.`} Customers reach out however they like, and Colvy keeps it to one conversation per customer.`} accent={accent} dark={dark} />
 
       {/* STATS */}
-      <section style={{ maxWidth: 1000, margin: '0 auto', padding: '30px 24px 60px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 18 }}>
-          {ch.stats.map((s, i) => (
-            <Reveal key={s.label} delay={i * 0.06}>
-              <div style={{ textAlign: 'center', borderRadius: 20, padding: '28px 14px', background: cardBg, border: `1px solid ${cardBorder}` }}>
-                <div style={{ fontSize: 'clamp(26px, 4.4vw, 42px)', fontWeight: 900, letterSpacing: '-0.03em', color: accent }}>{s.big}</div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: muted, marginTop: 4 }}>{s.label}</div>
-              </div>
-            </Reveal>
-          ))}
-        </div>
+      <section style={{ padding: '10px 24px clamp(56px, 8vw, 90px)' }}>
+        <SStats stats={ch.stats} accent={accent} dark={dark} />
       </section>
 
       <SeoFaqSection path={`channels/${slug}`} accent={accent} dark={dark} />
 
-      {/* CTA */}
-      <section style={{ padding: 'clamp(48px, 8vw, 96px) 24px', textAlign: 'center', background: `linear-gradient(135deg, ${accent}, ${PINK} 60%, ${PURPLE})` }}>
-        <Reveal>
-          <div style={{ maxWidth: 720, margin: '0 auto' }}>
-            <h2 style={{ fontSize: 'clamp(28px, 5vw, 52px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.05, color: '#fff', margin: '0 0 12px' }}>{ch.ctaHead}</h2>
-            <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.9)', margin: '0 0 30px' }}>Start free, set up in about 45 minutes — no credit card, cancel anytime.</p>
-            <button onClick={go} className="ch-btn cv-shine tint" style={{ padding: '16px 38px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 17, border: 'none', cursor: 'pointer', boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>Get started — it’s free</button>
-          </div>
-        </Reveal>
-      </section>
+      <SCta title={ch.ctaHead} sub={'Free forever for small teams. Set up in about 45 minutes.'} accent={accent} onGo={go} user={user} />
 
       <MarketingFooter dark={dark} />
     </div>

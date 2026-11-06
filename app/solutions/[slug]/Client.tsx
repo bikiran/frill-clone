@@ -8,6 +8,7 @@ import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
 import SeoFaqSection from '@/components/marketing/SeoFaqSection'
 import FeatureIcon from '@/components/FeatureIcon'
+import { SellioStyles, SPill, SGhost, STrust, SHead, SBento, SStory, SStats, SCta, SSteps, SPains, SChannels } from '@/components/marketing/Sellio'
 
 // Use-case Solutions pages — "Colvy for <the job you're trying to do>": customer
 // support, sales, marketing, reviews, product feedback and payments/orders. These
@@ -216,6 +217,7 @@ export default function SolutionPage() {
         @media (prefers-reduced-motion:reduce){ [style*="solFloat"]{ animation:none !important } }
       `}</style>
 
+      <SellioStyles />
       <MarketingNav dark={dark} onToggleDark={() => setDark(v => !v)} />
 
       {/* HERO */}
@@ -228,10 +230,11 @@ export default function SolutionPage() {
             </span>
             <h1 style={{ fontSize: 'clamp(40px, 6vw, 74px)', fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 1.02, margin: '0 0 18px' }}>{page.title}<br /><span style={{ color: accent }}>{page.titleAccent}</span></h1>
             <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: muted, maxWidth: 520, lineHeight: 1.6, margin: '0 0 30px' }}>{page.sub}</p>
-            <div className="sol-hero-cta" style={{ display: 'flex', gap: 12 }}>
-              <button onClick={go} className="sol-btn" style={btnPrimary}>Start free — no card →</button>
-              <a href="/pricing" className="sol-btn" style={btnGhost}>See pricing</a>
+            <div className="sl-ctas">
+              <SPill accent={accent} onClick={go} cta="hero_start_free">Start free — no card</SPill>
+              <SGhost href="/pricing">See pricing</SGhost>
             </div>
+            <STrust accent={accent} />
           </Reveal>
         </div>
         {/* Hero visual — real photography behind the accent overlay + floating chips */}
@@ -249,79 +252,28 @@ export default function SolutionPage() {
         </Reveal>
       </section>
 
-      {/* FEATURE GRID */}
-      <section style={{ maxWidth: 1280, margin: '0 auto', padding: '20px 24px 40px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(280px, 100%), 1fr))', gap: 18 }}>
-          {page.features.map((f, i) => (
-            <Reveal key={f.title} delay={(i % 3) * 0.05}>
-              <div className="sol-card" style={{ height: '100%', borderRadius: 20, padding: 26, background: cardBg, border: `1px solid ${cardBorder}` }}>
-                <span style={{ width: 46, height: 46, borderRadius: 13, background: accent + '16', color: accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><FeatureIcon name={f.icon} color={accent} size={23} /></span>
-                <h3 style={{ fontSize: 17.5, fontWeight: 800, margin: '0 0 6px', color: text }}>{f.title}</h3>
-                <p style={{ fontSize: 14.5, lineHeight: 1.6, color: muted, margin: 0 }}>{f.desc}</p>
-              </div>
-            </Reveal>
-          ))}
+      {/* FEATURES — bento */}
+      <section style={{ padding: 'clamp(56px, 8vw, 100px) 24px', background: dark ? '#0d0e17' : `linear-gradient(180deg, #ffffff, ${accent}0a)` }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+          <SHead eyebrow="What you get" title="Everything in one place" grey="Built in, not bolted on" accent={accent} dark={dark} />
+          <SBento items={page.features} accent={accent} dark={dark} />
         </div>
       </section>
 
-      {/* BANDS */}
+      {/* STORY BANDS — like the landing's colour bands */}
       {page.bands.map((b, i) => (
-        <section key={b.title} style={{ background: i % 2 ? (dark ? 'rgba(255,255,255,0.02)' : accent + '08') : 'transparent', padding: 'clamp(40px, 6vw, 80px) 24px' }}>
-          <div className="sol-band" style={{ maxWidth: 1160, margin: '0 auto', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'center', direction: i % 2 ? 'rtl' : 'ltr' }}>
-            <div style={{ direction: 'ltr' }}>
-              <Reveal>
-                <span style={{ fontSize: 12.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: accent }}>{b.tag}</span>
-                <h2 style={{ fontSize: 'clamp(26px, 3.4vw, 40px)', fontWeight: 900, letterSpacing: '-0.02em', lineHeight: 1.08, margin: '10px 0 14px', color: text }}>{b.title}</h2>
-                <p style={{ fontSize: 16.5, lineHeight: 1.65, color: muted, margin: '0 0 20px' }}>{b.body}</p>
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 11 }}>
-                  {b.bullets.map(bl => (
-                    <li key={bl} style={{ display: 'flex', alignItems: 'flex-start', gap: 11, fontSize: 15, fontWeight: 600, color: text }}>
-                      <span style={{ width: 22, height: 22, borderRadius: '50%', background: accent + '1a', color: accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg></span>{bl}
-                    </li>
-                  ))}
-                </ul>
-              </Reveal>
-            </div>
-            <div style={{ direction: 'ltr' }}>
-              <Reveal delay={0.1}>
-                <div style={{ position: 'relative', borderRadius: 24, minHeight: 280, overflow: 'hidden', background: `linear-gradient(140deg, ${accent}22, ${accent}05)`, border: `1px solid ${cardBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: gridImg, backgroundSize: '32px 32px', opacity: 0.5 }} />
-                  <div style={{ position: 'relative', width: 96, height: 96, borderRadius: 26, background: accent, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 20px 50px ${accent}55`, animation: 'solFloat 6s ease-in-out infinite' }}>
-                    <FeatureIcon name={page.features[Math.min(i + 1, page.features.length - 1)].icon} color="#fff" size={44} />
-                  </div>
-                </div>
-              </Reveal>
-            </div>
-          </div>
-        </section>
+        <SStory key={b.title} tag={b.tag} title={b.title} body={b.body} bullets={b.bullets} accent={accent} tone={i % 2 ? 'soft' : 'deep'} flip={i % 2 === 1} dark={dark}
+          icons={page.features.slice(i * 3, i * 3 + 3).map(f => f.icon)} />
       ))}
 
       {/* STATS */}
-      <section style={{ maxWidth: 1000, margin: '0 auto', padding: '20px 24px 60px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 18 }}>
-          {page.stats.map((s, i) => (
-            <Reveal key={s.label} delay={i * 0.06}>
-              <div style={{ textAlign: 'center', borderRadius: 20, padding: '28px 16px', background: cardBg, border: `1px solid ${cardBorder}` }}>
-                <div style={{ fontSize: 'clamp(30px, 5vw, 46px)', fontWeight: 900, letterSpacing: '-0.03em', color: accent }}>{s.big}</div>
-                <div style={{ fontSize: 13.5, fontWeight: 600, color: muted, marginTop: 4 }}>{s.label}</div>
-              </div>
-            </Reveal>
-          ))}
-        </div>
+      <section style={{ padding: '10px 24px clamp(56px, 8vw, 90px)' }}>
+        <SStats stats={page.stats} accent={accent} dark={dark} />
       </section>
 
       <SeoFaqSection path={`solutions/${slug}`} accent={accent} dark={dark} />
 
-      {/* CTA */}
-      <section style={{ padding: 'clamp(48px, 8vw, 96px) 24px', textAlign: 'center', background: `linear-gradient(135deg, ${accent}, ${PINK} 60%, ${PURPLE})`, overflow: 'hidden' }}>
-        <Reveal>
-          <div style={{ maxWidth: 720, margin: '0 auto' }}>
-            <h2 style={{ fontSize: 'clamp(30px, 5vw, 54px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.05, color: '#fff', margin: '0 0 14px' }}>{page.cta.title}</h2>
-            <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.9)', margin: '0 0 30px' }}>{page.cta.sub}</p>
-            <button onClick={go} className="sol-btn cv-shine tint" style={{ padding: '16px 38px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 17, border: 'none', cursor: 'pointer', boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>Get started — it’s free</button>
-          </div>
-        </Reveal>
-      </section>
+      <SCta title={page.cta.title} sub={page.cta.sub} accent={accent} onGo={go} user={user} />
 
       <MarketingFooter dark={dark} />
     </div>

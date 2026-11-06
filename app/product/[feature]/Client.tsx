@@ -1,7 +1,7 @@
 'use client'
 
 import { useParams } from 'next/navigation'
-import { useEffect, useRef, useState, ReactNode } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin } from '@/lib/redirect'
 import MarketingFooter from '@/components/MarketingFooter'
@@ -9,6 +9,7 @@ import SeoFaqSection from '@/components/marketing/SeoFaqSection'
 import MarketingNav from '@/components/MarketingNav'
 import FeatureMockup, { MockKind } from '@/components/FeatureMockups'
 import FeatureIcon from '@/components/FeatureIcon'
+import { SellioStyles, SPill, SGhost, STrust, SHead, SBento, SSteps, SLinkRow, SCta, SExplore } from '@/components/marketing/Sellio'
 
 // Feature deep-dive page (ideas / roadmap / announcements / knowledgebase),
 // re-skinned to match the main landing's bold, bright system.
@@ -451,33 +452,6 @@ const PAGES: Record<string, any> = {
     cta: 'Automate the busywork',
   },
 }
-const ALL = [
-  { label: 'Ideas Board', href: '/product/ideas', icon: 'idea', color: CORAL },
-  { label: 'Roadmap', href: '/product/roadmap', icon: 'map', color: BLUE },
-  { label: 'Announcements', href: '/product/announcements', icon: 'megaphone', color: GREEN },
-  { label: 'Knowledgebase', href: '/product/knowledgebase', icon: 'book', color: YELLOW },
-  { label: 'Shared Inbox', href: '/product/inbox', icon: 'inbox', color: TEAL },
-  { label: 'Contacts & CRM', href: '/product/crm', icon: 'user', color: BLUE },
-  { label: 'Media Gallery', href: '/product/gallery', icon: 'folder', color: PURPLE },
-  { label: 'Notes', href: '/product/notes', icon: 'pen', color: PINK },
-  { label: 'Voice typing', href: '/product/voice-typing', icon: 'mic', color: TEAL },
-  { label: 'Orders', href: '/product/orders', icon: 'tag', color: CORAL },
-  { label: 'Payments', href: '/product/payments', icon: 'bolt', color: GREEN },
-  { label: 'Waitlists', href: '/product/waitlists', icon: 'bell', color: PURPLE },
-  { label: 'Abandoned carts', href: '/product/abandoned-carts', icon: 'cart', color: '#d97706' },
-  { label: 'Link Reports', href: '/product/links', icon: 'link', color: CYAN },
-  { label: 'Insights', href: '/product/insights', icon: 'chart', color: INDIGO },
-  { label: 'Booking', href: '/product/booking', icon: 'calendar', color: CORAL },
-  { label: 'Table reservations', href: '/product/reservations', icon: 'utensils', color: PINK },
-  { label: '“I’m here” check-in', href: '/product/check-in', icon: 'hand', color: GREEN },
-  { label: 'Jobs & quotes', href: '/product/jobs', icon: 'briefcase', color: BLUE },
-  { label: 'Customer accounts', href: '/product/customer-accounts', icon: 'key', color: CYAN },
-  { label: 'Receipts & tax invoices', href: '/product/receipts', icon: 'receipt', color: INDIGO },
-  { label: 'Calendar', href: '/product/calendar', icon: 'calendar', color: BLUE },
-  { label: 'Tasks', href: '/product/tasks', icon: 'kanban', color: PURPLE },
-  { label: 'Broadcasts', href: '/product/broadcasts', icon: 'megaphone', color: CORAL },
-  { label: 'Automation', href: '/product/automation', icon: 'target', color: TEAL },
-]
 
 // ── helpers (shared look with the main landing) ──────────────────────────────
 function useReveal(threshold = 0.15) {
@@ -489,10 +463,6 @@ function useReveal(threshold = 0.15) {
     return () => o.disconnect()
   }, [threshold])
   return { ref, v }
-}
-function Reveal({ children, delay = 0, y = 30 }: { children: ReactNode; delay?: number; y?: number }) {
-  const { ref, v } = useReveal()
-  return <div ref={ref} style={{ opacity: v ? 1 : 0, transform: v ? 'none' : `translateY(${y}px)`, transition: `opacity 0.7s cubic-bezier(0.16,1,0.3,1) ${delay}s, transform 0.7s cubic-bezier(0.16,1,0.3,1) ${delay}s` }}>{children}</div>
 }
 function BigReveal({ text }: { text: string }) {
   const { ref, v } = useReveal(0.35)
@@ -510,7 +480,6 @@ function BigReveal({ text }: { text: string }) {
     </span>
   )
 }
-const ArrowRight = ({ s = 16 }: { s?: number }) => (<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>)
 const SunIcon = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></svg>)
 const MoonIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>)
 
@@ -543,17 +512,10 @@ export default function FeaturePage() {
   }
 
   const bg = dark ? '#0a0b12' : '#ffffff'
-  const canvas = dark ? '#0e0f18' : '#fff6f2'
   const text = dark ? '#f4f5fb' : INK
   const muted = dark ? 'rgba(244,245,251,0.62)' : 'rgba(15,17,25,0.6)'
-  const cardBg = dark ? 'rgba(255,255,255,0.045)' : '#ffffff'
-  const cardBorder = dark ? 'rgba(255,255,255,0.09)' : 'rgba(15,17,25,0.09)'
-  const navScrolled = scrollY > 30
-  const navBg = navScrolled ? (dark ? 'rgba(10,11,18,0.82)' : 'rgba(255,255,255,0.85)') : 'transparent'
   const font = '-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Inter,sans-serif'
   const gridImg = `linear-gradient(${dark ? 'rgba(255,255,255,0.04)' : 'rgba(15,17,25,0.045)'} 1px,transparent 1px),linear-gradient(90deg,${dark ? 'rgba(255,255,255,0.04)' : 'rgba(15,17,25,0.045)'} 1px,transparent 1px)`
-  const btnPrimary: React.CSSProperties = { padding: '15px 30px', borderRadius: 999, background: color, color: '#fff', fontWeight: 800, fontSize: 16, cursor: 'pointer', border: 'none', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8, boxShadow: `0 10px 30px ${color}55` }
-  const btnGhost: React.CSSProperties = { padding: '15px 26px', borderRadius: 999, border: `2px solid ${dark ? 'rgba(255,255,255,0.16)' : 'rgba(15,17,25,0.12)'}`, background: 'transparent', color: text, fontWeight: 700, fontSize: 15, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer' }
 
   return (
     <div style={{ background: bg, color: text, fontFamily: font, minHeight: '100vh', overflowX: 'hidden', transition: 'background 0.3s, color 0.3s' }}>
@@ -563,9 +525,10 @@ export default function FeaturePage() {
         .fp-card,.fp-navlink,.fp-btn { transition:all 0.22s cubic-bezier(0.16,1,0.3,1); }
         .fp-card:hover { transform:translateY(-6px); }
         .fp-btn:hover { transform:translateY(-2px); }
-        @media (max-width:900px){ .fp-hero{ grid-template-columns:1fr !important; } .fp-desktop{ display:none !important; } .fp-hero-cta{ flex-wrap:nowrap !important; align-items:stretch !important; } .fp-hero-cta > *{ flex:1 1 0 !important; min-width:0 !important; justify-content:center !important; text-align:center !important; padding-left:14px !important; padding-right:14px !important; } }
+        @media (max-width:900px){ .fp-hero{ grid-template-columns:1fr !important; } .fp-desktop{ display:none !important; } }
       `}</style>
 
+      <SellioStyles />
       {/* NAV */}
       <MarketingNav dark={dark} onToggleDark={() => setDark(v => !v)} />
 
@@ -577,12 +540,13 @@ export default function FeaturePage() {
           <div className="fp-hero" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'center' }}>
             <div style={{ maxWidth: 560 }}>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 15px', borderRadius: 999, marginBottom: 22, background: color + '1a', border: `1px solid ${color}44`, color, fontSize: 13, fontWeight: 800 }}><FeatureIcon name={page.icon} color={color} size={15} /> {page.subtitle}{page.isNew && <span style={{ marginLeft: 2, padding: '2px 8px', borderRadius: 999, background: color, color: '#fff', fontSize: 11, fontWeight: 800, letterSpacing: '0.02em' }}>New</span>}</div>
-              <h1 style={{ fontSize: 'clamp(40px, 5.6vw, 74px)', fontWeight: 900, lineHeight: 1.0, letterSpacing: '-0.035em', margin: '0 0 22px' }}><BigReveal text={page.title} /></h1>
+              <h1 style={{ fontSize: 'clamp(40px, 5.6vw, 74px)', fontWeight: 900, lineHeight: 1.0, letterSpacing: '-0.04em', margin: '0 0 22px' }}><BigReveal text={page.title} />{!/[.!?]$/.test(page.title) && <span style={{ color }}>.</span>}</h1>
               <p style={{ fontSize: 'clamp(16px, 1.7vw, 20px)', color: muted, lineHeight: 1.6, maxWidth: 520, margin: '0 0 32px' }}>{page.hero}</p>
-              <div className="fp-hero-cta" style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-                <button onClick={go} className="fp-btn" style={btnPrimary}>{page.cta} <ArrowRight /></button>
-                <a href="/product" className="fp-btn" style={btnGhost}>See all features</a>
+              <div className="sl-ctas">
+                <SPill accent={color} onClick={go} cta="feature_hero_start">{page.cta}</SPill>
+                <SGhost href="#explore">See all features</SGhost>
               </div>
+              <STrust accent={color} />
             </div>
             <div style={{ position: 'relative', transform: `translateY(${scrollY * -0.04}px)` }}>
               <div aria-hidden style={{ position: 'absolute', inset: -20, borderRadius: 34, background: `linear-gradient(135deg, ${color}, ${color}88)`, opacity: dark ? 0.4 : 0.22, filter: 'blur(28px)' }} />
@@ -594,90 +558,28 @@ export default function FeaturePage() {
         </div>
       </section>
 
-      {/* FEATURES GRID */}
-      <section style={{ padding: 'clamp(64px, 9vw, 110px) 24px', background: canvas, borderTop: `1px solid ${cardBorder}`, borderBottom: `1px solid ${cardBorder}` }}>
-        <div style={{ maxWidth: 1160, margin: '0 auto' }}>
-          <Reveal><div style={{ textAlign: 'center', marginBottom: 56 }}>
-            <h2 style={{ fontSize: 'clamp(30px, 4.6vw, 52px)', fontWeight: 900, letterSpacing: '-0.03em', margin: '0 0 12px', color: text }}>Everything you need</h2>
-            <p style={{ fontSize: 18, color: muted, margin: 0 }}>No compromises. No cobbling tools together.</p>
-          </div></Reveal>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))', gap: 20 }}>
-            {page.features.map((f: any, i: number) => (
-              <Reveal key={f.title} delay={(i % 3) * 0.06}>
-                <div className="fp-card" style={{ padding: 26, borderRadius: 20, background: cardBg, border: `1px solid ${cardBorder}`, height: '100%' }}>
-                  <div style={{ width: 52, height: 52, borderRadius: 14, background: color + '18', border: `1px solid ${color}33`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}><FeatureIcon name={f.icon} color={color} size={26} /></div>
-                  <h3 style={{ fontSize: 18, fontWeight: 800, color: text, margin: '0 0 8px' }}>{f.title}</h3>
-                  <p style={{ fontSize: 14.5, lineHeight: 1.6, color: muted, margin: 0 }}>{f.desc}</p>
-                </div>
-              </Reveal>
-            ))}
-          </div>
+      {/* FEATURES — bento grid on a soft band in the page's colour */}
+      <section style={{ padding: 'clamp(72px, 10vw, 120px) 24px', background: dark ? '#0d0e17' : `linear-gradient(180deg, ${color}0f, ${color}05)` }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+          <SHead eyebrow={page.subtitle} title="Everything you need" grey="No cobbling tools together" accent={color} dark={dark} />
+          <SBento items={page.features} accent={color} dark={dark} />
         </div>
       </section>
 
-      {/* HOW IT WORKS — the feature from the customer's side, in a few steps */}
+      {/* HOW IT WORKS — dark, numbered, like the landing */}
       {page.steps && (
-        <section style={{ padding: 'clamp(64px, 9vw, 100px) 24px clamp(30px, 5vw, 50px)', background: bg }}>
-          <div style={{ maxWidth: 1160, margin: '0 auto' }}>
-            <Reveal><div style={{ textAlign: 'center', marginBottom: 44 }}>
-              <h2 style={{ fontSize: 'clamp(30px, 4.6vw, 52px)', fontWeight: 900, letterSpacing: '-0.03em', margin: '0 0 12px', color: text }}>How it works</h2>
-              <p style={{ fontSize: 18, color: muted, margin: 0 }}>Set it up once. It runs every day.</p>
-            </div></Reveal>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(230px, 100%), 1fr))', gap: 16 }}>
-              {page.steps.map((s: any, i: number) => (
-                <Reveal key={s.title} delay={(i % 4) * 0.06}>
-                  <div className="fp-card" style={{ height: '100%', boxSizing: 'border-box', padding: 24, borderRadius: 20, background: cardBg, border: `1px solid ${cardBorder}` }}>
-                    <span style={{ width: 38, height: 38, borderRadius: 12, background: color, color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: 16, marginBottom: 14 }}>{i + 1}</span>
-                    <h3 style={{ fontSize: 18, fontWeight: 800, color: text, margin: '0 0 8px' }}>{s.title}</h3>
-                    <p style={{ fontSize: 14.5, lineHeight: 1.6, color: muted, margin: 0 }}>{s.desc}</p>
-                  </div>
-                </Reveal>
-              ))}
-            </div>
-            {page.related && (
-              <Reveal delay={0.1}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'center', marginTop: 32 }}>
-                  <span style={{ fontSize: 13, fontWeight: 800, color: muted, marginRight: 4 }}>Goes well with</span>
-                  {page.related.map((r: any) => (
-                    <a key={r.href} href={r.href} className="fp-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13.5, fontWeight: 700, padding: '8px 14px', borderRadius: 999, border: `1px solid ${cardBorder}`, background: cardBg, color: text, textDecoration: 'none' }}>{r.label} <ArrowRight s={13} /></a>
-                  ))}
-                </div>
-              </Reveal>
-            )}
-          </div>
-        </section>
+        <SSteps title="How it works" grey="Set it up once. It runs every day" steps={page.steps} accent={color} onGo={go}
+          after={page.related ? <SLinkRow label="Goes well with" links={page.related} /> : undefined} />
       )}
 
       <SeoFaqSection path={`product/${feature}`} accent={color} dark={dark} />
 
-      {/* CTA */}
-      <section style={{ position: 'relative', padding: 'clamp(64px, 9vw, 120px) 24px', textAlign: 'center', background: `linear-gradient(135deg, ${color}, ${color}bb)`, overflow: 'hidden' }}>
-        <div aria-hidden style={{ position: 'absolute', top: -50, left: '8%', width: 240, height: 240, borderRadius: '50%', background: 'rgba(255,255,255,0.14)' }} />
-        <div aria-hidden style={{ position: 'absolute', bottom: -70, right: '8%', width: 300, height: 300, borderRadius: '50%', background: 'rgba(255,255,255,0.12)' }} />
-        <div style={{ position: 'relative', maxWidth: 720, margin: '0 auto' }}>
-          <Reveal>
-            <div style={{ display: 'inline-flex', marginBottom: 16, padding: 16, borderRadius: 18, background: 'rgba(255,255,255,0.16)' }}><FeatureIcon name={page.icon} color="#fff" size={40} /></div>
-            <h2 style={{ fontSize: 'clamp(30px, 5vw, 56px)', fontWeight: 900, letterSpacing: '-0.03em', color: '#fff', lineHeight: 1.04, margin: '0 0 14px' }}>Ready to try {page.subtitle}?</h2>
-            <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.9)', margin: '0 0 30px' }}>Set up in about 45 minutes. Free forever for small teams.</p>
-            <button onClick={go} className="fp-btn cv-shine tint" style={{ padding: '16px 38px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 17, border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>Get started free <ArrowRight /></button>
-          </Reveal>
-        </div>
-      </section>
+      <SCta title={`Ready to try ${page.subtitle}?`} sub="Set up in about 45 minutes. Free forever for small teams." accent={color} onGo={go} user={user} />
 
-      {/* Other features */}
-      <section style={{ padding: 'clamp(56px, 8vw, 90px) 24px', background: bg }}>
-        <div style={{ maxWidth: 960, margin: '0 auto' }}>
-          <p style={{ textAlign: 'center', fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: muted, margin: '0 0 32px' }}>Explore all features</p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
-            {ALL.filter(f => !f.href.includes(feature)).map(f => (
-              <a key={f.label} href={f.href} className="fp-card" style={{ padding: 22, borderRadius: 18, textAlign: 'center', background: cardBg, border: `1px solid ${cardBorder}`, textDecoration: 'none' }}>
-                <div style={{ display: 'inline-flex', marginBottom: 12, padding: 12, borderRadius: 14, background: f.color + '18', border: `1px solid ${f.color}33` }}><FeatureIcon name={f.icon} color={f.color} size={26} /></div>
-                <p style={{ margin: 0, fontSize: 15, fontWeight: 800, color: f.color }}>{f.label}</p>
-              </a>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* Every feature, grouped by the job it does (compact; swipeable on phones) */}
+      <div id="explore" style={{ scrollMarginTop: 70 }}>
+        <SExplore current={`/product/${feature}`} accent={color} dark={dark} />
+      </div>
 
       <MarketingFooter dark={dark} />
     </div>

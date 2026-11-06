@@ -7,6 +7,7 @@ import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
 import FeatureIcon from '@/components/FeatureIcon'
+import { SellioStyles, SCta } from '@/components/marketing/Sellio'
 import ComingSoonPill from '@/components/ComingSoonPill'
 import { isComingSoon, type ComingSoonKey } from '@/lib/feature-availability'
 
@@ -435,6 +436,8 @@ export default function PhoneFeaturePage() {
         @media (prefers-reduced-motion:reduce){ [style*="pfFloat"]{ animation:none !important } }
       `}</style>
 
+      <SellioStyles />
+
       <MarketingNav dark={dark} onToggleDark={() => setDark(v => !v)} />
 
       {/* HERO */}
@@ -540,16 +543,7 @@ export default function PhoneFeaturePage() {
         </div>
       </section>
 
-      {/* CTA */}
-      <section style={{ padding: 'clamp(48px, 8vw, 96px) 24px', textAlign: 'center', background: `linear-gradient(135deg, ${accent}, ${BLUE} 60%, ${PURPLE})` }}>
-        <Reveal>
-          <div style={{ maxWidth: 720, margin: '0 auto' }}>
-            <h2 style={{ fontSize: 'clamp(28px, 5vw, 52px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.05, color: '#fff', margin: '0 0 12px' }}>{f.ctaHead}</h2>
-            <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.9)', margin: '0 0 30px' }}>Start free, set up in about 45 minutes — no credit card, cancel anytime.</p>
-            <button onClick={go} className="pf-btn cv-shine tint" style={{ padding: '16px 38px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 17, border: 'none', cursor: 'pointer', boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>Get started — it’s free</button>
-          </div>
-        </Reveal>
-      </section>
+      <SCta title={f.ctaHead} accent={accent} onGo={go} user={user} />
 
       <MarketingFooter dark={dark} />
     </div>
