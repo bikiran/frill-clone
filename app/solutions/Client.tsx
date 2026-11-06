@@ -6,6 +6,7 @@ import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
 import FeatureIcon from '@/components/FeatureIcon'
+import { SellioStyles, SPill, SGhost, STrust, SBento, SCta } from '@/components/marketing/Sellio'
 
 // Solutions hub — Colvy grouped by the job you're trying to do (support, sales,
 // marketing, reviews, feedback, payments), cross-cutting the channel / feature /
@@ -85,6 +86,8 @@ export default function SolutionsHub() {
         @media (prefers-reduced-motion:reduce){ [style*="solFloat"]{ animation:none !important } }
       `}</style>
 
+      <SellioStyles />
+
       <MarketingNav dark={dark} onToggleDark={() => setDark(v => !v)} />
 
       {/* HERO */}
@@ -95,10 +98,11 @@ export default function SolutionsHub() {
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: CORAL + '18', color: CORAL, fontSize: 12.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 18 }}><FeatureIcon name="target" color={CORAL} size={15} />Solutions</span>
             <h1 style={{ fontSize: 'clamp(40px, 6vw, 74px)', fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 1.02, margin: '0 0 18px' }}>Whatever the job,<br /><span style={{ color: CORAL }}>one place to do it</span></h1>
             <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: muted, maxWidth: 520, lineHeight: 1.6, margin: '0 0 30px' }}>Support, sales, marketing, reviews, feedback, bookings and payments — all in the same inbox, sharing the same customer history. Pick where you want to start.</p>
-            <div className="sol-hero-cta" style={{ display: 'flex', gap: 12 }}>
-              <button onClick={go} className="sol-btn" style={btnPrimary}>Start free — no card →</button>
-              <a href="/pricing" className="sol-btn" style={btnGhost}>See pricing</a>
+            <div className="sl-ctas">
+              <SPill accent={CORAL} onClick={go} cta="hub_hero_start">Start free — no card</SPill>
+              <SGhost href="/pricing">See pricing</SGhost>
             </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-start' }}><STrust accent={CORAL} /></div>
           </Reveal>
         </div>
         <Reveal delay={0.1}>
@@ -115,19 +119,9 @@ export default function SolutionsHub() {
         </Reveal>
       </section>
 
-      {/* WHY grid */}
-      <section style={{ maxWidth: 1280, margin: '0 auto', padding: '10px 24px 30px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(240px, 100%), 1fr))', gap: 16 }}>
-          {WHY.map((f, i) => (
-            <Reveal key={f.title} delay={(i % 4) * 0.05}>
-              <div className="sol-card" style={{ height: '100%', borderRadius: 18, padding: 22, background: cardBg, border: `1px solid ${cardBorder}` }}>
-                <span style={{ width: 42, height: 42, borderRadius: 12, background: CORAL + '14', color: CORAL, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}><FeatureIcon name={f.icon} color={CORAL} size={21} /></span>
-                <h3 style={{ fontSize: 16.5, fontWeight: 800, margin: '0 0 5px', color: text }}>{f.title}</h3>
-                <p style={{ fontSize: 14, lineHeight: 1.55, color: muted, margin: 0 }}>{f.desc}</p>
-              </div>
-            </Reveal>
-          ))}
-        </div>
+      {/* WHY — bento */}
+      <section style={{ maxWidth: 1200, margin: '0 auto', padding: '20px 24px 30px' }}>
+        <SBento items={WHY} accent={CORAL} dark={dark} />
       </section>
 
       {/* SOLUTION CARDS */}
@@ -157,16 +151,7 @@ export default function SolutionsHub() {
         </div>
       </section>
 
-      {/* CTA */}
-      <section style={{ padding: 'clamp(48px, 8vw, 90px) 24px', textAlign: 'center', background: `linear-gradient(135deg, ${CORAL}, ${PINK} 60%, ${PURPLE})` }}>
-        <Reveal>
-          <div style={{ maxWidth: 700, margin: '0 auto' }}>
-            <h2 style={{ fontSize: 'clamp(28px, 5vw, 50px)', fontWeight: 900, letterSpacing: '-0.03em', color: '#fff', margin: '0 0 12px' }}>One platform for all of it</h2>
-            <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.9)', margin: '0 0 28px' }}>Start with one job and grow into the rest — no new tools, no re-migrating.</p>
-            <button onClick={go} className="sol-btn" style={{ padding: '16px 38px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 17, border: 'none', cursor: 'pointer', boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>Start free — no card</button>
-          </div>
-        </Reveal>
-      </section>
+      <SCta title="One platform for all of it" sub="Start with one job and grow into the rest — no new tools, no re-migrating." accent={CORAL} onGo={go} user={user} />
 
       <MarketingFooter dark={dark} />
     </div>

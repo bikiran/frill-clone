@@ -8,6 +8,7 @@ import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
 import FeatureIcon from '@/components/FeatureIcon'
+import { SellioStyles, SPill, SGhost, STrust, SHead, SBento, SStory, SStats, SCta, SSteps, SPains, SChannels } from '@/components/marketing/Sellio'
 import { soonLabel } from '@/lib/feature-availability'
 
 // Landing-styled per-industry pages (Colvy for SaaS / Agencies / Retail / …).
@@ -315,6 +316,7 @@ export default function IndustryPage() {
         @media (prefers-reduced-motion:reduce){ [style*="indFloat"]{ animation:none !important } }
       `}</style>
 
+      <SellioStyles />
       <MarketingNav dark={dark} onToggleDark={() => setDark(v => !v)} />
 
       {/* HERO */}
@@ -325,10 +327,11 @@ export default function IndustryPage() {
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: accent + '18', color: accent, fontSize: 12.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 18 }}><FeatureIcon name={ind.features[0].icon} color={accent} size={15} />Industries</span>
             <h1 style={{ fontSize: 'clamp(40px, 6vw, 72px)', fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 1.03, margin: '0 0 18px' }}>Colvy for <span style={{ color: accent }}>{titleName}</span></h1>
             <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: muted, maxWidth: 520, lineHeight: 1.6, margin: '0 0 30px' }}>{ind.sub}</p>
-            <div className="ind-hero-cta" style={{ display: 'flex', gap: 12 }}>
-              <button onClick={go} className="ind-btn" style={btnPrimary}>Start free — no card →</button>
-              <a href="/pricing" className="ind-btn" style={btnGhost}>See pricing</a>
+            <div className="sl-ctas">
+              <SPill accent={accent} onClick={go} cta="hero_start_free">Start free — no card</SPill>
+              <SGhost href="/pricing">See pricing</SGhost>
             </div>
+            <STrust accent={accent} />
           </Reveal>
         </div>
         <Reveal delay={0.1}>
@@ -345,116 +348,32 @@ export default function IndustryPage() {
         </Reveal>
       </section>
 
-      {/* SOUND FAMILIAR — industry pain-points */}
-      <section style={{ maxWidth: 1160, margin: '0 auto', padding: '20px 24px 44px' }}>
-        <Reveal>
-          <h2 style={{ fontSize: 'clamp(24px, 3.4vw, 38px)', fontWeight: 900, letterSpacing: '-0.02em', textAlign: 'center', margin: '0 0 8px' }}>Sound familiar?</h2>
-          <p style={{ fontSize: 16, color: muted, maxWidth: 560, margin: '0 auto 26px', lineHeight: 1.55, textAlign: 'center' }}>The everyday friction Colvy is built to take off your plate in {titleName.toLowerCase()}.</p>
-        </Reveal>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(280px, 100%), 1fr))', gap: 18 }}>
-          {ind.pains.map((p, i) => (
-            <Reveal key={p.title} delay={(i % 3) * 0.05}>
-              <div style={{ height: '100%', borderRadius: 20, padding: 24, background: dark ? 'rgba(255,255,255,0.03)' : accent + '08', border: `1px solid ${cardBorder}` }}>
-                <span style={{ width: 40, height: 40, borderRadius: 12, background: accent + '1c', color: accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12, fontSize: 22, fontWeight: 900 }}>!</span>
-                <h3 style={{ fontSize: 16.5, fontWeight: 800, margin: '0 0 6px', color: text }}>{p.title}</h3>
-                <p style={{ fontSize: 14.5, lineHeight: 1.6, color: muted, margin: 0 }}>{p.desc}</p>
-              </div>
-            </Reveal>
-          ))}
+      {/* SOUND FAMILIAR */}
+      <SPains grey={`The everyday friction in ${titleName.toLowerCase()}`} items={ind.pains} accent={accent} dark={dark} />
+
+      {/* FEATURES — bento */}
+      <section style={{ padding: 'clamp(56px, 8vw, 100px) 24px', background: dark ? '#0d0e17' : `linear-gradient(180deg, #ffffff, ${accent}0a)` }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+          <SHead eyebrow="What you get" title="Everything in one place" grey="Built in, not bolted on" accent={accent} dark={dark} />
+          <SBento items={ind.features} accent={accent} dark={dark} />
         </div>
       </section>
 
-      {/* FEATURE GRID */}
-      <section style={{ maxWidth: 1280, margin: '0 auto', padding: '10px 24px 40px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(280px, 100%), 1fr))', gap: 18 }}>
-          {ind.features.map((f, i) => (
-            <Reveal key={f.title} delay={(i % 3) * 0.05}>
-              <div className="ind-card" style={{ height: '100%', borderRadius: 20, padding: 26, background: cardBg, border: `1px solid ${cardBorder}` }}>
-                <span style={{ width: 46, height: 46, borderRadius: 13, background: accent + '16', color: accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><FeatureIcon name={f.icon} color={accent} size={23} /></span>
-                <h3 style={{ fontSize: 17.5, fontWeight: 800, margin: '0 0 6px', color: text }}>{f.title}</h3>
-                <p style={{ fontSize: 14.5, lineHeight: 1.6, color: muted, margin: 0 }}>{f.desc}</p>
-              </div>
-            </Reveal>
-          ))}
-        </div>
-      </section>
-
-      {/* BANDS */}
+      {/* STORY BANDS — like the landing's colour bands */}
       {ind.bands.map((b, i) => (
-        <section key={b.title} style={{ background: i % 2 ? (dark ? 'rgba(255,255,255,0.02)' : accent + '08') : 'transparent', padding: 'clamp(40px, 6vw, 80px) 24px' }}>
-          <div className="ind-band" style={{ maxWidth: 1160, margin: '0 auto', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'center', direction: i % 2 ? 'rtl' : 'ltr' }}>
-            <div style={{ direction: 'ltr' }}>
-              <Reveal>
-                <span style={{ fontSize: 12.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: accent }}>{b.tag}</span>
-                <h2 style={{ fontSize: 'clamp(26px, 3.4vw, 40px)', fontWeight: 900, letterSpacing: '-0.02em', lineHeight: 1.08, margin: '10px 0 14px', color: text }}>{b.title}</h2>
-                <p style={{ fontSize: 16.5, lineHeight: 1.65, color: muted, margin: '0 0 20px' }}>{b.body}</p>
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 11 }}>
-                  {b.bullets.map(bl => (
-                    <li key={bl} style={{ display: 'flex', alignItems: 'flex-start', gap: 11, fontSize: 15, fontWeight: 600, color: text }}>
-                      <span style={{ width: 22, height: 22, borderRadius: '50%', background: accent + '1a', color: accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg></span>{bl}
-                    </li>
-                  ))}
-                </ul>
-              </Reveal>
-            </div>
-            <div style={{ direction: 'ltr' }}>
-              <Reveal delay={0.1}>
-                <div style={{ position: 'relative', borderRadius: 24, minHeight: 280, overflow: 'hidden', background: `linear-gradient(140deg, ${accent}22, ${accent}05)`, border: `1px solid ${cardBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: gridImg, backgroundSize: '32px 32px', opacity: 0.5 }} />
-                  <div style={{ position: 'relative', width: 96, height: 96, borderRadius: 26, background: accent, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 20px 50px ${accent}55`, animation: 'indFloat 6s ease-in-out infinite' }}>
-                    <FeatureIcon name={ind.features[Math.min(i + 2, ind.features.length - 1)].icon} color="#fff" size={44} />
-                  </div>
-                </div>
-              </Reveal>
-            </div>
-          </div>
-        </section>
+        <SStory key={b.title} tag={b.tag} title={b.title} body={b.body} bullets={b.bullets} accent={accent} tone={i % 2 ? 'soft' : 'deep'} flip={i % 2 === 1} dark={dark}
+          icons={ind.features.slice(i * 3, i * 3 + 3).map(f => f.icon)} />
       ))}
 
-      {/* PLAYBOOK — tailored setup steps */}
-      <section style={{ maxWidth: 1160, margin: '0 auto', padding: 'clamp(30px, 5vw, 56px) 24px' }}>
-        <Reveal>
-          <h2 style={{ fontSize: 'clamp(24px, 3.4vw, 38px)', fontWeight: 900, letterSpacing: '-0.02em', textAlign: 'center', margin: '0 0 8px' }}>Up and running in an <span style={{ color: accent }}>afternoon</span></h2>
-          <p style={{ fontSize: 16, color: muted, maxWidth: 560, margin: '0 auto 30px', lineHeight: 1.55, textAlign: 'center' }}>A simple path from sign-up to results, built for {titleName.toLowerCase()}.</p>
-        </Reveal>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 18 }}>
-          {ind.playbook.map((s, i) => (
-            <Reveal key={s.title} delay={(i % 4) * 0.05}>
-              <div style={{ position: 'relative', height: '100%', borderRadius: 20, padding: '26px 22px', background: cardBg, border: `1px solid ${cardBorder}` }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: '50%', background: accent, color: '#fff', fontWeight: 900, fontSize: 15, marginBottom: 14 }}>{i + 1}</span>
-                <h3 style={{ fontSize: 16.5, fontWeight: 800, margin: '0 0 6px', color: text }}>{s.title}</h3>
-                <p style={{ fontSize: 14, lineHeight: 1.6, color: muted, margin: 0 }}>{s.desc}</p>
-              </div>
-            </Reveal>
-          ))}
-        </div>
-      </section>
+      {/* PLAYBOOK — dark numbered steps, like the landing */}
+      <SSteps eyebrow="Your setup" title="Up and running in an afternoon" grey={`Built for ${titleName.toLowerCase()}`} steps={ind.playbook} accent={accent} onGo={go} />
 
       {/* EVERY CHANNEL */}
-      <section style={{ maxWidth: 1000, margin: '0 auto', padding: '30px 24px 20px', textAlign: 'center' }}>
-        <Reveal>
-          <h2 style={{ fontSize: 'clamp(24px, 3.4vw, 38px)', fontWeight: 900, letterSpacing: '-0.02em', margin: '0 0 8px' }}>Every channel, <span style={{ color: accent }}>one thread</span></h2>
-          <p style={{ fontSize: 16, color: muted, maxWidth: 560, margin: '0 auto 22px', lineHeight: 1.55 }}>Customers reach out however they like — Colvy brings it together, one conversation per customer.</p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center' }}>
-            {CHANNELS.map(ch => (
-              <span key={ch} style={{ fontSize: 13.5, fontWeight: 700, color: text, background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: 999, padding: '8px 16px' }}>{ch}</span>
-            ))}
-          </div>
-        </Reveal>
-      </section>
+      <SChannels channels={CHANNELS} note={'Customers reach out however they like, and Colvy keeps it to one conversation per customer.'} accent={accent} dark={dark} />
 
       {/* STATS */}
-      <section style={{ maxWidth: 1000, margin: '0 auto', padding: '30px 24px 40px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 18 }}>
-          {ind.stats.map((s, i) => (
-            <Reveal key={s.label} delay={i * 0.06}>
-              <div style={{ textAlign: 'center', borderRadius: 20, padding: '28px 14px', background: cardBg, border: `1px solid ${cardBorder}` }}>
-                <div style={{ fontSize: 'clamp(26px, 4.4vw, 42px)', fontWeight: 900, letterSpacing: '-0.03em', color: accent }}>{s.big}</div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: muted, marginTop: 4 }}>{s.label}</div>
-              </div>
-            </Reveal>
-          ))}
-        </div>
+      <section style={{ padding: '10px 24px clamp(56px, 8vw, 90px)' }}>
+        <SStats stats={ind.stats} accent={accent} dark={dark} />
       </section>
 
       {/* FAQ */}
@@ -471,16 +390,7 @@ export default function IndustryPage() {
         </div>
       </section>
 
-      {/* CTA */}
-      <section style={{ padding: 'clamp(48px, 8vw, 96px) 24px', textAlign: 'center', background: `linear-gradient(135deg, ${accent}, ${PINK} 60%, ${PURPLE})` }}>
-        <Reveal>
-          <div style={{ maxWidth: 720, margin: '0 auto' }}>
-            <h2 style={{ fontSize: 'clamp(28px, 5vw, 52px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.05, color: '#fff', margin: '0 0 12px' }}>Built for {titleName}</h2>
-            <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.9)', margin: '0 0 30px' }}>Start free, set up in about 45 minutes — no credit card, cancel anytime.</p>
-            <button onClick={go} className="ind-btn cv-shine tint" style={{ padding: '16px 38px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 17, border: 'none', cursor: 'pointer', boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>Get started — it’s free</button>
-          </div>
-        </Reveal>
-      </section>
+      <SCta title={`Built for ${titleName}`} sub={'Free forever for small teams. Set up in about 45 minutes.'} accent={accent} onGo={go} user={user} />
 
       <MarketingFooter dark={dark} />
     </div>

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, ReactNode, CSSProperties } from 'react'
 import Collapse from '@/components/Collapse'
 import { supabase } from '@/lib/supabase'
+import { SellioStyles, SCta } from '@/components/marketing/Sellio'
 import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 
 // Shared pieces for the newer marketing pages (/for/*, the business-number page
@@ -158,23 +159,12 @@ export function usePointerParallax<T extends HTMLElement>() {
   return ref
 }
 
+/** The closing band: the landing's gradient band (components/marketing/Sellio). */
 export function CtaBand({ title, sub, accent, onGo, user, secondary }: { title: string; sub: string; accent: string; onGo: () => void; user: any; secondary?: { label: string; href: string } }) {
   return (
-    <section style={{ padding: '30px 24px 90px' }}>
-      <Reveal>
-        <div style={{ position: 'relative', overflow: 'hidden', maxWidth: 1180, margin: '0 auto', borderRadius: 32, padding: 'clamp(44px, 6vw, 72px) clamp(24px, 5vw, 64px)', background: `linear-gradient(135deg, ${accent}, ${accent}cc 55%, #1f2a6b)`, color: '#fff', textAlign: 'center' }}>
-          <div aria-hidden style={{ position: 'absolute', width: 420, height: 420, borderRadius: '50%', background: 'rgba(255,255,255,0.12)', top: -180, right: -120, filter: 'blur(4px)' }} />
-          <div aria-hidden style={{ position: 'absolute', width: 300, height: 300, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', bottom: -160, left: -80 }} />
-          <h2 style={{ position: 'relative', fontSize: 'clamp(30px, 4.4vw, 52px)', fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 1.04, margin: '0 0 14px' }}>{title}</h2>
-          <p style={{ position: 'relative', fontSize: 'clamp(16px, 1.6vw, 19px)', lineHeight: 1.6, opacity: 0.9, maxWidth: 620, margin: '0 auto 28px' }}>{sub}</p>
-          <div style={{ position: 'relative', display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button onClick={onGo} data-cta="cta_band_start_free" data-cta-location="cta_band" style={{ padding: '15px 30px', borderRadius: 999, background: '#fff', color: accent, fontWeight: 900, fontSize: 16, border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, fontFamily: 'inherit' }}>
-              {user ? 'Go to your dashboard' : 'Start free'} <Arrow />
-            </button>
-            {secondary && <a href={secondary.href} style={{ padding: '15px 26px', borderRadius: 999, border: '2px solid rgba(255,255,255,0.5)', color: '#fff', fontWeight: 800, fontSize: 15, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8 }}>{secondary.label}</a>}
-          </div>
-        </div>
-      </Reveal>
-    </section>
+    <>
+      <SellioStyles />
+      <SCta title={title} sub={sub} accent={accent} onGo={onGo} user={user} secondary={secondary || { label: 'See all plans', href: '/pricing' }} />
+    </>
   )
 }

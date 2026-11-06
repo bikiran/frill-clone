@@ -6,6 +6,7 @@ import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
 import FeatureIcon from '@/components/FeatureIcon'
+import { SellioStyles, SPill, SGhost, STrust, SLinkCards, SCta } from '@/components/marketing/Sellio'
 
 // Integrations hub — overview linking to every integration page. Only the
 // integrations Colvy actually ships are listed.
@@ -75,6 +76,8 @@ export default function IntegrationsHub() {
         .hub-btn{ transition:transform 0.18s; } .hub-btn:hover{ transform:translateY(-2px); }
       `}</style>
 
+      <SellioStyles />
+
       <MarketingNav dark={dark} onToggleDark={() => setDark(v => !v)} />
 
       {/* HERO */}
@@ -84,39 +87,20 @@ export default function IntegrationsHub() {
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: ACCENT + '18', color: ACCENT, fontSize: 12.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 18 }}><FeatureIcon name="plug" color={ACCENT} size={15} />Integrations</span>
           <h1 style={{ fontSize: 'clamp(38px, 5.6vw, 66px)', fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 1.03, margin: '0 0 16px' }}>Connect your <span style={{ color: ACCENT }}>whole stack</span></h1>
           <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: muted, maxWidth: 600, lineHeight: 1.6, margin: '0 auto 28px' }}>Commerce, payments and the tools you already run — wired into every conversation in Colvy.</p>
-          <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button onClick={go} className="hub-btn" style={btnPrimary}>Start free — no card →</button>
-            <a href="/pricing" className="hub-btn" style={btnGhost}>See pricing</a>
+          <div className="sl-ctas" style={{ justifyContent: 'center' }}>
+            <SPill accent={ACCENT} onClick={go} cta="hub_hero_start">Start free — no card</SPill>
+            <SGhost href="/pricing">See pricing</SGhost>
           </div>
+          <div style={{ display: 'flex', justifyContent: 'center' }}><STrust accent={ACCENT} /></div>
         </Reveal>
       </section>
 
-      {/* CARDS */}
-      <section style={{ maxWidth: 1160, margin: '0 auto', padding: '20px 24px 60px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 18 }}>
-          {CARDS.map((c, i) => (
-            <Reveal key={c.title} delay={(i % 3) * 0.05}>
-              <a href={c.href} className="hub-card" style={{ display: 'block', height: '100%', borderRadius: 22, padding: 28, background: cardBg, border: `1px solid ${cardBorder}`, textDecoration: 'none', color: text }}>
-                <span style={{ width: 52, height: 52, borderRadius: 15, background: c.accent + '16', border: `1px solid ${c.accent}33`, color: c.accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 15 }}><FeatureIcon name={c.icon} color={c.accent} size={26} /></span>
-                <h3 style={{ fontSize: 20, fontWeight: 900, letterSpacing: '-0.01em', margin: '0 0 8px', color: text }}>{c.title}</h3>
-                <p style={{ fontSize: 14.5, lineHeight: 1.6, color: muted, margin: '0 0 16px' }}>{c.desc}</p>
-                <span className="hub-explore" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14, fontWeight: 800, color: c.accent, transition: 'gap 0.22s' }}>Explore <ArrowRight /></span>
-              </a>
-            </Reveal>
-          ))}
-        </div>
+      {/* CARDS — colourful link cards */}
+      <section style={{ maxWidth: 1200, margin: '0 auto', padding: '20px 24px clamp(64px, 9vw, 110px)' }}>
+        <SLinkCards items={CARDS.map(c => ({ ...c, color: c.accent }))} dark={dark} />
       </section>
 
-      {/* CTA */}
-      <section style={{ padding: 'clamp(48px, 8vw, 96px) 24px', textAlign: 'center', background: `linear-gradient(135deg, ${ACCENT}, ${PURPLE} 60%, ${PINK})` }}>
-        <Reveal>
-          <div style={{ maxWidth: 720, margin: '0 auto' }}>
-            <h2 style={{ fontSize: 'clamp(28px, 5vw, 52px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.05, color: '#fff', margin: '0 0 12px' }}>Wire Colvy into your stack</h2>
-            <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.9)', margin: '0 0 30px' }}>Start free, set up in about 45 minutes — no credit card, cancel anytime.</p>
-            <button onClick={go} className="hub-btn cv-shine tint" style={{ padding: '16px 38px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 17, border: 'none', cursor: 'pointer', boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>Get started — it’s free</button>
-          </div>
-        </Reveal>
-      </section>
+      <SCta title="Wire Colvy into your stack" sub="Free forever for small teams. Upgrade as you grow." accent={ACCENT} onGo={go} user={user} />
 
       <MarketingFooter dark={dark} />
     </div>

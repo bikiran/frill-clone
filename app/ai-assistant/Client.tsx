@@ -7,6 +7,7 @@ import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
 import FeatureIcon from '@/components/FeatureIcon'
+import { SellioStyles, SCta } from '@/components/marketing/Sellio'
 
 // Standalone AI Assistant landing page. Content is grounded in what the
 // assistant actually does (see lib/ai-assistant/tools.ts): look things up,
@@ -128,6 +129,8 @@ export default function AiAssistantPage() {
         @media (max-width:900px){ .ai-hero{ grid-template-columns:1fr !important; } .ai-band{ grid-template-columns:1fr !important; } .ai-actions{ grid-template-columns:1fr !important; } .ai-hero-cta{ flex-wrap:nowrap !important; } .ai-hero-cta > *{ flex:1 1 0 !important; justify-content:center !important; white-space:nowrap !important; padding-left:14px !important; padding-right:14px !important; } }
         @media (prefers-reduced-motion:reduce){ [style*="aiFloat"]{ animation:none !important } }
       `}</style>
+
+      <SellioStyles />
 
       <MarketingNav dark={dark} onToggleDark={() => setDark(v => !v)} />
 
@@ -308,16 +311,7 @@ export default function AiAssistantPage() {
         </div>
       </section>
 
-      {/* CTA */}
-      <section style={{ padding: 'clamp(48px, 8vw, 96px) 24px', textAlign: 'center', background: `linear-gradient(135deg, ${ACCENT}, ${PINK} 60%, ${BLUE})` }}>
-        <Reveal>
-          <div style={{ maxWidth: 720, margin: '0 auto' }}>
-            <h2 style={{ fontSize: 'clamp(28px, 5vw, 52px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.05, color: '#fff', margin: '0 0 12px' }}>Put an assistant on every thread</h2>
-            <p style={{ fontSize: 17, color: 'rgba(255,255,255,0.9)', margin: '0 0 30px' }}>Start free, set up in about 45 minutes — no credit card, cancel anytime.</p>
-            <button onClick={go} className="ai-btn cv-shine tint" style={{ padding: '16px 38px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 17, border: 'none', cursor: 'pointer', boxShadow: '0 14px 40px rgba(0,0,0,0.2)' }}>Get started — it’s free</button>
-          </div>
-        </Reveal>
-      </section>
+      <SCta title={"Put an assistant on every thread"} accent={ACCENT} onGo={go} user={user} />
 
       <MarketingFooter dark={dark} />
     </div>
