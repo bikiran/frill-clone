@@ -13,6 +13,24 @@ export type SeoFaq = { q: string; a: string }
 const STARTER = 'You can start free with no credit card, and every paid plan has a 14-day free trial.'
 
 export const SEO_FAQS: Record<string, SeoFaq[]> = {
+  // ── Email & SMS campaigns ───────────────────────────────────────────────────
+  'product/broadcasts': [
+    { q: 'Can I send email and SMS campaigns from Colvy?', a: 'Yes. Send a campaign by SMS from your Australian business number, by email, or both, to an audience you choose. Every reply opens a normal conversation in your shared inbox, and the report shows who clicked, replied, unsubscribed and ordered.' },
+    { q: 'Can AI build a campaign for me?', a: 'Yes. Describe it in a sentence, or start from an idea like a weekend sale or new stock, and Colvy AI suggests the audience with a live count, writes the text and the email, picks real products from your store and suggests a time. It creates a draft for you to review; nothing is sent until you send it.' },
+    { q: 'Who can I send a campaign to?', a: 'Everyone subscribed, a saved segment, people who bought a product or category, customers who haven’t ordered in a while, shoppers at one outlet, people with certain tags, people who clicked an earlier campaign, or abandoned checkouts. People who replied STOP, unsubscribed, bounced or marked an email as spam are always left out.' },
+    { q: 'How do I see what a campaign earned?', a: 'Each campaign’s report lists every person it went to and what they did, with orders and revenue through its links. Campaign Insights compares every email and SMS campaign by click rate, orders, revenue, cost and return on SMS spend.' },
+  ],
+  'channels/broadcasts': [
+    { q: 'What is a broadcast?', a: 'A broadcast (or campaign) is one message sent to many customers at once, such as a sale, a new arrival or a reminder. In Colvy it can go by SMS, email or both, and every reply lands in your shared inbox as its own conversation.' },
+    { q: 'Can I send bulk SMS in Australia with Colvy?', a: `Yes, from your business’s Australian number. Inbox plans include 3,000 texts a month, and prepaid credits from A$0.15 a text cover more. Colvy shows the message parts and the cost before you send, and leaves out anyone who replied STOP. ${STARTER}` },
+    { q: 'Can I test a campaign before it goes out?', a: 'Yes. Send a test to up to five email addresses or Australian mobiles, yours or a teammate’s, and see that each one arrived. Test texts start with [TEST] and test emails with [Test].' },
+  ],
+  'solutions/marketing': [
+    { q: 'Is Colvy an SMS marketing tool?', a: 'Yes, and an email one. Colvy sends SMS and email campaigns from the same place you talk to customers, so replies become conversations your team can answer, and reports show clicks, replies, orders and revenue.' },
+    { q: 'Does Colvy handle consent and opt-outs?', a: 'People who replied STOP, unsubscribed, bounced or marked an email as spam are left out of every campaign and follow-up automatically, and campaign emails link to unsubscribe and preference pages. You’re still responsible for having consent to message people, as Australia’s Spam Act requires.' },
+    { q: 'Can I follow up people who didn’t respond?', a: 'Yes. From a campaign’s report, text again the people who didn’t click, resend an email to people who didn’t open with a new subject line, or follow up people who clicked but didn’t order. Opt-outs are never included.' },
+  ],
+
   // ── Channels ────────────────────────────────────────────────────────────────
   'channels/sms': [
     { q: 'Can I send and receive business SMS from an Australian number?', a: 'Yes. Colvy gives your business an Australian 04 mobile number, and customers text it like any other number. Their texts land in your shared inbox, your team replies from the web or the Colvy phone app, and the whole conversation stays on the customer’s record.' },

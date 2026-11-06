@@ -37,7 +37,7 @@ const structuredData = [
     telephone: COLVY_CONTACT.phoneE164,
     email: COLVY_CONTACT.email,
     areaServed: 'AU',
-    knowsAbout: ['Shared inbox software', 'Customer messaging', 'Business SMS', 'Business phone systems', 'AI-powered CRM', 'CRM for small business', 'Enterprise customer communication', 'Google review management', 'Conversational commerce', 'AI customer service agents', 'WooCommerce', 'Shopify'],
+    knowsAbout: ['Shared inbox software', 'Customer messaging', 'Business SMS', 'SMS marketing', 'Email marketing', 'Business phone systems', 'Call transcription', 'AI-powered CRM', 'CRM for small business', 'Enterprise customer communication', 'Google review management', 'Conversational commerce', 'AI customer service agents', 'WooCommerce', 'Shopify'],
     contactPoint: [
       {
         '@type': 'ContactPoint',
@@ -76,7 +76,7 @@ const structuredData = [
     operatingSystem: 'Web, iOS, Android',
     url: SITE_URL,
     description:
-      'One shared inbox across Instagram, Messenger, SMS, email, live chat and phone, with a CRM, WooCommerce and Shopify orders, payments, AI agents and customer feedback boards.',
+      'One shared inbox across Instagram, Messenger, SMS, email, live chat and phone, with a CRM, WooCommerce and Shopify orders, payments, five AI agents, email and SMS campaigns and customer feedback boards.',
     // Mirrors the plans on /pricing (AUD per month).
     offers: {
       '@type': 'AggregateOffer', priceCurrency: 'AUD', lowPrice: '0', highPrice: '259', offerCount: 4,
@@ -96,13 +96,17 @@ const structuredData = [
       'Built-in CRM with each customer’s orders, bookings and messages',
       'WooCommerce and Shopify orders, products and abandoned carts in the inbox',
       'Stripe payment links in any conversation',
-      'Five AI agents for support, bookings, sales follow-ups, order updates and reviews',
+      'Five AI agents for support, bookings, sales follow-ups, order updates and reviews, each with a name and face the business chooses',
       'Online booking with deposits and SMS reminders',
-      'Broadcasts, review requests and back-in-stock texts',
+      'Email and SMS campaigns with an AI campaign builder, a drag-and-drop email designer, smart audiences and reports in orders and revenue',
+      'Call recording with AI summaries, suggested to-dos and transcripts',
+      'Delivery scheduling from the conversation, on a shared team calendar',
+      'Review requests and back-in-stock texts',
+      'Refund permissions and an optional refund PIN',
       'Help centre, ideas board, public roadmap and changelog',
       'iPhone and Android apps',
     ],
-    keywords: 'shared inbox, omnichannel inbox, AI-powered CRM, business phone and SMS, small business CRM, enterprise shared inbox, business SMS Australia, business phone number Australia, Instagram DM inbox, Google review management, live chat, help desk, AI agents for customer service, selling chat, Podium alternative',
+    keywords: 'shared inbox, omnichannel inbox, AI-powered CRM, business phone and SMS, small business CRM, enterprise shared inbox, business SMS Australia, bulk SMS Australia, SMS marketing, email marketing, email and SMS campaigns, business phone number Australia, call transcription, Instagram DM inbox, Google review management, live chat, help desk, help centre, AI agents for customer service, selling chat, WooCommerce inbox, Shopify inbox, Podium alternative, Gorgias alternative, Zendesk alternative',
     image: `${SITE_URL}/og.png`,
     sameAs: SAME_AS,
     publisher: { '@id': ORG_ID },

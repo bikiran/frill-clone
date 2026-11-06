@@ -104,6 +104,86 @@ export const TOPIC_PAGES: Record<string, TopicPage> = {
     ],
   },
 
+  'email-sms-marketing': {
+    slug: 'email-sms-marketing',
+    accent: '#7c5cff',
+    name: 'Email & SMS marketing',
+    metaTitle: 'Email & SMS Marketing Software for Australian Businesses | Colvy',
+    metaDescription: 'Email and SMS campaigns from your shared inbox: build them with Colvy AI, text from your Australian number, and see who clicked, replied and ordered. Start free.',
+    eyebrow: 'Email & SMS campaigns',
+    h1: 'Email and SMS campaigns that people reply to.',
+    sub: 'Send a sale, a new arrival or a “we miss you” to the right customers by text, email or both. Colvy AI can build it for you, every reply lands in your shared inbox, and the report shows who clicked, replied and ordered.',
+    primaryCta: 'Send your first campaign',
+    chat: {
+      channel: 'SMS campaign', who: 'Josh',
+      lines: [
+        { from: 'us', text: 'Weekend sale at Reef & Fin 🐠 20% off all aquarium plants, Saturday and Sunday only: reefandfin.com.au/s/plants' },
+        { from: 'them', text: 'Do you have java fern in stock?' },
+        { from: 'us', text: 'We do! 12 left. Want me to put two aside for pickup?' },
+        { from: 'them', text: 'Yes please, I’ll grab them Saturday 🙌' },
+      ],
+      chips: [{ text: 'Clicked' }, { text: 'Ordered $64', tone: '#2563eb' }],
+    },
+    intro: {
+      title: 'What are email and SMS campaigns?',
+      paragraphs: [
+        'An email or SMS campaign (also called a broadcast, bulk SMS or an email newsletter) is one message sent to many customers at once: a sale, a new arrival, an event, a reminder or a win-back for people who haven’t ordered in a while.',
+        'Most tools stop at “sent”. In Colvy a campaign goes out from the same place you talk to customers, so a reply becomes a normal conversation your team can answer, and the report follows each person from delivered to clicked to ordered.',
+      ],
+    },
+    sections: [
+      {
+        eyebrow: 'Build it', title: 'From an idea to a ready-to-send campaign',
+        sub: 'Describe it in a sentence, or design every block yourself.',
+        items: [
+          { icon: 'spark', title: 'Build with Colvy AI', body: 'Describe the campaign, or start from an idea like a weekend sale, new stock or VIP early access. Colvy AI suggests who should get it (with a live count), writes the text and the email, picks real products from your store and suggests a day and time. You review the draft before anything is sent.' },
+          { icon: 'form', title: 'An email designer with a real phone preview', body: 'Drag in text, images, buttons, two columns, video, products, coupons and social links. See it in a realistic phone, on desktop and in the inbox list, with checks for the subject, spammy wording, missing alt text and broken links.' },
+          { icon: 'phone', title: 'Texts from your own number', body: 'SMS campaigns go from your business’s Australian number, shown in a phone preview with the message parts and the cost before you send, and tracked links so you can see who clicked.' },
+          { icon: 'send', title: 'Test it first', body: 'Send a test to up to five email addresses or mobile numbers, yours or a teammate’s, and see that each one arrived.' },
+        ],
+      },
+      {
+        eyebrow: 'Measure it', title: 'Reports in orders and revenue, not just opens',
+        items: [
+          { icon: 'user', title: 'Who did what', body: 'Every person the campaign went to: delivered, opened, clicked (and which link), replied, unsubscribed or replied STOP, and ordered (and how much).', href: '/product/broadcasts' },
+          { icon: 'bell', title: 'One-tap follow-ups', body: 'Text again the people who didn’t click, resend an email to people who didn’t open with a new subject line, or follow up people who clicked but didn’t order.' },
+          { icon: 'chart', title: 'Campaign Insights', body: 'Every email and SMS campaign side by side: click rate, orders, revenue, cost and return on SMS spend, with the best performers picked out.', href: '/product/insights' },
+          { icon: 'chat', title: 'Replies in the shared inbox', body: 'A reply to a campaign opens a normal conversation in the shared inbox, beside the customer’s orders and history, so a broadcast can turn into a sale.', href: '/product/inbox' },
+        ],
+      },
+      {
+        eyebrow: 'Stay on the right side of the rules', title: 'Consent built into every send',
+        items: [
+          { icon: 'check', title: 'Opt-outs respected', body: 'People who replied STOP, unsubscribed, bounced or marked an email as spam are left out of every campaign and every follow-up, test sends included.' },
+          { icon: 'link', title: 'Unsubscribe and preference pages', body: 'Campaign emails link to an unsubscribe page and a preferences page, so customers can choose what they hear about.' },
+          { icon: 'tag', title: 'Audiences that make sense', body: 'Everyone subscribed, a saved segment, people who bought a product or category, customers who haven’t ordered in a while, shoppers at one outlet, tags, people who clicked an earlier campaign, or abandoned checkouts.' },
+        ],
+      },
+    ],
+    stepsTitle: 'From idea to orders in three steps',
+    steps: [
+      { title: 'Describe it', body: 'Tell Colvy AI what you want to promote, or start from an idea or a template. Get the audience, the copy and a suggested time.' },
+      { title: 'Check and send', body: 'Tweak the email in the designer or the text in the phone preview, send yourself a test, then send now or schedule it.' },
+      { title: 'Answer and measure', body: 'Replies land in the shared inbox. The report shows who clicked, replied and ordered, and lets you follow up the rest.' },
+    ],
+    faqs: [
+      { q: 'What is the difference between an SMS campaign and a broadcast?', a: 'They’re the same thing: one message sent to many customers at once. Colvy calls them campaigns, and they can go by SMS, by email or both.' },
+      { q: 'Can I send bulk SMS in Australia from my business number?', a: 'Yes. SMS campaigns go from your business’s Australian number in Colvy, and replies come back to the same shared inbox as the rest of your texts. Inbox plans include 3,000 texts a month, with prepaid credits for more.' },
+      { q: 'Can Colvy write my campaign for me?', a: 'Yes. Describe it in a sentence and Colvy AI suggests the audience (with a live count), writes the text and the email, picks real products from your store and suggests a time to send. It creates a draft for you to review; nothing is sent until you send it.' },
+      { q: 'How do I know if a campaign worked?', a: 'Each campaign’s report lists everyone it went to and what they did: opened, clicked, replied, unsubscribed or ordered, with revenue from the campaign’s links. Campaign Insights compares every campaign by click rate, orders, revenue and return on SMS spend.' },
+      { q: 'How are opt-outs handled?', a: 'People who replied STOP, unsubscribed, bounced or marked an email as spam are left out of every campaign and follow-up automatically. Campaign emails link to unsubscribe and preference pages.' },
+      { q: 'Does it work with WooCommerce and Shopify?', a: 'Yes. Campaigns can feature real products from your store, and orders made through a campaign’s links are counted in its report, so you can see the revenue each campaign brought in.' },
+      { q: 'How much does it cost?', a: `Email and SMS campaigns are part of Colvy’s Inbox and Everything plans. The Inbox plan includes 3,000 texts a month; extra texts are prepaid credits from A$0.15 each. ${START}` },
+    ],
+    cta: { title: 'Send a campaign people actually answer.', sub: 'Describe it to Colvy AI, check it in the phone preview, and answer every reply from one inbox.', secondary: { label: 'See broadcasts', href: '/product/broadcasts' } },
+    related: [
+      { label: 'Bulk SMS & email broadcasts', href: '/product/broadcasts' },
+      { label: 'Business SMS in Australia', href: '/channels/sms' },
+      { label: 'SMS marketing and consent in Australia', href: '/blog/sms-marketing-consent-australia' },
+      { label: 'Abandoned cart texts: what to send', href: '/blog/abandoned-cart-sms-woocommerce-shopify' },
+    ],
+  },
+
   'whatsapp-shared-inbox': {
     slug: 'whatsapp-shared-inbox',
     accent: '#16a34a',

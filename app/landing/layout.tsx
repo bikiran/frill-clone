@@ -9,7 +9,7 @@ import { pageMeta } from '@/lib/seo'
 export const metadata: Metadata = pageMeta({
   title: 'Colvy | Shared Inbox, Business Phone & SMS, AI-Powered CRM',
   description:
-    'One shared inbox for calls, SMS, Instagram, Messenger, email and live chat, with a business phone system, an AI-powered CRM and AI agents. For teams of every size, up to enterprise. Start free.',
+    'One shared inbox for calls, SMS, Instagram, Messenger, email and live chat, with a business phone, an AI-powered CRM, five AI agents and email and SMS campaigns. For teams of every size. Start free.',
   path: '',
   absolute: true,
 })
