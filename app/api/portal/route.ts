@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from 'next/server'
 import { checkBurst, callerKey } from '@/lib/rate-limit'
 import { internalHeaders } from '@/lib/internal-call'
 import { hidesPoweredBy } from '@/lib/branding'
+import { accountCodeEmailHtml } from '@/lib/booking-email'
 import { sendCustomerEmail } from '@/lib/customer-email'
 import { resolveSmsSender } from '@/lib/sms-provider'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
@@ -124,7 +125,7 @@ export async function POST(req: NextRequest) {
         sent = await sendCustomerEmail(db, pc.company, {
           to: contact.email, subject: `${code} is your ${pc.company.name} sign-in code`,
           text: `Your code to sign in to your account with ${pc.company.name}: ${code}\n\nIt expires in ${mins} minutes. If you didn't ask for it, you can ignore this email.`,
-          html: codeEmail(pc.company.name, code, mins, pc.company.accent_color),
+          html: accountCodeEmailHtml({ business: pc.company.name, logoUrl: pc.company.logo_url || null, accent: pc.company.accent_color || null, hideBadge: await hidesPoweredBy(db, pc.company.id, pc.company).catch(() => false), code, mins }),
         }).catch(() => false)
       }
       if (!sent) return json({ error: 'We couldn’t send the code just now. Please try again in a minute.' }, 502)
@@ -223,15 +224,3 @@ export async function POST(req: NextRequest) {
   }
 }
 
-function codeEmail(business: string, code: string, mins: number, accent?: string | null) {
-  const c = accent && /^#[0-9a-f]{6}$/i.test(accent) ? accent : '#ff7a6b'
-  const esc = (s: string) => s.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]!))
-  return `<!doctype html><html><body style="margin:0;padding:24px;background:#f6f6f7;font-family:Inter,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#111">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
-<table role="presentation" width="100%" style="max-width:460px;background:#fff;border-radius:20px;padding:32px 28px" cellpadding="0" cellspacing="0"><tr><td>
-<p style="margin:0 0 6px;font-size:14px;color:#6b7280">${esc(business)}</p>
-<h1 style="margin:0 0 18px;font-size:22px;line-height:1.3">Your sign-in code</h1>
-<div style="font-size:34px;font-weight:800;letter-spacing:8px;padding:16px 0;text-align:center;border-radius:14px;background:${c}14;color:#111">${esc(code)}</div>
-<p style="margin:18px 0 0;font-size:14px;line-height:1.6;color:#4b5563">Enter it on your account page. It expires in ${mins} minutes. If you didn’t ask for it, you can ignore this email.</p>
-</td></tr></table></td></tr></table></body></html>`
-}
