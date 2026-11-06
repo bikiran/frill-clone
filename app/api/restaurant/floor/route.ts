@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
     // What's there now (only this restaurant's rows can be updated).
     const [ea, et, ec] = await Promise.all([
       db.from('restaurant_areas').select('id').eq('company_id', companyId).eq('active', true),
-      db.from('restaurant_tables').select('id').eq('company_id', companyId).eq('active', true),
+      db.from('restaurant_tables').select('id, label').eq('company_id', companyId).eq('active', true),
       db.from('restaurant_table_combos').select('id').eq('company_id', companyId).eq('active', true),
     ])
     const err = ea.error || et.error || ec.error
@@ -103,24 +103,34 @@ export async function POST(req: NextRequest) {
       const { data: lost } = await db.from('reservation_tables').update({ active: false }).in('table_id', goneTables).eq('company_id', companyId).eq('active', true).select('booking_id')
       lostTables = new Set((lost || []).map((r: any) => r.booking_id)).size
     }
-    if (keepIds.size) {
-      for (const id of keepIds) await db.from('restaurant_tables').update({ label: `~${id.slice(0, 18)}` }).eq('id', id).eq('company_id', companyId)
-    }
+    // "~3-1a2b3c4d": unique per table (labels are 20 characters at most). If
+    // anything below fails, the kept tables get their old names back.
+    const oldLabel = new Map<string, string>((et.data || []).map((r: any) => [r.id, r.label]))
     const tableId = new Map<string, string>()
-    for (const t of tables) {
-      const row = {
-        area_id: t.area ? areaId.get(t.area) || null : null, label: t.label, min_party: t.min_party, max_party: t.max_party,
-        x: t.x, y: t.y, w: t.w, h: t.h, shape: t.shape, rotation: t.rotation, combinable: t.combinable, online: t.online, sort: t.sort, updated_at: now,
-      }
-      if (t.id && keepIds.has(t.id)) {
-        const { error } = await db.from('restaurant_tables').update(row).eq('id', t.id).eq('company_id', companyId)
+    try {
+      let n = 0
+      for (const id of keepIds) {
+        const { error } = await db.from('restaurant_tables').update({ label: `~${n++}-${id.replace(/-/g, '').slice(-8)}` }).eq('id', id).eq('company_id', companyId)
         if (error) throw error
-        tableId.set(t.key, t.id)
-      } else {
-        const { data, error } = await db.from('restaurant_tables').insert({ company_id: companyId, ...row }).select('id').maybeSingle()
-        if (error) throw error
-        tableId.set(t.key, data.id)
       }
+      for (const t of tables) {
+        const row = {
+          area_id: t.area ? areaId.get(t.area) || null : null, label: t.label, min_party: t.min_party, max_party: t.max_party,
+          x: t.x, y: t.y, w: t.w, h: t.h, shape: t.shape, rotation: t.rotation, combinable: t.combinable, online: t.online, sort: t.sort, updated_at: now,
+        }
+        if (t.id && keepIds.has(t.id)) {
+          const { error } = await db.from('restaurant_tables').update(row).eq('id', t.id).eq('company_id', companyId)
+          if (error) throw error
+          tableId.set(t.key, t.id)
+        } else {
+          const { data, error } = await db.from('restaurant_tables').insert({ company_id: companyId, ...row }).select('id').maybeSingle()
+          if (error) throw error
+          tableId.set(t.key, data.id)
+        }
+      }
+    } catch (e) {
+      for (const id of keepIds) { try { await db.from('restaurant_tables').update({ label: oldLabel.get(id) }).eq('id', id).eq('company_id', companyId).like('label', '~%') } catch {} }
+      throw e
     }
 
     // 3. Combos, pointing at the real table ids.

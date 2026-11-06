@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { AdminPage, Panel, Toggle } from '@/components/ui/AdminKit'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import WeekHoursEditor from '@/components/booking/admin/WeekHoursEditor'
@@ -14,6 +15,10 @@ import { api, useResCompany, useToast, Toast, SetupNote, Icon, JB_CSS, RS_CSS, S
 const INTERVALS = [10, 15, 20, 30, 45, 60]
 const NOTICE = [[0, 'No notice'], [30, '30 minutes'], [60, '1 hour'], [120, '2 hours'], [240, '4 hours'], [1440, 'A day'], [2880, 'Two days']] as const
 const AHEAD = [[14, '2 weeks'], [30, 'A month'], [60, '2 months'], [90, '3 months'], [180, '6 months'], [365, 'A year']] as const
+
+const AUTO_NO_SHOW = [[0, 'Off'], [15, '15 minutes'], [20, '20 minutes'], [30, '30 minutes'], [45, '45 minutes'], [60, 'An hour']] as const
+const DAYS: [string, string][] = [['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'], ['fri', 'Fri'], ['sat', 'Sat'], ['sun', 'Sun']]
+const dollars = (cents: number) => (cents / 100).toFixed(cents % 100 ? 2 : 0)
 
 const num = (v: any, d = 0) => { const n = Math.round(Number(String(v).replace(/[^0-9.]/g, ''))); return Number.isFinite(n) ? n : d }
 
@@ -144,6 +149,17 @@ export default function ReservationSettingsPage() {
           </div>
         </Panel>
 
+        <Panel title="Tables" sub="Seat guests at real tables: Colvy gives each booking the smallest free table that fits (or tables pushed together), and online booking only offers times with a table.">
+          <div className="js-row">
+            <div><b>Seat by table</b><span>{d.tables === null ? 'Needs one database update first (see the floor plan).' : d.tables ? `${d.tables} ${d.tables === 1 ? 'table' : 'tables'} on your floor plan. Covers still apply too.` : 'Add your tables on the floor plan first.'}</span></div>
+            <Toggle on={!!s.use_tables} onChange={v => set({ use_tables: v })} label="Seat by table" disabled={!canManage} />
+          </div>
+          <div className="js-row">
+            <div><b>Floor plan</b><span>Your tables, where they sit, which can be pushed together, and the room live.</span></div>
+            <Link className="ak-btn sm" href="/admin/reservations/floor?edit=1">{d.tables ? 'Edit floor plan' : 'Set up tables'}</Link>
+          </div>
+        </Panel>
+
         <Panel title="Dining time" sub="How long a table is kept, by party size. Bigger groups usually stay longer.">
           <div className="rss-durs">
             {durations.map((x, i) => (
@@ -217,6 +233,60 @@ export default function ReservationSettingsPage() {
           </div>
         </Panel>
 
+        <Panel title="Deposits" sub="Ask for a deposit when guests book online, paid by card on your Stripe account. The table is held for 30 minutes while they pay.">
+          {!d.stripeReady && <div className="ak-note warn" style={{ marginBottom: 10 }}><span>Connect Stripe (Settings, Payments) to take deposits. Until then bookings go through without one.</span></div>}
+          <div className="js-row">
+            <div><b>Deposit</b><span>{s.deposit.mode === 'off' ? 'No deposit for online bookings.' : s.deposit.mode === 'per_person' ? 'An amount for each guest.' : 'One amount for the booking.'}</span></div>
+            <select className="ak-select rss-sel" value={s.deposit.mode} onChange={e => set({ deposit: { ...s.deposit, mode: e.target.value } })} disabled={!canManage} aria-label="Deposit">
+              <option value="off">Off</option><option value="per_person">Per guest</option><option value="per_booking">Per booking</option>
+            </select>
+          </div>
+          {(s.deposit.mode !== 'off' || s.no_show.deposit_after > 0) && (
+            <div className="js-row">
+              <div><b>Amount</b><span>{s.deposit.mode === 'per_booking' ? 'For the whole table.' : 'For each guest.'}</span></div>
+              <div className="rss-range"><span>$</span><input className="ak-field rss-n" value={dollars(s.deposit.cents)} onChange={e => set({ deposit: { ...s.deposit, cents: Math.round(Number(e.target.value.replace(/[^0-9.]/g, '')) * 100) || 0 } })} inputMode="decimal" disabled={!canManage} aria-label="Deposit amount" /></div>
+            </div>
+          )}
+          {s.deposit.mode !== 'off' && <>
+            <div className="js-row">
+              <div><b>For parties of</b><span>Smaller tables book without one.</span></div>
+              <div className="rss-range"><input className="ak-field rss-n" value={s.deposit.min_party} onChange={e => set({ deposit: { ...s.deposit, min_party: num(e.target.value, 1) } })} inputMode="numeric" disabled={!canManage} aria-label="Smallest party with a deposit" /><span>or more</span></div>
+            </div>
+            <div className="js-row">
+              <div><b>On</b><span>{s.deposit.days.length ? 'Only on these days.' : 'Every day.'}</span></div>
+              <div className="rs-chips">
+                {DAYS.map(([k, l]) => {
+                  const on = s.deposit.days.includes(k)
+                  return <button key={k} type="button" className={`rs-chip${on ? ' on' : ''}`} disabled={!canManage} aria-pressed={on} onClick={() => set({ deposit: { ...s.deposit, days: on ? s.deposit.days.filter((x: string) => x !== k) : [...s.deposit.days, k] } })}>{l}</button>
+                })}
+              </div>
+            </div>
+          </>}
+          <p className="ak-hint" style={{ margin: '6px 0 0' }}>{s.allow_changes ? `Guests who cancel at least ${s.cancel_hours} hours ahead get the deposit back automatically; after that it’s kept.` : 'Guests can’t cancel online, so you decide on refunds when they call.'} A no-show keeps it. You can refund any deposit when you cancel a booking.</p>
+        </Panel>
+
+        <Panel title="No-shows" sub="For tables nobody turns up for.">
+          <div className="js-row">
+            <div><b>Mark as a no-show after</b><span>If a table isn’t seated this long after its time, Colvy marks it and frees the table. You can undo it on the day.</span></div>
+            <select className="ak-select rss-sel" value={s.no_show.auto_mins} onChange={e => set({ no_show: { ...s.no_show, auto_mins: Number(e.target.value) } })} disabled={!canManage} aria-label="Mark as a no-show after">
+              {AUTO_NO_SHOW.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              {!AUTO_NO_SHOW.some(([v]) => v === s.no_show.auto_mins) && <option value={s.no_show.auto_mins}>{s.no_show.auto_mins} minutes</option>}
+            </select>
+          </div>
+          <div className="js-row">
+            <div><b>Ask for a deposit after</b><span>Guests with this many no-shows pay a deposit to book online{s.deposit.mode === 'off' ? ` (${s.deposit.cents ? `$${dollars(s.deposit.cents)} a guest` : 'set the amount above'})` : ''}, even when deposits are otherwise off.</span></div>
+            <select className="ak-select rss-sel" value={s.no_show.deposit_after} onChange={e => set({ no_show: { ...s.no_show, deposit_after: Number(e.target.value) } })} disabled={!canManage} aria-label="Ask for a deposit after">
+              <option value={0}>Never</option>{[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n} no-show{n === 1 ? '' : 's'}</option>)}
+            </select>
+          </div>
+          <div className="js-row">
+            <div><b>Stop online booking after</b><span>Guests with this many no-shows are asked to call you instead. Matched by mobile or email.</span></div>
+            <select className="ak-select rss-sel" value={s.no_show.block_after} onChange={e => set({ no_show: { ...s.no_show, block_after: Number(e.target.value) } })} disabled={!canManage} aria-label="Stop online booking after">
+              <option value={0}>Never</option>{[2, 3, 4, 5].map(n => <option key={n} value={n}>{n} no-shows</option>)}
+            </select>
+          </div>
+        </Panel>
+
         <Panel title="Your page’s words">
           <div className="rss-text">
             <div><label className="ak-label" htmlFor="rss-title">Heading</label><input id="rss-title" className="ak-field" value={s.page_title} onChange={e => set({ page_title: e.target.value })} maxLength={120} placeholder={`Book a table at ${d.name || 'your restaurant'}`} disabled={!canManage} /></div>
@@ -244,7 +314,7 @@ const PAGE_CSS = `
 .js-row>div:first-child span{font-size:13px;color:var(--mut)}
 @media(max-width:560px){.js-row{flex-wrap:wrap}}
 .rss-fs{border:none;margin:0;padding:0;min-width:0}
-.rss-sel{width:auto;min-width:160px}
+.rss-sel,.js-row .rss-sel{width:auto;min-width:160px;flex:0 0 auto}
 .rss-n{width:76px!important;text-align:center;font-variant-numeric:tabular-nums}
 .rss-range{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--mut)}
 .rss-link{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 14px;border-radius:16px;background:var(--f)}

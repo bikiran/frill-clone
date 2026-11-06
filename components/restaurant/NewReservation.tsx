@@ -8,13 +8,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { isTime, zonedToUtc } from '@/lib/booking-time'
-import { apiRaw, Dialog, PartyStepper, Icon, addDays, dayLabel, dayShort, dayNum, timeOf, SEATING, RS_CSS, type Reservation } from '@/components/restaurant/shared'
+import { apiRaw, Dialog, PartyStepper, Icon, TablePicker, addDays, dayLabel, dayShort, dayNum, timeOf, SEATING, RS_CSS, type Reservation } from '@/components/restaurant/shared'
 
-type Slot = { start: string; period: string; ok: boolean; reason: 'full' | 'pace' | 'notice' | 'far' | null; coversLeft: number | null }
+type Slot = { start: string; period: string; ok: boolean; reason: 'full' | 'pace' | 'no_table' | 'notice' | 'far' | null; coversLeft: number | null }
 type Contact = { id: string; name: string | null; phone: string | null; email: string | null }
 
 const OCCASIONS = ['Birthday', 'Anniversary', 'Date night', 'Business', 'Celebration']
-const REASON: Record<string, string> = { full: 'Full', pace: 'Busy', notice: 'Soon', far: 'Far' }
+const REASON: Record<string, string> = { full: 'Full', pace: 'Busy', no_table: 'No table', notice: 'Soon', far: 'Far' }
 
 function useContactSearch(companyId: string, term: string) {
   const [hits, setHits] = useState<Contact[]>([])
@@ -32,9 +32,9 @@ function useContactSearch(companyId: string, term: string) {
   return hits
 }
 
-export default function NewReservation({ companyId, tz, today, date: initialDate, seatingOptions, onClose, onCreated }: {
-  companyId: string; tz: string; today: string; date: string; seatingOptions: string[]
-  onClose: () => void; onCreated: (r: Reservation) => void
+export default function NewReservation({ companyId, tz, today, date: initialDate, seatingOptions, useTables, onClose, onCreated }: {
+  companyId: string; tz: string; today: string; date: string; seatingOptions: string[]; useTables?: boolean
+  onClose: () => void; onCreated: (r: Reservation, noTable?: boolean) => void
 }) {
   const [party, setParty] = useState(2)
   const [date, setDate] = useState(initialDate < today ? today : initialDate)
@@ -50,6 +50,7 @@ export default function NewReservation({ companyId, tz, today, date: initialDate
   const [notes, setNotes] = useState('')
   const [internal, setInternal] = useState('')
   const [notify, setNotify] = useState(true)
+  const [tables, setTables] = useState<string[] | null>(null)   // null: Colvy chooses
   const [over, setOver] = useState<string>('')   // the "it's full" warning, once shown
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -69,7 +70,9 @@ export default function NewReservation({ companyId, tz, today, date: initialDate
     return () => clearTimeout(t)
   }, [companyId, date, party])
   // A different party or day may change whether the chosen time fits.
-  useEffect(() => { setOver('') }, [party, date, start, otherTime])
+  useEffect(() => { setOver('') }, [party, date, start, otherTime, tables])
+  // A new time or party: back to "Colvy chooses" (a picked table may not be free then).
+  useEffect(() => { setTables(null) }, [party, date, start, otherTime])
 
   const chosen = useMemo(() => {
     if (otherTime && isTime(otherTime)) return new Date(zonedToUtc(date, otherTime, tz)).toISOString()
@@ -92,7 +95,8 @@ export default function NewReservation({ companyId, tz, today, date: initialDate
     const name = (contact?.name || guest.name).trim()
     if (!chosen) { setErr('Pick a time.'); return }
     if (!name) { setErr('Add the guest’s name.'); return }
-    if (!force && chosenSlot && !chosenSlot.ok && (chosenSlot.reason === 'full' || chosenSlot.reason === 'pace')) {
+    if (!force && chosenSlot && !chosenSlot.ok && (chosenSlot.reason === 'full' || chosenSlot.reason === 'pace' || (chosenSlot.reason === 'no_table' && !tables?.length))) {
+      if (chosenSlot.reason === 'no_table') { setOver('No table that fits is free then. Book it without a table and sort one out later?'); return }
       setOver(chosenSlot.reason === 'pace'
         ? 'Lots of guests are already arriving around then. Book anyway?'
         : `That time is full${chosenSlot.coversLeft != null ? ` (${Math.max(0, chosenSlot.coversLeft)} seats left)` : ''}. Book anyway?`)
@@ -105,9 +109,11 @@ export default function NewReservation({ companyId, tz, today, date: initialDate
           companyId, startsAt: chosen, party, name, contactId: contact?.id || null,
           phone: contact ? contact.phone : guest.phone, email: contact ? contact.email : guest.email,
           seating: seating || null, occasion, notes, internalNotes: internal, notify: canNotify && notify, force,
+          ...(tables && tables.length ? { tables } : {}),
         },
       })
-      if (r.ok) { onCreated(r.data.reservation); return }
+      if (r.ok) { onCreated(r.data.reservation, !!r.data.noTable); return }
+      if (r.status === 409 && r.data?.reason === 'table_busy') { setTables(null); setErr(r.data.error); return }
       if (r.status === 409 && r.data?.full && !force) { setOver(`${r.data.error} Book anyway?`); return }
       setErr(r.data?.error || 'Could not make the reservation.')
     } finally { setBusy(false) }
@@ -160,11 +166,11 @@ export default function NewReservation({ companyId, tz, today, date: initialDate
                   {p.slots.map(s => {
                     const on = !otherTime && start === s.start
                     return (
-                      <button key={s.start} type="button" className={`rs-slot${on ? ' on' : !s.ok && (s.reason === 'full' || s.reason === 'pace') ? ' off' : ''}`}
+                      <button key={s.start} type="button" className={`rs-slot${on ? ' on' : !s.ok && (s.reason === 'full' || s.reason === 'pace' || s.reason === 'no_table') ? ' off' : ''}`}
                         onClick={() => { setStart(s.start); setOtherTime('') }} aria-pressed={on}
                         aria-label={`${timeOf(s.start, tz)}${!s.ok && s.reason ? `, ${REASON[s.reason] || ''}` : ''}`}>
                         <b>{timeOf(s.start, tz)}</b>
-                        {!s.ok && (s.reason === 'full' || s.reason === 'pace') ? <small>{REASON[s.reason]}</small>
+                        {!s.ok && (s.reason === 'full' || s.reason === 'pace' || s.reason === 'no_table') ? <small>{REASON[s.reason]}</small>
                           : s.coversLeft != null && s.coversLeft < 10 ? <small>{s.coversLeft} left</small> : null}
                       </button>
                     )
@@ -179,6 +185,13 @@ export default function NewReservation({ companyId, tz, today, date: initialDate
           <input id="nr-other" type="time" className="ak-field" style={{ width: 130, height: 38 }} value={otherTime} onChange={e => setOtherTime(e.target.value)} />
         </div>
       </div>
+
+      {useTables && chosen && (
+        <div>
+          <span className="ak-label">Table</span>
+          <TablePicker companyId={companyId} at={chosen} party={party} value={tables} onChange={setTables} />
+        </div>
+      )}
 
       <div>
         <span className="ak-label">Guest</span>
@@ -260,21 +273,25 @@ export default function NewReservation({ companyId, tz, today, date: initialDate
 }
 
 /** Seat a party that's just walked in (now, for the usual time). */
-export function WalkIn({ companyId, onClose, onCreated }: { companyId: string; onClose: () => void; onCreated: (r: Reservation) => void }) {
+export function WalkIn({ companyId, useTables, onClose, onCreated }: { companyId: string; useTables?: boolean; onClose: () => void; onCreated: (r: Reservation) => void }) {
   const [party, setParty] = useState(2)
+  const [tables, setTables] = useState<string[] | null>(null)
+  // "Now", fixed when the dialog opens (the picker shows what's free now).
+  const [now] = useState(() => new Date(Math.round(Date.now() / 60_000) * 60_000).toISOString())
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [notes, setNotes] = useState('')
   const [over, setOver] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
-  useEffect(() => { setOver('') }, [party])
+  useEffect(() => { setOver('') }, [party, tables])
+  useEffect(() => { setTables(null) }, [party])
   const save = async (force = false) => {
     setErr(''); setBusy(true)
     try {
-      const r = await apiRaw('/api/reservations', { method: 'POST', json: { companyId, walkIn: true, party, name: name.trim() || 'Walk-in', phone, notes, force } })
+      const r = await apiRaw('/api/reservations', { method: 'POST', json: { companyId, walkIn: true, party, name: name.trim() || 'Walk-in', phone, notes, force, ...(tables && tables.length ? { tables } : {}) } })
       if (r.ok) { onCreated(r.data.reservation); return }
-      if (r.status === 409 && r.data?.full && !force) { setOver(`${r.data.error} Seat them anyway?`); return }
+      if (r.status === 409 && r.data?.full && !force && r.data?.reason !== 'table_busy') { setOver(`${r.data.error} Seat them anyway?`); return }
       setErr(r.data?.error || 'Could not seat the walk-in.')
     } finally { setBusy(false) }
   }
@@ -290,6 +307,12 @@ export function WalkIn({ companyId, onClose, onCreated }: { companyId: string; o
         <label className="ak-label" htmlFor="wi-party">Guests</label>
         <PartyStepper id="wi-party" value={party} onChange={setParty} />
       </div>
+      {useTables && (
+        <div>
+          <span className="ak-label">Table</span>
+          <TablePicker companyId={companyId} at={now} party={party} value={tables} onChange={setTables} />
+        </div>
+      )}
       <div className="rs-two">
         <input className="ak-field" value={name} onChange={e => setName(e.target.value)} placeholder="Name (optional)" aria-label="Name" maxLength={120} />
         <input className="ak-field" value={phone} onChange={e => setPhone(e.target.value)} placeholder="Mobile (optional)" aria-label="Mobile" inputMode="tel" maxLength={40} />

@@ -572,5 +572,9 @@ export function publicRestaurant(company: any, rs: RestaurantSettings, tz: strin
     partyMin: rs.party_min, partyMax: rs.party_max, largePartyNote: rs.large_party_note, maxDaysAhead: rs.max_days_ahead,
     requirePhone: rs.require_phone, requireEmail: rs.require_email, seating: rs.seating,
     hours: rs.hours, closed: rs.closed.map(c => c.date),
+    // A deposit, when the restaurant takes card payments (the page shows it before they book).
+    deposit: stripeReady(company) && rs.deposit.mode !== 'off' && rs.deposit.cents > 0
+      ? { mode: rs.deposit.mode, cents: rs.deposit.cents, minParty: rs.deposit.min_party, days: rs.deposit.days } : null,
+    allowChanges: rs.allow_changes, cancelHours: rs.cancel_hours,
   }
 }
