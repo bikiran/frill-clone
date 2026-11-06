@@ -1512,7 +1512,8 @@ export default function TasksPage() {
           onClick={() => { setSelectedId(null); setShowNew(false); setNewTaskSeed(null) }} />
         <div className={'tasks-detail' + ((selected || showNew) && !isNarrow ? ' open' : '')}>
           {(selected || showNew) && (
-            <div style={{ position: 'sticky', top: 0, zIndex: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 12px 12px 22px', borderBottom: '1px solid #f0f0f2', background: 'rgba(255,255,255,.92)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}>
+            <div style={{ position: 'sticky', top: 0, zIndex: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 12px 12px 22px', borderBottom: '1px solid #f0f0f2', background: 'rgba(255,255,255,.92)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}>
+              {/* z-index 4: above the description editor's toolbar (2), which scrolls up under this bar. */}
               <span style={{ fontSize: 14, fontWeight: 600, color: '#71717a' }}>{showNew ? (newTaskSeed ? 'Continue repeat' : 'New task') : 'Task details'}</span>
               <button className="tl-pill icon" onClick={() => { setSelectedId(null); setShowNew(false); setNewTaskSeed(null) }} title="Close" aria-label="Close"
                 style={{ background: 'transparent', width: 36, height: 36 }}>
@@ -1629,7 +1630,7 @@ function FilterRail({ team, assigneeFilter, setAssigneeFilter, priorityFilter, s
 }
 
 function TaskCard({ t, conv, selected, onClick, onToggle, onStatus, showStatusButtons, statusOf, selectMode, checked, onSelect, outlets, missed = 0, onClearMissed, later = 0 }: any) {
-  const pr = PRIORITY[(t.priority || 'normal') as keyof typeof PRIORITY]
+  const pr = (PRIORITY[t.priority as keyof typeof PRIORITY] || PRIORITY.normal)
   const due = parseTs(t.due_date)
   const overdue = due && startOfDay(due).getTime() < startOfDay(new Date()).getTime() && statusOf(t) !== 'done'
   const assignees = (Array.isArray(t.assignees) && t.assignees.length) ? t.assignees : (t.assigned_to ? [{ name: t.assigned_to }] : [])
@@ -1803,7 +1804,7 @@ function TaskCalendar({ tasks, statusOf, onSelect, onToggle, selectedId }: any) 
 
   // One task pill, shared by every scope's cells.
   const renderPill = (t: any) => {
-    const pr = PRIORITY[(t.priority || 'normal') as keyof typeof PRIORITY]
+    const pr = (PRIORITY[t.priority as keyof typeof PRIORITY] || PRIORITY.normal)
     const done = statusOf(t) === 'done'
     const sel = selectedId === t.id
     const cBg = t.color ? tint(t.color, 0.16) : pr.bg
@@ -1890,7 +1891,7 @@ function TaskCalendar({ tasks, statusOf, onSelect, onToggle, selectedId }: any) 
           <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)', margin: '0 0 8px' }}>No due date ({byDay.noDate.length})</p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {byDay.noDate.map((t: any) => {
-              const pr = PRIORITY[(t.priority || 'normal') as keyof typeof PRIORITY]
+              const pr = (PRIORITY[t.priority as keyof typeof PRIORITY] || PRIORITY.normal)
               const sel = selectedId === t.id
               return (
                 <button key={t.id} onClick={() => onSelect(t.id)} title={t.title || t.text}
@@ -1920,7 +1921,7 @@ function TaskCalendar({ tasks, statusOf, onSelect, onToggle, selectedId }: any) 
             <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
               {dayPopup.tasks.length === 0 && <p style={{ padding: 20, textAlign: 'center', fontSize: 13, color: 'var(--slate)' }}>No tasks on this day.</p>}
               {dayPopup.tasks.map((t: any) => {
-                const pr = PRIORITY[(t.priority || 'normal') as keyof typeof PRIORITY]
+                const pr = (PRIORITY[t.priority as keyof typeof PRIORITY] || PRIORITY.normal)
                 const done = statusOf(t) === 'done'
                 return (
                   <button key={t.id} onClick={() => { onSelect(t.id); setDayPopup(null) }}

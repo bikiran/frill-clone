@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server'
+import { NextRequest, after } from 'next/server'
 import { hidesPoweredBy } from '@/lib/branding'
 import { loadCompanyPublic, manageUrl } from '@/lib/booking'
 import { addDays, dateInTz, isDate } from '@/lib/booking-time'
@@ -102,6 +102,8 @@ export async function POST(req: NextRequest) {
       startMs, party: Number(body.party), name: body.name, phone: body.phone, email: body.email, notes: body.notes,
       seating: body.seating, occasion: body.occasion, source: 'page', byTeam: false, notify: true,
       marketingOptIn: body.marketing === true, origin: req.nextUrl.origin,
+      // The confirmation text and email, the team's alert and the calendar entry follow the reply.
+      later: job => after(job),
     })
     if (!res.ok) return json({ error: res.error, full: !!res.full, blocked: res.reason === 'blocked' }, res.status || 400)
     const b = res.booking

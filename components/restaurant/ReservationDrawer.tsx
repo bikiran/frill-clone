@@ -9,7 +9,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import { useRefundAccess, RefundPinField, RefundNotAllowed, isPinError } from '@/components/RefundPin'
 import {
-  apiRaw, Icon, PartyStepper, PeopleIcon, StateTag, TableChip, TablePicker, money, tablesText, addDays, dayLabel, dayShort, dayNum, timeOf, fmtDay, dayKeyIn, SEATING, SOURCE, RS_CSS, type Reservation,
+  apiRaw, Icon, PartyStepper, PeopleIcon, StateTag, TableChip, TablePicker, OccasionPick, money, tablesText, addDays, dayLabel, dayShort, dayNum, timeOf, fmtDay, dayKeyIn, SEATING, SOURCE, RS_CSS, type Reservation,
 } from '@/components/restaurant/shared'
 
 type Guest = { guest: { id: string; name: string; phone: string; email: string; profile: any; birthday: string | null }; stats: any; reservations: Reservation[] }
@@ -339,7 +339,7 @@ function EditForm({ companyId, res, seatingOptions, onBack, onSaved }: { company
           </div>
         </div>
       )}
-      <div><label className="ak-label" htmlFor="re-occ">Occasion</label><input id="re-occ" className="ak-field" value={f.occasion} onChange={e => setF({ ...f, occasion: e.target.value })} maxLength={80} /></div>
+      <div><span className="ak-label">Occasion</span><OccasionPick id="re-occ" value={f.occasion} onChange={v => setF({ ...f, occasion: v })} /></div>
       <div><label className="ak-label" htmlFor="re-notes">Guest’s requests</label><textarea id="re-notes" className="ak-field" style={{ minHeight: 70 }} value={f.notes} onChange={e => setF({ ...f, notes: e.target.value })} maxLength={1000} /></div>
       <div><label className="ak-label" htmlFor="re-int">Team notes</label><textarea id="re-int" className="ak-field" style={{ minHeight: 70 }} value={f.internalNotes} onChange={e => setF({ ...f, internalNotes: e.target.value })} maxLength={1000} /></div>
       {err && <div className="ak-note bad" role="alert">{err}</div>}
