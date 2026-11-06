@@ -10,32 +10,58 @@ import { toE164 } from '@/lib/phone'
 export const MISSED_CALL_TEXT_DEFAULT =
   "Sorry we missed your call! This is {business}. Reply here and we'll get back to you shortly."
 
+/** For a restaurant: most missed calls are someone wanting a table, so send the booking page. */
+export const MISSED_CALL_TEXT_RESTAURANT =
+  "Sorry we missed your call! This is {business}. Book a table here: {booking_link} or reply and we'll get back to you."
+
 /** Two text messages' worth. Longer costs more and reads like spam. */
 export const MISSED_CALL_TEXT_MAX = 320
 
-/** A caller gets at most one text in this many hours, however often they ring. */
+/** A caller gets at most one text in this many hours, however often they ring (the default). */
 export const MISSED_CALL_TEXT_HOURS = 12
+/** The choices for how long before the same caller can get another text. */
+export const MISSED_CALL_TEXT_HOUR_CHOICES = [2, 6, 12, 24, 48]
 
 export type MissedCallTextWhen = 'always' | 'after_hours'
-export type MissedCallTextSettings = { enabled: boolean; message: string; when: MissedCallTextWhen }
+export type MissedCallTextSettings = { enabled: boolean; message: string; when: MissedCallTextWhen; hours: number }
 
-/** The saved setting, with defaults filled in. Off unless switched on. */
-export function missedCallTextSettings(inboxSettings: any): MissedCallTextSettings {
-  const s = inboxSettings?.missed_call_text || {}
-  const message = typeof s.message === 'string' && s.message.trim() ? s.message.trim().slice(0, MISSED_CALL_TEXT_MAX) : MISSED_CALL_TEXT_DEFAULT
-  return { enabled: s.enabled === true, message, when: s.when === 'after_hours' ? 'after_hours' : 'always' }
+export const cleanMissedCallHours = (v: any) => {
+  const n = Math.round(Number(v))
+  return Number.isFinite(n) && n >= 1 && n <= 72 ? n : MISSED_CALL_TEXT_HOURS
 }
 
 /**
- * The text the caller receives: {business} becomes the business's name. Curly
- * quotes (phones type them) are straightened so the text stays one message.
+ * The saved setting, with defaults filled in. Off unless switched on. A
+ * restaurant that hasn't written its own text gets the one with its table
+ * booking link.
  */
-export function renderMissedCallText(message: string, businessName: string): string {
+export function missedCallTextSettings(inboxSettings: any, opts: { restaurant?: boolean } = {}): MissedCallTextSettings {
+  const s = inboxSettings?.missed_call_text || {}
+  const fallback = opts.restaurant ? MISSED_CALL_TEXT_RESTAURANT : MISSED_CALL_TEXT_DEFAULT
+  const saved = typeof s.message === 'string' ? s.message.trim() : ''
+  // The plain default (saved before restaurants existed) counts as "not written".
+  const message = saved && !(opts.restaurant && saved === MISSED_CALL_TEXT_DEFAULT) ? saved.slice(0, MISSED_CALL_TEXT_MAX) : fallback
+  return { enabled: s.enabled === true, message, when: s.when === 'after_hours' ? 'after_hours' : 'always', hours: cleanMissedCallHours(s.hours) }
+}
+
+/**
+ * The text the caller receives: {business} becomes the business's name and
+ * {booking_link} the booking page (the table booking page for a restaurant).
+ * With no page to link to, the link and the words leading into it ("Book a
+ * table here:") are left out. Curly quotes (phones type them) are straightened
+ * so the text stays one message.
+ */
+export function renderMissedCallText(message: string, businessName: string, bookingLink?: string | null): string {
   const name = String(businessName || '').trim() || 'our team'
-  return String(message || MISSED_CALL_TEXT_DEFAULT)
-    .replace(/\{\s*business\s*\}/gi, () => name)
-    .replace(/[‘’]/g, "'").replace(/[“”]/g, '"')
-    .trim()
+  let t = String(message || MISSED_CALL_TEXT_DEFAULT).replace(/\{\s*business\s*\}/gi, () => name)
+  const link = String(bookingLink || '').trim()
+  if (link) t = t.replace(/\{\s*booking_link\s*\}/gi, () => link)
+  else {
+    // "Book a table here: {booking_link} or reply…" → "Reply…"; otherwise just drop it.
+    t = t.replace(/(^|[.!?]\s+)[^.!?{]*?:\s*\{\s*booking_link\s*\}\s*(or\s+)?([a-z])?/gi, (_m, lead, _or, ch) => `${lead}${ch ? ch.toUpperCase() : ''}`)
+      .replace(/\s*\{\s*booking_link\s*\}/gi, '')
+  }
+  return t.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[ \t]{2,}/g, ' ').trim()
 }
 
 // ── Who can be texted ─────────────────────────────────────────────────────────

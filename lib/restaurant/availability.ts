@@ -8,6 +8,7 @@
 
 import { zonedToUtc, addDays, dayKeyOf } from '@/lib/booking-time'
 import { durationFor, periodName, type RestaurantSettings } from '@/lib/restaurant/settings'
+import { pickTable, type Floor, type TableHold } from '@/lib/restaurant/tables'
 
 const MIN = 60_000
 const DAY = 86_400_000
@@ -18,8 +19,8 @@ export type ResSlot = {
   end: number
   period: string
   ok: boolean
-  /** Why it can't be booked online: 'full' | 'pace' | 'notice' | 'far' */
-  reason?: 'full' | 'pace' | 'notice' | 'far'
+  /** Why it can't be booked online: 'full' | 'pace' | 'no_table' | 'notice' | 'far' */
+  reason?: 'full' | 'pace' | 'no_table' | 'notice' | 'far'
   /** Seats left at the busiest moment of this visit (Infinity when there's no limit). */
   coversLeft: number
 }
@@ -71,6 +72,8 @@ export function reservationSlots(opts: {
   live: LiveRes[]
   now: number
   excludeId?: string | null
+  /** Seating by table: a time also needs a free table (or combo) for the party. */
+  floor?: { floor: Floor; holds: TableHold[]; onlineOnly?: boolean } | null
 }): ResSlot[] {
   const { settings: s, tz, date, party, live, now } = opts
   if (s.closed.some(c => c.date === date)) return []
@@ -89,6 +92,7 @@ export function reservationSlots(opts: {
       seen.add(t)
       const f = fits(s, live, t, party, opts.excludeId)
       let ok = f.ok, reason: ResSlot['reason'] = f.reason
+      if (ok && opts.floor && !pickTable(opts.floor.floor, opts.floor.holds, { party, start: t, end: t + dur, onlineOnly: opts.floor.onlineOnly, excludeId: opts.excludeId })) { ok = false; reason = 'no_table' }
       if (ok && t < earliest) { ok = false; reason = 'notice' }
       if (ok && t > latest) { ok = false; reason = 'far' }
       out.push({ start: t, end: t + dur, period, ok, reason, coversLeft: f.coversLeft })
