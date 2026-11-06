@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { requireCompanyAccess } from '@/lib/company-access'
+import { guardRefund, isRefused, guardBody } from '@/lib/refund-guard'
+import { audit } from '@/lib/activity-logging'
 import { addDays, dateInTz, isDate, zonedToUtc } from '@/lib/booking-time'
 import {
   loadCompanyPublic, resolveBookingSettings, loadStaff, availability, cancelBooking, rescheduleBooking,
@@ -95,13 +97,14 @@ export async function GET(req: NextRequest) {
       // series_id comes with V388 — read without it until then.
       let insights = null
       try {
-        const cols = 'status, service_name, starts_at, ends_at, price_cents, refunded_cents, contact_id, customer_phone, customer_email'
+        const cols = 'status, service_id, service_name, starts_at, ends_at, price_cents, refunded_cents, contact_id, customer_phone, customer_email'
         const read = (c: string) => db.from('bookings').select(c).eq('company_id', companyId)
           .gte('starts_at', new Date(now - 90 * DAY).toISOString()).lt('starts_at', new Date(now + 120 * DAY).toISOString())
           .in('status', ['confirmed', 'completed', 'no_show']).order('starts_at', { ascending: false }).limit(5000)
         let r: any = await read(`${cols}, series_id`)
         if (r.error) r = await read(cols)
-        if (!r.error) insights = computeInsights(r.data || [], tz, now)
+        // Table reservations (lib/restaurant) have their own reports.
+        if (!r.error) insights = computeInsights((r.data || []).filter((b: any) => !tables.has(b.service_id)), tz, now)
       } catch {}
       return NextResponse.json({
         timezone: tz,
@@ -170,21 +173,40 @@ export async function PATCH(req: NextRequest) {
       if (!['confirmed', 'pending'].includes(b.status)) return NextResponse.json({ error: 'This booking is already cancelled or finished.' }, { status: 400 })
       let also = 0
       const events: InviteEvent[] = []
-      if (body.series && b.series_id) {
-        const { data: later } = await db.from('bookings').select('id, starts_at, ends_at, reschedule_count, service_name').eq('company_id', companyId).eq('series_id', b.series_id)
+      const { data: later } = body.series && b.series_id
+        ? await db.from('bookings').select('id, starts_at, ends_at, reschedule_count, service_name, payment_status').eq('company_id', companyId).eq('series_id', b.series_id)
           .in('status', ['confirmed', 'pending']).gt('starts_at', b.starts_at).neq('id', b.id).limit(100)
+        : { data: [] as any[] }
+      // Money going back is a refund like any other: the "Issue refunds"
+      // permission and the refund PIN (lib/refund-guard), checked before
+      // anything is cancelled so a refused PIN changes nothing.
+      const refund = !!body.refund && (b.payment_status === 'paid' || (later || []).some((l: any) => l.payment_status === 'paid'))
+      let guard: any = null
+      if (refund) {
+        guard = await guardRefund(req, db, companyId, { pin: body.refundPin })
+        if (isRefused(guard)) return NextResponse.json(guardBody(guard), { status: guard.status })
+      }
+      let refundedAll = 0
+      if (later?.length) {
         const company = await loadCompanyPublic(db, { id: companyId })
-        for (const l of later || []) {
-          const r = await cancelBooking(db, l.id, { by: 'business', reason: body.reason || null, refund: !!body.refund, notifyCustomer: false, origin })
+        for (const l of later) {
+          const r = await cancelBooking(db, l.id, { by: 'business', reason: body.reason || null, refund, notifyCustomer: false, origin })
           if (!r.ok) continue
           also++
+          refundedAll += r.refunded || 0
           // Their calendar drops these too (one CANCEL file with the email).
           events.push({ uid: l.id, title: `${l.service_name || b.service_name} — ${company?.name || ''}`, startMs: Date.parse(l.starts_at), endMs: Date.parse(l.ends_at), sequence: (l.reschedule_count || 0) + 1, cancelled: true })
         }
       }
-      const r = await cancelBooking(db, b.id, { by: 'business', reason: body.reason || null, refund: !!body.refund, notifyCustomer: body.notify !== false, origin, alsoCancelled: also, alsoCancelledEvents: events })
+      const r = await cancelBooking(db, b.id, { by: 'business', reason: body.reason || null, refund, notifyCustomer: body.notify !== false, origin, alsoCancelled: also, alsoCancelledEvents: events })
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 })
-      return NextResponse.json({ ok: true, refunded: r.refunded || 0, refundError: r.refundError || null, alsoCancelled: also })
+      refundedAll += r.refunded || 0
+      if (refundedAll > 0) {
+        const who = guard?.actor?.name
+        await audit(req, db, companyId, 'refund_issued', `${who ? `${who} refunded` : 'Refunded'} $${(refundedAll / 100).toFixed(2)} on cancelling ${b.service_name || 'a booking'} for ${b.customer_name || 'a customer'}${also ? ` (and ${also} later visit${also === 1 ? '' : 's'})` : ''}${guard?.pinRequired ? ' (PIN checked)' : ''}`,
+          { booking_id: b.id, amount_cents: refundedAll, conversation_id: b.conversation_id || null, by: guard?.actor?.userId || null })
+      }
+      return NextResponse.json({ ok: true, refunded: refundedAll, refundError: r.refundError || null, alsoCancelled: also })
     }
     if (body.action === 'repeat') {
       const r = await repeatBooking(db, b.id, { everyWeeks: Number(body.everyWeeks), count: Number(body.count), dryRun: !!body.dryRun, notifyCustomer: body.notify !== false, origin })
