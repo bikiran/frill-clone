@@ -161,8 +161,11 @@ const FC_CSS = `
 .fc-t.seated{background:color-mix(in srgb,#16a34a 22%,var(--card,#fff))}
 .fc-t.seated .fc-in small{color:color-mix(in srgb,#15803d 85%,var(--ink))}
 .fc-t.late{background:color-mix(in srgb,#ef4444 18%,var(--card,#fff))}
+.fc-t.here{background:color-mix(in srgb,#16a34a 12%,var(--card,#fff));box-shadow:0 0 0 2px #16a34a,0 0 0 6px color-mix(in srgb,#16a34a 16%,transparent);animation:fcHere 2s ease-in-out infinite}
+.fc-t.here .fc-in small{color:color-mix(in srgb,#15803d 85%,var(--ink))}
+@keyframes fcHere{50%{box-shadow:0 0 0 2px #16a34a,0 0 0 10px color-mix(in srgb,#16a34a 6%,transparent)}}
 .fc-t.late .fc-in small{color:color-mix(in srgb,#b91c1c 85%,var(--ink))}
 .fc-t.out{background:repeating-linear-gradient(135deg,var(--f) 0 6px,var(--card,#fff) 6px 12px);color:var(--soft)}
 .fc-t.dim{opacity:.38}
-@media (prefers-reduced-motion:reduce){.fc-t.ring{animation:none}}
+@media (prefers-reduced-motion:reduce){.fc-t.ring,.fc-t.here{animation:none}}
 `

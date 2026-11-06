@@ -8,7 +8,7 @@ import { readCache, writeCache } from '@/lib/client-cache'
 import NewReservation, { WalkIn } from '@/components/restaurant/NewReservation'
 import ReservationDrawer from '@/components/restaurant/ReservationDrawer'
 import {
-  api, apiRaw, useResCompany, useToast, Toast, SetupNote, Icon, JB_CSS, RS_CSS, StateTag, PeopleIcon, SEATING, TableChip, money, tablesText,
+  api, apiRaw, useResCompany, useToast, Toast, SetupNote, Icon, JB_CSS, RS_CSS, StateTag, HereTag, PeopleIcon, SEATING, TableChip, money, tablesText,
   addDays, dayLabel, timeOf, fmtDay, covers, type Reservation,
 } from '@/components/restaurant/shared'
 
@@ -98,6 +98,18 @@ export default function ReservationsPage() {
     if (!companyId || tab !== 'day' || !day || day.from !== day.today) return
     const id = setInterval(() => { if (document.visibilityState === 'visible') loadDay(companyId, day.from, true) }, 60_000)
     return () => clearInterval(id)
+  }, [companyId, tab, day?.from, day?.today]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A guest tapped "I'm here" (or another booking alert): today's sheet updates straight away.
+  useEffect(() => {
+    const on = (e: Event) => {
+      const n = (e as CustomEvent).detail || {}
+      if (n.type !== 'booking' || !companyId || tab !== 'day' || !day || day.from !== day.today) return
+      if (/^🙋/.test(String(n.message || ''))) setToast(String(n.message).replace(/^🙋\s*/, ''))
+      loadDay(companyId, day.from, true)
+    }
+    window.addEventListener('colvy:notification', on)
+    return () => window.removeEventListener('colvy:notification', on)
   }, [companyId, tab, day?.from, day?.today]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const changed = (r: Reservation) => {
@@ -276,7 +288,7 @@ function Row({ r, tz, isToday, onOpen, onQuick, useTables }: { r: Reservation; t
         </div>
       </div>
       <div className="rs-side">
-        <StateTag state={r.state} />
+        {live && r.arrivedAt && !r.seatedAt ? <HereTag at={r.arrivedAt} tz={tz} /> : <StateTag state={r.state} />}
         {live && isToday && !r.seatedAt && <button type="button" className="ak-btn sm" onClick={e => go(e, 'seat')} disabled={busy}>Seat</button>}
         {live && r.seatedAt && <button type="button" className="ak-btn sm" onClick={e => go(e, 'complete')} disabled={busy}>Finish</button>}
       </div>

@@ -1441,6 +1441,66 @@ const esc = (s: string) => String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp
 
 // ── Public view of one booking (manage page) ─────────────────────────────────
 
+// ── "I'm here" (guest check-in) ──────────────────────────────────────────────
+// From half an hour before an in-person booking until it ends, the guest's
+// booking page offers "I'm here". Tapping it alerts the team once (bell,
+// push, a note in the conversation) and, with V431, marks the booking.
+
+export const CHECK_IN_EARLY_MINS = 30
+
+export function checkInState(b: any, service: any, now = Date.now()) {
+  const start = Date.parse(b.starts_at), end = Date.parse(b.ends_at)
+  const inPerson = !['phone', 'video'].includes(String(service?.location_mode || ''))
+  const live = b.status === 'confirmed' && !b.seated_at && !b.completed_at
+  const opensAt = start - CHECK_IN_EARLY_MINS * MIN
+  return {
+    /** The button shows (or, once tapped, "they know you're here"). */
+    open: live && inPerson && now >= opensAt && now <= end,
+    /** Later today: the page says the button will appear. */
+    soon: live && inPerson && now < opensAt && opensAt - now < 12 * 3600e3,
+    opensAt,
+    at: (b.arrived_at as string | null) || null,
+  }
+}
+
+const tableLabel = (label: string) => (/^\d+[a-z]?$/i.test(label) ? `T${label}` : label)
+
+/** Tell the team a guest has arrived: the bell, a push, and a note in their conversation. */
+export async function announceArrival(db: any, company: any, service: any, b: any, origin?: string) {
+  const isTable = service?.kind === 'reservation'
+  const tz = b.timezone || resolveBookingSettings(company?.booking_settings).timezone
+  const name = String(b.customer_name || '').trim() || 'A guest'
+  const first = name.split(/\s+/)[0]
+  let where = ''
+  if (isTable) {
+    try {
+      const { data: rt } = await db.from('reservation_tables').select('table_id').eq('booking_id', b.id).eq('active', true)
+      const ids = (rt || []).map((r: any) => r.table_id)
+      if (ids.length) {
+        const { data: t } = await db.from('restaurant_tables').select('id, label').in('id', ids)
+        const labels = (t || []).map((x: any) => tableLabel(String(x.label || ''))).filter(Boolean)
+        if (labels.length) where = ` · ${labels.join(' + ')}`
+      }
+    } catch {}
+  }
+  const what = isTable ? `Table for ${Math.max(1, Number(b.seats) || 1)}` : (b.service_name || 'Booking')
+  const detail = `${what}, ${fmtTime(Date.parse(b.starts_at), tz)}${where}${b.staff_name && !isTable ? ` with ${b.staff_name}` : ''}`
+  await systemNote(db, b, `🙋 ${first} tapped “I’m here” on their booking page`)
+  await notifyCompany({ db, companyId: b.company_id, type: 'booking', conversationId: b.conversation_id || undefined, message: `🙋 ${name} is here — ${detail}` })
+  try {
+    const base = process.env.NEXT_PUBLIC_SITE_URL || origin || 'https://colvy.com'
+    await fetch(`${base}/api/push/send`, {
+      method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        companyId: b.company_id, title: `🙋 ${name} is here`, body: detail,
+        // Their conversation, so the team can reply from the lock screen.
+        ...(b.conversation_id ? { conversationId: b.conversation_id } : { route: '/calendar' }),
+        feature: isTable ? 'reservations' : 'bookings',
+      }),
+    })
+  } catch {}
+}
+
 export function publicBooking(b: any, company: any, service: any, settings: BookingSettings, hidePoweredBy = false) {
   const pol = policyFor(b, settings)
   const holdLive = b.status === 'pending' && b.hold_expires_at && Date.parse(b.hold_expires_at) > Date.now()
@@ -1466,6 +1526,7 @@ export function publicBooking(b: any, company: any, service: any, settings: Book
     cancel_reason: b.status === 'cancelled' ? b.cancel_reason : null,
     policy: { ...pol, cancel_hours: settings.cancel_hours, late_cancel: settings.late_cancel, refund_on_cancel: settings.refund_on_cancel },
     confirmation_note: settings.confirmation_note,
+    check_in: checkInState(b, service),
     company: { name: company.name, slug: company.slug, logo_url: company.logo_url, accent_color: company.accent_color, hide_powered_by: hidePoweredBy },
     book_again_url: bookingPageUrl(company, service?.active ? service.slug : undefined),
   }

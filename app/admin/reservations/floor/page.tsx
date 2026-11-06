@@ -90,6 +90,17 @@ export default function FloorPage() {
     }, 30_000)
     return () => clearInterval(id)
   }, [companyId, date, edit, loadDay])
+  // A guest tapped "I'm here": the room updates straight away.
+  useEffect(() => {
+    const on = (e: Event) => {
+      const n = (e as CustomEvent).detail || {}
+      if (n.type !== 'booking' || !companyId || !date || edit) return
+      if (/^🙋/.test(String(n.message || ''))) setToast(String(n.message).replace(/^🙋\s*/, ''))
+      setNow(Date.now()); loadDay(companyId, date)
+    }
+    window.addEventListener('colvy:notification', on)
+    return () => window.removeEventListener('colvy:notification', on)
+  }, [companyId, date, edit, loadDay]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setAt(null); setTableId(null); setPlacing(null) }, [date])
   useEffect(() => { if (floor && (!area || !floor.areas.some(a => a.id === area))) setArea(floor.areas[0]?.id || null) }, [floor]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -114,12 +125,15 @@ export default function FloorPage() {
   }, [day]) // eslint-disable-line react-hooks/exhaustive-deps
   const unplaced = res.filter(r => !(r.tables || []).length && Date.parse(r.endsAt) > (isToday ? now : 0))
 
-  type Live = { state: 'free' | 'soon' | 'booked' | 'seated' | 'late' | 'out'; cur: Reservation | null; next: Reservation | null }
+  type Live = { state: 'free' | 'soon' | 'booked' | 'seated' | 'late' | 'out' | 'here'; cur: Reservation | null; next: Reservation | null }
   const liveOf = (t: FTable): Live => {
     const list = onTable.get(t.id) || []
     // Right now, a party that's been seated is at the table even if they came early.
     const cur = list.find(r => (Date.parse(r.startsAt) <= T || (following && !!r.seatedAt)) && Date.parse(r.endsAt) > T) || null
     const next = list.find(r => r !== cur && Date.parse(r.startsAt) > T) || null
+    // Right now, a guest who tapped "I'm here" is waiting for this table.
+    const here = following && !cur?.seatedAt ? list.find(r => r.arrivedAt && !r.seatedAt && Date.parse(r.endsAt) > T) || null : null
+    if (here) return { state: 'here', cur: here, next: next === here ? null : next }
     if (t.unavailable_until && Date.parse(t.unavailable_until) > T && !cur) return { state: 'out', cur, next }
     if (cur) return { state: cur.seatedAt ? 'seated' : following && Date.parse(cur.startsAt) < now - 15 * MIN ? 'late' : 'booked', cur, next }
     if (next && Date.parse(next.startsAt) - T <= 60 * MIN) return { state: 'soon', cur, next }
@@ -402,6 +416,7 @@ const FL_CSS = `
 .fl-cur>b{font-size:15px}
 .fl-cur>span{font-size:13px;color:var(--mut)}
 .fl-cur.s-seated{background:color-mix(in srgb,#16a34a 12%,var(--card,#fff))}
+.fl-cur.s-here{background:color-mix(in srgb,#16a34a 9%,var(--card,#fff));box-shadow:inset 0 0 0 1.5px color-mix(in srgb,#16a34a 45%,transparent)}
 .fl-cur.s-late{background:color-mix(in srgb,#ef4444 10%,var(--card,#fff))}
 .fl-cur.s-booked,.fl-cur.s-due{background:color-mix(in srgb,#3b82f6 10%,var(--card,#fff))}
 .fl-cur-b{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:0;border:none;background:none;font:inherit;color:var(--ink);text-align:left;cursor:pointer}

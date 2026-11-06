@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { hidesPoweredBy } from '@/lib/branding'
 import { createClient } from '@supabase/supabase-js'
 import { checkBurst, callerKey } from '@/lib/rate-limit'
@@ -8,7 +8,10 @@ import { buildIcs } from '@/lib/booking-ics'
 import {
   loadCompanyPublic, resolveBookingSettings, loadStaff, availability, publicBooking, policyFor,
   cancelBooking, rescheduleBooking, settleBookingPayment, isMissingBookingSchema, manageUrl, whereText,
+  checkInState, announceArrival,
 } from '@/lib/booking'
+import { isMissingColumn } from '@/lib/email-db'
+import { fmtTime } from '@/lib/booking-time'
 import { bookingTimeFreed } from '@/lib/booking-waitlist-queue'
 import { resolveRestaurantSettings } from '@/lib/restaurant/settings'
 import { resContext, slotsFor } from '@/lib/restaurant/server'
@@ -31,6 +34,10 @@ const admin = () => createClient(
 // POST { token, action: 'pay' }           → the checkout link again, while the hold lasts
 // POST { token, action: 'cancel', reason? }
 // POST { token, action: 'reschedule', startsAt }
+// POST { token, action: 'arrived' }       → "I'm here": the team gets an alert (once)
+
+// Without V431 the booking can't remember the tap; this stops repeat alerts meanwhile.
+const toldTeam = new Map<string, number>()
 
 async function load(db: any, token: string | null) {
   if (!token || token.length < 20) return null
@@ -172,6 +179,27 @@ export async function POST(req: NextRequest) {
       const r = await rescheduleBooking(db, b.id, { startMs, by: 'customer', notifyCustomer: true, origin })
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status || 400 })
       return reply()
+    }
+
+    if (body.action === 'arrived') {
+      if (b.arrived_at) return NextResponse.json({ ok: true, arrived: true, booking: (await reply().then(r => r.json())).booking })
+      const ci = checkInState(b, service)
+      if (!ci.open) {
+        const tz = b.timezone || settings.timezone
+        return NextResponse.json({ error: b.status !== 'confirmed' ? 'This booking isn’t active.' : b.seated_at ? 'You’re already seated. Enjoy!' : Date.now() < ci.opensAt ? `You can tap “I’m here” from ${fmtTime(ci.opensAt, tz)}.` : 'This booking has finished.' }, { status: 400 })
+      }
+      // Once per booking: a second tap, or a second phone, doesn't alert the team again.
+      let first = false
+      const { data: claimed, error } = await db.from('bookings').update({ arrived_at: new Date().toISOString() }).eq('id', b.id).eq('status', 'confirmed').is('arrived_at', null).select('id')
+      if (error) {
+        if (!isMissingColumn(error)) throw error
+        const seen = toldTeam.get(b.id)
+        first = !seen || Date.now() - seen > 6 * 3600e3
+        if (first) { if (toldTeam.size > 2000) toldTeam.clear(); toldTeam.set(b.id, Date.now()) }
+      } else first = !!claimed?.length
+      if (first) after(() => announceArrival(db, company, service, b, origin).catch(e => console.error('[book/manage] arrival alert', e?.message || e)))
+      const fresh = await reply().then(r => r.json())
+      return NextResponse.json({ ok: true, arrived: true, booking: fresh.booking })
     }
 
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 })

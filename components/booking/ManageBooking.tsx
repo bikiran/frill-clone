@@ -7,8 +7,9 @@ import { StatusMark, GoogleCalendarIcon, AppleIcon, OutlookIcon } from '@/compon
 import { googleCalendarUrl } from '@/lib/booking-ics'
 
 // The customer's own booking (link from the confirmation SMS / email):
-// confirmation, add to calendar, reschedule, cancel. Also the landing page
-// after Stripe Checkout, where it confirms the payment.
+// confirmation, add to calendar, reschedule, cancel, and "I'm here" when they
+// arrive (from half an hour before; the team gets an alert). Also the landing
+// page after Stripe Checkout, where it confirms the payment.
 
 const money = (c: number, cur = 'aud') => {
   const n = (c || 0) / 100
@@ -48,6 +49,7 @@ export default function ManageBooking({ token }: { token: string }) {
   const [isNew, setIsNew] = useState(false)
   const [payCancelled, setPayCancelled] = useState(false)
   const [markKey, setMarkKey] = useState(0)          // replay the mark when the status changes
+  const [arrivedAt, setArrivedAt] = useState<string | null>(null)   // "I'm here" tapped on this visit
 
   const post = useCallback(async (body: any) => {
     const r = await fetch('/api/book/manage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, ...body }) })
@@ -148,6 +150,15 @@ export default function ManageBooking({ token }: { token: string }) {
     try { const d = await post({ action: 'cancel', reason }); setB(d.booking); setMode('view'); setMarkKey(k => k + 1); window.scrollTo({ top: 0, behavior: 'smooth' }) }
     catch (e: any) { setMsg(e.message) } finally { setBusy(false) }
   }
+  const doArrive = async () => {
+    setBusy(true); setMsg('')
+    try {
+      const d = await post({ action: 'arrived' })
+      if (d.booking) setB(d.booking)
+      setArrivedAt(d.booking?.check_in?.at || new Date().toISOString())
+      try { navigator.vibrate?.(30) } catch {}
+    } catch (e: any) { setMsg(e.message) } finally { setBusy(false) }
+  }
   const doPay = async () => {
     setBusy(true); setMsg('')
     try { const d = await post({ action: 'pay' }); window.location.href = d.checkoutUrl }
@@ -155,6 +166,8 @@ export default function ManageBooking({ token }: { token: string }) {
   }
 
   const pol = b.policy || {}
+  const ci = b.check_in || {}
+  const hereAt: string | null = arrivedAt || ci.at || null
   const cutoff = pol.cutoffMs ? new Date(pol.cutoffMs).toLocaleString('en-AU', { timeZone: tz, weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : ''
   const rows: [string, React.ReactNode, boolean?][] = [
     ['What', <>{b.service.name}{b.staff_name ? <span style={{ color: '#6b7280', fontWeight: 500 }}> with {b.staff_name}</span> : null}</>],
@@ -184,6 +197,28 @@ export default function ManageBooking({ token }: { token: string }) {
         .mb-pad{padding-left:28px;padding-right:28px}
         @media(max-width:480px){.mb-pad{padding-left:18px;padding-right:18px}}
         .mb-panel{animation:bkRise .45s cubic-bezier(.22,1,.36,1) backwards}
+        .mb-here{position:relative;display:flex;align-items:center;gap:14px;width:100%;min-height:76px;padding:14px 18px 14px 14px;border:none;border-radius:20px;background:var(--bk-accent,#ff7a6b);color:#fff;font-family:inherit;text-align:left;cursor:pointer;box-shadow:0 16px 30px -18px var(--bk-accent,#ff7a6b),inset 0 1px 0 rgba(255,255,255,.25);transition:transform .22s cubic-bezier(.22,1,.36,1),box-shadow .25s,filter .2s}
+        .mb-here:hover{transform:translate3d(0,-2px,0);filter:saturate(1.08)}
+        .mb-here:active{transform:scale(.98);transition-duration:.08s}
+        .mb-here:disabled{cursor:default;filter:saturate(.8);transform:none}
+        .mb-here::after{content:'';position:absolute;inset:0;border-radius:inherit;box-shadow:0 0 0 0 color-mix(in srgb,var(--bk-accent,#ff7a6b) 45%,transparent);animation:mbHerePulse 2.4s ease-out infinite;pointer-events:none}
+        @keyframes mbHerePulse{70%{box-shadow:0 0 0 12px color-mix(in srgb,var(--bk-accent,#ff7a6b) 0%,transparent)}100%{box-shadow:0 0 0 0 transparent}}
+        .mb-here-ic{flex:0 0 48px;height:48px;border-radius:15px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.2)}
+        .mb-here-ic svg{transform-origin:70% 85%;animation:mbWave 2.6s ease-in-out infinite}
+        @keyframes mbWave{0%,60%,100%{transform:rotate(0)}10%,30%{transform:rotate(14deg)}20%,40%{transform:rotate(-8deg)}}
+        .mb-here-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+        .mb-here-t b{font-size:18px;font-weight:800;letter-spacing:-.01em}
+        .mb-here-t span{font-size:13.5px;line-height:1.4;opacity:.92}
+        .mb-here-go{flex:0 0 auto;opacity:.9}
+        .mb-here.done{cursor:default;background:#ecfdf5;color:#065f46;box-shadow:inset 0 0 0 1.5px #a7f3d0}
+        .mb-here.done::after{display:none}
+        .mb-here.done .mb-here-ic{background:#10b981;color:#fff}
+        .mb-here.done .mb-here-ic svg{animation:mbPop .5s cubic-bezier(.34,1.56,.64,1) backwards}
+        @keyframes mbPop{from{transform:scale(.3);opacity:0}}
+        .mb-here.done .mb-here-t span{color:#047857;opacity:1}
+        .mb-soon{display:flex;gap:10px;align-items:flex-start;margin:14px 0 0;padding:11px 14px;border-radius:14px;background:#f8f8f9;color:#4b5563;font-size:13px;line-height:1.5}
+        .mb-soon svg{flex-shrink:0;margin-top:1px;color:#9ca3af}
+        @media (prefers-reduced-motion:reduce){.mb-here::after,.mb-here-ic svg{animation:none}}
         @media(max-width:820px){.mb-cta.bk-cta{margin:18px -28px -26px;padding-left:28px;padding-right:28px}}
         @media(max-width:480px){.mb-cta.bk-cta{margin:18px -18px -26px;padding-left:18px;padding-right:18px}}
       `}</style>
@@ -198,6 +233,23 @@ export default function ManageBooking({ token }: { token: string }) {
           {hero.sub && <p className="bk-rise" style={{ margin: '0 auto', maxWidth: 440, color: '#6b7280', fontSize: 14.5, lineHeight: 1.55, animationDelay: '.65s' }}>{hero.sub}</p>}
         </div>
 
+        {status === 'confirmed' && ci.open && (
+          <div className="mb-pad bk-rise" style={{ marginBottom: 16, animationDelay: '.6s' }}>
+            {hereAt ? (
+              <div className="mb-here done" role="status" aria-live="polite">
+                <span className="mb-here-ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12.5l4.5 4.5L19 7.5" /></svg></span>
+                <div className="mb-here-t"><b>{b.company.name} knows you’re here</b><span>Someone will be with you shortly. You told them at {fmtT(Date.parse(hereAt), tz)}.</span></div>
+              </div>
+            ) : (
+              <button type="button" className="mb-here" onClick={doArrive} disabled={busy}>
+                <span className="mb-here-ic"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M18 11V6a2 2 0 0 0-4 0" /><path d="M14 10V4a2 2 0 0 0-4 0v2" /><path d="M10 10.5V6a2 2 0 0 0-4 0v8" /><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-6-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" /></svg></span>
+                <span className="mb-here-t"><b>{busy ? 'Letting them know…' : 'I’m here'}</b><span>Tap when you arrive and we’ll let {b.company.name} know.</span></span>
+                <svg className="mb-here-go" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M9 6l6 6-6 6" /></svg>
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="mb-pad">
           <div style={{ border: '1px solid rgba(0,0,0,.06)', borderRadius: 16, overflow: 'hidden', background: '#fff' }}>
             {rows.map(([k, v, strike], i) => (
@@ -208,6 +260,13 @@ export default function ManageBooking({ token }: { token: string }) {
             ))}
           </div>
         </div>
+
+        {status === 'confirmed' && !ci.open && ci.soon && (
+          <div className="mb-pad bk-rise" style={{ animationDelay: '.95s' }}>
+            <p className="mb-soon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+              <span>When you arrive, open this page and tap <b>I’m here</b> so {b.company.name} knows. It shows from {fmtT(ci.opensAt, tz)}.</span></p>
+          </div>
+        )}
 
         {b.confirmation_note && status === 'confirmed' && (
           <div className="mb-pad bk-rise" style={{ marginTop: 14, animationDelay: '1s' }}>

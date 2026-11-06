@@ -234,6 +234,7 @@ function Row({ b, i, t, dayChip, onAct, onMove, onCancel, onNoShow, onRepeat, ca
         {b.notes && <div className="bl-note">“{b.notes}”</div>}
         <div className="bl-tags">
           <span className="bl-chip dot" style={tint(st.bar)}>{st.label}</span>
+          {b.status === 'confirmed' && b.arrived_at && <span className="bl-chip dot" style={tint('#16a34a')} title={`Tapped “I’m here” at ${new Date(b.arrived_at).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })}`}>Here</span>}
           {b.status === 'confirmed' && b.customer_confirmed_at && <span className="bl-chip dot" style={tint('#22c55e')} title="Replied C to the reminder">Customer confirmed</span>}
           {b.status === 'confirmed' && !b.customer_confirmed_at && (b.reminder_24h_at || b.reminder_2h_at) && <span className="bl-chip">Reminded</span>}
           {b.amount_due_cents > 0 && PAY[b.payment_status] && (
