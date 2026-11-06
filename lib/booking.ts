@@ -18,7 +18,7 @@ import {
   type WeekHours, type SlotResource, type Busy, type Slot, type SlotService,
 } from '@/lib/booking-time'
 import { buildIcs, buildIcsMany, googleCalendarUrl, type InviteEvent } from '@/lib/booking-ics'
-import { bookingEmailHtml } from '@/lib/booking-email'
+import { bookingEmailHtml, manageLinkEmailHtml, seriesEmailHtml } from '@/lib/booking-email'
 import { createChatCheckoutSession, chatStripe } from '@/lib/chat-checkout'
 import { notifyCompany } from '@/lib/notify'
 import { emitIntegrationEvent } from '@/lib/integration-events'
@@ -1043,10 +1043,23 @@ export async function sendManageLink(db: any, company: any, b: any, origin: stri
     } catch (e) { console.error('[booking] manage link sms failed', e) }
   }
   if (b.customer_email) {
-    const ok = await sendCustomerEmail(db, company, {
-      to: b.customer_email, subject: `Your booking: ${b.service_name}`, text,
-      html: `<p style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14.5px;color:#111;line-height:1.55">${esc(text.replace(url, ''))}<a href="${esc(url)}">${esc(url)}</a></p>`,
+    let service: any = null
+    if (b.service_id) { try { const { data } = await db.from('booking_services').select('kind, location_mode').eq('id', b.service_id).maybeSingle(); service = data } catch {} }
+    const isTable = service?.kind === 'reservation'
+    const where = whereText(b, service)
+    const party = Math.max(1, Number(b.seats) || 1)
+    const live = b.status === 'confirmed' && !b.completed_at && Date.parse(b.ends_at) > Date.now()
+    const invite = { uid: b.id, title: `${b.service_name} — ${company.name}`, startMs: Date.parse(b.starts_at), endMs: Date.parse(b.ends_at), location: where || null, description: `Manage your booking: ${url}`, url, sequence: b.reschedule_count || 0 }
+    const html = manageLinkEmailHtml({
+      business: company.name || 'us', logoUrl: company.logo_url || null, accent: company.accent_color || null, hideBadge: await hidesPoweredBy(db, company.id, company),
+      first, serviceName: b.service_name, isTable, live,
+      rows: isTable
+        ? [['Table for', `${party} ${party === 1 ? 'person' : 'people'}`], ...(where ? [['Where', where] as [string, string]] : [])]
+        : [['What', `${b.service_name}${b.staff_name ? ` with ${b.staff_name}` : ''}`], ...(where ? [['Where', where] as [string, string]] : [])],
+      startMs: Date.parse(b.starts_at), endMs: Date.parse(b.ends_at), timezone: tz, manageUrl: url,
+      googleUrl: googleCalendarUrl(invite), icsUrl: `${companyBase(company).base}/api/book/manage?token=${encodeURIComponent(b.manage_token)}&op=ics`,
     })
+    const ok = await sendCustomerEmail(db, company, { to: b.customer_email, subject: `Your booking: ${b.service_name}`, text, html })
     if (ok) return 'email'
   }
   return null
@@ -1240,22 +1253,17 @@ async function seriesMessage(db: any, company: any, settings: BookingSettings, b
   }
   if (settings.notify_email && b.customer_email) {
     const hideBadge = await hidesPoweredBy(db, company.id, company)
-    const rows = starts.map(ms => `<tr><td style="padding:8px 0;color:#111;font-weight:600;border-top:1px solid #f1f1f1">${esc(fmtDateTime(ms, tz, { withTz: true }))}</td></tr>`).join('')
-    const html = `<!doctype html><html><body style="margin:0;background:#f6f6f7;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
-<div style="max-width:520px;margin:0 auto;padding:28px 16px">
-  <div style="background:#fff;border-radius:16px;padding:28px;border:1px solid #eee">
-    ${company.logo_url ? `<img src="${esc(company.logo_url)}" alt="" style="height:36px;margin-bottom:14px">` : `<div style="font-weight:800;font-size:16px;margin-bottom:14px">${esc(business)}</div>`}
-    <h1 style="margin:0 0 8px;font-size:22px;color:#111">Your regular booking</h1>
-    <p style="margin:0 0 18px;color:#4b5563;font-size:14.5px;line-height:1.55">Hi ${esc(first)}, your ${esc(b.service_name)} with ${esc(business)} is booked ${esc(freq)}${where ? ` at ${esc(where)}` : ''}. We’ll send a reminder before each visit, with a link to move or cancel it.</p>
-    <table style="width:100%;border-collapse:collapse;font-size:14px">${rows}</table>
-  </div>
-  <p style="text-align:center;color:#9ca3af;font-size:12px;margin-top:14px">${esc(business)}${hideBadge ? '' : ' · Powered by Colvy'}</p>
-</div></body></html>`
     const text = `Your regular booking\n\n${b.service_name}, ${freq}${where ? ` at ${where}` : ''}:\n${starts.map(ms => fmtDateTime(ms, tz, { withTz: true })).join('\n')}\n\nWe'll send a reminder before each visit.`
     // Every visit in one calendar file, each with its own manage link.
     const events = visits.map(v => {
       const url = manageUrl(company, v.manage_token)
       return { uid: v.id, title: `${b.service_name} — ${business}`, startMs: Date.parse(v.starts_at), endMs: Date.parse(v.ends_at), location: where || null, description: `Manage this visit: ${url}`, url, sequence: v.reschedule_count || 0 }
+    })
+    const byStart = new Map(visits.map(v => [Date.parse(v.starts_at), v]))
+    const html = seriesEmailHtml({
+      business, logoUrl: company.logo_url || null, accent: company.accent_color || null, hideBadge, first, serviceName: b.service_name, freq, where: where || null, timezone: tz,
+      visits: starts.map(ms => { const v = byStart.get(ms); return { startMs: ms, endMs: v ? Date.parse(v.ends_at) : ms + (Date.parse(b.ends_at) - Date.parse(b.starts_at)), url: v?.manage_token ? manageUrl(company, v.manage_token) : null } }),
+      withIcs: events.length > 0,
     })
     sent.email = await sendCustomerEmail(db, company, {
       to: b.customer_email, subject: `Your regular ${b.service_name}: ${freq}`, html, text,
