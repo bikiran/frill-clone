@@ -11,6 +11,7 @@ import FeatureIcon from '@/components/FeatureIcon'
 import ContactSalesModal from '@/components/ContactSalesModal'
 import { COMING_SOON } from '@/lib/feature-availability'
 import AgentTeamBand from '@/components/AgentTeamBand'
+import { VsLogos } from '@/components/marketing/CompareLogos'
 
 // Landing-styled competitor comparison pages (Colvy vs Podium / Gorgias / Gladly
 // / Intercom / Zendesk / Freshdesk). Data-driven so every comparison shares the
@@ -48,7 +49,7 @@ const ROWS: { group: string; rows: Row[] }[] = [
     { label: 'Live chat widget', v: { ...ALL_T(true), highlevel: true, salesforce: 'Pro Suite' } },
   ] },
   { group: 'AI', rows: [
-    { label: 'AI agents that answer on their own', colvy: 'Five, included', v: { podium: 'Paid add-on', birdeye: 'Quote-based', coax: 'Enterprise plan', gorgias: 'Per interaction', zendesk: 'Allowance, then per resolution', freshdesk: 'Per session', intercom: 'Per outcome (Fin)', gladly: 'Per resolution or quote', manychat: 'Manychat AI', highlevel: 'Add-on or per use', salesforce: 'Higher plans, usage-based' } },
+    { label: 'AI agents that answer on their own', colvy: 'Five, included', v: { podium: 'Paid add-on', birdeye: 'Quote-based', coax: 'Voice: all plans; chat: Enterprise', gorgias: 'Per interaction', zendesk: 'Allowance, then per resolution', freshdesk: 'Per session', intercom: 'Per outcome (Fin)', gladly: 'Per resolution or quote', manychat: 'Manychat AI', highlevel: 'Add-on or per use', salesforce: 'Higher plans, usage-based' } },
     { label: 'Name and style each AI agent', v: { podium: 'Name', gorgias: 'Name', zendesk: 'Name', freshdesk: true, intercom: true, gladly: 'Name', highlevel: true, salesforce: 'Higher plans' } },
     { label: 'Call summaries, to-dos & transcripts', v: { podium: true, coax: 'Add-on', gladly: 'Add-on', manychat: false, highlevel: 'Usage-based (Labs)', salesforce: 'Video meetings; calls on higher plans' } },
     { label: 'AI campaign builder (audience, copy, timing)', v: { highlevel: 'Email (beta)', salesforce: 'Marketing Cloud add-on' } },
@@ -190,7 +191,7 @@ const CMP: Record<string, Cmp> = {
       { t: 'Announcements & changelog', d: 'Post release notes and auto-notify the customers who asked. Tied to the inbox, not a separate tool.' },
       { t: 'The full loop', d: 'Idea → roadmap → announcement, connected to conversations so customers hear back when their idea ships.' },
       { t: 'One platform, one bill', d: 'Run support, sales and your product roadmap in one place instead of bolting on a feedback tool.' },
-      { t: 'AI agents and calls in the plan', d: 'Coax lists its AI agent on its Enterprise plan and calls as an add-on. Colvy includes five AI agents and calls with AI summaries.' },
+      { t: 'AI agents for chat and calls, in the plan', d: 'Coax includes AI voice agents on every plan and lists its messaging AI agent on the Enterprise plan. Colvy’s Inbox and Everything plans include five AI agents across chat, social, email and calls.' },
     ],
     checklist: ['SMS, calls, email and social, like Coax', 'Plus a built-in ideas & feedback board', 'A public roadmap customers can follow', 'Announcements & changelog tied to the inbox', 'Polls & surveys to validate decisions', 'Call intelligence on every call', 'Australian 🇦🇺 support and local numbers', 'No lock-in contracts — cancel anytime'],
   },
@@ -324,6 +325,7 @@ export default function ComparePage() {
       <section style={{ position: 'relative', textAlign: 'center', padding: 'clamp(100px, 13vw, 150px) 24px 50px', background: dark ? 'linear-gradient(180deg,#10111b,#0a0b12 80%)' : `linear-gradient(180deg, ${accent}0d 0%, #ffffff 80%)` }}>
         <Reveal>
           <a href="/compare" style={{ display: 'inline-block', fontSize: 12, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: accent, background: accent + '16', padding: '6px 14px', borderRadius: 999, textDecoration: 'none', marginBottom: 18 }}>← Compare</a>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}><VsLogos slug={slug} name={c.name} accent={accent} size={56} variant="vs" muted={muted} /></div>
           <h1 style={{ fontSize: 'clamp(34px, 5.4vw, 64px)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.05, margin: '0 auto 16px', maxWidth: 900 }}>{c.heroTitle} <span style={{ color: accent }}>{c.heroAccent}</span></h1>
           <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: muted, maxWidth: 640, margin: '0 auto 28px', lineHeight: 1.6 }}>{c.heroSub}</p>
           <div className="cmp-hero-cta" style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
