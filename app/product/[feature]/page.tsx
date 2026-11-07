@@ -14,7 +14,7 @@ const META: Record<string, { title: string; description: string }> = {
   roadmap: { title: 'Public Product Roadmap Tool', description: 'Share what you’re building with a public Colvy roadmap and keep customers in the loop as work progresses.' },
   announcements: { title: 'Changelog & Product Announcement Tool', description: 'Announce new releases with a beautiful Colvy changelog and notify the customers who asked for each feature.' },
   knowledgebase: { title: 'Knowledge Base & Help Centre Software', description: 'Publish a searchable help centre and knowledge base that answers customers around the clock, and powers Colvy’s AI agents with your own answers.' },
-  inbox: { title: 'Omnichannel Shared Inbox for Teams of Every Size', description: 'One shared inbox for SMS, calls, Instagram, Messenger, email, live chat and Google reviews. Assign conversations, schedule replies and answer from web or app. Start free.' },
+  inbox: { title: 'Omnichannel Shared Inbox for Teams of Every Size', description: 'One shared inbox for SMS, calls, Instagram, Messenger, email, live chat and Google reviews. Assign conversations, schedule replies and answer from web or app.' },
   crm: { title: 'AI-Powered CRM, Built Into Your Inbox', description: 'A simple CRM that fills itself in: every customer’s details, channels, orders, bookings, notes and messages beside each conversation. No data entry, start free.' },
   gallery: { title: 'Shared Media Gallery for Customer Chats', description: 'Photos, videos and files in one searchable library — mark up photos, trim videos and send them into any chat in a tap.' },
   notes: { title: 'Internal Team Notes on Customer Conversations', description: 'Add private team notes to any conversation in Colvy so context never gets lost.' },
@@ -33,7 +33,7 @@ const META: Record<string, { title: string; description: string }> = {
   receipts: { title: 'Receipts & Tax Invoices for Your Customers', description: 'Every order in a customer’s account opens a receipt they can print or save as a PDF, and a tax invoice when you have an ABN and the sale includes GST.' },
   calendar: { title: 'Shared Calendar & Appointment Reminders', description: 'Schedule and manage appointments alongside your conversations in Colvy.' },
   tasks: { title: 'Tasks & Follow-ups from Customer Chats', description: 'Turn conversations into tasks and never drop a follow-up with Colvy.' },
-  broadcasts: { title: 'Email & SMS Campaigns and Bulk SMS Broadcasts', description: 'Email and SMS campaigns built with Colvy AI: smart audiences, a drag-and-drop email designer, texts from your Australian number, and reports in clicks, replies, orders and revenue.' },
+  broadcasts: { title: 'Email & SMS Campaigns and Bulk SMS Broadcasts', description: 'Email and SMS campaigns built with Colvy AI: smart audiences, a drag-and-drop designer, texts from your Australian number and reports in orders and revenue.' },
   automation: { title: 'Customer Messaging Automation', description: 'Automate replies, routing and follow-ups so your team focuses on the conversations that matter, with Colvy.' },
 }
 

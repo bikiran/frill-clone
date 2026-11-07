@@ -9,7 +9,7 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
 export const metadata: Metadata = pageMeta({
   title: 'Pricing: Shared Inbox, Business SMS & CRM Plans',
-  description: 'Colvy pricing in AUD. Start free, then pick Inbox for SMS, calls, social, email and live chat with AI agents, Feedback for roadmaps and help centre, or Everything. 14-day free trial.',
+  description: 'Colvy pricing in AUD. Start free, then choose Inbox for SMS, calls, social, email and live chat with AI agents, Feedback, or Everything. 14-day free trial.',
   path: 'pricing',
 })
 

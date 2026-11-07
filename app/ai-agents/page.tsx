@@ -8,7 +8,7 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
 export const metadata: Metadata = pageMeta({
   title: 'AI Agents for Support, Bookings, Sales, Orders & Reviews',
-  description: 'Five AI agents that answer customers, book appointments, follow up carts, chase late orders and reply to reviews. They check your real data first, start as drafts, and hand your team the exceptions.',
+  description: 'Five AI agents answer customers, book appointments, follow up carts, chase late orders and reply to reviews. They check your real data and start as drafts.',
   path: 'ai-agents',
 })
 

@@ -8,7 +8,7 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
 export const metadata: Metadata = pageMeta({
   title: 'AI Assistant for Customer Messages',
-  description: 'Colvy’s AI assistant drafts replies from your own knowledge, summarises conversations and takes actions like payment links and bookings, so your team replies faster.',
+  description: 'Colvy’s AI assistant drafts replies from your own knowledge, summarises conversations and takes actions like payment links and bookings, so you reply faster.',
   path: 'ai-assistant',
 })
 

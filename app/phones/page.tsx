@@ -8,7 +8,7 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
 export const metadata: Metadata = pageMeta({
   title: 'Business Phone System & Call Inbox',
-  description: 'Make and take business calls in your browser or the Colvy app on Australian numbers, with ring groups, voicemail, recordings and transcripts on every customer record.',
+  description: 'Make and take business calls in your browser or the Colvy app on Australian numbers, with ring groups, voicemail, recordings and transcripts on every record.',
   path: 'phones',
 })
 

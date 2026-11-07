@@ -49,7 +49,7 @@ function seedToArticle(p: BlogPost): Article {
     slug: p.slug, title: p.title, excerpt: p.excerpt, category: p.category,
     accent: p.accent, icon: p.icon, cover: coverFor(p.slug, p.cover),
     date: p.date, dateLabel: p.dateLabel, readTime: p.readTime, author: p.author,
-    bodyHtml, takeaways: p.takeaways || [],
+    bodyHtml, takeaways: p.takeaways || [], seoDescription: p.seoDescription || null,
   }
 }
 

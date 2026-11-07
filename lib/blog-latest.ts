@@ -13,6 +13,7 @@ export const LATEST_POSTS: BlogPost[] = [
     cover: '/blog/restaurant-reservations-guide/cover.jpg',
     title: 'Full tables, fewer no-shows: a practical table bookings guide for restaurants and cafés',
     excerpt: 'How to set covers and pacing so the kitchen keeps up, how long to hold a table, when a deposit is worth asking for, what to do about no-shows and how to run a Friday night from one sheet. With checklists you can use this week.',
+    seoDescription: 'How to set covers and pacing, how long to hold a table, when to ask for a deposit and what to do about no-shows, with checklists you can use this week.',
     category: 'Industry guides', accent: CORAL, icon: 'utensils',
     date: '2026-11-06T21:00:00+11:00', dateLabel: 'Nov 6, 2026', readTime: '9 min read', author: 'The Colvy Team',
     takeaways: [
@@ -178,6 +179,7 @@ Nobody can answer the phone at 7:30 on a Saturday. With a Colvy business number,
     cover: '/blog/trades-quotes-jobs-guide/cover.jpg',
     title: 'Quote, book, sign off: a tradie’s guide to running jobs without the paperwork pile',
     excerpt: 'Quotes customers say yes to, GST done properly, a schedule without double-bookings and jobs that finish with photos and a signature. A practical guide for electricians, plumbers, cleaners, removalists and other trades.',
+    seoDescription: 'Quotes customers say yes to, GST done properly, a schedule without double-bookings and jobs that finish with photos and a signature. A guide for trades.',
     category: 'Industry guides', accent: BLUE, icon: 'briefcase',
     date: '2026-11-06T20:00:00+11:00', dateLabel: 'Nov 6, 2026', readTime: '9 min read', author: 'The Colvy Team',
     takeaways: [
@@ -322,6 +324,7 @@ In Colvy, turn the conversation, the booking or the form response straight into 
     cover: '/blog/specialist-retail-receipts-accounts/cover.jpg',
     title: '“Can you send me the receipt again?” Receipts, tax invoices and customer accounts for specialist shops',
     excerpt: 'Aquarium, pet and other specialist shops sell expensive gear with warranties, to regulars who come back every few weeks and to businesses that need tax invoices. Here’s how to get receipts, regular services and repeat questions off the counter.',
+    seoDescription: 'How aquarium, pet and other specialist shops get receipts, tax invoices, regular services and repeat questions off the counter, for regulars and businesses.',
     category: 'Industry guides', accent: TEAL, icon: 'receipt',
     date: '2026-11-06T19:00:00+11:00', dateLabel: 'Nov 6, 2026', readTime: '8 min read', author: 'The Colvy Team',
     takeaways: [
@@ -455,6 +458,7 @@ For back-in-stock texts, shipment-day campaigns and after-hours care questions, 
     cover: '/blog/appointments-regulars-waitlist/cover.jpg',
     title: 'Regulars, gaps and the front desk: a booking guide for salons, clinics and groomers',
     excerpt: 'Standing appointments that book themselves, a waitlist that fills cancellations while you work, arrivals without a receptionist, and confirmations that answer the usual questions. A practical guide with settings to copy.',
+    seoDescription: 'Standing appointments that book themselves, a waitlist that fills cancellations, check-in without a receptionist and confirmations that answer common questions.',
     category: 'Industry guides', accent: PURPLE, icon: 'repeat',
     date: '2026-11-06T18:00:00+11:00', dateLabel: 'Nov 6, 2026', readTime: '8 min read', author: 'The Colvy Team',
     takeaways: [
@@ -588,6 +592,7 @@ With [customer accounts](/product/customer-accounts) on, clients sign in at your
     cover: '/ai/human-in-control.jpg',
     title: 'Why you can trust Colvy with your customer conversations',
     excerpt: 'Your inbox holds your customers’ numbers, messages and orders. Here’s exactly how Colvy looks after them: who you’re dealing with, what we do with your data, how the AI stays in check, and what we won’t claim.',
+    seoDescription: 'Your inbox holds your customers’ numbers, messages and orders. How Colvy looks after them: what we do with your data and how the AI stays in check.',
     category: 'Buyer’s guide', accent: CORAL, icon: 'lock',
     date: '2026-11-06T17:00:00+11:00', dateLabel: 'Nov 6, 2026', readTime: '6 min read', author: 'The Colvy Team',
     takeaways: [
@@ -666,6 +671,7 @@ Try it with your own customers. [Start free](/signup) for 14 days with no card, 
     cover: '/photos/crm.jpg',
     title: 'Do you want the best CRM software, or the most capable CRM software?',
     excerpt: 'Most “best CRM software” lists count features. For a small team, the CRM that wins is the one that does the most work on an ordinary day: it fills itself in, lives where the conversations happen, and follows up for you.',
+    seoDescription: 'Most “best CRM software” lists count features. For a small team, the best CRM does the most work on an ordinary day: it fills itself in and follows up for you.',
     category: 'Buyer’s guide', accent: CORAL, icon: 'idea',
     date: '2026-11-06T15:00:00+11:00', dateLabel: 'Nov 6, 2026', readTime: '5 min read', author: 'The Colvy Team',
     takeaways: [
@@ -756,6 +762,7 @@ Not sure which kind your business needs? [Leave your name and number](#lets-talk
     cover: '/solutions/hub.jpg',
     title: 'Give your AI agents a name and a face',
     excerpt: 'Five agents working in one inbox read better as a team than as job titles. Give each one its own name, shape and colour (or a photo) and see at a glance which agent did what.',
+    seoDescription: 'Five agents in one inbox read better as a team than as job titles. Give each its own name, shape and colour (or a photo) and see which agent did what.',
     category: 'Product', accent: PURPLE, icon: 'ai',
     date: '2026-11-06T09:00:00+11:00', dateLabel: 'Nov 6, 2026', readTime: '4 min read', author: 'The Colvy Team',
     takeaways: [
@@ -811,6 +818,7 @@ None of this changes how much an agent does on its own. Every agent starts by dr
     cover: '/channels/phones.jpg',
     title: 'Every phone call, written up: summaries, to-dos and a transcript',
     excerpt: 'A call ends and the details are already in the customer’s conversation: a short summary, the to-dos it raised, the recording and a transcript by speaker. Here’s how to get the most out of it.',
+    seoDescription: 'A call ends and the details are already in the customer’s conversation: a short summary, the to-dos it raised, the recording and a transcript by speaker.',
     category: 'Product', accent: BLUE, icon: 'phone',
     date: '2026-11-05T09:00:00+11:00', dateLabel: 'Nov 5, 2026', readTime: '5 min read', author: 'The Colvy Team',
     takeaways: [
@@ -866,6 +874,7 @@ The Colvy app shows the same card: summary, to-dos, recording and transcript. Yo
     cover: '/blog/online-store-wheres-my-order/tags.jpg',
     title: 'Book the delivery where the conversation is',
     excerpt: 'Big, heavy or local orders need a delivery day, not a tracking number. Schedule it from the customer’s conversation, keep the whole team on the same calendar, and follow it through to delivered.',
+    seoDescription: 'Big, heavy or local orders need a delivery day, not a tracking number. Schedule it from the customer’s conversation and follow it through to delivered.',
     category: 'Industry guides', accent: GREEN, icon: 'map',
     date: '2026-11-04T09:00:00+11:00', dateLabel: 'Nov 4, 2026', readTime: '5 min read', author: 'The Colvy Team',
     takeaways: [
@@ -923,6 +932,7 @@ The same deliveries show on the **Calendar** and in the bell, so the person load
     cover: '/integrations/stripe.jpg',
     title: 'Growing team, same control: refund permissions, a refund PIN and locked keys',
     excerpt: 'As more people answer customers, refunds and connection keys need a lock. Decide who can refund, ask for a PIN on every refund, and keep your store and channel keys out of reach.',
+    seoDescription: 'As more people answer customers, refunds and keys need a lock. Decide who can refund, ask for a PIN on every refund and keep store and channel keys safe.',
     category: 'Product', accent: CORAL, icon: 'lock',
     date: '2026-11-03T09:00:00+11:00', dateLabel: 'Nov 3, 2026', readTime: '4 min read', author: 'The Colvy Team',
     takeaways: [
@@ -974,6 +984,7 @@ The keys that connect Colvy to your store, your phone numbers, Facebook and Inst
     cover: '/channels/forms.jpg',
     title: 'Quotes, labels and photos: files that look like files',
     excerpt: 'A PDF a customer emails you, a quote you text them, photos of a damaged delivery: every file now shows as a proper card in the conversation, opens in place and is named in your conversation list.',
+    seoDescription: 'A PDF a customer emails, a quote you text, photos of a damaged delivery: every file now shows as a proper card in the conversation and opens in place.',
     category: 'Product', accent: TEAL, icon: 'inbox',
     date: '2026-11-02T09:00:00+11:00', dateLabel: 'Nov 2, 2026', readTime: '3 min read', author: 'The Colvy Team',
     takeaways: [

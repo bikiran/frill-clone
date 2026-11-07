@@ -26,6 +26,7 @@ export type BlogPost = {
   sections?: BlogSection[]
   takeaways?: string[]
   content?: string      // Markdown body (takes precedence when present)
+  seoDescription?: string  // search/social description when the excerpt runs past ~160 characters
 }
 
 // The newest articles live in lib/blog-latest.ts, ahead of these.
@@ -206,6 +207,7 @@ For sold-out products, [back-in-stock texts](/product/waitlists) do the same job
     cover: '/blog/meet-your-ai-team-cover.jpg',
     title: "Meet your AI team: a Saturday at an aquarium shop, run with five AI agents",
     excerpt: "Order questions, bookings, reviews, a stuck parcel and an abandoned cart: one day at a busy store, and how Colvy’s Support, Reception, Reputation, Operations and Sales agents handle it while the team handles the exceptions.",
+    seoDescription: 'Order questions, bookings, reviews, a stuck parcel and an abandoned cart: one busy day at a store, and how Colvy’s five AI agents handle it with the team.',
     category: 'Product', accent: PURPLE, icon: 'ai',
     date: '2026-10-23T10:00:00+11:00', dateLabel: 'Oct 23, 2026', readTime: '7 min read', author: 'The Colvy Team',
     takeaways: [
@@ -312,6 +314,7 @@ The AI agents are included on the Inbox and Everything plans. Turn them on in **
     cover: '/blog/online-store-wheres-my-order/cover.jpg',
     title: "“Where’s my order?”: how online stores answer it before customers ask",
     excerpt: "It’s the most common message an online store gets. Status updates in your voice, tracking that finds itself, AI answers from live order data and friendly cart reminders take it off your plate.",
+    seoDescription: 'The most common message an online store gets. Status updates in your voice, tracking that finds itself and AI answers from live orders take it off your plate.',
     category: 'Industry guides', accent: BLUE, icon: 'cart',
     date: '2026-10-18T14:00:00+11:00', dateLabel: 'Oct 18, 2026', readTime: '6 min read', author: 'The Colvy Team',
     takeaways: [
@@ -454,6 +457,7 @@ Every link Colvy sends is tracked, including cart reminders, campaign links and 
     cover: '/blog/real-estate-enquiries/cover.jpg',
     title: "First to reply wins: a real estate agency’s guide to never missing an enquiry",
     excerpt: "Portal enquiries, Facebook messages, website chat, calls and texts, all while you’re running open homes. Here’s how agencies reply first, fill inspections and keep paperwork moving.",
+    seoDescription: 'Portal enquiries, Facebook messages, chat, calls and texts while you run open homes. How agencies reply first, fill inspections and keep paperwork moving.',
     category: 'Industry guides', accent: GREEN, icon: 'pin',
     date: '2026-10-18T13:00:00+11:00', dateLabel: 'Oct 18, 2026', readTime: '5 min read', author: 'The Colvy Team',
     takeaways: [
@@ -567,6 +571,7 @@ The settlement is the best moment to ask for a review. Hit **Ask for a review** 
     cover: '/blog/sms-marketing-consent-australia/cover.jpg',
     title: "SMS marketing in Australia: consent, STOP and the Spam Act in plain English",
     excerpt: "If you text customers about offers, the Spam Act applies to you. Here are the three rules (consent, identify, unsubscribe) explained simply, plus a checklist and how to make compliance automatic.",
+    seoDescription: 'Texting customers about offers? The Spam Act applies. Its three rules (consent, identify, unsubscribe) explained simply, plus a checklist to stay compliant.',
     category: 'Playbooks', accent: CORAL, icon: 'lock',
     date: '2026-10-18T12:00:00+11:00', dateLabel: 'Oct 18, 2026', readTime: '5 min read', author: 'The Colvy Team',
     takeaways: [
@@ -677,6 +682,7 @@ A few details that matter:
     cover: '/blog/multi-location-retail-one-inbox/cover.jpg',
     title: "Three stores, one inbox: running multi-location retail without the chaos",
     excerpt: "Every store has its own phone, page and regulars. Here’s how to answer all of them from one place, with local numbers, per-store hours, click & collect and reports that compare your stores.",
+    seoDescription: 'Every store has its own phone, page and regulars. Answer them all from one place, with local numbers, per-store hours, click & collect and reports by store.',
     category: 'Industry guides', accent: PURPLE, icon: 'map',
     date: '2026-10-18T11:00:00+11:00', dateLabel: 'Oct 18, 2026', readTime: '5 min read', author: 'The Colvy Team',
     takeaways: [
@@ -800,6 +806,7 @@ Head office finally gets a view across locations:
     cover: '/blog/aquarium-pet-store-playbook/cover.jpg',
     title: "Fish, frags and “is it back yet?”: a messaging playbook for aquarium and pet stores",
     excerpt: "Back-in-stock texts, shipment-day campaigns, kind DOA claims and 10pm care questions: the five moments that fill an aquarium store’s inbox, and how to handle each one with less typing.",
+    seoDescription: 'Back-in-stock texts, shipment-day campaigns, DOA claims and 10pm care questions: the five moments that fill an aquarium store’s inbox, and how to handle each.',
     category: 'Industry guides', accent: TEAL, icon: 'bolt',
     date: '2026-10-18T10:00:00+11:00', dateLabel: 'Oct 18, 2026', readTime: '8 min read', author: 'The Colvy Team',
     takeaways: [
@@ -949,6 +956,7 @@ None of this replaces the advice you give across the counter. It just stops the 
     cover: '/blog/salon-barber-no-shows/cover.jpg',
     title: "The empty chair: how salons and barbers cut no-shows without nagging",
     excerpt: "No-shows aren’t a character flaw, they’re a design problem. Easy booking, deposits where they make sense, one-tap reminders and guilt-free rescheduling put clients back in the chair.",
+    seoDescription: 'No-shows are a design problem, not a character flaw. Easy booking, sensible deposits, one-tap reminders and guilt-free rescheduling bring clients back.',
     category: 'Industry guides', accent: CORAL, icon: 'scissors',
     date: '2026-10-18T09:00:00+11:00', dateLabel: 'Oct 18, 2026', readTime: '6 min read', author: 'The Colvy Team',
     takeaways: [
@@ -1081,6 +1089,7 @@ No-shows drop when booking is easy, a deposit backs the long appointments, remin
     cover: '/blog/tradies-missed-calls/cover.jpg',
     title: "The job you lost while you were up a ladder: a tradie’s guide to never missing work",
     excerpt: "When your hands are full the phone goes unanswered, and the caller rings the next tradie. A business number, instant text-backs, call summaries and quote follow-ups keep the job yours.",
+    seoDescription: 'When your hands are full, the caller rings the next tradie. A business number, instant text-backs, call summaries and quote follow-ups keep the job yours.',
     category: 'Industry guides', accent: BLUE, icon: 'phone',
     date: '2026-10-17T10:00:00+11:00', dateLabel: 'Oct 17, 2026', readTime: '6 min read', author: 'The Colvy Team',
     takeaways: [
@@ -1216,6 +1225,7 @@ When reviews come in, the Reputation Agent drafts replies in your voice. It can 
     cover: '/blog/sports-clubs-community-groups/cover.jpg',
     title: "Rained out at 7am: running a sports club or community group without the group-chat chaos",
     excerpt: "Clubs and community groups juggle the same messages as a small business, run by volunteers. One shared inbox, instant SMS notices, smarter rego forms and member polls take the load off the committee.",
+    seoDescription: 'Volunteer-run clubs juggle the same messages as a small business. One shared inbox, instant SMS notices, smarter rego forms and member polls lighten the load.',
     category: 'Industry guides', accent: GREEN, icon: 'megaphone',
     date: '2026-10-17T09:00:00+11:00', dateLabel: 'Oct 17, 2026', readTime: '5 min read', author: 'The Colvy Team',
     takeaways: [
@@ -1333,6 +1343,7 @@ The Free plan includes one poll, one survey and ten help articles, enough to try
     cover: '/blog/cafes-restaurants-regulars/cover.jpg',
     title: "The rainy Tuesday text: how cafés and restaurants keep regulars coming back",
     excerpt: "Holiday hours, dietary questions, function enquiries and reviews all arrive mid-rush. Here’s how cafés and restaurants answer fast, book the big tables and fill the quiet days, without living on their phones.",
+    seoDescription: 'Holiday hours, dietary questions, function enquiries and reviews arrive mid-rush. How cafés and restaurants answer fast, book big tables and fill quiet days.',
     category: 'Industry guides', accent: PURPLE, icon: 'chat',
     date: '2026-10-16T10:00:00+11:00', dateLabel: 'Oct 16, 2026', readTime: '6 min read', author: 'The Colvy Team',
     takeaways: [
@@ -1452,6 +1463,7 @@ If your phone rings off the hook at noon, a Colvy business number can text back 
     cover: '/hero/landing-omni.jpg',
     title: 'How Colvy helps you run your business more efficiently',
     excerpt: 'Most of the time lost in a small business isn’t the work itself. It’s the switching, the chasing and the “did anyone reply to that?”. Here’s where Colvy takes that time back.',
+    seoDescription: 'Most time lost in a small business isn’t the work. It’s the switching, the chasing and the “did anyone reply to that?”. Here’s where Colvy takes it back.',
     category: 'Product', accent: CORAL, icon: 'bolt',
     date: '2026-10-15', dateLabel: 'Oct 15, 2026', readTime: '7 min read', author: 'The Colvy Team',
     content: `Ask a busy owner where their week went and you rarely hear “serving customers”. You hear “checking Instagram, then the email, then the shop phone’s voicemail, then finding that order, then texting the customer back”. The work is fine. It’s everything around the work that eats the day.

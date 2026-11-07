@@ -12,7 +12,7 @@ export const FOR_PAGES: Record<string, ForMeta> = {
   ecommerce: {
     name: 'Ecommerce',
     title: 'Colvy for Ecommerce: turn chats into orders',
-    description: 'Answer Instagram, Messenger, SMS, email and live chat in one inbox, see each buyer’s Shopify or WooCommerce orders, send payment links, recover carts and ask for reviews.',
+    description: 'Answer Instagram, Messenger, SMS, email and live chat in one inbox, see each buyer’s Shopify or WooCommerce orders, send payment links and recover carts.',
     faqs: [
       { q: 'Which stores does Colvy work with?', a: 'Shopify (one-click install) and WooCommerce (with the Colvy WordPress plugin or an API key). Orders and customers come into Colvy, so you see a buyer’s order history next to their messages.' },
       { q: 'Can I take payment inside a conversation?', a: 'Yes. Send a secure payment link from the chat, or create the order for the customer and send them the link to pay. When they pay, it shows as paid and the sale is recorded against the conversation.' },
@@ -23,7 +23,7 @@ export const FOR_PAGES: Record<string, ForMeta> = {
   'real-estate': {
     name: 'Real estate',
     title: 'Colvy for Real Estate: answer every enquiry, book every inspection',
-    description: 'Bring portal enquiry emails, Facebook messages, website chat and texts into one inbox, reply fast with the listing, book inspections online and follow up after the sale.',
+    description: 'Bring portal enquiries, Facebook messages, website chat and texts into one inbox, reply fast with the listing, book inspections online and follow up after sale.',
     faqs: [
       { q: 'Can portal enquiries come into Colvy?', a: 'Yes. Connect your realestate.com.au agency, or the email address your portal enquiries go to, and each enquiry arrives as a conversation in the shared inbox alongside Facebook, website chat and SMS.' },
       { q: 'Can buyers book inspections themselves?', a: 'Yes. Set up inspection or appraisal times on your booking page, share the link, and Colvy sends SMS reminders the day before and two hours before.' },
@@ -45,7 +45,7 @@ export const FOR_PAGES: Record<string, ForMeta> = {
   'service-businesses': {
     name: 'Service businesses',
     title: 'Colvy for Service Businesses: from missed call to five-star review',
-    description: 'For trades, salons, cleaners and clinics: text back missed calls, get photos before you quote, take deposits, let customers book online and ask for a review when the job is done.',
+    description: 'For trades, salons, cleaners and clinics: text back missed calls, get photos before you quote, take deposits and online bookings, and ask for a review after.',
     faqs: [
       { q: 'What happens when I miss a call on a job?', a: 'Switch on missed-call text back and Colvy texts the caller straight away from your business number. Their reply lands in your inbox, and your dashboard shows which missed calls still need a call back.' },
       { q: 'Can customers send me photos of the job?', a: 'Yes. Send an upload link and the customer can send photos or videos at full quality, straight into the conversation.' },
@@ -57,7 +57,7 @@ export const FOR_PAGES: Record<string, ForMeta> = {
   restaurants: {
     name: 'Restaurants',
     title: 'Colvy for Restaurants: nothing missed during service',
-    description: 'Table bookings with a live floor plan, plus calls, Instagram, Facebook and texts in one inbox, instant answers about hours and menus, function deposits, replies to every review and SMS to regulars.',
+    description: 'Table bookings with a live floor plan, plus calls, Instagram, Facebook and texts in one inbox, instant answers about hours and menus, and function deposits.',
     faqs: [
       { q: 'Can guests book a table online?', a: 'Yes. Colvy has table reservations: a booking page where guests choose the party size, date, time, seating and occasion, a day sheet and live floor plan for your team, covers and pacing limits, deposits for bigger groups and no-show tools. Guests can change or cancel from their booking page, and tap “I’m here” when they arrive.' },
       { q: 'Can the AI answer questions about our hours?', a: 'Yes. Colvy’s AI can answer opening hours, including holiday hours from your Google Business Profile, and questions covered in your knowledge such as menus and dietary notes. Anything it can’t answer goes to your team.' },

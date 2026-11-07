@@ -111,5 +111,39 @@ console.log('every compare page has its copy, search title, FAQs and hub card')
   ok(!untyped.length, 'every compare slug is in the table\'s Slug type', untyped)
 }
 
+console.log('every search description fits in a Google result (160 characters)')
+{
+  const MAX = 160
+  const unq = x => x.replace(/\\'/g, "'").replace(/\\\\/g, '\\')
+  const STR = `'((?:[^'\\\\]|\\\\.)*)'`
+  const found = []
+  const take = (file, re) => { for (const m of read(file).matchAll(re)) found.push([file, unq(m[1])]) }
+  // Description maps (every description: in these files is a page's search description)
+  for (const f of ['lib/compare-meta.ts', 'lib/for-pages.ts', 'app/channels/[slug]/page.tsx', 'app/product/[feature]/page.tsx', 'app/solutions/[slug]/page.tsx',
+    'app/phones/[slug]/layout.tsx', 'app/ai-assistant/[slug]/layout.tsx', 'app/integrations/[slug]/layout.tsx'])
+    take(f, new RegExp(`description: ["']((?:[^"'\\\\]|\\\\.)*)["']`, 'g'))
+  take('lib/topic-pages.ts', new RegExp(`metaDescription: ${STR}`, 'g'))
+  // The site default, and pageMeta({ … description: '…' }) on every page and layout
+  take('app/layout.tsx', new RegExp(`^  description:\\s*${STR}`, 'gm'))
+  const { readdirSync, statSync } = await import('node:fs')
+  const walk = d => readdirSync(ROOT + d).flatMap(n => { const p = `${d}/${n}`; return statSync(ROOT + p).isDirectory() ? walk(p) : /\/(page|layout)\.tsx$/.test(p) ? [p] : [] })
+  for (const f of walk('app')) {
+    for (const call of read(f).matchAll(/pageMeta\(\{[\s\S]*?\}\)/g)) {
+      const m = call[0].match(new RegExp(`description: ${STR}`)); if (m) found.push([f, unq(m[1])])
+    }
+  }
+  // Blog posts: the search description, else the excerpt
+  for (const f of ['lib/blog.ts', 'lib/blog-latest.ts']) {
+    for (const block of read(f).split(/\n\s+slug: '/).slice(1)) {
+      const slug = block.slice(0, block.indexOf("'"))
+      const seo = block.match(new RegExp(`\\n\\s+seoDescription: ${STR}`)), ex = block.match(new RegExp(`\\n\\s+excerpt: ${STR}`))
+      if (ex) found.push([`${f} (${slug})`, unq((seo || ex)[1])])
+    }
+  }
+  const long = found.filter(([, d]) => d.length > MAX).map(([f, d]) => `${f}: ${d.length}`)
+  ok(found.length > 100, `found the search descriptions (${found.length})`)
+  ok(!long.length, `none over ${MAX} characters`, long)
+}
+
 console.log(failures ? `\n${failures} failed` : '\nall passed')
 process.exit(failures ? 1 : 0)
