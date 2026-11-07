@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { allMarketingPaths } from '@/lib/marketing-routes'
 
 // Branded, animated 404. Rendered as a fixed full-screen overlay so it looks
 // clean regardless of whatever chrome the root layout wraps an unknown route in.
@@ -40,6 +41,20 @@ const ROUTES: { href: string; label: string }[] = [
   { href: '/demo', label: 'Book a demo' },
 ]
 
+// Every other marketing page (each feature, channel, phone feature, AI page,
+// integration…, from lib/marketing-routes), so "/phones/call-fowarding" finds
+// Call forwarding. Labels come from the address.
+const WORDS: Record<string, string> = { ai: 'AI', ivr: 'IVR', voip: 'VoIP', api: 'API', sms: 'SMS', crm: 'CRM', hd: 'HD', saas: 'SaaS', woocommerce: 'WooCommerce' }
+const labelFor = (path: string) => {
+  const words = (path.split('/').pop() || '').split('-').map(w => WORDS[w] || w)
+  const label = words.join(' ')
+  return path.startsWith('compare/') ? `Colvy vs ${label[0].toUpperCase()}${label.slice(1)}` : label[0].toUpperCase() + label.slice(1)
+}
+const ALL_ROUTES: { href: string; label: string }[] = [
+  ...ROUTES,
+  ...allMarketingPaths().filter(p => p && !ROUTES.some(r => r.href === `/${p}`)).map(p => ({ href: `/${p}`, label: labelFor(p) })),
+]
+
 // Compact Levenshtein distance for fuzzy path matching.
 function lev(a: string, b: string): number {
   const m = a.length, n = b.length
@@ -64,21 +79,32 @@ const norm = (p: string) => (p || '').toLowerCase().replace(/\/+$/, '') || '/'
 function bestMatch(path: string): { route: { href: string; label: string }; confident: boolean } | null {
   const target = norm(path)
   if (target === '/') return null
-  const lastSeg = target.split('/').filter(Boolean).pop() || ''
+  const segs = target.split('/').filter(Boolean)
+  const lastSeg = segs.pop() || ''
+  const parent = segs.join('/')
   let best: { href: string; label: string } | null = null
   let bestScore = Infinity
-  for (const r of ROUTES) {
+  for (const r of ALL_ROUTES) {
     if (r.href === '/') continue
     const cand = norm(r.href)
     // Distance on the full path, plus a lighter distance on the last segment so
-    // "/chanels/sms" still lands near "/channels/sms".
-    const candLast = cand.split('/').filter(Boolean).pop() || ''
-    const score = Math.min(lev(target, cand), lev(lastSeg, candLast) + 1)
+    // "/chanels/sms" and "/sms" still land on "/channels/sms" (only when the
+    // section is close too, or missing, so a typo under /phones doesn't jump
+    // to /channels).
+    const cSegs = cand.split('/').filter(Boolean)
+    const candLast = cSegs.pop() || ''
+    const sameSection = !parent || lev(parent, cSegs.join('/')) <= 2
+    const score = Math.min(lev(target, cand), sameSection ? lev(lastSeg, candLast) + 1 : Infinity)
     if (score < bestScore) { bestScore = score; best = r }
   }
   if (!best) return null
-  // Confident when the edit distance is small relative to the path length.
-  const threshold = Math.max(2, Math.floor(target.replace(/[^a-z0-9]/g, '').length * 0.34))
+  // Confident when the edit distance is small relative to the last part of
+  // the address (where the difference is): measured against the whole path,
+  // a long section like /industries/ let "aquarium" pass for "agencies".
+  // Too far off to be a typo at all (a missing blog post…): no guess.
+  const lastLen = lastSeg.replace(/[^a-z0-9]/g, '').length
+  if (bestScore > Math.max(3, Math.ceil(lastLen * 0.5))) return null
+  const threshold = Math.max(2, Math.floor(lastLen * 0.34))
   return { route: best, confident: bestScore <= threshold }
 }
 
@@ -128,7 +154,7 @@ export default function NotFound() {
     e.preventDefault()
     const q = query.trim().toLowerCase()
     if (!q) return
-    const hit = ROUTES.find(r => r.label.toLowerCase().includes(q) || r.href.includes(q))
+    const hit = ALL_ROUTES.find(r => r.label.toLowerCase().includes(q) || r.href.includes(q))
     router.push(hit ? hit.href : `/product`)
   }
 

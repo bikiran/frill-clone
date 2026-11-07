@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
+import { notFound } from 'next/navigation'
 import JsonLd from '@/components/JsonLd'
 import { pageMeta } from '@/lib/seo'
+import { SOLUTION_SLUGS } from '@/lib/marketing-routes'
 import { faqJsonLd, breadcrumbJsonLd } from '@/lib/seo-faqs'
 import Client from './Client'
 
@@ -17,6 +19,13 @@ const META: Record<string, { title: string; description: string }> = {
   payments: { title: 'Take Payments in Chat with Pay-by-Link', description: 'Send secure pay-by-link requests inside any conversation and reconcile them against orders — all in Colvy.' },
 }
 
+// Only the solutions that exist are built (lib/marketing-routes.ts); any other
+// address is a real 404, not this page with fallback copy.
+export function generateStaticParams() {
+  return SOLUTION_SLUGS.map(slug => ({ slug }))
+}
+export const dynamicParams = false
+
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
   const m = META[slug]
@@ -27,6 +36,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 // The page's questions (lib/seo-faqs.ts) and a breadcrumb trail as structured data.
 export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
+  if (!SOLUTION_SLUGS.includes(slug)) notFound()
   const m = META[slug]
   const path = `solutions/${slug}`
   const faq = faqJsonLd(path)
