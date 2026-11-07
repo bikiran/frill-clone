@@ -194,6 +194,12 @@ export const SEO_FAQS: Record<string, SeoFaq[]> = {
     { q: 'Does Colvy keep one history per customer?', a: 'Yes. Every channel lands on the customer’s record, so anyone on the team can pick up the conversation with full context.' },
     { q: 'How do I get started?', a: STARTER },
   ],
+  'compare/highlevel': [
+    { q: 'Is Colvy a HighLevel alternative?', a: 'Yes, for businesses that answer their own customers. Colvy puts SMS, calls, Instagram, Messenger, email, live chat and Google reviews in one shared inbox, with a CRM, five AI agents, store orders and online booking. HighLevel is built mainly for marketing agencies that set up accounts for their clients.' },
+    { q: 'Do I need to be an agency to use Colvy?', a: 'No. Colvy is set up and run by the business itself, with no sub-accounts or reselling to manage. Most teams connect their channels and start replying in about 45 minutes.' },
+    { q: 'Are texts and AI included?', a: 'The Inbox and Everything plans include five AI agents and 3,000 SMS a month. Texts beyond that use prepaid credits from A$0.15, so there are no surprise bills.' },
+    { q: 'How do I get started?', a: STARTER },
+  ],
   'compare/manychat': [
     { q: 'Is Colvy a ManyChat alternative?', a: 'Colvy handles Instagram and Messenger conversations in a shared inbox where your team and AI agents reply together, and adds SMS, calls, email, live chat, reviews and store orders, so conversations turn into sales and bookings.' },
     { q: 'Can Colvy reply to Instagram comments and DMs?', a: 'Yes. Instagram DMs arrive in the inbox, and the Social Engagement page lets you reply to comments, message commenters privately or hide harmful ones.' },

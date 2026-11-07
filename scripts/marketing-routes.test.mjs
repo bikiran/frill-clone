@@ -93,5 +93,23 @@ for (const [route, name, path] of ROUTES) {
   ok(!!meta && !missing.length, `/${route}/[…]: a META entry for every slug in ${name}`, missing)
 }
 
+console.log('every compare page has its copy, search title, FAQs and hub card')
+{
+  const listed = list('COMPARE_SLUGS')
+  const cmp = mapKeys('app/compare/[slug]/Client.tsx', 'const CMP')
+  const meta = mapKeys('lib/compare-meta.ts', 'export const COMPARE_META')
+  const faqs = [...read('lib/seo-faqs.ts').matchAll(/^ {2}'compare\/([a-z0-9-]+)': \[/gm)].map(m => m[1])
+  const cards = [...read('app/compare/Client.tsx').matchAll(/\{ slug: '([a-z0-9-]+)'/g)].map(m => m[1])
+  const slugType = (read('app/compare/[slug]/Client.tsx').match(/^type Slug = (.*)$/m) || [])[1] || ''
+  ok(new Set(listed).size === listed.length, 'COMPARE_SLUGS has no repeats')
+  for (const [what, keys] of [['a CMP entry (page copy)', cmp], ['a COMPARE_META entry', meta], ['FAQs in lib/seo-faqs', faqs], ['a card on the /compare hub', cards]]) {
+    const missing = listed.filter(s => !keys.includes(s))
+    const extra = keys.filter(s => !listed.includes(s))
+    ok(!missing.length && !extra.length, `every compare slug has ${what}, and nothing else does`, { missing, extra })
+  }
+  const untyped = listed.filter(s => !slugType.includes(`'${s}'`))
+  ok(!untyped.length, 'every compare slug is in the table\'s Slug type', untyped)
+}
+
 console.log(failures ? `\n${failures} failed` : '\nall passed')
 process.exit(failures ? 1 : 0)
