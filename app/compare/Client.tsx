@@ -31,6 +31,7 @@ const CARDS = [
   { slug: 'freshdesk', comp: 'Freshdesk', tag: 'All-in-one, no add-on fees', metric: '$0', accent: CYAN },
   { slug: 'coax', comp: 'Coax', tag: 'Comms + a built-in feedback loop', metric: 'Feedback', accent: TEAL },
   { slug: 'highlevel', comp: 'HighLevel', tag: 'Built for your business, not an agency', metric: 'AUD', accent: BLUE },
+  { slug: 'salesforce', comp: 'Salesforce', tag: 'One price for the team, not per seat', metric: 'Flat', accent: CYAN },
   { slug: 'manychat', comp: 'ManyChat', tag: 'A real inbox, not just flows', metric: 'Inbox', accent: INDIGO },
   { slug: 'birdeye', comp: 'Birdeye', tag: 'Reviews, calls & feedback — fairly priced', metric: 'All-in-1', accent: AMBER },
 ]
