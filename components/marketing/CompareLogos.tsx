@@ -25,12 +25,12 @@ const LOGOS: Record<string, Logo> = {
 
 export const hasCompetitorLogo = (slug: string) => !!LOGOS[slug]
 
-function Tile({ size, ring, children, bg = '#fff', clip = false }: { size: number; ring?: string; children: React.ReactNode; bg?: string; clip?: boolean }) {
+function Tile({ size, ring, children, bg = '#fff', clip = false, edge }: { size: number; ring?: string; children: React.ReactNode; bg?: string; clip?: boolean; edge?: string }) {
   return (
     <span style={{
       position: 'relative', width: size, height: size, borderRadius: Math.round(size * 0.3), flexShrink: 0,
       display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: bg, overflow: clip ? 'hidden' : 'visible',
-      boxShadow: `${ring ? `0 0 0 ${Math.max(2, Math.round(size / 18))}px ${ring}, ` : ''}0 0 0 1px rgba(15,17,25,0.07) inset, 0 2px 6px rgba(15,17,25,0.08)`,
+      boxShadow: `${ring ? `0 0 0 ${Math.max(2, Math.round(size / 18))}px ${ring}, ` : ''}${edge ? `0 0 0 1px ${edge}, ` : ''}0 0 0 1px rgba(15,17,25,0.07) inset, 0 2px 6px rgba(15,17,25,0.08)`,
     }}>{children}</span>
   )
 }
@@ -57,7 +57,8 @@ export function VsLogos({ slug, name, accent, size = 42, ring = '#fff', variant 
   slug: string; name: string; accent: string; size?: number; ring?: string; variant?: 'stack' | 'vs'; muted?: string
 }) {
   const colvy = (
-    <Tile size={size} clip bg="#0f1119">
+    // A faint light edge so Colvy's dark tile still reads on dark pages (invisible on light ones).
+    <Tile size={size} clip bg="#0f1119" edge="rgba(255,255,255,0.16)">
       <img src="/icon-192.png" alt="Colvy logo" width={size} height={size} loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
     </Tile>
   )
