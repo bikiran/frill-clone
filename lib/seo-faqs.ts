@@ -200,6 +200,12 @@ export const SEO_FAQS: Record<string, SeoFaq[]> = {
     { q: 'Are texts and AI included?', a: 'The Inbox and Everything plans include five AI agents and 3,000 SMS a month. Texts beyond that use prepaid credits from A$0.15, so there are no surprise bills.' },
     { q: 'How do I get started?', a: STARTER },
   ],
+  'compare/salesforce': [
+    { q: 'Is Colvy a Salesforce alternative for small businesses?', a: 'Yes. Colvy is a CRM with a shared inbox for SMS, calls, Instagram, Messenger, email and live chat, plus five AI agents, store orders and online booking, and most teams set it up in about 45 minutes. Salesforce is a broader CRM platform where messaging, calls and AI agents are added on higher editions.' },
+    { q: 'Is Colvy priced per user?', a: 'No. The Inbox and Everything plans are one monthly price in AUD with unlimited team members, and you can cancel anytime.' },
+    { q: 'Does Colvy include AI agents?', a: 'Yes. The Inbox and Everything plans include five AI agents for support, bookings, sales follow-ups, order updates and reviews. They draft for approval at first, and you decide what they may do on their own.' },
+    { q: 'How do I get started?', a: STARTER },
+  ],
   'compare/manychat': [
     { q: 'Is Colvy a ManyChat alternative?', a: 'Colvy handles Instagram and Messenger conversations in a shared inbox where your team and AI agents reply together, and adds SMS, calls, email, live chat, reviews and store orders, so conversations turn into sales and bookings.' },
     { q: 'Can Colvy reply to Instagram comments and DMs?', a: 'Yes. Instagram DMs arrive in the inbox, and the Social Engagement page lets you reply to comments, message commenters privately or hide harmful ones.' },
