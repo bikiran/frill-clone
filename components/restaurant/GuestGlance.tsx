@@ -1,8 +1,10 @@
 'use client'
 
 // The Inbox contact panel's table history for a restaurant: visits, no-shows,
-// the next table and any allergies, with a link to Reservations. Shows only
-// when the workspace takes reservations and this person has booked before.
+// the next table and any allergies, with a link to Reservations and Book a
+// table (the new-reservation form with this guest chosen). Shows whenever the
+// workspace takes reservations (lib/modules); a guest who hasn't booked yet
+// gets just the Book a table link.
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
@@ -39,7 +41,18 @@ export default function GuestGlance({ companyId, contactId }: { companyId: strin
     })()
     return () => { live = false }
   }, [companyId, contactId, key])
-  if (!d || !d.reservations?.length) return null
+  if (!d) return null
+  const book = `/admin/reservations?new=1&contactId=${encodeURIComponent(contactId)}`
+  if (!d.reservations?.length) {
+    return (
+      <div className="gg">
+        <div className="gg-h"><b>Tables</b><Link href="/admin/reservations?tab=guests">Open ›</Link></div>
+        <p>No table bookings yet.</p>
+        <Link href={book} className="gg-book">Book a table</Link>
+        <style>{GG_CSS}</style>
+      </div>
+    )
+  }
   const s = d.stats || {}
   const tz = d.timezone || 'Australia/Melbourne'
   const fmt = (iso: string) => new Intl.DateTimeFormat('en-AU', { timeZone: tz, weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(iso)).replace(/ (am|pm)$/i, (m: string) => m.trim().toLowerCase())
@@ -57,7 +70,13 @@ export default function GuestGlance({ companyId, contactId }: { companyId: strin
       </div>
       {next && <p>Next: {fmt(next.startsAt)} · {next.party} {next.party === 1 ? 'guest' : 'guests'}</p>}
       {d.guest?.profile?.allergies && <p className="bad">⚠︎ {d.guest.profile.allergies}</p>}
-      <style>{`
+      <Link href={book} className="gg-book">Book a table</Link>
+      <style>{GG_CSS}</style>
+    </div>
+  )
+}
+
+const GG_CSS = `
         .gg{margin-top:14px;padding:12px 14px;border-radius:16px;background:var(--f,#f4f4f5);font-size:13px;color:var(--ink,#111)}
         .gg-h{display:flex;align-items:center;gap:8px}
         .gg-h b{font-size:13.5px;font-weight:700}
@@ -67,7 +86,8 @@ export default function GuestGlance({ companyId, contactId }: { companyId: strin
         .gg-s b{color:var(--ink,#111);font-variant-numeric:tabular-nums}
         .gg p{margin:6px 0 0;color:var(--mut,#71717a)}
         .gg .bad,.gg .bad b{color:#b45309;font-weight:650}
-      `}</style>
-    </div>
-  )
-}
+        .gg-book{margin-top:10px;width:100%;height:34px;border-radius:999px;box-shadow:0 0 0 1px rgba(15,17,25,.1);background:var(--card,#fff);color:var(--ink,#111);font-size:13px;font-weight:650;display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+        .gg-book:hover{box-shadow:0 0 0 1px rgba(255,106,77,.5);color:var(--coral)}
+        [data-theme="dark"] .gg{background:rgba(255,255,255,.05)}
+        [data-theme="dark"] .gg-book{box-shadow:0 0 0 1px rgba(255,255,255,.1)}
+`
