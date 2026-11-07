@@ -7,7 +7,7 @@ import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
 import FeatureIcon from '@/components/FeatureIcon'
-import { SellioStyles, SCta } from '@/components/marketing/Sellio'
+import { SellioStyles, SCta, SCrumb, SPill, SGhost, STrust, SHead, SBento, SStory, SStats, SMore } from '@/components/marketing/Sellio'
 
 // Individual AI Assistant capability pages. Data-driven, one per menu item.
 // Copy is grounded in what the assistant actually does (see the AI hub and
@@ -252,14 +252,14 @@ export default function AiFeaturePage() {
         <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: gridImg, backgroundSize: '54px 54px', WebkitMaskImage: 'radial-gradient(ellipse 70% 60% at 40% 40%, #000 40%, transparent 80%)', maskImage: 'radial-gradient(ellipse 70% 60% at 40% 40%, #000 40%, transparent 80%)', pointerEvents: 'none' }} />
         <div style={{ position: 'relative' }}>
           <Reveal>
-            <a href="/ai-assistant" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 800, color: accent, textDecoration: 'none', marginBottom: 14 }}>← AI Assistant</a>
-            <div style={{ marginBottom: 8 }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: accent + '18', color: accent, fontSize: 12.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase' }}><FeatureIcon name={f.features[0].icon} color={accent} size={15} />{f.eyebrow}</span></div>
-            <h1 style={{ fontSize: 'clamp(36px, 5.2vw, 60px)', fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 1.04, margin: '0 0 18px' }}>{f.title}</h1>
+            <SCrumb back={{ label: 'AI Assistant', href: '/ai-assistant' }} current={f.eyebrow} icon={f.features[0].icon} accent={accent} />
+            <h1 style={{ fontSize: 'clamp(36px, 5.2vw, 60px)', fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 1.04, margin: '0 0 18px' }}>{f.title}{!/[.!?]$/.test(f.title) && <span style={{ color: accent }}>.</span>}</h1>
             <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: muted, maxWidth: 520, lineHeight: 1.6, margin: '0 0 30px' }}>{f.sub}</p>
-            <div className="af-hero-cta" style={{ display: 'flex', gap: 12 }}>
-              <button onClick={go} className="af-btn" style={btnPrimary}>Start free — no card →</button>
-              <a href="/pricing" className="af-btn" style={btnGhost}>See pricing</a>
+            <div className="sl-ctas">
+              <SPill accent={accent} onClick={go} cta="hero_start_free">Start free — no card</SPill>
+              <SGhost href="/pricing">See pricing</SGhost>
             </div>
+            <STrust accent={accent} />
           </Reveal>
         </div>
         <Reveal delay={0.1}>
@@ -276,78 +276,27 @@ export default function AiFeaturePage() {
         </Reveal>
       </section>
 
-      {/* FEATURE GRID */}
-      <section style={{ maxWidth: 1280, margin: '0 auto', padding: '10px 24px 40px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(260px, 100%), 1fr))', gap: 18 }}>
-          {f.features.map((ft, i) => (
-            <Reveal key={ft.title} delay={(i % 4) * 0.05}>
-              <div className="af-card" style={{ height: '100%', borderRadius: 20, padding: 26, background: cardBg, border: `1px solid ${cardBorder}` }}>
-                <span style={{ width: 46, height: 46, borderRadius: 13, background: accent + '16', color: accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}><FeatureIcon name={ft.icon} color={accent} size={23} /></span>
-                <h3 style={{ fontSize: 17.5, fontWeight: 800, margin: '0 0 6px', color: text }}>{ft.title}</h3>
-                <p style={{ fontSize: 14.5, lineHeight: 1.6, color: muted, margin: 0 }}>{ft.desc}</p>
-              </div>
-            </Reveal>
-          ))}
+      {/* FEATURES — bento */}
+      <section style={{ padding: 'clamp(56px, 8vw, 100px) 24px', background: dark ? '#0d0e17' : `linear-gradient(180deg, #ffffff, ${accent}0a)` }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+          <SHead eyebrow="What you get" title="Everything in one place" grey="Built in, not bolted on" accent={accent} dark={dark} />
+          <SBento items={f.features} accent={accent} dark={dark} />
         </div>
       </section>
 
-      {/* BANDS */}
+      {/* STORY BANDS */}
       {f.bands.map((b, i) => (
-        <section key={b.title} style={{ background: i % 2 ? (dark ? 'rgba(255,255,255,0.02)' : accent + '08') : 'transparent', padding: 'clamp(40px, 6vw, 80px) 24px' }}>
-          <div className="af-band" style={{ maxWidth: 1160, margin: '0 auto', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'center', direction: i % 2 ? 'rtl' : 'ltr' }}>
-            <div style={{ direction: 'ltr' }}>
-              <Reveal>
-                <span style={{ fontSize: 12.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: accent }}>{b.tag}</span>
-                <h2 style={{ fontSize: 'clamp(26px, 3.4vw, 40px)', fontWeight: 900, letterSpacing: '-0.02em', lineHeight: 1.08, margin: '10px 0 14px', color: text }}>{b.title}</h2>
-                <p style={{ fontSize: 16.5, lineHeight: 1.65, color: muted, margin: '0 0 20px' }}>{b.body}</p>
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 11 }}>
-                  {b.bullets.map(bl => (
-                    <li key={bl} style={{ display: 'flex', alignItems: 'flex-start', gap: 11, fontSize: 15, fontWeight: 600, color: text }}>
-                      <span style={{ width: 22, height: 22, borderRadius: '50%', background: accent + '1a', color: accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg></span>{bl}
-                    </li>
-                  ))}
-                </ul>
-              </Reveal>
-            </div>
-            <div style={{ direction: 'ltr' }}>
-              <Reveal delay={0.1}>
-                <div style={{ position: 'relative', borderRadius: 24, minHeight: 280, overflow: 'hidden', background: `linear-gradient(140deg, ${accent}22, ${accent}05)`, border: `1px solid ${cardBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: gridImg, backgroundSize: '32px 32px', opacity: 0.5 }} />
-                  <div style={{ position: 'relative', width: 96, height: 96, borderRadius: 26, background: accent, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 20px 50px ${accent}55`, animation: 'afFloat 6s ease-in-out infinite' }}>
-                    <FeatureIcon name={f.features[Math.min(i + 1, f.features.length - 1)].icon} color="#fff" size={44} />
-                  </div>
-                </div>
-              </Reveal>
-            </div>
-          </div>
-        </section>
+        <SStory key={b.title} tag={b.tag} title={b.title} body={b.body} bullets={b.bullets} accent={accent} tone={i % 2 ? 'soft' : 'deep'} flip={i % 2 === 1} dark={dark}
+          icons={f.features.slice(i * 3, i * 3 + 3).map(x => x.icon)} />
       ))}
 
       {/* MORE AI CAPABILITIES */}
-      <section style={{ maxWidth: 1000, margin: '0 auto', padding: '30px 24px 20px', textAlign: 'center' }}>
-        <Reveal>
-          <h2 style={{ fontSize: 'clamp(24px, 3.4vw, 38px)', fontWeight: 900, letterSpacing: '-0.02em', margin: '0 0 8px' }}>More of the <span style={{ color: accent }}>AI assistant</span></h2>
-          <p style={{ fontSize: 16, color: muted, maxWidth: 560, margin: '0 auto 22px', lineHeight: 1.55 }}>One assistant, many jobs — explore the rest.</p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center' }}>
-            {ALL.filter(a => a.slug !== slug).map(a => (
-              <a key={a.slug} href={`/ai-assistant/${a.slug}`} style={{ fontSize: 13.5, fontWeight: 700, color: text, background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: 999, padding: '8px 16px', textDecoration: 'none' }}>{a.name}</a>
-            ))}
-          </div>
-        </Reveal>
-      </section>
+      <SMore eyebrow="One assistant" title="More of the AI assistant" grey="Many jobs, one place" accent={accent} dark={dark}
+        items={ALL.map(a => ({ href: `/ai-assistant/${a.slug}`, title: a.name, icon: AI[a.slug].features[0].icon, here: a.slug === pageKey }))} />
 
       {/* STATS */}
-      <section style={{ maxWidth: 1000, margin: '0 auto', padding: '30px 24px 60px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 18 }}>
-          {f.stats.map((s, i) => (
-            <Reveal key={s.label} delay={i * 0.06}>
-              <div style={{ textAlign: 'center', borderRadius: 20, padding: '28px 14px', background: cardBg, border: `1px solid ${cardBorder}` }}>
-                <div style={{ fontSize: 'clamp(22px, 3.4vw, 34px)', fontWeight: 900, letterSpacing: '-0.03em', color: accent }}>{s.big}</div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: muted, marginTop: 4 }}>{s.label}</div>
-              </div>
-            </Reveal>
-          ))}
-        </div>
+      <section style={{ padding: 'clamp(40px, 6vw, 70px) 24px clamp(56px, 8vw, 90px)' }}>
+        <SStats stats={f.stats} accent={accent} dark={dark} />
       </section>
 
       <SCta title={f.ctaHead} accent={accent} onGo={go} user={user} />

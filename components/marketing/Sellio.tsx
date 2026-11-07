@@ -81,6 +81,21 @@ export function STrust({ accent, items = ['Free plan', 'No card needed', 'Set up
   return <div className="sl-trust" style={{ ['--a' as any]: accent } as CSSProperties}>{items.map(i => <span key={i}>{i}</span>)}</div>
 }
 
+/**
+ * Where you are: a round back pill to the hub ("Phones") and the current
+ * page's chip, on one line, instead of a bare "← Phones" link above it.
+ */
+export function SCrumb({ back, current, icon, accent, extra }: { back?: { label: string; href: string }; current: string; icon: string; accent: string; extra?: ReactNode }) {
+  return (
+    <nav className="sl-crumb" aria-label="Breadcrumb" style={{ ['--a' as any]: accent } as CSSProperties}>
+      {back && <a href={back.href} className="sl-crumb-back"><span className="ar" aria-hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg></span>{back.label}</a>}
+      {back && <span className="sl-crumb-sep" aria-hidden>/</span>}
+      <span className="sl-crumb-now" aria-current="page"><FeatureIcon name={icon} color={accent} size={14} />{current}</span>
+      {extra}
+    </nav>
+  )
+}
+
 // ── Section heading ──────────────────────────────────────────────────────────
 
 /** Eyebrow in mono, a big two-tone headline (the grey part continues it). */
@@ -215,9 +230,33 @@ export function SStats({ stats, accent, dark = false }: { stats: { big: string; 
   return (
     <SReveal>
       <div className="sl-stats" style={{ ...vars(dark, accent), gridTemplateColumns: `repeat(${stats.length}, 1fr)` }}>
-        {stats.map(s => <div key={s.label} className="sl-stat"><b>{s.big}{/[A-Za-z]$/.test(s.big) && <i>.</i>}</b><span>{s.label}</span></div>)}
+        {stats.map(s => <div key={s.label} className="sl-stat"><b>{s.big}{/[A-Za-z]$/.test(s.big) && !/\d/.test(s.big) && <i>.</i>}</b><span>{s.label}</span></div>)}
       </div>
     </SReveal>
+  )
+}
+
+// ── More in this area (compact link tiles) ───────────────────────────────────
+
+/** The other pages in an area (e.g. every phone feature): compact tiles, two across on phones. */
+export function SMore({ eyebrow, title, grey, items, accent, dark = false }: { eyebrow?: string; title: string; grey?: string; items: { href: string; title: string; icon: string; soon?: boolean; here?: boolean }[]; accent: string; dark?: boolean }) {
+  return (
+    <section className="sl-more" style={vars(dark, accent)}>
+      <div className="sl-wrap">
+        <SHead eyebrow={eyebrow} title={title} grey={grey} accent={accent} dark={dark} />
+        <div className="sl-more-grid">
+          {items.map((it, i) => (
+            <SReveal key={it.href} delay={(i % 4) * 0.04} className="sl-more-cell">
+              <a href={it.href} className={`sl-more-a${it.here ? ' here' : ''}`} aria-current={it.here ? 'page' : undefined}>
+                <i><FeatureIcon name={it.icon} color={accent} size={17} /></i>
+                <span>{it.title}{it.soon && <em>Soon</em>}{it.here && <em className="here">You’re here</em>}</span>
+                <b aria-hidden><Arrow s={14} /></b>
+              </a>
+            </SReveal>
+          ))}
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -467,7 +506,43 @@ const SELLIO_CSS = `
 .sl-stat b { display: block; font-size: clamp(24px, 4.2vw, 46px); font-weight: 900; letter-spacing: -.04em; line-height: 1; color: var(--text); overflow-wrap: anywhere }
 .sl-stat b i { font-style: normal; color: var(--a) }
 .sl-stat span { display: block; margin-top: 12px; font-family: ${S_MONO}; font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted) }
-@media (max-width: 560px) { .sl-stat { padding: 20px 6px } .sl-stat span { font-size: 9.5px; letter-spacing: .06em; margin-top: 8px } }
+@media (max-width: 560px) {
+  .sl-stats { grid-template-columns: 1fr !important; border-radius: 22px }
+  .sl-stat { display: flex; align-items: center; gap: 16px; text-align: left; padding: 18px 20px; border-left: 0; border-top: 1px solid var(--line) }
+  .sl-stat:first-child { border-top: 0 }
+  .sl-stat b { flex: 0 0 auto; max-width: 52%; font-size: 30px }
+  .sl-stat span { margin: 0; font-size: 11px; letter-spacing: .08em; line-height: 1.45 }
+}
+
+/* Breadcrumb */
+.sl-crumb { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 22px }
+.sl-crumb-back { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px 0 4px; border-radius: 999px; border: 1px solid var(--line2, rgba(15,17,25,.14)); color: inherit; font-size: 13.5px; font-weight: 750; text-decoration: none; transition: border-color .2s, background .2s }
+.sl-crumb-back .ar { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--a) 14%, transparent); color: var(--a); transition: transform .2s }
+.sl-crumb-back:hover { border-color: var(--a) }
+.sl-crumb-back:hover .ar { transform: translateX(-2px) }
+.sl-crumb-sep { opacity: .3; font-weight: 700 }
+.sl-crumb-now { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 14px; border-radius: 999px; background: color-mix(in srgb, var(--a) 13%, transparent); color: var(--a); font-family: ${S_MONO}; font-size: 11.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase }
+
+/* More in this area */
+.sl-more { padding: clamp(64px, 9vw, 110px) 24px; background: var(--bg2) }
+.sl-more-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px }
+.sl-more-cell { display: flex; min-width: 0 }
+.sl-more-a { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 12px 14px 12px 12px; border-radius: 18px; background: var(--card); border: 1px solid var(--line); color: var(--text); text-decoration: none; font-size: 14.5px; font-weight: 750; line-height: 1.3; transition: transform .25s cubic-bezier(.16,1,.3,1), border-color .2s, box-shadow .25s }
+.sl-more-a:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--a) 40%, transparent); box-shadow: 0 18px 34px -24px color-mix(in srgb, var(--a) 70%, transparent) }
+.sl-more-a i { width: 36px; height: 36px; border-radius: 11px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--a) 12%, transparent) }
+.sl-more-a span { flex: 1; min-width: 0 }
+.sl-more-a em { display: inline-block; margin-left: 6px; font-style: normal; font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 999px; background: color-mix(in srgb, var(--a) 14%, transparent); color: var(--a); vertical-align: 2px }
+.sl-more-a em.here { background: var(--text); color: var(--card) }
+.sl-more-a b { color: var(--grey); display: inline-flex; transition: transform .2s, color .2s }
+.sl-more-a:hover b { color: var(--a); transform: translateX(3px) }
+.sl-more-a.here { border-color: color-mix(in srgb, var(--a) 45%, transparent) }
+@media (max-width: 1000px) { .sl-more-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) } }
+@media (max-width: 720px) { .sl-more-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) } }
+@media (max-width: 560px) {
+  .sl-more-a { flex-direction: column; align-items: flex-start; gap: 10px; padding: 14px; font-size: 14px }
+  .sl-more-a b { display: none }
+  .sl-more-a em { margin: 6px 0 0; display: table }
+}
 
 /* Hub link cards */
 .sl-links { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px }
