@@ -5,18 +5,12 @@ import { pageMeta } from '@/lib/seo'
 import { INDUSTRY_SLUGS } from '@/lib/marketing-routes'
 import { faqJsonLd, breadcrumbJsonLd } from '@/lib/seo-faqs'
 import Client from './Client'
+import { INDUSTRY_META } from '@/lib/page-meta'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
 // SEO copy per industry landing page. Keys mirror IND in ./Client.tsx.
-const META: Record<string, { title: string; description: string }> = {
-  saas: { title: 'Customer Support & Feedback Software for SaaS', description: 'Support, onboard and gather feedback from SaaS users — one shared inbox, a CRM and public roadmaps in Colvy.' },
-  agencies: { title: 'Client Messaging Inbox & CRM for Agencies', description: 'Manage client conversations across every channel from one inbox, with a CRM and white-label boards built for agencies.' },
-  ecommerce: { title: 'Colvy for Ecommerce', description: 'Answer buyers on Instagram, SMS and email, tie chats to orders, and take payments — all in Colvy.' },
-  hospitality: { title: 'Messaging, Bookings & Reviews for Hospitality', description: 'Handle bookings, enquiries and reviews across channels from one shared inbox built for hospitality teams.' },
-  'real-estate': { title: 'Colvy for Real Estate', description: 'Capture and nurture property leads across SMS, calls and email with Colvy’s shared inbox and CRM.' },
-  healthcare: { title: 'Patient Messaging & Reminders for Clinics', description: 'Coordinate patient enquiries, reminders and reviews across channels from one secure shared inbox in Colvy.' },
-}
+const META = INDUSTRY_META
 
 // Only the industries that exist are built (lib/marketing-routes.ts); any other
 // address is a real 404, not this page with fallback copy.

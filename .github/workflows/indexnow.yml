@@ -1,0 +1,55 @@
+name: Tell search engines about changed pages (IndexNow)
+
+# After each production deploy, submit the colvy.com pages that changed to
+# IndexNow (Bing, which ChatGPT search and Copilot use, and the other
+# IndexNow engines), so new and updated pages are recrawled within hours.
+# Google doesn't use IndexNow; it reads the sitemap's dates instead.
+#
+# Vercel reports a "Vercel" commit status when a deployment is ready; the one
+# on a main commit is the production deploy. A daily run catches anything a
+# missed status would skip, and it can be run by hand from the Actions tab.
+
+on:
+  status:
+  schedule:
+    - cron: '23 20 * * *'
+  workflow_dispatch:
+    inputs:
+      since:
+        description: 'Submit pages changed after this date (e.g. 2026-11-01). Blank: since the last successful run.'
+        required: false
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: indexnow
+  cancel-in-progress: false
+
+jobs:
+  submit:
+    if: >-
+      github.event_name != 'status' ||
+      (github.event.state == 'success' && startsWith(github.event.context, 'Vercel') && contains(github.event.branches.*.name, 'main'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Since the last successful submission
+        id: since
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SINCE_INPUT: ${{ inputs.since }}
+        run: |
+          if [ -n "$SINCE_INPUT" ]; then echo "since=$SINCE_INPUT" >> "$GITHUB_OUTPUT"; exit 0; fi
+          last=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow indexnow.yml --status success --limit 1 --json createdAt --jq '.[0].createdAt' 2>/dev/null || true)
+          echo "since=$last" >> "$GITHUB_OUTPUT"
+      - name: Submit changed pages
+        env:
+          SINCE: ${{ steps.since.outputs.since }}
+          SHA: ${{ github.event_name == 'status' && github.event.sha || '' }}
+        run: node scripts/indexnow.mjs --site https://colvy.com --since "$SINCE" ${SHA:+--wait-for-sha "$SHA"}

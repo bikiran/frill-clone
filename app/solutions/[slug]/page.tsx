@@ -5,19 +5,12 @@ import { pageMeta } from '@/lib/seo'
 import { SOLUTION_SLUGS } from '@/lib/marketing-routes'
 import { faqJsonLd, breadcrumbJsonLd } from '@/lib/seo-faqs'
 import Client from './Client'
+import { SOLUTION_META } from '@/lib/page-meta'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
 // SEO copy per solution landing page. Keys mirror PAGES in ./Client.tsx.
-const META: Record<string, { title: string; description: string }> = {
-  'customer-support': { title: 'Customer Support Software for Teams of Every Size', description: 'Run customer support across SMS, calls, Instagram, Messenger, email and live chat from one shared inbox, with a help centre, CRM and AI agents. Start free.' },
-  sales: { title: 'Sales Inbox & AI-Powered CRM', description: 'Chase leads and close deals in Colvy — an omnichannel inbox and lightweight CRM that keeps every conversation and order in one place.' },
-  marketing: { title: 'SMS & Email Marketing for Business', description: 'SMS and email campaigns built with Colvy AI, sent to smart audiences, with every reply in your shared inbox and reports in orders and revenue.' },
-  reviews: { title: 'Review & Reputation Management for Business', description: 'Get more Google reviews with SMS review requests, reply to every review and social comment from one inbox, and let AI draft replies in your tone.' },
-  feedback: { title: 'Customer Feedback Software & Public Roadmaps', description: 'Capture feature requests, prioritise a public roadmap and announce releases with Colvy feedback boards.' },
-  bookings: { title: 'Online Appointment Booking & Scheduling Software', description: 'Let customers book appointments online: staff and location availability, Stripe deposits, SMS reminders and self-serve rescheduling, all in your shared inbox.' },
-  payments: { title: 'Take Payments in Chat with Pay-by-Link', description: 'Send secure pay-by-link requests inside any conversation and reconcile them against orders — all in Colvy.' },
-}
+const META = SOLUTION_META
 
 // Only the solutions that exist are built (lib/marketing-routes.ts); any other
 // address is a real 404, not this page with fallback copy.

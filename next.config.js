@@ -7,6 +7,8 @@ const MEDIA_HOST = hostOf(process.env.NEXT_PUBLIC_R2_PUBLIC_URL || process.env.R
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // The day this build was made: llms.txt says when it was last updated.
+  env: { COLVY_BUILD_DATE: new Date().toISOString().slice(0, 10) },
   typescript: {
     ignoreBuildErrors: true,
   },
