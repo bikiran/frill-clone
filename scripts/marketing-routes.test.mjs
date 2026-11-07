@@ -77,20 +77,20 @@ for (const [route, name, path] of ROUTES) {
 }
 
 console.log('every page has its own search title and description')
-for (const [route, name, path] of ROUTES) {
-  const dir = path.slice(0, path.lastIndexOf('/'))
-  let meta = null
-  for (const f of ['page.tsx', 'layout.tsx']) {
-    try {
-      const src = read(`${dir}/${f}`)
-      const i = src.indexOf('const META')
-      if (i < 0) continue
-      const end = src.indexOf('\n}\n', i)
-      meta = [...src.slice(i, end).matchAll(/^ {2}(?:'|")?([a-z0-9-]+)(?:'|")?: \{ ?(?:name: [^,]+, )?title:/gm)].map(m => m[1])
-    } catch {}
+{
+  // The maps live in lib/page-meta.ts, one per route (PRODUCT_META, PHONE_META…).
+  const META_NAME = { product: 'PRODUCT_META', channels: 'CHANNEL_META', solutions: 'SOLUTION_META', industries: 'INDUSTRY_META', phones: 'PHONE_META', 'ai-assistant': 'AI_META', integrations: 'INTEGRATION_META' }
+  const src = read('lib/page-meta.ts')
+  for (const [route, name, path] of ROUTES) {
+    const i = src.indexOf(`export const ${META_NAME[route]}:`)
+    const meta = i < 0 ? null : [...src.slice(i, src.indexOf('\n}\n', i)).matchAll(/^ {2}(?:'|")?([a-z0-9-]+)(?:'|")?: \{ ?title:/gm)].map(m => m[1])
+    const missing = meta ? list(name).filter(s => !meta.includes(s)) : list(name)
+    ok(!!meta && !missing.length, `/${route}/[…]: a ${META_NAME[route]} entry for every slug in ${name}`, missing)
+    const dir = path.slice(0, path.lastIndexOf('/'))
+    let uses = false
+    for (const f of ['page.tsx', 'layout.tsx']) { try { if (read(`${dir}/${f}`).includes(`const META = ${META_NAME[route]}`)) uses = true } catch {} }
+    ok(uses, `/${route}/[…]: its metadata reads ${META_NAME[route]}`)
   }
-  const missing = meta ? list(name).filter(s => !meta.includes(s)) : list(name)
-  ok(!!meta && !missing.length, `/${route}/[…]: a META entry for every slug in ${name}`, missing)
 }
 
 console.log('every compare page has its copy, search title, FAQs and hub card')
@@ -119,8 +119,7 @@ console.log('every search description fits in a Google result (160 characters)')
   const found = []
   const take = (file, re) => { for (const m of read(file).matchAll(re)) found.push([file, unq(m[1])]) }
   // Description maps (every description: in these files is a page's search description)
-  for (const f of ['lib/compare-meta.ts', 'lib/for-pages.ts', 'app/channels/[slug]/page.tsx', 'app/product/[feature]/page.tsx', 'app/solutions/[slug]/page.tsx',
-    'app/phones/[slug]/layout.tsx', 'app/ai-assistant/[slug]/layout.tsx', 'app/integrations/[slug]/layout.tsx'])
+  for (const f of ['lib/compare-meta.ts', 'lib/for-pages.ts', 'lib/page-meta.ts'])
     take(f, new RegExp(`description: ["']((?:[^"'\\\\]|\\\\.)*)["']`, 'g'))
   take('lib/topic-pages.ts', new RegExp(`metaDescription: ${STR}`, 'g'))
   // The site default, and pageMeta({ … description: '…' }) on every page and layout
@@ -143,6 +142,23 @@ console.log('every search description fits in a Google result (160 characters)')
   const long = found.filter(([, d]) => d.length > MAX).map(([f, d]) => `${f}: ${d.length}`)
   ok(found.length > 100, `found the search descriptions (${found.length})`)
   ok(!long.length, `none over ${MAX} characters`, long)
+}
+
+console.log('llms.txt lists every page, so AI assistants find it')
+{
+  const src = read('lib/llms.ts')
+  const listed = new Set([...src.matchAll(/path: '\/([^']*)'/g)].map(m => m[1]))
+  const topics = [...read('lib/topic-pages.ts').matchAll(/^ {2}'([a-z0-9-]+)': \{\n {4}slug:/gm)].map(m => m[1])
+  const staticSrc = read('lib/marketing-routes.ts').match(/export const STATIC_MARKETING_ROUTES: string\[\] = \[([\s\S]*?)\]/)[1]
+  const statics = [...staticSrc.matchAll(/'([^'\n]*)'/g)].map(m => m[1])
+  ok(statics.length > 20, `read the static pages (${statics.length})`)
+  const missing = statics.filter(p => !listed.has(p) && !topics.includes(p))
+  ok(!missing.length, 'every static page is in its PAGES list (or a topic page)', missing)
+  const groups = [...src.matchAll(/\{ name: '[^']+', base: '([a-z-]+)', slugs: ([A-Z_]+), meta: ([A-Z_]+) \}/g)].map(m => m[1])
+  const routes = ROUTES.map(r => r[0])
+  ok(routes.every(r => groups.includes(r)), 'every [param] route is one of its FEATURE_GROUPS', routes.filter(r => !groups.includes(r)))
+  ok(src.includes('allMarketingPaths()') && src.includes("'## Every page'"), 'llms-full.txt lists every sitemap page (allMarketingPaths)')
+  ok(src.includes('Object.values(COMPARE_META).map(m => m.name)'), 'the competitors it names come from the compare pages')
 }
 
 console.log(failures ? `\n${failures} failed` : '\nall passed')

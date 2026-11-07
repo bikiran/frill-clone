@@ -5,37 +5,12 @@ import { pageMeta } from '@/lib/seo'
 import { PRODUCT_FEATURES } from '@/lib/marketing-routes'
 import { faqJsonLd, breadcrumbJsonLd } from '@/lib/seo-faqs'
 import Client from './Client'
+import { PRODUCT_META } from '@/lib/page-meta'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
 // SEO copy per product feature landing page. Keys mirror PAGES in ./Client.tsx.
-const META: Record<string, { title: string; description: string }> = {
-  ideas: { title: 'Feature Request & Idea Board Software', description: 'Collect and prioritise feature requests with Colvy idea boards — let customers vote and comment in one place.' },
-  roadmap: { title: 'Public Product Roadmap Tool', description: 'Share what you’re building with a public Colvy roadmap and keep customers in the loop as work progresses.' },
-  announcements: { title: 'Changelog & Product Announcement Tool', description: 'Announce new releases with a beautiful Colvy changelog and notify the customers who asked for each feature.' },
-  knowledgebase: { title: 'Knowledge Base & Help Centre Software', description: 'Publish a searchable help centre and knowledge base that answers customers around the clock, and powers Colvy’s AI agents with your own answers.' },
-  inbox: { title: 'Omnichannel Shared Inbox for Teams of Every Size', description: 'One shared inbox for SMS, calls, Instagram, Messenger, email, live chat and Google reviews. Assign conversations, schedule replies and answer from web or app.' },
-  crm: { title: 'AI-Powered CRM, Built Into Your Inbox', description: 'A simple CRM that fills itself in: every customer’s details, channels, orders, bookings, notes and messages beside each conversation. No data entry, start free.' },
-  gallery: { title: 'Shared Media Gallery for Customer Chats', description: 'Photos, videos and files in one searchable library — mark up photos, trim videos and send them into any chat in a tap.' },
-  notes: { title: 'Internal Team Notes on Customer Conversations', description: 'Add private team notes to any conversation in Colvy so context never gets lost.' },
-  orders: { title: 'WooCommerce & Shopify Orders in Your Inbox', description: 'See WooCommerce and Shopify orders beside every chat, update them, send tracking and payment links, and answer “where’s my order?” without leaving Colvy.' },
-  payments: { title: 'Pay-by-Link & Payments in Chat with Stripe', description: 'Send a secure Stripe pay-by-link from any SMS, Instagram or email conversation, see when it’s paid, and follow up unpaid requests automatically.' },
-  links: { title: 'Secure Upload & Payment Links', description: 'Send secure upload and payment links, and collect files from customers, right from Colvy.' },
-  insights: { title: 'Customer Service Analytics & Response Times', description: 'Track response times, conversation volume, channels and team performance, and see what your customer conversations turn into.' },
-  waitlists: { title: 'Back-in-Stock Waitlists for WooCommerce and Shopify', description: 'Add a “Notify me” form to sold-out WooCommerce or Shopify products and text everyone automatically when stock returns, with replies in your Colvy inbox.' },
-  'voice-typing': { title: 'AI Voice Typing for Customer Replies', description: 'Dictate chat, SMS, social and email replies with Colvy Voice. Fillers removed, punctuation added and your product names spelled right, ready to send.' },
-  'abandoned-carts': { title: 'Abandoned Cart Recovery for WooCommerce and Shopify', description: 'See every abandoned WooCommerce or Shopify checkout in your Colvy inbox, follow up by SMS or email, convert it to an order and track recovered revenue.' },
-  booking: { title: 'Online Booking System with Deposits & SMS Reminders', description: 'Let customers book services online with Colvy: live staff availability, deposits with Stripe, SMS reminders, regular bookings and a waitlist that fills gaps.' },
-  reservations: { title: 'Restaurant Table Reservations, Floor Plan & Deposits', description: 'Take table bookings online, run the night from a day sheet and live floor plan, limit covers, take deposits for big groups and cut no-shows with Colvy.' },
-  'check-in': { title: '“I’m Here” Guest Check-In for Bookings and Tables', description: 'Guests tap “I’m here” on their booking page when they arrive. Your team gets an alert and the booking or table shows them as arrived. No app needed.' },
-  jobs: { title: 'Jobs & Quotes Software for Trades and Home Services', description: 'Send GST quotes customers accept online, run jobs on a list, board or calendar, assign your team with clash checks, and capture photos and signatures.' },
-  'customer-accounts': { title: 'Customer Accounts: a Self-Service Portal for Your Customers', description: 'A “Your account” page at your address. Customers sign in with a code and see bookings, quotes, jobs, orders, receipts, payments due and messages.' },
-  receipts: { title: 'Receipts & Tax Invoices for Your Customers', description: 'Every order in a customer’s account opens a receipt they can print or save as a PDF, and a tax invoice when you have an ABN and the sale includes GST.' },
-  calendar: { title: 'Shared Calendar & Appointment Reminders', description: 'Schedule and manage appointments alongside your conversations in Colvy.' },
-  tasks: { title: 'Tasks & Follow-ups from Customer Chats', description: 'Turn conversations into tasks and never drop a follow-up with Colvy.' },
-  broadcasts: { title: 'Email & SMS Campaigns and Bulk SMS Broadcasts', description: 'Email and SMS campaigns built with Colvy AI: smart audiences, a drag-and-drop designer, texts from your Australian number and reports in orders and revenue.' },
-  automation: { title: 'Customer Messaging Automation', description: 'Automate replies, routing and follow-ups so your team focuses on the conversations that matter, with Colvy.' },
-}
+const META = PRODUCT_META
 
 // Only the product features that exist are built (lib/marketing-routes.ts); any other
 // address is a real 404, not this page with fallback copy.
