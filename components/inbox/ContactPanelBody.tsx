@@ -1,6 +1,9 @@
 'use client'
 
 // The contact panel's tabs: Info (contact, addresses, notes, media), Timeline and Orders.
+// What shows follows the business: store tools (back-in-stock, deliveries, carts, the
+// Orders tab) with a store or orders, Jobs & quotes with Jobs on, Tables with
+// reservations on, and everything when a business has all three.
 // Moved out of app/admin/inbox/page.tsx unchanged. Its names come from the
 // inbox controller through useInbox().
 
@@ -28,6 +31,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import ContactTags from '@/components/inbox/ContactTags'
 import GuestGlance from '@/components/restaurant/GuestGlance'
+import JobGlance from '@/components/jobs/JobGlance'
 import SendReceipt from '@/components/orders/SendReceipt'
 
 export default function ContactPanelBody() {
@@ -48,7 +52,7 @@ export default function ContactPanelBody() {
     setShowOrderSearch, setShowTimeline, setShowTracking, setStatus, showCardAssign, showCardMore,
     showContactEdit, showEmailComposer, showMsgSearch, showOrderSearch, showToast, teamMembers,
     toggleBlockContact, user, wooCustomer, wooOrders, wooOrdersLoading,
-    orderFocus, setOrderFocus, storeConnected,
+    orderFocus, setOrderFocus, storeConnected, ordersConnected,
   } = useInbox()
   const router = useRouter()
 
@@ -542,6 +546,10 @@ export default function ContactPanelBody() {
                         }} />
                       {/* Back-in-stock alerts are for a store's products. */}
                       {storeConnected && <WaitlistQuickAdd compact companyId={companyId} contact={contact as any} conversationId={selected?.id || null} />}
+                      {/* Deliveries are for businesses that sell (an online store or
+                          Prexty), or a customer who already has one booked; a trades
+                          business or a restaurant doesn't get them. */}
+                      {(ordersConnected || !!when || !!dStatus) && <>
                       <PanelItem icon={CPD_ICON.calendar} label="Delivery" set={!!when} onClick={() => setShowDeliveryPanel(true)}
                         value={when ? new Date(when).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Schedule'} />
                       <PanelItem icon={CPD_ICON.box} label="Delivery status" value={D_LABEL[dStatus] || 'Not set'} set={!!dStatus}
@@ -556,9 +564,17 @@ export default function ContactPanelBody() {
                           },
                         }} />
                       <PanelItem icon={CPD_ICON.truck} label="Send tracking link" value="" onClick={() => setShowTracking(true)} />
+                      </>}
                     </div>
                   )
                 })()}
+
+                {/* ── The business's own tools for this customer ── Jobs & quotes
+                    (trades and services) and Tables (restaurants), each shown only
+                    when that module is on (lib/modules), so a store sees neither
+                    and a business with both sees both. */}
+                {companyId && contact?.id && <JobGlance companyId={companyId} contactId={contact.id} conversationId={selected?.id || null} />}
+                {companyId && contact?.id && <GuestGlance companyId={companyId} contactId={contact.id} />}
 
                 {/* ── Tags ── the customer's tags (Contacts page, campaign audiences). */}
                 {companyId && contact?.id && (
@@ -567,9 +583,6 @@ export default function ContactPanelBody() {
                       onChange={tags => setContact((c: any) => (c ? { ...c, tags } : c))} />
                   </div>
                 )}
-
-                {/* ── Tables ── a restaurant's history with this guest (hidden otherwise). */}
-                {companyId && contact?.id && <GuestGlance companyId={companyId} contactId={contact.id} />}
 
                 <SuperAdminContactWorkspaces email={(contact as any)?.email || null} />
 
@@ -715,7 +728,7 @@ export default function ContactPanelBody() {
             </div>
 
             {/* Abandoned cart — what the customer was trying to buy */}
-            {abandonedCarts.length > 0 && (
+            {storeConnected && abandonedCarts.length > 0 && (
               <div style={{ marginTop: 18 }}>
                 <h3 style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ color: 'var(--coral)', display: 'inline-flex' }}>{Icon.cart(15)}</span> Abandoned Cart <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 6, background: '#fef3c7', color: '#b45309' }}>{abandonedCarts.length}</span></h3>
                 {abandonedCarts.map(cart => (

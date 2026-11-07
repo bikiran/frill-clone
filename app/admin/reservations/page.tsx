@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { supabase } from '@/lib/supabase'
 import { AdminPage } from '@/components/ui/AdminKit'
 import EmptyScroll from '@/components/EmptyScroll'
 import { readCache, writeCache } from '@/lib/client-cache'
@@ -43,6 +44,9 @@ export default function ReservationsPage() {
   const [meta, setMeta] = useState<{ enabled: boolean; seating: string[]; canManage: boolean; pageUrl: string } | null>(null)
   const [open, setOpen] = useState<Reservation | null>(null)
   const [showNew, setShowNew] = useState(false)
+  // Book a table from the inbox: the new reservation starts with that guest chosen.
+  const [newFor, setNewFor] = useState<string | null>(null)
+  const [newGuest, setNewGuest] = useState<{ id: string; name: string | null; phone: string | null; email: string | null } | null>(null)
   const [showWalkIn, setShowWalkIn] = useState(false)
   const [toast, setToast] = useToast()
 
@@ -54,8 +58,17 @@ export default function ReservationsPage() {
       const d = sp.get('date')
       if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) setDate(d)
       if (sp.get('new') === '1') setShowNew(true)
+      const cid = sp.get('contactId')
+      if (cid && /^[0-9a-f-]{36}$/i.test(cid)) setNewFor(cid)
     } catch {}
   }, [])
+  useEffect(() => {
+    if (!newFor || !companyId) return
+    let live = true
+    ;(supabase as any).from('contacts').select('id, name, phone, email').eq('company_id', companyId).eq('id', newFor).maybeSingle()
+      .then(({ data }: any) => { if (live && data) setNewGuest(data) }, () => {})
+    return () => { live = false }
+  }, [newFor, companyId])
   const switchTab = (t: Tab) => {
     setTab(t)
     try { const u = new URL(window.location.href); u.searchParams.set('tab', t); window.history.replaceState(null, '', u.toString()) } catch {}
@@ -124,7 +137,9 @@ export default function ReservationsPage() {
   }
 
   const tz = day?.timezone || 'Australia/Melbourne'
-  const today = day?.today || date
+  // Until the day has loaded, today in the business's timezone, so a New
+  // reservation opened straight from a link (?new=1) always has a real date.
+  const today = day?.today || date || new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date())
   const off = meta && !meta.enabled
 
   return (
@@ -174,8 +189,9 @@ export default function ReservationsPage() {
       )}
 
       {showNew && companyId && (
-        <NewReservation companyId={companyId} tz={tz} today={today || date} date={date || today} seatingOptions={meta?.seating || []} useTables={!!day?.useTables}
-          onClose={() => setShowNew(false)}
+        <NewReservation key={newGuest?.id || 'new'} companyId={companyId} tz={tz} today={today || date} date={date || today} seatingOptions={meta?.seating || []} useTables={!!day?.useTables}
+          initialContact={newGuest}
+          onClose={() => { setShowNew(false); setNewGuest(null); setNewFor(null) }}
           onCreated={(r, noTable) => { setShowNew(false); setToast(`Booked: ${r.name}, ${r.party} at ${timeOf(r.startsAt, tz)}${r.tables?.length ? ` · ${tablesText(r.tables)}` : noTable ? ' · no table free yet' : ''}`); const d = r.startsAt ? new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(r.startsAt)) : date; if (tab !== 'day') switchTab('day'); if (d !== date) setDate(d); else if (companyId) { setDay(x => (x && x.from === d ? withNew(x, r) : x)); loadDay(companyId, d, true) } }} />
       )}
       {showWalkIn && companyId && (

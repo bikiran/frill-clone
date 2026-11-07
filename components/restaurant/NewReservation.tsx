@@ -31,8 +31,10 @@ function useContactSearch(companyId: string, term: string) {
   return hits
 }
 
-export default function NewReservation({ companyId, tz, today, date: initialDate, seatingOptions, useTables, onClose, onCreated }: {
+export default function NewReservation({ companyId, tz, today, date: initialDate, seatingOptions, useTables, initialContact, onClose, onCreated }: {
   companyId: string; tz: string; today: string; date: string; seatingOptions: string[]; useTables?: boolean
+  /** A guest chosen already (Book a table from the inbox). */
+  initialContact?: Contact | null
   onClose: () => void; onCreated: (r: Reservation, noTable?: boolean) => void
 }) {
   const [party, setParty] = useState(2)
@@ -41,7 +43,7 @@ export default function NewReservation({ companyId, tz, today, date: initialDate
   const [duration, setDuration] = useState(0)
   const [start, setStart] = useState<string | null>(null)
   const [otherTime, setOtherTime] = useState('')
-  const [contact, setContact] = useState<Contact | null>(null)
+  const [contact, setContact] = useState<Contact | null>(initialContact || null)
   const [guest, setGuest] = useState({ name: '', phone: '', email: '' })
   const [nameFocus, setNameFocus] = useState(false)
   const [seating, setSeating] = useState<string>('')
