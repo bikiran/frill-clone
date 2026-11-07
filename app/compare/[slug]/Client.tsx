@@ -28,9 +28,12 @@ const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c'
 // not confirmed either way. ✗ is only for things we're confident they don't
 // offer. Plans change, so the table says when it was checked.
 type Val = boolean | string
-type Slug = 'podium' | 'birdeye' | 'coax' | 'gorgias' | 'zendesk' | 'freshdesk' | 'intercom' | 'gladly' | 'manychat'
+type Slug = 'podium' | 'birdeye' | 'coax' | 'gorgias' | 'zendesk' | 'freshdesk' | 'intercom' | 'gladly' | 'manychat' | 'highlevel' | 'salesforce'
 type Row = { label: string; colvy?: Val; v: Partial<Record<Slug, Val>> }
-const ALL_T = (val: Val): Record<Slug, Val> => ({ podium: val, birdeye: val, coax: val, gorgias: val, zendesk: val, freshdesk: val, intercom: val, gladly: val, manychat: val })
+// The nine competitors checked in the first round. A shorthand for a value
+// they all share; competitors added later list only what was checked for them.
+const FIRST_NINE = ['podium', 'birdeye', 'coax', 'gorgias', 'zendesk', 'freshdesk', 'intercom', 'gladly', 'manychat'] as const
+const ALL_T = (val: Val): Partial<Record<Slug, Val>> => Object.fromEntries(FIRST_NINE.map(k => [k, val]))
 const HELPDESKS_T: Partial<Record<Slug, Val>> = { gorgias: true, zendesk: true, freshdesk: true, intercom: true, gladly: true }
 
 const ROWS: { group: string; rows: Row[] }[] = [
