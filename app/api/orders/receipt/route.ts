@@ -7,7 +7,7 @@ import { isExternalSendBlocked } from '@/lib/demo-guard'
 import { hidesPoweredBy } from '@/lib/branding'
 import { shortenUrl } from '@/lib/short-link'
 import { checkBurst } from '@/lib/rate-limit'
-import { portalDb } from '@/lib/portal/auth'
+import { portalDb, accountLink, contactsFor, parseIdentifier } from '@/lib/portal/auth'
 import { buildReceipt, parseReceiptKey } from '@/lib/portal/receipts'
 import { receiptToken, receiptUrl } from '@/lib/portal/receipt-link'
 import { receiptEmailHtml } from '@/lib/booking-email'
@@ -44,17 +44,17 @@ async function resolveKey(db: any, companyId: string, b: any): Promise<string | 
 }
 
 /** Who the order is for: its email, mobile and name (the order's own, else its contact's). */
-async function recipient(db: any, companyId: string, key: string): Promise<{ email: string | null; phone: string | null; name: string | null; conversationId: string | null }> {
+async function recipient(db: any, companyId: string, key: string): Promise<{ email: string | null; phone: string | null; name: string | null; conversationId: string | null; contactId: string | null }> {
   const k = parseReceiptKey(key)!
-  const out = { email: null as string | null, phone: null as string | null, name: null as string | null, conversationId: null as string | null }
+  const out = { email: null as string | null, phone: null as string | null, name: null as string | null, conversationId: null as string | null, contactId: null as string | null }
   try {
     if (k.src === 'woo') {
       const { data: o } = await db.from('woocommerce_orders').select('customer_email, billing, contact_id').eq('id', k.id).eq('company_id', companyId).maybeSingle()
       const bl = o?.billing && typeof o.billing === 'object' ? o.billing : {}
-      Object.assign(out, { email: o?.customer_email || bl.email || null, phone: bl.phone || null, name: `${bl.first_name || ''} ${bl.last_name || ''}`.trim() || null })
+      Object.assign(out, { email: o?.customer_email || bl.email || null, phone: bl.phone || null, name: `${bl.first_name || ''} ${bl.last_name || ''}`.trim() || null, contactId: o?.contact_id || null })
     } else if (k.src === 'shop') {
       const { data: o } = await db.from('orders').select('customer_name, customer_email, customer_phone, contact_id').eq('id', k.id).eq('company_id', companyId).maybeSingle()
-      Object.assign(out, { email: o?.customer_email || null, phone: o?.customer_phone || null, name: o?.customer_name || null })
+      Object.assign(out, { email: o?.customer_email || null, phone: o?.customer_phone || null, name: o?.customer_name || null, contactId: o?.contact_id || null })
       if (o?.contact_id && (!out.email || !out.phone)) {
         const { data: c } = await db.from('contacts').select('name, email, phone').eq('id', o.contact_id).eq('company_id', companyId).maybeSingle()
         out.email = out.email || c?.email || null; out.phone = out.phone || c?.phone || null; out.name = out.name || c?.name || null
@@ -65,6 +65,7 @@ async function recipient(db: any, companyId: string, key: string): Promise<{ ema
         out.conversationId = p.conversation_id
         const { data: cv } = await db.from('conversations').select('contact_id').eq('id', p.conversation_id).eq('company_id', companyId).maybeSingle()
         if (cv?.contact_id) {
+          out.contactId = cv.contact_id
           const { data: c } = await db.from('contacts').select('name, email, phone').eq('id', cv.contact_id).eq('company_id', companyId).maybeSingle()
           Object.assign(out, { email: c?.email || null, phone: c?.phone || null, name: c?.name || null })
         }
@@ -105,11 +106,17 @@ export async function POST(req: NextRequest) {
     const name = first(who.name || r.customer)
     let ok = false, error = ''
     if (channel === 'email') {
+      // "Your account" (customer accounts on, and the order has a contact or
+      // this address is a contact's, so a code can reach them): the plain
+      // page, signed in with a code. A receipt link is shared more freely
+      // than a booking's, so it doesn't sign anyone in.
+      const canSignIn = !!who.contactId || await (async () => { const id = parseIdentifier(to); return !!id && (await contactsFor(db, companyId, id).catch(() => [])).length > 0 })()
+      const accountUrl = canSignIn ? await accountLink(db, company, {}) : null
       const html = receiptEmailHtml({
         business, logoUrl: company.logo_url || null, accent: company.accent_color || null, hideBadge: await hidesPoweredBy(db, companyId, company).catch(() => false),
-        first: name || null, title: r.title, number: r.number, total: summary.total, gst: summary.gst, date: day(r.date), where: r.where, status: r.status, statusLabel: r.statusLabel, url,
+        first: name || null, title: r.title, number: r.number, total: summary.total, gst: summary.gst, date: day(r.date), where: r.where, status: r.status, statusLabel: r.statusLabel, url, accountUrl,
       })
-      const text = `Hi ${name || 'there'}, here's your ${word} ${r.number} from ${business} (${summary.total}). View, print or save it as a PDF:\n${url}`
+      const text = `Hi ${name || 'there'}, here's your ${word} ${r.number} from ${business} (${summary.total}). View, print or save it as a PDF:\n${url}${accountUrl ? `\n\nYour account: ${accountUrl}` : ''}`
       ok = await sendCustomerEmail(db, company, { to, subject: `Your ${word} ${r.number} from ${business}`, text, html }).catch(() => false)
       if (!ok) error = 'The email didn’t send. Check the email settings, or copy the link instead.'
     } else {

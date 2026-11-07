@@ -4,6 +4,7 @@ import { internalHeaders } from '@/lib/internal-call'
 import { sendCustomerEmail } from '@/lib/customer-email'
 import { quoteEmailHtml } from '@/lib/booking-email'
 import { hidesPoweredBy } from '@/lib/branding'
+import { accountLink } from '@/lib/portal/auth'
 import { isExternalSendBlocked } from '@/lib/demo-guard'
 import { fmtMoney } from '@/lib/jobs/quote-math'
 import {
@@ -106,14 +107,16 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       // lead-in), then the quote's summary and a button, on the customer email layout.
       const words = message.split(url).join('').replace(/\s*(view and accept it here|view it here|open it here|see it here)\s*:?\s*$/i, '').replace(/[\s:]+$/, '').trim()
       const validUntil = sent[0]?.valid_until || quote.valid_until
+      // "Your account" (customer accounts on): the quote's own token signs them in for a day.
+      const accountUrl = job.contact_id ? await accountLink(db, company, { q: token }) : null
       const html = quoteEmailHtml({
         business: company?.name || 'us', logoUrl: company?.logo_url || null, accent: company?.accent_color || null,
         hideBadge: await hidesPoweredBy(db, companyId, company).catch(() => false),
         message: words, label, title: job.title || null, total: fmtMoney(quote.total_cents),
         validUntil: validUntil ? new Date(`${String(validUntil).slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-AU', { timeZone: 'UTC', day: 'numeric', month: 'long', year: 'numeric' }) : null,
-        url, resent: !wasDraft,
+        url, resent: !wasDraft, accountUrl,
       })
-      delivered = await sendCustomerEmail(db, company, { to, subject, text: message, html })
+      delivered = await sendCustomerEmail(db, company, { to, subject, text: accountUrl ? `${message}\n\nYour account: ${accountUrl}` : message, html })
       if (!delivered) deliveryError = 'The email didn’t send. Check the email settings, or copy the link instead.'
     }
 

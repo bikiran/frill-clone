@@ -184,9 +184,11 @@ export function maskPhone(p?: string | null): string {
 }
 
 /**
- * "Your account" for a booking or quote page, when the business has accounts
- * on: the account page with the record's own token, which signs the customer
- * in for a day. Null when it's off (or before V432).
+ * "Your account" for a booking or quote page or email, when the business has
+ * accounts on: the account page with the record's own token, which signs the
+ * customer in for a day (no token: the plain page, signed in with a code).
+ * <business>.colvy.com/account, or colvy.com/account/<business> off the
+ * subdomains. Null when it's off (or before V432).
  */
 export async function accountLink(db: any, company: any, link: { b?: string | null; q?: string | null }): Promise<string | null> {
   try {
@@ -195,7 +197,8 @@ export async function accountLink(db: any, company: any, link: { b?: string | nu
     if (error || !resolvePortalSettings(data?.portal_settings).enabled) return null
     const { companyBase } = await import('@/lib/booking')
     const q = link.b ? `?b=${encodeURIComponent(link.b)}` : link.q ? `?q=${encodeURIComponent(link.q)}` : ''
-    return `${companyBase(company).base}/account${q}`
+    const { base, onSubdomain } = companyBase(company)
+    return `${base}/account${onSubdomain ? '' : `/${encodeURIComponent(company.slug)}`}${q}`
   } catch { return null }
 }
 

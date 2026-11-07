@@ -1058,6 +1058,7 @@ export async function sendManageLink(db: any, company: any, b: any, origin: stri
         : [['What', `${b.service_name}${b.staff_name ? ` with ${b.staff_name}` : ''}`], ...(where ? [['Where', where] as [string, string]] : [])],
       startMs: Date.parse(b.starts_at), endMs: Date.parse(b.ends_at), timezone: tz, manageUrl: url,
       googleUrl: googleCalendarUrl(invite), icsUrl: `${companyBase(company).base}/api/book/manage?token=${encodeURIComponent(b.manage_token)}&op=ics`,
+      accountUrl: b.contact_id ? await import('@/lib/portal/auth').then(m => m.accountLink(db, company, { b: b.manage_token })).catch(() => null) : null,
     })
     const ok = await sendCustomerEmail(db, company, { to: b.customer_email, subject: `Your booking: ${b.service_name}`, text, html })
     if (ok) return 'email'
@@ -1419,6 +1420,8 @@ export async function customerMessage(db: any, company: any, settings: BookingSe
     }
     const noteText = isTable ? tableNote : settings.confirmation_note
     const calendar = kind === 'confirmed' || kind === 'rescheduled'
+    // "Your account" (customer accounts on): the booking's own token signs them in for a day.
+    const accountUrl = b.contact_id && b.manage_token ? await import('@/lib/portal/auth').then(m => m.accountLink(db, company, { b: b.manage_token })).catch(() => null) : null
     const html = bookingEmailHtml({
       kind, isTable, business, logoUrl: company.logo_url || null, accent, headline: headlines[kind], intro: intro[kind], rows,
       startMs: Date.parse(b.starts_at), endMs: Date.parse(b.ends_at), timezone: b.timezone || 'Australia/Melbourne',
@@ -1428,9 +1431,9 @@ export async function customerMessage(db: any, company: any, settings: BookingSe
       icsUrl: calendar && b.manage_token ? `${companyBase(company).base}/api/book/manage?token=${encodeURIComponent(b.manage_token)}&op=ics` : null,
       note: (kind === 'confirmed' || kind === 'reminder') && noteText ? String(noteText) : null,
       preheader: rows.length ? `${isTable ? `Table for ${party}` : b.service_name} · ${when}` : `${business}: book your next ${isTable ? 'table' : b.service_name}`,
-      hideBadge,
+      hideBadge, accountUrl,
     })
-    const text = `${headlines[kind]}\n\n${rows.map(([k, v]) => `${k}: ${v}`).join('\n')}\n\n${live ? `Manage your booking: ${manage}` : `Book: ${rebook}`}`
+    const text = `${headlines[kind]}\n\n${rows.map(([k, v]) => `${k}: ${v}`).join('\n')}\n\n${live ? `Manage your booking: ${manage}` : `Book: ${rebook}`}${accountUrl ? `\nYour account: ${accountUrl}` : ''}`
     const withIcs = kind === 'confirmed' || kind === 'rescheduled' || kind === 'cancelled'
     sent.email = await sendCustomerEmail(db, company, {
       to: b.customer_email, subject: subjects[kind], html, text,
