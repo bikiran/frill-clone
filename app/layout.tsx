@@ -31,7 +31,7 @@ export const metadata: Metadata = {
     template: '%s · Colvy',
   },
   description:
-    'Colvy is the all-in-one customer platform for teams of every size, from small businesses to enterprise: one shared inbox for Instagram, Messenger, email, SMS and live chat, with an AI-powered CRM, business phone and SMS, email and SMS campaigns, store orders, payments, AI agents and customer feedback built in.',
+    'The all-in-one customer platform: one shared inbox for Instagram, Messenger, email, SMS and live chat, with an AI CRM, business phone, campaigns and AI agents.',
   applicationName: 'Colvy',
   keywords: [
     'shared inbox', 'omnichannel inbox', 'AI CRM', 'business phone', 'business SMS',

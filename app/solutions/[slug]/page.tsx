@@ -15,7 +15,7 @@ const META: Record<string, { title: string; description: string }> = {
   marketing: { title: 'SMS & Email Marketing for Business', description: 'SMS and email campaigns built with Colvy AI, sent to smart audiences, with every reply in your shared inbox and reports in orders and revenue.' },
   reviews: { title: 'Review & Reputation Management for Business', description: 'Get more Google reviews with SMS review requests, reply to every review and social comment from one inbox, and let AI draft replies in your tone.' },
   feedback: { title: 'Customer Feedback Software & Public Roadmaps', description: 'Capture feature requests, prioritise a public roadmap and announce releases with Colvy feedback boards.' },
-  bookings: { title: 'Online Appointment Booking & Scheduling Software', description: 'Let customers book appointments online with Colvy: staff and location availability, Stripe deposits, SMS reminders and self-serve rescheduling, all in your shared inbox.' },
+  bookings: { title: 'Online Appointment Booking & Scheduling Software', description: 'Let customers book appointments online: staff and location availability, Stripe deposits, SMS reminders and self-serve rescheduling, all in your shared inbox.' },
   payments: { title: 'Take Payments in Chat with Pay-by-Link', description: 'Send secure pay-by-link requests inside any conversation and reconcile them against orders — all in Colvy.' },
 }
 
