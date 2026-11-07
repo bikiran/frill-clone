@@ -7,6 +7,7 @@ import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
 import FeatureIcon from '@/components/FeatureIcon'
 import { SellioStyles, SPill, SGhost, STrust, SBento, SCta } from '@/components/marketing/Sellio'
+import { VsLogos } from '@/components/marketing/CompareLogos'
 
 const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c', PINK = '#ff4d8d', CYAN = '#0891b2', TEAL = '#12b5a5', INDIGO = '#4f46e5', AMBER = '#d97706', INK = '#0f1119'
 
@@ -20,7 +21,7 @@ const WHY = [
   { icon: 'lock', title: 'Own your data', desc: 'Export anytime. Encrypted in transit and at rest.' },
 ]
 
-// Comparison cards. Accents are used tastefully (monogram, metric pill, arrow) so
+// Comparison cards: Colvy's logo and the competitor's, then accents used tastefully (metric pill, arrow) so
 // the cards blend with the rest of the site instead of the loud coloured borders.
 const CARDS = [
   { slug: 'podium', comp: 'Podium', tag: 'More channels, deeper AI, no lock-in', metric: 'No contracts', accent: GREEN },
@@ -141,7 +142,7 @@ export default function CompareHub() {
               <a href={`/compare/${card.slug}`} className="ch-card" style={{ position: 'relative', overflow: 'hidden', display: 'block', height: '100%', borderRadius: 22, background: cardBg, border: `1px solid ${cardBorder}`, padding: '24px 24px 22px', textDecoration: 'none', boxShadow: '0 1px 2px rgba(15,17,25,0.04)' }}>
                 <div aria-hidden style={{ position: 'absolute', top: -36, right: -36, width: 150, height: 150, borderRadius: '50%', background: card.accent + (dark ? '22' : '18'), filter: 'blur(30px)' }} />
                 <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                  <span style={{ width: 42, height: 42, borderRadius: 13, background: card.accent + '18', color: card.accent, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: 17 }}>{card.comp.charAt(0)}</span>
+                  <VsLogos slug={card.slug} name={card.comp} accent={card.accent} size={42} ring={cardBg} />
                   <span style={{ fontSize: 12.5, fontWeight: 800, color: card.accent, background: card.accent + '14', borderRadius: 999, padding: '5px 12px' }}>{card.metric}</span>
                 </div>
                 <h3 style={{ position: 'relative', fontSize: 19, fontWeight: 900, letterSpacing: '-0.01em', margin: '0 0 5px', color: text }}>Colvy <span style={{ color: muted, fontWeight: 700 }}>vs</span> {card.comp}</h3>
