@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { requireCompanyAccess } from '@/lib/company-access'
+import { requireCompanyAccess, callerUser } from '@/lib/company-access'
 import { needsRecheck, partnerApiConfigured, planSelectionUrl, shopifyBillingStore, syncShopifyBilling, PAID_STATUSES } from '@/lib/shopify-billing'
+import { CLAIM_COOKIE, findPendingInstall } from '@/lib/shopify-install'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,12 +12,27 @@ const admin = () => createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
-// GET ?companyId=[&refresh=1] → how this workspace's Colvy plan is billed.
+// GET ?companyId=[&refresh=1][&chosen=1] → how this workspace's Colvy plan is billed.
 // Shopify-billed: { provider: 'shopify', plan, complimentary, store, planUrl, subscription }
-// (re-read from Shopify when it's more than a couple of minutes old).
+// (re-read from Shopify when it's more than a couple of minutes old; chosen=1
+// on the way back from Shopify's plan page applies the plan just picked).
+// Installed from Shopify in this browser but not connected to a workspace
+// yet: { provider: 'shopify', pending: { shop, name } } — never card plans.
 // Otherwise: { provider: 'stripe' }.
 export async function GET(req: NextRequest) {
   const db = admin()
+  // ?mine=1 → { shopify }: does this person use Colvy through Shopify (a store
+  // installed in this browser and waiting, or any workspace they own billed
+  // through Shopify)? The public plan page asks before showing card plans.
+  if (req.nextUrl.searchParams.get('mine') === '1') {
+    const user = await callerUser(req, db)
+    if (!user) return NextResponse.json({ shopify: false })
+    const pending = await findPendingInstall(db, req.cookies.get(CLAIM_COOKIE)?.value).catch(() => null)
+    if (pending) return NextResponse.json({ shopify: true, pending: true })
+    const { data: owned } = await db.from('companies').select('id').eq('owner_id', user.id).limit(20)
+    for (const c of owned || []) if (await shopifyBillingStore(db, c.id)) return NextResponse.json({ shopify: true })
+    return NextResponse.json({ shopify: false })
+  }
   const companyId = req.nextUrl.searchParams.get('companyId')
   if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
@@ -24,16 +40,23 @@ export async function GET(req: NextRequest) {
   // (App Store rule 1.2.1); older connections are adopted here.
   await shopifyBillingStore(db, companyId)
   const { data: co } = await db.from('companies').select('id, owner_id, plan, is_complimentary, billing_provider, billing_integration_id').eq('id', companyId).maybeSingle()
-  if (!co || co.billing_provider !== 'shopify' || !co.billing_integration_id) return NextResponse.json({ provider: 'stripe' })
+  if (!co || co.billing_provider !== 'shopify' || !co.billing_integration_id) {
+    // Just installed from Shopify and not connected yet (App Store rule 1.2.2):
+    // a Shopify merchant is never offered card billing, even for a moment.
+    const p = await findPendingInstall(db, req.cookies.get(CLAIM_COOKIE)?.value).catch(() => null)
+    if (p) return NextResponse.json({ provider: 'shopify', pending: { shop: p.shop, name: p.store_name || p.shop }, plan: co?.plan || 'free', configured: partnerApiConfigured() })
+    return NextResponse.json({ provider: 'stripe' })
+  }
 
   const { data: integ } = await db.from('shopify_integrations')
     .select('id, store_name, store_domain, is_active, billing, billing_checked_at').eq('id', co.billing_integration_id).maybeSingle()
   let subscription = integ?.billing || null
   let note: string | null = null
   if (integ?.is_active && (req.nextUrl.searchParams.get('refresh') === '1' || needsRecheck(integ, 2 * 60 * 1000))) {
-    try { subscription = await syncShopifyBilling(db, co.id) } catch { note = 'Shopify didn’t answer just now — showing your last known plan.' }
+    const chosen = req.nextUrl.searchParams.get('chosen') === '1'
+    try { subscription = await syncShopifyBilling(db, co.id, { chosen }) } catch { note = 'Shopify didn’t answer just now — showing your last known plan.' }
   }
-  const { data: after } = await db.from('companies').select('plan, trial_ends_at').eq('id', co.id).maybeSingle()
+  const { data: after } = await db.from('companies').select('plan, trial_ends_at, is_complimentary').eq('id', co.id).maybeSingle()
   // Still paying Colvy by card from before the store was connected: the page
   // says so and links to the card portal to cancel once the Shopify plan starts.
   let cardSubscription: { tier: string | null; customerId: string } | null = null
@@ -47,7 +70,7 @@ export async function GET(req: NextRequest) {
     provider: 'shopify',
     plan,
     // Given free by Colvy: no Shopify plan needed (the sync never overrides it).
-    complimentary: !!co.is_complimentary,
+    complimentary: !!(after ? after.is_complimentary : co.is_complimentary),
     // Set up by the Colvy team (Enterprise): nothing to choose or buy here.
     managed: plan === 'enterprise' || plan === 'suspended',
     cardSubscription,

@@ -68,8 +68,17 @@ export default function UpgradePage() {
   const [openFaq, setOpenFaq] = useState<number | null>(null)
   const [setupNeeded, setSetupNeeded] = useState(false)
   const [preselected, setPreselected] = useState<string | null>(null)
+  // Shopify merchants choose their plan in Shopify (App Store rule 1.2.2), so
+  // the card plans stay hidden until we know this isn't one.
+  const [checking, setChecking] = useState(true)
 
   useEffect(() => {
+    // Installed Colvy from Shopify in this browser: finish connecting the
+    // store; its plan is then chosen in Shopify.
+    if (typeof document !== 'undefined' && document.cookie.includes('colvy_shopify_pending=')) {
+      window.location.replace('/admin/integrations/shopify')
+      return
+    }
     // Preselect billing period + plan handed over from the marketing pricing page
     // (?plan=&billing=) or stashed at signup (pending_plan), so a visitor who
     // clicked "Start free trial" lands ready to check out.
@@ -89,6 +98,14 @@ export default function UpgradePage() {
     supabase.auth.getSession().then(async ({ data }: any) => {
       const u = data?.session?.user
       setUser(u)
+      if (u) {
+        try {
+          const r = await authFetch('/api/shopify/billing?mine=1')
+          const d = await r.json()
+          if (d?.shopify) { window.location.replace(d.pending ? '/admin/integrations/shopify' : '/admin/billing'); return }
+        } catch {}
+      }
+      setChecking(false)
       // Reflect what they already pay for. subscriptions.tier holds the marketing
       // plan id (feedback/omnichannel/everything); fall back to the company plan.
       if (u) {
@@ -139,6 +156,8 @@ export default function UpgradePage() {
     }
     setLoading(null)
   }
+
+  if (checking) return <div className="min-h-screen" style={{ background: 'var(--canvas)' }} aria-busy="true" />
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--canvas)' }}>

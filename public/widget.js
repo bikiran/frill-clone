@@ -1,11 +1,38 @@
 /**
  * Colvy Feedback Widget — embed with:
  * <script src="https://colvy.com/widget.js" data-slug="your-slug" async></script>
+ *
+ * On a Shopify store the Colvy chat app embed also passes the store's address
+ * (data-shop="<store>.myshopify.com"). If it has no slug (the app metafield
+ * isn't there yet), the workspace the store is connected to is looked up.
  */
-(function () {
-  var script = document.currentScript || document.querySelector('script[data-slug]')
-  var slug = script ? script.getAttribute('data-slug') : null
-  if (!slug) { console.warn('[Colvy] data-slug attribute missing'); return }
+(function colvyWidget(resolvedSlug) {
+  var script = document.currentScript || document.querySelector('script[data-slug],script[data-shop]')
+  var slug = resolvedSlug || (script ? script.getAttribute('data-slug') : null)
+  if (!slug) {
+    var shop = script ? script.getAttribute('data-shop') : null
+    if (!shop || resolvedSlug === false) { console.warn('[Colvy] data-slug attribute missing'); return }
+    var base0 = 'https://colvy.com'
+    try {
+      var so0 = new URL(script.src, window.location.href)
+      if (/^(localhost|127\.0\.0\.1)$/.test(so0.hostname) || /\.vercel\.app$/.test(so0.hostname)) base0 = so0.origin
+    } catch (e) {}
+    fetch(base0 + '/api/widget/shop?shop=' + encodeURIComponent(shop))
+      .then(function (r) { return r.json() })
+      .then(function (d) {
+        if (d && d.slug) return colvyWidget(d.slug)
+        // In the theme editor, say why there's no chat yet (shoppers see nothing).
+        if (window.Shopify && window.Shopify.designMode && document.body) {
+          var n = document.createElement('div')
+          n.setAttribute('data-colvy', 'not-connected')
+          n.textContent = 'Colvy chat: connect this store to Colvy (Apps → Colvy) and your chat appears here.'
+          n.style.cssText = 'position:fixed;right:20px;bottom:20px;z-index:2147483000;max-width:280px;padding:12px 14px;border-radius:14px;background:#0f1119;color:#fff;font:600 13px/1.4 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;box-shadow:0 12px 30px rgba(0,0,0,.25)'
+          document.body.appendChild(n)
+        }
+      })
+      .catch(function () {})
+    return
+  }
 
   // Where the widget page lives. Always colvy.com on a real site; a copy served
   // from a local dev server or a Colvy preview deployment talks to that server

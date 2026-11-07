@@ -129,7 +129,12 @@ export async function connectStore(db: any, a: { companyId: string; userId?: str
   } catch (e: any) {
     await db.from('shopify_integrations').update({ last_error: `Webhooks: ${e?.message || 'failed'}`.slice(0, 500) }).eq('id', integ.id)
   }
-  try { await ensureAppMetafields(db, { id: integ.id, company_id: a.companyId, auth_type: 'oauth', app_metafields: null }, svc) } catch {}
+  try { await ensureAppMetafields(db, { id: integ.id, company_id: a.companyId, auth_type: 'oauth', app_metafields: null }, svc) } catch (e: any) {
+    // The chat embed still finds the workspace by the store's address
+    // (/api/widget/shop); the reconcile cron retries the metafield.
+    console.error('[shopify connect] app metafields', e?.message || e)
+    await db.from('shopify_integrations').update({ last_error: `App metafields: ${e?.message || 'failed'}`.slice(0, 500) }).eq('id', integ.id)
+  }
   // Through the public app, the Colvy plan is billed by Shopify
   // (lib/shopify-billing). Custom apps can't charge through Shopify, so a
   // store on the private app leaves the workspace's billing as it was.
