@@ -64,7 +64,7 @@ export default function CustomerAccountsSettings() {
                 <a className="ak-btn sm ghost" href={url} target="_blank" rel="noreferrer">Open</a>
               </div>
             )}
-            {s.enabled && <p className="ca-fine">Booking and quote links you send also open it: “Your account” on a customer’s booking page signs them in for a day.</p>}
+            {s.enabled && <p className="ca-fine">Booking and quote links you send also open it: “Your account” on a customer’s booking page, and in their booking and quote emails, signs them in for a day. Receipt emails link to it too, with a code sign-in.</p>}
             {saved === 'enabled' && <p className="ca-saved">Saved</p>}
           </Panel>
 

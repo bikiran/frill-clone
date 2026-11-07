@@ -209,6 +209,27 @@ function finePrint(k: Kit, text: string) {
           </td></tr>`
 }
 
+/**
+ * "Your account": a quiet card under the main button that opens the
+ * customer's account with the business (bookings, quotes, receipts). Only
+ * passed when the business has customer accounts on.
+ */
+function accountBlock(k: Kit, url: string | null | undefined, text: string) {
+  if (!url) return ''
+  return `
+          <tr><td style="padding-top:18px">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="cv-acct" style="border:1px solid #e1e1e5;border-radius:16px"><tr>
+              <td valign="middle" style="padding:14px 6px 14px 16px">
+                <div class="cv-ink" style="font:700 14px/1.35 ${k.font};color:${k.ink}">Your account</div>
+                <div class="cv-muted" style="padding-top:2px;font:400 13px/1.45 ${k.font};color:${k.muted}">${esc(text)}</div>
+              </td>
+              <td align="right" valign="middle" style="padding:14px 14px 14px 6px;white-space:nowrap">
+                <a href="${esc(url)}" class="cv-ghost" style="display:inline-block;padding:9px 15px;background:#ffffff;border:1px solid #e1e1e5;border-radius:999px;font:600 13.5px/1.2 ${k.font};color:${k.ink};text-decoration:none;white-space:nowrap">Open&nbsp;&rarr;</a>
+              </td>
+            </tr></table>
+          </td></tr>`
+}
+
 /** A summary panel: a small label line, a big figure (e.g. a total), then label/value rows. */
 function summaryBlock(k: Kit, o: { label: string; big?: string | null; bigNote?: string | null; rows: [string, string][] }) {
   return `
@@ -313,6 +334,7 @@ function shell(k: Kit, s: Shell): string {
     .cv-note{background:${k.accentTintDark}!important}
     ${tone ? `.cv-pill{background:${tone.dbg}!important;color:${tone.dfg}!important;border-color:${tone.dline}!important}` : ''}
     .cv-ghost{background:${dark.panel}!important;border-color:#3a3a42!important;color:${dark.ink}!important}
+    .cv-acct{border-color:#3a3a42!important}
     .cv-panel td,.cv-panel tr td{border-color:${dark.line}!important}
   }
 </style>
@@ -374,6 +396,8 @@ export type BookingEmailInput = {
   /** Hidden preview line shown in the inbox list. */
   preheader?: string
   hideBadge?: boolean
+  /** The customer's account (customer accounts on, booking has a contact): signs them in for a day. */
+  accountUrl?: string | null
   now?: number
 }
 
@@ -401,6 +425,7 @@ export function bookingEmailHtml(i: BookingEmailInput): string {
     buttonBlock(k, i.primaryUrl, i.primaryLabel),
     calendarBlock(k, i.googleUrl, i.icsUrl),
     i.note ? noteBlock(k, `A note from ${i.business}`, i.note) : '',
+    accountBlock(k, i.accountUrl, `All your bookings with ${i.business} in one place.`),
   ]
   return shell(k, { business: i.business, logoUrl: i.logoUrl, hideBadge: i.hideBadge, pill: KIND_PILL[i.kind], headline: i.headline, intro: i.intro, blocks, preheader: i.preheader })
 }
@@ -416,6 +441,7 @@ export type ManageLinkEmailInput = {
   googleUrl?: string | null; icsUrl?: string | null
   /** The booking is still on (not cancelled or finished). */
   live: boolean
+  accountUrl?: string | null
   now?: number
 }
 
@@ -425,6 +451,7 @@ export function manageLinkEmailHtml(i: ManageLinkEmailInput): string {
     ticketBlock(k, { startMs: i.startMs, endMs: i.endMs, timezone: i.timezone, showEnd: !i.isTable, chip: i.live ? soonLabel(i.startMs, i.timezone, i.now ?? Date.now()) : null, rows: i.rows }),
     buttonBlock(k, i.manageUrl, i.live ? 'View or change' : 'View booking'),
     i.live ? calendarBlock(k, i.googleUrl, i.icsUrl) : '',
+    accountBlock(k, i.accountUrl, `All your bookings with ${i.business} in one place.`),
     finePrint(k, `You asked for this link, or ${i.business} sent it to you. Anyone with the link can view and change this booking, so keep it to yourself.`),
   ]
   return shell(k, {
@@ -517,6 +544,8 @@ export type QuoteEmailInput = {
   url: string
   /** Sent before (a new revision or a reminder). */
   resent?: boolean
+  /** The customer's account (customer accounts on, job has a contact): signs them in for a day. */
+  accountUrl?: string | null
 }
 
 export function quoteEmailHtml(i: QuoteEmailInput): string {
@@ -527,6 +556,7 @@ export function quoteEmailHtml(i: QuoteEmailInput): string {
       rows: [...(i.title ? [['For', i.title] as [string, string]] : []), ...(i.validUntil ? [['Valid until', i.validUntil] as [string, string]] : [])],
     }),
     buttonBlock(k, i.url, `View and accept quote ${i.label}`),
+    accountBlock(k, i.accountUrl, `Your quotes, jobs and payments with ${i.business} in one place.`),
     finePrint(k, `Or open this link: ${i.url}`),
   ]
   return shell(k, {
@@ -599,6 +629,8 @@ export type ReceiptEmailInput = {
   status: 'paid' | 'unpaid' | 'refunded' | 'cancelled'
   statusLabel: string
   url: string
+  /** The account page (customer accounts on, order has a contact). Signed in with a code, not by this link. */
+  accountUrl?: string | null
 }
 
 export function receiptEmailHtml(i: ReceiptEmailInput): string {
@@ -613,6 +645,7 @@ export function receiptEmailHtml(i: ReceiptEmailInput): string {
       rows: [['Date', i.date], ...(i.where ? [['Where', i.where] as [string, string]] : [])],
     }),
     buttonBlock(k, i.url, 'View, print or save as PDF'),
+    accountBlock(k, i.accountUrl, `Your orders and receipts with ${i.business}. Sign in with a code sent to you.`),
     finePrint(k, `Keep this email: the button always opens your ${word} from ${i.business}.`),
   ]
   return shell(k, {

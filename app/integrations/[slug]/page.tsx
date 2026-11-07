@@ -224,7 +224,7 @@ export default function IntegrationPage() {
         <div aria-hidden style={{ position: 'absolute', inset: 0, backgroundImage: gridImg, backgroundSize: '54px 54px', WebkitMaskImage: 'radial-gradient(ellipse 70% 60% at 40% 40%, #000 40%, transparent 80%)', maskImage: 'radial-gradient(ellipse 70% 60% at 40% 40%, #000 40%, transparent 80%)', pointerEvents: 'none' }} />
         <div style={{ position: 'relative' }}>
           <Reveal>
-            <SCrumb back={{ label: 'Integrations', href: '/integrations' }} current={intg.eyebrow} icon={intg.features[0].icon} accent={accent} />
+            <SCrumb back={{ label: 'Integrations', href: '/integrations' }} current={intg.eyebrow} icon={intg.features[0].icon} accent={accent} dark={dark} />
             <h1 style={{ fontSize: 'clamp(38px, 5.4vw, 64px)', fontWeight: 900, letterSpacing: '-0.035em', lineHeight: 1.04, margin: '0 0 18px' }}>{intg.title}{!/[.!?]$/.test(intg.title) && <span style={{ color: accent }}>.</span>}</h1>
             <p style={{ fontSize: 'clamp(16px, 1.9vw, 20px)', color: muted, maxWidth: 520, lineHeight: 1.6, margin: '0 0 30px' }}>{intg.sub}</p>
             <div className="sl-ctas">

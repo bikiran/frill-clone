@@ -28,13 +28,34 @@ export function mix(a: string, b: string, t: number): string {
 /** A headline that ends like the landing's: with a full stop (unless it already has punctuation). */
 export function withStop(s: string) { return /[.!?…”"’)]$/.test(s.trim()) ? s : `${s.trim()}.` }
 
+const lum = (hex: string) => {
+  const n = parseInt(hex.slice(1), 16)
+  const [r, g, b] = [n >> 16, (n >> 8) & 255, n & 255].map(v => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4 })
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+const contrast = (a: string, b: string) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05) }
+/**
+ * The accent as text: as is on light pages; on dark ones lifted towards white
+ * until it reads (5:1 on the page, so still 4.5:1 on a tinted card or chip),
+ * so a blue or indigo eyebrow isn't lost on near-black.
+ */
+export function accentText(accent: string, dark: boolean) {
+  if (!dark || !/^#[0-9a-f]{6}$/i.test(accent)) return accent
+  for (let t = 0; t <= 1.0001; t += 0.05) { const c = mix(accent, '#ffffff', t); if (contrast(c, '#0d0e17') >= 5) return c }
+  return '#ffffff'
+}
+
 function vars(dark: boolean, accent: string): CSSProperties {
   return {
     ['--a' as any]: accent,
+    ['--at' as any]: accentText(accent, dark),
+    ['--ona' as any]: onAccent(accent),
+    ['--ontext' as any]: dark ? '#0b0c13' : '#ffffff',
+    ['--bad' as any]: dark ? '#ff8a8d' : '#e5484d',
     ['--a2' as any]: mix(accent, PURPLE, 0.35),
     ['--text' as any]: dark ? '#f4f5fb' : S_INK,
     ['--muted' as any]: dark ? 'rgba(244,245,251,0.62)' : 'rgba(15,17,25,0.6)',
-    ['--grey' as any]: dark ? 'rgba(244,245,251,0.36)' : 'rgba(15,17,25,0.34)',
+    ['--grey' as any]: dark ? 'rgba(244,245,251,0.42)' : 'rgba(15,17,25,0.34)',
     ['--card' as any]: dark ? 'rgba(255,255,255,0.045)' : '#ffffff',
     ['--line' as any]: dark ? 'rgba(255,255,255,0.09)' : 'rgba(15,17,25,0.08)',
     ['--line2' as any]: dark ? 'rgba(255,255,255,0.16)' : 'rgba(15,17,25,0.14)',
@@ -65,9 +86,12 @@ const Tick = ({ s = 12 }: { s?: number }) => <svg width={s} height={s} viewBox="
 
 // ── Buttons and the hero's trust line ────────────────────────────────────────
 
+/** Text on an accent fill: white, unless the accent is too light for it (then ink). */
+export const onAccent = (accent: string) => (!/^#[0-9a-f]{6}$/i.test(accent) || contrast('#ffffff', accent) >= 2.6 ? '#ffffff' : S_INK)
+
 /** The landing's primary pill: label, then an arrow in a circle. */
 export function SPill({ children, onClick, href, accent, cta }: { children: ReactNode; onClick?: () => void; href?: string; accent: string; cta?: string }) {
-  const style = { ['--a' as any]: accent } as CSSProperties
+  const style = { ['--a' as any]: accent, color: onAccent(accent) } as CSSProperties
   const inner = <>{children}<span className="ar"><Arrow /></span></>
   return href
     ? <a href={href} className="sl-pill" style={style} data-cta={cta}>{inner}</a>
@@ -85,12 +109,12 @@ export function STrust({ accent, items = ['Free plan', 'No card needed', 'Set up
  * Where you are: a round back pill to the hub ("Phones") and the current
  * page's chip, on one line, instead of a bare "← Phones" link above it.
  */
-export function SCrumb({ back, current, icon, accent, extra }: { back?: { label: string; href: string }; current: string; icon: string; accent: string; extra?: ReactNode }) {
+export function SCrumb({ back, current, icon, accent, extra, dark = false }: { back?: { label: string; href: string }; current: string; icon: string; accent: string; extra?: ReactNode; dark?: boolean }) {
   return (
-    <nav className="sl-crumb" aria-label="Breadcrumb" style={{ ['--a' as any]: accent } as CSSProperties}>
+    <nav className="sl-crumb" aria-label="Breadcrumb" style={{ ['--a' as any]: accent, ['--at' as any]: accentText(accent, dark) } as CSSProperties}>
       {back && <a href={back.href} className="sl-crumb-back"><span className="ar" aria-hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg></span>{back.label}</a>}
       {back && <span className="sl-crumb-sep" aria-hidden>/</span>}
-      <span className="sl-crumb-now" aria-current="page"><FeatureIcon name={icon} color={accent} size={14} />{current}</span>
+      <span className="sl-crumb-now" aria-current="page"><FeatureIcon name={icon} color={accentText(accent, dark)} size={14} />{current}</span>
       {extra}
     </nav>
   )
@@ -133,7 +157,7 @@ export function SBento({ items, accent, dark = false }: { items: { icon: string;
           <SReveal key={f.title} delay={(i % 3) * 0.05} className={`sl-bcell ${kind}`} style={{ gridColumn: `span ${span}` }}>
             <div className={`sl-cell ${kind}`}>
               <span className="sl-ix">{String(i + 1).padStart(2, '0')}</span>
-              <span className="sl-ic"><FeatureIcon name={f.icon} color={i === 0 ? '#fff' : accent} size={i === 0 ? 28 : 24} /></span>
+              <span className="sl-ic"><FeatureIcon name={f.icon} color={i === 0 ? onAccent(accent) : accentText(accent, dark)} size={i === 0 ? 28 : 24} /></span>
               <span className="sl-tx">
                 <h3>{f.title}</h3>
                 <p>{f.desc}</p>
@@ -248,7 +272,7 @@ export function SMore({ eyebrow, title, grey, items, accent, dark = false }: { e
           {items.map((it, i) => (
             <SReveal key={it.href} delay={(i % 4) * 0.04} className="sl-more-cell">
               <a href={it.href} className={`sl-more-a${it.here ? ' here' : ''}`} aria-current={it.here ? 'page' : undefined}>
-                <i><FeatureIcon name={it.icon} color={accent} size={17} /></i>
+                <i><FeatureIcon name={it.icon} color={accentText(accent, dark)} size={17} /></i>
                 <span>{it.title}{it.soon && <em>Soon</em>}{it.here && <em className="here">You’re here</em>}</span>
                 <b aria-hidden><Arrow s={14} /></b>
               </a>
@@ -268,7 +292,7 @@ export function SLinkCards({ items, dark = false }: { items: { icon: string; tit
     <div className={`sl-links n${items.length}`} style={vars(dark, items[0]?.color || '#ff6a4d')}>
       {items.map((c, i) => (
         <SReveal key={c.href} delay={(i % 3) * 0.05} className="sl-lcell">
-          <a href={c.href} className="sl-lcard" style={{ ['--c' as any]: c.color } as CSSProperties}>
+          <a href={c.href} className="sl-lcard" style={{ ['--c' as any]: c.color, ['--ct' as any]: accentText(c.color, dark) } as CSSProperties}>
             <span className="sl-lart" aria-hidden>
               <span className="sl-lo one" /><span className="sl-lo two" />
               <span className="sl-lic"><FeatureIcon name={c.icon} color="#fff" size={28} /></span>
@@ -358,7 +382,7 @@ export function SExplore({ current, accent, dark = false, title = 'Explore every
                   const here = !!current && f.href === current
                   return (
                     <a key={f.href} href={f.href} className={`sl-ex-a${here ? ' here' : ''}`} aria-current={here ? 'page' : undefined} style={{ ['--c' as any]: f.color } as CSSProperties}>
-                      <i><FeatureIcon name={f.icon} color={f.color} size={16} /></i>
+                      <i><FeatureIcon name={f.icon} color={accentText(f.color, dark)} size={16} /></i>
                       <span>{f.title}</span>
                       {here ? <em className="sl-here">You’re here</em> : f.isNew ? <em className="sl-new">New</em> : null}
                     </a>
@@ -385,7 +409,7 @@ const SELLIO_CSS = `
 .sl-wrap { max-width: 1200px; margin: 0 auto }
 .sl-head { max-width: 820px; margin: 0 0 44px }
 .sl-head.c { text-align: center; margin: 0 auto 48px }
-.sl-eyebrow { display: inline-block; font-family: ${S_MONO}; font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--a) }
+.sl-eyebrow { display: inline-block; font-family: ${S_MONO}; font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--at, var(--a)) }
 .sl-h2 { font-size: clamp(32px, 4.8vw, 58px); font-weight: 900; letter-spacing: -.04em; line-height: 1.02; margin: 14px 0 0; color: var(--text) }
 .sl-h2 .g { color: var(--grey) }
 .sl-head.ondark .sl-h2 { color: #fff } .sl-head.ondark .sl-h2 .g { color: rgba(255,255,255,.4) }
@@ -394,9 +418,9 @@ const SELLIO_CSS = `
 
 .sl-pill { display: inline-flex; align-items: center; gap: 14px; padding: 7px 7px 7px 24px; min-height: 54px; box-sizing: border-box; border-radius: 999px; border: 0; background: var(--a); color: #fff; font: inherit; font-size: 16px; font-weight: 800; cursor: pointer; text-decoration: none; box-shadow: 0 16px 34px -14px var(--a); transition: transform .2s cubic-bezier(.16,1,.3,1), box-shadow .2s }
 .sl-pill:hover { transform: translateY(-2px); box-shadow: 0 20px 40px -14px var(--a) }
-.sl-pill .ar { width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,.22); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; transition: transform .25s cubic-bezier(.16,1,.3,1) }
+.sl-pill .ar { width: 40px; height: 40px; border-radius: 50%; background: color-mix(in srgb, currentColor 20%, transparent); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; transition: transform .25s cubic-bezier(.16,1,.3,1) }
 .sl-pill:hover .ar { transform: translateX(3px) }
-.sl-ghost { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 54px; box-sizing: border-box; padding: 0 24px; border-radius: 999px; border: 1.5px solid var(--line2, rgba(15,17,25,.14)); background: transparent; color: inherit; font: inherit; font-weight: 700; font-size: 15px; text-decoration: none; cursor: pointer; transition: border-color .2s, transform .2s }
+.sl-ghost { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 54px; box-sizing: border-box; padding: 0 24px; border-radius: 999px; border: 1.5px solid var(--line2, color-mix(in srgb, currentColor 18%, transparent)); background: transparent; color: inherit; font: inherit; font-weight: 700; font-size: 15px; text-decoration: none; cursor: pointer; transition: border-color .2s, transform .2s }
 .sl-ghost:hover { transform: translateY(-2px); border-color: currentColor }
 .sl-ctas { display: flex; flex-wrap: wrap; gap: 12px; align-items: center }
 .sl-trust { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 22px; font-family: ${S_MONO}; font-size: 11.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; opacity: .62 }
@@ -412,17 +436,17 @@ const SELLIO_CSS = `
 .sl-bento { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px }
 .sl-bcell { display: flex; min-width: 0 }
 .sl-cell { flex: 1; min-width: 0; position: relative; box-sizing: border-box; border-radius: 26px; padding: 28px; background: var(--card); border: 1px solid var(--line); overflow: hidden; color: var(--text); transition: transform .3s cubic-bezier(.16,1,.3,1), box-shadow .3s }
-.sl-cell:hover { transform: translateY(-4px); box-shadow: 0 24px 50px -28px rgba(15,17,25,.35) }
+.sl-cell:hover { transform: translateY(-4px); box-shadow: 0 24px 50px -28px color-mix(in srgb, var(--a) 45%, rgba(15,17,25,.5)) }
 .sl-cell .sl-ix { position: absolute; top: 24px; right: 26px; font-family: ${S_MONO}; font-size: 12px; font-weight: 600; color: var(--grey) }
 .sl-cell .sl-ic { width: 50px; height: 50px; border-radius: 15px; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--a) 13%, transparent); margin-bottom: 20px }
 .sl-cell h3 { font-size: 19px; font-weight: 850; letter-spacing: -.015em; line-height: 1.25; margin: 0 0 8px }
 .sl-cell p { font-size: 15px; line-height: 1.6; color: var(--muted); margin: 0 }
-.sl-cell.hero { background: linear-gradient(140deg, var(--a), var(--a2)); border-color: transparent; color: #fff; min-height: 250px; display: flex; flex-direction: column; justify-content: flex-end }
+.sl-cell.hero { background: linear-gradient(140deg, var(--a), var(--a2)); border-color: transparent; color: var(--ona, #fff); min-height: 250px; display: flex; flex-direction: column; justify-content: flex-end }
 .sl-cell.hero::after { content: ''; position: absolute; width: 320px; height: 320px; border-radius: 50%; background: rgba(255,255,255,.12); top: -140px; right: -90px; pointer-events: none }
-.sl-cell.hero .sl-ix { color: rgba(255,255,255,.7) }
-.sl-cell.hero .sl-ic { width: 60px; height: 60px; border-radius: 18px; background: rgba(255,255,255,.2); margin-bottom: auto }
+.sl-cell.hero .sl-ix { color: color-mix(in srgb, currentColor 70%, transparent) }
+.sl-cell.hero .sl-ic { width: 60px; height: 60px; border-radius: 18px; background: color-mix(in srgb, currentColor 20%, transparent); margin-bottom: auto }
 .sl-cell.hero h3 { font-size: clamp(24px, 2.6vw, 32px); letter-spacing: -.03em; margin-top: 28px }
-.sl-cell.hero p { color: rgba(255,255,255,.88); font-size: 16px; max-width: 460px }
+.sl-cell.hero p { color: color-mix(in srgb, currentColor 88%, transparent); font-size: 16px; max-width: 460px }
 .sl-cell.tint { background: color-mix(in srgb, var(--a) 7%, var(--card)) }
 .sl-cell.wide { display: flex; align-items: center; gap: 22px }
 .sl-cell.wide .sl-ic { margin: 0; flex-shrink: 0 }
@@ -450,7 +474,7 @@ const SELLIO_CSS = `
 .sl-story-in { position: relative; max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center }
 .sl-story.flip .sl-story-copy { order: 2 }
 .sl-tag { display: inline-block; font-family: ${S_MONO}; font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--head) }
-.sl-story.soft .sl-tag { color: var(--a); background: color-mix(in srgb, var(--a) 14%, transparent); padding: 6px 12px; border-radius: 999px; letter-spacing: .1em }
+.sl-story.soft .sl-tag { color: var(--at, var(--a)); background: color-mix(in srgb, var(--a) 14%, transparent); padding: 6px 12px; border-radius: 999px; letter-spacing: .1em }
 .sl-story h2 { font-size: clamp(36px, 5.2vw, 64px); font-weight: 900; letter-spacing: -.045em; line-height: .98; margin: 16px 0 20px; color: var(--head) }
 .sl-story p { font-size: clamp(16px, 1.6vw, 19px); line-height: 1.6; max-width: 500px; margin: 0 0 26px; color: var(--body) }
 .sl-ticks { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 13px }
@@ -485,7 +509,7 @@ const SELLIO_CSS = `
 .sl-step-list { list-style: none; margin: 0; padding: 0 }
 .sl-step { display: grid; grid-template-columns: 56px 1fr; gap: 16px; padding: 26px 0; border-top: 1px solid rgba(255,255,255,.1) }
 .sl-step-list > div:last-child .sl-step { border-bottom: 1px solid rgba(255,255,255,.1) }
-.sl-step .n { font-family: ${S_MONO}; font-size: 13px; font-weight: 700; color: var(--a); padding-top: 5px }
+.sl-step .n { font-family: ${S_MONO}; font-size: 13px; font-weight: 700; color: var(--at, var(--a)); padding-top: 5px }
 .sl-step h3 { font-size: clamp(19px, 2vw, 24px); font-weight: 850; letter-spacing: -.02em; margin: 0 0 8px; color: #fff }
 .sl-step p { font-size: 15.5px; line-height: 1.6; color: rgba(244,245,251,.62); margin: 0 }
 .sl-steps-after { padding-top: 26px }
@@ -504,7 +528,7 @@ const SELLIO_CSS = `
 .sl-stat { padding: 30px 16px; text-align: center; border-left: 1px solid var(--line); min-width: 0 }
 .sl-stat:first-child { border-left: 0 }
 .sl-stat b { display: block; font-size: clamp(24px, 4.2vw, 46px); font-weight: 900; letter-spacing: -.04em; line-height: 1; color: var(--text); overflow-wrap: anywhere }
-.sl-stat b i { font-style: normal; color: var(--a) }
+.sl-stat b i { font-style: normal; color: var(--at, var(--a)) }
 .sl-stat span { display: block; margin-top: 12px; font-family: ${S_MONO}; font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted) }
 @media (max-width: 560px) {
   .sl-stats { grid-template-columns: 1fr !important; border-radius: 22px }
@@ -516,12 +540,12 @@ const SELLIO_CSS = `
 
 /* Breadcrumb */
 .sl-crumb { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 22px }
-.sl-crumb-back { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px 0 4px; border-radius: 999px; border: 1px solid var(--line2, rgba(15,17,25,.14)); color: inherit; font-size: 13.5px; font-weight: 750; text-decoration: none; transition: border-color .2s, background .2s }
-.sl-crumb-back .ar { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--a) 14%, transparent); color: var(--a); transition: transform .2s }
-.sl-crumb-back:hover { border-color: var(--a) }
+.sl-crumb-back { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px 0 4px; border-radius: 999px; border: 1px solid var(--line2, color-mix(in srgb, currentColor 18%, transparent)); color: inherit; font-size: 13.5px; font-weight: 750; text-decoration: none; transition: border-color .2s, background .2s }
+.sl-crumb-back .ar { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--a) 14%, transparent); color: var(--at, var(--a)); transition: transform .2s }
+.sl-crumb-back:hover { border-color: var(--at, var(--a)) }
 .sl-crumb-back:hover .ar { transform: translateX(-2px) }
 .sl-crumb-sep { opacity: .3; font-weight: 700 }
-.sl-crumb-now { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 14px; border-radius: 999px; background: color-mix(in srgb, var(--a) 13%, transparent); color: var(--a); font-family: ${S_MONO}; font-size: 11.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase }
+.sl-crumb-now { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 14px; border-radius: 999px; background: color-mix(in srgb, var(--a) 13%, transparent); color: var(--at, var(--a)); font-family: ${S_MONO}; font-size: 11.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase }
 
 /* More in this area */
 .sl-more { padding: clamp(64px, 9vw, 110px) 24px; background: var(--bg2) }
@@ -531,10 +555,10 @@ const SELLIO_CSS = `
 .sl-more-a:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--a) 40%, transparent); box-shadow: 0 18px 34px -24px color-mix(in srgb, var(--a) 70%, transparent) }
 .sl-more-a i { width: 36px; height: 36px; border-radius: 11px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--a) 12%, transparent) }
 .sl-more-a span { flex: 1; min-width: 0 }
-.sl-more-a em { display: inline-block; margin-left: 6px; font-style: normal; font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 999px; background: color-mix(in srgb, var(--a) 14%, transparent); color: var(--a); vertical-align: 2px }
-.sl-more-a em.here { background: var(--text); color: var(--card) }
+.sl-more-a em { display: inline-block; margin-left: 6px; font-style: normal; font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 999px; background: color-mix(in srgb, var(--a) 14%, transparent); color: var(--at, var(--a)); vertical-align: 2px }
+.sl-more-a em.here { background: var(--text); color: var(--ontext) }
 .sl-more-a b { color: var(--grey); display: inline-flex; transition: transform .2s, color .2s }
-.sl-more-a:hover b { color: var(--a); transform: translateX(3px) }
+.sl-more-a:hover b { color: var(--at, var(--a)); transform: translateX(3px) }
 .sl-more-a.here { border-color: color-mix(in srgb, var(--a) 45%, transparent) }
 @media (max-width: 1000px) { .sl-more-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) } }
 @media (max-width: 720px) { .sl-more-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) } }
@@ -560,7 +584,7 @@ const SELLIO_CSS = `
 .sl-lbody { display: flex; flex-direction: column; flex: 1; padding: 22px }
 .sl-lbody h3 { font-size: 20px; font-weight: 900; letter-spacing: -.02em; margin: 0 0 6px }
 .sl-lbody p { flex: 1; font-size: 14.5px; line-height: 1.55; color: var(--muted); margin: 0 0 16px }
-.sl-lgo { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 800; color: var(--c); transition: gap .2s }
+.sl-lgo { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 800; color: var(--ct, var(--c)); transition: gap .2s }
 .sl-lcard:hover .sl-lgo { gap: 10px }
 @media (max-width: 900px) { .sl-links { grid-template-columns: repeat(2, minmax(0, 1fr)) } }
 @media (max-width: 560px) {
@@ -578,7 +602,7 @@ const SELLIO_CSS = `
 .sl-pains { padding: clamp(64px, 9vw, 110px) 24px; background: var(--bg2) }
 .sl-pain-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 16px }
 .sl-pain { position: relative; box-sizing: border-box; border-radius: 24px 24px 24px 8px; padding: 26px 24px 24px; background: var(--card); border: 1px solid var(--line); color: var(--text) }
-.sl-pain-dot { width: 30px; height: 30px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: #fdecec; color: #e5484d; margin-bottom: 16px }
+.sl-pain-dot { width: 30px; height: 30px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: color-mix(in srgb, #e5484d 13%, transparent); color: var(--bad); margin-bottom: 16px }
 .sl-pain h3 { font-size: 18px; font-weight: 850; letter-spacing: -.015em; margin: 0 0 8px }
 .sl-pain p { font-size: 15px; line-height: 1.6; color: var(--muted); margin: 0 }
 
@@ -616,8 +640,8 @@ const SELLIO_CSS = `
 .sl-ex-a span { flex: 1; min-width: 0 }
 .sl-ex-a.here { background: color-mix(in srgb, var(--c) 11%, transparent) }
 .sl-ex-a em { font-style: normal; flex-shrink: 0; font-size: 10px; font-weight: 800; padding: 3px 7px; border-radius: 999px }
-.sl-new { background: var(--a); color: #fff }
-.sl-here { background: var(--text); color: var(--card) }
+.sl-new { background: var(--a); color: var(--ona, #fff) }
+.sl-here { background: var(--text); color: var(--ontext) }
 .sl-ex-swipe { display: none }
 @media (max-width: 1100px) { .sl-ex-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) } }
 @media (max-width: 760px) {
