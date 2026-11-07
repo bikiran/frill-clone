@@ -12,7 +12,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createJobFrom, useJobsEnabled } from '@/components/jobs/createJob'
 import { apiRaw, fmtWhen } from '@/components/jobs/shared'
-import { JOB_STATUS_LABEL, QUOTE_STATUS_LABEL, isOpenJob, type JobStatus, type QuoteStatus } from '@/lib/jobs/status'
+import { JOB_STATUS_LABEL, QUOTE_STATUS_LABEL, fmtJobNumber, fmtQuoteNumber, isOpenJob, type JobStatus, type QuoteStatus } from '@/lib/jobs/status'
 
 type Job = {
   id: string; number: number; title: string; status: string; scheduled_start: string | null; scheduled_end: string | null
@@ -41,7 +41,7 @@ export default function JobGlance({ companyId, contactId, conversationId }: { co
       if (!live || !r.ok) return
       const v: Data = {
         jobs: (r.data?.jobs || []) as Job[],
-        jobPrefix: r.data?.settings?.job_prefix || 'J-', quotePrefix: r.data?.settings?.quote_prefix || 'Q-',
+        jobPrefix: r.data?.settings?.job_prefix || 'J', quotePrefix: r.data?.settings?.quote_prefix || 'Q',
         tz: r.data?.timezone || 'Australia/Melbourne', money: !!r.data?.seesMoney,
       }
       cache.set(key, v); setD(v)
@@ -50,12 +50,13 @@ export default function JobGlance({ companyId, contactId, conversationId }: { co
   }, [on, companyId, contactId, key])
 
   if (!on || !d) return null
-  // Open jobs first (soonest booked first), then the rest, newest first.
+  // Open jobs first: booked ones soonest first, then the unbooked; finished ones
+  // last. Within each, the API's order (most recently updated first).
+  const rank = (j: Job) => (!isOpenJob(j.status) ? 2 : j.scheduled_start ? 0 : 1)
   const jobs = d.jobs.slice().sort((a, b) => {
-    const ao = isOpenJob(a.status) ? 0 : 1, bo = isOpenJob(b.status) ? 0 : 1
-    if (ao !== bo) return ao - bo
-    if (ao === 0 && a.scheduled_start && b.scheduled_start) return a.scheduled_start.localeCompare(b.scheduled_start)
-    return 0
+    const ra = rank(a), rb = rank(b)
+    if (ra !== rb) return ra - rb
+    return ra === 0 ? String(a.scheduled_start).localeCompare(String(b.scheduled_start)) : 0
   })
   const shown = jobs.slice(0, 3)
   const create = async () => {
@@ -83,14 +84,14 @@ export default function JobGlance({ companyId, contactId, conversationId }: { co
         return (
           <Link key={j.id} href={`/admin/jobs/${j.id}`} className="jg-row">
             <span className="jg-top">
-              <span className="jg-num">{d.jobPrefix}{j.number}</span>
+              <span className="jg-num">{fmtJobNumber(j.number, d.jobPrefix)}</span>
               <span className="jg-title">{j.title || 'Job'}</span>
               <span className={`jg-tag ${TONE[j.status] || ''}`}>{JOB_STATUS_LABEL[j.status as JobStatus] || j.status}</span>
             </span>
             {(when || q || total) && (
               <span className="jg-sub">
                 {when && <span>{when}</span>}
-                {q && <span>Quote {d.quotePrefix}{q.number}: {QUOTE_STATUS_LABEL[q.status as QuoteStatus] || q.status}</span>}
+                {q && <span>Quote {fmtQuoteNumber(q.number, null, d.quotePrefix)}: {QUOTE_STATUS_LABEL[q.status as QuoteStatus] || q.status}</span>}
                 {total && <span className="jg-money">{total}</span>}
               </span>
             )}

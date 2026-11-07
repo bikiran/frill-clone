@@ -137,7 +137,9 @@ export default function ReservationsPage() {
   }
 
   const tz = day?.timezone || 'Australia/Melbourne'
-  const today = day?.today || date
+  // Until the day has loaded, today in the business's timezone, so a New
+  // reservation opened straight from a link (?new=1) always has a real date.
+  const today = day?.today || date || new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date())
   const off = meta && !meta.enabled
 
   return (
