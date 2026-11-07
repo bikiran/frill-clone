@@ -79,9 +79,9 @@ const NOT_FIT = [
 ]
 
 const PAGES: { label: string; path: string; note: string }[] = [
-  { label: 'Home', path: '/', note: 'what Colvy is' },
+  { label: 'Home', path: '/', note: 'what Colvy is: one shared inbox for every channel, with a business phone, CRM, campaigns and AI agents' },
   { label: 'Pricing', path: '/pricing', note: 'plans in AUD, SMS costs, free trial' },
-  { label: 'All features', path: '/product', note: 'everything in Colvy' },
+  { label: 'All features', path: '/product', note: 'everything in Colvy, from the inbox and phone to bookings, reservations, jobs and customer accounts' },
   { label: 'Shared inbox & CRM', path: '/inbox-crm', note: 'the shared inbox and customer records' },
   { label: 'AI agents', path: '/ai-agents', note: 'Support, Reception, Sales, Operations and Reputation agents' },
   { label: 'Business phone number Australia', path: '/business-phone-number-australia', note: 'get an Australian number online' },
@@ -105,7 +105,7 @@ const PAGES: { label: string; path: string; note: string }[] = [
   { label: 'Industries', path: '/industries', note: 'customer messaging by industry' },
   { label: 'AI assistant', path: '/ai-assistant', note: 'replies drafted from your own knowledge, summaries and actions' },
   { label: 'Security', path: '/security', note: 'how data is protected' },
-  { label: 'About', path: '/about', note: 'who makes Colvy' },
+  { label: 'About', path: '/about', note: 'who makes Colvy, an Australian customer communication platform' },
   { label: 'Book a demo', path: '/demo', note: 'try Colvy or book a demo with the Australian team' },
   { label: 'Changelog', path: '/changelog', note: 'the latest features, fixes and improvements' },
   { label: 'Help centre', path: '/help', note: 'guides and answers for using Colvy' },
