@@ -3,9 +3,12 @@
 // deliberately excluded (they're also blocked in robots.ts).
 //
 // The dynamic slug lists below MUST stay in sync with the `PAGES` / `CH` / `IND`
-// maps in the corresponding app/<route>/[param]/page.tsx files. They're client
-// components, so their slug maps can't be imported into a server sitemap; this
-// mirror is the trade-off for keeping the sitemap self-contained.
+// / `PH` / `AI` / `INTG` maps in the corresponding app/<route>/[param] files.
+// Those are client components, so their slug maps can't be imported on the
+// server; this mirror is the trade-off. The lists also decide which addresses
+// exist: each [param] route builds only these and 404s anything else
+// (dynamicParams = false). scripts/marketing-routes.test.mjs checks the
+// mirror against the maps, so a page added to a map but not here is caught.
 
 // Top-level marketing pages (relative paths, no leading slash for '').
 export const STATIC_MARKETING_ROUTES: string[] = [
@@ -62,6 +65,24 @@ export const FOR_SLUGS: string[] = [
   'ecommerce', 'real-estate', 'multi-location-retail', 'service-businesses', 'restaurants',
 ]
 
+// Phone system features; mirrors PH in app/phones/[slug]/page.tsx.
+export const PHONE_SLUGS: string[] = [
+  'click-to-dial', 'browser-dialer', 'hd-audio', 'numbers-porting', 'mobile-app',
+  'warm-transfer', 'call-forwarding', 'cascade-ring', 'simultaneous-ring', 'ivr',
+  'ai-receptionist', 'ai-call-intelligence', 'ai-actions', 'call-recording',
+  'call-reporting', 'missed-call-text-back', 'voicemail', 'voip', 'international',
+  'command-centre',
+]
+// AI assistant capabilities; mirrors AI in app/ai-assistant/[slug]/page.tsx.
+export const AI_SLUGS: string[] = [
+  'ai-replies', 'knowledge-base', 'auto-summaries', 'ai-actions', 'auto-routing',
+  'follow-ups', 'tasks-reminders', 'workflows', 'human-in-control',
+]
+// Integrations; mirrors INTG in app/integrations/[slug]/page.tsx.
+export const INTEGRATION_SLUGS: string[] = [
+  'woocommerce', 'shopify', 'stripe', 'slack', 'zapier', 'api',
+]
+
 // Colvy vs <competitor> pages; mirrors CMP in app/compare/[slug]/Client.tsx.
 export const COMPARE_SLUGS: string[] = [
   'podium', 'birdeye', 'coax', 'gorgias', 'zendesk', 'freshdesk', 'intercom', 'gladly', 'manychat',
@@ -77,5 +98,8 @@ export function allMarketingPaths(): string[] {
     ...INDUSTRY_SLUGS.map(s => `industries/${s}`),
     ...FOR_SLUGS.map(s => `for/${s}`),
     ...COMPARE_SLUGS.map(s => `compare/${s}`),
+    ...PHONE_SLUGS.map(s => `phones/${s}`),
+    ...AI_SLUGS.map(s => `ai-assistant/${s}`),
+    ...INTEGRATION_SLUGS.map(s => `integrations/${s}`),
   ]
 }
