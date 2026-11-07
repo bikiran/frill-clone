@@ -28,51 +28,54 @@ const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c'
 // not confirmed either way. ✗ is only for things we're confident they don't
 // offer. Plans change, so the table says when it was checked.
 type Val = boolean | string
-type Slug = 'podium' | 'birdeye' | 'coax' | 'gorgias' | 'zendesk' | 'freshdesk' | 'intercom' | 'gladly' | 'manychat'
+type Slug = 'podium' | 'birdeye' | 'coax' | 'gorgias' | 'zendesk' | 'freshdesk' | 'intercom' | 'gladly' | 'manychat' | 'highlevel' | 'salesforce'
 type Row = { label: string; colvy?: Val; v: Partial<Record<Slug, Val>> }
-const ALL_T = (val: Val): Record<Slug, Val> => ({ podium: val, birdeye: val, coax: val, gorgias: val, zendesk: val, freshdesk: val, intercom: val, gladly: val, manychat: val })
+// The nine competitors checked in the first round. A shorthand for a value
+// they all share; competitors added later list only what was checked for them.
+const FIRST_NINE = ['podium', 'birdeye', 'coax', 'gorgias', 'zendesk', 'freshdesk', 'intercom', 'gladly', 'manychat'] as const
+const ALL_T = (val: Val): Partial<Record<Slug, Val>> => Object.fromEntries(FIRST_NINE.map(k => [k, val]))
 const HELPDESKS_T: Partial<Record<Slug, Val>> = { gorgias: true, zendesk: true, freshdesk: true, intercom: true, gladly: true }
 
 const ROWS: { group: string; rows: Row[] }[] = [
   { group: 'Channels', rows: [
-    { label: 'SMS on Australian 🇦🇺 numbers', v: { podium: true, birdeye: true, coax: true, gorgias: 'Add-on', zendesk: 'Add-on', freshdesk: 'Add-on', intercom: 'Usage-based', gladly: true, manychat: 'Via your Twilio' } },
-    { label: 'WhatsApp', colvy: COMING_SOON.whatsapp ? 'Coming soon' : true, v: { birdeye: true, coax: true, intercom: 'Usage-based', gladly: true, manychat: true } },
-    { label: 'Instagram DMs', v: ALL_T(true) },
-    { label: 'Facebook Messenger', v: ALL_T(true) },
-    { label: 'Email inbox (Gmail or any mailbox)', v: { podium: true, birdeye: 'Marketing', coax: true, gorgias: true, zendesk: true, freshdesk: true, intercom: true, gladly: true, manychat: 'Basic' } },
-    { label: 'Phone calls & voicemail', v: { podium: true, birdeye: 'Partial', coax: 'Add-on', gorgias: 'Add-on', zendesk: true, freshdesk: 'Add-on', intercom: 'Usage-based', gladly: true, manychat: false } },
-    { label: 'Google reviews', v: { podium: true, birdeye: true, coax: true, gorgias: false, zendesk: false, freshdesk: false, intercom: false, gladly: false, manychat: false } },
-    { label: 'Live chat widget', v: ALL_T(true) },
+    { label: 'SMS on Australian 🇦🇺 numbers', v: { podium: true, birdeye: true, coax: true, gorgias: 'Add-on', zendesk: 'Add-on', freshdesk: 'Add-on', intercom: 'Usage-based', gladly: true, manychat: 'Via your Twilio', highlevel: 'Usage-based' } },
+    { label: 'WhatsApp', colvy: COMING_SOON.whatsapp ? 'Coming soon' : true, v: { birdeye: true, coax: true, intercom: 'Usage-based', gladly: true, manychat: true, highlevel: 'Add-on' } },
+    { label: 'Instagram DMs', v: { ...ALL_T(true), highlevel: true } },
+    { label: 'Facebook Messenger', v: { ...ALL_T(true), highlevel: true } },
+    { label: 'Email inbox (Gmail or any mailbox)', v: { podium: true, birdeye: 'Marketing', coax: true, gorgias: true, zendesk: true, freshdesk: true, intercom: true, gladly: true, manychat: 'Basic', highlevel: true } },
+    { label: 'Phone calls & voicemail', v: { podium: true, birdeye: 'Partial', coax: 'Add-on', gorgias: 'Add-on', zendesk: true, freshdesk: 'Add-on', intercom: 'Usage-based', gladly: true, manychat: false, highlevel: 'Usage-based' } },
+    { label: 'Google reviews', v: { podium: true, birdeye: true, coax: true, gorgias: false, zendesk: false, freshdesk: false, intercom: false, gladly: false, manychat: false, highlevel: true } },
+    { label: 'Live chat widget', v: { ...ALL_T(true), highlevel: true } },
   ] },
   { group: 'AI', rows: [
-    { label: 'AI agents that answer on their own', colvy: 'Five, included', v: { podium: 'Paid add-on', birdeye: 'Quote-based', coax: 'Enterprise plan', gorgias: 'Per interaction', zendesk: 'Allowance, then per resolution', freshdesk: 'Per session', intercom: 'Per outcome (Fin)', gladly: 'Per resolution or quote', manychat: 'Manychat AI' } },
-    { label: 'Name and style each AI agent', v: { podium: 'Name', gorgias: 'Name', zendesk: 'Name', freshdesk: true, intercom: true, gladly: 'Name' } },
-    { label: 'Call summaries, to-dos & transcripts', v: { podium: true, coax: 'Add-on', gladly: 'Add-on', manychat: false } },
-    { label: 'AI campaign builder (audience, copy, timing)', v: {} },
+    { label: 'AI agents that answer on their own', colvy: 'Five, included', v: { podium: 'Paid add-on', birdeye: 'Quote-based', coax: 'Enterprise plan', gorgias: 'Per interaction', zendesk: 'Allowance, then per resolution', freshdesk: 'Per session', intercom: 'Per outcome (Fin)', gladly: 'Per resolution or quote', manychat: 'Manychat AI', highlevel: 'Add-on or per use' } },
+    { label: 'Name and style each AI agent', v: { podium: 'Name', gorgias: 'Name', zendesk: 'Name', freshdesk: true, intercom: true, gladly: 'Name', highlevel: true } },
+    { label: 'Call summaries, to-dos & transcripts', v: { podium: true, coax: 'Add-on', gladly: 'Add-on', manychat: false, highlevel: 'Usage-based (Labs)' } },
+    { label: 'AI campaign builder (audience, copy, timing)', v: { highlevel: 'Email (beta)' } },
     { label: 'AI voice typing', v: {} },
   ] },
   { group: 'Sell & deliver', rows: [
     { label: 'WooCommerce orders beside each chat', colvy: 'Woo + Shopify', v: { podium: 'Via Zapier', coax: 'Coming soon', gorgias: true, zendesk: 'Via apps', freshdesk: 'Via apps', intercom: 'Via third-party', manychat: 'Via Zapier' } },
-    { label: '“Where’s my order?” automation', v: { coax: true, gorgias: true } },
-    { label: 'POS / ERP integrations', v: { podium: 'Limited', birdeye: 'Limited', coax: true, gorgias: 'Via integrations', zendesk: 'Limited', freshdesk: 'Limited', intercom: 'Limited', gladly: 'Limited', manychat: 'Limited' } },
-    { label: 'Payment links in the chat', v: { podium: true, birdeye: true, coax: true, manychat: 'Buy button (Pro)' } },
+    { label: '“Where’s my order?” automation', v: { coax: true, gorgias: true, highlevel: 'Shipping alerts' } },
+    { label: 'POS / ERP integrations', v: { podium: 'Limited', birdeye: 'Limited', coax: true, gorgias: 'Via integrations', zendesk: 'Limited', freshdesk: 'Limited', intercom: 'Limited', gladly: 'Limited', manychat: 'Limited', highlevel: 'Square, QuickBooks' } },
+    { label: 'Payment links in the chat', v: { podium: true, birdeye: true, coax: true, manychat: 'Buy button (Pro)', highlevel: true } },
     { label: 'Delivery scheduling from the chat', v: {} },
     { label: 'Back-in-stock waitlists & restock texts', v: {} },
-    { label: 'Online booking, deposits & reminders', v: { podium: 'Some industries', birdeye: true, coax: 'Via integrations', zendesk: 'Via apps', freshdesk: 'Via apps', intercom: 'Via apps' } },
+    { label: 'Online booking, deposits & reminders', v: { podium: 'Some industries', birdeye: true, coax: 'Via integrations', zendesk: 'Via apps', freshdesk: 'Via apps', intercom: 'Via apps', highlevel: true } },
   ] },
   { group: 'Marketing', rows: [
-    { label: 'Email & SMS campaigns', colvy: 'Email + SMS', v: { podium: 'SMS', birdeye: true, coax: 'SMS + Messenger', zendesk: 'Via apps', freshdesk: 'WhatsApp app', intercom: true, gladly: 'Proactive, not marketing', manychat: 'Email; AU SMS via Twilio' } },
-    { label: 'Campaign reports in orders & revenue', v: {} },
-    { label: 'Scheduled replies (edit, send now or cancel)', v: { podium: true, birdeye: true, coax: true, zendesk: 'Add-on', manychat: 'Broadcasts only' } },
-    { label: 'Polls & surveys', v: { birdeye: true, intercom: true, gorgias: 'CSAT', zendesk: 'CSAT', freshdesk: 'CSAT' } },
+    { label: 'Email & SMS campaigns', colvy: 'Email + SMS', v: { podium: 'SMS', birdeye: true, coax: 'SMS + Messenger', zendesk: 'Via apps', freshdesk: 'WhatsApp app', intercom: true, gladly: 'Proactive, not marketing', manychat: 'Email; AU SMS via Twilio', highlevel: 'Usage-based' } },
+    { label: 'Campaign reports in orders & revenue', v: { highlevel: 'Email only' } },
+    { label: 'Scheduled replies (edit, send now or cancel)', v: { podium: true, birdeye: true, coax: true, zendesk: 'Add-on', manychat: 'Broadcasts only', highlevel: 'Schedule & cancel' } },
+    { label: 'Polls & surveys', v: { birdeye: true, intercom: true, gorgias: 'CSAT', zendesk: 'CSAT', freshdesk: 'CSAT', highlevel: true } },
   ] },
   { group: 'Team & self-service', rows: [
     { label: 'Help centre / knowledge base', v: { ...HELPDESKS_T } },
-    { label: 'iOS & Android app', v: { podium: true, birdeye: true, coax: true, gorgias: true, zendesk: true, freshdesk: true, intercom: true, gladly: 'Mobile browser', manychat: true } },
-    { label: 'Team notes', v: { ...HELPDESKS_T } },
-    { label: 'Tasks & reminders', v: {} },
-    { label: 'Shared calendar', v: {} },
-    { label: 'Shared media gallery, photo markup & video trimming', v: {} },
+    { label: 'iOS & Android app', v: { podium: true, birdeye: true, coax: true, gorgias: true, zendesk: true, freshdesk: true, intercom: true, gladly: 'Mobile browser', manychat: true, highlevel: true } },
+    { label: 'Team notes', v: { ...HELPDESKS_T, highlevel: true } },
+    { label: 'Tasks & reminders', v: { highlevel: true } },
+    { label: 'Shared calendar', v: { highlevel: true } },
+    { label: 'Shared media gallery, photo markup & video trimming', v: { highlevel: 'Media + image editor' } },
   ] },
   { group: 'Product feedback', rows: [
     { label: 'Ideas & feedback board', v: { podium: false, birdeye: false, coax: false, gorgias: false, intercom: false, gladly: false, manychat: false } },
@@ -80,7 +83,7 @@ const ROWS: { group: string; rows: Row[] }[] = [
     { label: 'Announcements / changelog', v: { ...ALL_T(false), intercom: true } },
   ] },
   { group: 'Local', rows: [
-    { label: 'Australian 🇦🇺 phone numbers', v: { podium: true, coax: true, zendesk: 'Limited', manychat: 'Via your Twilio' } },
+    { label: 'Australian 🇦🇺 phone numbers', v: { podium: true, coax: true, zendesk: 'Limited', manychat: 'Via your Twilio', highlevel: true } },
   ] },
 ]
 
@@ -204,6 +207,20 @@ const CMP: Record<string, Cmp> = {
       { t: 'Australian 🇦🇺 support', d: 'Local team, local numbers, pricing in AUD.' },
     ],
     checklist: ['A real team inbox with CRM, not just flows', 'Voice calls, voicemail and call intelligence', 'Ideas board, roadmap and changelog built in', 'Payments and recorded sales in the thread', 'AI that reads orders and takes action', 'Google Reviews automated and managed', 'Australian 🇦🇺 support and local numbers', 'No lock-in contracts — cancel anytime'],
+  },
+  highlevel: {
+    name: 'HighLevel', accent: BLUE, heroTitle: 'The HighLevel alternative built for', heroAccent: 'the business itself', heroSub: 'HighLevel is built mainly for marketing agencies that set up and resell accounts for their clients. Colvy is the shared inbox, phone and CRM a business runs itself, with five AI agents, store orders and a customer feedback suite.',
+    stats: [{ big: '5', label: 'AI agents in the plan' }, { big: '3,000', label: 'SMS a month included' }, { big: 'AUD', label: 'published pricing' }],
+    tableNote: 'HighLevel is broad and agency-first, with calls, SMS, email and AI billed on usage from a prepaid wallet. Colvy is built for the business that talks to the customers, with store orders, deliveries and a feedback suite in the same inbox.',
+    wins: [
+      { t: 'Built for your business, not an agency', d: 'No sub-accounts or reselling to manage. Your team connects its channels and starts replying in about 45 minutes.' },
+      { t: 'AI agents in the plan', d: 'HighLevel’s AI Employee is $20–$97 USD a month per sub-account, or pay-per-use. Colvy’s Inbox and Everything plans include five AI agents for support, bookings, sales, orders and reviews.' },
+      { t: 'Texts included, then prepaid', d: 'HighLevel bills calls, texts and email on usage from a prepaid wallet. Colvy’s Inbox and Everything plans include 3,000 SMS a month, then prepaid credits from A$0.15 a text.' },
+      { t: 'Store orders beside every chat', d: 'WooCommerce and Shopify orders sit next to the conversation, with delivery scheduling and back-in-stock texts from the same thread.' },
+      { t: 'A customer feedback suite', d: 'An ideas board, a public roadmap and announcements, tied to the inbox, so customers see what you build next.' },
+      { t: 'Australian 🇦🇺 support & pricing', d: 'Local team, Australian numbers and prices in AUD. HighLevel publishes its prices in USD.' },
+    ],
+    checklist: ['SMS, calls, email, social and live chat in one inbox', 'Five AI agents on the Inbox and Everything plans', '3,000 SMS a month included', 'WooCommerce and Shopify orders beside every chat', 'Delivery scheduling and back-in-stock texts', 'Ideas board, roadmap and announcements', 'Australian 🇦🇺 support, numbers and AUD pricing', 'No lock-in contracts — cancel anytime'],
   },
   birdeye: {
     name: 'Birdeye', accent: AMBER, heroTitle: 'The Birdeye alternative built for', heroAccent: 'every team size', heroSub: 'Birdeye is a US reputation platform with quote-based pricing. Colvy brings reviews, messaging, a full business phone, campaigns and a built-in feedback suite together, with Australian 🇦🇺 support and published prices.',
