@@ -115,9 +115,9 @@ export default function JobGlance({ companyId, contactId, conversationId }: { co
         .jg-empty{margin:2px 0 0;color:var(--slate)}
         .jg-row{display:block;padding:9px 10px;margin:6px -4px 0;border-radius:12px;background:var(--card);text-decoration:none;color:inherit;box-shadow:0 0 0 1px rgba(15,17,25,.06)}
         .jg-row:hover{box-shadow:0 0 0 1px rgba(99,102,241,.35)}
-        .jg-top{display:flex;align-items:center;gap:7px;min-width:0}
+        .jg-top{display:flex;align-items:flex-start;gap:7px;min-width:0;line-height:20px}
         .jg-num{font-size:12px;font-weight:700;color:var(--slate);font-variant-numeric:tabular-nums;flex-shrink:0}
-        .jg-title{flex:1;min-width:0;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .jg-title{flex:1;min-width:0;font-weight:650;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow-wrap:anywhere}
         .jg-tag{flex-shrink:0;height:20px;padding:0 8px;border-radius:999px;font-size:11px;font-weight:700;display:inline-flex;align-items:center;background:#f4f4f5;color:#52525b}
         .jg-tag.blue{background:#e0ecff;color:#1d4ed8}.jg-tag.violet{background:#ede9fe;color:#6d28d9}.jg-tag.amber{background:#fef3c7;color:#b45309}
         .jg-tag.green{background:#dcfce7;color:#15803d}.jg-tag.red{background:#fee2e2;color:#b91c1c}
