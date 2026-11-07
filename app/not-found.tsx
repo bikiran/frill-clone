@@ -44,7 +44,7 @@ const ROUTES: { href: string; label: string }[] = [
 // Every other marketing page (each feature, channel, phone feature, AI page,
 // integration…, from lib/marketing-routes), so "/phones/call-fowarding" finds
 // Call forwarding. Labels come from the address.
-const WORDS: Record<string, string> = { ai: 'AI', ivr: 'IVR', voip: 'VoIP', api: 'API', sms: 'SMS', crm: 'CRM', hd: 'HD', saas: 'SaaS', woocommerce: 'WooCommerce' }
+const WORDS: Record<string, string> = { ai: 'AI', ivr: 'IVR', voip: 'VoIP', api: 'API', sms: 'SMS', crm: 'CRM', hd: 'HD', saas: 'SaaS', woocommerce: 'WooCommerce', manychat: 'ManyChat', highlevel: 'HighLevel' }
 const labelFor = (path: string) => {
   const words = (path.split('/').pop() || '').split('-').map(w => WORDS[w] || w)
   const label = words.join(' ')

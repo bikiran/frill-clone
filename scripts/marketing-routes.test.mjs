@@ -76,5 +76,22 @@ for (const [route, name, path] of ROUTES) {
   ok(!!guard && guard.includes(`${name}.map(`) && guard.includes(`${name}.includes(`) && guard.includes('notFound()'), `/${route}/[…]: generateStaticParams from ${name}, dynamicParams = false, notFound()`)
 }
 
+console.log('every page has its own search title and description')
+for (const [route, name, path] of ROUTES) {
+  const dir = path.slice(0, path.lastIndexOf('/'))
+  let meta = null
+  for (const f of ['page.tsx', 'layout.tsx']) {
+    try {
+      const src = read(`${dir}/${f}`)
+      const i = src.indexOf('const META')
+      if (i < 0) continue
+      const end = src.indexOf('\n}\n', i)
+      meta = [...src.slice(i, end).matchAll(/^ {2}(?:'|")?([a-z0-9-]+)(?:'|")?: \{ ?(?:name: [^,]+, )?title:/gm)].map(m => m[1])
+    } catch {}
+  }
+  const missing = meta ? list(name).filter(s => !meta.includes(s)) : list(name)
+  ok(!!meta && !missing.length, `/${route}/[…]: a META entry for every slug in ${name}`, missing)
+}
+
 console.log(failures ? `\n${failures} failed` : '\nall passed')
 process.exit(failures ? 1 : 0)
