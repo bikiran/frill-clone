@@ -2,7 +2,8 @@ import { callerUser, requireCompanyAccess } from '@/lib/company-access'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { BRANDING_ADDON } from '@/lib/branding-addon'
-import { shopifyChargeBlock } from '@/lib/shopify-billing'
+import { shopifyChargeBlock, planSelectionUrl } from '@/lib/shopify-billing'
+import { CLAIM_COOKIE, findPendingInstall } from '@/lib/shopify-install'
 import { billingUnavailableCopy, checkoutBlockers, isKnownTier, priceIdFor } from '@/lib/billing-config'
 import { alertBillingNotConfigured } from '@/lib/billing-alert'
 import { COLVY_CONTACT } from '@/lib/colvy-contact'
@@ -59,13 +60,23 @@ export async function POST(req: NextRequest) {
     // A workspace using Colvy through the Shopify app pays through Shopify
     // (App Store rule 1.2.1, lib/shopify-billing): no plan or add-on by card.
     {
-      let cid = companyId
-      if (!cid) {
-        const { data: owned } = await db.from('companies').select('id').eq('owner_id', userId).limit(1)
-        cid = owned?.[0]?.id || null
+      // Installed from Shopify in this browser and not connected yet: the
+      // store's plan is chosen in Shopify once it is (rule 1.2.2).
+      const pending = await findPendingInstall(db, req.cookies.get(CLAIM_COOKIE)?.value).catch(() => null)
+      if (pending) {
+        return NextResponse.json({ error: `You installed Colvy on ${pending.store_name || pending.shop}, so your plan is chosen and billed in Shopify. Connect the store under Integrations → Shopify, then choose your plan.`, shopify: true, planUrl: planSelectionUrl(pending.shop) }, { status: 409 })
       }
-      const viaShopify = await shopifyChargeBlock(db, cid, tier === BRANDING_ADDON ? 'addon' : 'plan')
-      if (viaShopify) return NextResponse.json(viaShopify, { status: 409 })
+      // The workspace asked about, or (from the plan page, which has none)
+      // every workspace this person owns: any one on Shopify blocks card plans.
+      let cids: string[] = companyId ? [companyId] : []
+      if (!cids.length) {
+        const { data: owned } = await db.from('companies').select('id').eq('owner_id', userId).limit(20)
+        cids = (owned || []).map((c: any) => c.id)
+      }
+      for (const cid of cids) {
+        const viaShopify = await shopifyChargeBlock(db, cid, tier === BRANDING_ADDON ? 'addon' : 'plan')
+        if (viaShopify) return NextResponse.json(viaShopify, { status: 409 })
+      }
     }
 
     const blockers = checkoutBlockers(tier, billing, process.env)

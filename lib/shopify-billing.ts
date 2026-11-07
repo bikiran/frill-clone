@@ -191,7 +191,7 @@ export async function shopifyChargeBlock(db: any, companyId: string | null | und
  * Returns the stored billing summary; throws on Partner API trouble (nothing
  * is changed then).
  */
-export async function syncShopifyBilling(db: any, companyId: string, opts: { hint?: string | null } = {}) {
+export async function syncShopifyBilling(db: any, companyId: string, opts: { hint?: string | null; chosen?: boolean } = {}) {
   const { data: co } = await db.from('companies').select('id, plan, is_complimentary, billing_provider, billing_integration_id').eq('id', companyId).maybeSingle()
   if (!co || co.billing_provider !== 'shopify' || !co.billing_integration_id) return null
   const { data: integ } = await db.from('shopify_integrations').select('*').eq('id', co.billing_integration_id).maybeSingle()
@@ -210,7 +210,17 @@ export async function syncShopifyBilling(db: any, companyId: string, opts: { hin
   }
   await db.from('shopify_integrations').update({ billing, billing_checked_at: billing.checked_at }).eq('id', integ.id)
 
-  if (!keepsOwnPlan(co)) {
+  // The merchant just picked a paid plan on Shopify's plan page (opts.chosen:
+  // their own signed-in Billing page asked, on the way back): that moves an
+  // Enterprise or complimentary workspace onto it, so they can always change
+  // plan themselves (App Store rule 1.2.3). Choosing Free leaves a plan the
+  // Colvy team set alone (the page tells them to, to stop a double charge);
+  // a suspended workspace never changes here.
+  if (keepsOwnPlan(co) && opts.chosen && co.plan !== 'suspended' && billing.plan && billing.plan !== 'free') {
+    if (billing.plan !== co.plan || co.is_complimentary) {
+      await db.from('companies').update({ plan: billing.plan, is_complimentary: false, trial_ends_at: null, plan_changed_at: new Date().toISOString() }).eq('id', companyId)
+    }
+  } else if (!keepsOwnPlan(co)) {
     let next: string | null = null
     if (billing.plan) next = billing.plan
     // Had a Shopify plan and it's gone (cancelled, frozen, expired) → Free.

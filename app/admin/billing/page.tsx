@@ -107,6 +107,48 @@ const fmtDate = (d?: string | null) => (d ? new Date(d).toLocaleDateString(undef
 // A workspace using Colvy through the Shopify app is billed by Shopify (App
 // Store rule): plans are picked on Shopify's own plan page, never Stripe.
 function ShopifyBilling({ info }: { info: any }) {
+  if (info.pending) return <ShopifyPending info={info} />
+  return <ShopifyBilled info={info} />
+}
+
+// Installed from Shopify in this browser, not connected to the workspace yet:
+// plans for Shopify stores are chosen in Shopify once it's connected, so
+// there's nothing to buy here (App Store rule 1.2.2: never card billing).
+function ShopifyPending({ info }: { info: any }) {
+  const plan = info.plan || 'free'
+  const name = info.pending?.name || 'your Shopify store'
+  return (
+    <AdminPage width="md" title="Billing" sub={<>You’re on the <b style={{ color: 'var(--ink)' }}>{PLAN_LABEL[plan] || plan}</b> plan.</>}>
+      <section className="bl-sum">
+        <div className="bl-sum-row">
+          <span className="bl-row-ic shop" aria-hidden><ShopifyBagIcon /></span>
+          <div className="bl-sum-rt">
+            <b>Billed through Shopify</b>
+            <p>You installed Colvy on <strong style={{ color: 'var(--ink)' }}>{name}</strong>. Connect it to this workspace, then choose your plan in Shopify. It’s charged on your Shopify bill, and you can change or cancel it there any time.</p>
+          </div>
+          <a href="/admin/integrations/shopify" className="ak-btn bl-shopify cv-shine"><span>Connect {name}</span></a>
+        </div>
+      </section>
+      <div className="bl-plans-h"><h2>What each plan includes</h2></div>
+      <div className="bl-plans">
+        {PLANS.map(p => (
+          <div key={p.id} className={`bl-plan${plan === p.id ? ' current' : ''}`} style={{ '--pc': p.color } as React.CSSProperties}>
+            <PlanMark id={p.id} size={46} />
+            <div className="bl-plan-h"><h3>{p.name}</h3>{plan === p.id && <span className="ak-tag green">Current</span>}</div>
+            <p className="bl-plan-desc">{p.desc}</p>
+            <Rule />
+            <p className="bl-incl-l">Includes</p>
+            <ul className="bl-feats">{p.features.map(f => <li key={f}><span aria-hidden><CheckIcon /></span>{f}</li>)}</ul>
+          </div>
+        ))}
+      </div>
+      <p className="bl-foot">Plans for Shopify stores are billed by Shopify · Change or cancel any time</p>
+      <style>{BL_CSS}</style>
+    </AdminPage>
+  )
+}
+
+function ShopifyBilled({ info }: { info: any }) {
   const sub = info.subscription
   const plan = info.plan || 'free'
   const returned = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('shopify_plan') : null
@@ -135,12 +177,12 @@ function ShopifyBilling({ info }: { info: any }) {
   }
   const status = managed
     ? (paidInShopify
-      ? `Your ${PLAN_LABEL[plan] || plan} plan is managed by the Colvy team, but you also have a paid ${sub.name || PLAN_LABEL[sub.plan] || 'Colvy'} plan in Shopify${price ? ` (${price})` : ''}. Choose the Free plan in Shopify so you’re not charged twice.`
-      : `Your ${PLAN_LABEL[plan] || plan} plan is set up and managed by the Colvy team. Contact us for any billing changes.`)
+      ? `Your ${PLAN_LABEL[plan] || plan} plan was set up by the Colvy team, and you also have a paid ${sub.name || PLAN_LABEL[sub.plan] || 'Colvy'} plan in Shopify${price ? ` (${price})` : ''}. Choose that plan again in Shopify to switch to it, or choose Free there so you’re not charged twice.`
+      : `Your ${PLAN_LABEL[plan] || plan} plan was set up by the Colvy team. You can switch to any plan below in Shopify whenever you like.`)
     : comp
     ? (paidInShopify
-      ? `Your ${PLAN_LABEL[plan] || plan} plan is complimentary, but you also have a paid ${sub.name || PLAN_LABEL[sub.plan] || 'Colvy'} plan in Shopify${price ? ` (${price})` : ''}. Choose the Free plan in Shopify so you’re not charged.`
-      : `Your ${PLAN_LABEL[plan] || plan} plan is complimentary. You won’t be charged.`)
+      ? `Your ${PLAN_LABEL[plan] || plan} plan is complimentary, and you also have a paid ${sub.name || PLAN_LABEL[sub.plan] || 'Colvy'} plan in Shopify${price ? ` (${price})` : ''}. Choose that plan again in Shopify to switch to it, or choose Free there so you’re not charged.`
+      : `Your ${PLAN_LABEL[plan] || plan} plan is complimentary, so you won’t be charged. You can switch to any plan below in Shopify whenever you like.`)
     : !sub?.plan
     ? (plan === 'trial'
       ? `You’re on the 14-day trial${info.trialEndsAt ? ` until ${fmtDate(info.trialEndsAt)}` : ''}. Choose a plan in Shopify to keep your features after it ends.`
@@ -164,9 +206,9 @@ function ShopifyBilling({ info }: { info: any }) {
             <h2>{comp ? (PLAN_LABEL[plan] || plan) : (sub?.name || PLAN_LABEL[sub?.plan || plan] || plan)} <span className="bl-chip">Your plan</span></h2>
             <p>{FACTS[shownPlan] || FACTS.free}</p>
           </div>
-          {!(comp && !paidInShopify) && info.planUrl && info.store?.active && (
+          {info.planUrl && info.store?.active && (
             <a href={info.planUrl} target="_top" rel="noopener" className="ak-btn bl-shopify cv-shine">
-              <span>{paidInShopify ? 'Change to Free in Shopify' : sub?.plan ? 'Change plan' : 'Choose a plan'}</span>
+              <span>{sub?.plan || comp ? 'Change plan' : 'Choose a plan'}</span>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M7 17 17 7M8 7h9v9"/></svg>
             </a>
           )}
@@ -184,9 +226,9 @@ function ShopifyBilling({ info }: { info: any }) {
                 : <>Charged on {info.store?.name ? <b>{info.store.name}</b> : 'your store'}’s Shopify bill. Invoices and your payment method are in Shopify under Settings → Billing.</>}
             </small>
           </div>
-          {managed && <button type="button" className="ak-btn sm" onClick={() => setContact(true)}>Contact us</button>}
+
         </div>
-        {!(comp && !paidInShopify) && !(info.planUrl && info.store?.active) && (
+        {!(info.planUrl && info.store?.active) && (
           <p className="ak-hint bl-sum-hint">Reconnect your Shopify store under Integrations → Shopify to change your plan.</p>
         )}
         {(card || cardMsg) && (
@@ -305,7 +347,7 @@ export default function BillingPage() {
       // Asked for every workspace: one with a store connected through the
       // Shopify app is billed through Shopify (adopted server-side).
       const shopP = co?.id
-        ? authFetch(`/api/shopify/billing?companyId=${co.id}${back ? '&refresh=1' : ''}`).then(async r => ({ ok: r.ok, d: await r.json() })).catch(() => null)
+        ? authFetch(`/api/shopify/billing?companyId=${co.id}${back ? '&refresh=1&chosen=1' : ''}`).then(async r => ({ ok: r.ok, d: await r.json() })).catch(() => null)
         : null
       const addonOn = await readAddon()
       // Back from the add-on checkout: Stripe's webhook can land a few seconds
