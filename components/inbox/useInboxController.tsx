@@ -45,7 +45,7 @@ import { useStoreStatus } from '@/lib/store-status'
 import { agentChannel, useAgentTeam } from '@/components/agents/useAgentTeam'
 import { suggestSale } from '@/lib/sale-signal'
 import { Contact, Conversation, Highlight, INBOX_HOUR12, Icon, Message, THREAD_PAGE, TeamMember, extractFromText, initialsOf, makeSnippet, parseTs, runPool, sendChannelGlyph, setInboxHour12, isFailureToast, threadCacheGet, threadCacheSet, toolBtn, tsOf, videoPoster } from '@/components/inbox/inbox-shared'
-import { GATED, channelNeedsInbox } from '@/lib/plan-gate'
+import { GATED, replyNeedsInbox } from '@/lib/plan-gate'
 
 // The contacts behind the list's rows, by id. One failed query used to blank
 // every name in the inbox (the rows fell back to their phone numbers): a column
@@ -5486,7 +5486,7 @@ export function useInboxController() {
     if ((!replyNow.current.trim() && stagedMedia.length === 0) || !selected || !user) return
     // Live chat, email, Instagram and Messenger replies need the Inbox plan
     // (internal notes don't). The card above the reply box says so too.
-    if (!internalMode && !inboxIncluded && channelNeedsInbox(selected.channel)) { showToast(GATED.inbox.locked); return }
+    if (!internalMode && !inboxIncluded && replyNeedsInbox(composeChannel(), selected.channel)) { showToast(GATED.inbox.locked); return }
     flushReply()
     setSending(true)
     let content = replyNow.current.trim()
@@ -5684,8 +5684,9 @@ export function useInboxController() {
     }
 
     // Email conversations reply by email (threaded back into the customer's
-    // original message), not through the chat widget.
-    if ((selected as any).channel === 'email' || sendChannel === 'email') {
+    // original message), not through the chat widget, unless the agent picked
+    // another channel ("Use SMS"): that reply goes the way the composer says.
+    if (sendChannel === 'email' || ((selected as any).channel === 'email' && sendChannel === 'auto')) {
       try {
         const res = await authFetch('/api/email/reply', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },

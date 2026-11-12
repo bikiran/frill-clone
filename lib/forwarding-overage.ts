@@ -1,4 +1,4 @@
-// Last month's forwarded call minutes past each plan's allowance
+// Last month's call minutes (forwarded, and made from Colvy) past each plan's allowance
 // (lib/forwarding-usage) go on the business's next Colvy invoice, as a Stripe
 // invoice item on its plan subscription. Run daily by
 // app/api/cron/forwarding-overage.
@@ -94,7 +94,7 @@ export async function chargeForwardingOverage(db: any, period: string, deps: Ove
         ...(subscription ? { subscription } : {}),
         amount: u.overCents,
         currency: 'aud',
-        description: `Forwarded call minutes, ${monthName(period)}: ${u.over} past the ${included} included, at ${u.rateCents}c a minute`,
+        description: `Call minutes (forwarded and made from Colvy), ${monthName(period)}: ${u.over} past the ${included} included, at ${u.rateCents}c a minute`,
         metadata: { colvy_kind: 'forward_overage', company_id: companyId, period, minutes: String(u.minutes), over: String(u.over) },
       }, { idempotencyKey: key })
       await db.from('platform_settings').update({ value: { ...base, state: 'charged', charged: true, invoiceItem: item?.id || null }, updated_at: now() }).eq('key', key)
@@ -109,8 +109,8 @@ export async function chargeForwardingOverage(db: any, period: string, deps: Ove
   if (problems.length) {
     await deps.alert(db, {
       key: 'alert:forwarding-overage',
-      subject: 'Forwarded minutes couldn’t be charged',
-      message: `Extra forwarded call minutes for ${monthName(period)} couldn’t be added to these businesses’ next invoice: ${problems.join('; ')}. ${!deps.stripe ? 'STRIPE_SECRET_KEY isn’t set. ' : ''}It’s tried again every day.`,
+      subject: 'Call minutes couldn’t be charged',
+      message: `Extra call minutes for ${monthName(period)} couldn’t be added to these businesses’ next invoice: ${problems.join('; ')}. ${!deps.stripe ? 'STRIPE_SECRET_KEY isn’t set. ' : ''}It’s tried again every day.`,
     })
   }
   return run

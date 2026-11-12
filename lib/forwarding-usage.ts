@@ -1,18 +1,24 @@
-// Forwarded call minutes: how many a business used this month, how many its
-// plan includes, and what the rest costs.
+// Call minutes on a metered plan: how many a business used this month, how
+// many its plan includes, and what the rest costs.
 //
-// A call forwarded to an outside mobile or landline (lib/call-routing) is an
-// outbound call on Colvy's Twilio account, so it costs Colvy per minute. Plans
-// sold for a business's phone line (the Business number plan) include a set
-// number of forwarded minutes a month (PLAN_LIMITS.forwardMinutes); minutes past
-// that are charged at FORWARD_MINUTE_PRICE_CENTS each, added to the next invoice
+// Two kinds of call go out on Colvy's Twilio account and cost Colvy per minute:
+// a call forwarded to an outside mobile or landline (lib/call-routing), and a
+// call someone makes from Colvy, in the app or the browser. Plans sold for a
+// business's phone line (the Business number plan) include a set number of
+// these minutes a month (PLAN_LIMITS.forwardMinutes, the name kept from when
+// only forwarding counted); minutes past that are charged at
+// FORWARD_MINUTE_PRICE_CENTS each, added to the next invoice
 // (app/api/cron/forwarding-overage). Plans without a number (Infinity) aren't
-// metered, as before.
+// metered, as before. Calls answered in the app or browser don't count.
 //
-// Counting: each forwarded call that a person took (calls.forwarded_seconds,
-// V399, saved by the Twilio inbound-status route) counts its length rounded up
-// to the whole minute, the way Twilio bills each call. Months are calendar
-// months in UTC, the same as the SMS allowance (lib/sms-quota smsPeriod).
+// Counting: each call's length rounded up to the whole minute, the way Twilio
+// bills each call. A forwarded call counts the forwarded leg a person took
+// (calls.forwarded_seconds, V399, saved by the Twilio inbound-status route); a
+// call made from Colvy counts its talk time (calls.duration_seconds on an
+// outbound row, from Twilio's DialCallDuration in /api/twilio/voice/status),
+// from APP_CALLS_COUNTED_FROM on, so nothing made before calls from Colvy
+// counted is charged. Months are calendar months in UTC, the same as the SMS
+// allowance (lib/sms-quota smsPeriod).
 //
 // Env:
 //   COLVY_FORWARD_MINUTE_PRICE_CENTS   A$ cents per minute past the allowance,
@@ -25,6 +31,9 @@ const envNum = (v: string | undefined, fallback: number) => {
 
 /** A$ cents (GST included) for each forwarded minute past the plan's allowance. */
 export const FORWARD_MINUTE_PRICE_CENTS = Math.round(envNum(process.env.COLVY_FORWARD_MINUTE_PRICE_CENTS, 20))
+
+/** Calls made from Colvy count toward a plan's minutes from this moment on. */
+export const APP_CALLS_COUNTED_FROM = '2026-11-13T00:00:00.000Z'
 
 /** The calendar month (UTC) as 'YYYY-MM', like lib/sms-quota smsPeriod. */
 export const forwardingPeriod = (d: Date = new Date()) => d.toISOString().slice(0, 7)
@@ -64,6 +73,25 @@ export function overage(minutes: number, included: number, rateCents = FORWARD_M
   return { over, cents: over * rateCents }
 }
 
+/** Minutes and calls made from Colvy (app or browser) for a company in a month. */
+export async function outboundMinutes(db: any, companyId: string, period: string = forwardingPeriod()): Promise<{ minutes: number; calls: number }> {
+  const b = periodBounds(period)
+  if (b.to <= APP_CALLS_COUNTED_FROM) return { minutes: 0, calls: 0 }
+  const from = b.from > APP_CALLS_COUNTED_FROM ? b.from : APP_CALLS_COUNTED_FROM
+  let minutes = 0, calls = 0
+  const page = 1000
+  for (let start = 0; start < 100_000; start += page) {
+    const { data, error } = await db.from('calls').select('duration_seconds')
+      .eq('company_id', companyId).eq('direction', 'outbound').gte('created_at', from).lt('created_at', b.to).gt('duration_seconds', 0)
+      .order('created_at', { ascending: true }).range(start, start + page - 1)
+    if (error) throw error
+    const rows = data || []
+    for (const r of rows) { const m = billableMinutes(r.duration_seconds); if (m) { minutes += m; calls++ } }
+    if (rows.length < page) break
+  }
+  return { minutes, calls }
+}
+
 /** Forwarded minutes and calls for a company in a month. */
 export async function forwardedMinutes(db: any, companyId: string, period: string = forwardingPeriod()): Promise<{ minutes: number; calls: number }> {
   const { from, to } = periodBounds(period)
@@ -83,8 +111,11 @@ export async function forwardedMinutes(db: any, companyId: string, period: strin
 
 export type ForwardingUsage = {
   period: string
+  /** Forwarded minutes plus minutes of calls made from Colvy. */
   minutes: number
   calls: number
+  forwardedMinutes: number
+  appMinutes: number
   /** Infinity when the plan doesn't meter forwarding. */
   included: number
   over: number
@@ -92,10 +123,15 @@ export type ForwardingUsage = {
   rateCents: number
 }
 
-/** This month's (or `period`'s) forwarded minutes against the allowance the company has now. */
+/** This month's (or `period`'s) call minutes against the allowance the company has now. */
 export async function forwardingUsage(db: any, companyId: string, included: number, period: string = forwardingPeriod()): Promise<ForwardingUsage> {
-  const { minutes, calls } = await forwardedMinutes(db, companyId, period)
   const inc = cleanAllowance(included)
+  const [fwd, out] = await Promise.all([
+    forwardedMinutes(db, companyId, period),
+    // Only metered plans count calls made from Colvy (and only they need the read).
+    Number.isFinite(inc) ? outboundMinutes(db, companyId, period) : Promise.resolve({ minutes: 0, calls: 0 }),
+  ])
+  const minutes = fwd.minutes + out.minutes
   const { over, cents } = overage(minutes, inc)
-  return { period, minutes, calls, included: inc, over, overCents: cents, rateCents: FORWARD_MINUTE_PRICE_CENTS }
+  return { period, minutes, calls: fwd.calls + out.calls, forwardedMinutes: fwd.minutes, appMinutes: out.minutes, included: inc, over, overCents: cents, rateCents: FORWARD_MINUTE_PRICE_CENTS }
 }

@@ -30,7 +30,7 @@ const TIERS = [
     annualPrice: 35,
     monthlyOnly: true,
     color: '#0d9488',
-    features: ['One Australian number (02, 03, 07, 08 or 04)','Calls forwarded to your mobile','100 forwarded minutes a month, then 20c a minute','Voicemail and the call log','3 team members'],
+    features: ['One Australian number (02, 03, 07, 08 or 04)','Calls forwarded to your mobile','100 call minutes a month (forwarded calls and calls you make from Colvy), then 20c a minute','Voicemail and the call log','3 team members'],
     limits: ['No live chat / CRM'],
   },
   {

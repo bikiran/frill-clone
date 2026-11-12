@@ -17,7 +17,7 @@ import { Icon, sendChannelGlyph, toolBtn } from '@/components/inbox/inbox-shared
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useInbox } from '@/components/inbox/InboxContext'
 import PlanLockCard from '@/components/PlanLockCard'
-import { channelNeedsInbox } from '@/lib/plan-gate'
+import { replyNeedsInbox } from '@/lib/plan-gate'
 
 export default function InboxComposer() {
   const {
@@ -144,7 +144,7 @@ export default function InboxComposer() {
         {/* Live chat, email, Instagram and Messenger replies are on the Inbox
             plans (lib/plan-gate): the message arrived, replying needs an upgrade.
             Above both composers: email threads use the email composer. */}
-        {selected && !internalMode && !inboxIncluded && channelNeedsInbox(selected.channel) && (
+        {selected && !internalMode && !inboxIncluded && replyNeedsInbox(sendChannel !== 'auto' ? sendChannel : outboundChannel, selected.channel) && (
           <div style={{ margin: '0 0 8px' }}>
             <PlanLockCard feature="inbox" compact body="Replying by live chat, email, Instagram or Messenger is on the Inbox and Everything plans. You can still add internal notes." />
           </div>

@@ -464,7 +464,7 @@ export default function CallRoutingSettings({ companyId }: { companyId: string }
           )}
           {fwdUse && fwdUse.included != null && (c.strategy === 'forward' || (c.strategy === 'in_order' && c.order.thenForward) || fwdUse.minutes > 0) && (
             <p style={hint} className="crs-fwd-use">
-              This month: <b style={{ color: 'var(--ck-ink, var(--ink))' }}>{fwdUse.minutes} of {fwdUse.included}</b> forwarded minutes used.{' '}
+              This month: <b style={{ color: 'var(--ck-ink, var(--ink))' }}>{fwdUse.minutes} of {fwdUse.included}</b> call minutes used (forwarded calls and calls made from Colvy).{' '}
               {fwdUse.rateCents > 0 ? `Each minute after that is ${fwdUse.rateCents}c, added to your next bill.` : ''}
             </p>
           )}

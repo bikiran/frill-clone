@@ -39,7 +39,7 @@ const TIERS = [
 // for a business that needs nothing else yet. Shown as its own strip under the
 // plan cards (it isn't in the comparison table), monthly only.
 const TEAL = '#0d9488'
-const PHONE_TIER = { id: 'phone', name: 'Business number', tagline: 'A local number that rings your mobile', accent: TEAL, monthly: 35, annual: 35, monthlyOnly: true, badge: null, cta: 'Get a number', smsNote: false, features: ['One Australian number: 02, 03, 07, 08 or 04 mobile', 'Calls forwarded to your mobile, always or after hours', '100 forwarded minutes a month, then 20c a minute', 'Press 1 to accept, so your voicemail never takes the call', 'Voicemail and every call in the Colvy app', 'Up to 3 team members'] }
+const PHONE_TIER = { id: 'phone', name: 'Business number', tagline: 'A local number that rings your mobile', accent: TEAL, monthly: 35, annual: 35, monthlyOnly: true, badge: null, cta: 'Get a number', smsNote: false, features: ['One Australian number: 02, 03, 07, 08 or 04 mobile', 'Calls forwarded to your mobile, always or after hours', '100 call minutes a month (forwarded calls and calls you make from Colvy), then 20c a minute', 'Press 1 to accept, so your voicemail never takes the call', 'Voicemail and every call in the Colvy app', 'Up to 3 team members'] }
 
 // Full feature matrix. Each row's cells line up with TIERS order:
 // [Free, Feedback, Inbox, Everything]. true = included, false = not, string = value.

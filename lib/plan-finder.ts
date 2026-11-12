@@ -78,7 +78,7 @@ export function recommendPlan(a: FinderAnswers): { plan: PlanId; reasons: string
 
   // Only phone calls, nothing else: a number that rings their mobile is enough.
   if (a.channels.length === 1 && a.channels[0] === 'calls' && !a.extras.length && a.team <= PHONE_SEATS && a.brand === 'colvy') {
-    return { plan: 'phone', reasons: ['One Australian number that rings your mobile', '100 forwarded minutes a month included', 'Voicemail and every call in the Colvy app'] }
+    return { plan: 'phone', reasons: ['One Australian number that rings your mobile', '100 call minutes a month included', 'Voicemail and every call in the Colvy app'] }
   }
 
   if (inbox) {

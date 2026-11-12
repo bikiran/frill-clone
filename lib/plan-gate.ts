@@ -78,3 +78,17 @@ export const INBOX_CHANNELS = new Set(['widget', 'email', 'instagram', 'messenge
 
 /** Does replying on this conversation channel need the Inbox plan? */
 export const channelNeedsInbox = (channel: string | null | undefined) => INBOX_CHANNELS.has(String(channel || '').toLowerCase())
+
+/**
+ * Does this reply need the Inbox plan? Decided by how it goes OUT, not by the
+ * thread: a reply by SMS on an old live-chat or email thread is fine (SMS has
+ * its own check), while live chat, email, Instagram and Messenger need it.
+ * 'chat' (a message shown in the thread itself) counts as live chat only on a
+ * live-chat, email or social thread; on order, cart and account threads it's
+ * part of those features.
+ */
+export function replyNeedsInbox(sendChannel: string | null | undefined, conversationChannel: string | null | undefined): boolean {
+  const via = String(sendChannel || '').toLowerCase()
+  if (via === 'chat') return channelNeedsInbox(conversationChannel)
+  return INBOX_CHANNELS.has(via)
+}

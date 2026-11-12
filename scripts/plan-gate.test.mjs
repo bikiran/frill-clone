@@ -36,7 +36,7 @@ function fakeDb(tables, broken = []) {
   }
 }
 
-const { planAllows, planLock, lockedBody, GATED, PLAN_LOCKED_STATUS, channelNeedsInbox } = await import('../lib/plan-gate.ts')
+const { planAllows, planLock, lockedBody, GATED, PLAN_LOCKED_STATUS, channelNeedsInbox, replyNeedsInbox } = await import('../lib/plan-gate.ts')
 const { featureForPage } = await import('../components/PlanPageLock.tsx')
 
 const FEATURES = ['inbox', 'campaigns', 'reviewDashboard', 'ecommerceSync', 'aiAutomation']
@@ -99,6 +99,14 @@ for (const f of FEATURES) ok(/Inbox and Everything plans/.test(GATED[f].locked) 
 console.log('Which conversations need the Inbox plan to reply')
 for (const c of ['widget', 'email', 'instagram', 'messenger', 'facebook', 'Email']) ok(channelNeedsInbox(c), `${c} needs it`)
 for (const c of ['sms', 'phone', 'whatsapp', 'chat', 'form', 'realestate', 'prexty', 'colvy', '', null, undefined]) ok(!channelNeedsInbox(c), `${String(c)} does not`)
+
+console.log('Which replies need the Inbox plan (by how they go out)')
+for (const [via, conv, want] of [
+  ['email', 'email', true], ['instagram', 'instagram', true], ['messenger', 'facebook', true], ['widget', 'widget', true],
+  ['chat', 'widget', true], ['chat', 'email', true],
+  ['sms', 'widget', false], ['sms', 'email', false], ['sms', 'instagram', false],
+  ['chat', 'chat', false], ['chat', 'sms', false], ['whatsapp', 'whatsapp', false], ['colvy', 'colvy', false], ['', 'widget', false],
+]) ok(replyNeedsInbox(via, conv) === want, `${via || '(none)'} reply on a ${conv} thread → ${want ? 'needs it' : 'doesn’t'}`)
 
 console.log('Which admin pages show the plan card')
 const pages = {

@@ -134,6 +134,30 @@ console.log('Counting forwarded minutes')
   ok(m.minutes === 4 && m.calls === 2, 'only this business’s forwarded calls in that month', m)
 }
 
+console.log('Counting calls made from Colvy')
+{
+  ok(usage.APP_CALLS_COUNTED_FROM === '2026-11-13T00:00:00.000Z', 'calls from Colvy count from 13 Nov 2026')
+  const db = fakeDb({ calls: [
+    { company_id: 'co1', direction: 'outbound', created_at: '2026-12-02T01:00:00.000Z', duration_seconds: 125 },  // 3
+    { company_id: 'co1', direction: 'outbound', created_at: '2026-12-09T01:00:00.000Z', duration_seconds: 30 },   // 1
+    { company_id: 'co1', direction: 'outbound', created_at: '2026-12-09T02:00:00.000Z', duration_seconds: 0 },    // not answered
+    { company_id: 'co1', direction: 'inbound', created_at: '2026-12-10T01:00:00.000Z', duration_seconds: 900 },   // answered in the app: not counted
+    { company_id: 'co1', direction: 'inbound', created_at: '2026-12-11T01:00:00.000Z', forwarded_seconds: 240 },  // forwarded: 4
+    { company_id: 'co2', direction: 'outbound', created_at: '2026-12-02T01:00:00.000Z', duration_seconds: 600 },  // another business
+    { company_id: 'co1', direction: 'outbound', created_at: '2026-11-05T01:00:00.000Z', duration_seconds: 600 },  // before the change
+    { company_id: 'co1', direction: 'outbound', created_at: '2026-11-20T01:00:00.000Z', duration_seconds: 120 },  // after it: 2
+  ] })
+  const dec = await usage.outboundMinutes(db, 'co1', '2026-12')
+  ok(dec.minutes === 4 && dec.calls === 2, 'outbound calls this business made that month, rounded up', dec)
+  const nov = await usage.outboundMinutes(db, 'co1', '2026-11')
+  ok(nov.minutes === 2 && nov.calls === 1, 'November counts only calls from 13 Nov on', nov)
+  ok((await usage.outboundMinutes(db, 'co1', '2026-10')).minutes === 0, 'months before the change count none')
+  const u = await usage.forwardingUsage(db, 'co1', 5, '2026-12')
+  ok(u.minutes === 8 && u.forwardedMinutes === 4 && u.appMinutes === 4 && u.over === 3 && u.overCents === 60, 'forwarded and app minutes share the allowance', u)
+  const open = await usage.forwardingUsage(db, 'co1', Infinity, '2026-12')
+  ok(open.appMinutes === 0 && open.minutes === 4 && open.overCents === 0, 'unmetered plans don’t count calls from Colvy', open)
+}
+
 console.log('Charging minutes past the allowance')
 {
   const many = (companyId, month, minutes) => Array.from({ length: minutes }, (_, i) => ({ company_id: companyId, created_at: `${month}-0${1 + (i % 9)}T03:00:00.000Z`, forwarded_seconds: 60 }))
