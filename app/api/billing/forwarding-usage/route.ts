@@ -6,7 +6,7 @@ import { forwardingUsage } from '@/lib/forwarding-usage'
 
 export const dynamic = 'force-dynamic'
 
-// This month's forwarded call minutes against the plan's allowance
+// This month's call minutes (forwarded, and made from Colvy) against the plan's allowance
 // (lib/forwarding-usage), for Billing and the Call routing card.
 //
 // GET ?companyId= → { usage: { period, minutes, calls, included, over, overCents, rateCents } }
@@ -26,6 +26,6 @@ export async function GET(req: NextRequest) {
     const u = await forwardingUsage(db, companyId, included)
     return NextResponse.json({ usage: { ...u, included: Number.isFinite(u.included) && u.included > 0 ? u.included : null } })
   } catch (err: any) {
-    return NextResponse.json({ error: 'Couldn’t load this month’s forwarded minutes.' }, { status: 500 })
+    return NextResponse.json({ error: 'Couldn’t load this month’s call minutes.' }, { status: 500 })
   }
 }

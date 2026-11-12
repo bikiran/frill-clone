@@ -68,7 +68,7 @@ const PlanMark = ({ id, size = 48 }: { id: string; size?: number }) => {
 }
 // One line of what a plan gives you, under its name in the summary.
 const FACTS: Record<string, string> = {
-  phone: 'One Australian number · Calls forwarded to your mobile · 100 forwarded minutes a month',
+  phone: 'One Australian number · Calls forwarded to your mobile · 100 call minutes a month',
   feedback: 'Ideas & voting · Roadmaps · Help centre · Unlimited team',
   omnichannel: 'Live chat · SMS & calls · 3,000 SMS a month · Unlimited team',
   everything: 'Feedback + Inbox · White-label · AI assistant · Unlimited team',
@@ -84,7 +84,7 @@ const NUMBER_PLAN = { id: 'phone', name: 'Business number', monthly: 35 }
 const NUMBER_FEATS = [
   'One Australian number: 02, 03, 07, 08 or 04 mobile',
   'Calls forwarded to your mobile, always or after hours',
-  '100 forwarded minutes a month, then 20c a minute',
+  '100 call minutes a month (forwarded calls and calls you make from Colvy), then 20c a minute',
   'Press 1 to accept, so your own voicemail never takes the call',
   'Voicemail and every call in the Colvy app',
   'Up to 3 team members',
@@ -348,7 +348,7 @@ export default function BillingPage() {
   const [brandingAddon, setBrandingAddon] = useState(false)
   const [addonPending, setAddonPending] = useState(false)
   // This month's forwarded minutes, on a plan that includes a set number (Business number).
-  const [fwdUse, setFwdUse] = useState<{ minutes: number; included: number | null; over: number; overCents: number; rateCents: number } | null>(null)
+  const [fwdUse, setFwdUse] = useState<{ minutes: number; included: number | null; over: number; overCents: number; rateCents: number; forwardedMinutes?: number; appMinutes?: number } | null>(null)
   const [contact, setContact] = useState(false)
 
   useEffect(() => {
@@ -562,12 +562,13 @@ export default function BillingPage() {
         )}
         {fwdUse && fwdUse.included != null && (
           <div className="bl-meter">
-            <div className="bl-meter-l"><span className="bl-meter-ic" aria-hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z" /></svg></span>Forwarded minutes</div>
+            <div className="bl-meter-l"><span className="bl-meter-ic" aria-hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z" /></svg></span>Call minutes</div>
             <div className="bl-meter-v">
               {fwdUse.minutes} of {fwdUse.included} this month
+              {Number(fwdUse.appMinutes) > 0 ? ` (${Number(fwdUse.forwardedMinutes) || 0} forwarded, ${fwdUse.appMinutes} from Colvy)` : ''}
               {fwdUse.over > 0 ? ` · ${fwdUse.over} extra, ${formatMoney(fwdUse.overCents / 100)} on your next bill` : ''}
             </div>
-            <div className="bl-bar" role="img" aria-label={`${fwdUse.minutes} of ${fwdUse.included} forwarded minutes used this month`}><i style={{ width: `${Math.min(100, fwdUse.included ? (fwdUse.minutes / fwdUse.included) * 100 : 100)}%` }} /></div>
+            <div className="bl-bar" role="img" aria-label={`${fwdUse.minutes} of ${fwdUse.included} call minutes used this month`}><i style={{ width: `${Math.min(100, fwdUse.included ? (fwdUse.minutes / fwdUse.included) * 100 : 100)}%` }} /></div>
           </div>
         )}
         {isPaid && hasStripe && subscription?.current_period_end && (

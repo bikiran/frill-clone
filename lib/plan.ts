@@ -91,7 +91,7 @@ export const OVERRIDABLE_FEATURES: { key: string; label: string }[] = [
 export const OVERRIDABLE_LIMITS: { key: string; label: string }[] = [
   { key: 'teamMembers', label: 'Team members' },
   { key: 'smsPerMonth', label: 'SMS included / month' },
-  { key: 'forwardMinutes', label: 'Forwarded call minutes / month' },
+  { key: 'forwardMinutes', label: 'Call minutes / month (forwarded + made from Colvy)' },
   { key: 'polls', label: 'Polls' },
   { key: 'surveys', label: 'Surveys' },
   { key: 'helpArticles', label: 'Help center articles' },

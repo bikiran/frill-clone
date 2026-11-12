@@ -31,7 +31,7 @@ const UPDATED = process.env.COLVY_BUILD_DATE || ''
 // Mirrors TIERS in app/pricing/Client.tsx (AUD, per month).
 const PLANS = [
   { name: 'Free', monthly: 0, annual: 0, what: 'Ideas board, public roadmap, changelog, help centre (10 articles), feedback widget, 2 team members.' },
-  { name: 'Business number', monthly: 35, annual: 0, what: 'One Australian number (02, 03, 07, 08 or 04 mobile) with calls forwarded to your mobile, voicemail and the call log; 100 forwarded minutes a month, then 20c a minute. Billed monthly.' },
+  { name: 'Business number', monthly: 35, annual: 0, what: 'One Australian number (02, 03, 07, 08 or 04 mobile) with calls forwarded to your mobile, voicemail and the call log; 100 call minutes a month (forwarded calls and calls made from Colvy), then 20c a minute. Billed monthly.' },
   { name: 'Feedback', monthly: 39, annual: 29, what: 'Unlimited ideas, polls, surveys and forms, private and public roadmaps, unlimited help centre, unlimited team members.' },
   { name: 'Inbox', monthly: 179, annual: 149, what: `Shared inbox (SMS, calls, Instagram, Messenger, email, live chat${COMING_SOON.whatsapp ? '' : ', WhatsApp'}), CRM, 3,000 SMS a month, WooCommerce and Shopify, email and SMS campaigns with the AI campaign builder, online booking and deposits, all five AI agents, review dashboard, unlimited team members.` },
   { name: 'Everything', monthly: 259, annual: 209, what: 'Inbox plus the Feedback suite, white-label branding, custom domain, advanced analytics, AI writing assistant, unlimited team members.' },

@@ -10,7 +10,7 @@ import { chargeForwardingOverage } from '@/lib/forwarding-overage'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-// Daily (Vercel Cron): last month's forwarded call minutes past each plan's
+// Daily (Vercel Cron): last month's call minutes (forwarded and made from Colvy) past each plan's
 // allowance go on the business's next Colvy invoice (lib/forwarding-overage
 // has the rules: once per business per month, claimed before Stripe is called).
 
