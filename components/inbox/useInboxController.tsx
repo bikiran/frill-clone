@@ -5684,8 +5684,9 @@ export function useInboxController() {
     }
 
     // Email conversations reply by email (threaded back into the customer's
-    // original message), not through the chat widget.
-    if ((selected as any).channel === 'email' || sendChannel === 'email') {
+    // original message), not through the chat widget, unless the agent picked
+    // another channel ("Use SMS"): that reply goes the way the composer says.
+    if (sendChannel === 'email' || ((selected as any).channel === 'email' && sendChannel === 'auto')) {
       try {
         const res = await authFetch('/api/email/reply', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
