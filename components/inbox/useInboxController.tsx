@@ -45,7 +45,7 @@ import { useStoreStatus } from '@/lib/store-status'
 import { agentChannel, useAgentTeam } from '@/components/agents/useAgentTeam'
 import { suggestSale } from '@/lib/sale-signal'
 import { Contact, Conversation, Highlight, INBOX_HOUR12, Icon, Message, THREAD_PAGE, TeamMember, extractFromText, initialsOf, makeSnippet, parseTs, runPool, sendChannelGlyph, setInboxHour12, isFailureToast, threadCacheGet, threadCacheSet, toolBtn, tsOf, videoPoster } from '@/components/inbox/inbox-shared'
-import { GATED, channelNeedsInbox } from '@/lib/plan-gate'
+import { GATED, replyNeedsInbox } from '@/lib/plan-gate'
 
 // The contacts behind the list's rows, by id. One failed query used to blank
 // every name in the inbox (the rows fell back to their phone numbers): a column
@@ -5486,7 +5486,7 @@ export function useInboxController() {
     if ((!replyNow.current.trim() && stagedMedia.length === 0) || !selected || !user) return
     // Live chat, email, Instagram and Messenger replies need the Inbox plan
     // (internal notes don't). The card above the reply box says so too.
-    if (!internalMode && !inboxIncluded && channelNeedsInbox(selected.channel)) { showToast(GATED.inbox.locked); return }
+    if (!internalMode && !inboxIncluded && replyNeedsInbox(composeChannel(), selected.channel)) { showToast(GATED.inbox.locked); return }
     flushReply()
     setSending(true)
     let content = replyNow.current.trim()
