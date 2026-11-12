@@ -10,9 +10,12 @@
 -- company_entitlements (V222), shown and removable in super admin → the
 -- company → Entitlements.
 --
--- Only workspaces on those plans now (not trials, which get everything until
--- they end, and not Inbox and up, which have it anyway). A feature a super
--- admin already set (true or false) is left as it is. "Using" means:
+-- Only workspaces that are below the Inbox plans now: Free, Feedback, Business
+-- number, a plan name the app reads as Free, or a trial that has already ended
+-- (lib/plan effectivePlan). Not running trials (they get everything until they
+-- end, then lock), Inbox and up (they have it anyway) or suspended workspaces.
+-- A feature a super admin already set (true or false) is left as it is.
+-- "Using" means:
 --
 --   inbox            an active email inbox (not a web form), an active
 --                    Instagram/Messenger channel, or a website live chat in the
@@ -45,7 +48,8 @@ BEGIN
       eligible AS (
         SELECT DISTINCT u.company_id FROM users u
         JOIN companies c ON c.id = u.company_id
-        WHERE lower(coalesce(c.plan, 'free')) IN ('free', 'feedback', 'phone', 'business_number')
+        WHERE (lower(coalesce(c.plan, '')) NOT IN ('trial', 'suspended', 'omnichannel', 'everything', 'enterprise', 'pro', 'business', 'growth', 'startup'))
+           OR (lower(c.plan) = 'trial' AND c.trial_ends_at IS NOT NULL AND c.trial_ends_at < now())
       ),
       done AS (
         INSERT INTO company_entitlements (company_id, features, reason, updated_by, updated_at)
