@@ -9,7 +9,7 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
 export const metadata: Metadata = pageMeta({
   title: 'Get a Business Phone Number Online in Australia',
-  description: 'Get a local 02, 03, 07 or 08 number for calls, or an 04 mobile for calls and texts, online in minutes. Answer from one shared inbox, from $15 a month.',
+  description: 'Get a local 02, 03, 07 or 08 number or an 04 mobile online in minutes. Forward calls to your mobile for $35 a month all in, or answer from one shared inbox.',
   path: 'business-phone-number-australia',
 })
 

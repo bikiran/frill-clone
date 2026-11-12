@@ -148,7 +148,7 @@ export default function BusinessNumberClient() {
         <div className="bn-hero-copy" style={{ position: 'relative', minWidth: 0 }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 14px', borderRadius: 999, background: GREEN + '16', color: GREEN, fontSize: 13, fontWeight: 800 }}>Australian business numbers</span>
           <h1 style={{ fontSize: 'clamp(40px, 5.8vw, 74px)', fontWeight: 900, letterSpacing: '-0.045em', lineHeight: 0.99, margin: '20px 0 22px' }}>Get a business phone number online, in minutes.</h1>
-          <p style={{ fontSize: 'clamp(17px, 1.6vw, 20px)', lineHeight: 1.6, color: t.muted, maxWidth: 560, margin: '0 0 30px' }}>Choose a local 02, 03, 07 or 08 number for calls, or an 04 mobile for calls and texts, and answer from your browser or phone, in the same inbox as the rest of your customers. <b style={{ color: t.text }}>$15 a month</b> per number.</p>
+          <p style={{ fontSize: 'clamp(17px, 1.6vw, 20px)', lineHeight: 1.6, color: t.muted, maxWidth: 560, margin: '0 0 30px' }}>Choose a local 02, 03, 07 or 08 number for calls, or an 04 mobile for calls and texts, and answer from your browser or phone, in the same inbox as the rest of your customers. <b style={{ color: t.text }}>$15 a month</b> per number, or <a href="#plans" style={{ color: t.text, fontWeight: 800, textDecorationColor: GREEN, textUnderlineOffset: 3 }}>$35 a month all in</a> if you just want calls forwarded to your mobile.</p>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <button onClick={t.go} style={t.btnPrimary}>{t.user ? 'Get a number in Colvy' : 'Get your number'} <Arrow /></button>
             <a href="#how" style={t.btnGhost}>How it works</a>
@@ -235,19 +235,34 @@ export default function BusinessNumberClient() {
         </div>
       </section>
 
-      {/* PRICING NOTE */}
-      <section style={{ maxWidth: 980, margin: '0 auto', padding: '40px 24px 30px' }}>
+      {/* PRICING: the two ways to have a number */}
+      <section id="plans" style={{ maxWidth: 980, margin: '0 auto', padding: '40px 24px 30px', scrollMarginTop: 90 }}>
         <Reveal>
           <div className="bn-grid2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            <div style={{ padding: '28px 26px', borderRadius: 24, background: `linear-gradient(150deg, ${GREEN}, #0f3d3e)`, color: '#fff' }}>
-              <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', opacity: 0.85 }}>Each number</div>
-              <div style={{ fontSize: 52, fontWeight: 900, letterSpacing: '-0.04em', margin: '6px 0 4px' }}>$15<span style={{ fontSize: 18, fontWeight: 700, opacity: 0.85 }}> AUD/month</span></div>
-              <p style={{ fontSize: 15, lineHeight: 1.6, opacity: 0.9, margin: 0 }}>Billed monthly. No lock-in contract.</p>
+            <div style={{ padding: '28px 26px', borderRadius: 24, background: `linear-gradient(150deg, ${GREEN}, #0f3d3e)`, color: '#fff', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', opacity: 0.85 }}>Just want it to ring your mobile?</div>
+              <div style={{ fontSize: 52, fontWeight: 900, letterSpacing: '-0.04em', margin: '6px 0 2px' }}>$35<span style={{ fontSize: 18, fontWeight: 700, opacity: 0.85, letterSpacing: 0 }}> AUD/month, all in</span></div>
+              <p style={{ fontSize: 15, lineHeight: 1.55, opacity: 0.92, margin: '0 0 14px' }}>The <b>Business number</b> plan. Billed monthly.</p>
+              <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 20px', display: 'grid', gap: 8, fontSize: 14.5, lineHeight: 1.45 }}>
+                {[
+                  'Your number included: 02, 03, 07, 08 or an 04 mobile',
+                  'Calls forwarded to your mobile, always or only after hours',
+                  'Voicemail, and every call in the Colvy app',
+                  '100 call minutes a month, then 20c a minute',
+                ].map(x => (
+                  <li key={x} style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0, marginTop: 2 }}><path d="M20 6 9 17l-5-5" /></svg>
+                    {x}
+                  </li>
+                ))}
+              </ul>
+              <a href={t.user ? '/pricing#business-number' : '/signup?plan=phone&billing=monthly'} style={{ marginTop: 'auto', alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 22px', borderRadius: 999, background: '#fff', color: '#0f3d3e', fontWeight: 900, fontSize: 15, textDecoration: 'none' }}>Get the $35 plan <Arrow size={14} /></a>
             </div>
-            <div style={{ padding: '28px 26px', borderRadius: 24, background: t.cardBg, border: `1px solid ${t.cardBorder}` }}>
-              <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: t.muted }}>Calls and texts</div>
-              <p style={{ fontSize: 15.5, lineHeight: 1.65, margin: '10px 0 14px' }}>Calling and SMS run on Colvy’s <b>Inbox</b> or <b>Everything</b> plan, with 3,000 SMS a month included. Just need a number that rings your mobile? The <b>Business number</b> plan is $35 a month with the number included. For high-volume calling, contact us for call rates.</p>
-              <a href="/pricing" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 800, color: GREEN, textDecoration: 'none' }}>See plans and pricing <Arrow size={14} /></a>
+            <div style={{ padding: '28px 26px', borderRadius: 24, background: t.cardBg, border: `1px solid ${t.cardBorder}`, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: t.muted }}>Answer in the shared inbox</div>
+              <div style={{ fontSize: 52, fontWeight: 900, letterSpacing: '-0.04em', margin: '6px 0 2px' }}>$15<span style={{ fontSize: 18, fontWeight: 700, color: t.muted, letterSpacing: 0 }}> AUD/month per number</span></div>
+              <p style={{ fontSize: 15.5, lineHeight: 1.65, margin: '0 0 14px' }}>Add numbers to Colvy’s <b>Inbox</b> or <b>Everything</b> plan: calls and texts in one inbox with chat and email, your whole team ringing in the browser and app, and 3,000 SMS a month included. An 1800 number is $25 a month. No lock-in contract. For high-volume calling, contact us for call rates.</p>
+              <a href="/pricing" style={{ marginTop: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 800, color: GREEN, textDecoration: 'none' }}>See plans and pricing <Arrow size={14} /></a>
             </div>
           </div>
         </Reveal>
