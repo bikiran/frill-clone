@@ -652,7 +652,7 @@ function BusinessDetail({ co, onClose, onAction }: { co: any; onClose: () => voi
 
           {tab === 'plan' && (() => {
             const PLANS = CONSOLE_PLANS
-            const planColor: Record<string, string> = { free: '#6b7280', trial: '#6366f1', feedback: '#7c5cff', omnichannel: '#2b59ff', everything: '#ff6a4d', pro: '#10b981', enterprise: '#8b5cf6', suspended: '#ef4444' }
+            const planColor: Record<string, string> = { free: '#6b7280', trial: '#6366f1', phone: '#0d9488', feedback: '#7c5cff', omnichannel: '#2b59ff', everything: '#ff6a4d', pro: '#10b981', enterprise: '#8b5cf6', suspended: '#ef4444' }
             // Counted as the customer sees it (lib/trial).
             const trial = trialLeftOf(sub.trial_ends_at)
             return (
@@ -2714,7 +2714,7 @@ function DemoWorkspacesPage() {
 
 // Attention Required — surfaces businesses that need a look right now, computed
 // purely from companies.plan + created_at (no invented columns, no backend).
-const CONSOLE_PLANS = ['free', 'trial', 'feedback', 'omnichannel', 'everything', 'enterprise', 'suspended']
+const CONSOLE_PLANS = ['free', 'trial', 'phone', 'feedback', 'omnichannel', 'everything', 'enterprise', 'suspended']
 
 function paBtn(color = 'var(--sa-muted)', filled = false): React.CSSProperties {
   return { padding: '8px 15px', borderRadius: 999, border: filled ? 'none' : '1.5px solid var(--sa-border)', background: filled ? color : 'var(--sa-card)', color: filled ? '#fff' : color, fontSize: 13, fontWeight: 650, cursor: 'pointer', whiteSpace: 'nowrap', display: 'inline-block', boxShadow: filled ? 'inset 0 1px 0 rgba(255,255,255,.22), 0 1px 2px rgba(16,24,40,.12)' : 'none' }
@@ -4424,7 +4424,7 @@ function SettingsPage() {
         </div>
         <div style={{ background: 'var(--sa-card)', border: '1px solid var(--sa-border)', borderRadius: 16, padding: 22 }}>
           <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sa-text)', marginBottom: 6 }}>Plan list prices (per month)</p>
-          {(['feedback', 'omnichannel', 'everything', 'enterprise'] as Plan[]).map(k => (
+          {(['phone', 'feedback', 'omnichannel', 'everything', 'enterprise'] as Plan[]).map(k => (
             <Row key={k} label={PLAN_NAMES[k]} value={PLAN_PRICES[k] == null ? 'Custom' : `$${PLAN_PRICES[k]}`} />
           ))}
           <p style={{ fontSize: 11.5, color: 'var(--sa-muted)', marginTop: 10 }}>From <code>lib/plan.ts</code>. The overview MRR uses live Stripe subscription amounts when there are any, and these list prices only as an estimate otherwise.</p>

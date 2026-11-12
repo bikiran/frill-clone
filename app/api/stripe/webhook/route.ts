@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { confirmChatPayment } from '@/lib/chat-payment-confirm'
 import { internalPlanForTier } from '@/lib/plan'
+import { grantIncludedNumber, endIncludedNumber } from '@/lib/business-number-plan'
 import { BRANDING_ADDON, setBrandingAddon } from '@/lib/branding-addon'
 import { stripeSecretFor } from '@/lib/company-secrets'
 import { recordUnclaimedFailure, type NumberOrder } from '@/lib/number-orders'
@@ -297,6 +298,18 @@ export async function POST(req: NextRequest) {
           try {
             await (supabase as any).from('companies').update({ plan: internalPlanForTier(tier), trial_ends_at: null }).eq('owner_id', userId)
           } catch {}
+          // The Business number plan includes one number (lib/business-number-plan):
+          // for the workspace it was bought from, else the owner's first.
+          if (internalPlanForTier(tier) === 'phone') {
+            try {
+              let cid = meta.companyId ? String(meta.companyId) : ''
+              if (!cid) {
+                const { data: own } = await (supabase as any).from('companies').select('id').eq('owner_id', userId).order('created_at', { ascending: true }).limit(1)
+                cid = own?.[0]?.id || ''
+              }
+              if (cid) await grantIncludedNumber(supabase, cid)
+            } catch (e: any) { console.error('[stripe webhook] included number grant failed', e?.message || e) }
+          }
         }
         // Phone number purchase — provision the number now that payment is set up
         if (meta.kind === 'phone_number' && meta.companyId) {
@@ -430,15 +443,28 @@ export async function POST(req: NextRequest) {
           if (sub.metadata.companyId) await setBrandingAddon(supabase, sub.metadata.companyId, false)
           break
         }
+        // Which plan ended, read before the row is reset below.
+        const { data: endedRow } = await (supabase as any).from('subscriptions').select('user_id, tier').eq('stripe_subscription_id', sub.id).maybeSingle()
         await (supabase as any).from('subscriptions').update({
           status: 'canceled',
           tier: 'free',
         }).eq('stripe_subscription_id', sub.id)
         // Revert the company to free so it stops counting as a paying customer.
         try {
-          const { data: subRow } = await (supabase as any).from('subscriptions').select('user_id').eq('stripe_subscription_id', sub.id).maybeSingle()
-          if (subRow?.user_id) await (supabase as any).from('companies').update({ plan: 'free' }).eq('owner_id', subRow.user_id)
+          if (endedRow?.user_id) await (supabase as any).from('companies').update({ plan: 'free' }).eq('owner_id', endedRow.user_id)
         } catch {}
+        // The Business number plan's included number: an unused one is taken
+        // back, a used one is flagged to the Colvy team (lib/business-number-plan).
+        if (internalPlanForTier(endedRow?.tier || sub.metadata?.tier) === 'phone') {
+          try {
+            const ids: string[] = sub.metadata?.companyId ? [String(sub.metadata.companyId)] : []
+            if (!ids.length && endedRow?.user_id) {
+              const { data: own } = await (supabase as any).from('companies').select('id').eq('owner_id', endedRow.user_id)
+              for (const c of own || []) ids.push(c.id)
+            }
+            for (const cid of ids) await endIncludedNumber(supabase, cid)
+          } catch (e: any) { console.error('[stripe webhook] included number end failed', e?.message || e) }
+        }
         break
       }
     }

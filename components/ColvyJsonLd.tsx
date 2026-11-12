@@ -79,9 +79,10 @@ const structuredData = [
       'One shared inbox across Instagram, Messenger, SMS, email, live chat and phone, with a CRM, WooCommerce and Shopify orders, payments, five AI agents, email and SMS campaigns and customer feedback boards.',
     // Mirrors the plans on /pricing (AUD per month).
     offers: {
-      '@type': 'AggregateOffer', priceCurrency: 'AUD', lowPrice: '0', highPrice: '259', offerCount: 4,
+      '@type': 'AggregateOffer', priceCurrency: 'AUD', lowPrice: '0', highPrice: '259', offerCount: 5,
       offers: [
         { '@type': 'Offer', name: 'Free', price: '0', priceCurrency: 'AUD' },
+        { '@type': 'Offer', name: 'Business number', price: '35', priceCurrency: 'AUD' },
         { '@type': 'Offer', name: 'Feedback', price: '39', priceCurrency: 'AUD' },
         { '@type': 'Offer', name: 'Inbox', price: '179', priceCurrency: 'AUD' },
         { '@type': 'Offer', name: 'Everything', price: '259', priceCurrency: 'AUD' },

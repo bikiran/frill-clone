@@ -9,7 +9,7 @@ import { supabase } from '@/lib/supabase'
 // XYZ — show me XYZ" without leaving the conversation. The lookup API 403s for
 // everyone else, so this renders nothing for normal agents.
 
-const PLAN_COLOR: Record<string, string> = { free: '#6b7280', trial: '#6366f1', feedback: '#7c5cff', omnichannel: '#2b59ff', everything: '#ff6a4d', enterprise: '#8b5cf6', suspended: '#ef4444' }
+const PLAN_COLOR: Record<string, string> = { free: '#6b7280', trial: '#6366f1', phone: '#0d9488', feedback: '#7c5cff', omnichannel: '#2b59ff', everything: '#ff6a4d', enterprise: '#8b5cf6', suspended: '#ef4444' }
 
 export default function SuperAdminContactWorkspaces({ email }: { email: string | null }) {
   const [workspaces, setWorkspaces] = useState<any[] | null>(null)

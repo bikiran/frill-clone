@@ -5,7 +5,7 @@ import { getCompanyByOwner } from './board'
 // Single source of truth for plan entitlements.
 //
 // Plan values mirror what the customer buys on the pricing page (`app/pricing`):
-//   free · feedback · omnichannel (Inbox) · everything · enterprise
+//   free · phone (Business number) · feedback · omnichannel (Inbox) · everything · enterprise
 // plus two lifecycle states — `trial` (a full-access preview) and `suspended` —
 // and the legacy value `pro` still stored on some rows / settable in the
 // platform-admin console. Everything is normalised through `normalizePlan()`,
@@ -15,7 +15,7 @@ import { getCompanyByOwner } from './board'
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type Plan =
-  | 'free' | 'trial' | 'feedback' | 'omnichannel' | 'everything'
+  | 'free' | 'trial' | 'phone' | 'feedback' | 'omnichannel' | 'everything'
   | 'pro' | 'enterprise' | 'suspended'
 
 // The full paid feature surface (Everything / legacy Pro / trial preview).
@@ -28,6 +28,11 @@ const EVERYTHING_FEATURES = [
 
 export const PLAN_FEATURES: Record<Plan, string[]> = {
   free: ['feedbackSuite'],
+  // Business number: Free's feedback tools plus one Australian number with
+  // forwarding, voicemail and the call log (lib/forwarding-usage meters its
+  // forwarded minutes). Its polls/surveys/help-article caps match Free's, which
+  // is what the database caps (V298 colvy_cap) give any plan they don't name.
+  phone: ['feedbackSuite', 'channels'],
   feedback: ['feedbackSuite', 'polls', 'surveys', 'removeBranding'],
   omnichannel: ['inbox', 'channels', 'campaigns', 'reviewDashboard', 'ecommerceSync', 'aiAutomation', 'prioritySupport', 'aiAgents'],
   everything: EVERYTHING_FEATURES,
@@ -39,26 +44,29 @@ export const PLAN_FEATURES: Record<Plan, string[]> = {
 
 // Numeric caps. Infinity = unlimited. `smsPerMonth` is the included SMS
 // allowance (metered beyond it); 0 means the plan cannot send SMS at all.
+// `forwardMinutes`: calls forwarded to an outside number each month before
+// each further minute is charged (lib/forwarding-usage); Infinity = not metered.
 export const PLAN_LIMITS: Record<Plan, Record<string, any>> = {
-  free:        { teamMembers: 2,        smsPerMonth: 0,        polls: 1,        surveys: 1,        helpArticles: 10 },
-  feedback:    { teamMembers: Infinity, smsPerMonth: 0,        polls: Infinity, surveys: Infinity, helpArticles: Infinity },
-  omnichannel: { teamMembers: Infinity, smsPerMonth: 3000,     polls: 0,        surveys: 0,        helpArticles: 0 },
-  everything:  { teamMembers: Infinity, smsPerMonth: 3000,     polls: Infinity, surveys: Infinity, helpArticles: Infinity },
-  trial:       { teamMembers: Infinity, smsPerMonth: 3000,     polls: Infinity, surveys: Infinity, helpArticles: Infinity },
-  pro:         { teamMembers: Infinity, smsPerMonth: 3000,     polls: Infinity, surveys: Infinity, helpArticles: Infinity },
-  enterprise:  { teamMembers: Infinity, smsPerMonth: Infinity, polls: Infinity, surveys: Infinity, helpArticles: Infinity },
-  suspended:   { teamMembers: 0,        smsPerMonth: 0,        polls: 0,        surveys: 0,        helpArticles: 0 },
+  free:        { teamMembers: 2,        smsPerMonth: 0,        polls: 1,        surveys: 1,        helpArticles: 10,       forwardMinutes: 0 },
+  phone:       { teamMembers: 3,        smsPerMonth: 50,       polls: 1,        surveys: 1,        helpArticles: 10,       forwardMinutes: 100 },
+  feedback:    { teamMembers: Infinity, smsPerMonth: 0,        polls: Infinity, surveys: Infinity, helpArticles: Infinity, forwardMinutes: 0 },
+  omnichannel: { teamMembers: Infinity, smsPerMonth: 3000,     polls: 0,        surveys: 0,        helpArticles: 0,        forwardMinutes: Infinity },
+  everything:  { teamMembers: Infinity, smsPerMonth: 3000,     polls: Infinity, surveys: Infinity, helpArticles: Infinity, forwardMinutes: Infinity },
+  trial:       { teamMembers: Infinity, smsPerMonth: 3000,     polls: Infinity, surveys: Infinity, helpArticles: Infinity, forwardMinutes: Infinity },
+  pro:         { teamMembers: Infinity, smsPerMonth: 3000,     polls: Infinity, surveys: Infinity, helpArticles: Infinity, forwardMinutes: Infinity },
+  enterprise:  { teamMembers: Infinity, smsPerMonth: Infinity, polls: Infinity, surveys: Infinity, helpArticles: Infinity, forwardMinutes: Infinity },
+  suspended:   { teamMembers: 0,        smsPerMonth: 0,        polls: 0,        surveys: 0,        helpArticles: 0,        forwardMinutes: 0 },
 }
 
 export const PLAN_NAMES: Record<Plan, string> = {
-  free: 'Free', trial: '14-Day Trial', feedback: 'Feedback', omnichannel: 'Inbox',
+  free: 'Free', trial: '14-Day Trial', phone: 'Business number', feedback: 'Feedback', omnichannel: 'Inbox',
   everything: 'Everything', pro: 'Pro', enterprise: 'Enterprise', suspended: 'Suspended',
 }
 
 // Monthly list price in AUD (shown as A$ on the pricing page), for display
 // only. null = contact sales.
 export const PLAN_PRICES: Record<Plan, number | null> = {
-  free: 0, trial: 0, feedback: 39, omnichannel: 179, everything: 259,
+  free: 0, trial: 0, phone: 35, feedback: 39, omnichannel: 179, everything: 259,
   pro: 259, enterprise: null, suspended: 0,
 }
 
@@ -83,6 +91,7 @@ export const OVERRIDABLE_FEATURES: { key: string; label: string }[] = [
 export const OVERRIDABLE_LIMITS: { key: string; label: string }[] = [
   { key: 'teamMembers', label: 'Team members' },
   { key: 'smsPerMonth', label: 'SMS included / month' },
+  { key: 'forwardMinutes', label: 'Forwarded call minutes / month' },
   { key: 'polls', label: 'Polls' },
   { key: 'surveys', label: 'Surveys' },
   { key: 'helpArticles', label: 'Help center articles' },
@@ -94,6 +103,8 @@ export function normalizePlan(raw: string | null | undefined): Plan {
   switch ((raw || '').toLowerCase()) {
     case 'free': return 'free'
     case 'trial': return 'trial'
+    case 'phone':
+    case 'business_number': return 'phone'
     case 'suspended': return 'suspended'
     case 'feedback': return 'feedback'
     case 'omnichannel': return 'omnichannel'
@@ -216,7 +227,7 @@ export function canAccess(plan: Plan, feature: string): boolean {
 
 export function isPro(plan: Plan): boolean {
   const p = normalizePlan(plan)
-  return p === 'feedback' || p === 'omnichannel' || p === 'everything' || p === 'pro' || p === 'enterprise' || p === 'trial'
+  return p === 'phone' || p === 'feedback' || p === 'omnichannel' || p === 'everything' || p === 'pro' || p === 'enterprise' || p === 'trial'
 }
 
 export function clearPlanCache() {

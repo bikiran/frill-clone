@@ -53,6 +53,7 @@ const MARKS: Record<string, { from: string; to: string; d: React.ReactNode }> = 
   feedback: { from: '#a78bfa', to: '#6d28d9', d: <><path d="M9 18h6M10 22h4" /><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2V17h6v-.3c0-.8.4-1.5 1-2A7 7 0 0 0 12 2z" /></> },
   omnichannel: { from: '#60a5fa', to: '#1d4ed8', d: <><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.8-.9L3 20.5l1.6-4.7A8.4 8.4 0 1 1 21 11.5z" /><path d="M8 11h.01M12 11h.01M16 11h.01" /></> },
   everything: { from: '#ffb37a', to: '#ff5a3c', d: <path d="M3 8l4 4 5-7 5 7 4-4-2 11H5z" /> },
+  phone: { from: '#2dd4bf', to: '#0f766e', d: <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z" /> },
   enterprise: { from: '#52525b', to: '#18181b', d: <><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M9 7h1M14 7h1M9 11h1M14 11h1M9 15h1M14 15h1M10 21v-3h4v3" /></> },
   trial: { from: '#ffa68a', to: '#ff6a4d', d: <><circle cx="12" cy="13" r="8" /><path d="M12 9v4l2.5 1.5M9 2h6" /></> },
   free: { from: '#6ee7b7', to: '#059669', d: <><path d="M12 20v-8" /><path d="M12 12c0-4 3-7 8-7 0 4-3 7-8 7z" /><path d="M12 14c0-3-2.5-5.5-7-5.5 0 3 2.5 5.5 7 5.5z" /></> },
@@ -67,6 +68,7 @@ const PlanMark = ({ id, size = 48 }: { id: string; size?: number }) => {
 }
 // One line of what a plan gives you, under its name in the summary.
 const FACTS: Record<string, string> = {
+  phone: 'One Australian number · Calls forwarded to your mobile · 100 forwarded minutes a month',
   feedback: 'Ideas & voting · Roadmaps · Help centre · Unlimited team',
   omnichannel: 'Live chat · SMS & calls · 3,000 SMS a month · Unlimited team',
   everything: 'Feedback + Inbox · White-label · AI assistant · Unlimited team',
@@ -75,6 +77,40 @@ const FACTS: Record<string, string> = {
   trial: 'Everything unlocked while you try Colvy',
   free: 'Feedback board · Roadmap · Changelog · 2 team members',
 }
+// The Business number plan (lib/plan `phone`): one number that rings the
+// owner's mobile, for a business that needs nothing else yet. Sold monthly only
+// (create-checkout); its number comes free with it (lib/business-number-plan).
+const NUMBER_PLAN = { id: 'phone', name: 'Business number', monthly: 35 }
+const NUMBER_FEATS = [
+  'One Australian number: 02, 03, 07, 08 or 04 mobile',
+  'Calls forwarded to your mobile, always or after hours',
+  '100 forwarded minutes a month, then 20c a minute',
+  'Press 1 to accept, so your own voicemail never takes the call',
+  'Voicemail and every call in the Colvy app',
+  'Up to 3 team members',
+]
+
+/** The Business number strip under the plan cards. */
+function NumberPlanCard({ current, busy, onSubscribe }: { current: boolean; busy: boolean; onSubscribe: () => void }) {
+  return (
+    <section className={`bl-ent bl-num${current ? ' current' : ''}`}>
+      <div className="bl-ent-l">
+        <PlanMark id="phone" size={44} />
+        <div>
+          <h3>{NUMBER_PLAN.name} {current && <span className="ak-tag green">Your plan</span>}</h3>
+          <p>Just need a business number? A local number that rings your mobile. <b style={{ color: 'var(--ink)' }}>A$35/month</b>, number included.</p>
+        </div>
+      </div>
+      <ul className="bl-ent-f">
+        {NUMBER_FEATS.map(f => <li key={f}><BuildingIcon />{f}</li>)}
+      </ul>
+      {current
+        ? <span className="ak-tag green">Current</span>
+        : <button type="button" className="ak-btn bl-ent-go bl-num-go cv-shine" onClick={onSubscribe} disabled={busy}><span>{busy ? 'Opening checkout…' : 'Subscribe'}</span></button>}
+    </section>
+  )
+}
+
 const ENTERPRISE_FEATS = ['White-label branding', 'Roles & permissions', 'Audit logs', 'Dedicated onboarding', 'Dedicated support', 'Custom contracts', 'High-volume usage & rates']
 // The little "+ ◇ +" rule between a plan's button and its features.
 const Rule = () => (
@@ -101,7 +137,7 @@ function EnterpriseCard({ current, onContact }: { current: boolean; onContact: (
   )
 }
 
-const PLAN_LABEL: Record<string, string> = { free: 'Free', trial: '14-day trial', feedback: 'Feedback', omnichannel: 'Inbox', everything: 'Everything', pro: 'Everything', enterprise: 'Enterprise' }
+const PLAN_LABEL: Record<string, string> = { free: 'Free', trial: '14-day trial', phone: 'Business number', feedback: 'Feedback', omnichannel: 'Inbox', everything: 'Everything', pro: 'Everything', enterprise: 'Enterprise' }
 const fmtDate = (d?: string | null) => (d ? new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '')
 
 // A workspace using Colvy through the Shopify app is billed by Shopify (App
@@ -305,6 +341,8 @@ export default function BillingPage() {
   // override in company_entitlements once Stripe confirms the payment.
   const [brandingAddon, setBrandingAddon] = useState(false)
   const [addonPending, setAddonPending] = useState(false)
+  // This month's forwarded minutes, on a plan that includes a set number (Business number).
+  const [fwdUse, setFwdUse] = useState<{ minutes: number; included: number | null; over: number; overCents: number; rateCents: number } | null>(null)
   const [contact, setContact] = useState(false)
 
   useEffect(() => {
@@ -335,6 +373,12 @@ export default function BillingPage() {
         co = coByOwner
       }
       setCompany(co)
+      // Forwarded minutes this month (only shown when the plan includes a set number).
+      if (co?.id) {
+        authFetch(`/api/billing/forwarding-usage?companyId=${encodeURIComponent(co.id)}`).then(r => r.json()).then(x => {
+          if (x?.usage && typeof x.usage.minutes === 'number') setFwdUse(x.usage)
+        }).catch(() => {})
+      }
       const readAddon = async () => {
         if (!co?.id) return false
         const { data: ent } = await (supabase as any).from('company_entitlements').select('features').eq('company_id', co.id).maybeSingle()
@@ -421,9 +465,9 @@ export default function BillingPage() {
         // Billing isn't set up on Colvy's side: a plain message (the server has
         // already told the Colvy team), never env var names.
         setLoading(null)
-        const plan = PLANS.find(p => p.id === planId)
+        const plan = PLANS.find(p => p.id === planId) || (planId === NUMBER_PLAN.id ? NUMBER_PLAN : undefined)
         await showBillingUnavailable({
-          what: planId === 'branding_removal' ? 'the Remove “Powered by Colvy” add-on' : `the ${plan?.name || planId} plan (${billing})`,
+          what: planId === 'branding_removal' ? 'the Remove “Powered by Colvy” add-on' : `the ${plan?.name || planId} plan (${planId === NUMBER_PLAN.id ? 'monthly' : billing})`,
           workspace: company?.name || null,
         })
         return
@@ -464,7 +508,7 @@ export default function BillingPage() {
   // the branding add-on; the company's own plan (e.g. a trial) wins then.
   const currentPlanId = (subscription?.tier && subscription.tier !== 'free' ? subscription.tier : null) || company?.plan || 'free'
   const isOnPlan = (id: string) => currentPlanId === id
-  const isPaid = ['feedback', 'omnichannel', 'everything', 'startup', 'business', 'growth', 'pro', 'enterprise'].includes(currentPlanId)
+  const isPaid = ['phone', 'feedback', 'omnichannel', 'everything', 'startup', 'business', 'growth', 'pro', 'enterprise'].includes(currentPlanId)
   const planLabel = PLAN_LABEL[currentPlanId] || currentPlanId.charAt(0).toUpperCase() + currentPlanId.slice(1)
   // Plans set up by the Colvy team (Enterprise, complimentary) have no Stripe
   // customer, so there's no billing portal to open.
@@ -508,6 +552,16 @@ export default function BillingPage() {
             <div className="bl-meter-l"><span className="bl-meter-ic" aria-hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg></span>Free trial</div>
             <div className="bl-meter-v">{trialInfo.line}</div>
             <div className="bl-bar" role="img" aria-label={trialInfo.line}><i style={{ width: `${trialInfo.pct}%` }} /></div>
+          </div>
+        )}
+        {fwdUse && fwdUse.included != null && (
+          <div className="bl-meter">
+            <div className="bl-meter-l"><span className="bl-meter-ic" aria-hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z" /></svg></span>Forwarded minutes</div>
+            <div className="bl-meter-v">
+              {fwdUse.minutes} of {fwdUse.included} this month
+              {fwdUse.over > 0 ? ` · ${fwdUse.over} extra, ${formatMoney(fwdUse.overCents / 100)} on your next bill` : ''}
+            </div>
+            <div className="bl-bar" role="img" aria-label={`${fwdUse.minutes} of ${fwdUse.included} forwarded minutes used this month`}><i style={{ width: `${Math.min(100, fwdUse.included ? (fwdUse.minutes / fwdUse.included) * 100 : 100)}%` }} /></div>
           </div>
         )}
         {isPaid && hasStripe && subscription?.current_period_end && (
@@ -589,6 +643,7 @@ export default function BillingPage() {
           )
         })}
       </div>
+      <NumberPlanCard current={isOnPlan('phone')} busy={loading === 'phone'} onSubscribe={() => handleUpgrade('phone')} />
       <EnterpriseCard current={currentPlanId === 'enterprise'} onContact={() => setContact(true)} />
       <p className="bl-foot">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
@@ -783,6 +838,9 @@ const BL_CSS = `
 .bl-ent-f li{display:flex;align-items:center;gap:7px;font-size:13.5px;color:var(--ink)}
 .bl-ent-f svg{flex-shrink:0;color:#16a34a}
 .ak-btn.bl-ent-go{height:46px;padding:0 24px}
+.bl-num .bl-ent-f svg{color:#0d9488}
+.ak-btn.bl-num-go{color:#fff;background:linear-gradient(180deg,#2dd4bf,#0f766e);box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 12px 26px -12px #0f766e;--shine-c:255,255,255}
+.ak-btn.bl-num-go:hover{filter:brightness(1.05)}
 @media (max-width:980px){.bl-ent{grid-template-columns:minmax(0,1fr)}.ak-btn.bl-ent-go{justify-self:start}}
 @media (max-width:480px){.bl-ent-f{grid-template-columns:minmax(0,1fr)}}
 .bl-foot{display:flex;align-items:center;justify-content:center;gap:7px;margin:4px 0 28px;font-size:13px;color:var(--soft)}

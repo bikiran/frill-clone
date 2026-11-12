@@ -10,7 +10,7 @@ import { collectIntegrations } from '@/app/api/platform-admin/_lib/integrations'
 import { BAND_LABEL } from '@/lib/intel/health'
 
 const DAY = 86_400_000
-const PAID = new Set(['feedback', 'omnichannel', 'everything', 'pro', 'enterprise'])
+const PAID = new Set(['phone', 'feedback', 'omnichannel', 'everything', 'pro', 'enterprise'])
 
 // Every milestone, in the order a business usually reaches them, with the
 // words the dashboard uses.

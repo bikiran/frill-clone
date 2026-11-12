@@ -9,7 +9,7 @@ import { CHANNELS, EXTRAS, FREE_SEATS, SMS_INCLUDED, recommendPlan, smsOverage, 
 const CORAL = '#ff6a4d'
 const MONO = 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace'
 
-type Tier = { id: string; name: string; tagline: string; accent: string; monthly: number; annual: number; cta: string }
+type Tier = { id: string; name: string; tagline: string; accent: string; monthly: number; annual: number; cta: string; monthlyOnly?: boolean }
 
 // Line glyphs for the chips (same drawing style as the landing page's channel row).
 const GLYPHS: Record<string, ReactNode> = {
@@ -37,6 +37,7 @@ const BRANDS: { id: Brand; label: string; hint: string }[] = [
 
 const HEADLINES: Record<PlanId, { title: string; line: string }> = {
   free: { title: 'Start free, stay free', line: 'Everything you need to hear from customers, at no cost. Upgrade the day you outgrow it.' },
+  phone: { title: 'A business number, nothing more', line: 'A local number that rings your mobile. Add the inbox, texts and AI receptionist the day you need them.' },
   feedback: { title: 'Hear every customer', line: 'Collect ideas, run surveys and show what’s coming, with your whole team on board.' },
   omnichannel: { title: 'Every conversation, one inbox', line: 'Chat, texts, calls and orders in one place, so nobody waits and nothing slips.' },
   everything: { title: 'All of Colvy, working as one', line: 'Every conversation and every piece of feedback in one place, under your own brand.' },
@@ -184,7 +185,8 @@ export default function PlanFinder({ dark, annual, setAnnual, tiers, onChoose, o
       <div style={{ marginTop: 22, fontSize: 14, color: muted }}>Every paid plan includes <b style={{ color: text }}>unlimited team members</b>. Free covers {FREE_SEATS}.</div>
     </>
   } else {
-    const price = tier ? (annual ? tier.annual : tier.monthly) : 0
+    const yearly = annual && !tier?.monthlyOnly
+    const price = tier ? (yearly ? tier.annual : tier.monthly) : 0
     const h = HEADLINES[rec.plan]
     body = <>
       <div style={{ fontSize: 16, fontWeight: 800, color: text, marginBottom: 10 }}>Your plan is <span style={{ color: tier?.accent || CORAL }}>{tier?.name}</span></div>
@@ -204,11 +206,12 @@ export default function PlanFinder({ dark, annual, setAnnual, tiers, onChoose, o
               <button key={String(yr)} type="button" role="radio" aria-checked={annual === yr} onClick={() => setAnnual(yr)} style={{ padding: '8px 16px', borderRadius: 999, border: 'none', cursor: 'pointer', fontFamily: MONO, fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase', background: annual === yr ? ink : 'transparent', color: annual === yr ? onInk : text, transition: 'background 0.2s, color 0.2s' }}>{yr ? 'Annual' : 'Monthly'}</button>
             ))}
           </div>
-          {tier && tier.monthly > 0 && annual && <span style={{ fontSize: 13, fontWeight: 700, color: '#00a676' }}>Save {aud((tier.monthly - tier.annual) * 12)} a year</span>}
+          {tier && tier.monthly > tier.annual && yearly && <span style={{ fontSize: 13, fontWeight: 700, color: '#00a676' }}>Save {aud((tier.monthly - tier.annual) * 12)} a year</span>}
+          {tier?.monthlyOnly && annual && <span style={{ fontSize: 13, fontWeight: 700, color: muted }}>Billed monthly</span>}
         </div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 'clamp(40px, 7vw, 52px)', fontWeight: 900, letterSpacing: '-0.04em', color: text, fontVariantNumeric: 'tabular-nums' }}>{price === 0 ? 'Free' : aud(price)}</span>
-          {price > 0 && <span style={{ fontSize: 15, color: muted }}>/mo{annual ? `, ${aud(price * 12)} billed yearly` : ''}</span>}
+          {price > 0 && <span style={{ fontSize: 15, color: muted }}>/mo{yearly ? `, ${aud(price * 12)} billed yearly` : ''}</span>}
         </div>
         <div style={{ fontSize: 13, color: muted, marginTop: 4 }}>
           {price === 0 ? 'No card, no time limit.' : 'Inc. GST · 14-day free trial, no card.'}

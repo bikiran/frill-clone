@@ -131,6 +131,10 @@
     {
       "path": "/api/cron/purge-closed-accounts",
       "schedule": "30 17 * * *"
+    },
+    {
+      "path": "/api/cron/forwarding-overage",
+      "schedule": "10 2 * * *"
     }
   ]
 }

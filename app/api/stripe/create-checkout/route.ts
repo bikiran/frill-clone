@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { BRANDING_ADDON } from '@/lib/branding-addon'
 import { shopifyChargeBlock, planSelectionUrl } from '@/lib/shopify-billing'
 import { CLAIM_COOKIE, findPendingInstall } from '@/lib/shopify-install'
-import { billingUnavailableCopy, checkoutBlockers, isKnownTier, priceIdFor } from '@/lib/billing-config'
+import { billingUnavailableCopy, checkoutBlockers, isKnownTier, priceIdFor, INLINE_PLAN_PRICES, monthlyOnly } from '@/lib/billing-config'
 import { alertBillingNotConfigured } from '@/lib/billing-alert'
 import { COLVY_CONTACT } from '@/lib/colvy-contact'
 import { checkoutTaxParams } from '@/lib/tax-invoice-core'
@@ -41,8 +41,10 @@ export async function POST(req: NextRequest) {
   let tierOf = '', billingOf = 'monthly'
   try {
     const body = await req.json()
-    const { tier, billing = 'monthly', trial = false } = body
-    tierOf = String(tier || ''); billingOf = String(billing || 'monthly')
+    const { tier, trial = false } = body
+    // Business number is monthly only.
+    const billing = monthlyOnly(String(tier || '')) ? 'monthly' : (body.billing === 'annual' ? 'annual' : 'monthly')
+    tierOf = String(tier || ''); billingOf = billing
     // Who is subscribing comes from the sign-in, not the request: a body userId
     // let anyone attach a checkout to someone else's subscription row.
     const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } })
@@ -143,11 +145,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ url: session.url, sessionId: session.id })
     }
 
+    // A plan sold before its Stripe price exists gets its price inline.
+    const inline = !priceId ? INLINE_PLAN_PRICES[tier] : undefined
+    const lineItem = inline
+      ? { price_data: { currency: 'aud', product_data: { name: inline.name, description: inline.description }, unit_amount: inline.cents, recurring: { interval: 'month' } }, quantity: 1 }
+      : { price: priceId, quantity: 1 }
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       payment_method_types: ['card'],
       customer_email: email,
-      line_items: [{ price: priceId, quantity: 1 }],
+      line_items: [lineItem],
       metadata: { userId, tier, billing, ...(companyId ? { companyId } : {}) },
       success_url: `${origin}/admin/billing?success=1`,
       cancel_url:  `${origin}/admin/billing`,

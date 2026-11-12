@@ -368,7 +368,15 @@ export class TwilioService {
     if (params.contains) q.set('Contains', params.contains)
     if (params.inLocality) q.set('InLocality', params.inLocality)
     const data = await this.req(`/AvailablePhoneNumbers/${country}/${kind}.json?${q.toString()}`, 'GET')
-    return data?.available_phone_numbers || []
+    const found = data?.available_phone_numbers || []
+    // An Australian landline (02/03/07/08) is sold for calls (Colvy never texts
+    // from one: lib/missed-call-text canTextFrom). When none that can also text
+    // are in stock, offer the calls-only ones rather than nothing, so a business
+    // can still get the 03 number it asked for.
+    if (!found.length && kind === 'Local' && country === 'AU' && params.smsEnabled === undefined) {
+      return this.searchAvailableNumbers({ ...params, smsEnabled: false })
+    }
+    return found
   }
 
   // Buy a number and point its webhooks at Colvy. For regulated countries (AU),

@@ -315,9 +315,14 @@ export default function CallRoutingSettings({ companyId }: { companyId: string }
   const [saved, setSaved] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string; list?: string[] } | null>(null)
+  // This month's forwarded minutes, when the plan includes a set number (Business number).
+  const [fwdUse, setFwdUse] = useState<{ minutes: number; included: number | null; rateCents: number } | null>(null)
 
   useEffect(() => {
     let live = true
+    authFetch(`/api/billing/forwarding-usage?companyId=${encodeURIComponent(companyId)}`).then(r => r.json()).then(x => {
+      if (live && x?.usage && typeof x.usage.minutes === 'number') setFwdUse({ minutes: x.usage.minutes, included: x.usage.included ?? null, rateCents: Number(x.usage.rateCents) || 0 })
+    }).catch(() => {})
     authFetch(`/api/call-routing?companyId=${encodeURIComponent(companyId)}`).then(r => r.json()).then((x: Data & { error?: string }) => {
       if (!live || x.error || !Array.isArray(x.numbers)) return
       setD(x)
@@ -456,6 +461,12 @@ export default function CallRoutingSettings({ companyId }: { companyId: string }
           </div>
           {(c.strategy === 'forward' || (c.strategy === 'in_order' && c.order.thenForward)) && (
             <p style={hint}>Forwarded calls are recorded and summarised like any other call, and the forwarded minutes show on each call.</p>
+          )}
+          {fwdUse && fwdUse.included != null && (c.strategy === 'forward' || (c.strategy === 'in_order' && c.order.thenForward) || fwdUse.minutes > 0) && (
+            <p style={hint} className="crs-fwd-use">
+              This month: <b style={{ color: 'var(--ck-ink, var(--ink))' }}>{fwdUse.minutes} of {fwdUse.included}</b> forwarded minutes used.{' '}
+              {fwdUse.rateCents > 0 ? `Each minute after that is ${fwdUse.rateCents}c, added to your next bill.` : ''}
+            </p>
           )}
 
           {editable && (

@@ -1,12 +1,13 @@
 // The pricing page's plan finder: a few questions about how a business will
 // use Colvy, and the plan that covers it. Plan ids match the TIERS on
-// app/pricing/Client.tsx (free / feedback / omnichannel = Inbox / everything),
+// app/pricing/Client.tsx (free / feedback / omnichannel = Inbox / everything,
+// plus phone = the Business number strip),
 // and the rules follow that page's comparison table, so the finder never
 // recommends a plan that lacks something the visitor picked.
 
 import { DEFAULT_PRICING, priceForParts } from '@/lib/sms-pricing'
 
-export type PlanId = 'free' | 'feedback' | 'omnichannel' | 'everything'
+export type PlanId = 'free' | 'phone' | 'feedback' | 'omnichannel' | 'everything'
 export type Brand = 'colvy' | 'mine' | 'domain'
 
 export type FinderAnswers = {
@@ -39,8 +40,10 @@ export const EXTRAS = [
 
 // SMS included each month on Inbox and Everything.
 export const SMS_INCLUDED = 3000
-// People the Free plan allows; every paid plan is unlimited.
+// People the Free plan allows; every paid plan but Business number is unlimited.
 export const FREE_SEATS = 2
+// People the Business number plan allows.
+export const PHONE_SEATS = 3
 
 const suiteOf = (id: string) => EXTRAS.find(e => e.id === id)?.suite
 
@@ -71,6 +74,11 @@ export function recommendPlan(a: FinderAnswers): { plan: PlanId; reasons: string
     if (insights) reasons.push('Advanced analytics and the AI writing assistant')
     if (a.channels.includes('sms') || a.extras.includes('campaigns')) reasons.push(`${SMS_INCLUDED.toLocaleString('en-AU')} SMS a month included`)
     return { plan: 'everything', reasons: reasons.slice(0, 3) }
+  }
+
+  // Only phone calls, nothing else: a number that rings their mobile is enough.
+  if (a.channels.length === 1 && a.channels[0] === 'calls' && !a.extras.length && a.team <= PHONE_SEATS && a.brand === 'colvy') {
+    return { plan: 'phone', reasons: ['One Australian number that rings your mobile', '100 forwarded minutes a month included', 'Voicemail and every call in the Colvy app'] }
   }
 
   if (inbox) {

@@ -35,6 +35,12 @@ const TIERS = [
   { id: 'everything', name: 'Everything', tagline: 'The full Colvy platform', accent: CORAL, monthly: 259, annual: 209, badge: 'Best value', cta: 'Start free trial', smsNote: true, features: ['Feedback suite + Inbox', 'All five AI agents', '3,000 SMS / month included*', 'White-label branding', 'Custom domain', 'Advanced analytics', 'AI writing assistant', 'Unlimited team members', 'Priority support'] },
 ]
 
+// Business number (lib/plan `phone`): one number that rings the owner's mobile,
+// for a business that needs nothing else yet. Shown as its own strip under the
+// plan cards (it isn't in the comparison table), monthly only.
+const TEAL = '#0d9488'
+const PHONE_TIER = { id: 'phone', name: 'Business number', tagline: 'A local number that rings your mobile', accent: TEAL, monthly: 35, annual: 35, monthlyOnly: true, badge: null, cta: 'Get a number', smsNote: false, features: ['One Australian number: 02, 03, 07, 08 or 04 mobile', 'Calls forwarded to your mobile, always or after hours', '100 forwarded minutes a month, then 20c a minute', 'Press 1 to accept, so your voicemail never takes the call', 'Voicemail and every call in the Colvy app', 'Up to 3 team members'] }
+
 // Full feature matrix. Each row's cells line up with TIERS order:
 // [Free, Feedback, Inbox, Everything]. true = included, false = not, string = value.
 const COMPARE: { group: string; rows: { label: string; cells: (boolean | string)[] }[] }[] = [
@@ -182,8 +188,8 @@ export default function PricingPage() {
             <div style={{ fontFamily: 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace', fontSize: 11.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: muted }}>Not sure which suite? · 30 seconds</div>
             <button type="button" onClick={toPlans} style={{ marginTop: 8, background: 'none', border: 'none', padding: 0, color: muted, fontFamily: 'inherit', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 3 }}>Skip to all plans</button>
           </div>
-          <PlanFinder dark={dark} annual={annual} setAnnual={setAnnual} tiers={TIERS} onMatch={setMatch} onCompare={toPlans}
-            onChoose={id => { const t = TIERS.find(x => x.id === id); if (t) go(t) }} />
+          <PlanFinder dark={dark} annual={annual} setAnnual={setAnnual} tiers={[...TIERS, PHONE_TIER]} onMatch={setMatch} onCompare={toPlans}
+            onChoose={id => { const t = [...TIERS, PHONE_TIER].find(x => x.id === id); if (t) go(t) }} />
         </Reveal>
       </section>
 
@@ -275,6 +281,30 @@ export default function PricingPage() {
             </tbody>
           </table>
         </div>
+      </section>
+
+      {/* BUSINESS NUMBER — just a number that rings your mobile */}
+      <section id="business-number" style={{ padding: '10px 24px 10px', scrollMarginTop: 80 }}>
+        <Reveal>
+          <div style={{ maxWidth: 900, margin: '0 auto', borderRadius: 18, background: match === 'phone' ? (dark ? 'rgba(13,148,136,0.1)' : '#f0fdfa') : cardBg, border: match === 'phone' ? `2px solid ${TEAL}` : `1px solid ${cardBorder}`, padding: 'clamp(24px, 3vw, 34px)', position: 'relative' }}>
+            {match === 'phone' && <div style={{ position: 'absolute', top: -13, left: 28, fontSize: 11.5, fontWeight: 800, background: TEAL, color: '#fff', padding: '5px 16px', borderRadius: 999 }}>Your match</div>}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <h2 style={{ fontSize: 18, fontWeight: 900, letterSpacing: '-0.01em', color: text, margin: 0 }}>Just need a business number?</h2>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: TEAL, background: dark ? 'rgba(13,148,136,0.16)' : 'rgba(13,148,136,0.1)', borderRadius: 999, padding: '3px 10px' }}>Business number</span>
+                </div>
+                <p style={{ fontSize: 14, color: muted, margin: '6px 0 0', maxWidth: 540, lineHeight: 1.55 }}>A local 03 (or 02, 07, 08) number that rings your mobile. <b style={{ color: text }}>A$35/month</b>, number included, billed monthly. Add the inbox, texts and AI receptionist any time.</p>
+              </div>
+              <InviteCta onClick={() => go(PHONE_TIER)} cta={{ id: 'pricing_choose_phone', location: 'pricing_business_number', plan: 'phone', billing: 'monthly' }} className="pr-btn cv-shine" style={{ padding: '12px 26px', borderRadius: 999, background: `linear-gradient(180deg, color-mix(in srgb, ${TEAL} 82%, #fff), ${TEAL})`, color: '#fff', fontWeight: 800, fontSize: 14, border: 'none', boxShadow: `inset 0 1px 0 rgba(255,255,255,.28), 0 12px 26px -12px ${TEAL}`, flexShrink: 0, cursor: 'pointer', fontFamily: 'inherit' }}>{PHONE_TIER.cta}</InviteCta>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {PHONE_TIER.features.map(f => (
+                <span key={f} style={{ fontSize: 12.5, fontWeight: 600, color: muted, background: dark ? 'rgba(255,255,255,0.04)' : 'rgba(15,17,25,0.03)', border: `1px solid ${cardBorder}`, borderRadius: 999, padding: '5px 12px' }}>{f}</span>
+              ))}
+            </div>
+          </div>
+        </Reveal>
       </section>
 
       {/* ENTERPRISE — quiet "contact sales" strip */}
