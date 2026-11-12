@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { PrextyService } from '@/lib/prexty-service'
 import { publicUrlProblem } from '@/lib/site-crawl'
+import { planLock } from '@/lib/plan-gate'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,6 +31,8 @@ export async function POST(req: NextRequest) {
     const db = admin()
     // Workspace members only.
     if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    // Store orders are on the Inbox plans (lib/plan-gate).
+    if (!isUpdate) { const locked = await planLock(db, companyId, 'ecommerceSync'); if (locked) return locked }
     const normalizedBase = (baseUrl || DEFAULT_BASE).replace(/\/+$/, '')
     // Our servers call this address with the key: a public https one only.
     const urlProblem = /^https:\/\//i.test(normalizedBase) ? await publicUrlProblem(normalizedBase) : 'The address must start with https://.'

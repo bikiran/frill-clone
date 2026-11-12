@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import { prepareCampaign, processCampaignBatch, campaignMaySendNow, pauseCampaign, updateCampaignIf, CampaignNotReadyError, CampaignStateChangedError, BATCH_BUDGET_MS } from '@/lib/campaign-sender'
 import { logJobRun } from '@/lib/job-log'
 import { isEmailCampaign, startEmailCampaign, emailBatch } from '@/lib/campaign-email'
+import { planAllows, GATED } from '@/lib/plan-gate'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -70,6 +71,13 @@ export async function GET(req: NextRequest) {
 
     for (const c of (due || [])) {
       if (Date.now() >= deadline) break
+      // Campaigns are on the Inbox plans (lib/plan-gate): a workspace that's no
+      // longer on one has its scheduled campaign paused with the reason.
+      if (!(await planAllows(db, c.company_id, 'campaigns'))) {
+        await pauseCampaign(db, c.id, GATED.campaigns.locked, ['scheduled'])
+        results.push({ campaign: c.id, paused: 'plan' })
+        continue
+      }
       // Respect quiet hours — a campaign scheduled for 2am waits until 9am
       // rather than being sent because its time technically passed.
       if (!campaignMaySendNow(c)) {
@@ -102,10 +110,15 @@ export async function GET(req: NextRequest) {
 
     // ── 2. Campaigns mid-send ──────────────────────────────────────────────
     const { data: sending } = await db.from('campaigns')
-      .select('id, channel, quiet_hours, timezone').eq('status', 'sending').limit(5)
+      .select('id, company_id, channel, quiet_hours, timezone').eq('status', 'sending').limit(5)
 
     for (const c of (sending || [])) {
       if (Date.now() >= deadline) break
+      if (c.company_id && !(await planAllows(db, c.company_id, 'campaigns'))) {
+        await pauseCampaign(db, c.id, GATED.campaigns.locked, ['sending'])
+        results.push({ campaign: c.id, paused: 'plan' })
+        continue
+      }
       try {
         if (isEmailCampaign(c)) {
           // Quiet hours only when the email campaign has them switched on.

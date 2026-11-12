@@ -5,6 +5,7 @@ import { isIgLoginChannel, sendInstagramMessage, sendInstagramAttachment } from 
 import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { isInternalCall } from '@/lib/internal-call'
+import { planLock } from '@/lib/plan-gate'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,6 +32,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     }
     if (await isExternalSendBlocked(conv.company_id, db)) { logBlockedSend(conv.company_id, 'meta', db); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
+    // Instagram and Messenger replies are on the Inbox plans (lib/plan-gate).
+    if (!isInternalCall(req)) { const locked = await planLock(db, conv.company_id, 'inbox'); if (locked) return locked }
     if (!['instagram', 'facebook'].includes(conv.channel)) {
       return NextResponse.json({ error: 'Not a Meta conversation' }, { status: 400 })
     }

@@ -3,6 +3,7 @@ import { isInternalCall } from '@/lib/internal-call'
 import { createClient } from '@supabase/supabase-js'
 import { formsDb } from '@/lib/forms-server'
 import { quietVerdict } from '@/lib/conversation-protection'
+import { planAllows } from '@/lib/plan-gate'
 
 function admin() {
   return createClient(
@@ -38,6 +39,8 @@ export async function POST(req: NextRequest) {
     const db = admin()
     const { data: conv } = await db.from('conversations').select('*').eq('id', conversationId).maybeSingle()
     if (!conv) return NextResponse.json({ ok: true, skipped: 'no conv' })
+    // Conversation actions are automations, on the Inbox plans (lib/plan-gate).
+    if (!(await planAllows(db, conv.company_id, 'aiAutomation'))) return NextResponse.json({ ok: true, skipped: 'plan' })
     const quiet = await quietVerdict(db, conversationId)
     if (quiet) return NextResponse.json({ ok: true, skipped: `protection: ${quiet}` })
     // Only offer once per conversation

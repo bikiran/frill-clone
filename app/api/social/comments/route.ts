@@ -6,6 +6,7 @@ import { isIgLoginChannel, hideInstagramComment, sendInstagramCommentPrivateRepl
 import { IG_COMMENTS_PERMISSION, postCommentReply } from '@/lib/social-reply'
 import { modelFor, trackAi } from '@/lib/ai-models'
 import { memoryForPrompt, memoryBlock } from '@/lib/agent/business-memory'
+import { planLock } from '@/lib/plan-gate'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,6 +20,8 @@ export async function POST(req: NextRequest) {
     const db = admin()
     // Workspace members only.
     if (!isInternalCall(req) && !(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    // Replying to comments is part of social engagement, on the Inbox plans (lib/plan-gate).
+    if (!isInternalCall(req)) { const locked = await planLock(db, companyId, 'reviewDashboard'); if (locked) return locked }
 
     const { data: comment } = await db.from('social_comments').select('*').eq('id', commentId).eq('company_id', companyId).maybeSingle()
     if (!comment) return NextResponse.json({ error: 'Comment not found' }, { status: 404 })

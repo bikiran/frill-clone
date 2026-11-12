@@ -4,6 +4,7 @@ import { sendGmail, sanitizeEmailHtml } from '@/lib/gmail'
 import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { isInternalCall } from '@/lib/internal-call'
+import { planLock } from '@/lib/plan-gate'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,6 +41,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     }
     if (await isExternalSendBlocked(conv.company_id, db)) { logBlockedSend(conv.company_id, 'email', db); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
+    // Email replies from the inbox are on the Inbox plans (lib/plan-gate). Our own
+    // server routes (reminders, notifications, scheduled sends) go through.
+    if (!isInternalCall(req)) { const locked = await planLock(db, conv.company_id, 'inbox'); if (locked) return locked }
 
     // Recipient = the composer's To field, else whoever last emailed us on this
     // thread (an email can thread onto an order conversation), else the contact.

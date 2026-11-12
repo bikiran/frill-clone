@@ -7,6 +7,7 @@ import { supportAutoSends, getAgentChannels, channelKey } from '@/lib/agent/pilo
 import { createClient } from '@supabase/supabase-js'
 import { textOptOut } from '@/lib/sms-consent'
 import { quietVerdict } from '@/lib/conversation-protection'
+import { planAllows } from '@/lib/plan-gate'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -32,6 +33,8 @@ export async function POST(req: NextRequest) {
     if (!conversationId) return NextResponse.json({ error: 'conversationId required' }, { status: 400 })
     const { data: owner } = await admin().from('conversations').select('company_id, channel, sms_number, contact_id').eq('id', conversationId).maybeSingle()
     if (!owner?.company_id) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+    // Automatic replies are on the Inbox plans (lib/plan-gate).
+    if (!(await planAllows(admin(), owner.company_id, 'aiAutomation'))) return NextResponse.json({ ok: true, skipped: 'plan' })
     // Spam, a blocked sender, or a message Colvy hid for review: the AI stays out of it.
     const quiet = await quietVerdict(admin(), conversationId)
     if (quiet) return NextResponse.json({ ok: true, skipped: `protection: ${quiet}` })

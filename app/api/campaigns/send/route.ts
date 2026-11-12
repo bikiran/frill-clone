@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import { prepareCampaign, processCampaignBatch, resumeCampaign, CampaignNotReadyError, CampaignStateChangedError, notReadyBody, BATCH_BUDGET_MS, campaignMaySendNow } from '@/lib/campaign-sender'
 import { isEmailCampaign, startEmailCampaign, emailBatch } from '@/lib/campaign-email'
 import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
+import { planLock } from '@/lib/plan-gate'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -46,6 +47,8 @@ export async function POST(req: NextRequest) {
     if (await isExternalSendBlocked(companyId)) { logBlockedSend(companyId, 'campaign'); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
 
     const db = admin()
+    // Campaigns are on the Inbox plans (lib/plan-gate).
+    { const locked = await planLock(db, companyId, 'campaigns'); if (locked) return locked }
     const { data: campaign } = await db.from('campaigns').select('id, channel, quiet_hours, timezone')
       .eq('id', campaignId).eq('company_id', companyId).maybeSingle()
     if (!campaign) return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
