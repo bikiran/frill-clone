@@ -962,7 +962,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   // Upgrade shows for the people who run billing, and only when there's
   // something to upgrade to (not on a paid or Enterprise plan).
-  const showUpgrade = hasFullAccess(myRole) && !['feedback', 'omnichannel', 'everything', 'enterprise', 'pro', 'business', 'growth', 'startup'].includes(String(company?.plan || '').toLowerCase())
+  const showUpgrade = hasFullAccess(myRole) && !['phone', 'feedback', 'omnichannel', 'everything', 'enterprise', 'pro', 'business', 'growth', 'startup'].includes(String(company?.plan || '').toLowerCase())
 
   // The rail's sections: what this member may open, with counts of what's
   // waiting, the current page lit, and demo-locked pages marked.

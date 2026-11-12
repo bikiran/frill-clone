@@ -23,6 +23,17 @@ const TIERS = [
     limits: ['No live chat / CRM','No SMS or voice calls'],
   },
   {
+    // Business number: one number that rings your mobile. Monthly only.
+    id: 'phone',
+    name: 'Business number',
+    price: 35,
+    annualPrice: 35,
+    monthlyOnly: true,
+    color: '#0d9488',
+    features: ['One Australian number (02, 03, 07, 08 or 04)','Calls forwarded to your mobile','100 forwarded minutes a month, then 20c a minute','Voicemail and the call log','3 team members'],
+    limits: ['No live chat / CRM'],
+  },
+  {
     id: 'feedback',
     name: 'Feedback',
     price: 39,
@@ -198,7 +209,7 @@ export default function UpgradePage() {
         </div>
 
         {/* Pricing cards */}
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-16">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5 mb-16">
           {TIERS.map(tier => {
             const p = billing === 'annual' ? tier.annualPrice : tier.price
             const isCurrent = tier.id === currentPlan
@@ -229,7 +240,7 @@ export default function UpgradePage() {
                     <div className="flex items-end gap-1">
                       <span className="text-4xl font-black" style={{ color: tier.color }}>A${p}</span>
                       <span className="text-sm mb-1.5" style={{ color: 'var(--slate)' }}>
-                        /{billing === 'annual' ? 'mo · billed annually' : 'month'}
+                        /{billing === 'annual' && !(tier as any).monthlyOnly ? 'mo · billed annually' : 'month'}
                       </span>
                     </div>
                   ) : p === 0 ? (
@@ -237,7 +248,7 @@ export default function UpgradePage() {
                   ) : (
                     <div className="text-2xl font-black" style={{ color: tier.color }}>Custom pricing</div>
                   )}
-                  {billing === 'annual' && tier.price && tier.annualPrice && (
+                  {billing === 'annual' && tier.price > tier.annualPrice && tier.annualPrice > 0 && (
                     <p className="text-xs mt-1" style={{ color: '#16a34a' }}>
                       Save A${(tier.price - tier.annualPrice) * 12}/year
                     </p>

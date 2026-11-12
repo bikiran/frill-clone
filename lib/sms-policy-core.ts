@@ -42,7 +42,7 @@ export const SMS_MODE_HINT: Record<SmsMode, string> = {
 }
 
 /** The plans a super admin sets a policy for (suspended always sends nothing). */
-export const POLICY_PLANS = ['free', 'feedback', 'omnichannel', 'everything', 'trial', 'pro', 'enterprise'] as const
+export const POLICY_PLANS = ['free', 'phone', 'feedback', 'omnichannel', 'everything', 'trial', 'pro', 'enterprise'] as const
 export type PolicyPlan = typeof POLICY_PLANS[number]
 export const isPolicyPlan = (p: any): p is PolicyPlan => (POLICY_PLANS as readonly string[]).includes(p)
 

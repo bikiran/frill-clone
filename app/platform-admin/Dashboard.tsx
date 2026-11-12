@@ -187,8 +187,8 @@ function Mini({ label, value, color }: { label: string; value: string; color?: s
   )
 }
 
-const PLAN_ORDER = ['enterprise', 'everything', 'omnichannel', 'inbox', 'feedback', 'growth', 'pro', 'business', 'startup', 'trial', 'free', 'suspended']
-const PLAN_COLOR: Record<string, string> = { enterprise: PURPLE, everything: '#ff6a4d', omnichannel: '#2b59ff', inbox: '#2b59ff', feedback: '#7c5cff', growth: CORAL, pro: GREEN, business: '#2563eb', startup: CYAN, trial: '#f59e0b', free: '#9ca3af', suspended: RED }
+const PLAN_ORDER = ['enterprise', 'everything', 'omnichannel', 'inbox', 'feedback', 'phone', 'growth', 'pro', 'business', 'startup', 'trial', 'free', 'suspended']
+const PLAN_COLOR: Record<string, string> = { enterprise: PURPLE, everything: '#ff6a4d', omnichannel: '#2b59ff', inbox: '#2b59ff', feedback: '#7c5cff', phone: '#0d9488', growth: CORAL, pro: GREEN, business: '#2563eb', startup: CYAN, trial: '#f59e0b', free: '#9ca3af', suspended: RED }
 
 function Plans({ dist, onGo }: { dist: Record<string, number> | undefined; onGo: Go }) {
   const total = Object.values(dist || {}).reduce((a, b) => a + b, 0)

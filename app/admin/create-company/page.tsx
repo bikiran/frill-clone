@@ -12,9 +12,9 @@ import { AdminPage, Panel } from '@/components/ui/AdminKit'
 const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 // The real tiers customers buy (plus the trial state). Values match
 // companies.plan / lib/plan.ts, so the entitlement model applies exactly.
-const PLANS = ['free', 'trial', 'feedback', 'omnichannel', 'everything', 'enterprise']
+const PLANS = ['free', 'trial', 'phone', 'feedback', 'omnichannel', 'everything', 'enterprise']
 const PLAN_HINT: Record<string, string> = {
-  free: 'The basics, no charge', trial: '14 days of everything', feedback: 'Ideas, roadmap, surveys',
+  free: 'The basics, no charge', trial: '14 days of everything', phone: 'One number, forwarded to a mobile', feedback: 'Ideas, roadmap, surveys',
   omnichannel: 'Inbox, contacts, SMS', everything: 'The whole platform', enterprise: 'Set up by the Colvy team',
 }
 

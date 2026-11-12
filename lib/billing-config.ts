@@ -21,11 +21,26 @@ const PRICE_ENV: Record<string, Record<Billing, string[]>> = {
   omnichannel:      { monthly: ['STRIPE_OMNICHANNEL_MONTHLY_PRICE_ID'], annual: ['STRIPE_OMNICHANNEL_ANNUAL_PRICE_ID'] },
   everything:       { monthly: ['STRIPE_EVERYTHING_MONTHLY_PRICE_ID'], annual: ['STRIPE_EVERYTHING_ANNUAL_PRICE_ID'] },
   branding_removal: { monthly: ['STRIPE_BRANDING_REMOVAL_PRICE_ID'], annual: ['STRIPE_BRANDING_REMOVAL_PRICE_ID'] },
+  // Business number: monthly only (an annual request is checked out monthly).
+  phone:            { monthly: ['STRIPE_PHONE_MONTHLY_PRICE_ID'], annual: ['STRIPE_PHONE_MONTHLY_PRICE_ID'] },
   startup:          { monthly: ['STRIPE_STARTUP_MONTHLY_PRICE_ID'], annual: ['STRIPE_STARTUP_ANNUAL_PRICE_ID'] },
   business:         { monthly: ['STRIPE_BUSINESS_MONTHLY_PRICE_ID'], annual: ['STRIPE_BUSINESS_ANNUAL_PRICE_ID'] },
   growth:           { monthly: ['STRIPE_GROWTH_MONTHLY_PRICE_ID'], annual: ['STRIPE_GROWTH_ANNUAL_PRICE_ID'] },
   pro:              { monthly: ['STRIPE_PRO_MONTHLY_PRICE_ID', 'STRIPE_GROWTH_MONTHLY_PRICE_ID'], annual: ['STRIPE_PRO_ANNUAL_PRICE_ID', 'STRIPE_GROWTH_ANNUAL_PRICE_ID'] },
 }
+
+/**
+ * Plans that can be sold before a Stripe price exists: with no price ID set,
+ * Checkout is given the price inline (price_data), the way numbers are sold
+ * (app/api/twilio/number-checkout). Set the env var to manage the price in
+ * Stripe instead. A$ cents, GST included like every Colvy price.
+ */
+export const INLINE_PLAN_PRICES: Record<string, { cents: number; name: string; description: string }> = {
+  phone: { cents: 3500, name: 'Colvy Business number', description: 'One Australian number, call forwarding, voicemail and the call log' },
+}
+
+/** Plans sold monthly only. */
+export const monthlyOnly = (tier: string) => tier === 'phone'
 
 /** A plan or add-on the checkout knows about. */
 export const isKnownTier = (tier: string) => Object.prototype.hasOwnProperty.call(PRICE_ENV, String(tier || ''))
@@ -54,7 +69,8 @@ export function checkoutBlockers(tier: string, billing: string, env: Env): strin
   const out: string[] = []
   if (!secretKeyOk(env)) out.push('STRIPE_SECRET_KEY')
   const price = priceIdFor(tier, billing, env)
-  if (!price || !price.startsWith('price_')) out.push(priceEnvName(tier, billing))
+  // Not set is fine for a plan with an inline price; set but wrong never is.
+  if (price ? !price.startsWith('price_') : !INLINE_PLAN_PRICES[tier]) out.push(priceEnvName(tier, billing))
   return out
 }
 
@@ -86,6 +102,7 @@ const WHERE_PRICE = 'Stripe → Product catalogue → the product → Pricing �
 
 // The plans and add-on a customer can buy today (app/admin/billing, /upgrade).
 const SOLD: { tier: string; name: string; group: 'plans' | 'addons'; periods: Billing[] }[] = [
+  { tier: 'phone', name: 'Business number', group: 'plans', periods: ['monthly'] },
   { tier: 'feedback', name: 'Feedback', group: 'plans', periods: ['monthly', 'annual'] },
   { tier: 'omnichannel', name: 'Inbox', group: 'plans', periods: ['monthly', 'annual'] },
   { tier: 'everything', name: 'Everything', group: 'plans', periods: ['monthly', 'annual'] },
@@ -130,12 +147,14 @@ export function billingConfigStatus(env: Env): BillingStatus {
     for (const period of p.periods) {
       const envVar = priceEnvName(p.tier, period)
       const v = priceIdFor(p.tier, period, env)
-      const state: CheckState = !v ? 'missing' : v.startsWith('price_') ? 'ok' : 'invalid'
+      const inline = INLINE_PLAN_PRICES[p.tier]
+      const state: CheckState = !v ? (inline ? 'warn' : 'missing') : v.startsWith('price_') ? 'ok' : 'invalid'
       checks.push({
         envVar,
         label: p.group === 'addons' ? p.name : `${p.name} · ${period}`,
-        group: p.group, required: true, state,
-        problem: !v ? 'Not set.' : v.startsWith('prod_') ? 'This is a product ID; use the price ID (price_…).' : v.startsWith('price_') ? '' : 'Must start with price_.',
+        group: p.group, required: !inline, state,
+        problem: !v ? (inline ? `Optional: without it, checkout charges A$${(inline.cents / 100).toFixed(2)}/month directly. Set it to manage the price in Stripe.` : 'Not set.')
+          : v.startsWith('prod_') ? 'This is a product ID; use the price ID (price_…).' : v.startsWith('price_') ? '' : 'Must start with price_.',
         where: WHERE_PRICE,
       })
     }

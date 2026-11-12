@@ -246,7 +246,7 @@ export default function BusinessNumberClient() {
             </div>
             <div style={{ padding: '28px 26px', borderRadius: 24, background: t.cardBg, border: `1px solid ${t.cardBorder}` }}>
               <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: t.muted }}>Calls and texts</div>
-              <p style={{ fontSize: 15.5, lineHeight: 1.65, margin: '10px 0 14px' }}>Calling and SMS run on Colvy’s <b>Inbox</b> or <b>Everything</b> plan, with 3,000 SMS a month included. For high-volume calling, contact us for call rates.</p>
+              <p style={{ fontSize: 15.5, lineHeight: 1.65, margin: '10px 0 14px' }}>Calling and SMS run on Colvy’s <b>Inbox</b> or <b>Everything</b> plan, with 3,000 SMS a month included. Just need a number that rings your mobile? The <b>Business number</b> plan is $35 a month with the number included. For high-volume calling, contact us for call rates.</p>
               <a href="/pricing" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 800, color: GREEN, textDecoration: 'none' }}>See plans and pricing <Arrow size={14} /></a>
             </div>
           </div>
