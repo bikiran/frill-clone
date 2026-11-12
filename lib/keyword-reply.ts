@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { trackLinksInText } from '@/lib/link-tracking'
 import { modelFor, trackAi } from '@/lib/ai-models'
 import { quietVerdict } from '@/lib/conversation-protection'
+import { planAllows } from './plan-gate'
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -144,6 +145,8 @@ export async function runKeywordReply(opts: {
     companyId = data?.company_id
   }
   if (!companyId) return { matched: false }
+  // Automatic replies are on the Inbox plans (lib/plan-gate).
+  if (!(await planAllows(db, companyId, 'aiAutomation'))) return { matched: false }
 
   const { data: rules } = await db.from('keyword_replies')
     .select('*').eq('company_id', companyId).eq('is_active', true)

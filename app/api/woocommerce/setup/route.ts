@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { WooCommerceService } from '@/lib/woocommerce-service'
 import { publicUrlProblem } from '@/lib/site-crawl'
+import { planLock } from '@/lib/plan-gate'
 
 /**
  * POST /api/woocommerce/setup
@@ -23,6 +24,9 @@ export async function POST(req: NextRequest) {
     {
       const gateDb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL || '', process.env.SUPABASE_SERVICE_ROLE_KEY || '')
       if (!(await requireCompanyAccess(req, gateDb, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+      // Store orders are on the Inbox plans (lib/plan-gate). Shopify isn't
+      // locked: a Shopify app workspace chooses and pays for its plan in Shopify.
+      if (!isUpdate) { const locked = await planLock(gateDb, companyId, 'ecommerceSync'); if (locked) return locked }
     }
 
     // For new integrations, require both keys

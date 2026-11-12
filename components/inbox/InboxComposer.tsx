@@ -16,6 +16,8 @@ import VoiceDictationButton from '@/components/VoiceDictationButton'
 import { Icon, sendChannelGlyph, toolBtn } from '@/components/inbox/inbox-shared'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useInbox } from '@/components/inbox/InboxContext'
+import PlanLockCard from '@/components/PlanLockCard'
+import { channelNeedsInbox } from '@/lib/plan-gate'
 
 export default function InboxComposer() {
   const {
@@ -38,7 +40,7 @@ export default function InboxComposer() {
     setSendChannel, setShowChannelMenu, setShowEmoji, setShowQuickMenu, setShowRecordSale,
     setSmsCreditError, setStagedExpiry, setStagedMedia, setStatus, setTicketDesc, setTicketPriority,
     setTicketSubject, showChannelMenu, showEmailComposer, showEmoji, showQuickMenu, showToast,
-    smsCreditError, smsDestination, smsIncluded, smsOptOut, stagedExpiry, stagedMedia,
+    smsCreditError, smsDestination, smsIncluded, inboxIncluded, smsOptOut, stagedExpiry, stagedMedia,
     startComposerResize, stopVoiceNote, takeControl, teamMembers, templateVars, textareaRef,
     themeGradient, themeSolid, ticketDesc, ticketMode, ticketPriority, ticketSaving, ticketSubject,
     toLocalInput, wooOrders,
@@ -139,6 +141,14 @@ export default function InboxComposer() {
             {composerDragging ? `${composerH}px` : 'Drag up or down to resize'}
           </span>
         </div>
+        {/* Live chat, email, Instagram and Messenger replies are on the Inbox
+            plans (lib/plan-gate): the message arrived, replying needs an upgrade.
+            Above both composers: email threads use the email composer. */}
+        {selected && !internalMode && !inboxIncluded && channelNeedsInbox(selected.channel) && (
+          <div style={{ margin: '0 0 8px' }}>
+            <PlanLockCard feature="inbox" compact body="Replying by live chat, email, Instagram or Messenger is on the Inbox and Everything plans. You can still add internal notes." />
+          </div>
+        )}
         {/* Email threads get a proper email composer (To/Cc/Subject +
             signature) instead of the plain chat box. */}
         {ticketMode ? (

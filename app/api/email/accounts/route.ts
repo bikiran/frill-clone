@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { syncGmailChannel } from '@/lib/gmail'
 import { requireCompanyAccess } from '@/lib/company-access'
+import { planLock } from '@/lib/plan-gate'
 
 export const maxDuration = 60
 
@@ -101,6 +102,8 @@ export async function POST(req: NextRequest) {
     if (action === 'save_webhook') {
       const { id, inbound_address, from_address, from_name, location_id, is_active, sync_all } = body
       if (!inbound_address) return NextResponse.json({ error: 'Inbound address required' }, { status: 400 })
+      // A new email inbox is on the Inbox plans (lib/plan-gate).
+      if (!id) { const locked = await planLock(db, companyId, 'inbox'); if (locked) return locked }
       // Reply-from is managed by Colvy on its own verified sending domain — the
       // customer never picks it or verifies anything with a mail vendor. Honour an
       // explicit value if one was passed (advanced/back-compat), otherwise

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { CampaignNotReadyError, notReadyBody } from '@/lib/campaign-sender'
 import { CampaignActionError, scheduleCampaign } from '@/lib/campaign-control'
+import { planLock } from '@/lib/plan-gate'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -33,6 +34,8 @@ export async function POST(req: NextRequest) {
     if (!companyId || !campaignId) return NextResponse.json({ error: 'Missing companyId or campaignId' }, { status: 400 })
     const db = admin()
     if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    // Campaigns are on the Inbox plans (lib/plan-gate).
+    { const locked = await planLock(db, companyId, 'campaigns'); if (locked) return locked }
     const r = await scheduleCampaign(db, companyId, campaignId, new Date(String(scheduledAt || '')))
     if (r.channel === 'email') return NextResponse.json({ ok: true, channel: 'email', scheduledAt: r.scheduledAt, recipients: r.recipients, heldForSendingHours: r.heldForSendingHours })
     return NextResponse.json({ ok: true, scheduledAt: r.scheduledAt, recipients: r.recipients, parts: r.parts, heldCents: r.heldCents, heldForSendingHours: r.heldForSendingHours })

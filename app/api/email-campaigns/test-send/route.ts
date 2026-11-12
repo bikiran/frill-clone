@@ -10,6 +10,7 @@ import { fillSubject, fillTemplate, renderEmail } from '@/components/EmailDesign
 import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE } from '@/lib/demo-guard'
 import { suppressedSet } from '@/lib/email-suppression'
 import { readRecipients, type TestResult } from '@/lib/test-recipients'
+import { planLock } from '@/lib/plan-gate'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,6 +41,8 @@ export async function POST(req: NextRequest) {
   const to = asked?.list.length ? asked.list : own ? [own] : []
   if (!to.length) return NextResponse.json({ error: asked ? 'Add an email address to send the test to.' : 'Your account has no email address to send the test to.' }, { status: 400 })
   if (await isExternalSendBlocked(companyId, db)) return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 })
+  // Campaigns are on the Inbox plans (lib/plan-gate).
+  { const locked = await planLock(db, companyId, 'campaigns'); if (locked) return locked }
   const key = process.env.RESEND_API_KEY
   if (!key) return NextResponse.json({ error: 'Email isn’t set up on this server.' }, { status: 503 })
 

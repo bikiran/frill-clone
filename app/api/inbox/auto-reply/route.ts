@@ -2,6 +2,7 @@ import { internalHeaders, isInternalCall } from '@/lib/internal-call'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { quietVerdict } from '@/lib/conversation-protection'
+import { planAllows } from '@/lib/plan-gate'
 
 function admin() {
   return createClient(
@@ -49,6 +50,8 @@ export async function POST(req: NextRequest) {
       }
     } catch { /* best-effort — fall through to the normal auto-reply */ }
 
+    // Automatic replies are on the Inbox plans (lib/plan-gate).
+    if (!(await planAllows(db, conv.company_id, 'aiAutomation'))) return NextResponse.json({ ok: true, skipped: 'plan' })
     const { data: company } = await db.from('companies').select('*').eq('id', conv.company_id).maybeSingle()
     const businessName = company?.name || 'us'
 

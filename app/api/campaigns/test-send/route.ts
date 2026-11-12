@@ -6,6 +6,7 @@ import { renderVariables } from '@/lib/sms-segments'
 import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
 import { textOptOut } from '@/lib/sms-consent'
 import { readRecipients, fmtMobile, type TestResult } from '@/lib/test-recipients'
+import { planLock } from '@/lib/plan-gate'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,6 +41,8 @@ export async function POST(req: NextRequest) {
     const access = await requireCompanyAccess(req, admin(), companyId)
     if (!access.ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     if (await isExternalSendBlocked(companyId)) { logBlockedSend(companyId, 'campaign_test'); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
+    // Campaigns are on the Inbox plans (lib/plan-gate).
+    { const locked = await planLock(admin(), companyId, 'campaigns'); if (locked) return locked }
 
     const { list, error } = readRecipients('sms', asked)
     if (error) return NextResponse.json({ error }, { status: 400 })

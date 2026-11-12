@@ -8,6 +8,7 @@ import { emitIntegrationEvent } from '@/lib/integration-events'
 import { isPublicNow, sortForPublic, toPublicAnnouncement } from '@/lib/announcements'
 import { publicBoardUrl } from '@/lib/board-url'
 import { checkBurst, callerKey } from '@/lib/rate-limit'
+import { planAllows } from '@/lib/plan-gate'
 
 // A live announcement as the widget gets it: the public fields, plus the
 // names the widget already reads (description, tag, created_at).
@@ -174,6 +175,10 @@ export async function GET(req: NextRequest) {
       supabase, company.id, 'removeBranding',
       effectivePlan(company.plan, company.trial_ends_at),
     )
+    // Live chat is on the Inbox plans (lib/plan-gate): without it the chat tab
+    // hides, so visitors can't start a chat nobody can answer. The feedback,
+    // roadmap, updates and help tabs stay.
+    if (widgetTabs && !(await planAllows(supabase, company.id, 'inbox'))) widgetTabs = { ...widgetTabs, chat: false }
     // Don't leak the raw plan to the public widget payload.
     const { plan: _plan, trial_ends_at: _trialEndsAt, ...companyPublic } = company as any
     // The public board address (lib/board-url.ts). Read on its own so an old

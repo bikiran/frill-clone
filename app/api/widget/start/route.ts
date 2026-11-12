@@ -5,6 +5,7 @@ import { checkBurst, callerKey } from '@/lib/rate-limit'
 import { clickRefFromVisit } from '@/lib/link-channels'
 import { stitchLinkClick } from '@/lib/link-stitch'
 import { ilikeExact, exactEmailRow } from '@/lib/phone'
+import { planAllows } from '@/lib/plan-gate'
 
 export const dynamic = 'force-dynamic'
 
@@ -53,6 +54,10 @@ export async function POST(req: NextRequest) {
     }
 
     const db = admin()
+    // Live chat is on the Inbox plans (lib/plan-gate).
+    if (!(await planAllows(db, companyId, 'inbox'))) {
+      return NextResponse.json({ error: 'Chat isn’t available right now. Please contact the business another way.', chatOff: true }, { status: 403 })
+    }
 
     const name = (b.name || '').toString().trim().slice(0, 120) || null
     const email = (b.email || '').toString().trim().slice(0, 200) || null

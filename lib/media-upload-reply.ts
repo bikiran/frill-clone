@@ -16,6 +16,7 @@ import { internalHeaders } from '@/lib/internal-call'
 
 import { mediaUploadReplySettings, wantsUploadReply, MEDIA_UPLOAD_REPLY_HOURS } from '@/lib/media-upload-reply-settings'
 import { textOptOut } from '@/lib/sms-consent'
+import { planAllows } from './plan-gate'
 export * from '@/lib/media-upload-reply-settings'
 
 /**
@@ -32,6 +33,8 @@ export async function sendMediaUploadReply(p: {
     const { data: co } = await p.db.from('companies').select('inbox_settings').eq('id', p.companyId).maybeSingle()
     const s = mediaUploadReplySettings(co?.inbox_settings)
     if (!s.enabled) return 'off'
+    // Automatic replies are on the Inbox plans (lib/plan-gate).
+    if (!(await planAllows(p.db, p.companyId, 'aiAutomation'))) return 'off'
     if (!wantsUploadReply(p.media, s)) return 'not_needed'
 
     // Not to a customer who opted out of texts or is blocked (on any contact

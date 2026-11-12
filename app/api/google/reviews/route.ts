@@ -2,6 +2,7 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getGoogleToken, listLocations, syncReviews, replyToReview } from '@/lib/google-business'
+import { planLock } from '@/lib/plan-gate'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60   // a full review sync pages through hundreds of rows
@@ -56,6 +57,8 @@ export async function POST(req: NextRequest) {
     const db = admin()
     // Workspace members only.
     if (!(await requireCompanyAccess(req, db, companyId)).ok) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    // Google reviews are on the Inbox plans (lib/plan-gate).
+    { const locked = await planLock(db, companyId, 'reviewDashboard'); if (locked) return locked }
 
     if (action === 'select_location') {
       const { accountName, locationName, title } = body
