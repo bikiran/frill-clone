@@ -141,6 +141,14 @@ export default function InboxComposer() {
             {composerDragging ? `${composerH}px` : 'Drag up or down to resize'}
           </span>
         </div>
+        {/* Live chat, email, Instagram and Messenger replies are on the Inbox
+            plans (lib/plan-gate): the message arrived, replying needs an upgrade.
+            Above both composers: email threads use the email composer. */}
+        {selected && !internalMode && !inboxIncluded && channelNeedsInbox(selected.channel) && (
+          <div style={{ margin: '0 0 8px' }}>
+            <PlanLockCard feature="inbox" compact body="Replying by live chat, email, Instagram or Messenger is on the Inbox and Everything plans. You can still add internal notes." />
+          </div>
+        )}
         {/* Email threads get a proper email composer (To/Cc/Subject +
             signature) instead of the plain chat box. */}
         {ticketMode ? (
@@ -512,13 +520,6 @@ export default function InboxComposer() {
             customer (a mobile is on file) but the plan doesn't include SMS.
             This is the highest-intent moment to convert, so link straight to
             the upgrade page. */}
-        {/* Live chat, email, Instagram and Messenger replies are on the Inbox
-            plans (lib/plan-gate): the message arrived, replying needs an upgrade. */}
-        {selected && !internalMode && !inboxIncluded && channelNeedsInbox(selected.channel) && (
-          <div style={{ margin: '0 0 8px' }}>
-            <PlanLockCard feature="inbox" compact body="Replying by live chat, email, Instagram or Messenger is on the Inbox and Everything plans. You can still add internal notes." />
-          </div>
-        )}
         {selected && !internalMode && !smsIncluded && !!smsDestination() && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 8px', padding: '10px 12px', borderRadius: 10, background: 'linear-gradient(135deg, #fff1ee 0%, #ffe9f0 100%)', border: '1px solid #ffd0c4' }}>
             <span style={{ fontSize: 16, flexShrink: 0 }}>💬</span>
