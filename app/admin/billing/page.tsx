@@ -810,9 +810,9 @@ const BL_CSS = `
 .bl-plan:hover{transform:translateY(-3px);box-shadow:0 0 0 1px rgba(0,0,0,.07),0 22px 44px -24px rgba(16,24,40,.28)}
 .bl-plan.best{box-shadow:0 0 0 2px #ff6a4d,0 22px 44px -24px rgba(255,106,77,.7)}
 .bl-plan.current{box-shadow:0 0 0 2px #22c55e}
-.bl-plan-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:16px}
+.bl-plan-h{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 8px;margin-top:16px}
 .bl-plan-h h3{margin:0;font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:28px;font-weight:700;letter-spacing:-.04em;line-height:1.1;color:var(--ink)}
-.bl-best{height:24px;padding:0 10px;border-radius:999px;display:inline-flex;align-items:center;background:#ff6a4d;color:#fff;font-size:11.5px;font-weight:700}
+.bl-best{height:24px;padding:0 10px;border-radius:999px;display:inline-flex;align-items:center;flex-shrink:0;white-space:nowrap;line-height:1;background:#ff6a4d;color:#fff;font-size:11.5px;font-weight:700}
 .bl-plan-desc{margin:6px 0 0;font-size:13.5px;line-height:1.5;color:var(--mut)}
 .bl-price{display:flex;align-items:baseline;gap:6px;margin:20px 0 0}
 .bl-price b{font-family:var(--font-display),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:44px;font-weight:700;letter-spacing:-.05em;line-height:1;color:var(--ink);font-variant-numeric:tabular-nums}

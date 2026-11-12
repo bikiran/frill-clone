@@ -182,6 +182,8 @@ export const AK_CSS = `
 .ak-table tbody tr:hover{background:color-mix(in srgb,var(--f) 60%,transparent)}
 .ak :focus-visible{outline:2px solid var(--coral);outline-offset:2px}
 .ak .ak-field:focus-visible,.ak .ak-select:focus-visible,.ak input:focus-visible{outline:none}
+.ak .ak-seg button:focus-visible{outline:none;box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--coral) 45%,transparent)}
+.ak .ak-seg button.on:focus-visible{box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--coral) 45%,transparent),0 1px 3px rgba(16,24,40,.12)}
 @keyframes akIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .ak-in{animation:akIn .35s cubic-bezier(.22,1,.36,1) both}
 @media (prefers-reduced-motion:reduce){.ak-in{animation:none}}
