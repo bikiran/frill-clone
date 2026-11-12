@@ -296,7 +296,7 @@ export default function PricingPage() {
                 </div>
                 <p style={{ fontSize: 14, color: muted, margin: '6px 0 0', maxWidth: 540, lineHeight: 1.55 }}>A local 03 (or 02, 07, 08) number that rings your mobile. <b style={{ color: text }}>A$35/month</b>, number included, billed monthly. Add the inbox, texts and AI receptionist any time.</p>
               </div>
-              <InviteCta onClick={() => go(PHONE_TIER)} cta={{ id: 'pricing_choose_phone', location: 'pricing_business_number', plan: 'phone', billing: 'monthly' }} className="pr-btn cv-shine" style={{ padding: '12px 26px', borderRadius: 999, background: `linear-gradient(180deg, color-mix(in srgb, ${TEAL} 82%, #fff), ${TEAL})`, color: '#fff', fontWeight: 800, fontSize: 14, border: 'none', boxShadow: `inset 0 1px 0 rgba(255,255,255,.28), 0 12px 26px -12px ${TEAL}`, flexShrink: 0, cursor: 'pointer', fontFamily: 'inherit' }}>{PHONE_TIER.cta}</InviteCta>
+              <InviteCta onClick={() => go(PHONE_TIER)} cta={{ id: 'pricing_choose_phone', location: 'pricing_business_number', plan: 'phone', billing: 'monthly' }} className="pr-btn cv-shine" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap', padding: '12px 26px', borderRadius: 999, background: `linear-gradient(180deg, color-mix(in srgb, ${TEAL} 82%, #fff), ${TEAL})`, color: '#fff', fontWeight: 800, fontSize: 14, border: 'none', boxShadow: `inset 0 1px 0 rgba(255,255,255,.28), 0 12px 26px -12px ${TEAL}`, flexShrink: 0, cursor: 'pointer', fontFamily: 'inherit' }}>{PHONE_TIER.cta}</InviteCta>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {PHONE_TIER.features.map(f => (

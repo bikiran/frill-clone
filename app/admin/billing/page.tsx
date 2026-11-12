@@ -138,6 +138,12 @@ function EnterpriseCard({ current, onContact }: { current: boolean; onContact: (
 }
 
 const PLAN_LABEL: Record<string, string> = { free: 'Free', trial: '14-day trial', phone: 'Business number', feedback: 'Feedback', omnichannel: 'Inbox', everything: 'Everything', pro: 'Everything', enterprise: 'Enterprise' }
+// A renewal date as the subscriptions row holds it: an ISO date (the Stripe
+// webhook) or Stripe's seconds since 1970.
+const renewsOn = (v: string | number | null | undefined) => {
+  const ms = typeof v === 'number' || /^\d+$/.test(String(v ?? '')) ? Number(v) * 1000 : Date.parse(String(v ?? ''))
+  return Number.isFinite(ms) ? new Date(ms).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : 'soon'
+}
 const fmtDate = (d?: string | null) => (d ? new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '')
 
 // A workspace using Colvy through the Shopify app is billed by Shopify (App
@@ -567,7 +573,7 @@ export default function BillingPage() {
         {isPaid && hasStripe && subscription?.current_period_end && (
           <div className="bl-meter">
             <div className="bl-meter-l"><span className="bl-meter-ic good" aria-hidden><CheckIcon /></span>{subscription?.status === 'active' ? 'Active' : 'Subscription'}</div>
-            <div className="bl-meter-v">Renews {new Date(subscription.current_period_end * 1000).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+            <div className="bl-meter-v">Renews {renewsOn(subscription.current_period_end)}</div>
           </div>
         )}
 

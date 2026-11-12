@@ -10,7 +10,8 @@ export const dynamic = 'force-dynamic'
 // (lib/forwarding-usage), for Billing and the Call routing card.
 //
 // GET ?companyId= → { usage: { period, minutes, calls, included, over, overCents, rateCents } }
-//   `included` is null when the plan doesn't meter forwarding (Inbox and up).
+//   `included` is null when the plan doesn't include a set number of forwarded
+//   minutes: not metered (Inbox and up), or no forwarding at all (Free).
 // Staff of the business.
 
 const admin = () => createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { autoRefreshToken: false, persistSession: false } })
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest) {
   try {
     const included = await companyLimit(db, companyId, 'forwardMinutes')
     const u = await forwardingUsage(db, companyId, included)
-    return NextResponse.json({ usage: { ...u, included: Number.isFinite(u.included) ? u.included : null } })
+    return NextResponse.json({ usage: { ...u, included: Number.isFinite(u.included) && u.included > 0 ? u.included : null } })
   } catch (err: any) {
     return NextResponse.json({ error: 'Couldn’t load this month’s forwarded minutes.' }, { status: 500 })
   }
