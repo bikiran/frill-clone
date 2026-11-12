@@ -11,6 +11,7 @@ import ColvyAppDemo from '@/components/ColvyAppDemo'
 import TeamInboxDemo from '@/components/marketing/TeamInboxDemo'
 import ChannelFlow from '@/components/marketing/ChannelFlow'
 import IndustryCarousel from '@/components/marketing/IndustryCarousel'
+import JustShipped from '@/components/marketing/JustShipped'
 import HowItWorks from '@/components/marketing/HowItWorks'
 import ScrollStory from '@/components/ScrollStory'
 import MarketingFooter from '@/components/MarketingFooter'
@@ -286,44 +287,6 @@ function FeatureSuite({ dark, text, muted, cardBorder, canvas }: { dark: boolean
       </div>
       <div ref={trackRef} className="cv-suite-track" style={{ display: 'flex', gap: 20, overflowX: 'auto', scrollSnapType: 'x mandatory', padding: '8px 24px 22px', scrollbarWidth: 'none' }}>
         {SUITE.map((s, i) => <SuiteCard key={s.title} s={s} i={i} dark={dark} border={cardBorder} />)}
-      </div>
-    </section>
-  )
-}
-
-// Just shipped — the newest features, each with its own page. The same photo
-// cards as the suite carousel, laid out as a grid (a swipeable row on phones).
-const INDIGO = '#4f46e5'
-const NEW_FEATURES: typeof SUITE = [
-  { icon: 'utensils', title: 'Table reservations', desc: 'A table booking page, a live floor plan, covers and pacing, deposits for bigger groups and no-show tools.', cta: 'See reservations', href: '/product/reservations', color: PINK, img: '/new/reservations.webp' },
-  { icon: 'hand', title: '“I’m here” check-in', desc: 'Guests tap “I’m here” on their booking page. Your team gets an alert and sees them as arrived.', cta: 'See check-in', href: '/product/check-in', color: GREEN, img: '/new/check-in.webp' },
-  { icon: 'repeat', title: 'Regular bookings & waitlist', desc: 'Repeat a booking every few weeks, and offer freed-up times to the people waiting, automatically.', cta: 'See bookings', href: '/product/booking', color: CORAL, img: '/new/booking.webp' },
-  { icon: 'briefcase', title: 'Jobs & quotes', desc: 'Quotes customers accept online, a jobs board and calendar, clash checks, checklists, photos and sign-off.', cta: 'See jobs', href: '/product/jobs', color: BLUE, img: '/new/jobs.webp' },
-  { icon: 'key', title: 'Customer accounts', desc: 'Customers sign in with a code to see bookings, quotes and orders, pay deposits and book again. No password.', cta: 'See accounts', href: '/product/customer-accounts', color: CYAN, img: '/new/accounts.webp' },
-  { icon: 'receipt', title: 'Receipts & tax invoices', desc: 'Send a receipt by email or text, or let them open it in their account. Tax invoices show your ABN and GST.', cta: 'See receipts', href: '/product/receipts', color: INDIGO, img: '/new/receipts.webp' },
-]
-
-function NewFeatures({ dark, text, muted, cardBorder, bg }: { dark: boolean; text: string; muted: string; cardBorder: string; bg: string }) {
-  return (
-    <section id="new" style={{ background: bg, padding: 'clamp(56px, 8vw, 96px) 0', overflow: 'hidden', scrollMarginTop: 80 }}>
-      <style>{`
-        .cv-new-grid{ display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:20px; max-width:1200px; margin:0 auto; padding:8px 24px 22px; }
-        .cv-new-grid > .cv-suite-card{ width:auto !important; }
-        @media (max-width:900px){
-          .cv-new-grid{ display:flex; overflow-x:auto; scroll-snap-type:x mandatory; scrollbar-width:none; max-width:none; }
-          .cv-new-grid::-webkit-scrollbar{ display:none; }
-          .cv-new-grid > .cv-suite-card{ width:min(80vw, 300px) !important; }
-        }
-      `}</style>
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px', marginBottom: 30 }}>
-        <div style={{ maxWidth: 720 }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999, background: CORAL, color: '#fff', fontSize: 12.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 16 }}>Just shipped</span>
-          <h2 style={{ fontSize: 'clamp(28px, 4.4vw, 50px)', fontWeight: 900, letterSpacing: '-0.025em', lineHeight: 1.06, margin: '0 0 14px', color: text }}><BigReveal text="New: tables, jobs and customer accounts." /></h2>
-          <p style={{ fontSize: 17, color: muted, lineHeight: 1.6, margin: 0 }}>Table reservations for restaurants and cafés, jobs and quotes for trades, regular bookings and a waitlist for appointments, and an account page where your customers see it all, receipts included.</p>
-        </div>
-      </div>
-      <div className="cv-new-grid">
-        {NEW_FEATURES.map((s, i) => <SuiteCard key={s.title} s={s} i={i % 3} dark={dark} border={cardBorder} />)}
       </div>
     </section>
   )
@@ -655,7 +618,7 @@ export default function LandingPage() {
       </div>
 
       {/* JUST SHIPPED — the newest features, each linking to its own page */}
-      <NewFeatures dark={dark} text={text} muted={muted} cardBorder={cardBorder} bg={bg} />
+      <JustShipped dark={dark} />
 
       {/* AI TEAM — the five agents, linking to /ai-agents */}
       <AgentTeamBand dark={dark} />
