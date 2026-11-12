@@ -68,8 +68,13 @@ export async function planLock(db: any, companyId: string, feature: GatedFeature
   return new Response(JSON.stringify(lockedBody(feature)), { status: PLAN_LOCKED_STATUS, headers: { 'content-type': 'application/json' } })
 }
 
-/** The channels whose replies need the `inbox` feature (SMS and calls need `channels`, WhatsApp its own check). */
-export const INBOX_CHANNELS = new Set(['chat', 'widget', 'livechat', 'live_chat', 'web', 'email', 'instagram', 'messenger', 'facebook', 'ig', 'fb'])
+/**
+ * The conversation channels whose replies need the `inbox` feature: website
+ * live chat, email, Instagram and Messenger. Not 'chat' (order, cart and
+ * customer-account threads, answered by SMS or email, each with its own check),
+ * SMS and calls (`channels`) or WhatsApp (its own check).
+ */
+export const INBOX_CHANNELS = new Set(['widget', 'email', 'instagram', 'messenger', 'facebook'])
 
 /** Does replying on this conversation channel need the Inbox plan? */
 export const channelNeedsInbox = (channel: string | null | undefined) => INBOX_CHANNELS.has(String(channel || '').toLowerCase())

@@ -47,6 +47,7 @@ import { reportFonts } from '@/lib/fonts'
 import { useStoreStatus, storeAllowsPage } from '@/lib/store-status'
 import { jobsEnabled, restaurantEnabled, moduleAllowsPage } from '@/lib/modules'
 import AiBuddy from '@/components/AiBuddy'
+import PlanPageLock from '@/components/PlanPageLock'
 
 const SUPER_ADMIN_EMAIL = 'bishalstha76@gmail.com'
 
@@ -1324,6 +1325,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
         <div ref={pageRef} className="colvy-mobile-pad">
           {/* The Settings menu shows only what this member may open. */}
+          {/* A page whose feature the plan doesn't include says so up top (lib/plan-gate). */}
+          <PlanPageLock pathname={pathname} />
           <SettingsAccess.Provider value={settingsAccess}>
             {children}
           </SettingsAccess.Provider>

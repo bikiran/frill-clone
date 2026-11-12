@@ -16,6 +16,8 @@ import VoiceDictationButton from '@/components/VoiceDictationButton'
 import { Icon, sendChannelGlyph, toolBtn } from '@/components/inbox/inbox-shared'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useInbox } from '@/components/inbox/InboxContext'
+import PlanLockCard from '@/components/PlanLockCard'
+import { channelNeedsInbox } from '@/lib/plan-gate'
 
 export default function InboxComposer() {
   const {
@@ -38,7 +40,7 @@ export default function InboxComposer() {
     setSendChannel, setShowChannelMenu, setShowEmoji, setShowQuickMenu, setShowRecordSale,
     setSmsCreditError, setStagedExpiry, setStagedMedia, setStatus, setTicketDesc, setTicketPriority,
     setTicketSubject, showChannelMenu, showEmailComposer, showEmoji, showQuickMenu, showToast,
-    smsCreditError, smsDestination, smsIncluded, smsOptOut, stagedExpiry, stagedMedia,
+    smsCreditError, smsDestination, smsIncluded, inboxIncluded, smsOptOut, stagedExpiry, stagedMedia,
     startComposerResize, stopVoiceNote, takeControl, teamMembers, templateVars, textareaRef,
     themeGradient, themeSolid, ticketDesc, ticketMode, ticketPriority, ticketSaving, ticketSubject,
     toLocalInput, wooOrders,
@@ -510,6 +512,13 @@ export default function InboxComposer() {
             customer (a mobile is on file) but the plan doesn't include SMS.
             This is the highest-intent moment to convert, so link straight to
             the upgrade page. */}
+        {/* Live chat, email, Instagram and Messenger replies are on the Inbox
+            plans (lib/plan-gate): the message arrived, replying needs an upgrade. */}
+        {selected && !internalMode && !inboxIncluded && channelNeedsInbox(selected.channel) && (
+          <div style={{ margin: '0 0 8px' }}>
+            <PlanLockCard feature="inbox" compact body="Replying by live chat, email, Instagram or Messenger is on the Inbox and Everything plans. You can still add internal notes." />
+          </div>
+        )}
         {selected && !internalMode && !smsIncluded && !!smsDestination() && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 8px', padding: '10px 12px', borderRadius: 10, background: 'linear-gradient(135deg, #fff1ee 0%, #ffe9f0 100%)', border: '1px solid #ffd0c4' }}>
             <span style={{ fontSize: 16, flexShrink: 0 }}>💬</span>

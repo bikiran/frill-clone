@@ -6,6 +6,8 @@ import { supabase } from '@/lib/supabase'
 import { authFetch } from '@/lib/auth-fetch'
 import { useCompanyUser, S } from '../_shared'
 import BrandLogo, { type BrandKey } from '@/components/BrandLogo'
+import { useEntitlements } from '@/lib/entitlements-client'
+import type { GatedFeature } from '@/lib/plan-gate'
 
 // Each channel points at the page that actually connects it. Channels that
 // aren't built yet say so honestly instead of offering a button that does
@@ -56,6 +58,7 @@ const GROUPS: { key: string; title: string; sub: string }[] = [
 export default function ChannelsSettings() {
   const router = useRouter()
   const { companyId, loading } = useCompanyUser()
+  const ent = useEntitlements()
   const [connected, setConnected] = useState<Record<string, boolean>>({})
   // WhatsApp goes request → pending → connected, set by Colvy (/api/whatsapp).
   const [waStatus, setWaStatus] = useState<string>('not_requested')
@@ -138,8 +141,12 @@ export default function ChannelsSettings() {
                 rejected: { label: 'Not approved', tone: 'bad', cta: 'Details', primary: false },
                 disabled: { label: 'Switched off', tone: '', cta: 'Details', primary: false },
               } as Record<string, { label: string; tone: string; cta: string; primary: boolean }>)[waStatus] || null : null
-              const label = wa ? wa.label : isConnected ? 'Connected' : ch.ready ? 'Not connected' : 'Coming soon'
-              const tone = wa ? wa.tone : isConnected ? 'on' : ''
+              // Channels on the Inbox plans (lib/plan-gate) say so before
+              // anyone tries to connect one. A connected one stays Connected.
+              const needs = CHANNEL_PLAN[ch.id]
+              const planLocked = !!needs && ent.ready && !!ent.companyId && !ent.hasFeature(needs) && !isConnected
+              const label = planLocked ? 'Inbox plan' : wa ? wa.label : isConnected ? 'Connected' : ch.ready ? 'Not connected' : 'Coming soon'
+              const tone = planLocked ? 'lock' : wa ? wa.tone : isConnected ? 'on' : ''
               const primary = wa ? wa.primary : !isConnected
               return (
                 <div key={ch.id} className={`chn-card${tone === 'on' ? ' on' : ''}`} onClick={() => ch.ready && router.push(ch.href)} role="link" tabIndex={-1}>
@@ -166,6 +173,9 @@ export default function ChannelsSettings() {
   )
 }
 
+// The channels whose connecting needs an Inbox plan feature (lib/plan-gate).
+const CHANNEL_PLAN: Record<string, GatedFeature> = { instagram: 'inbox', facebook: 'inbox', email: 'inbox', google: 'reviewDashboard' }
+
 const CHN_CSS = `
 .chn{max-width:980px}
 .chn button::before{display:none!important}
@@ -181,6 +191,7 @@ const CHN_CSS = `
 .chn-state.on{background:#dcfce7;color:#15803d}.chn-state.on i{background:#22c55e}
 .chn-state.warn{background:#fef3c7;color:#b45309}.chn-state.warn i{background:#f59e0b}
 .chn-state.bad{background:#fee2e2;color:#b91c1c}.chn-state.bad i{background:#ef4444}
+.chn-state.lock{background:#eef2ff;color:#4338ca}.chn-state.lock i{background:#6366f1}
 .chn-name{font-size:15.5px;font-weight:700;color:#111;letter-spacing:-.01em}
 .chn-note{flex:1;margin:4px 0 14px;font-size:13px;line-height:1.5;color:#71717a}
 .chn-btn{padding:8px 16px;border-radius:999px;border:0;background:#fff;color:#18181b;font:inherit;font-size:13px;font-weight:650;cursor:pointer;box-shadow:0 0 0 1.5px #e4e4e7;transition:background .15s}
