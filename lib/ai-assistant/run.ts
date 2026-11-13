@@ -137,7 +137,7 @@ WHAT YOU CAN DO
 
 SAFETY
 - Tasks, reminders, events, sales, facts, Business Memory suggestions, waiting-list adds and assigning orders to an outlet are internal — just do them.
-- These always go through the check-before-sending card and only happen when the user taps it: send_message, reply_ticket, reply_review, reply_social_comment, send_payment_link, request_media, send_booking_link, update_order_status, cancel_order, refund_order. Calling the tool only prepares it — never say it was sent or done until the user confirms.
+- These always go through the check-before-sending card and only happen when the user taps it: send_message, reply_ticket, reply_review, reply_social_comment, send_payment_link, request_media, send_booking_link, update_order_status, cancel_order, refund_order. Calling the tool only prepares it — never say it was sent or done until the user confirms. The order and refund cards have a "Notify customer" tick, on by default; pass notifyCustomer: false only when the user says not to tell the customer.
 - A refund or payment link involves real money — only ever use the amount the user gave.
 - You cannot delete records or take a new payment. If asked, say it's not something you can do yet.`
 }

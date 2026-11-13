@@ -297,6 +297,7 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
       properties: {
         orderId: { type: 'string', description: 'order id or order number' },
         status: { type: 'string', enum: ['processing', 'completed', 'on-hold'], description: 'the status to set (WooCommerce words; mapped for Shopify)' },
+        notifyCustomer: { type: 'boolean', description: 'false only when the user says not to tell / notify / message the customer about this; otherwise leave it out (the card shows a Notify customer tick, on by default)' },
       },
       required: ['orderId', 'status'],
     },
@@ -304,7 +305,7 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
   {
     name: 'cancel_order', safety: 'confirm',
     description: 'Cancel an order in the store. REQUIRES confirmation. Does not refund money — use refund_order for that.',
-    input_schema: { type: 'object', properties: { orderId: { type: 'string' }, reason: { type: 'string' } }, required: ['orderId'] },
+    input_schema: { type: 'object', properties: { orderId: { type: 'string' }, reason: { type: 'string' }, notifyCustomer: { type: 'boolean', description: 'false only when the user says not to tell / notify / message the customer about this; otherwise leave it out (the card shows a Notify customer tick, on by default)' }, }, required: ['orderId'] },
   },
   {
     name: 'refund_order', safety: 'confirm',
@@ -315,6 +316,7 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
         orderId: { type: 'string' },
         amount: { type: 'number', description: 'dollars to refund; omit for full' },
         reason: { type: 'string' },
+        notifyCustomer: { type: 'boolean', description: 'false only when the user says not to tell / notify / message the customer about this; otherwise leave it out (the card shows a Notify customer tick, on by default)' },
       },
       required: ['orderId'],
     },
@@ -1301,13 +1303,15 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     if (!order) return { ok: false, error: 'Order not found.' }
     if (!order.external_order_id) return { ok: false, error: 'That\'s a manual order — change its status on the Orders page.' }
     if (notWooOrder(order)) return { ok: false, error: notWooMessage(order, false) }
+    // "Notify customer" unticked on the card (lib/order-notify).
+    const quiet = args?.notifyCustomer === false
 
     const base = ctx.siteOrigin || process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
     let ok = false, err = ''
     try {
       const res = await fetch(`${base}/api/orders/status`, {
         method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ companyId: ctx.companyId, orderId: storeRef(order), status: wooStatus, conversationId: order.conversation_id || undefined }),
+        body: JSON.stringify({ companyId: ctx.companyId, orderId: storeRef(order), status: wooStatus, conversationId: order.conversation_id || undefined, notifyCustomer: quiet ? false : undefined }),
       })
       const data = await res.json().catch(() => ({}))
       ok = res.ok && data?.ok !== false
@@ -1320,8 +1324,8 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     if (order.sales_channel !== 'shopify') try { await D.from('orders').update({ status: mapWooStatus(wooStatus), payment_status: ['processing', 'completed'].includes(wooStatus) ? 'paid' : order.payment_status, updated_at: new Date().toISOString() }).eq('id', order.id) } catch {}
 
     const label = wooStatus === 'cancelled' ? 'cancelled' : wooStatus === 'completed' ? 'marked paid & completed' : wooStatus === 'processing' ? 'set to processing' : 'put on hold'
-    const card = { kind: 'order', title: `Order ${order.order_number || ''} ${label}`.trim(), lines: [order.customer_name, money(order.total, order.currency)].filter(Boolean), href: '/admin/orders' }
-    await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: name === 'cancel_order' ? 'Cancelled order' : 'Updated order status', tool: name, entityType: 'order', entityId: order.id, input: { orderNumber: order.order_number, status: wooStatus }, result: { ok: true } })
+    const card = { kind: 'order', title: `Order ${order.order_number || ''} ${label}`.trim(), lines: [order.customer_name, money(order.total, order.currency), quiet ? 'Customer not notified' : null].filter(Boolean), href: '/admin/orders' }
+    await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: name === 'cancel_order' ? 'Cancelled order' : 'Updated order status', tool: name, entityType: 'order', entityId: order.id, input: { orderNumber: order.order_number, status: wooStatus, notifyCustomer: !quiet }, result: { ok: true } })
     return { ok: true, entityType: 'order', entityId: order.id, card, undo: null }
   }
 
@@ -1349,13 +1353,14 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     if (notWooOrder(order)) return { ok: false, error: notWooMessage(order, true) }
     const amount = args?.amount != null ? Number(args.amount) : undefined
     if (amount != null && (!isFinite(amount) || amount <= 0)) return { ok: false, error: 'The refund amount looks wrong.' }
+    const quietRefund = args?.notifyCustomer === false
 
     const base = ctx.siteOrigin || process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
     let ok = false, err = ''
     try {
       const res = await fetch(`${base}/api/orders/refund`, {
         method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ companyId: ctx.companyId, actorUserId: ctx.userId || undefined, orderId: storeRef(order), amount: amount != null ? String(amount) : undefined, reason: args?.reason || undefined, conversationId: order.conversation_id || undefined }),
+        body: JSON.stringify({ companyId: ctx.companyId, actorUserId: ctx.userId || undefined, orderId: storeRef(order), amount: amount != null ? String(amount) : undefined, reason: args?.reason || undefined, conversationId: order.conversation_id || undefined, notifyCustomer: quietRefund ? false : undefined }),
       })
       const data = await res.json().catch(() => ({}))
       ok = res.ok && data?.ok !== false
@@ -1369,8 +1374,8 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     if (order.sales_channel !== 'shopify') try { await D.from('orders').update({ payment_status: 'refunded', ...(full ? { status: 'refunded' } : {}), updated_at: new Date().toISOString() }).eq('id', order.id) } catch {}
 
     const refunded = amount != null ? money(amount, order.currency) : money(order.total, order.currency)
-    const card = { kind: 'order', title: `Refunded ${refunded}`, lines: [`Order ${order.order_number || ''}`.trim(), order.customer_name].filter(Boolean), href: '/admin/orders' }
-    await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Refunded order', tool: name, entityType: 'order', entityId: order.id, input: { orderNumber: order.order_number, amount: amount ?? 'full' }, result: { ok: true } })
+    const card = { kind: 'order', title: `Refunded ${refunded}`, lines: [`Order ${order.order_number || ''}`.trim(), order.customer_name, quietRefund ? 'Customer not notified' : null].filter(Boolean), href: '/admin/orders' }
+    await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Refunded order', tool: name, entityType: 'order', entityId: order.id, input: { orderNumber: order.order_number, amount: amount ?? 'full', notifyCustomer: !quietRefund }, result: { ok: true } })
     return { ok: true, entityType: 'order', entityId: order.id, card, undo: null }
   }
 
@@ -1558,11 +1563,11 @@ export async function buildConfirmPreview(db: SupabaseClient, ctx: AssistantCont
     if (name === 'refund_order') {
       const amt = args?.amount != null ? Number(args.amount) : undefined
       const refundStr = amt != null ? money(amt, order.currency) : `${total} (full)`
-      return { ok: true, preview: { kind: 'refund_order', orderLabel, to: order.customer_name, amount: refundStr, warn: 'This refunds money to the customer through the store.', args: { orderId: order.id, amount: amt, reason: args?.reason } } }
+      return { ok: true, preview: { kind: 'refund_order', orderLabel, to: order.customer_name, amount: refundStr, warn: 'This refunds money to the customer through the store.', notify: args?.notifyCustomer !== false, args: { orderId: order.id, amount: amt, reason: args?.reason, notifyCustomer: args?.notifyCustomer !== false } } }
     }
     const wooStatus = name === 'cancel_order' ? 'cancelled' : String(args?.status || '')
     const action = name === 'cancel_order' ? 'Cancel this order' : `Set status to “${wooStatus}”`
-    return { ok: true, preview: { kind: 'order_status', orderLabel, to: order.customer_name, action, current: statusMeta(order.status).label, amount: total, args: { orderId: order.id, ...(name === 'cancel_order' ? { reason: args?.reason } : { status: wooStatus }) } } }
+    return { ok: true, preview: { kind: 'order_status', orderLabel, to: order.customer_name, action, current: statusMeta(order.status).label, amount: total, notify: args?.notifyCustomer !== false, args: { orderId: order.id, notifyCustomer: args?.notifyCustomer !== false, ...(name === 'cancel_order' ? { reason: args?.reason } : { status: wooStatus }) } } }
   }
   if (!canEdit(ctx.role as any)) return { ok: false, error: "You don't have permission to do that." }
 
