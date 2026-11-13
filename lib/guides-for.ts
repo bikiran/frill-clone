@@ -10,8 +10,9 @@ import type { GuideCard } from '@/components/marketing/RelatedGuides'
 // Pages no article links to by address, with the guides written for them.
 export const PICKED_GUIDES: Record<string, string[]> = {
   'industries/healthcare': ['physio-chiro-massage-clinics', 'appointments-regulars-waitlist'],
-  'industries/hospitality': ['restaurant-reservations-guide', 'cafes-restaurants-regulars'],
-  'for/service-businesses': ['cleaning-business-guide', 'mechanics-car-detailing', 'trades-quotes-jobs-guide'],
+  'industries/hospitality': ['restaurant-reservations-guide', 'cafes-restaurants-regulars', 'photographers-event-venues'],
+  'industries/agencies': ['who-uses-colvy'],
+  'for/service-businesses': ['cleaning-business-guide', 'home-services-garden-pool-pest', 'mechanics-car-detailing'],
   'for/restaurants': ['restaurant-reservations-guide', 'cafes-restaurants-regulars'],
   'for/real-estate': ['real-estate-enquiries'],
   'for/multi-location-retail': ['multi-location-retail-one-inbox', 'specialist-retail-receipts-accounts'],
