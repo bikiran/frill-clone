@@ -4,6 +4,8 @@ import JsonLd from '@/components/JsonLd'
 import { pageMeta } from '@/lib/seo'
 import { FOR_PAGES, FOR_SLUGS } from '@/lib/for-pages'
 import Client from './Client'
+import { GuidesProvider } from '@/components/marketing/RelatedGuides'
+import { guidesFor } from '@/lib/guides-for'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
@@ -43,7 +45,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
   return (
     <>
       <JsonLd data={ld} />
-      <Client slug={slug} />
+      <GuidesProvider guides={guidesFor(`for/${slug}`)}><Client slug={slug} /></GuidesProvider>
     </>
   )
 }

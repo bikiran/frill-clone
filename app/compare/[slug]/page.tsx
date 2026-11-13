@@ -6,6 +6,8 @@ import { COMPARE_SLUGS } from '@/lib/marketing-routes'
 import { faqJsonLd, breadcrumbJsonLd } from '@/lib/seo-faqs'
 import { COMPARE_META as META } from '@/lib/compare-meta'
 import Client from './Client'
+import { GuidesProvider } from '@/components/marketing/RelatedGuides'
+import { guidesFor } from '@/lib/guides-for'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
@@ -33,7 +35,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
   return (
     <>
       <JsonLd data={ld} />
-      <Client />
+      <GuidesProvider guides={guidesFor(`compare/${slug}`)}><Client /></GuidesProvider>
     </>
   )
 }
