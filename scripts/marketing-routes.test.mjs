@@ -132,7 +132,7 @@ console.log('every search description fits in a Google result (160 characters)')
     }
   }
   // Blog posts: the search description, else the excerpt
-  for (const f of ['lib/blog.ts', 'lib/blog-latest.ts', 'lib/blog-industries.ts']) {
+  for (const f of ['lib/blog.ts', 'lib/blog-latest.ts', 'lib/blog-industries.ts', 'lib/blog-industries-2.ts']) {
     for (const block of read(f).split(/\n\s+slug: '/).slice(1)) {
       const slug = block.slice(0, block.indexOf("'"))
       const seo = block.match(new RegExp(`\\n\\s+seoDescription: ${STR}`)), ex = block.match(new RegExp(`\\n\\s+excerpt: ${STR}`))
@@ -180,7 +180,7 @@ console.log('shared links show the page\'s own photo, and every photo exists')
 
 console.log('the guides picked for a page are real articles')
 {
-  const slugs = new Set(['lib/blog.ts', 'lib/blog-latest.ts', 'lib/blog-industries.ts'].flatMap(f => [...read(f).matchAll(/\n\s+slug: '([a-z0-9-]+)'/g)].map(m => m[1])))
+  const slugs = new Set(['lib/blog.ts', 'lib/blog-latest.ts', 'lib/blog-industries.ts', 'lib/blog-industries-2.ts'].flatMap(f => [...read(f).matchAll(/\n\s+slug: '([a-z0-9-]+)'/g)].map(m => m[1])))
   const src = read('lib/guides-for.ts')
   const block = src.slice(src.indexOf('PICKED_GUIDES'), src.indexOf('\n}\n', src.indexOf('PICKED_GUIDES')))
   const entries = [...block.matchAll(/^ {2}'([a-z0-9/-]+)': \[([^\]]*)\]/gm)]
