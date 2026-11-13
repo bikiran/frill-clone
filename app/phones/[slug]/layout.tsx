@@ -3,7 +3,7 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import JsonLd from '@/components/JsonLd'
 import { pageMeta } from '@/lib/seo'
-import { breadcrumbJsonLd } from '@/lib/seo-faqs'
+import { breadcrumbJsonLd, faqJsonLd } from '@/lib/seo-faqs'
 import { PHONE_SLUGS } from '@/lib/marketing-routes'
 import { PHONE_META } from '@/lib/page-meta'
 
@@ -36,7 +36,7 @@ export default async function Layout({ children, params }: { children: ReactNode
   const path = `phones/${slug}`
   return (
     <>
-      {m && <JsonLd data={[breadcrumbJsonLd(SITE_URL, [{ name: 'Phones', path: 'phones' }, { name: m.title, path }])]} />}
+      {m && <JsonLd data={[breadcrumbJsonLd(SITE_URL, [{ name: 'Phones', path: 'phones' }, { name: m.title, path }]), ...(faqJsonLd(path) ? [faqJsonLd(path)!] : [])]} />}
       {children}
     </>
   )

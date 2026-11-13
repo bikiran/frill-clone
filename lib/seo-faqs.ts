@@ -206,6 +206,77 @@ export const SEO_FAQS: Record<string, SeoFaq[]> = {
     { q: 'Does Colvy include AI agents?', a: 'Yes. The Inbox and Everything plans include five AI agents for support, bookings, sales follow-ups, order updates and reviews. They draft for approval at first, and you decide what they may do on their own.' },
     { q: 'How do I get started?', a: STARTER },
   ],
+  // ── Phone system (/phones/…) ────────────────────────────────────────────────
+  // Written around what people search for: call forwarding, call transfer for
+  // small business, auto attendant and IVR, web-based phone dialer, cloud call
+  // recording, phone call summaries, call analytics. True of Colvy today.
+  'phones/call-forwarding': [
+    { q: 'How does call forwarding work in Colvy?', a: 'Your Colvy business number forwards calls to an Australian mobile or landline: every call, only when you’re closed (by your opening hours), after your team’s phones have rung, or when a caller picks it from your phone menu. Whoever answers hears who the call is for and presses 1 to take it, so their own voicemail can’t swallow the call.' },
+    { q: 'How much does call forwarding cost in Australia?', a: 'The Business number plan is A$35 a month, all in: one Australian number (02, 03, 07, 08 or an 04 mobile), forwarding to your mobile, voicemail and every call in the Colvy app, with 100 call minutes a month and 20c a minute after that. Teams on the Inbox or Everything plan add numbers for A$15 a month each.' },
+    { q: 'Can I forward calls only after hours?', a: 'Yes. Choose “only when closed” and calls ring your team during opening hours and forward to your mobile when you’re closed, including the holiday hours on your Google Business Profile.' },
+    { q: 'What happens if nobody answers the forwarded call?', a: 'The call carries on to your voicemail, a missed-call text or the AI receptionist, whichever you’ve set up, and it’s logged in the inbox like every other call, with the recording, transcript and summary.' },
+    { q: 'Is call forwarding the same as call transfer?', a: 'Not quite. Forwarding sends incoming calls to another number before anyone answers. A transfer passes a call you’ve already answered to a colleague. Colvy does both: forwarding from your number’s call routing, and warm transfers from a live call.' },
+  ],
+  'phones/warm-transfer': [
+    { q: 'What is a warm call transfer?', a: 'A warm transfer is when you speak to the colleague first, tell them who’s calling and what they need, then pass the caller across. The customer doesn’t have to repeat themselves, which is why it suits small businesses where every call matters.' },
+    { q: 'Can I transfer a call to a colleague in Colvy?', a: 'Yes. During a call, choose a teammate, brief them privately, then hand the call over. The customer’s history, notes and orders are on their screen when they pick up.' },
+    { q: 'Do I need a desk phone to transfer calls?', a: 'No. Calls run in the browser and the Colvy app on iOS and Android, so transfers work wherever your team is.' },
+    { q: 'How is call transfer different from call forwarding?', a: 'A transfer moves a call you’ve already answered. Forwarding sends incoming calls to another number, such as your mobile, before anyone answers. Colvy does both.' },
+  ],
+  'phones/ivr': [
+    { q: 'What’s the difference between an auto attendant and an IVR?', a: 'People use the words for the same thing: a recorded greeting that asks callers to press a key (“For sales, press 1”) and sends them to the right place. Colvy’s auto attendant is a press-1 menu with up to 10 options on keys 0 to 9.' },
+    { q: 'What can each menu option do?', a: 'Ring the team, ring people in order, forward to a mobile, take a voicemail, hand over to the AI receptionist, play a message or text the caller a link or address.' },
+    { q: 'Can I have a different menu after hours?', a: 'Yes. Colvy switches to your after-hours menu by your opening hours, so callers hear the right options when you’re closed.' },
+    { q: 'What if the caller doesn’t press anything?', a: 'The menu plays once more, then your default action runs: ringing everyone unless you pick something else. The inbox shows what each caller pressed, like “Pressed 2 · Support”.' },
+  ],
+  'phones/browser-dialer': [
+    { q: 'Is Colvy a web-based phone dialer?', a: 'Yes. Make and take business calls from any modern browser tab, with nothing to install and no desk phone. The same calls work in the Colvy app on iOS and Android.' },
+    { q: 'Can I call from my business number, not my personal one?', a: 'Yes. Calls go out from your Colvy business number, so customers see the business, never your personal mobile.' },
+    { q: 'Does the dialer show who’s calling?', a: 'Yes. Incoming calls ring in the browser with the caller identified and their history, orders and notes on screen, and every call is logged on the customer’s conversation.' },
+    { q: 'Which numbers can I get?', a: 'An Australian local number (02, 03, 07 or 08), an 04 mobile or an 1800 number when available, or keep your current number by porting it to Colvy.' },
+  ],
+  'phones/click-to-dial': [
+    { q: 'What is click to call?', a: 'Click to call (click to dial) means calling a customer with one click on their number, instead of copying it into a phone. In Colvy every phone number in a conversation, contact or order is clickable.' },
+    { q: 'Do I need a softphone or headset app?', a: 'No. Calls run in the browser and the Colvy app. A headset helps, but there’s nothing to install.' },
+    { q: 'Are click-to-call calls logged?', a: 'Yes. Each call is saved on the customer’s conversation, and recorded calls get a transcript and an AI summary.' },
+  ],
+  'phones/call-recording': [
+    { q: 'Does Colvy record calls in the cloud?', a: 'Yes. Calls are recorded in the cloud and saved on the customer’s conversation with a full transcript and an AI summary, so there’s no recorder to run and nothing to download.' },
+    { q: 'Do I get a summary of every phone call?', a: 'Every recorded call gets a short AI summary on the thread, with the key details and suggested follow-up tasks, so anyone on the team can catch up without listening to the whole call.' },
+    { q: 'Can I search what was said on a call?', a: 'Yes. Transcripts are searchable, so you can find a call by a word, an order number or a name.' },
+    { q: 'Where do recordings go: email or the inbox?', a: 'Colvy keeps each recording, transcript and summary on the customer’s conversation rather than in someone’s email, so the whole team can play it, read it and follow up from one place, on the web or in the app.' },
+    { q: 'Do I need to tell callers they’re being recorded?', a: 'Recording laws differ between Australian states, so check what applies to you. Many businesses mention it at the start of the call; if you use a press-1 menu, you can add it to the menu greeting.' },
+  ],
+  'phones/call-reporting': [
+    { q: 'What call analytics does Colvy give me?', a: 'Call volume, answered and missed calls, answer and miss rates, talk time and busy hours, by person and for the whole team, so you can staff the busy times and follow up the missed ones.' },
+    { q: 'Can I see total talk time?', a: 'Yes. The call log shows total talk time for today, the last 7 days and the last 30 days, and every call’s length.' },
+    { q: 'Do missed calls show up?', a: 'Yes. Missed calls are listed with the caller, and a missed-call text can go out automatically so the conversation keeps going.' },
+  ],
+  'phones/ai-call-intelligence': [
+    { q: 'What is phone call intelligence?', a: 'Phone call intelligence uses AI to make sense of calls: who’s calling and why before you answer, and a transcript, summary and next steps after. Colvy does both, on the customer’s conversation.' },
+    { q: 'What does Colvy show when the phone rings?', a: 'The caller’s name if they’re a customer, their recent conversations, orders and notes, and a hint at why they might be calling, so you can answer informed.' },
+    { q: 'What happens after the call?', a: 'Recorded calls are transcribed and summarised, and AI drafts follow-up tasks you can keep or discard.' },
+  ],
+  'phones/ai-receptionist': [
+    { q: 'Can the AI receptionist answer order inquiries?', a: 'Yes, when you turn it on. If the caller’s number matches a customer, it can look up their orders; for any other order it asks for the order number and the email or postcode on it before sharing anything. It can also answer opening hours, stock questions and free booking times.' },
+    { q: 'When does the AI receptionist answer?', a: 'You choose: out of hours, when nobody picks up, or always. It handles common questions, takes messages and can text callers what they need, such as an address or a link.' },
+    { q: 'Do I see what the AI said?', a: 'Yes. Each AI call appears in the inbox with a transcript and summary, beside your team’s calls in the Command Centre.' },
+  ],
+  'phones/ai-actions': [
+    { q: 'Can calls turn into tasks and reminders?', a: 'Yes. After a call, AI drafts the follow-up and suggests tasks with due dates, which you can keep, change or discard. Colvy reminds the person a task is assigned to when it’s due.' },
+    { q: 'Does the AI change anything without me?', a: 'No. Suggested tasks and follow-ups are drafts until someone on your team keeps them.' },
+  ],
+  'phones/voip': [
+    { q: 'Is Colvy an online phone system for small business?', a: 'Yes. Colvy is a cloud (VoIP) phone system built into a shared inbox: business numbers, ringing rules, a press-1 menu, voicemail, call recording, transcripts and reports, with calls in the browser and the Colvy app. No PBX or desk phones.' },
+    { q: 'How much does a business phone number cost?', a: 'Numbers are A$15 a month each on the Inbox and Everything plans (1800 numbers A$25). If you only want a number that forwards to your mobile, the Business number plan is A$35 a month all in, with 100 call minutes.' },
+    { q: 'Can I keep my existing number?', a: 'Yes. Request a port in Colvy and our team handles it with the carriers, typically within 1 to 3 weeks.' },
+    { q: 'Can I make international calls?', a: 'Not yet. Colvy numbers are Australian, and international calling from the dialer is on the way.' },
+  ],
+  'phones/numbers-porting': [
+    { q: 'What telephone numbers can my business get?', a: 'An Australian local number (02, 03, 07 or 08), an 04 mobile number for calls and texts, or an 1800 number when available, usually ready within a couple of minutes of ordering online.' },
+    { q: 'How long does porting a number take?', a: 'Most ports take 1 to 3 weeks. Send one request in Colvy and our team lodges it with the carriers and keeps you posted. Keep your current service until we tell you the move is complete.' },
+    { q: 'What does a number cost after porting?', a: 'A$15 a month, like any Colvy number, on the Inbox and Everything plans.' },
+  ],
   'compare/manychat': [
     { q: 'Is Colvy a ManyChat alternative?', a: 'Colvy handles Instagram and Messenger conversations in a shared inbox where your team and AI agents reply together, and adds SMS, calls, email, live chat, reviews and store orders, so conversations turn into sales and bookings.' },
     { q: 'Can Colvy reply to Instagram comments and DMs?', a: 'Yes. Instagram DMs arrive in the inbox, and the Social Engagement page lets you reply to comments, message commenters privately or hide harmful ones.' },
