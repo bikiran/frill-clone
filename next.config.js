@@ -44,6 +44,9 @@ const nextConfig = {
       // These industry pages became workflow pages under /for.
       { source: '/industries/ecommerce', destination: '/for/ecommerce', permanent: true },
       { source: '/industries/real-estate', destination: '/for/real-estate', permanent: true },
+      // One address for search engines: www.colvy.com (robots.txt included)
+      // goes to colvy.com. Needs www pointed at this deployment in DNS.
+      { source: '/:path*', has: [{ type: 'host', value: 'www.colvy.com' }], destination: 'https://colvy.com/:path*', permanent: true },
     ]
   },
   // Colvy MCP: OAuth discovery documents live under /.well-known. The path-

@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
+import SeoFaqSection from '@/components/marketing/SeoFaqSection'
 import FeatureIcon from '@/components/FeatureIcon'
 import { SellioStyles, SCta, SCrumb, SPill, SGhost, STrust, SHead, SBento, SStory, SStats, SMore } from '@/components/marketing/Sellio'
 import ComingSoonPill from '@/components/ComingSoonPill'
@@ -517,6 +518,9 @@ export default function PhoneFeaturePage() {
           </Reveal>
         </section>
       )}
+
+      {/* QUESTIONS (lib/seo-faqs.ts; the layout publishes them as FAQPage data) */}
+      <SeoFaqSection path={`phones/${slug}`} accent={accent} dark={dark} />
 
       {/* MORE PHONE FEATURES */}
       <SMore eyebrow="One phone system" title="More in Phones" grey="Every feature works together" accent={accent} dark={dark}

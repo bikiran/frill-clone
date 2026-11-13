@@ -9,6 +9,336 @@ const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c'
 
 export const LATEST_POSTS: BlogPost[] = [
   {
+    slug: 'call-forwarding-small-business-australia',
+    cover: '/phones/call-forwarding.jpg',
+    title: 'Call forwarding for small business in Australia: how it works and what it costs',
+    excerpt: 'Forward your business number to your mobile, always or only after hours, without giving out your personal number. How call forwarding works, the settings that matter, what happens when you miss the call, and what it costs.',
+    seoDescription: 'How business call forwarding works in Australia: forward your number to a mobile always or after hours, the settings that matter, and what it costs.',
+    category: 'Playbooks', accent: BLUE, icon: 'phone',
+    date: '2026-11-13T09:00:00+11:00', dateLabel: 'Nov 13, 2026', readTime: '7 min read', author: 'The Colvy Team',
+    takeaways: [
+      'Call forwarding sends calls for your business number to another phone, usually your mobile, so you never have to hand out your personal number.',
+      'Decide when calls forward: always, only when you’re closed, or after your team’s phones have rung.',
+      'Turn on “press 1 to accept” so your mobile’s voicemail can’t quietly take the business call.',
+      'Plan for the missed call too: business voicemail, a missed-call text or an AI receptionist.',
+      'On Colvy, a number that forwards to your mobile is A$35 a month all in, with 100 call minutes.',
+    ],
+    content: `A customer wants a local number for their business, an 03 for Melbourne say, and they want calls to that number to ring their own mobile. That’s it. No office, no desk phone, no receptionist. It’s one of the most common things a small business asks for, and it has a name: **call forwarding**.
+
+This guide explains how business call forwarding works in Australia, the handful of settings that make it work well, what happens when you can’t pick up, and what it costs.
+
+## What call forwarding is (and isn’t)
+
+Call forwarding sends calls made to one number on to another number. Customers ring your business number; your mobile rings. They never see your personal number, and you can change where calls go at any time without reprinting a single business card.
+
+It’s easy to mix up with **call transfer**. Forwarding happens before anyone answers. A transfer is when you’ve already answered and pass the call to someone else. Most small businesses want both eventually; we cover transfers in [Call transfer for small business](/blog/call-transfer-small-business).
+
+## When should calls forward?
+
+“Always” is the simplest choice, but it’s rarely the only one you want. With Colvy’s [call forwarding](/phones/call-forwarding) you choose:
+
+- **Every call.** Your business number simply rings your mobile. Good for sole traders and anyone always on the road.
+- **Only when you’re closed.** During opening hours calls ring your team in the browser or the Colvy app; after hours they forward to your mobile. Colvy goes by your opening hours, including the holiday hours on your Google Business Profile.
+- **After your team’s phones have rung.** Ring the team first, in order or all at once, and forward to a mobile only if nobody picks up. See [cascade ring](/phones/cascade-ring) and [simultaneous ring](/phones/simultaneous-ring).
+- **When a caller chooses it.** In a press-1 menu, one option can forward to a mobile: “For after-hours emergencies, press 9.” More on menus in [Auto attendant vs IVR](/blog/auto-attendant-vs-ivr).
+
+## The settings that make forwarding work
+
+### Ring time
+How long the forwarded call rings before Colvy gives up on it. Colvy uses 25 seconds unless you change it. Too short and you miss calls while you find your phone; too long and callers hang up before your fallback plays.
+
+### “Press 1 to accept”
+This is the setting most people don’t know they need. When a forwarded call reaches your mobile and you don’t answer, **your mobile’s own voicemail picks up**. The caller leaves a message in your personal voicemail, the call looks “answered”, and your business never knows it happened.
+
+With press 1 to accept (on by default in Colvy), whoever answers hears who the call is for and presses 1 to take it. A voicemail can’t press 1, so if your phone’s voicemail answers, the call comes back to Colvy and carries on to your business voicemail instead.
+
+### Which number shows on your mobile
+Colvy shows your business number when it forwards a call, so you know it’s a work call before you answer. If you’d rather see the caller’s own number, you can choose that instead.
+
+## What happens when you can’t answer
+
+Forwarding gets the call to you. It doesn’t help when you’re driving, on a job or asleep. Decide what happens to the calls you miss:
+
+- **Business voicemail** that’s transcribed and summarised, so you read it instead of dialling in. See [voicemail](/phones/voicemail).
+- **A missed-call text** that goes to the caller straight away, so the conversation carries on by SMS instead of going cold. See [missed call text back](/phones/missed-call-text-back).
+- **An AI receptionist** that answers when you don’t, handles the common questions and takes a message. See [AI receptionist](/phones/ai-receptionist).
+
+Every forwarded call is logged in Colvy like any other call, with the recording, a transcript and a summary, so nothing lives only in your mobile’s call history.
+
+## What does call forwarding cost?
+
+Forwarding costs vary a lot between providers. Watch for per-minute charges on forwarded calls, separate fees for the number, and add-ons for voicemail or call recording.
+
+On Colvy there are two ways to have a number:
+
+- **Just want calls on your mobile?** The [Business number plan](/business-phone-number-australia#plans) is **A$35 a month, all in**: one Australian number (02, 03, 07, 08 or an 04 mobile), forwarding always or only after hours, voicemail, every call in the Colvy app, and 100 call minutes a month, then 20c a minute. Billed monthly.
+- **Want the whole team answering in a shared inbox?** Numbers are **A$15 a month each** on the Inbox and Everything plans, with calls, SMS, email and chat in one place.
+
+Already have a number customers know? You can [move it to Colvy](/phones/numbers-porting); most ports take 1 to 3 weeks.
+
+## A quick setup checklist
+
+1. Get a number (or request a port) and choose where calls should go.
+2. Pick when they forward: always, only when closed, or after the team has rung.
+3. Leave press 1 to accept on, and set a ring time you can actually answer within.
+4. Set your opening hours, so “only when closed” knows when you’re closed.
+5. Choose what happens to missed calls: voicemail, a missed-call text or the AI receptionist.
+6. Make a test call from someone else’s phone, during and outside opening hours.
+
+That’s all most businesses need: a number customers can call, that rings you where you are, and a plan for the calls you can’t take.`,
+  },
+  {
+    slug: 'call-transfer-small-business',
+    cover: '/phones/warm-transfer.jpg',
+    title: 'Call transfer for small business: warm transfers, forwarding and ring groups explained',
+    excerpt: 'Warm transfer, cold transfer, call forwarding, ring groups. What each one means, which one fits which moment, and how to hand a caller to the right person without making them repeat themselves.',
+    seoDescription: 'Warm transfer, call forwarding and ring groups explained for small business: what each does, when to use it, and how to hand calls over smoothly.',
+    category: 'Playbooks', accent: GREEN, icon: 'phone',
+    date: '2026-11-13T08:00:00+11:00', dateLabel: 'Nov 13, 2026', readTime: '6 min read', author: 'The Colvy Team',
+    takeaways: [
+      'A transfer moves a call someone has already answered; forwarding moves a call before anyone answers.',
+      'Warm transfers (brief the colleague first) beat cold transfers for anything that isn’t trivial.',
+      'Ring groups decide who answers first: everyone at once, or one person at a time in order.',
+      'The caller’s history should travel with the call, so nobody asks them to start again.',
+    ],
+    content: `“Let me put you through.” Then silence, a ring, and a colleague who says “Hi, how can I help?” and the customer has to explain everything again. Small businesses lose goodwill in exactly that moment.
+
+Here’s what the call-handling terms mean, which one fits which situation, and how to hand calls over well.
+
+## The four terms, in plain words
+
+- **Cold transfer:** you answer, then send the caller to a colleague without speaking to them first. Fast, but the colleague starts from zero.
+- **Warm transfer:** you answer, put the caller on hold, tell your colleague who’s calling and what they need, then bring them together. A little slower, much better for the customer.
+- **Call forwarding:** calls for your number go to another number, such as your mobile, before anyone answers. See [Call forwarding for small business in Australia](/blog/call-forwarding-small-business-australia).
+- **Ring group:** a set of people whose phones ring for incoming calls, either all at once or one after another.
+
+## When to use which
+
+**Use a warm transfer** when the caller has explained something: a complaint, a quote, a question about an order. Thirty seconds of briefing saves them three minutes of repeating themselves. Colvy’s [warm transfer](/phones/warm-transfer) lets you talk to your colleague privately first, then hand the call over.
+
+**Forward the call** when there’s nobody to answer it where it’s ringing: after hours, on a job, or when you work alone. You can forward always, only when closed, or after the team has had a chance to answer.
+
+**Set up a ring group** so incoming calls reach the right people in the first place:
+
+- [Simultaneous ring](/phones/simultaneous-ring) rings everyone available at once. The fastest hand wins. Good for a shop floor where whoever is free should answer.
+- [Cascade ring](/phones/cascade-ring) rings one person at a time in the order you choose, then everyone, then a mobile if you like. Good when one person usually owns the phone and others back them up.
+
+In Colvy, teammates who are offline or already on a call are skipped, so callers don’t sit listening to a phone nobody can answer.
+
+## Make the context travel with the call
+
+The real problem with transfers isn’t the button. It’s that the second person doesn’t know what the first one knows. In Colvy every call sits on the customer’s conversation, so whoever picks up sees:
+
+- the customer’s name and recent messages, by SMS, email, chat or social,
+- their orders and bookings,
+- notes from the team, and
+- earlier calls with their summaries.
+
+A transfer then sounds like “Hi Sam, I hear the replacement filter arrived damaged. Let’s sort that out,” not “How can I help?”
+
+## A simple call-handling plan for a small team
+
+1. **During opening hours:** ring the front counter first, then everyone after 20 seconds.
+2. **When someone needs a specialist:** warm-transfer, with a one-line brief.
+3. **After hours:** forward to the owner’s mobile, with press 1 to accept on.
+4. **When nobody answers:** voicemail that’s transcribed into the inbox, or a missed-call text.
+5. **Every call:** logged on the customer’s conversation, so the next person knows what happened.
+
+You don’t need a switchboard or desk phones for any of this. Colvy runs calls in the browser and the Colvy app on iOS and Android, so transfers and ring groups work wherever your team is.`,
+  },
+  {
+    slug: 'auto-attendant-vs-ivr',
+    cover: '/phones/ivr.jpg',
+    title: 'Auto attendant vs IVR: what a small business phone menu should do',
+    excerpt: 'Auto attendant and IVR usually mean the same thing: a greeting that asks callers to press a key. How to write a menu callers don’t hate, how many options to offer, what to do after hours, and the mistakes to avoid.',
+    seoDescription: 'Auto attendant vs IVR, explained for small business: how press-1 phone menus work, how to write one callers don’t hate, and what to do after hours.',
+    category: 'Playbooks', accent: TEAL, icon: 'phone',
+    date: '2026-11-12T09:00:00+11:00', dateLabel: 'Nov 12, 2026', readTime: '6 min read', author: 'The Colvy Team',
+    takeaways: [
+      'For a small business, an auto attendant and an IVR are the same thing: a greeting with “press 1, press 2” options.',
+      'Keep it to three or four options, and put the most common reason first.',
+      'Have a separate after-hours menu, and always give callers a way to leave a message.',
+      'Decide what happens when nobody presses anything; ringing the team is a safe default.',
+    ],
+    content: `“Thank you for calling. Please listen carefully, as our options have changed.” Few phrases make callers sigh faster. A phone menu can still be the best thing on your phone line, as long as it’s short and sends people somewhere useful.
+
+## Auto attendant or IVR?
+
+You’ll see both terms. Strictly, **IVR** (interactive voice response) covers any system where callers interact by keypad or voice, while an **auto attendant** is the virtual receptionist that greets callers and routes them by key press. For a small business they describe the same thing: a greeting that says “For sales, press 1. For support, press 2,” and sends each caller to the right place.
+
+Colvy calls it an [auto attendant and IVR](/phones/ivr): a press-1 menu on your business number with up to 10 options, on keys 0 to 9.
+
+## What a menu option can do
+
+Each key does one thing. In Colvy that can be:
+
+- ring the whole team,
+- ring people one after another, in order,
+- forward to a mobile,
+- take a voicemail,
+- hand the call to the [AI receptionist](/phones/ai-receptionist),
+- play a message (your address, say, or holiday hours), or
+- text the caller a link, such as your booking page or directions.
+
+That last one is underrated. “To get our booking link by text, press 3” answers a lot of calls without anyone picking up.
+
+## How to write a menu callers don’t hate
+
+1. **Lead with your name and one sentence.** “Thanks for calling Harbour Pets.” Skip the history.
+2. **Three or four options is plenty.** Every extra option is another few seconds of listening.
+3. **Put the most common reason first.** If most calls are about orders, that’s option 1.
+4. **Say the destination before the number.** “For orders, press 1” is easier to follow than “Press 1 for orders.”
+5. **Offer a shortcut to a person** if you have people to answer. A menu that traps callers feels worse than no menu.
+
+Colvy reads your greeting and options aloud in the same voice as your voicemail greeting, so the whole line sounds consistent.
+
+## Timing and the “nobody pressed anything” case
+
+Callers in Colvy get 6 seconds to press a key, or anything from 3 to 15 seconds you choose. If they press a wrong key or nothing at all, the menu plays once more, then your default action runs: ringing everyone, unless you choose something else. Ringing the team is a safe default; people who don’t press anything are often older callers or people on speakerphone who just want a human.
+
+## After hours
+
+Your menu during opening hours and after hours shouldn’t be the same. After hours, “press 1 for sales” leads nowhere. Colvy switches to a separate after-hours menu by your opening hours. A good after-hours menu might offer:
+
+- your hours and address,
+- a voicemail,
+- a text with your booking or ordering link, and
+- for genuine emergencies, forwarding to a mobile.
+
+## See what callers choose
+
+A menu is only as good as its options, and you can’t improve options you can’t measure. In Colvy the inbox and call history show what each caller pressed, like “Pressed 2 · Support”, and voicemails are tagged with the option they were left under. If nobody ever presses 4, drop it. If everyone presses 1, maybe those calls should skip the menu altogether.
+
+## Do you need a menu at all?
+
+Not always. A sole trader with one service doesn’t. A menu earns its place when calls go to different people or need different answers, or when a lot of calls can be answered with a text or a recorded message. Start small, watch what callers press, and adjust.`,
+  },
+  {
+    slug: 'online-phone-system-small-business',
+    cover: '/phones/browser-dialer.jpg',
+    title: 'An online phone system for small business: web-based dialer, click to call and business numbers',
+    excerpt: 'You don’t need desk phones or a PBX to run a business phone line. What an online (VoIP) phone system is, what to look for, how a web-based dialer and click to call work, and how to get or keep a business number.',
+    seoDescription: 'What an online phone system for small business is, how a web-based dialer and click to call work, and how to get or keep an Australian business number.',
+    category: 'Playbooks', accent: BLUE, icon: 'phone',
+    date: '2026-11-12T08:00:00+11:00', dateLabel: 'Nov 12, 2026', readTime: '6 min read', author: 'The Colvy Team',
+    takeaways: [
+      'An online phone system runs your business number in the cloud, so calls ring in a browser and an app instead of on desk phones.',
+      'Look for: Australian numbers, porting, ring rules, voicemail, recording and reports, all in one place.',
+      'A web-based dialer plus click to call removes the copy-paste-dial routine.',
+      'The real win is calls sitting beside the customer’s messages and orders, not in a separate system.',
+    ],
+    content: `Ten years ago a business phone system meant a box in a cupboard, desk phones and a technician. Today most small businesses run their phones online: the number lives in the cloud and calls ring in a browser tab and on a mobile app.
+
+## What is an online phone system?
+
+An online phone system, also called a cloud or **VoIP** phone system, handles your business number over the internet. Calls ring on computers and mobiles; there’s no PBX hardware and nothing to install in the office. You manage numbers, who rings and what happens to missed calls from a web page.
+
+Colvy’s [online phone system](/phones/voip) is built into a shared inbox, so calls sit beside SMS, email, live chat and social messages.
+
+## What to look for
+
+- **Australian numbers.** A local 02, 03, 07 or 08 number, an 04 mobile for calls and texts, or an 1800 number.
+- **Porting.** Keeping the number customers already know. Colvy’s team handles [number porting](/phones/numbers-porting) with the carriers; most ports take 1 to 3 weeks.
+- **Ringing rules.** Ring everyone at once, ring in order, a [press-1 menu](/phones/ivr), [forwarding to a mobile](/phones/call-forwarding).
+- **Missed calls.** Voicemail that’s transcribed, a missed-call text, or an AI receptionist.
+- **Recording and reports.** Recordings with transcripts, and [call analytics](/phones/call-reporting) that show volume, missed calls and busy hours.
+- **Apps.** A [mobile app](/phones/mobile-app) on iOS and Android, so the business line goes where you go, without ever showing your personal number.
+
+## The web-based phone dialer
+
+A [web-based phone dialer](/phones/browser-dialer) puts a full phone in a browser tab. You make and take business calls from any computer with a headset, and incoming calls ring with the caller identified and their history on screen. There’s no softphone to install and nothing for IT to configure.
+
+On the Colvy side of the call, the browser and app use the Opus HD codec, so your voice comes through fuller and clearer. Calls to ordinary phone lines are still limited by the phone network.
+
+## Click to call
+
+[Click to call](/phones/click-to-dial) means exactly what it says: click a phone number and the call starts. In Colvy every number in a conversation, contact or order is clickable, so calling a customer back is one click from the message they sent you, and the call is logged on their conversation.
+
+## Why calls belong next to messages
+
+The biggest change isn’t technical. When calls live in the same place as everything else a customer has sent you, the person who picks up already knows:
+
+- who’s calling, and their last few messages,
+- their orders and bookings,
+- what was said on the last call.
+
+That’s what makes a small team sound organised on the phone.
+
+## What it costs
+
+On Colvy, numbers are A$15 a month each on the Inbox and Everything plans, and an 1800 number is A$25. If you only need one number that forwards to your mobile, the Business number plan is A$35 a month all in, with 100 call minutes. International calling from the Colvy dialer is on the way; today Colvy numbers are Australian.
+
+## Getting started
+
+1. Choose a new number or request a port.
+2. Add your team, and decide who rings for incoming calls.
+3. Set opening hours and what happens after hours.
+4. Install the app on the phones that should ring.
+5. Make a test call in and out.
+
+Most small businesses are taking calls the same day.`,
+  },
+  {
+    slug: 'call-recording-summaries-analytics',
+    cover: '/phones/call-recording.jpg',
+    title: 'Cloud call recording, call summaries and call analytics: what small teams actually need',
+    excerpt: 'Recording every call is easy. Getting value from recordings is the hard part. How cloud call recording, transcripts, phone call summaries and call analytics fit together, and what small teams actually use.',
+    seoDescription: 'How cloud call recording, transcripts, phone call summaries and call analytics fit together for a small business, and what you should actually use.',
+    category: 'Playbooks', accent: PURPLE, icon: 'phone',
+    date: '2026-11-11T09:00:00+11:00', dateLabel: 'Nov 11, 2026', readTime: '6 min read', author: 'The Colvy Team',
+    takeaways: [
+      'A recording nobody listens to is just storage. Transcripts and summaries are what make calls useful.',
+      'Keep recordings with the customer’s conversation, not in someone’s email, so the whole team can find them.',
+      'Call analytics answer two practical questions: when do we miss calls, and who’s handling them.',
+      'Recording laws differ between Australian states, so check what applies to you.',
+    ],
+    content: `Most phone systems can record calls. Few small businesses ever listen to the recordings. A call recording is only useful when you can find it, skim it and act on it, which is where transcripts, call summaries and call analytics come in.
+
+## Cloud call recording
+
+[Cloud call recording](/phones/call-recording) means calls are recorded by your phone system and stored online, with no recorder, no app on your mobile and nothing to download. In Colvy each recorded call is saved on the customer’s conversation along with:
+
+- the recording,
+- a transcript, grouped by speaker, and
+- a short AI summary with suggested to-dos.
+
+## Why recordings belong in the inbox, not in email
+
+A common request is “record the call and send it to email”. It works, until you need it. The recording sits in one person’s inbox, nobody else can find it, and it isn’t connected to the customer.
+
+Colvy keeps the recording, transcript and summary on the customer’s conversation instead. Anyone on the team, on the web or in the app, can open the customer and see every call next to their messages and orders. Transcripts are searchable, so you can find a call by a word, an order number or a name.
+
+## Phone call summaries
+
+A summary is the part people actually read. After a call, Colvy writes the gist in a few lines and suggests follow-up tasks, such as “Send the quote for the 4-foot tank by Friday.” Keep a task with one tap and it’s assigned and due; the app reminds whoever it’s assigned to when it’s due. We go deeper in [Every phone call, written up](/blog/phone-calls-written-up).
+
+## Phone call intelligence
+
+**Phone call intelligence** is the broader idea of using AI on calls. Before the call, Colvy’s [call intelligence](/phones/ai-call-intelligence) shows who’s calling, their recent conversations and orders, and a hint at why they might be calling. After it, the transcript and summary do the remembering. The point isn’t analysis for its own sake; it’s answering every call already knowing the customer.
+
+## Call analytics
+
+You don’t need a wall of charts. [Call analytics](/phones/call-reporting) for a small business should answer a few questions:
+
+- **How many calls do we get, and when?** A busy-hours view shows when to have someone free.
+- **How many do we miss?** Answer and miss rates, and the list of missed callers to call back.
+- **Who’s handling them?** Calls and talk time by person.
+- **How much time goes on the phone?** Colvy’s call log shows total talk time for today, 7 days and 30 days, split into incoming and outgoing.
+
+## Recording and the law
+
+Australian rules on recording calls differ by state and situation, so check what applies to your business. Many businesses simply tell callers at the start of the call. If you use a [press-1 menu](/phones/ivr), you can include it in the menu greeting.
+
+## What to set up first
+
+1. Turn recording on for your business number.
+2. Read the summaries for a week before deciding you need anything more.
+3. Keep the to-dos that matter, and let the rest go.
+4. Check missed calls and busy hours each week, and adjust who rings when.
+
+That covers most of what “call intelligence” promises, without a separate tool.`,
+  },
+  {
     slug: 'restaurant-reservations-guide',
     cover: '/blog/restaurant-reservations-guide/cover.jpg',
     title: 'Full tables, fewer no-shows: a practical table bookings guide for restaurants and cafés',
