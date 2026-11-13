@@ -25,6 +25,8 @@ type Feat = {
   bands: Band[]
   stats: { big: string; label: string }[]
   ctaHead: string
+  // A price to say plainly on the page (shown after the story bands).
+  price?: { eyebrow: string; big: string; unit: string; note: string; bullets: string[]; cta: { label: string; href: string }; other?: { label: string; href: string } }
   // Not live yet: the page shows a "Coming soon" pill and its copy is in the
   // future tense, with "Available today" pointing at the nearest real feature.
   comingSoon?: ComingSoonKey
@@ -149,6 +151,12 @@ const PH: Record<string, Feat> = {
     ],
     stats: [{ big: 'Press 1', label: 'call screening' }, { big: '25s', label: 'ring time unless you change it' }, { big: 'Every', label: 'forwarded call logged' }],
     ctaHead: 'Take calls wherever you are',
+    price: {
+      eyebrow: 'Just want calls on your mobile?', big: '$35', unit: 'AUD/month, all in', note: 'The Business number plan, billed monthly.',
+      bullets: ['Your number included: 02, 03, 07, 08 or an 04 mobile', 'Calls forwarded to your mobile, always or only after hours', 'Voicemail, and every call in the Colvy app', '100 call minutes a month, then 20c a minute'],
+      cta: { label: 'Get the $35 plan', href: '/signup?plan=phone&billing=monthly' },
+      other: { label: 'Want the whole team answering in Colvy? Numbers are $15 a month on the Inbox plans', href: '/business-phone-number-australia#plans' },
+    },
   },
   'cascade-ring': {
     accent: PURPLE, eyebrow: 'Cascade ring', name: 'Cascade Ring', title: 'Ring the team in order', comingSoon: 'cascadeRing',
@@ -432,7 +440,7 @@ export default function PhoneFeaturePage() {
         .pf-card,.pf-btn{ transition:all 0.22s cubic-bezier(0.16,1,0.3,1); }
         .pf-card:hover{ transform:translateY(-6px); }
         .pf-btn:hover{ transform:translateY(-2px); }
-        @media (max-width:900px){ .pf-hero{ grid-template-columns:1fr !important; } .pf-band{ grid-template-columns:1fr !important; } .pf-hero-cta{ flex-wrap:nowrap !important; } .pf-hero-cta > *{ flex:1 1 0 !important; justify-content:center !important; white-space:nowrap !important; padding-left:14px !important; padding-right:14px !important; } }
+        @media (max-width:900px){ .pf-hero{ grid-template-columns:1fr !important; } .pf-band{ grid-template-columns:1fr !important; } .pf-hero-cta{ flex-wrap:nowrap !important; } .pf-hero-cta > *{ flex:1 1 0 !important; justify-content:center !important; white-space:nowrap !important; padding-left:14px !important; padding-right:14px !important; } .pf-price{ grid-template-columns:1fr !important; } }
         @media (prefers-reduced-motion:reduce){ [style*="pfFloat"]{ animation:none !important } }
       `}</style>
 
@@ -482,6 +490,33 @@ export default function PhoneFeaturePage() {
         <SStory key={b.title} tag={b.tag} title={b.title} body={b.body} bullets={b.bullets} accent={accent} tone={i % 2 ? 'soft' : 'deep'} flip={i % 2 === 1} dark={dark}
           icons={f.features.slice(i * 3, i * 3 + 3).map(x => x.icon)} />
       ))}
+
+      {/* PRICE, where a page says one */}
+      {f.price && (
+        <section id="price" style={{ padding: 'clamp(40px, 6vw, 70px) 24px 10px', scrollMarginTop: 90 }}>
+          <Reveal>
+            <div style={{ maxWidth: 880, margin: '0 auto', borderRadius: 28, padding: 'clamp(26px, 4vw, 40px)', background: `linear-gradient(150deg, ${accent}, ${dark ? '#0b0c14' : '#171a2b'} 135%)`, color: '#fff', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.15fr)', gap: 'clamp(20px, 4vw, 44px)', alignItems: 'center', boxShadow: `0 30px 70px ${accent}33` }} className="pf-price">
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', opacity: 0.85 }}>{f.price.eyebrow}</div>
+                <div style={{ fontSize: 'clamp(52px, 7vw, 68px)', fontWeight: 900, letterSpacing: '-0.04em', lineHeight: 1, margin: '10px 0 6px' }}>{f.price.big}<span style={{ fontSize: 18, fontWeight: 700, letterSpacing: 0, opacity: 0.85 }}> {f.price.unit}</span></div>
+                <p style={{ fontSize: 15, lineHeight: 1.55, opacity: 0.9, margin: '0 0 20px' }}>{f.price.note}</p>
+                <a href={user ? '/pricing#business-number' : f.price.cta.href} className="pf-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '13px 24px', borderRadius: 999, background: '#fff', color: INK, fontWeight: 900, fontSize: 15, textDecoration: 'none' }}>{f.price.cta.label} <span aria-hidden>→</span></a>
+              </div>
+              <div>
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 10, fontSize: 15, lineHeight: 1.45 }}>
+                  {f.price.bullets.map(x => (
+                    <li key={x} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0, marginTop: 2 }}><path d="M20 6 9 17l-5-5" /></svg>
+                      {x}
+                    </li>
+                  ))}
+                </ul>
+                {f.price.other && <a href={f.price.other.href} style={{ display: 'inline-block', marginTop: 18, fontSize: 13.5, fontWeight: 700, color: '#fff', opacity: 0.85, textUnderlineOffset: 3 }}>{f.price.other.label}</a>}
+              </div>
+            </div>
+          </Reveal>
+        </section>
+      )}
 
       {/* MORE PHONE FEATURES */}
       <SMore eyebrow="One phone system" title="More in Phones" grey="Every feature works together" accent={accent} dark={dark}
