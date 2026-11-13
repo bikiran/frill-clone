@@ -265,6 +265,11 @@ export default function AdminRail({ workspace, sections, settings, search, ring,
         .rail-mid.fade-bottom { -webkit-mask-image: linear-gradient(#000 calc(100% - 28px), transparent); mask-image: linear-gradient(#000 calc(100% - 28px), transparent); }
         .rail-mid.fade-top { -webkit-mask-image: linear-gradient(transparent, #000 28px); mask-image: linear-gradient(transparent, #000 28px); }
         .rail-mid.fade-top.fade-bottom { -webkit-mask-image: linear-gradient(transparent, #000 28px, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(transparent, #000 28px, #000 calc(100% - 28px), transparent); }
+        /* A mask clips everything inside it, the fixed panels included, so a
+           rail long enough to scroll (more sections switched on, a shorter
+           screen) showed no panel at all. While a panel is open the fade steps
+           aside; the rest of the rail is dimmed then anyway. */
+        .admin-rail.dim .rail-mid { -webkit-mask-image: none; mask-image: none; }
         /* Shorter screens: tighter tiles, and Upgrade steps aside (Billing is under Settings). */
         @media (max-height: 860px) {
           .rail-tile { padding: 6px 0 5px; gap: 3px; }
