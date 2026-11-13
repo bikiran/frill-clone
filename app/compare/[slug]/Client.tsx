@@ -29,7 +29,7 @@ const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c'
 // not confirmed either way. ✗ is only for things we're confident they don't
 // offer. Plans change, so the table says when it was checked.
 type Val = boolean | string
-type Slug = 'podium' | 'birdeye' | 'coax' | 'gorgias' | 'zendesk' | 'freshdesk' | 'intercom' | 'gladly' | 'manychat' | 'highlevel' | 'salesforce'
+type Slug = 'podium' | 'birdeye' | 'coax' | 'gorgias' | 'zendesk' | 'freshdesk' | 'intercom' | 'gladly' | 'manychat' | 'highlevel' | 'salesforce' | 'aircall' | 'dialpad' | 'ringcentral'
 type Row = { label: string; colvy?: Val; v: Partial<Record<Slug, Val>> }
 // The nine competitors checked in the first round. A shorthand for a value
 // they all share; competitors added later list only what was checked for them.
@@ -39,19 +39,19 @@ const HELPDESKS_T: Partial<Record<Slug, Val>> = { gorgias: true, zendesk: true, 
 
 const ROWS: { group: string; rows: Row[] }[] = [
   { group: 'Channels', rows: [
-    { label: 'SMS on Australian 🇦🇺 numbers', v: { podium: true, birdeye: true, coax: true, gorgias: 'Add-on', zendesk: 'Add-on', freshdesk: 'Add-on', intercom: 'Usage-based', gladly: true, manychat: 'Via your Twilio', highlevel: 'Usage-based', salesforce: 'Add-on, higher plans' } },
-    { label: 'WhatsApp', colvy: COMING_SOON.whatsapp ? 'Coming soon' : true, v: { birdeye: true, coax: true, intercom: 'Usage-based', gladly: true, manychat: true, highlevel: 'Add-on', salesforce: 'Add-on, higher plans' } },
+    { label: 'SMS on Australian 🇦🇺 numbers', v: { podium: true, birdeye: true, coax: true, gorgias: 'Add-on', zendesk: 'Add-on', freshdesk: 'Add-on', intercom: 'Usage-based', gladly: true, manychat: 'Via your Twilio', highlevel: 'Usage-based', salesforce: 'Add-on, higher plans', aircall: 'Mobile numbers; rates on request', dialpad: '250 a month, pooled', ringcentral: 'Since July 2026; bundles extra' } },
+    { label: 'WhatsApp', colvy: COMING_SOON.whatsapp ? 'Coming soon' : true, v: { birdeye: true, coax: true, intercom: 'Usage-based', gladly: true, manychat: true, highlevel: 'Add-on', salesforce: 'Add-on, higher plans', aircall: 'Add-on' } },
     { label: 'Instagram DMs', v: { ...ALL_T(true), highlevel: true, salesforce: 'Custom build' } },
     { label: 'Facebook Messenger', v: { ...ALL_T(true), highlevel: true, salesforce: 'Add-on, higher plans' } },
-    { label: 'Email inbox (Gmail or any mailbox)', v: { podium: true, birdeye: 'Marketing', coax: true, gorgias: true, zendesk: true, freshdesk: true, intercom: true, gladly: true, manychat: 'Basic', highlevel: true, salesforce: true } },
-    { label: 'Phone calls & voicemail', v: { podium: true, birdeye: 'Partial', coax: 'Add-on', gorgias: 'Add-on', zendesk: true, freshdesk: 'Add-on', intercom: 'Usage-based', gladly: true, manychat: false, highlevel: 'Usage-based', salesforce: 'Add-on, higher plans' } },
+    { label: 'Email inbox (Gmail or any mailbox)', v: { podium: true, birdeye: 'Marketing', coax: true, gorgias: true, zendesk: true, freshdesk: true, intercom: true, gladly: true, manychat: 'Basic', highlevel: true, salesforce: true, dialpad: 'Separate Support product' } },
+    { label: 'Phone calls & voicemail', v: { podium: true, birdeye: 'Partial', coax: 'Add-on', gorgias: 'Add-on', zendesk: true, freshdesk: 'Add-on', intercom: 'Usage-based', gladly: true, manychat: false, highlevel: 'Usage-based', salesforce: 'Add-on, higher plans', aircall: true, dialpad: true, ringcentral: true } },
     { label: 'Google reviews', v: { podium: true, birdeye: true, coax: true, gorgias: false, zendesk: false, freshdesk: false, intercom: false, gladly: false, manychat: false, highlevel: true } },
-    { label: 'Live chat widget', v: { ...ALL_T(true), highlevel: true, salesforce: 'Pro Suite' } },
+    { label: 'Live chat widget', v: { ...ALL_T(true), highlevel: true, salesforce: 'Pro Suite', dialpad: 'Separate Support product' } },
   ] },
   { group: 'AI', rows: [
-    { label: 'AI agents that answer on their own', colvy: 'Five, included', v: { podium: 'Paid add-on', birdeye: 'Quote-based', coax: 'Voice: all plans; chat: Enterprise', gorgias: 'Per interaction', zendesk: 'Allowance, then per resolution', freshdesk: 'Per session', intercom: 'Per outcome (Fin)', gladly: 'Per resolution or quote', manychat: 'Manychat AI', highlevel: 'Add-on or per use', salesforce: 'Higher plans, usage-based' } },
+    { label: 'AI agents that answer on their own', colvy: 'Five, included', v: { podium: 'Paid add-on', birdeye: 'Quote-based', coax: 'Voice: all plans; chat: Enterprise', gorgias: 'Per interaction', zendesk: 'Allowance, then per resolution', freshdesk: 'Per session', intercom: 'Per outcome (Fin)', gladly: 'Per resolution or quote', manychat: 'Manychat AI', highlevel: 'Add-on or per use', salesforce: 'Higher plans, usage-based', aircall: 'Voice agents from A$150/mo', ringcentral: 'AI Receptionist, A$62/mo' } },
     { label: 'Name and style each AI agent', v: { podium: 'Name', gorgias: 'Name', zendesk: 'Name', freshdesk: true, intercom: true, gladly: 'Name', highlevel: true, salesforce: 'Higher plans' } },
-    { label: 'Call summaries, to-dos & transcripts', v: { podium: true, coax: 'Add-on', gladly: 'Add-on', manychat: false, highlevel: 'Usage-based (Labs)', salesforce: 'Video meetings; calls on higher plans' } },
+    { label: 'Call summaries, to-dos & transcripts', v: { podium: true, coax: 'Add-on', gladly: 'Add-on', manychat: false, highlevel: 'Usage-based (Labs)', salesforce: 'Video meetings; calls on higher plans', aircall: 'Professional, or add-on', dialpad: true, ringcentral: 'Depends on plan' } },
     { label: 'AI campaign builder (audience, copy, timing)', v: { highlevel: 'Email (beta)', salesforce: 'Marketing Cloud add-on' } },
     { label: 'AI voice typing', v: {} },
   ] },
@@ -84,7 +84,7 @@ const ROWS: { group: string; rows: Row[] }[] = [
     { label: 'Announcements / changelog', v: { ...ALL_T(false), intercom: true } },
   ] },
   { group: 'Local', rows: [
-    { label: 'Australian 🇦🇺 phone numbers', v: { podium: true, coax: true, zendesk: 'Limited', manychat: 'Via your Twilio', highlevel: true, salesforce: 'Add-on, higher plans' } },
+    { label: 'Australian 🇦🇺 phone numbers', v: { podium: true, coax: true, zendesk: 'Limited', manychat: 'Via your Twilio', highlevel: true, salesforce: 'Add-on, higher plans', aircall: 'Local & mobile', dialpad: 'Local, mobile & 1800', ringcentral: 'Local, 1300 & 1800' } },
   ] },
 ]
 
@@ -97,6 +97,50 @@ type Cmp = {
 }
 
 const CMP: Record<string, Cmp> = {
+  // Phone systems. Facts from each vendor's own Australian pricing, feature
+  // and help pages, checked 13 November 2026.
+  aircall: {
+    name: 'Aircall', accent: GREEN, heroTitle: 'The Aircall alternative built for', heroAccent: 'the whole conversation', heroSub: 'Aircall is a cloud phone system priced per licence, with a three-licence minimum. Colvy puts your business number in a shared inbox with SMS, email, live chat and social, with call summaries and an AI receptionist, at one AUD price for the team.',
+    stats: [{ big: '1', label: 'price for the whole team' }, { big: '3,000', label: 'SMS a month included' }, { big: 'AUD', label: 'GST included' }],
+    tableNote: 'Aircall is a capable cloud phone system, with IVR, forwarding, warm transfers and call recording on every plan. Its column shows the Essentials and Professional plans on aircall.io/en-au. Colvy adds texting, email, live chat and social in the same inbox, at one price for the team.',
+    wins: [
+      { t: 'One price for the whole team', d: 'Aircall prices each licence, with a minimum of three: from A$45 per licence a month, billed annually. Colvy’s Inbox plan is one price for unlimited team members: A$179 a month, or A$149 a month billed yearly, GST included.' },
+      { t: 'Texts included', d: 'In Australia, Aircall can text only from mobile numbers, and outbound SMS is charged per segment at rates on request. Colvy’s Inbox and Everything plans include 3,000 SMS a month, then prepaid credits from A$0.15 a text.' },
+      { t: 'Call summaries in the plan', d: 'Aircall includes AI call summaries from its Professional plan (A$75 per licence a month); on Essentials they’re an add-on. Colvy records, transcribes and summarises calls on the Inbox and Everything plans.' },
+      { t: 'Every channel, one inbox', d: 'Calls sit beside SMS, email, live chat, Instagram and Messenger, with the customer’s orders and bookings in the same conversation.' },
+      { t: 'An AI receptionist in the plan', d: 'Aircall’s AI Voice Agents start from A$150 a month. Colvy’s Inbox plan comes with the AI receptionist; its calls use your metered call minutes like any other call.' },
+      { t: 'Australian 🇦🇺 support & pricing', d: 'Local team, Australian numbers and prices in AUD with GST included. Cancel anytime.' },
+    ],
+    checklist: ['Calls, SMS, email, social and live chat in one inbox', 'One price for unlimited team members, GST included', '3,000 SMS a month included', 'Call recording, transcripts and AI summaries', 'Press-1 menus, forwarding and ring groups', 'AI receptionist and five AI agents', 'Australian 🇦🇺 numbers, support and AUD pricing', 'No lock-in contracts — cancel anytime'],
+  },
+  dialpad: {
+    name: 'Dialpad', accent: PURPLE, heroTitle: 'The Dialpad alternative with', heroAccent: 'every channel in one inbox', heroSub: 'Dialpad’s phone system is priced per user, and its live chat and digital channels are a separate product. Colvy puts calls, SMS, email, live chat and social in one shared inbox, with store orders and AI agents, at one AUD price for the team.',
+    stats: [{ big: '1', label: 'inbox for every channel' }, { big: '3,000', label: 'SMS a month included' }, { big: 'AUD', label: 'one price, GST included' }],
+    tableNote: 'Dialpad includes AI transcripts and call recaps on every phone plan, and offers Australian local, mobile and 1800 numbers. Its column shows Dialpad Connect, its phone system, on dialpad.com/au. Colvy adds texting, email, live chat, social and store orders in the same inbox, at one price for the team.',
+    wins: [
+      { t: 'One price, not per user', d: 'Dialpad’s phone system is priced per user: from A$20 a user a month billed annually, or A$32 monthly, on Standard. Colvy’s Inbox plan is one price for unlimited team members: A$179 a month, or A$149 a month billed yearly, GST included.' },
+      { t: 'Chat and email in the same inbox', d: 'On Dialpad, live chat and other digital channels are part of its separate Support product, from A$99 per user a month billed annually. Colvy’s Inbox plan has calls, SMS, email, live chat, Instagram and Messenger in one inbox.' },
+      { t: 'More texts included', d: 'Dialpad’s phone plans list 250 outbound SMS a month, pooled across the account. Colvy’s Inbox and Everything plans include 3,000 SMS a month, then prepaid credits from A$0.15 a text.' },
+      { t: 'Store orders beside every call', d: 'WooCommerce and Shopify orders sit next to the conversation, so whoever answers sees what the caller bought, with delivery scheduling from the same thread.' },
+      { t: 'Reviews and feedback built in', d: 'Reply to Google reviews from the inbox, and run an ideas board, public roadmap and announcements for your customers.' },
+      { t: 'Australian 🇦🇺 support & pricing', d: 'Local team, Australian numbers and prices in AUD with GST included. Cancel anytime.' },
+    ],
+    checklist: ['Calls, SMS, email, social and live chat in one inbox', 'One price for unlimited team members, GST included', '3,000 SMS a month included', 'Call recording, transcripts and AI summaries', 'WooCommerce and Shopify orders beside every chat', 'AI receptionist and five AI agents', 'Australian 🇦🇺 numbers, support and AUD pricing', 'No lock-in contracts — cancel anytime'],
+  },
+  ringcentral: {
+    name: 'RingCentral', accent: CORAL, heroTitle: 'The RingCentral alternative for', heroAccent: 'small Australian teams', heroSub: 'RingCentral’s RingEX is a business phone platform priced per user, with prices shown before GST. Colvy puts your number in a shared inbox with SMS, email, live chat and social, with an AI receptionist and call summaries, at one AUD price with GST included.',
+    stats: [{ big: '1', label: 'price for the whole team' }, { big: '3,000', label: 'SMS a month included' }, { big: 'GST', label: 'included in our prices' }],
+    tableNote: 'RingCentral is a large business phone platform with local, 1300 and 1800 numbers and plans priced per user. Its column shows RingEX on ringcentral.com/au. Colvy adds texting, email, live chat, social and store orders in the same inbox, at one price for the team.',
+    wins: [
+      { t: 'One price, GST included', d: 'RingEX is priced per user and by team size, from A$22.99 per user a month on Essentials billed annually, with prices shown before GST. Colvy’s Inbox plan is one price for unlimited team members: A$179 a month, or A$149 a month billed yearly, GST included.' },
+      { t: 'Texting included', d: 'RingCentral launched domestic SMS in Australia in July 2026, on SMS-capable licences and mobile numbers, with SMS bundles sold separately. Colvy’s Inbox and Everything plans include 3,000 SMS a month.' },
+      { t: 'An AI receptionist in the plan', d: 'RingCentral’s AI Receptionist is A$62 a month for the account with 100 minutes, then A$0.80 a minute. Colvy’s Inbox plan comes with the AI receptionist; its calls use your metered call minutes like any other call.' },
+      { t: 'Press-1 menus on the Inbox plan', d: 'On RingEX, multi-level IVR starts from the Standard plan. Colvy’s press-1 menu, with an after-hours menu, is part of call routing on the Inbox and Everything plans.' },
+      { t: 'Every channel, one inbox', d: 'Calls sit beside SMS, email, live chat, Instagram and Messenger, with the customer’s orders and bookings in the same conversation.' },
+      { t: 'Australian 🇦🇺 support & pricing', d: 'Local team, Australian numbers and prices in AUD with GST included. Cancel anytime, with no annual contract.' },
+    ],
+    checklist: ['Calls, SMS, email, social and live chat in one inbox', 'One price for unlimited team members, GST included', '3,000 SMS a month included', 'Call recording, transcripts and AI summaries', 'Press-1 menus, forwarding and ring groups', 'AI receptionist and five AI agents', 'Australian 🇦🇺 numbers, support and AUD pricing', 'No lock-in contracts — cancel anytime'],
+  },
   podium: {
     name: 'Podium', accent: GREEN, heroTitle: 'The Podium alternative built for', heroAccent: 'Australian 🇦🇺 business', heroSub: 'More channels, AI that learns from every chat, Australian support and real results — everything Podium locks behind contracts and add-ons, Colvy includes.',
     stats: [{ big: 'No', label: 'lock-in contracts' }, { big: 'Every', label: 'channel included' }, { big: '45 min', label: 'to set up' }],
