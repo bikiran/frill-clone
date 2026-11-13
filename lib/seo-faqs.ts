@@ -277,6 +277,24 @@ export const SEO_FAQS: Record<string, SeoFaq[]> = {
     { q: 'How long does porting a number take?', a: 'Most ports take 1 to 3 weeks. Send one request in Colvy and our team lodges it with the carriers and keeps you posted. Keep your current service until we tell you the move is complete.' },
     { q: 'What does a number cost after porting?', a: 'A$15 a month, like any Colvy number, on the Inbox and Everything plans.' },
   ],
+  'compare/aircall': [
+    { q: 'Is Colvy an Aircall alternative?', a: 'Yes. Colvy is a cloud phone system inside a shared inbox: Australian business numbers, press-1 menus, forwarding, ring groups, voicemail, call recording, transcripts and AI summaries, with SMS, email, live chat, Instagram and Messenger in the same place.' },
+    { q: 'Is Colvy priced per user?', a: 'No. The Inbox plan is one price for unlimited team members: A$179 a month, or A$149 a month billed yearly, GST included, with 3,000 SMS a month. Numbers are A$15 a month each, and call minutes are metered.' },
+    { q: 'Can I keep my phone number?', a: 'Yes. Request a port in Colvy and our team handles it with the carriers, typically within 1 to 3 weeks. Keep your current service running until we tell you the move is complete.' },
+    { q: 'How do I get started?', a: STARTER },
+  ],
+  'compare/dialpad': [
+    { q: 'Is Colvy a Dialpad alternative?', a: 'Yes. Colvy gives you a business phone system with call recording, transcripts and AI summaries, in the same shared inbox as SMS, email, live chat, Instagram and Messenger, plus a CRM, store orders and five AI agents.' },
+    { q: 'Does Colvy include live chat and email?', a: 'Yes. The Inbox and Everything plans include live chat, email, SMS, calls, Instagram and Messenger in one inbox, at one price for the whole team.' },
+    { q: 'How many texts are included?', a: 'The Inbox and Everything plans include 3,000 SMS a month. More texts use prepaid credits from A$0.15 a text, and texting stops rather than running up a bill when credit runs out.' },
+    { q: 'How do I get started?', a: STARTER },
+  ],
+  'compare/ringcentral': [
+    { q: 'Is Colvy a RingCentral alternative for small business?', a: 'Yes. Colvy is a business phone system for small Australian teams: local, mobile and 1800 numbers, press-1 menus, forwarding, voicemail, call recording and AI summaries, in one inbox with SMS, email, live chat and social.' },
+    { q: 'Do Colvy’s prices include GST?', a: 'Yes. Colvy’s prices are in Australian dollars and include GST. The Inbox plan is A$179 a month, or A$149 a month billed yearly, for unlimited team members.' },
+    { q: 'Does Colvy have an AI receptionist?', a: 'Yes, on the Inbox and Everything plans. It can answer out of hours, when nobody picks up, or always, handle common questions, take messages and text callers what they need. Its calls use your metered call minutes.' },
+    { q: 'How do I get started?', a: STARTER },
+  ],
   'compare/manychat': [
     { q: 'Is Colvy a ManyChat alternative?', a: 'Colvy handles Instagram and Messenger conversations in a shared inbox where your team and AI agents reply together, and adds SMS, calls, email, live chat, reviews and store orders, so conversations turn into sales and bookings.' },
     { q: 'Can Colvy reply to Instagram comments and DMs?', a: 'Yes. Instagram DMs arrive in the inbox, and the Social Engagement page lets you reply to comments, message commenters privately or hide harmful ones.' },
