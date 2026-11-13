@@ -86,7 +86,7 @@ export const INTEGRATION_SLUGS: string[] = [
 // Colvy vs <competitor> pages; mirrors CMP in app/compare/[slug]/Client.tsx.
 export const COMPARE_SLUGS: string[] = [
   'podium', 'birdeye', 'coax', 'gorgias', 'zendesk', 'freshdesk', 'intercom', 'gladly', 'manychat', 'highlevel', 'salesforce',
-  'aircall', 'dialpad', 'ringcentral',
+  'aircall', 'dialpad', 'ringcentral', 'krispcall',
 ]
 
 // Every indexable path (relative, e.g. '' or 'channels/whatsapp').

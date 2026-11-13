@@ -33,6 +33,7 @@ const CARDS = [
   { slug: 'coax', comp: 'Coax', tag: 'Comms + a built-in feedback loop', metric: 'Feedback', accent: TEAL },
   { slug: 'highlevel', comp: 'HighLevel', tag: 'Built for your business, not an agency', metric: 'AUD', accent: BLUE },
   { slug: 'salesforce', comp: 'Salesforce', tag: 'One price for the team, not per seat', metric: 'Flat', accent: CYAN },
+  { slug: 'krispcall', comp: 'KrispCall', tag: 'One team price, texts included', metric: '3,000 SMS', accent: TEAL },
   { slug: 'aircall', comp: 'Aircall', tag: 'Calls plus texts, chat and email', metric: '1 price', accent: GREEN },
   { slug: 'dialpad', comp: 'Dialpad', tag: 'Phone, chat and email in one inbox', metric: '3,000 SMS', accent: PURPLE },
   { slug: 'ringcentral', comp: 'RingCentral', tag: 'One AUD price, GST included', metric: 'AUD', accent: CORAL },

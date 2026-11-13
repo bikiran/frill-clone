@@ -277,6 +277,12 @@ export const SEO_FAQS: Record<string, SeoFaq[]> = {
     { q: 'How long does porting a number take?', a: 'Most ports take 1 to 3 weeks. Send one request in Colvy and our team lodges it with the carriers and keeps you posted. Keep your current service until we tell you the move is complete.' },
     { q: 'What does a number cost after porting?', a: 'A$15 a month, like any Colvy number, on the Inbox and Everything plans.' },
   ],
+  'compare/krispcall': [
+    { q: 'Is Colvy a KrispCall alternative?', a: 'Yes. Colvy is a cloud phone system inside a shared inbox: Australian local, mobile and 1800 numbers, press-1 menus, forwarding, voicemail, call recording, transcripts and AI summaries, with SMS, email, live chat, Instagram and Messenger in the same place.' },
+    { q: 'Can I get just a business phone number?', a: 'Yes. The Business number plan is A$35 a month: one Australian local or mobile number forwarded to your mobile, always or only after hours, with voicemail, every call in the Colvy app and 100 call minutes a month, then 20c a minute.' },
+    { q: 'Are texts included?', a: 'Yes, on the Inbox and Everything plans: 3,000 SMS a month. More texts use prepaid credits from A$0.15 a text, and texting stops rather than running up a bill when credit runs out.' },
+    { q: 'How do I get started?', a: STARTER },
+  ],
   'compare/aircall': [
     { q: 'Is Colvy an Aircall alternative?', a: 'Yes. Colvy is a cloud phone system inside a shared inbox: Australian business numbers, press-1 menus, forwarding, ring groups, voicemail, call recording, transcripts and AI summaries, with SMS, email, live chat, Instagram and Messenger in the same place.' },
     { q: 'Is Colvy priced per user?', a: 'No. The Inbox plan is one price for unlimited team members: A$179 a month, or A$149 a month billed yearly, GST included, with 3,000 SMS a month. Numbers are A$15 a month each, and call minutes are metered.' },

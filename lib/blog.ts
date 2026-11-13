@@ -3,6 +3,7 @@
 // third-party stats, quotes or customer names; advice is general and honest.
 
 import { LATEST_POSTS } from '@/lib/blog-latest'
+import { INDUSTRY_POSTS } from '@/lib/blog-industries'
 
 const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c', TEAL = '#0d9488'
 
@@ -1741,7 +1742,7 @@ More on how it works: [WhatsApp shared inbox for teams](/whatsapp-shared-inbox).
   },
 ]
 
-export const POSTS: BlogPost[] = [...LATEST_POSTS, ...EARLIER_POSTS]
+export const POSTS: BlogPost[] = [...INDUSTRY_POSTS, ...LATEST_POSTS, ...EARLIER_POSTS]
 
 export function getPost(slug: string): BlogPost | undefined {
   return POSTS.find(p => p.slug === slug)
