@@ -255,14 +255,14 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
     } finally { setBusy(false) }
   }
 
-  async function confirmSend(confirm: ConfirmPayload, msgIdx: number, editedText?: string) {
+  async function confirmSend(confirm: ConfirmPayload, msgIdx: number, editedText?: string, extra?: Record<string, unknown>) {
     if (busy || !companyId) return
     setBusy(true)
     try {
       const res = await authFetch('/api/ai/assistant/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
-        body: JSON.stringify({ tool: confirm.tool, args: editedText != null && confirm.args && 'text' in confirm.args ? { ...confirm.args, text: editedText } : confirm.args, context: buildContext(), companyId }),
+        body: JSON.stringify({ tool: confirm.tool, args: { ...(editedText != null && confirm.args && 'text' in confirm.args ? { ...confirm.args, text: editedText } : confirm.args), ...(extra || {}) }, context: buildContext(), companyId }),
       })
       const data = await res.json().catch(() => ({}))
       setMsgs(m => {
@@ -475,7 +475,7 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
                           confirm={m.confirm}
                           busy={busy}
                           onCancel={() => cancelConfirm(i)}
-                          onSend={(edited) => confirmSend(m.confirm!, i, edited)}
+                          onSend={(edited, extra) => confirmSend(m.confirm!, i, edited, extra)}
                         />
                       )}
                     </>
@@ -739,13 +739,16 @@ function RichText({ text }: { text: string }) {
 
 // The "check before it goes out" card. One tap to send; the wording can be
 // tweaked right here first, so there's no back-and-forth to change a word.
-function ConfirmCard({ confirm, busy, onCancel, onSend }: { confirm: ConfirmPayload; busy: boolean; onCancel: () => void; onSend: (editedText?: string) => void }) {
+function ConfirmCard({ confirm, busy, onCancel, onSend }: { confirm: ConfirmPayload; busy: boolean; onCancel: () => void; onSend: (editedText?: string, extra?: Record<string, unknown>) => void }) {
   const p = confirm.preview || {}
   const kind: string = p.kind || 'send_message'
   const editable = typeof p.text === 'string' && confirm.args && 'text' in confirm.args
   const [text, setText] = useState<string>(p.text || '')
   const isRefund = kind === 'refund_order'
   const isOrder = kind === 'order_status' || isRefund
+  // Order changes and refunds: "Notify customer", ticked unless the user
+  // asked Colvy AI not to tell them.
+  const [notify, setNotify] = useState<boolean>(p.notify !== false)
   const heading = isRefund ? 'Check the refund' : isOrder ? 'Check the order change'
     : kind === 'payment_link' ? 'Check the payment link'
     : kind === 'review_reply' ? 'Check your review reply'
@@ -780,8 +783,18 @@ function ConfirmCard({ confirm, busy, onCancel, onSend }: { confirm: ConfirmPayl
         )}
         {p.warn && <p style={{ margin: '8px 0 0', fontSize: 12.5, color: '#b42318' }}>{p.warn}</p>}
         {p.note && <p style={{ margin: '8px 0 0', fontSize: 12, color: '#71717a' }}>{p.note}</p>}
+        {isOrder && (
+          <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', marginTop: 10, padding: '9px 10px', borderRadius: 12, background: '#f6f6f7', cursor: 'pointer' }}>
+            <input type="checkbox" checked={notify} onChange={e => setNotify(e.target.checked)} disabled={busy}
+              style={{ width: 16, height: 16, marginTop: 1, accentColor: AI_CORAL, flexShrink: 0, cursor: 'pointer' }} />
+            <span style={{ minWidth: 0 }}>
+              <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#0d0d0d' }}>Notify customer</span>
+              <span style={{ display: 'block', fontSize: 12, color: '#71717a', marginTop: 1, lineHeight: 1.4 }}>{notify ? 'They get the usual update by SMS or email.' : 'Nothing is sent to the customer about this.'}</span>
+            </span>
+          </label>
+        )}
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-          <button type="button" onClick={() => onSend(editable ? text : undefined)} disabled={busy || (editable && !text.trim())}
+          <button type="button" onClick={() => onSend(editable ? text : undefined, isOrder ? { notifyCustomer: notify } : undefined)} disabled={busy || (editable && !text.trim())}
             style={{ flex: 1, padding: '10px 12px', borderRadius: 12, border: 'none', background: isRefund ? '#dc2626' : GRAD, color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1, fontFamily: 'inherit' }}>
             {busy ? 'Working…' : cta}
           </button>
