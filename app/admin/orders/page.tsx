@@ -24,7 +24,7 @@ import OrderHeadsUp from '@/components/orders/OrderHeadsUp'
 import EmptyScroll from '@/components/EmptyScroll'
 import { CARRIERS as TRACK_CARRIERS, carrierByKey } from '@/lib/carriers'
 import { barcodeSVG } from '@/lib/barcode'
-import { confirmDialog } from '@/components/ConfirmDialog'
+import { confirmDialog, confirmNotify } from '@/components/ConfirmDialog'
 import { notifyIntegrations } from '@/lib/integrations-notify'
 import { authFetch } from '@/lib/auth-fetch'
 import SendReceipt from '@/components/orders/SendReceipt'
@@ -2234,24 +2234,27 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
   }, [order.id])
   const refundedTotal = refunds ? refunds.reduce((s, r) => s + r.amount, 0) : Math.abs(Number(order.total_refunded) || 0)
   const markCompleted = async (opts: { allSent?: boolean } = {}) => {
-    const ok = opts.allSent
-      ? await confirmDialog({
+    // "Notify customer" (ticked by default): untick it to complete quietly.
+    const picked = await confirmNotify(opts.allSent
+      ? {
           title: 'All items sent. Order completed?',
           message: isShopifyOrder
             ? `Mark order ${order.order_number} as completed? This marks it paid (if it isn't yet) and fulfilled in Shopify.`
             : `Mark order ${order.order_number} as completed in ${storeName}?`,
           confirmLabel: 'Yes, complete', cancelLabel: 'No', tone: 'primary',
+        }
+      : {
+          title: `Mark order ${order.order_number} as completed?`,
+          message: isShopifyOrder ? 'This marks it paid (if it isn’t yet) and fulfilled in Shopify.' : `This completes it in ${storeName}.`,
+          confirmLabel: 'Complete', tone: 'primary',
         })
-      : await confirmDialog(isShopifyOrder
-        ? `Mark order ${order.order_number} as completed?\n\nThis marks it paid (if it isn't yet) and fulfilled in Shopify.`
-        : `Mark order ${order.order_number} as completed in WooCommerce?`)
-    if (!ok) return
+    if (!picked) return
     setActBusy('done')
     try {
-      const res = await authFetch('/api/orders/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, orderId: storeRef, status: 'completed', conversationId: order.conversation_id || undefined }) })
+      const res = await authFetch('/api/orders/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, orderId: storeRef, status: 'completed', conversationId: order.conversation_id || undefined, notifyCustomer: picked.notify }) })
       const j = await res.json().catch(() => ({}))
       if (!res.ok || j.error) onFlash(`Failed: ${j.error || res.status}`)
-      else { onPatch({ status: 'shipped', fulfilment_status: 'fulfilled' }, { type: 'status_changed', detail: `Marked completed in ${storeName}` }); order.status = 'shipped'; onFlash('Order marked completed') }
+      else { onPatch({ status: 'shipped', fulfilment_status: 'fulfilled' }, { type: 'status_changed', detail: `Marked completed in ${storeName}${picked.notify ? '' : ' · customer not notified'}` }); order.status = 'shipped'; onFlash(picked.notify ? 'Order marked completed' : 'Order completed. Customer not notified') }
     } catch (e: any) { onFlash(`Error: ${e?.message || e}`) }
     setActBusy('')
   }
@@ -3279,15 +3282,16 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
       {showRefund && companyId && (
         <RefundOrderModal companyId={companyId} order={order} accent={ACCENT}
           onClose={() => setShowRefund(false)}
-          onDone={(amount: number) => {
-            onFlash(`Refunded${amount ? ` $${amount.toFixed(2)}` : ''}`)
+          onDone={(amount: number, _reason: string, notified: boolean) => {
+            onFlash(`Refunded${amount ? ` $${amount.toFixed(2)}` : ''}${notified ? '' : '. Customer not notified'}`)
             // Only flip to "refunded" when the whole order is now refunded;
             // a partial refund leaves the payment status as-is.
             const totalRefunded = (Number(order.total_refunded) || 0) + (amount || 0)
             const full = totalRefunded + 0.005 >= (Number(order.total) || 0)
             order.total_refunded = totalRefunded
-            if (full) onPatch({ payment_status: 'refunded' }, { type: 'refunded', detail: `Refund issued · $${amount.toFixed(2)}` })
-            else logEvent('refunded', `Partial refund · $${amount.toFixed(2)}`)
+            const quietly = notified ? '' : ' · customer not notified'
+            if (full) onPatch({ payment_status: 'refunded' }, { type: 'refunded', detail: `Refund issued · $${amount.toFixed(2)}${quietly}` })
+            else logEvent('refunded', `Partial refund · $${amount.toFixed(2)}${quietly}`)
             // Show what was just refunded on the items and in the Refunds section.
             loadRefunds(true)
           }} />

@@ -21,7 +21,7 @@ import { useAiDraft } from '@/components/AiDraft'
 import { useReplyTranslate } from '@/components/inbox/ReplyTranslate'
 import { useDraft } from '@/lib/drafts'
 import { ColvyChatRow, useColvySummary } from '@/components/inbox/ColvyChat'
-import { alertDialog, confirmDialog } from '@/components/ConfirmDialog'
+import { alertDialog, confirmDialog, confirmNotify } from '@/components/ConfirmDialog'
 import { fillTemplateVars, type TemplateVars } from '@/lib/composer-templates'
 import { readJsonSafe, uploadAttachment } from '@/lib/upload-attachment'
 import { boardUrl } from '@/lib/redirect'
@@ -4481,9 +4481,13 @@ export function useInboxController() {
     const orderId = payload.order_id || payload.id
     if (!orderId) { showToast('No order id for this order'); return }
     const isShopify = /^shopify-/.test(String(orderId))
-    if (!await confirmDialog(isShopify
-      ? `Mark order #${payload.order_number || orderId} as completed?\n\nThis marks it paid (if it isn't yet) and fulfilled in Shopify.`
-      : `Mark order #${payload.order_number || orderId} as completed?\n\nThis updates WooCommerce and may send the customer a completion email.`)) return
+    // "Notify customer" (ticked by default): untick it to complete quietly.
+    const picked = await confirmNotify({
+      title: `Mark order #${payload.order_number || orderId} as completed?`,
+      message: isShopify ? 'This marks it paid (if it isn’t yet) and fulfilled in Shopify.' : 'This completes it in WooCommerce.',
+      confirmLabel: 'Complete', tone: 'primary',
+    })
+    if (!picked) return
     try {
       const res = await authFetch('/api/orders/status', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -4491,11 +4495,12 @@ export function useInboxController() {
           companyId, orderId, status: 'completed',
           integrationId: payload.integration_id || undefined,
           conversationId: selected?.id || undefined,
+          notifyCustomer: picked.notify,
         }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not update the order')
-      showToast(`Order #${payload.order_number || orderId} marked completed`)
+      showToast(`Order #${payload.order_number || orderId} marked completed${picked.notify ? '' : '. Customer not notified'}`)
       if (selected) { loadWooData(contact?.id || null, contact?.email, contact?.phone); loadConversationExtras(selected.id) }
     } catch (e: any) {
       alertDialog('Could not mark the order completed: ' + e.message)
@@ -4689,8 +4694,8 @@ export function useInboxController() {
 
   // After a refund: show it on the order straight away (the refetch below
   // confirms it) and leave a team note in the thread.
-  const afterOrderRefund = async (payload: any, amt: number, reason: string) => {
-    showToast(`Refunded $${amt.toFixed(2)}`)
+  const afterOrderRefund = async (payload: any, amt: number, reason: string, notified = true) => {
+    showToast(`Refunded $${amt.toFixed(2)}${notified ? '' : '. Customer not notified'}`)
     const refundedId = String(payload.order_id ?? payload.woo_order_id ?? payload.id)
     setWooOrders(prev => prev.map((o: any) => {
       const oid = o.order_id ?? o.woo_order_id ?? o.id
@@ -4704,7 +4709,7 @@ export function useInboxController() {
         await (supabase as any).from('messages').insert({
           conversation_id: selected.id, company_id: companyId, sender_type: 'agent',
           sender_name: myName || 'Colvy', is_internal: true,
-          content: `💸 Refunded $${amt.toFixed(2)} on order #${payload.order_number || refundedId}${reason ? ` — ${reason}` : ''}.`,
+          content: `💸 Refunded $${amt.toFixed(2)} on order #${payload.order_number || refundedId}${reason ? ` — ${reason}` : ''}.${notified ? '' : ' Customer not notified.'}`,
         })
       } catch {}
       loadWooData(contact?.id || null, contact?.email, contact?.phone)
@@ -4759,6 +4764,8 @@ export function useInboxController() {
         order_id: payload.order_id,
         number: data.order.number,
         status: data.order.status,
+        originalStatus: data.order.status,
+        notifyCustomer: true,
         integration_id: payload.integration_id,
         items: (data.order.line_items || []).map((li: any, i: number) => ({ key: `i${i}`, id: li.id, name: li.name, quantity: li.quantity, total: li.total })),
         customerNote: '',
@@ -4778,6 +4785,8 @@ export function useInboxController() {
           items: editOrderData.items.map((it: any) => ({ id: it.id, quantity: it.quantity })),
           customerNote: editOrderData.customerNote,
           conversationId: selected?.id,
+          // Only matters when the status changes; ticked unless unticked.
+          notifyCustomer: editOrderData.notifyCustomer !== false,
         }),
       })
       const data = await res.json()
@@ -4792,15 +4801,30 @@ export function useInboxController() {
     if (!companyId || !payload?.order_id) return
     const shopify = payload.channel === 'shopify' || /^shopify-/.test(String(payload.order_id))
     const verb = status === 'cancelled' ? (payload.draft ? 'delete draft' : 'cancel') : status === 'completed' ? 'mark paid and complete' : 'mark paid'
-    if (!await confirmDialog(`Are you sure you want to ${verb} order #${payload.order_number}?${status !== 'cancelled' ? ` This records payment and reduces stock in ${shopify ? 'Shopify' : 'WooCommerce'}.` : ''}`)) return
+    const question = `Are you sure you want to ${verb} order #${payload.order_number}?${status !== 'cancelled' ? ` This records payment and reduces stock in ${shopify ? 'Shopify' : 'WooCommerce'}.` : ''}`
+    // Deleting a draft tells nobody anything, so it's a plain confirm. Every
+    // other change has the "Notify customer" tick, ticked by default.
+    let notify = true
+    if (status === 'cancelled' && payload.draft) {
+      if (!await confirmDialog(question)) return
+    } else {
+      const picked = await confirmNotify({
+        message: question,
+        confirmLabel: status === 'cancelled' ? 'Cancel order' : status === 'completed' ? 'Complete' : 'Mark paid',
+        cancelLabel: status === 'cancelled' ? 'Keep it' : 'Cancel',
+        tone: status === 'cancelled' ? 'danger' : 'primary',
+      })
+      if (!picked) return
+      notify = picked.notify
+    }
     try {
       const res = await authFetch('/api/orders/status', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, orderId: payload.order_id, status, conversationId: selected?.id }),
+        body: JSON.stringify({ companyId, orderId: payload.order_id, status, conversationId: selected?.id, notifyCustomer: notify }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not update order')
-      showToast(`Order #${payload.order_number} updated`)
+      showToast(`Order #${payload.order_number} updated${notify ? '' : '. Customer not notified'}`)
       if (selected) selectConversation(selected)
     } catch (e: any) { showToast(e.message || 'Failed to update order') }
   }

@@ -11,6 +11,11 @@ import { createRoot } from 'react-dom/client'
 //
 // Esc / clicking outside = cancel, Enter = confirm.
 //
+// With a tick box (e.g. "Notify customer", ticked by default):
+//
+//   const r = await confirmWithCheck({ title: 'Complete order #1042?', check: { label: 'Notify customer' } })
+//   if (!r.ok) return; send({ notifyCustomer: r.checked })
+//
 // It's usually opened from inside another popup (a refund modal, a side panel),
 // so it sits above every other overlay in the app rather than behind them.
 
@@ -24,21 +29,60 @@ export type ConfirmOptions = {
   hideCancel?: boolean
   /** 'info' for a notice rather than a question (the default for one-button dialogs). */
   icon?: 'question' | 'info'
+  /** A tick box under the message; its state comes back from confirmWithCheck. */
+  check?: ConfirmCheck
 }
 
-export function confirmDialog(opts: string | ConfirmOptions): Promise<boolean> {
-  const o: ConfirmOptions = typeof opts === 'string' ? { message: opts } : opts
-  if (typeof document === 'undefined') return Promise.resolve(false)
+export type ConfirmCheck = {
+  label: string
+  /** A line under the label; `hintOff` replaces it while unticked. */
+  hint?: string
+  hintOff?: string
+  /** Ticked unless this is false. */
+  defaultChecked?: boolean
+}
+
+function open(o: ConfirmOptions): Promise<{ ok: boolean; checked: boolean }> {
+  const fallback = o.check?.defaultChecked !== false
+  if (typeof document === 'undefined') return Promise.resolve({ ok: false, checked: fallback })
   return new Promise(resolve => {
     const host = document.createElement('div')
     document.body.appendChild(host)
     const root = createRoot(host)
-    const done = (v: boolean) => {
-      resolve(v)
+    const done = (ok: boolean, checked: boolean) => {
+      resolve({ ok, checked })
       setTimeout(() => { root.unmount(); host.remove() }, 220)
     }
     root.render(<Dialog {...o} onDone={done} />)
   })
+}
+
+export function confirmDialog(opts: string | ConfirmOptions): Promise<boolean> {
+  const o: ConfirmOptions = typeof opts === 'string' ? { message: opts } : opts
+  return open(o).then(r => r.ok)
+}
+
+/** A confirm with a tick box: { ok, checked }. */
+export function confirmWithCheck(opts: ConfirmOptions & { check: ConfirmCheck }): Promise<{ ok: boolean; checked: boolean }> {
+  return open(opts)
+}
+
+/**
+ * The "Notify customer" tick, ticked by default. Resolves null when cancelled,
+ * else whether to tell the customer. `channel` names how they'd hear, e.g.
+ * "SMS or email".
+ */
+export async function confirmNotify(opts: ConfirmOptions & { notifyLabel?: string; notifyHint?: string; notifyHintOff?: string }): Promise<{ notify: boolean } | null> {
+  const { notifyLabel, notifyHint, notifyHintOff, ...o } = opts
+  const r = await open({
+    ...o,
+    check: {
+      label: notifyLabel || 'Notify customer',
+      hint: notifyHint || 'They get the usual update by SMS or email.',
+      hintOff: notifyHintOff || 'Nothing is sent to the customer about this.',
+    },
+  })
+  return r.ok ? { notify: r.checked } : null
 }
 
 // In-app replacement for window.alert(): one button, never a browser popup.
@@ -57,12 +101,15 @@ function split(o: ConfirmOptions) {
 
 const DANGER = /\b(delete|remove|cancel|discard|disconnect|revoke|clear|reset|archive|end|leave|block)\b/i
 
-function Dialog({ onDone, confirmLabel, cancelLabel, tone, hideCancel, icon, ...o }: ConfirmOptions & { onDone: (v: boolean) => void }) {
+function Dialog({ onDone, confirmLabel, cancelLabel, tone, hideCancel, icon, check, ...o }: ConfirmOptions & { onDone: (v: boolean, checked: boolean) => void }) {
   const [closing, setClosing] = useState<null | boolean>(null)
+  const [checked, setChecked] = useState(check?.defaultChecked !== false)
+  const checkedRef = useRef(checked)
+  checkedRef.current = checked
   const okRef = useRef<HTMLButtonElement>(null)
   const { title, body } = split(o)
   const danger = tone ? tone === 'danger' : DANGER.test(`${o.title || ''} ${o.message || ''}`)
-  const close = (v: boolean) => { if (closing !== null) return; setClosing(v); onDone(v) }
+  const close = (v: boolean) => { if (closing !== null) return; setClosing(v); onDone(v, checkedRef.current) }
   // "Remove X from…?" → a "Remove" button, rather than a generic "Yes".
   const verb = (o.title || o.message || '').match(/^\s*(delete|remove|cancel|discard|disconnect|revoke|clear|reset|archive|end|leave|block|send|text|publish|archive|restore|resend|refund|mark|move|merge|unlink|suspend|reactivate)\b/i)?.[1]
   const okLabel = confirmLabel || (verb ? verb.charAt(0).toUpperCase() + verb.slice(1).toLowerCase() : danger ? 'Yes, continue' : 'OK')
@@ -107,9 +154,20 @@ function Dialog({ onDone, confirmLabel, cancelLabel, tone, hideCancel, icon, ...
           .cd-actions{flex-direction:column-reverse}
           .cd-btn{min-height:48px;width:100%;font-size:15px}
         }
+        .cd-check{display:flex;gap:11px;align-items:flex-start;margin:16px 0 0;padding:12px 13px;border-radius:13px;background:#f6f6f7;cursor:pointer;user-select:none;transition:background .15s}
+        .cd-check:hover{background:#f0f0f2}
+        .cd-check input{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+        .cd-box-tick{width:21px;height:21px;border-radius:7px;flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;border:2px solid #c9cbd1;background:#fff;color:#fff;transition:background .18s,border-color .18s,transform .18s cubic-bezier(.22,1,.36,1)}
+        .cd-check.on .cd-box-tick{background:var(--coral,#ff7a6b);border-color:var(--coral,#ff7a6b)}
+        .cd-check:active .cd-box-tick{transform:scale(.9)}
+        .cd-check input:focus-visible + .cd-box-tick{outline:3px solid rgba(255,122,107,.35);outline-offset:2px}
+        .cd-box-tick svg{opacity:0;transform:scale(.6);transition:opacity .15s,transform .2s cubic-bezier(.22,1,.36,1)}
+        .cd-check.on .cd-box-tick svg{opacity:1;transform:none}
+        .cd-check-l{font-size:14px;font-weight:700;color:var(--ink,#111);line-height:1.35}
+        .cd-check-h{font-size:12.5px;color:var(--slate,#6b7280);margin-top:2px;line-height:1.45}
         @keyframes cdUp{from{transform:translate3d(0,100%,0)}to{transform:none}}
         @keyframes cdDown{from{transform:none}to{transform:translate3d(0,100%,0)}}
-        @media (prefers-reduced-motion: reduce){.cd-overlay,.cd-box{animation:none!important}}
+        @media (prefers-reduced-motion: reduce){.cd-overlay,.cd-box{animation:none!important}.cd-box-tick,.cd-box-tick svg{transition:none!important}}
       `}</style>
       <div className="cd-box" role="alertdialog" aria-modal="true" aria-labelledby="cd-title" aria-describedby={body ? 'cd-body' : undefined}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
@@ -125,6 +183,16 @@ function Dialog({ onDone, confirmLabel, cancelLabel, tone, hideCancel, icon, ...
             {body && <div id="cd-body" style={{ fontSize: 13.5, color: 'var(--slate,#6b7280)', marginTop: 6, lineHeight: 1.55, whiteSpace: 'pre-line' }}>{body}</div>}
           </div>
         </div>
+        {check && (
+          <label className={`cd-check${checked ? ' on' : ''}`}>
+            <input type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)} />
+            <span className="cd-box-tick" aria-hidden><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg></span>
+            <span style={{ minWidth: 0 }}>
+              <span className="cd-check-l" style={{ display: 'block' }}>{check.label}</span>
+              {(checked ? check.hint : (check.hintOff ?? check.hint)) && <span className="cd-check-h" style={{ display: 'block' }}>{checked ? check.hint : (check.hintOff ?? check.hint)}</span>}
+            </span>
+          </label>
+        )}
         <div className="cd-actions">
           {!hideCancel && <button className="cd-btn cd-cancel" onClick={() => close(false)}>{cancelLabel || 'Cancel'}</button>}
           <button ref={okRef} className="cd-btn cd-ok" style={{ background: danger ? '#dc2626' : 'var(--coral,#ff7a6b)' }} onClick={() => close(true)}>{okLabel}</button>

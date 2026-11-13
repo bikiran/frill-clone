@@ -6,7 +6,7 @@
 // them to every visit.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { confirmDialog } from '@/components/ConfirmDialog'
+import { confirmDialog, confirmNotify } from '@/components/ConfirmDialog'
 import { useRefundAccess, RefundPinField, RefundNotAllowed, isPinError } from '@/components/RefundPin'
 import {
   apiRaw, Icon, PartyStepper, PeopleIcon, StateTag, HereTag, TableChip, TablePicker, OccasionPick, money, tablesText, addDays, dayLabel, dayShort, dayNum, timeOf, fmtDay, dayKeyIn, SEATING, SOURCE, RS_CSS, type Reservation,
@@ -52,8 +52,14 @@ export default function ReservationDrawer({ companyId, tz, today, res, seatingOp
   const cancel = async () => {
     // A paid deposit: choose whether to give it back (a refund, so the refund PIN applies).
     if (res.deposit?.status === 'paid') { setMode('cancel'); return }
-    const ok = await confirmDialog({ title: `Cancel ${res.name}’s table?`, message: `${dayLabel(dayKeyIn(res.startsAt, tz), today, true)} at ${timeOf(res.startsAt, tz)} for ${res.party}. ${res.phone || res.email ? 'We’ll let them know.' : ''}`, confirmLabel: 'Cancel reservation', cancelLabel: 'Keep it', tone: 'danger' })
-    if (ok) await act('cancel', { notify: true }, 'Reservation cancelled')
+    const opts = { title: `Cancel ${res.name}’s table?`, message: `${dayLabel(dayKeyIn(res.startsAt, tz), today, true)} at ${timeOf(res.startsAt, tz)} for ${res.party}.`, confirmLabel: 'Cancel reservation', cancelLabel: 'Keep it', tone: 'danger' as const }
+    // A guest we can reach gets the "Notify customer" tick, ticked by default.
+    if (res.phone || res.email) {
+      const picked = await confirmNotify({ ...opts, notifyLabel: 'Notify guest', notifyHint: 'They get the cancellation by SMS or email.', notifyHintOff: 'Nothing is sent to the guest about this.' })
+      if (picked) await act('cancel', { notify: picked.notify }, picked.notify ? 'Reservation cancelled' : 'Reservation cancelled. Guest not notified')
+      return
+    }
+    if (await confirmDialog(opts)) await act('cancel', { notify: false }, 'Reservation cancelled')
   }
 
   const day = dayKeyIn(res.startsAt, tz)
@@ -213,6 +219,7 @@ function TableForm({ companyId, res, onBack, onSaved }: { companyId: string; res
 function CancelForm({ companyId, res, onBack, onCancelled }: { companyId: string; res: Reservation; onBack: () => void; onCancelled: (r: Reservation, msg: string) => void }) {
   const access = useRefundAccess(companyId)
   const [refund, setRefund] = useState(true)
+  const [notify, setNotify] = useState(true)
   const [pin, setPin] = useState('')
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
@@ -223,7 +230,8 @@ function CancelForm({ companyId, res, onBack, onCancelled }: { companyId: string
     setBusy(true); setErr('')
     try {
       const giveBack = refund && canRefund
-      const r = await apiRaw('/api/reservations', { method: 'PATCH', json: { companyId, id: res.id, action: 'cancel', notify: true, reason, refund: giveBack, ...(giveBack && pin ? { refundPin: pin } : {}) } })
+      const tell = notify && !!(res.phone || res.email)
+      const r = await apiRaw('/api/reservations', { method: 'PATCH', json: { companyId, id: res.id, action: 'cancel', notify: tell, reason, refund: giveBack, ...(giveBack && pin ? { refundPin: pin } : {}) } })
       if (!r.ok) { if (isPinError(r.data?.code)) setPin(''); setErr(r.data?.error || 'Could not cancel.'); return }
       onCancelled(r.data.reservation, r.data.refundError ? `Cancelled. The refund didn’t go through: ${r.data.refundError}` : r.data.refunded ? `Cancelled and ${money(r.data.refunded)} refunded` : 'Reservation cancelled, deposit kept')
     } finally { setBusy(false) }
@@ -231,10 +239,11 @@ function CancelForm({ companyId, res, onBack, onCancelled }: { companyId: string
   return (
     <div className="rd-form">
       <h3 style={{ margin: 0 }}>Cancel {res.name}’s table?</h3>
-      <p className="ak-hint" style={{ margin: 0 }}>They paid a {money(cents)} deposit. {res.phone || res.email ? 'We’ll let them know it’s cancelled.' : ''}</p>
+      <p className="ak-hint" style={{ margin: 0 }}>They paid a {money(cents)} deposit.</p>
       {canRefund ? (
         <label className="rs-check"><input type="checkbox" checked={refund} onChange={e => setRefund(e.target.checked)} /><span>Refund the {money(cents)} deposit to their card</span></label>
       ) : access.loading ? null : !access.canRefund ? <RefundNotAllowed /> : <p className="ak-hint" style={{ margin: 0, color: '#b45309' }}>Refunds are locked for a while after wrong PINs. Cancel now and refund later from Payments, or try again soon.</p>}
+      {(res.phone || res.email) && <label className="rs-check"><input type="checkbox" checked={notify} onChange={e => setNotify(e.target.checked)} /><span>Notify guest</span></label>}
       {refund && canRefund && access.pinSet && <RefundPinField value={pin} onChange={setPin} id="rd-pin" />}
       <div><label className="ak-label" htmlFor="rd-why">Reason (optional)</label><input id="rd-why" className="ak-field" value={reason} onChange={e => setReason(e.target.value)} maxLength={500} placeholder="e.g. They called to cancel" /></div>
       {err && <div className="ak-note bad" role="alert">{err}</div>}

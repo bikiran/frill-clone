@@ -19,6 +19,7 @@ import { claimEvent, claimOrderAnnouncement, orderAlertVerb } from '@/lib/order-
 import { DEFAULT_ORDER_MESSAGES, isStaleOrderMessage, withCompletedFallbacks, isPickupMethod, completedKey, trackingAlreadySent } from '@/lib/order-messages'
 import { findCustomerGoogleReview } from '@/lib/review-match'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
+import { customerNoticeHeld } from '@/lib/order-notify'
 
 // WooCommerce's status words — the vocabulary the inbox badge, the message
 // templates and the settings page all use. Each store maps into it.
@@ -295,6 +296,10 @@ export async function runOrderAutomation(db: any, companyId: string, o: NormalOr
     } catch {}
   }
 
+  // "Notify customer" unticked on the change in Colvy that caused this.
+  const heldByTeam = await customerNoticeHeld(db, companyId, dupeKey.order_id, status)
+  if (shouldSend && heldByTeam) shouldSend = false
+
   if (shouldSend) {
     const refundedAmount = o.refundedTotal ? money(Math.abs(o.refundedTotal)) : money(o.total)
     const body = template
@@ -358,8 +363,9 @@ export async function runOrderAutomation(db: any, companyId: string, o: NormalOr
     await hooks.persist(db, companyId, o, { conversationId: conv?.id || null, contactId: contact?.id || null, attribution, badgeStatus })
   } catch (e) { console.error('[order automation] attribution failed', e) }
 
-  // ── Review request on completion (its own toggle; never for POS) ──────────
-  if (status === 'completed' && !o.isPos) {
+  // ── Review request on completion (its own toggle; never for POS, nor when
+  // the team completed it with "Notify customer" unticked) ──────────────────
+  if (status === 'completed' && !o.isPos && !heldByTeam) {
     try {
       const { data: co } = await db.from('companies').select('review_request_settings').eq('id', companyId).maybeSingle()
       const rr = co?.review_request_settings || {}

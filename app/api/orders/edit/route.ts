@@ -5,6 +5,7 @@ import { resolveShopifyOrderRef, shopifyEditItems, shopifyChangeStatus, shopifyA
 import { statusWord } from '@/lib/shopify-automation'
 import { readStoreJson } from '@/lib/store-response'
 import { forgetWooOrders } from '@/lib/woocommerce-service'
+import { wantsNotify, quietStatuses, quietMetaValue, holdCustomerNotice, releaseCustomerNotice, QUIET_META_KEY, QUIET_NOTE } from '@/lib/order-notify'
 
 function admin() {
   return createClient(
@@ -21,8 +22,11 @@ function admin() {
 // (Shopify has no separate customer-note email).
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, integrationId, orderId, status, items, customerNote, conversationId, channel, orderRowId } = await req.json()
+    const { companyId, integrationId, orderId, status, items, customerNote, conversationId, channel, orderRowId, notifyCustomer } = await req.json()
     if (!companyId || !orderId) return NextResponse.json({ error: 'Missing companyId or orderId' }, { status: 400 })
+    // "Notify customer" unticked: a status change here messages nobody (lib/order-notify).
+    const notify = wantsNotify(notifyCustomer)
+    const quiet = status ? quietStatuses(status) : []
 
     const db = admin()
     // Workspace members only (customer details, orders and refunds).
@@ -37,7 +41,13 @@ export async function POST(req: NextRequest) {
         const list = Array.isArray(items) ? items : []
         if (list.some((it: any) => !it?.id)) return NextResponse.json({ error: 'Adding products to a Shopify order isn’t available from Colvy yet — add them in Shopify.' }, { status: 400 })
         let o: any = (await shopifyEditItems(db, shop, list.map((it: any) => ({ id: it.id, quantity: it.remove ? 0 : Number(it.quantity) || 0 })))).order
-        if (status && o && statusWord(o) !== String(status).toLowerCase()) o = (await shopifyChangeStatus(db, shop, status)).order || o
+        if (status && o && statusWord(o) !== String(status).toLowerCase()) {
+          const shopId = Number(shop.externalId)
+          if (notify) await releaseCustomerNotice(db, companyId, shopId, quiet)
+          else await holdCustomerNotice(db, companyId, shopId, quiet)
+          try { o = (await shopifyChangeStatus(db, shop, status)).order || o }
+          catch (e) { if (!notify) await releaseCustomerNotice(db, companyId, shopId, quiet); throw e }
+        }
         if (customerNote && String(customerNote).trim()) o = (await shopifyAppendNote(db, shop, String(customerNote))) || o
         const number = String(o?.name || shop.row?.order_number || shop.externalId).replace(/^#/, '')
         const total = parseFloat(o?.currentTotalPriceSet?.shopMoney?.amount ?? o?.totalPriceSet?.shopMoney?.amount) || 0
@@ -89,19 +99,28 @@ export async function POST(req: NextRequest) {
     }
     if (status) payload.status = status
     if (customerNote) payload.customer_note = customerNote
+    const wooId = Number(orderId)
+    if (status && notify) await releaseCustomerNotice(db, companyId, wooId, quiet)
+    else if (status) {
+      await holdCustomerNotice(db, companyId, wooId, quiet)
+      payload.meta_data = [{ key: QUIET_META_KEY, value: quietMetaValue(quiet) }]
+    }
 
     const res = await fetch(`${integ.store_url}/wp-json/wc/v3/orders/${orderId}`, {
       method: 'PUT', headers: { 'Authorization': auth, 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
     })
     const data = await readStoreJson(res, { provider: 'woocommerce', store: integ.store_url })
     forgetWooOrders(integ.store_url)
-    if (!res.ok) return NextResponse.json({ error: data?.message || `Update failed (${res.status})` }, { status: 502 })
+    if (!res.ok) {
+      if (status && !notify) await releaseCustomerNotice(db, companyId, wooId, quiet)
+      return NextResponse.json({ error: data?.message || `Update failed (${res.status})` }, { status: 502 })
+    }
 
     if (conversationId) {
       try {
         await db.from('messages').insert({
           conversation_id: conversationId, company_id: companyId, sender_type: 'system',
-          content: `✏️ Order #${data.number || orderId} updated — new total ${data.currency || 'AUD'} $${data.total} (${data.status}).`,
+          content: `✏️ Order #${data.number || orderId} updated — new total ${data.currency || 'AUD'} $${data.total} (${data.status}).${status && !notify ? ` ${QUIET_NOTE}` : ''}`,
         })
       } catch {}
     }
