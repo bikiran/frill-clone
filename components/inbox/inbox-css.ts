@@ -663,6 +663,30 @@ export const INBOX_KEYFRAMES_CSS = `
 
 // Message rows: hover actions, bubbles and reactions.
 export const THREAD_MESSAGES_CSS = `
+/* Internal note (team only): a soft warm card, Sellio style. No side
+   stripe; the tint, lock tile and "Team only" pill say it isn't sent. */
+.tn-note{max-width:86%;width:100%;box-sizing:border-box;padding:14px 16px 15px;border-radius:20px;background:#fff8ec;box-shadow:inset 0 0 0 1px rgba(217,119,6,.16),0 10px 24px -20px rgba(146,64,14,.45)}
+.tn-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;row-gap:6px;margin-bottom:10px}
+.tn-ic{width:30px;height:30px;border-radius:10px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:#ffedcc;color:#b45309}
+.tn-title{font-size:14px;font-weight:800;letter-spacing:-.01em;color:#6b3a07}
+.tn-pill{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;background:rgba(245,158,11,.14);color:#9a5b06;font-size:11px;font-weight:700}
+.tn-by{margin-left:auto;display:inline-flex;align-items:center;gap:7px;min-width:0;font-size:12.5px}
+.tn-av{width:24px;height:24px;border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:#fde3a7;color:#8a4b0a;font-size:9.5px;font-weight:800}
+.tn-who{font-weight:650;color:#7a4a12;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tn-when{color:#b08850;white-space:nowrap}
+.tn-when::before{content:'·';margin-right:7px;color:#d4b483}
+.tn-text{margin:0;font-size:14.5px;line-height:1.55;color:#3f2a0c;white-space:pre-wrap;word-break:break-word}
+.tn-voice{width:min(340px,100%);border-radius:16px;background:#fff;box-shadow:0 0 0 1px rgba(217,119,6,.12),0 4px 14px -10px rgba(146,64,14,.35)}
+@media (max-width:640px){.tn-note{max-width:100%;padding:12px 13px 13px;border-radius:18px}.tn-by{margin-left:0;width:100%}}
+[data-theme="dark"] .tn-note{background:rgba(245,158,11,.07);box-shadow:inset 0 0 0 1px rgba(245,158,11,.2)}
+[data-theme="dark"] .tn-ic{background:rgba(245,158,11,.16);color:#fbbf24}
+[data-theme="dark"] .tn-title{color:#fcd34d}
+[data-theme="dark"] .tn-pill{background:rgba(245,158,11,.16);color:#fcd34d}
+[data-theme="dark"] .tn-av{background:rgba(245,158,11,.22);color:#fde68a}
+[data-theme="dark"] .tn-who{color:#f5d9a8}
+[data-theme="dark"] .tn-when{color:#c9a46c}
+[data-theme="dark"] .tn-text{color:#f6e7cc}
+[data-theme="dark"] .tn-voice{background:var(--card,#1c1c1f);box-shadow:0 0 0 1px rgba(245,158,11,.18)}
               .chat-msg-row:hover .chat-msg-actions,
               .chat-msg-row .chat-msg-actions.pinned { opacity: 1 !important; pointer-events: auto !important; }
               /* The picker sat 34px above the smiley with a dead gap between them:
