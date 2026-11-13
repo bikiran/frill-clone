@@ -50,7 +50,7 @@ them: Yes please!
 card: Book your free class | Strength Basics · Sat 8:00am · 45 min | Choose a time
 \`\`\`
 
-Phone calls count too. If nobody can pick up because every coach is on the floor, Colvy’s [missed-call text back](/phones/missed-call-text-back) can text the caller once from your business number, with your booking link in it. Their reply lands in the same conversation as the missed call.
+Phone calls count too. If nobody can pick up because every coach is on the floor, Colvy’s [missed-call text back](/phones/missed-call-text-back) can text the caller once, with your booking link in it. Their reply lands in the same conversation as the missed call.
 
 > [!TRY] Set it up in Colvy
 > Turn on missed-call text back in Settings → Calls & SMS and add {booking_link} to the message. You can send it only when you’re closed, or any time nobody answers.
@@ -284,7 +284,7 @@ Colvy gives you a few ways to catch them:
 
 - **An [AI receptionist](/phones/ai-receptionist)** that answers when nobody picks up, out of hours, or always. It handles the common questions (hours, location, parking, what to wear), takes a message, and can text the caller your booking link.
 - **A [press-1 menu](/phones/ivr)** (“press 1 to book or change an appointment, press 2 for anything else”) so calls reach the right person.
-- **[Missed-call text back](/phones/missed-call-text-back)**, which texts a caller you couldn’t answer, once, from your clinic number, with your booking link.
+- **[Missed-call text back](/phones/missed-call-text-back)**, which texts a caller you couldn’t answer, once, with your booking link.
 
 \`\`\`chat
 title: Northbank Physio · SMS
@@ -373,7 +373,7 @@ This guide shows how a cleaning business runs that side of things in Colvy: quot
 
 Quote requests come in from everywhere: Facebook, Instagram, your website, texts and calls. In Colvy they land in [one inbox](/product/inbox) you can answer from your phone, between jobs.
 
-- **Missed calls:** turn on [missed-call text back](/phones/missed-call-text-back), so a caller you couldn’t answer gets a text from your business number and replies there.
+- **Missed calls:** turn on [missed-call text back](/phones/missed-call-text-back), so a caller you couldn’t answer gets a text and replies there.
 - **A quote request form:** a [Colvy form](/channels/forms) asks the questions you always need (address, number of bedrooms and bathrooms, the type of clean, photos of the worst bits) and you can turn a response straight into a job.
 - **Photos on request:** need to see the oven before you quote? Send the customer a photo request link, and they upload pictures from their phone into the conversation.
 

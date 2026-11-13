@@ -209,7 +209,7 @@ That’s also the moment to ask for a review, while they’re delighted. Reply t
 
 ## 5. Calls while your hands are full
 
-You can’t answer the phone mid-groom. Turn on [missed-call text back](/phones/missed-call-text-back) so a caller you missed gets a text from your business number with your booking link, and their reply lands in the same conversation.
+You can’t answer the phone mid-groom. Turn on [missed-call text back](/phones/missed-call-text-back) so a caller you missed gets a text with your booking link, and their reply lands in the same conversation.
 
 ![A small dog in a yellow hoodie](/blog/pet-groomers-walkers-trainers/dressed.jpg "Missed calls get a text with your booking link, so the next booking isn’t lost.")
 
@@ -531,7 +531,7 @@ them: Looks amazing, paid. Thanks!
 
 ## 4. Calls when you’re outside
 
-The phone rings when you’re on the mower. [Missed-call text back](/phones/missed-call-text-back) texts callers you couldn’t answer, from your business number, with your booking link. Or [forward calls to your mobile](/phones/call-forwarding) only after hours.
+The phone rings when you’re on the mower. [Missed-call text back](/phones/missed-call-text-back) texts callers you couldn’t answer, with your booking link. Or [forward calls to your mobile](/phones/call-forwarding) only after hours.
 
 ## 5. Seasonal reminders
 
