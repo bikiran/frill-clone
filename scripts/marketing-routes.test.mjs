@@ -132,7 +132,7 @@ console.log('every search description fits in a Google result (160 characters)')
     }
   }
   // Blog posts: the search description, else the excerpt
-  for (const f of ['lib/blog.ts', 'lib/blog-latest.ts']) {
+  for (const f of ['lib/blog.ts', 'lib/blog-latest.ts', 'lib/blog-industries.ts']) {
     for (const block of read(f).split(/\n\s+slug: '/).slice(1)) {
       const slug = block.slice(0, block.indexOf("'"))
       const seo = block.match(new RegExp(`\\n\\s+seoDescription: ${STR}`)), ex = block.match(new RegExp(`\\n\\s+excerpt: ${STR}`))

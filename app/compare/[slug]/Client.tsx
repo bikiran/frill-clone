@@ -29,7 +29,7 @@ const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c'
 // not confirmed either way. ✗ is only for things we're confident they don't
 // offer. Plans change, so the table says when it was checked.
 type Val = boolean | string
-type Slug = 'podium' | 'birdeye' | 'coax' | 'gorgias' | 'zendesk' | 'freshdesk' | 'intercom' | 'gladly' | 'manychat' | 'highlevel' | 'salesforce' | 'aircall' | 'dialpad' | 'ringcentral'
+type Slug = 'podium' | 'birdeye' | 'coax' | 'gorgias' | 'zendesk' | 'freshdesk' | 'intercom' | 'gladly' | 'manychat' | 'highlevel' | 'salesforce' | 'aircall' | 'dialpad' | 'ringcentral' | 'krispcall'
 type Row = { label: string; colvy?: Val; v: Partial<Record<Slug, Val>> }
 // The nine competitors checked in the first round. A shorthand for a value
 // they all share; competitors added later list only what was checked for them.
@@ -39,19 +39,19 @@ const HELPDESKS_T: Partial<Record<Slug, Val>> = { gorgias: true, zendesk: true, 
 
 const ROWS: { group: string; rows: Row[] }[] = [
   { group: 'Channels', rows: [
-    { label: 'SMS on Australian 🇦🇺 numbers', v: { podium: true, birdeye: true, coax: true, gorgias: 'Add-on', zendesk: 'Add-on', freshdesk: 'Add-on', intercom: 'Usage-based', gladly: true, manychat: 'Via your Twilio', highlevel: 'Usage-based', salesforce: 'Add-on, higher plans', aircall: 'Mobile numbers; rates on request', dialpad: '250 a month, pooled', ringcentral: 'Since July 2026; bundles extra' } },
+    { label: 'SMS on Australian 🇦🇺 numbers', v: { podium: true, birdeye: true, coax: true, gorgias: 'Add-on', zendesk: 'Add-on', freshdesk: 'Add-on', intercom: 'Usage-based', gladly: true, manychat: 'Via your Twilio', highlevel: 'Usage-based', salesforce: 'Add-on, higher plans', aircall: 'Mobile numbers; rates on request', dialpad: '250 a month, pooled', ringcentral: 'Since July 2026; bundles extra', krispcall: 'Billed per message' } },
     { label: 'WhatsApp', colvy: COMING_SOON.whatsapp ? 'Coming soon' : true, v: { birdeye: true, coax: true, intercom: 'Usage-based', gladly: true, manychat: true, highlevel: 'Add-on', salesforce: 'Add-on, higher plans', aircall: 'Add-on' } },
     { label: 'Instagram DMs', v: { ...ALL_T(true), highlevel: true, salesforce: 'Custom build' } },
     { label: 'Facebook Messenger', v: { ...ALL_T(true), highlevel: true, salesforce: 'Add-on, higher plans' } },
     { label: 'Email inbox (Gmail or any mailbox)', v: { podium: true, birdeye: 'Marketing', coax: true, gorgias: true, zendesk: true, freshdesk: true, intercom: true, gladly: true, manychat: 'Basic', highlevel: true, salesforce: true, dialpad: 'Separate Support product' } },
-    { label: 'Phone calls & voicemail', v: { podium: true, birdeye: 'Partial', coax: 'Add-on', gorgias: 'Add-on', zendesk: true, freshdesk: 'Add-on', intercom: 'Usage-based', gladly: true, manychat: false, highlevel: 'Usage-based', salesforce: 'Add-on, higher plans', aircall: true, dialpad: true, ringcentral: true } },
+    { label: 'Phone calls & voicemail', v: { podium: true, birdeye: 'Partial', coax: 'Add-on', gorgias: 'Add-on', zendesk: true, freshdesk: 'Add-on', intercom: 'Usage-based', gladly: true, manychat: false, highlevel: 'Usage-based', salesforce: 'Add-on, higher plans', aircall: true, dialpad: true, ringcentral: true, krispcall: true } },
     { label: 'Google reviews', v: { podium: true, birdeye: true, coax: true, gorgias: false, zendesk: false, freshdesk: false, intercom: false, gladly: false, manychat: false, highlevel: true } },
     { label: 'Live chat widget', v: { ...ALL_T(true), highlevel: true, salesforce: 'Pro Suite', dialpad: 'Separate Support product' } },
   ] },
   { group: 'AI', rows: [
     { label: 'AI agents that answer on their own', colvy: 'Five, included', v: { podium: 'Paid add-on', birdeye: 'Quote-based', coax: 'Voice: all plans; chat: Enterprise', gorgias: 'Per interaction', zendesk: 'Allowance, then per resolution', freshdesk: 'Per session', intercom: 'Per outcome (Fin)', gladly: 'Per resolution or quote', manychat: 'Manychat AI', highlevel: 'Add-on or per use', salesforce: 'Higher plans, usage-based', aircall: 'Voice agents from A$150/mo', ringcentral: 'AI Receptionist, A$62/mo' } },
     { label: 'Name and style each AI agent', v: { podium: 'Name', gorgias: 'Name', zendesk: 'Name', freshdesk: true, intercom: true, gladly: 'Name', highlevel: true, salesforce: 'Higher plans' } },
-    { label: 'Call summaries, to-dos & transcripts', v: { podium: true, coax: 'Add-on', gladly: 'Add-on', manychat: false, highlevel: 'Usage-based (Labs)', salesforce: 'Video meetings; calls on higher plans', aircall: 'Professional, or add-on', dialpad: true, ringcentral: 'Depends on plan' } },
+    { label: 'Call summaries, to-dos & transcripts', v: { podium: true, coax: 'Add-on', gladly: 'Add-on', manychat: false, highlevel: 'Usage-based (Labs)', salesforce: 'Video meetings; calls on higher plans', aircall: 'Professional, or add-on', dialpad: true, ringcentral: 'Depends on plan', krispcall: 'Paid AI add-on' } },
     { label: 'AI campaign builder (audience, copy, timing)', v: { highlevel: 'Email (beta)', salesforce: 'Marketing Cloud add-on' } },
     { label: 'AI voice typing', v: {} },
   ] },
@@ -72,7 +72,7 @@ const ROWS: { group: string; rows: Row[] }[] = [
   ] },
   { group: 'Team & self-service', rows: [
     { label: 'Help centre / knowledge base', v: { ...HELPDESKS_T, salesforce: 'Knowledge base; help centre on higher plans' } },
-    { label: 'iOS & Android app', v: { podium: true, birdeye: true, coax: true, gorgias: true, zendesk: true, freshdesk: true, intercom: true, gladly: 'Mobile browser', manychat: true, highlevel: true, salesforce: true } },
+    { label: 'iOS & Android app', v: { podium: true, birdeye: true, coax: true, gorgias: true, zendesk: true, freshdesk: true, intercom: true, gladly: 'Mobile browser', manychat: true, highlevel: true, salesforce: true, krispcall: true } },
     { label: 'Team notes', v: { ...HELPDESKS_T, highlevel: true, salesforce: true } },
     { label: 'Tasks & reminders', v: { highlevel: true, salesforce: true } },
     { label: 'Shared calendar', v: { highlevel: true } },
@@ -84,7 +84,7 @@ const ROWS: { group: string; rows: Row[] }[] = [
     { label: 'Announcements / changelog', v: { ...ALL_T(false), intercom: true } },
   ] },
   { group: 'Local', rows: [
-    { label: 'Australian 🇦🇺 phone numbers', v: { podium: true, coax: true, zendesk: 'Limited', manychat: 'Via your Twilio', highlevel: true, salesforce: 'Add-on, higher plans', aircall: 'Local & mobile', dialpad: 'Local, mobile & 1800', ringcentral: 'Local, 1300 & 1800' } },
+    { label: 'Australian 🇦🇺 phone numbers', v: { podium: true, coax: true, zendesk: 'Limited', manychat: 'Via your Twilio', highlevel: true, salesforce: 'Add-on, higher plans', aircall: 'Local & mobile', dialpad: 'Local, mobile & 1800', ringcentral: 'Local, 1300 & 1800', krispcall: 'Local, mobile & 1800' } },
   ] },
 ]
 
@@ -97,6 +97,23 @@ type Cmp = {
 }
 
 const CMP: Record<string, Cmp> = {
+  // KrispCall: from its plans, pricing and help pages on krispcall.com and
+  // help.krispcall.com, checked 13 November 2026. Its prices are shown with a
+  // plain "$", so the copy doesn't name a currency for them.
+  krispcall: {
+    name: 'KrispCall', accent: TEAL, heroTitle: 'The KrispCall alternative with', heroAccent: 'one price for the whole team', heroSub: 'KrispCall is a cloud phone system priced per user, with calls and texts billed per minute and per message on its Starter and Advance plans. Colvy puts your Australian business number in a shared inbox with SMS, email, live chat and social, at one AUD price for the team, with 3,000 texts a month included.',
+    stats: [{ big: '1', label: 'price for the whole team' }, { big: '3,000', label: 'SMS a month included' }, { big: 'A$35', label: 'for just a business number' }],
+    tableNote: 'KrispCall is a cloud phone system with Australian local, mobile and 1800 numbers, call recording on every plan, and phone trees (IVR) and call transfer from its Advance plan. Its column shows its plans and help pages on krispcall.com. Colvy adds texting, email, live chat and social in the same inbox, at one price for the team.',
+    wins: [
+      { t: 'One price for the whole team', d: 'KrispCall prices each user: Starter is $15 a user a month ($12 billed annually) for up to 5 users, and Advance is $40 ($32 billed annually) for up to 50. Colvy’s Inbox plan is one price for unlimited team members: A$179 a month, or A$149 a month billed yearly, GST included.' },
+      { t: 'Texts included', d: 'On KrispCall’s Starter and Advance plans, calls and texts are billed per minute and per message; its Max plan includes 1,000 SMS segments a user a month for US and Canadian numbers. Colvy’s Inbox and Everything plans include 3,000 SMS a month, then prepaid credits from A$0.15 a text.' },
+      { t: 'Press-1 menus without the upgrade', d: 'KrispCall’s phone trees (IVR) and call transfer start on its Advance plan. Colvy’s press-1 menu, with an after-hours menu, is part of call routing on the Inbox and Everything plans.' },
+      { t: 'Call summaries in the plan', d: 'KrispCall’s call transcription and AI summaries are part of a paid AI add-on. Colvy records, transcribes and summarises calls on the Inbox and Everything plans, and drafts the follow-up tasks for you.' },
+      { t: 'Just need a number?', d: 'Colvy’s Business number plan is A$35 a month: one Australian local or mobile number that forwards to your mobile, voicemail, every call in the Colvy app, and 100 call minutes included, then 20c a minute.' },
+      { t: 'Australian 🇦🇺 support & pricing', d: 'Local team, Australian numbers and prices in AUD with GST included. Cancel anytime.' },
+    ],
+    checklist: ['Calls, SMS, email, social and live chat in one inbox', 'One price for unlimited team members, GST included', '3,000 SMS a month included', 'Call recording, transcripts and AI summaries', 'Press-1 menus, forwarding and ring groups', 'AI receptionist and five AI agents', 'Australian 🇦🇺 numbers, support and AUD pricing', 'No lock-in contracts — cancel anytime'],
+  },
   // Phone systems. Facts from each vendor's own Australian pricing, feature
   // and help pages, checked 13 November 2026.
   aircall: {
