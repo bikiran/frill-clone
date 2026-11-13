@@ -472,7 +472,7 @@ export default function InboxOverlays() {
       {refundOrder && companyId && (
         <RefundOrderModal companyId={companyId} order={refundOrder} accent={companyInfo?.accent_color || 'var(--coral)'}
           onClose={() => setRefundOrder(null)}
-          onDone={(amt, reason) => { const o = refundOrder; setRefundOrder(null); afterOrderRefund(o, amt, reason) }} />
+          onDone={(amt, reason, notified) => { const o = refundOrder; setRefundOrder(null); afterOrderRefund(o, amt, reason, notified) }} />
       )}
 
       {showPod && (
@@ -951,6 +951,17 @@ export default function InboxOverlays() {
                     style={{ width: '100%', padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', fontSize: 13.5, marginBottom: 14 }}>
                     {['pending', 'processing', 'on-hold', 'completed', 'cancelled', 'refunded'].map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
+                  {/* A new status can message the customer: "Notify customer", ticked by default. */}
+                  {editOrderData.status !== editOrderData.originalStatus && (
+                    <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 11, background: 'var(--soft, #f6f6f7)', marginTop: -4, marginBottom: 14, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={editOrderData.notifyCustomer !== false} onChange={e => setEditOrderData((d: any) => ({ ...d, notifyCustomer: e.target.checked }))}
+                        style={{ width: 17, height: 17, marginTop: 1, accentColor: 'var(--coral)', flexShrink: 0 }} />
+                      <span style={{ minWidth: 0 }}>
+                        <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: 'var(--ink)' }}>Notify customer</span>
+                        <span style={{ display: 'block', fontSize: 12, color: 'var(--slate)', marginTop: 1, lineHeight: 1.4 }}>{editOrderData.notifyCustomer !== false ? `They get the usual “${editOrderData.status}” update by SMS or email.` : 'Nothing is sent to the customer about this change.'}</span>
+                      </span>
+                    </label>
+                  )}
 
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--ink)', marginBottom: 5 }}>Add a customer note (optional)</label>
                   <textarea value={editOrderData.customerNote} onChange={e => setEditOrderData((d: any) => ({ ...d, customerNote: e.target.value }))} rows={2}

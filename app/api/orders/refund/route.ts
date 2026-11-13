@@ -2,6 +2,7 @@ import { guardRefund, guardBody, isRefused } from '@/lib/refund-guard'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { deliverAutomatedMessage } from '@/lib/channel-fallback'
+import { wantsNotify, quietMetaValue, holdCustomerNotice, releaseCustomerNotice, QUIET_META_KEY, QUIET_NOTE } from '@/lib/order-notify'
 import { resolveShopifyOrderRef, shopifyRefund, ShopifyActionError } from '@/lib/shopify-order-actions'
 import { readStoreJson } from '@/lib/store-response'
 import { forgetWooOrders } from '@/lib/woocommerce-service'
@@ -46,10 +47,14 @@ function admin() {
 export async function POST(req: NextRequest) {
   try {
     const { companyId, integrationId, orderId, amount, reason, conversationId,
-            lineItems, shipping, restock, channel, orderRowId, idempotencyKey, refundPin, actorUserId } = await req.json()
+            lineItems, shipping, restock, channel, orderRowId, idempotencyKey, refundPin, actorUserId, notifyCustomer } = await req.json()
     if (!companyId || !orderId) {
       return NextResponse.json({ error: 'Missing companyId or orderId' }, { status: 400 })
     }
+    // "Notify customer" unticked: no refund message from Colvy, none from the
+    // store's webhook that follows, and (with the Colvy plugin) no WooCommerce
+    // "Refunded order" email. See lib/order-notify.
+    const notify = wantsNotify(notifyCustomer)
 
     const db = admin()
     // Staff with "Issue refunds", and the refund PIN when one is set.
@@ -71,6 +76,9 @@ export async function POST(req: NextRequest) {
     try { shop = await resolveShopifyOrderRef(db, companyId, { orderId, channel, orderRowId }) }
     catch (e: any) { return NextResponse.json({ error: e.message }, { status: e instanceof ShopifyActionError ? e.status : 500 }) }
     if (shop) {
+      const shopId = Number(shop.externalId)
+      if (notify) await releaseCustomerNotice(db, companyId, shopId, ['refunded'])
+      else await holdCustomerNotice(db, companyId, shopId, ['refunded'])
       try {
         const r = await shopifyRefund(db, shop, {
           amount: (Array.isArray(lineItems) && lineItems.length) || Number(shipping) > 0 ? null : (Number(amount) || null),
@@ -84,6 +92,7 @@ export async function POST(req: NextRequest) {
         dedupeOrderId = Number(shop.externalId)
         data = { id: r.refundId, amount: r.amount, currency: r.currency, total_refunded: r.totalRefunded, channel: 'shopify' }
       } catch (e: any) {
+        if (!notify) await releaseCustomerNotice(db, companyId, shopId, ['refunded'])
         return NextResponse.json({ error: e.message || 'Shopify rejected the refund' }, { status: e instanceof ShopifyActionError ? e.status : 502 })
       }
     } else {
@@ -190,6 +199,21 @@ export async function POST(req: NextRequest) {
         if (dupe) return NextResponse.json({ error: `A refund of $${Number(refundAmount).toFixed(2)} was just made on this order. Check the order before refunding again.`, code: 'refund_duplicate' }, { status: 409 })
       } catch {}
 
+      // Quiet: hold the webhook's refund message, and mark the order so the
+      // Colvy plugin holds WooCommerce's "Refunded order" email (a refund
+      // can't carry order meta itself, so it's its own small update first).
+      const wooId = Number(orderId)
+      if (notify) await releaseCustomerNotice(db, companyId, wooId, ['refunded'])
+      else {
+        await holdCustomerNotice(db, companyId, wooId, ['refunded'])
+        try {
+          await fetch(`${integ.store_url}/wp-json/wc/v3/orders/${orderId}`, {
+            method: 'PUT', headers: { 'Authorization': auth, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ meta_data: [{ key: QUIET_META_KEY, value: quietMetaValue(['refunded']) }] }),
+          })
+        } catch {}
+      }
+
       const res = await fetch(`${integ.store_url}/wp-json/wc/v3/orders/${orderId}/refunds`, {
         method: 'POST',
         headers: { 'Authorization': auth, 'Content-Type': 'application/json' },
@@ -200,6 +224,7 @@ export async function POST(req: NextRequest) {
       data = await readStoreJson(res, { provider: 'woocommerce', store: integ.store_url }).catch((e: any) => { refundReadErr = e?.message || 'WooCommerce sent back something Colvy can’t read.'; return {} })
       forgetWooOrders(integ.store_url)
       if (!res.ok || refundReadErr) {
+        if (!notify) await releaseCustomerNotice(db, companyId, wooId, ['refunded'])
         return NextResponse.json(
           { error: data?.message || (refundReadErr ? `${refundReadErr} Check the order in WooCommerce before trying again — the refund may or may not have gone through.` : 'WooCommerce rejected the refund') },
           { status: 400 }
@@ -232,7 +257,7 @@ export async function POST(req: NextRequest) {
         await db.from('conversation_events').insert({
           conversation_id: conversationId, company_id: companyId,
           event_type: 'order_refunded',
-          detail: `Refunded $${Number(refundAmount).toFixed(2)} on order #${orderLabel}`,
+          detail: `Refunded $${Number(refundAmount).toFixed(2)} on order #${orderLabel}${notify ? '' : `. ${QUIET_NOTE}`}`,
         })
       } catch {}
     }
@@ -243,8 +268,9 @@ export async function POST(req: NextRequest) {
     // customer is notified immediately instead of relying on (or missing) the
     // store's order.updated webhook. The team-only internal note is posted
     // separately by the inbox and remains the audit record. Best-effort — a
-    // delivery failure never affects the refund itself.
-    if (conversationId) {
+    // delivery failure never affects the refund itself. Unticked "Notify
+    // customer" skips it all.
+    if (conversationId && notify) {
       try {
         const [{ data: company }, { data: conv }] = await Promise.all([
           db.from('companies').select('name, order_chat_automation').eq('id', companyId).maybeSingle(),
@@ -311,9 +337,13 @@ export async function POST(req: NextRequest) {
         console.error('[Refund] customer notify failed', e)
       }
     }
+    // Quiet refunds still keep the thread's status badge in step.
+    if (conversationId && !notify && String(refreshedStatus).toLowerCase() === 'refunded') {
+      try { await db.from('conversations').update({ order_status: 'refunded' }).eq('id', conversationId) } catch {}
+    }
 
     await audit(req, db, companyId, 'refund_issued', `${okGuard.actor.name ? `${okGuard.actor.name} refunded` : 'Refunded'} ${refundAmount ? `$${refundAmount}` : 'an amount'} on ${shop ? 'Shopify ' : ''}order #${orderLabel}${okGuard.pinRequired ? ' (PIN checked)' : ''}${reason ? ` — ${String(reason).slice(0, 120)}` : ''}`, { order_id: String(orderId), amount: refundAmount, conversation_id: conversationId || null, by: okGuard.actor.userId })
-    return NextResponse.json({ ok: true, refund: data, amount: refundAmount })
+    return NextResponse.json({ ok: true, refund: data, amount: refundAmount, notified: notify })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }

@@ -22,7 +22,7 @@ export default function RefundOrderModal({
   order: any
   accent?: string
   onClose: () => void
-  onDone?: (amount: number, reason: string) => void
+  onDone?: (amount: number, reason: string, notified: boolean) => void
 }) {
   // A Shopify order is refunded through Shopify — the routes recognise "shopify-<id>".
   const orderId = order.sales_channel === 'shopify' && order.external_order_id
@@ -35,6 +35,8 @@ export default function RefundOrderModal({
   const [shippingMethod, setShippingMethod] = useState<string | null>(order.shipping_method || null)
   const [refundShipping, setRefundShipping] = useState(false)
   const [restock, setRestock] = useState(true)
+  // "Notify customer": ticked unless someone unticks it for this refund.
+  const [notify, setNotify] = useState(true)
   const [reason, setReason] = useState('')
   const [orderTotal, setOrderTotal] = useState(Number(order.total || 0))
   const [alreadyRefunded, setAlreadyRefunded] = useState(Math.abs(Number(order.total_refunded || 0)))
@@ -134,7 +136,7 @@ export default function RefundOrderModal({
     const question = shippingOnly
       ? `Refund ${money(total)} for shipping only on order #${order.order_number}?\n\nNo items are included, so they stay paid. To refund the whole order, choose “Refund everything”.`
       : `Refund ${money(total)} for order #${order.order_number}?\n\nThis returns money through the payment gateway and cannot be undone here.`
-    if (!await confirmDialog(question)) return
+    if (!await confirmDialog(`${question}${notify ? '' : '\n\nThe customer won’t be notified.'}`)) return
     setBusy(true)
     try {
       const lineItems = chosen.map(it => ({
@@ -150,6 +152,7 @@ export default function RefundOrderModal({
           conversationId: order.conversation_id || undefined,
           ...(noItems ? { amount: +total.toFixed(2) } : {}),
           lineItems, shipping: refundShipping ? shippingLeft : 0, restock, reason: reason || undefined,
+          notifyCustomer: notify,
           ...(pin ? { refundPin: pin } : {}),
         }),
       })
@@ -158,7 +161,7 @@ export default function RefundOrderModal({
         if (isPinError(data.code)) setPin('')
         throw new Error(data.error || 'Refund failed')
       }
-      onDone?.(Number(data.amount || total), reason)
+      onDone?.(Number(data.amount || total), reason, notify)
       onClose()
     } catch (e: any) {
       setError(e?.message || 'Could not issue the refund'); setBusy(false)
@@ -235,6 +238,10 @@ export default function RefundOrderModal({
               <input type="checkbox" checked={restock} onChange={e => setRestock(e.target.checked)} />
               <span>Put refunded items back in stock</span>
             </label>
+            <label className="sk-check">
+              <input type="checkbox" checked={notify} onChange={e => setNotify(e.target.checked)} />
+              <span style={{ minWidth: 0 }}>Notify customer<small className="rf-sub">{notify ? 'They get the usual refund message by SMS or email.' : 'Nothing is sent to the customer about this refund.'}</small></span>
+            </label>
 
             <label className="sk-lbl" htmlFor="rf-reason">Reason <span className="sk-opt">optional</span></label>
             <input id="rf-reason" className="sk-in" value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Damaged in transit" />
@@ -272,5 +279,6 @@ const RF_CSS = `
 .rf-all-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;font-size:14.5px;font-weight:700}
 .rf-all-t small{font-size:12.5px;font-weight:500;opacity:.75}
 .rf-all b{font-size:16px;font-weight:800;font-variant-numeric:tabular-nums}
+.rf-sub{display:block;margin-top:1px;font-size:12.5px;font-weight:500;color:var(--sk-muted,#6b7280);line-height:1.4}
 .rf-tag{flex-shrink:0;padding:4px 10px;border-radius:999px;background:#fef3c7;color:#b45309;font-size:11.5px;font-weight:700}
 `

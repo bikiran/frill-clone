@@ -1,4 +1,5 @@
 import { posSaleInfo, posColumns, missingPosColumns, withoutPosColumns, orderDetail } from '@/lib/prexty-pos'
+import { customerNoticeHeld } from '@/lib/order-notify'
 import { wooWebhookTrust } from '@/lib/woo-webhook'
 import { NextRequest, NextResponse } from 'next/server'
 import { deliverAutomatedMessage } from '@/lib/channel-fallback'
@@ -566,6 +567,14 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     } catch { /* never let this lookup decide anything by failing */ }
   }
 
+  // "Notify customer" was unticked on the change in Colvy that caused this
+  // (lib/order-notify): the team asked for no message about it.
+  const heldByTeam = await customerNoticeHeld(db, companyId, Number(order.id), status, order.meta_data)
+  if (shouldSend && heldByTeam) {
+    shouldSend = false
+    console.log('[Order automation] suppressed customer message — "Notify customer" unticked', { order: order.number || order.id, status })
+  }
+
   if (shouldSend) {
   const refundedAmount = order.refunds?.length ? `$${Math.abs(order.refunds.reduce((s: number, r: any) => s + (parseFloat(r.total) || 0), 0)).toFixed(2)}` : `$${order.total}`
   const body = template
@@ -754,8 +763,9 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   // ── Auto review request on completion ─────────────────────────────────────
   // Independent of the order-chat automation toggle: if the business turned on
   // review requests, schedule one (optionally delayed) for a completed order.
-  // Skipped for POS sales — the same reason we don't SMS them an order update.
-  if (status === 'completed' && !pos.isPos) {
+  // Skipped for POS sales — the same reason we don't SMS them an order update —
+  // and when the team completed it with "Notify customer" unticked.
+  if (status === 'completed' && !pos.isPos && !heldByTeam) {
     try {
       const { data: co } = await db.from('companies').select('review_request_settings').eq('id', companyId).maybeSingle()
       const rr = co?.review_request_settings || {}

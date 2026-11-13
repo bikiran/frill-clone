@@ -29,6 +29,37 @@ add_action( 'admin_init', function () {
 	if ( ! colvywp_get( 'company_id' ) && get_option( 'colvy_ac_company_id' ) ) colvywp_set( array( 'company_id' => trim( get_option( 'colvy_ac_company_id' ) ) ) );
 } );
 
+/* ─────────────────── "Notify customer" unticked in Colvy ─────────────────── */
+// When someone in Colvy completes, cancels or refunds an order with "Notify
+// customer" unticked, Colvy marks the order: _colvy_quiet = "<status,…>@<unix
+// time>". For an hour after, WooCommerce's own customer email for those
+// statuses (Completed order, Refunded order…) isn't sent. Other emails, and the
+// same emails for any later change, go out as usual.
+
+function colvywp_wc_quiet( $order, $status ) {
+	if ( ! $order || ! is_a( $order, 'WC_Order' ) ) return false;
+	$v  = (string) $order->get_meta( '_colvy_quiet', true );
+	$at = strrpos( $v, '@' );
+	if ( ! $at ) return false;
+	$when = (int) substr( $v, $at + 1 );
+	if ( $when <= 0 || abs( time() - $when ) > HOUR_IN_SECONDS ) return false;
+	$list = array_map( 'trim', explode( ',', strtolower( substr( $v, 0, $at ) ) ) );
+	return in_array( $status, $list, true );
+}
+
+foreach ( array(
+	'customer_processing_order' => 'processing',
+	'customer_on_hold_order'    => 'on-hold',
+	'customer_completed_order'  => 'completed',
+	'customer_refunded_order'   => 'refunded',
+	'customer_cancelled_order'  => 'cancelled',
+	'customer_failed_order'     => 'failed',
+) as $colvywp_email_id => $colvywp_status ) {
+	add_filter( 'woocommerce_email_enabled_' . $colvywp_email_id, function ( $enabled, $order = null ) use ( $colvywp_status ) {
+		return $enabled && colvywp_wc_quiet( $order, $colvywp_status ) ? false : $enabled;
+	}, 20, 2 );
+}
+
 /* ─────────────────── Page history (browsing before the cart) ─────────────────── */
 // Every page the shopper views, kept in their Woo session. Sent with an
 // abandoned cart so Colvy can show what they looked at before leaving.

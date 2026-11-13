@@ -334,7 +334,7 @@ export async function shopifyStoreFor(db: any, companyId: string, integrationId?
  * fulfil it for completed), on-hold completes it as payment pending, and
  * "Cancel" deletes the draft.
  */
-export async function shopifyDraftAction(db: any, integ: any, draftId: string, status: string) {
+export async function shopifyDraftAction(db: any, integ: any, draftId: string, status: string, opts: { onOrder?: (externalId: string) => Promise<void> } = {}) {
   const svc = await serviceFor(db, integ)
   const id = `gid://shopify/DraftOrder/${draftId}`
   const st = String(status || '').toLowerCase()
@@ -360,6 +360,7 @@ export async function shopifyDraftAction(db: any, integ: any, draftId: string, s
   check('Couldn’t complete the draft', errors, data?.draftOrderComplete?.userErrors)
   const order = data?.draftOrderComplete?.draftOrder?.order
   if (!order) throw new ShopifyCreateError('Shopify didn’t create the order from the draft.', 502)
+  if (opts.onOrder) { try { await opts.onOrder(String(order.legacyResourceId)) } catch {} }
   const full = await svc.getOrder(order.legacyResourceId)
   if (full) { try { await upsertShopifyOrder(db, integ.company_id, full, { svc }) } catch {} }
   if (st === 'completed') await shopifyChangeStatus(db, { row: null, integ, externalId: String(order.legacyResourceId) }, 'completed')
