@@ -339,9 +339,50 @@ export default function ThreadMessages() {
                       <span style={{ fontSize: 11.5, color: '#a16207', whiteSpace: 'nowrap' }}>{noteAuthor} · {noteRel === 'now' ? 'just now' : `${noteRel} ago`}</span>
                     </div>
                   </div>
-                  <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5, color: '#422006', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                    {renderWithMentions(msg.content)}
-                  </p>
+                  {(() => {
+                    // What the note carries besides text: a voice note left in
+                    // the app (an audio attachment, often with no text at all),
+                    // photos, videos and files. These used to be dropped here,
+                    // so an app voice note showed as an empty card.
+                    const natts = (Array.isArray(msg.attachments) ? msg.attachments : []).filter((a: any) => a && a.url)
+                    const isAud = (a: any) => a.kind === 'audio' || /^audio\//.test(a.type || '') || /\.(webm|ogg|m4a|mp3|wav|aac|caf)(\?|$)/i.test(a.url || '')
+                    const isPic = (a: any) => !isAud(a) && (a.kind === 'image' || a.kind === 'video' || /^(image|video)\//.test(a.type || ''))
+                    const audios = natts.filter(isAud)
+                    const pics = natts.filter(isPic)
+                    const docs = natts.filter((a: any) => !isAud(a) && !isPic(a))
+                    const noteText = withoutFileLines(msg.content, docs).trim()
+                    return (
+                      <>
+                        {noteText && (
+                          <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5, color: '#422006', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                            {renderWithMentions(noteText)}
+                          </p>
+                        )}
+                        {audios.map((a: any, ai: number) => (
+                          <div key={`na${ai}`} style={{ marginTop: noteText || ai ? 8 : 0, width: 'min(320px, 100%)' }}>
+                            <VoicePlayer src={toPublicUrl(a.url)} name={a.name && !/^voice-\d+/i.test(a.name) ? a.name : 'Voice note'} style={{ background: '#fff' }} />
+                          </div>
+                        ))}
+                        {pics.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: noteText || audios.length ? 8 : 0 }}>
+                            {pics.map((a: any, pi: number) => (
+                              <a key={`np${pi}`} href={toPublicUrl(a.url)} target="_blank" rel="noreferrer" title={a.name || 'Open'}
+                                style={{ width: 96, height: 96, borderRadius: 10, overflow: 'hidden', background: a.kind === 'video' ? '#000' : '#fde68a', display: 'block', position: 'relative', flexShrink: 0 }}>
+                                {a.kind === 'video' || /^video\//.test(a.type || '')
+                                  ? <video src={toPublicUrl(a.url) + '#t=0.1'} preload="metadata" muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', pointerEvents: 'none' }} />
+                                  : <img src={a.thumbUrl ? toPublicUrl(a.thumbUrl) : sizedImageUrl(a.url, 200)} onError={a.thumbUrl ? undefined : sizedImageFallback(a.url)} alt={a.name || 'Photo'} loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                        {docs.map((a: any, di: number) => (
+                          <div key={`nd${di}`} style={{ marginTop: noteText || audios.length || pics.length || di ? 8 : 0 }}>
+                            <FileCard a={a} mine={false} plain />
+                          </div>
+                        ))}
+                      </>
+                    )
+                  })()}
                 </div>
               </div>
             </div>
