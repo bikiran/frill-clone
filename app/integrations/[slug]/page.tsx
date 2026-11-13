@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
+import RelatedGuides from '@/components/marketing/RelatedGuides'
 import FeatureIcon from '@/components/FeatureIcon'
 import { SellioStyles, SCta, SCrumb, SPill, SGhost, STrust, SHead, SBento, SStory, SStats, SMore } from '@/components/marketing/Sellio'
 
@@ -263,6 +264,7 @@ export default function IntegrationPage() {
       ))}
 
       {/* REST OF YOUR STACK */}
+      <RelatedGuides accent={accent} dark={dark} />
       <SMore eyebrow="Integrations" title="Works with the rest of your stack" grey="Wired into every conversation" accent={accent} dark={dark}
         items={Object.entries(INTG).map(([k, x]) => ({ href: `/integrations/${k}`, title: x.name, icon: x.features[0].icon, here: k === pageKey }))} />
 

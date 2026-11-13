@@ -161,5 +161,46 @@ console.log('llms.txt lists every page, so AI assistants find it')
   ok(src.includes('Object.values(COMPARE_META).map(m => m.name)'), 'the competitors it names come from the compare pages')
 }
 
+console.log('shared links show the page\'s own photo, and every photo exists')
+{
+  const { existsSync } = await import('node:fs')
+  const map = Object.fromEntries([...read('lib/og-image.ts').matchAll(/^ {2}'([a-z0-9/-]+)': '([^']+)',$/gm)].map(m => [m[1], m[2]]))
+  const keys = Object.keys(map)
+  ok(keys.length > 60, `read the photo map (${keys.length} pages)`)
+  const gone = keys.filter(k => !existsSync(ROOT + 'public' + map[k]))
+  ok(!gone.length, 'every photo in lib/og-image.ts is a real file in public/', gone)
+  const want = [...list('PHONE_SLUGS').map(s => `phones/${s}`), ...list('CHANNEL_SLUGS').map(s => `channels/${s}`), ...list('SOLUTION_SLUGS').map(s => `solutions/${s}`),
+    ...list('AI_SLUGS').map(s => `ai-assistant/${s}`), ...list('INTEGRATION_SLUGS').map(s => `integrations/${s}`), ...list('COMPARE_SLUGS').map(s => `compare/${s}`)]
+  const without = want.filter(k => !map[k])
+  ok(!without.length, 'every phone, channel, solution, AI, integration and compare page has its photo', without)
+  const real = new Set(keysOfPaths())
+  const stray = keys.filter(k => !real.has(k))
+  ok(!stray.length, 'the map only names real marketing pages', stray)
+}
+
+console.log('the guides picked for a page are real articles')
+{
+  const slugs = new Set(['lib/blog.ts', 'lib/blog-latest.ts', 'lib/blog-industries.ts'].flatMap(f => [...read(f).matchAll(/\n\s+slug: '([a-z0-9-]+)'/g)].map(m => m[1])))
+  const src = read('lib/guides-for.ts')
+  const block = src.slice(src.indexOf('PICKED_GUIDES'), src.indexOf('\n}\n', src.indexOf('PICKED_GUIDES')))
+  const entries = [...block.matchAll(/^ {2}'([a-z0-9/-]+)': \[([^\]]*)\]/gm)]
+  ok(entries.length > 5, `read the picked guides (${entries.length} pages)`)
+  const real = new Set(keysOfPaths())
+  const badPage = entries.map(m => m[1]).filter(p => !real.has(p))
+  ok(!badPage.length, 'each page with picked guides is a real marketing page', badPage)
+  const badPost = entries.flatMap(m => [...m[2].matchAll(/'([a-z0-9-]+)'/g)].map(x => x[1])).filter(x => !slugs.has(x))
+  ok(!badPost.length, 'each picked guide is a published article', badPost)
+}
+
+// Every marketing address, as lib/marketing-routes.ts builds them.
+function keysOfPaths() {
+  const groups = { PRODUCT_FEATURES: 'product', CHANNEL_SLUGS: 'channels', SOLUTION_SLUGS: 'solutions', INDUSTRY_SLUGS: 'industries', FOR_SLUGS: 'for',
+    COMPARE_SLUGS: 'compare', PHONE_SLUGS: 'phones', AI_SLUGS: 'ai-assistant', INTEGRATION_SLUGS: 'integrations' }
+  // The static list starts with '' (the home page), which list()'s pattern can't read, so it's read here.
+  const block = read('lib/marketing-routes.ts').match(/export const STATIC_MARKETING_ROUTES: string\[\] = \[([\s\S]*?)\]/)[1]
+  const statics = [...block.matchAll(/'([a-z0-9-]*)'/g)].map(m => m[1])
+  return [...statics, ...Object.entries(groups).flatMap(([n, base]) => list(n).map(s => `${base}/${s}`))]
+}
+
 console.log(failures ? `\n${failures} failed` : '\nall passed')
 process.exit(failures ? 1 : 0)

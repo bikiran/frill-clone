@@ -2,6 +2,8 @@ import type { ReactNode } from 'react'
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import JsonLd from '@/components/JsonLd'
+import { GuidesProvider } from '@/components/marketing/RelatedGuides'
+import { guidesFor } from '@/lib/guides-for'
 import { pageMeta } from '@/lib/seo'
 import { breadcrumbJsonLd } from '@/lib/seo-faqs'
 import { AI_SLUGS } from '@/lib/marketing-routes'
@@ -37,7 +39,7 @@ export default async function Layout({ children, params }: { children: ReactNode
   return (
     <>
       {m && <JsonLd data={[breadcrumbJsonLd(SITE_URL, [{ name: 'AI Assistant', path: 'ai-assistant' }, { name: m.title, path }])]} />}
-      {children}
+      <GuidesProvider guides={guidesFor(`ai-assistant/${slug}`)}>{children}</GuidesProvider>
     </>
   )
 }

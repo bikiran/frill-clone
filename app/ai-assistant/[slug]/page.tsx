@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
+import RelatedGuides from '@/components/marketing/RelatedGuides'
 import FeatureIcon from '@/components/FeatureIcon'
 import { SellioStyles, SCta, SCrumb, SPill, SGhost, STrust, SHead, SBento, SStory, SStats, SMore } from '@/components/marketing/Sellio'
 
@@ -291,6 +292,7 @@ export default function AiFeaturePage() {
       ))}
 
       {/* MORE AI CAPABILITIES */}
+      <RelatedGuides accent={accent} dark={dark} />
       <SMore eyebrow="One assistant" title="More of the AI assistant" grey="Many jobs, one place" accent={accent} dark={dark}
         items={ALL.map(a => ({ href: `/ai-assistant/${a.slug}`, title: a.name, icon: AI[a.slug].features[0].icon, here: a.slug === pageKey }))} />
 

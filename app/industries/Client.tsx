@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
+import RelatedGuides from '@/components/marketing/RelatedGuides'
 import FeatureIcon from '@/components/FeatureIcon'
 import { SellioStyles, SPill, SGhost, STrust, SLinkCards, SCta } from '@/components/marketing/Sellio'
 import { soonLabel } from '@/lib/feature-availability'
@@ -101,6 +102,8 @@ export default function IndustriesHub() {
       <section style={{ maxWidth: 1200, margin: '0 auto', padding: '20px 24px clamp(64px, 9vw, 110px)' }}>
         <SLinkCards items={CARDS.map(c => ({ ...c, color: c.accent }))} dark={dark} />
       </section>
+
+      <RelatedGuides accent={ACCENT} dark={dark} eyebrow="Industry guides" title="How businesses like yours use Colvy." sub="Step-by-step guides for gyms, clinics, trades, cleaners, workshops, salons, restaurants and more." />
 
       <SCta title="Made to fit how you work" sub="Free forever for small teams. Upgrade as you grow." accent={ACCENT} onGo={go} user={user} />
 

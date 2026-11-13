@@ -5,6 +5,8 @@ import { pageMeta } from '@/lib/seo'
 import { CHANNEL_SLUGS } from '@/lib/marketing-routes'
 import { faqJsonLd, breadcrumbJsonLd } from '@/lib/seo-faqs'
 import Client from './Client'
+import { GuidesProvider } from '@/components/marketing/RelatedGuides'
+import { guidesFor } from '@/lib/guides-for'
 import { CHANNEL_META } from '@/lib/page-meta'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
@@ -39,7 +41,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
   return (
     <>
       {ld.length > 0 && <JsonLd data={ld} />}
-      <Client />
+      <GuidesProvider guides={guidesFor(`channels/${slug}`)}><Client /></GuidesProvider>
     </>
   )
 }

@@ -3,6 +3,7 @@
 import { ReactNode } from 'react'
 import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
+import RelatedGuides from '@/components/marketing/RelatedGuides'
 import ScrollStory from '@/components/ScrollStory'
 import { useShell, Reveal, Arrow, SectionHead, Faq, WorkflowRail, usePointerParallax, CtaBand, FONT } from '@/components/marketing/Kit'
 import { FOR_PAGES } from '@/lib/for-pages'
@@ -158,6 +159,7 @@ export default function ForClient({ slug }: { slug: string }) {
         </div>
       </section>
 
+      <RelatedGuides accent={accent} dark={t.dark} />
       <CtaBand title={`Run your ${meta.name.toLowerCase()} business from one place.`} sub="Start free, connect your channels and switch on the steps you need. You can be answering customers from one inbox today." accent={accent} onGo={t.go} user={t.user} secondary={{ label: 'See pricing', href: '/pricing' }} />
       <MarketingFooter dark={t.dark} />
     </div>

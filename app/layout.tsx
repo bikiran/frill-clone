@@ -76,6 +76,24 @@ export const metadata: Metadata = {
     follow: true,
     googleBot: { index: true, follow: true, 'max-image-preview': 'large', 'max-snippet': -1 },
   },
+  verification: siteVerification(),
+}
+
+// Search engine and social site ownership checks, as <meta> tags, from the
+// environment (each service shows the code when you add the site), so
+// verifying doesn't need a code change: Google Search Console, Bing Webmaster
+// Tools (which also feeds ChatGPT search and Copilot), Yandex, Pinterest and
+// Meta (Facebook) domain verification. Unset ones are left out.
+function siteVerification(): Metadata['verification'] {
+  const env = (k: string) => (process.env[k] || '').trim() || undefined
+  const other: Record<string, string> = {}
+  const bing = env('BING_SITE_VERIFICATION'), pinterest = env('PINTEREST_SITE_VERIFICATION'), meta = env('FACEBOOK_DOMAIN_VERIFICATION')
+  if (bing) other['msvalidate.01'] = bing
+  if (pinterest) other['p:domain_verify'] = pinterest
+  if (meta) other['facebook-domain-verification'] = meta
+  const google = env('GOOGLE_SITE_VERIFICATION'), yandex = env('YANDEX_SITE_VERIFICATION')
+  if (!google && !yandex && !Object.keys(other).length) return undefined
+  return { ...(google ? { google } : {}), ...(yandex ? { yandex } : {}), ...(Object.keys(other).length ? { other } : {}) }
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

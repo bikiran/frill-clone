@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { redirectToUserAdmin, boardUrl } from '@/lib/redirect'
 import MarketingNav from '@/components/MarketingNav'
 import MarketingFooter from '@/components/MarketingFooter'
+import RelatedGuides from '@/components/marketing/RelatedGuides'
 import FeatureIcon from '@/components/FeatureIcon'
 import { SellioStyles, SPill, SGhost, STrust, SHead, SBento, SStory, SStats, SCta, SSteps, SPains, SChannels } from '@/components/marketing/Sellio'
 import { soonLabel } from '@/lib/feature-availability'
@@ -389,6 +390,8 @@ export default function IndustryPage() {
           ))}
         </div>
       </section>
+
+      <RelatedGuides accent={accent} dark={dark} />
 
       <SCta title={`Built for ${titleName}`} sub={'Free forever for small teams. Set up in about 45 minutes.'} accent={accent} onGo={go} user={user} />
 

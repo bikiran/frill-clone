@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { pageImage } from '@/lib/og-image'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
@@ -10,16 +11,19 @@ export const OG_IMAGES = [{ url: '/og.png', width: 1731, height: 909, alt: 'Colv
  * Twitter cards. Without the last two, a shared link shows the home page's
  * title whatever page it points at.
  */
-export function pageMeta({ title, description, path, absolute = false }: { title: string; description: string; path: string; absolute?: boolean }): Metadata {
+export function pageMeta({ title, description, path, absolute = false, image }: { title: string; description: string; path: string; absolute?: boolean; image?: string }): Metadata {
   const full = absolute ? title : `${title} · Colvy`
   const url = path ? `${SITE_URL}/${path}` : SITE_URL
+  // The page's own photo when it has one (lib/og-image.ts), else the shared card.
+  const photo = image || pageImage(path)
+  const images = photo ? [{ url: photo, alt: title }] : OG_IMAGES
   return {
     title: absolute ? { absolute: title } : title,
     description,
     alternates: { canonical: path ? `/${path}` : '/' },
     // A page's openGraph / twitter replace the root layout's rather than merge
     // with them, so the shared card's image and site name are repeated here.
-    openGraph: { type: 'website', siteName: 'Colvy', locale: 'en_AU', url, title: full, description, images: OG_IMAGES },
-    twitter: { card: 'summary_large_image', title: full, description, images: ['/og.png'] },
+    openGraph: { type: 'website', siteName: 'Colvy', locale: 'en_AU', url, title: full, description, images },
+    twitter: { card: 'summary_large_image', title: full, description, images: [photo || '/og.png'] },
   }
 }

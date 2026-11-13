@@ -1,5 +1,7 @@
 import type { Metadata } from 'next'
 import Client from './Client'
+import { GuidesProvider } from '@/components/marketing/RelatedGuides'
+import { industryGuides } from '@/lib/guides-for'
 import { pageMeta } from '@/lib/seo'
 import JsonLd from '@/components/JsonLd'
 import { breadcrumbJsonLd } from '@/lib/seo-faqs'
@@ -16,7 +18,7 @@ export default function Page() {
   return (
     <>
       <JsonLd data={breadcrumbJsonLd(SITE_URL, [{ name: 'Industries', path: 'industries' }])} />
-      <Client />
+      <GuidesProvider guides={industryGuides(6)}><Client /></GuidesProvider>
     </>
   )
 }
