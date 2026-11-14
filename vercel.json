@@ -57,6 +57,10 @@
       "schedule": "7 23 * * *"
     },
     {
+      "path": "/api/cron/repeat-jobs",
+      "schedule": "13 19 * * *"
+    },
+    {
       "path": "/api/cron/booking-waitlist",
       "schedule": "*/5 * * * *"
     },

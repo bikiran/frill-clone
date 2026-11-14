@@ -7,6 +7,7 @@ import { AdminPage } from '@/components/ui/AdminKit'
 import NewJobDialog from '@/components/jobs/NewJobDialog'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import EmptyScroll from '@/components/EmptyScroll'
+import { RepeatIcon } from '@/components/jobs/Repeat'
 import {
   api, useJobsCompany, StatusTag, QuoteTag, fmtWhen, fmtTime, fmtAgo, dayKeyIn, useToast, Toast, SetupNote, Icon, JB_CSS, AvatarStack,
   cacheKeys, readJobsCache, writeJobsCache, prefetchJob,
@@ -336,7 +337,7 @@ function Board({ jobs, tz, prefix, qPrefix, onMove, onOpen, onWarm }: { jobs: an
                     <span className="jb-no">{fmtJobNumber(j.number, prefix)}</span>
                     <span className="jb-card-r"><AvatarStack people={j.assignees || []} size={22} max={2} /><MoveMenu job={j} onMove={onMove} /></span>
                   </div>
-                  <b className="jb-title">{j.title}</b>
+                  <b className="jb-title">{j.repeat_id && <span className="jb-rep" title="Repeats" aria-label="Repeats"><RepeatIcon size={12} /></span>}{j.title}</b>
                   <div className="jb-meta">
                     {j.contact && <span>{Icon.user}{j.contact.name || j.contact.phone || j.contact.email}</span>}
                     {j.scheduled_start && <span>{Icon.clock}{fmtWhen(j.scheduled_start, null, tz)}</span>}
@@ -403,7 +404,7 @@ function ListView({ jobs, tz, prefix, qPrefix, onOpen, onWarm, onShowAll }: { jo
           <button key={j.id} type="button" className="jb-li" onClick={() => onOpen(j)} onPointerEnter={() => onWarm(j)} onPointerDown={() => onWarm(j)} onFocus={() => onWarm(j)}>
             <div className="jb-li-main">
               <div className="jb-li-top"><span className="jb-no">{fmtJobNumber(j.number, prefix)}</span><StatusTag status={j.status} /></div>
-              <b className="jb-title">{j.title}</b>
+              <b className="jb-title">{j.repeat_id && <span className="jb-rep" title="Repeats" aria-label="Repeats"><RepeatIcon size={12} /></span>}{j.title}</b>
               <div className="jb-meta">
                 {j.contact && <span>{Icon.user}{j.contact.name || j.contact.phone || j.contact.email}</span>}
                 {j.scheduled_start && <span>{Icon.clock}{fmtWhen(j.scheduled_start, j.scheduled_end, tz)}</span>}
@@ -469,7 +470,7 @@ function CalendarView({ jobs, tz, prefix, onOpen, onWarm }: { jobs: any[]; tz: s
               <span className="jb-cal-d">{d}</span>
               {list.slice(0, 3).map(j => (
                 <button key={j.id} type="button" className={`jb-cal-j s-${j.status}`} onClick={() => onOpen(j)} onPointerEnter={() => onWarm(j)} onPointerDown={() => onWarm(j)} title={`${fmtJobNumber(j.number, prefix)} ${j.title} · ${fmtWhen(j.scheduled_start, j.scheduled_end, tz)}`}>
-                  <span className="jb-num">{fmtTime(j.scheduled_start, tz)}</span> {j.title}
+                  <span className="jb-num">{fmtTime(j.scheduled_start, tz)}</span> {j.repeat_id ? '↻ ' : ''}{j.title}
                 </button>
               ))}
               {list.length > 3 && <span className="jb-cal-more">+{list.length - 3} more</span>}
@@ -483,6 +484,7 @@ function CalendarView({ jobs, tz, prefix, onOpen, onWarm }: { jobs: any[]; tz: s
 }
 
 const PAGE_CSS = `
+.jb-rep{display:inline-flex;vertical-align:-1px;margin-right:5px;color:var(--coral)}
 .jb-empty{padding:28px 20px 34px}
 .jb-empty .es-title{font-size:16px}
 .jb-empty .es-line{max-width:380px;font-size:13.5px}

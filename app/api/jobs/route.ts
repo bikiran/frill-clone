@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import { isMissingRepeatSchema } from '@/lib/jobs/repeat-server'
 import { audit } from '@/lib/activity-logging'
 import { ensureContact } from '@/lib/booking'
 import { isJobStatus } from '@/lib/jobs/status'
@@ -32,8 +33,11 @@ export async function GET(req: NextRequest) {
     const settings = companySettings(company)
     const view = viewFor(access, settings)
 
+    // repeat_id (V435) marks repeating visits; without it the list still loads.
+    const COLS = 'id, number, title, status, source, contact_id, conversation_id, booking_id, address, scheduled_start, scheduled_end, value_cents, accepted_quote_id, sort_order, assignees, time_seconds, completed_at, created_at, updated_at'
+    const build = (cols: string) => {
     let q = db.from('jobs')
-      .select('id, number, title, status, source, contact_id, conversation_id, booking_id, address, scheduled_start, scheduled_end, value_cents, accepted_quote_id, sort_order, assignees, time_seconds, completed_at, created_at, updated_at')
+      .select(cols)
       .eq('company_id', companyId!)
     // Field staff (when the business limits them) see only their own jobs; anyone can ask for "mine".
     // JSON text, not an array: supabase-js turns an array into a Postgres array
@@ -51,7 +55,10 @@ export async function GET(req: NextRequest) {
       const n = Number(search.replace(/^[A-Za-z]+-?/, ''))
       q = Number.isInteger(n) && n > 0 ? q.or(`title.ilike.%${search}%,number.eq.${n}`) : q.ilike('title', `%${search}%`)
     }
-    const listRes = await q.order('updated_at', { ascending: false }).limit(500)
+    return q.order('updated_at', { ascending: false }).limit(500)
+    }
+    let listRes: any = await build(`${COLS}, repeat_id`)
+    if (listRes.error && isMissingRepeatSchema(listRes.error)) listRes = await build(COLS)
     const { data: jobs, error } = listRes as any
     if (error) { if (isMissingJobsSchema(error)) return setupNeeded(); throw error }
 
