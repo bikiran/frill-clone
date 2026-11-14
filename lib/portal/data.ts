@@ -12,7 +12,7 @@ import { JOB_STATUS_LABEL, QUOTE_STATUS_LABEL, fmtJobNumber } from '@/lib/jobs/s
 import { resolveJobSettings } from '@/lib/jobs/settings'
 import { preferenceState, applyPreferences } from '@/lib/email-preferences'
 import { maskEmail, maskPhone, type PortalCompany } from '@/lib/portal/auth'
-import type { PortalMe, PortalComing, PortalAgain, PortalPayment, PortalQuote, PortalInvoice, PortalJob, PortalOrder, PortalMessage } from '@/lib/portal/types'
+import type { PortalMe, PortalComing, PortalAgain, PortalPayment, PortalQuote, PortalInvoice, PortalJob, PortalOrder, PortalMessage, PortalPass } from '@/lib/portal/types'
 
 const safe = async <T>(fn: () => Promise<T>, fallback: T): Promise<T> => { try { return await fn() } catch { return fallback } }
 const DAY = 86_400_000
@@ -342,7 +342,7 @@ export async function portalData(db: any, pc: PortalCompany, contactId: string, 
   const on = pc.settings.sections
   const convs = await safe(() => conversationsOf(db, pc.company.id, contactId), [])
   const convIds = convs.map(c => c.id)
-  const [prefs, coming, again, pay, qj, ords, msgs] = await Promise.all([
+  const [prefs, coming, again, pay, qj, ords, msgs, passes] = await Promise.all([
     safe(() => preferenceState(db, pc.company.id, contact), { email: false, sms: null, emailCanTurnOn: false, everythingOff: false }),
     on.coming_up ? safe(() => comingUp(db, pc, contact), []) : Promise.resolve(undefined),
     on.coming_up ? safe(() => bookAgain(db, pc, contactId), []) : Promise.resolve(undefined),
@@ -350,6 +350,7 @@ export async function portalData(db: any, pc: PortalCompany, contactId: string, 
     on.quotes ? safe(() => quotesAndJobs(db, pc, contactId), { quotes: [], invoices: [], jobs: [], depositPayments: [] as string[] }) : Promise.resolve(undefined),
     on.orders ? safe(() => orders(db, pc, contact, convIds), []) : Promise.resolve(undefined),
     on.messages ? safe(() => messages(db, pc, convs[0] || null), { items: [], canReply: true }) : Promise.resolve(undefined),
+    safe(() => portalPasses(db, pc, contactId), [] as PortalPass[]),
   ])
   return {
     me: meOf(contact, prefs, session),
@@ -359,7 +360,25 @@ export async function portalData(db: any, pc: PortalCompany, contactId: string, 
     ...(qj ? { quotes: qj.quotes, invoices: qj.invoices, jobs: qj.jobs } : {}),
     ...(ords ? { orders: ords } : {}),
     ...(msgs ? { messages: msgs } : {}),
+    ...(passes.length ? { passes } : {}),
   }
+}
+
+/** Their class packs and memberships: live ones, and ones that ended in the last 60 days. */
+async function portalPasses(db: any, pc: PortalCompany, contactId: string): Promise<PortalPass[]> {
+  const { passesForContact, withState } = await import('@/lib/passes/server')
+  const { creditsWords, priceWords } = await import('@/lib/passes/rules')
+  const { resolveBookingSettings } = await import('@/lib/booking')
+  const tz = resolveBookingSettings(pc.company.booking_settings).timezone
+  const recent = Date.now() - 60 * 86_400_000
+  const rows = (await passesForContact(db, pc.company.id, contactId))
+    .filter(p => ['active', 'past_due'].includes(p.status) || Date.parse(p.updated_at || p.created_at) > recent)
+  const withS = await withState(db, rows, tz)
+  return withS.slice(0, 12).map(p => ({
+    id: p.id, name: p.name, kind: p.kind, label: p.state.label, when: p.state.when,
+    gives: creditsWords(p), price: priceWords(p), live: p.state.usable,
+    canCancel: p.kind === 'membership' && p.status !== 'cancelled' && !p.cancel_at_period_end && !!p.period_end,
+  }))
 }
 
 /**

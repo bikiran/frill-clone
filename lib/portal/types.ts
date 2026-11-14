@@ -33,6 +33,20 @@ export type PortalOrder = {
 }
 export type PortalMessage = { id: string; mine: boolean; text: string; at: string; by: string | null }
 
+/** A class pack or membership (lib/passes). */
+export type PortalPass = {
+  id: string; name: string; kind: 'pack' | 'membership'
+  /** "6 of 10 left", "Unlimited classes", "Payment failed" */
+  label: string
+  /** "Expires 3 March", "Renews 1 March", "Ends 1 March" */
+  when: string | null
+  gives: string
+  price: string
+  live: boolean
+  /** A membership they can stop (from the end of the period paid for). */
+  canCancel: boolean
+}
+
 export type PortalMe = {
   me: { name: string; email: string; phone: string; marketingEmail: boolean; marketingSms: boolean; smsOnFile: boolean; via: 'code' | 'link'; expiresAt: string }
   comingUp?: PortalComing[]
@@ -43,4 +57,5 @@ export type PortalMe = {
   jobs?: PortalJob[]
   orders?: PortalOrder[]
   messages?: { items: PortalMessage[]; canReply: boolean } | null
+  passes?: PortalPass[]
 }

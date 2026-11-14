@@ -24,7 +24,9 @@ const admin = () => createClient(
 // GET ?op=slots&slug=&service=&staff=any|id&location=&from=&to= → bookable start times (ISO)
 // GET ?op=invite&slug=&token=                        → details to pre-fill (personal link)
 // POST { slug|domain, serviceId, staff, startsAt, name, email, phone, timezone,
-//        answers, locationId, address, notes, offer? }  → { token, checkoutUrl? }
+//        answers, locationId, address, notes, offer?, passId? }  → { token, checkoutUrl? }
+//   passId: pay with a class pack or membership (lib/passes); needs the
+//   customer's account sign-in (Authorization: Bearer) and must be theirs.
 //   offer: a booking-waitlist claim token (lib/booking-waitlist.ts) — the
 //   booking is marked "From waitlist" and may take over a time held for them.
 
@@ -152,6 +154,23 @@ export async function POST(req: NextRequest) {
       waitlist = { offerId: c.offerId, heldBookingId: c.heldBookingId }
     }
 
+    // Paying with a class pack or membership: it must be the signed-in
+    // customer's own (account sign-in token) and able to pay for this class.
+    let pass: { row: any; by: string } | null = null
+    if (typeof b.passId === 'string' && b.passId) {
+      const { sessionFor } = await import('@/lib/portal/auth')
+      const { PASS_COLS, usedInWindow } = await import('@/lib/passes/server')
+      const { canBook } = await import('@/lib/passes/rules')
+      const s = await sessionFor(db, req, company.id)
+      if (!s) return NextResponse.json({ error: 'Sign in again to use your pass.', signIn: true }, { status: 401 })
+      const { data: row } = await db.from('customer_passes').select(PASS_COLS).eq('company_id', company.id).eq('id', b.passId).eq('contact_id', s.contactId).maybeSingle()
+      if (!row) return NextResponse.json({ error: 'That pass wasn’t found. Sign in again and try once more.' }, { status: 404 })
+      const w = await usedInWindow(db, row, startMs)
+      const v = canBook(row, service.id, startMs, Date.now(), w.used)
+      if (!v.ok) return NextResponse.json({ error: (v as { reason: string }).reason }, { status: 400 })
+      pass = { row, by: 'customer' }
+    }
+
     const r = await createBooking(db, {
       company, service, staffChoice: waitlist ? 'any' : staffChoice, startMs,
       customer: { name, email, phone, timezone: tz },
@@ -167,6 +186,7 @@ export async function POST(req: NextRequest) {
       // The Reel / QR click that opened the page — checked against this
       // business when the booking is confirmed (lib/link-stitch.ts).
       clickRef: cleanClickRef(b.clv),
+      pass,
     })
     if ('error' in r) {
       // Someone else got there first: they stay on the waitlist.

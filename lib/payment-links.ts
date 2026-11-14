@@ -131,6 +131,10 @@ export async function reconcilePayments(db: any, pending: any[]): Promise<{ chec
       if (session?.metadata?.kind === 'job_invoice' && session?.metadata?.invoiceId) {
         try { const { settleInvoicePayment } = await import('@/lib/jobs/invoices'); await settleInvoicePayment(db, String(session.metadata.invoiceId), session) } catch {}
       }
+      // A class pack bought on the booking page: the pass goes live too.
+      if (session?.metadata?.kind === 'pass_purchase' && session?.metadata?.passId) {
+        try { const { settlePurchase } = await import('@/lib/passes/server'); await settlePurchase(db, String(session.metadata.passId), session) } catch {}
+      }
       results.push({ id: pay.id, status: res.confirmed ? 'paid' : 'already-confirmed' })
     } catch (e: any) {
       results.push({ id: pay.id, error: e?.message || 'failed' })

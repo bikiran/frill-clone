@@ -627,6 +627,40 @@ export function accountCodeEmailHtml(i: AccountCodeEmailInput): string {
   })
 }
 
+// ── A class pack or membership, ready to use (lib/passes) ────────────────────
+
+export type PassEmailInput = {
+  business: string; logoUrl?: string | null; accent?: string | null; hideBadge?: boolean
+  kind: 'pack' | 'membership'
+  name: string
+  /** "10 classes", "Unlimited classes" */
+  gives: string
+  /** "$150", "$39 a week" */
+  price: string
+  /** "Expires 3 March", "Renews 10 December" */
+  when?: string | null
+  bookUrl: string
+  accountUrl?: string | null
+}
+
+export function passEmailHtml(i: PassEmailInput): string {
+  const k = kit(i.accent)
+  const rows: [string, string][] = [['Gives you', i.gives], ['Price', i.price], ...(i.when ? [[i.kind === 'pack' ? 'Use by' : 'Next payment', i.when.replace(/^(Expires|Renews) /, '')] as [string, string]] : [])]
+  return shell(k, {
+    business: i.business, logoUrl: i.logoUrl, hideBadge: i.hideBadge,
+    pill: { tone: 'good', text: i.kind === 'pack' ? 'Ready to use' : 'Membership started', mark: '✓' },
+    headline: i.kind === 'pack' ? `Your ${i.name} is ready` : `Welcome to your ${i.name}`,
+    intro: `Book a class on ${esc(i.business)}’s booking page and choose “Use my pass” at the end: you sign in with a code sent to your email or mobile.`,
+    blocks: [
+      summaryBlock(k, { label: i.name, big: i.gives, bigNote: i.kind === 'pack' ? 'Classes to book' : 'With your membership', rows }),
+      buttonBlock(k, i.bookUrl, 'Book a class'),
+      ...(i.accountUrl ? [accountBlock(k, i.accountUrl, `Your bookings, passes and payments with ${i.business} in one place.`)] : []),
+      finePrint(k, i.kind === 'membership' ? 'Your card is charged automatically each period until you cancel. You can cancel any time from your account page, or ask us.' : `Or open this link: ${i.bookUrl}`),
+    ],
+    preheader: `${i.name}: ${i.gives}${i.when ? ` · ${i.when}` : ''}`,
+  })
+}
+
 // ── Back in stock (lib/waitlist) ─────────────────────────────────────────────
 
 export type BackInStockEmailInput = {

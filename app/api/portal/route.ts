@@ -24,23 +24,36 @@ export const dynamic = 'force-dynamic'
 //   GET  ?slug&op=receipt&key=woo:<id>|shop:<id>|pay:<id>   Bearer  a receipt, if that order is theirs
 //   POST { slug, action: 'code', to }              send a code to that email or mobile (if it's a customer's)
 //   POST { slug, action: 'verify', to, code }      → { token, expiresAt } (30 days unused)
+//        (code and verify also work with for: 'passes' when the business sells
+//        class passes but hasn't turned customer accounts on: the booking page's
+//        "Use my pass" sign-in)
 //   POST { slug, action: 'link', booking | quote | invoice } → { token } from a booking / quote / invoice link (a day)
 //   POST { slug, action: 'reply', text }   Bearer  a message into their conversation
 //   POST { slug, action: 'prefs', name?, marketingEmail?, marketingSms? }   Bearer
 //   POST { slug, action: 'track', kind, id? }      Bearer  "opened a booking / quote / pay link" (pilot numbers)
 //   POST { slug, action: 'again', id }     Bearer  Book again: a personal booking link for a past booking's service → { url }
 //   POST { slug, action: 'pay', id }       Bearer  pay an accepted quote's deposit → { url } (card payment)
+//   POST { slug, action: 'cancel_pass', id } Bearer  end a membership at the end of the period paid for
 //   POST { slug, action: 'signout' }       Bearer
 
 const json = (d: any, status = 200) => NextResponse.json(d, { status, headers: { 'Cache-Control': 'no-store' } })
 const NOT_ON = (name?: string) => json({ error: name ? `${name} hasn’t turned on customer accounts.` : 'There’s no account page here.' }, 404)
 const TRACK = new Set(['open_booking', 'open_quote', 'open_invoice', 'pay', 'open_order'])
 
-async function business(db: any, slug: any) {
+async function business(db: any, slug: any, forPasses = false) {
   const pc = await portalCompany(db, String(slug || ''))
   if (!pc) return { pc: null, res: NOT_ON() }
-  if (!pc.settings.enabled) return { pc: null, res: NOT_ON(pc.company.name) }
+  // Signing in to use a class pass works whenever the business sells passes,
+  // even with customer accounts off (only the sign-in: nothing else here).
+  if (!pc.settings.enabled && !(forPasses && await sellsPasses(db, pc.company.id))) return { pc: null, res: NOT_ON(pc.company.name) }
   return { pc, res: null }
+}
+
+async function sellsPasses(db: any, companyId: string): Promise<boolean> {
+  try {
+    const { count } = await db.from('pass_products').select('id', { count: 'exact', head: true }).eq('company_id', companyId).eq('active', true)
+    return (count || 0) > 0
+  } catch { return false }
 }
 
 export async function GET(req: NextRequest) {
@@ -89,7 +102,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}))
     const action = String(body.action || '')
     if (!checkBurst(`portal-post:${callerKey(req)}`, 30)) return json({ error: 'Too many tries. Please wait a minute.' }, 429)
-    const { pc, res } = await business(db, body.slug)
+    const { pc, res } = await business(db, body.slug, body.for === 'passes' && (action === 'code' || action === 'verify'))
     if (!pc) return res!
     const companyId = pc.company.id
     const origin = req.nextUrl.origin
@@ -184,6 +197,22 @@ export async function POST(req: NextRequest) {
       if ('error' in r) return json({ error: r.error }, r.status)
       after(() => portalEvent(db, companyId, s.contactId, 'book_again', { id }))
       return json({ url: r.url })
+    }
+
+    // Stop their membership from the end of the period they've paid for.
+    if (action === 'cancel_pass') {
+      if (!checkBurst(`portal-cancel-pass:${s.id}`, 5)) return json({ error: 'Please wait a moment and try again.' }, 429)
+      const { PASS_COLS, cancelMembership } = await import('@/lib/passes/server')
+      const { passState } = await import('@/lib/passes/rules')
+      const { resolveBookingSettings } = await import('@/lib/booking')
+      const { data: pass } = await db.from('customer_passes').select(PASS_COLS).eq('company_id', companyId).eq('contact_id', s.contactId).eq('id', String(body.id || '').slice(0, 64)).maybeSingle()
+      if (!pass) return json({ error: 'That membership wasn’t found.' }, 404)
+      const { data: co } = await db.from('companies').select('id, name, stripe_mode, stripe_connected, stripe_account_id').eq('id', companyId).maybeSingle()
+      const r = await cancelMembership(db, co, pass, { now: false })
+      if (!r.ok) return json({ error: (r as { error: string }).error }, 400)
+      after(() => portalEvent(db, companyId, s.contactId, 'cancel_pass', { id: pass.id }))
+      after(() => notifyCompany({ db, companyId, type: 'booking', message: `${pass.customer_name || 'A member'} cancelled their ${pass.name} from their account. It ends when the period they’ve paid for runs out.` } as any).catch(() => null))
+      return json({ ok: true, when: passState(r.pass, Date.now(), 0, resolveBookingSettings(pc.company.booking_settings).timezone).when })
     }
 
     // A deposit on an accepted quote, straight to the card payment.
