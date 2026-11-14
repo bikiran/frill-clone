@@ -127,6 +127,10 @@ export async function reconcilePayments(db: any, pending: any[]): Promise<{ chec
       if (session?.metadata?.kind === 'quote_deposit' && session?.metadata?.quoteId) {
         try { const { settleQuoteDeposit } = await import('@/lib/jobs/server'); await settleQuoteDeposit(db, String(session.metadata.quoteId), session) } catch {}
       }
+      // An invoice paid by card (Jobs & quotes): record it on the invoice too.
+      if (session?.metadata?.kind === 'job_invoice' && session?.metadata?.invoiceId) {
+        try { const { settleInvoicePayment } = await import('@/lib/jobs/invoices'); await settleInvoicePayment(db, String(session.metadata.invoiceId), session) } catch {}
+      }
       results.push({ id: pay.id, status: res.confirmed ? 'paid' : 'already-confirmed' })
     } catch (e: any) {
       results.push({ id: pay.id, error: e?.message || 'failed' })

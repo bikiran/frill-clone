@@ -121,7 +121,7 @@ export function companyTz(company: any): string {
 }
 export const todayIn = (tz: string) => dateInTz(Date.now(), tz)
 
-export async function nextNumber(db: any, companyId: string, kind: 'job' | 'quote'): Promise<number> {
+export async function nextNumber(db: any, companyId: string, kind: 'job' | 'quote' | 'invoice'): Promise<number> {
   const { data, error } = await db.rpc('colvy_next_job_number', { p_company: companyId, p_kind: kind })
   if (error) throw error
   const n = Number(data)

@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Shell } from '@/components/booking/BookingFlow'
-import type { PortalPublic, PortalMe, PortalComing, PortalAgain, PortalQuote, PortalOrder } from '@/lib/portal/types'
+import type { PortalPublic, PortalMe, PortalComing, PortalAgain, PortalQuote, PortalInvoice, PortalOrder } from '@/lib/portal/types'
 import type { PortalReceipt } from '@/lib/portal/receipts'
 import ReceiptDoc, { RECEIPT_CSS } from '@/components/portal/ReceiptDoc'
 
@@ -77,13 +77,13 @@ export default function Portal({ slug }: { slug: string }) {
       setBiz(r.data)
       try { document.title = `Your account · ${r.data.name}` } catch {}
       const sp = new URLSearchParams(window.location.search)
-      const b = sp.get('b'), q = sp.get('q')
-      const tidy = () => { if (b || q) try { window.history.replaceState(null, '', window.location.pathname) } catch {} }
+      const b = sp.get('b'), q = sp.get('q'), i = sp.get('i')
+      const tidy = () => { if (b || q || i) try { window.history.replaceState(null, '', window.location.pathname) } catch {} }
       // Already signed in here: keep that session (a link's is only for a day).
       if (token() && await loadMe()) { tidy(); return }
       // Arrived from a link the business sent: sign in with it, then tidy the address bar.
-      if (b || q) {
-        const x = await call('POST', '', { action: 'link', ...(b ? { booking: b } : { quote: q }) })
+      if (b || q || i) {
+        const x = await call('POST', '', { action: 'link', ...(b ? { booking: b } : q ? { quote: q } : { invoice: i }) })
         if (x.ok && x.data.token) setToken(x.data.token)
         tidy()
         if (token()) { await loadMe(); return }
@@ -188,16 +188,16 @@ function Account({ biz, me, setMe, call, track, signOut }: {
 }) {
   const first = (me.me.name || '').trim().split(/\s+/)[0]
   const on = (k: string) => biz.sections[k] !== false
-  const coming = me.comingUp || [], pay = me.payments || [], quotes = me.quotes || [], jobs = me.jobs || [], orders = me.orders || [], again = me.bookAgain || []
+  const coming = me.comingUp || [], pay = me.payments || [], quotes = me.quotes || [], invoices = me.invoices || [], jobs = me.jobs || [], orders = me.orders || [], again = me.bookAgain || []
   const waiting = quotes.filter(q => q.waiting)
   // Deposits to pay live on their own booking or quote; "To pay" counts them too.
-  const holdsDue = coming.filter(c => c.payUrl), depositsDue = quotes.filter(q => q.deposit?.due)
-  const toPay = pay.length + holdsDue.length + depositsDue.length
+  const holdsDue = coming.filter(c => c.payUrl), depositsDue = quotes.filter(q => q.deposit?.due), invoicesDue = invoices.filter(v => v.owing > 0)
+  const toPay = pay.length + holdsDue.length + depositsDue.length + invoicesDue.length
   const payAt = pay.length ? 'pt-pay' : holdsDue.length ? 'pt-coming' : 'pt-quotes'
   const chips = [
     on('coming_up') && { id: 'pt-coming', label: 'Coming up', n: coming.length },
     on('payments') && { id: payAt, label: 'To pay', n: toPay, hot: toPay > 0 },
-    on('quotes') && { id: 'pt-quotes', label: 'Quotes', n: waiting.length + depositsDue.length, hot: waiting.length + depositsDue.length > 0 },
+    on('quotes') && { id: 'pt-quotes', label: invoices.length ? 'Quotes & invoices' : 'Quotes', n: waiting.length + depositsDue.length + invoicesDue.length, hot: waiting.length + depositsDue.length + invoicesDue.length > 0 },
     on('orders') && { id: 'pt-orders', label: 'Orders', n: orders.length },
     on('messages') && { id: 'pt-msgs', label: 'Messages', n: null },
   ].filter(Boolean) as { id: string; label: string; n: number | null; hot?: boolean }[]
@@ -252,9 +252,10 @@ function Account({ biz, me, setMe, call, track, signOut }: {
         </section>
       )}
 
-      {on('quotes') && (quotes.length > 0 || jobs.length > 0) && (
+      {on('quotes') && (quotes.length > 0 || jobs.length > 0 || invoices.length > 0) && (
         <section id="pt-quotes" className="pt-card bk-rise">
-          <h2><span className="pt-ic"><Ic.doc /></span>Quotes and jobs</h2>
+          <h2><span className="pt-ic"><Ic.doc /></span>{invoices.length ? 'Quotes, jobs and invoices' : 'Quotes and jobs'}</h2>
+          {invoices.map(v => <InvoiceRow key={v.id} v={v} track={track} />)}
           {quotes.map(q => <QuoteRow key={q.id} q={q} track={track} busy={going === `pay:${q.id}`} err={goErr?.id === `pay:${q.id}` ? goErr.text : ''} onPay={() => goTo(`pay:${q.id}`, { action: 'pay', id: q.id })} />)}
           {jobs.map(j => (
             <div key={j.id} className="pt-item">
@@ -307,6 +308,21 @@ function AgainRow({ a, busy, err, onGo }: { a: PortalAgain; busy: boolean; err: 
         {err && <em className="pt-rowerr" role="alert">{err}</em>}
       </div>
       <button type="button" className="pt-btn" disabled={busy} onClick={onGo}>{busy ? 'Opening…' : a.kind === 'reservation' ? 'Book a table' : 'Book again'}</button>
+    </div>
+  )
+}
+
+function InvoiceRow({ v, track }: { v: PortalInvoice; track: (k: string, id?: string) => void }) {
+  const due = v.owing > 0
+  return (
+    <div className="pt-item">
+      <div className="pt-main">
+        <b>{v.title || `Invoice ${v.number}`}</b>
+        <span>Invoice {v.number}{due && v.dueDate ? ` · ${v.overdue ? 'was due' : 'due'} ${dateLong(`${v.dueDate}T12:00:00`)}` : v.sentAt ? ` · ${dateLong(v.sentAt)}` : ''}</span>
+      </div>
+      <strong className="pt-amt">{money(due ? v.owing : v.cents)}</strong>
+      <span className={`pt-pill ${due ? 'hot' : 'ok'}`}>{v.statusLabel}</span>
+      <a className={due ? 'bk-primary pt-sm' : 'pt-btn'} href={v.url} onClick={() => track('open_invoice', v.id)}>{due ? 'View and pay' : 'View'}</a>
     </div>
   )
 }

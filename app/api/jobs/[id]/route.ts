@@ -4,7 +4,7 @@ import { canMoveJob, isJobStatus, JOB_STATUS_LABEL, type JobStatus } from '@/lib
 import { companyBase, stripeReady } from '@/lib/booking'
 import {
   jobsDb, jobsAccess, json, setupNeeded, isMissingJobsSchema, isUuid, isJobsManager,
-  logJobEvent, emitJobEvent, loadCompany, companySettings, companyTz, clip, isoOrNull,
+  logJobEvent, emitJobEvent, loadCompany, companySettings, companyTz, todayIn, clip, isoOrNull,
 } from '@/lib/jobs/server'
 import { viewFor, callerSeesJob, busyFor, describeConflicts, syncJob, closeOpenEntries, notifyPeople, whenText } from '@/lib/jobs/field'
 import { assigneesOf, findConflicts, jobWindow, timeTotals } from '@/lib/jobs/work'
@@ -34,7 +34,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     // time as the access check; nothing is sent back unless it says yes.
     const ok = isUuid(companyId)
     const none = Promise.resolve({ data: null, error: null })
-    const [access, jobRes, quotes, events, company, checklist, attachments, entries] = await Promise.all([
+    const [access, jobRes, quotes, events, company, checklist, attachments, entries, invoices] = await Promise.all([
       jobsAccess(req, db, companyId),
       ok ? db.from('jobs').select('*').eq('company_id', companyId!).eq('id', id).maybeSingle() : none,
       ok ? db.from('job_quotes').select('id, number, revision, status, title, total_cents, tax_cents, deposit_cents, deposit_status, valid_until, public_token, sent_at, sent_via, viewed_at, accepted_at, declined_at, decided_name, decided_note, decided_by_type, created_at, updated_at')
@@ -44,6 +44,9 @@ export async function GET(req: NextRequest, ctx: Ctx) {
       ok ? db.from('job_checklist_items').select('id, text, done, done_by_id, done_by_name, done_at, sort_order').eq('company_id', companyId!).eq('job_id', id).order('sort_order').limit(200) : none,
       ok ? db.from('job_attachments').select('id, kind, url, name, mime, caption, uploaded_by_id, uploaded_by_name, created_at').eq('company_id', companyId!).eq('job_id', id).order('created_at').limit(300) : none,
       ok ? db.from('job_time_entries').select('id, user_id, user_name, started_at, ended_at, seconds').eq('company_id', companyId!).eq('job_id', id).order('started_at', { ascending: false }).limit(300) : none,
+      // Invoices (V434); none yet before that migration.
+      ok ? db.from('job_invoices').select('id, quote_id, number, status, title, total_cents, credit_cents, paid_cents, issue_date, due_date, public_token, sent_at, sent_via, viewed_at, paid_at, voided_at, reminders, reminder_count, created_at, updated_at')
+        .eq('company_id', companyId!).eq('job_id', id).order('created_at', { ascending: false }) : none,
     ]) as any[]
     if (!access.ok) return access.response
     const { data: job, error } = jobRes
@@ -77,7 +80,10 @@ export async function GET(req: NextRequest, ctx: Ctx) {
       booking: booking.data || null,
       form: form.data && (form.data as any).company_id === companyId ? { id: (form.data as any).id, title: (form.data as any).title } : null,
       quotes: view.money ? (quotes.data || []) : [],
-      events: (events.data || []).filter((e: any) => view.money || !String(e.type || '').startsWith('quote') && e.type !== 'deposit_paid' && e.type !== 'deposit_requested'),
+      invoices: view.money ? (invoices.data || []) : [],
+      invoicesReady: !invoices.error,
+      today: todayIn(tz),
+      events: (events.data || []).filter((e: any) => view.money || !/^(quote|invoice)/.test(String(e.type || '')) && e.type !== 'deposit_paid' && e.type !== 'deposit_requested'),
       checklist: checklist.data || [],
       attachments: attachments.data || [],
       time: { entries: entries.data || [], totalSeconds: time.totalSeconds, byUser: time.byUser, running: time.runningUserIds, mineRunning: time.runningUserIds.includes(view.userId) },
@@ -239,6 +245,9 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     // A quote the customer has seen stays on record: cancel the job instead.
     const { data: out } = await db.from('job_quotes').select('id').eq('company_id', companyId!).eq('job_id', id).neq('status', 'draft').limit(1)
     if (out?.length) return json({ error: 'A quote for this job has been sent, so it stays on record. Cancel the job instead.' }, 409)
+    // So does an invoice (a tax invoice is a business record).
+    const { data: billed, error: bErr } = await db.from('job_invoices').select('id').eq('company_id', companyId!).eq('job_id', id).neq('status', 'draft').limit(1)
+    if (!bErr && billed?.length) return json({ error: 'An invoice for this job has been sent, so it stays on record. Cancel the job instead.' }, 409)
     const { error } = await db.from('jobs').delete().eq('company_id', companyId!).eq('id', id)
     if (error) throw error
     if (job.calendar_event_id) { try { await db.from('calendar_events').update({ status: 'cancelled' }).eq('company_id', companyId!).eq('id', job.calendar_event_id) } catch {} }

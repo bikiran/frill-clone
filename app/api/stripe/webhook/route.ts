@@ -184,6 +184,27 @@ export async function POST(req: NextRequest) {
           break
         }
 
+        // Jobs & quotes: an invoice paid by card (lib/jobs/invoices.ts). Counts
+        // once, and only for the Checkout session Colvy made for that invoice.
+        if (meta.kind === 'job_invoice' && meta.invoiceId) {
+          try {
+            if (session.payment_status === 'paid') {
+              let s: any = session
+              const piId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id
+              if (piId) {
+                try {
+                  const acctOpt: any = event.account ? { stripeAccount: event.account } : undefined
+                  const pi: any = await stripe.paymentIntents.retrieve(piId, { expand: ['latest_charge'] }, acctOpt)
+                  s = { ...session, payment_intent: pi }
+                } catch {}
+              }
+              const { settleInvoicePayment } = await import('@/lib/jobs/invoices')
+              await settleInvoicePayment(supabase, String(meta.invoiceId), s)
+            }
+          } catch (e) { console.error('[webhook] job_invoice failed', e) }
+          break
+        }
+
         // In-chat payment (on a connected account) — mark paid + confirm in chat
         if (meta.kind === 'chat_payment' && meta.conversationId) {
           const receiptUrl = session.receipt_url || null

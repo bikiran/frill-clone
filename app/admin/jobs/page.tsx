@@ -146,6 +146,7 @@ export default function JobsPage() {
     <AdminPage title="Jobs" width="xl"
       sub={meta.restricted ? 'The jobs you’re on.' : 'Quotes and jobs, from the first enquiry to done.'}
       actions={<>
+        {!meta.restricted && <Link href="/admin/jobs/invoices" className="ak-btn" title="Who owes what, and what’s overdue">{Icon.doc}<span className="jb-hide-sm">Invoices</span></Link>}
         {meta.canManage !== false && <Link href="/admin/jobs/settings" className="ak-btn" title="Quote settings, price list, templates and checklists">{Icon.gear}<span className="jb-hide-sm">Settings</span></Link>}
         <button type="button" className="ak-btn go" onClick={() => setShowNew(true)} disabled={!companyId || !!setup}>{Icon.plus}New job</button>
       </>}>

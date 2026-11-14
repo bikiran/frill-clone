@@ -44,3 +44,8 @@ export const QUOTE_STATUS_TONE: Record<QuoteStatus, '' | 'blue' | 'amber' | 'vio
 
 export const fmtJobNumber = (n: number | null | undefined, prefix = 'J') => (n ? `${prefix}-${n}` : '')
 export const fmtQuoteNumber = (n: number | null | undefined, rev?: number | null, prefix = 'Q') => (n ? `${prefix}-${n}${rev && rev > 1 ? ` (rev ${rev})` : ''}` : '')
+
+export const INVOICE_STATUSES = ['draft', 'sent', 'paid', 'void'] as const
+export type InvoiceStatus = typeof INVOICE_STATUSES[number]
+export const INVOICE_STATUS_LABEL: Record<InvoiceStatus, string> = { draft: 'Draft', sent: 'Sent', paid: 'Paid', void: 'Void' }
+export const INVOICE_STATUS_TONE: Record<InvoiceStatus, '' | 'blue' | 'amber' | 'violet' | 'green' | 'red'> = { draft: '', sent: 'amber', paid: 'green', void: '' }

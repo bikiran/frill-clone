@@ -24,7 +24,7 @@ export const dynamic = 'force-dynamic'
 //   GET  ?slug&op=receipt&key=woo:<id>|shop:<id>|pay:<id>   Bearer  a receipt, if that order is theirs
 //   POST { slug, action: 'code', to }              send a code to that email or mobile (if it's a customer's)
 //   POST { slug, action: 'verify', to, code }      → { token, expiresAt } (30 days unused)
-//   POST { slug, action: 'link', booking | quote } → { token } from a booking / quote link (a day)
+//   POST { slug, action: 'link', booking | quote | invoice } → { token } from a booking / quote / invoice link (a day)
 //   POST { slug, action: 'reply', text }   Bearer  a message into their conversation
 //   POST { slug, action: 'prefs', name?, marketingEmail?, marketingSms? }   Bearer
 //   POST { slug, action: 'track', kind, id? }      Bearer  "opened a booking / quote / pay link" (pilot numbers)
@@ -34,7 +34,7 @@ export const dynamic = 'force-dynamic'
 
 const json = (d: any, status = 200) => NextResponse.json(d, { status, headers: { 'Cache-Control': 'no-store' } })
 const NOT_ON = (name?: string) => json({ error: name ? `${name} hasn’t turned on customer accounts.` : 'There’s no account page here.' }, 404)
-const TRACK = new Set(['open_booking', 'open_quote', 'pay', 'open_order'])
+const TRACK = new Set(['open_booking', 'open_quote', 'open_invoice', 'pay', 'open_order'])
 
 async function business(db: any, slug: any) {
   const pc = await portalCompany(db, String(slug || ''))
@@ -152,10 +152,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'link') {
-      const contactId = await contactFromLink(db, companyId, { booking: body.booking, quote: body.quote })
+      const contactId = await contactFromLink(db, companyId, { booking: body.booking, quote: body.quote, invoice: body.invoice })
       if (!contactId) return json({ error: 'That link has expired.' }, 404)
       const s = await startSession(db, companyId, contactId, 'link', req.headers.get('user-agent'))
-      after(() => portalEvent(db, companyId, contactId, 'link_sign_in', { from: body.booking ? 'booking' : 'quote' }))
+      after(() => portalEvent(db, companyId, contactId, 'link_sign_in', { from: body.booking ? 'booking' : body.quote ? 'quote' : 'invoice' }))
       return json({ ok: true, token: s.token, expiresAt: s.expiresAt })
     }
 

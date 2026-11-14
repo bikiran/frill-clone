@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { resolveCompanyUser, peekCompanyUser, readStored, writeStored, writeCache } from '@/lib/client-cache'
 import { api as apiCall } from '@/components/booking/admin/shared'
-import { JOB_STATUS_LABEL, JOB_STATUS_TONE, QUOTE_STATUS_LABEL, QUOTE_STATUS_TONE, type JobStatus, type QuoteStatus } from '@/lib/jobs/status'
+import { JOB_STATUS_LABEL, JOB_STATUS_TONE, QUOTE_STATUS_LABEL, QUOTE_STATUS_TONE, INVOICE_STATUS_LABEL, INVOICE_STATUS_TONE, type JobStatus, type QuoteStatus, type InvoiceStatus } from '@/lib/jobs/status'
 export { api } from '@/components/booking/admin/shared'
 
 /**
@@ -52,6 +52,7 @@ export const cacheKeys = {
   list: (cid: string) => `jobs:list:${cid}`,
   job: (cid: string, id: string) => `jobs:job:${cid}:${id}`,
   quote: (cid: string, id: string) => `jobs:quote:${cid}:${id}`,
+  invoice: (cid: string, id: string) => `jobs:invoice:${cid}:${id}`,
 }
 export const readJobsCache = <T = any>(key: string) => readStored<T>(key)
 export const writeJobsCache = (key: string, v: any) => {
@@ -67,10 +68,16 @@ export function prefetchInto(key: string, url: string) {
 }
 export const prefetchJob = (cid: string, id: string) => prefetchInto(cacheKeys.job(cid, id), `/api/jobs/${id}?companyId=${cid}`)
 export const prefetchQuote = (cid: string, id: string) => prefetchInto(cacheKeys.quote(cid, id), `/api/jobs/quotes/${id}?companyId=${cid}`)
+export const prefetchInvoice = (cid: string, id: string) => prefetchInto(cacheKeys.invoice(cid, id), `/api/jobs/invoices/${id}?companyId=${cid}`)
 
 export function StatusTag({ status }: { status: string }) {
   const s = status as JobStatus
   return <span className={`ak-tag ${JOB_STATUS_TONE[s] || ''}`}>{JOB_STATUS_LABEL[s] || status}</span>
+}
+export function InvoiceTag({ status, overdue }: { status: string; overdue?: boolean }) {
+  const s = status as InvoiceStatus
+  if (overdue && s === 'sent') return <span className="ak-tag red">Overdue</span>
+  return <span className={`ak-tag ${INVOICE_STATUS_TONE[s] || ''}`}>{INVOICE_STATUS_LABEL[s] || status}</span>
 }
 export function QuoteTag({ status, expired }: { status: string; expired?: boolean }) {
   const s = status as QuoteStatus
