@@ -87,6 +87,7 @@ export const INTEGRATION_SLUGS: string[] = [
 export const COMPARE_SLUGS: string[] = [
   'podium', 'birdeye', 'coax', 'gorgias', 'zendesk', 'freshdesk', 'intercom', 'gladly', 'manychat', 'highlevel', 'salesforce',
   'aircall', 'dialpad', 'ringcentral', 'krispcall',
+  'servicem8', 'tradify', 'fresha', 'timely', 'mindbody',
 ]
 
 // Every indexable path (relative, e.g. '' or 'channels/whatsapp').

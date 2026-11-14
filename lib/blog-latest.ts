@@ -622,9 +622,10 @@ In Colvy, turn the conversation, the booking or the form response straight into 
 
 ## 6. After the job
 
-- **Get paid.** Send a payment link in the conversation. Once it’s paid, the customer can find the receipt in their account with you.
+- **Send the invoice.** From the finished job, send an invoice for the balance by text or email, with the deposit already taken off. The customer pays by card online, or you record cash or a bank transfer. If it’s still unpaid, Colvy texts a reminder 1, 7 and 14 days after the due date.
+- **Repeat the regular work.** Gutter cleans, servicing and maintenance visits can repeat every week, 2 weeks, 4 weeks, month or 3 months. Each visit is its own job, with the same customer, address, team, checklist and price, on the board a few weeks ahead.
 - **Ask for the review** while they’re happy with the work.
-- **Keep them in the loop.** With [customer accounts](/product/customer-accounts) on, customers sign in with a code and see the quotes waiting for them and how their jobs are going, without ringing you to ask. If they accepted a quote without paying the deposit, they can pay it by card from there.
+- **Keep them in the loop.** With [customer accounts](/product/customer-accounts) on, customers sign in with a code and see the quotes waiting for them and how their jobs are going, without ringing you to ask. If they accepted a quote without paying the deposit, they can pay it by card from there, and their invoices are there too.
 
 > [!WARNING] Home building contracts and deposits
 > Most states require a written contract for residential building work above a certain value, and many cap the deposit you can ask for, often at 10% or less. The rules differ by state and by trade, so check with your state’s fair trading or building regulator before you set a default deposit.
@@ -639,6 +640,7 @@ In Colvy, turn the conversation, the booking or the form response straight into 
 | GST | Worked out on a calculator | Included or added for you, on its own line |
 | Booking the job | A diary and a group chat | A board and calendar, with clash checks |
 | On site | Photos lost in the camera roll | Checklist, photos, timer and signature on the job |
+| Getting paid | Chasing it by phone | An invoice they pay online, with reminders when it’s late |
 | “Where are we up to?” | A phone call | Their account shows the quote and the job |
 
 > [!TRY] Set it up in an afternoon
@@ -646,6 +648,8 @@ In Colvy, turn the conversation, the booking or the form response straight into 
 > - Set your GST, quote and job numbering, default terms and how long quotes are valid.
 > - Add your price list and save a template for your most common job.
 > - Create your first job from a conversation, send the quote, and watch for the accept.
+
+Coming from another job app? See [Colvy vs ServiceM8](/compare/servicem8) and [Colvy vs Tradify](/compare/tradify).
 
 [See jobs and quotes](/product/jobs), [see Colvy for service businesses](/for/service-businesses) or [start free](/signup).`,
   },

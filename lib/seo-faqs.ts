@@ -283,6 +283,36 @@ export const SEO_FAQS: Record<string, SeoFaq[]> = {
     { q: 'Are texts included?', a: 'Yes, on the Inbox and Everything plans: 3,000 SMS a month. More texts use prepaid credits from A$0.15 a text, and texting stops rather than running up a bill when credit runs out.' },
     { q: 'How do I get started?', a: STARTER },
   ],
+  'compare/servicem8': [
+    { q: 'Is Colvy a ServiceM8 alternative?', a: 'Yes, for trades and service businesses that want their jobs and customer conversations in one place. Colvy has quotes customers accept online, deposits, jobs with checklists, photos, time and signatures, repeating jobs and invoices paid online, beside calls, SMS, email, live chat, Instagram and Messenger.' },
+    { q: 'Does Colvy limit how many jobs I can do?', a: 'No. Colvy doesn’t count jobs. The Inbox plan is A$179 a month, or A$149 a month billed yearly, GST included, for unlimited team members, with 3,000 SMS a month.' },
+    { q: 'Does Colvy sync with Xero or MYOB?', a: 'No, Colvy doesn’t sync with Xero, MYOB or QuickBooks. Each invoice shows what’s been paid, by card, cash or bank transfer, and what’s still owing.' },
+    { q: 'How do I get started?', a: STARTER },
+  ],
+  'compare/tradify': [
+    { q: 'Is Colvy a Tradify alternative?', a: 'Yes. Colvy gives trades quotes customers accept online, deposits, jobs with checklists, photos, time and signatures, repeating jobs and invoices paid online, in the same inbox as calls, SMS, email, live chat, Instagram and Messenger.' },
+    { q: 'Is Colvy priced per user?', a: 'No. The Inbox plan is one price for unlimited team members: A$179 a month, or A$149 a month billed yearly, GST included, with 3,000 SMS a month.' },
+    { q: 'Can customers book a job online?', a: 'Yes. Your booking page lists your services, including ones done at the customer’s address. Customers pick a time, pay a deposit if you ask for one, and get reminders.' },
+    { q: 'How do I get started?', a: STARTER },
+  ],
+  'compare/fresha': [
+    { q: 'Is Colvy a Fresha alternative?', a: 'Yes. Colvy gives salons, spas and clinics online booking with deposits and reminders, repeat appointments, packs and memberships, and client accounts, with texts, calls, email, live chat, Instagram and Messenger in one inbox.' },
+    { q: 'Does Colvy charge a fee for new clients?', a: 'No. Colvy doesn’t run a marketplace and doesn’t charge a fee for new clients. Clients book on your own booking page.' },
+    { q: 'Can I sell memberships and packs?', a: 'Yes. Sell packs, like 10 visits for $150, and memberships that renew weekly, fortnightly or monthly, paid into your own Stripe account. Clients use them when they book and see what’s left in their account.' },
+    { q: 'How do I get started?', a: STARTER },
+  ],
+  'compare/timely': [
+    { q: 'Is Colvy a Timely alternative?', a: 'Yes. Colvy has online booking with deposits and reminders, repeat appointments, packs and memberships, and client accounts, plus two-way texts, calls, email, live chat, Instagram and Messenger in one inbox.' },
+    { q: 'Can clients text back?', a: 'Yes. Clients text your Australian business number and your team replies from the shared inbox. The Inbox and Everything plans include 3,000 SMS a month.' },
+    { q: 'Does Colvy take deposits?', a: 'Yes. For each service, choose no payment, a deposit or the full price, paid by card through your own Stripe account.' },
+    { q: 'How do I get started?', a: STARTER },
+  ],
+  'compare/mindbody': [
+    { q: 'Is Colvy a Mindbody alternative?', a: 'Yes, for gyms and studios that want class booking, class packs, memberships, campaigns and every member conversation in one place: texts, calls, email, live chat, Instagram and Messenger.' },
+    { q: 'Can Colvy bill memberships automatically?', a: 'Yes. Memberships renew weekly, fortnightly or monthly through your own Stripe account, and members see their classes left and next renewal in their account.' },
+    { q: 'How much does Colvy cost?', a: 'The Inbox plan is A$179 a month, or A$149 a month billed yearly, GST included, for unlimited team members, with email and SMS campaigns, five AI agents and 3,000 SMS a month.' },
+    { q: 'How do I get started?', a: STARTER },
+  ],
   'compare/aircall': [
     { q: 'Is Colvy an Aircall alternative?', a: 'Yes. Colvy is a cloud phone system inside a shared inbox: Australian business numbers, press-1 menus, forwarding, ring groups, voicemail, call recording, transcripts and AI summaries, with SMS, email, live chat, Instagram and Messenger in the same place.' },
     { q: 'Is Colvy priced per user?', a: 'No. The Inbox plan is one price for unlimited team members: A$179 a month, or A$149 a month billed yearly, GST included, with 3,000 SMS a month. Numbers are A$15 a month each, and call minutes are metered.' },
