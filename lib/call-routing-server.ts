@@ -14,7 +14,7 @@ import { businessNumbers } from '@/lib/business-numbers'
 import { isExternalSendBlocked } from '@/lib/demo-guard'
 import { resolveAutomatedSmsSender } from '@/lib/sms-consent'
 import { textableCaller } from '@/lib/missed-call-text-settings'
-import { cleanRouting, fillBusiness, stepLabel, type CallRouting, type StepResult } from '@/lib/call-routing'
+import { cleanRouting, fillBusiness, stepLabel, forwardNumbers, type CallRouting, type StepResult } from '@/lib/call-routing'
 
 type Db = any
 
@@ -174,7 +174,7 @@ export type RoutingNote = {
   menu?: 'main' | 'ah'
   choice?: { key: string | null; label: string | null; at: string }
   path?: string[]
-  forward?: { to: string; step: number; route: string; accepted?: boolean; acceptedSid?: string; seconds?: number }
+  forward?: { to: string; step: number; route: string; accepted?: boolean; acceptedSid?: string; seconds?: number; phones?: string[]; answeredTo?: string }
   texted?: boolean
   voicemailBox?: string
 }
@@ -207,9 +207,10 @@ export async function noteRouting(db: Db, callRowId: string, patch: RoutingNote 
 
 /** A ring step has started: add it to the trail, and remember a forward's target (forward-screen and the Dial's callback read it). */
 export function noteStep(db: Db, callRowId: string, route: string, step: StepResult, current?: any) {
+  const phones = step.forwardTo && step.step.kind === 'forward' ? forwardNumbers(step.step.target) : []
   return noteRouting(db, callRowId, {
-    route, pathAdd: stepLabel(step),
-    ...(step.forwardTo ? { forward: { to: step.forwardTo, step: step.index, route } } : {}),
+    route, pathAdd: stepLabel({ ...step, forwardAlso: Math.max(0, phones.length - 1) }),
+    ...(step.forwardTo ? { forward: { to: step.forwardTo, step: step.index, route, ...(phones.length > 1 ? { phones } : {}) } } : {}),
   }, current)
 }
 
