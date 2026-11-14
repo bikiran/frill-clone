@@ -13,6 +13,7 @@ import {
 import AddressAutocomplete from '@/components/AddressAutocomplete'
 import Link from 'next/link'
 import { PeoplePanel, WorkPanel, ChecklistPanel, PhotosPanel, SignaturePanel, SignatureDialog, FIELD_CSS } from '@/components/jobs/Field'
+import { RepeatPanel } from '@/components/jobs/Repeat'
 import { JOB_STATUS_LABEL, nextStatuses, fmtJobNumber, fmtQuoteNumber, type JobStatus } from '@/lib/jobs/status'
 import { fmtMoney } from '@/lib/jobs/quote-math'
 
@@ -375,6 +376,7 @@ export default function JobPage() {
             <PeoplePanel companyId={companyId} job={job} conflicts={d.conflicts || []} canAssign={!!d.canManage || !d.restricted} toast={setToast}
               onSaved={(j, c) => { setD((x: any) => ({ ...x, job: { ...x.job, ...j }, conflicts: c })); load() }} />
             <SignaturePanel job={job} required={!!d.settings?.require_signature} onSign={() => setSigning(true)} />
+            <RepeatPanel key={`${job.id}:${job.repeat_id || ''}`} companyId={companyId} job={job} tz={tz} prefix={pf} canEdit={!!d.canManage || !d.restricted} toast={setToast} onChange={() => load()} />
           </>}
 
           {!partial && (
