@@ -502,6 +502,8 @@ export type CreateInput = {
   heldBookingId?: string | null
   /** The waitlist offer this booking comes from (its claim link). */
   waitlistOfferId?: string | null
+  /** Paid with a class from this pass (lib/passes), checked as theirs by the caller. */
+  pass?: { row: any; by: string } | null
 }
 
 export type CreateResult = { ok: true; token: string; checkoutUrl?: string | null; state: 'confirmed' | 'pending' } | { ok: false; error: string; status?: number }
@@ -536,7 +538,7 @@ export async function createBooking(db: any, input: CreateInput): Promise<Create
   const dayLoad = (id: string | null) => (busy.get(rKey(id)) || []).filter(b => b.serviceId !== undefined && dateInTz(b.from, tz) === date).length
   const candidates = [...slot.resources].sort((a, b) => dayLoad(a) - dayLoad(b))
 
-  const due = amountDue(service)
+  const due = input.pass ? 0 : amountDue(service)
   const needsPayment = due > 0
   if (needsPayment && !stripeReady(company)) return { ok: false, error: 'This business hasn’t finished setting up online payments, so this service can’t be booked online yet. Please contact them directly.' }
 
@@ -559,7 +561,7 @@ export async function createBooking(db: any, input: CreateInput): Promise<Create
       customer_name: input.customer.name, customer_email: input.customer.email, customer_phone: input.customer.phone,
       customer_timezone: input.customer.timezone, answers: input.answers, notes: input.notes,
       price_cents: service.price_cents || 0, amount_due_cents: due, currency: service.currency || 'aud',
-      payment_mode: service.payment_mode || 'none', payment_status: needsPayment ? 'pending' : 'none',
+      payment_mode: input.pass ? 'none' : (service.payment_mode || 'none'), payment_status: needsPayment ? 'pending' : 'none',
       manage_token: token, source: input.source || 'waitlist', updated_at: new Date().toISOString(),
     }).eq('id', input.heldBookingId).eq('company_id', company.id).eq('status', 'pending').eq('source', 'waitlist_hold')
       .eq('starts_at', new Date(startMs).toISOString()).gt('hold_expires_at', new Date().toISOString()).select('id')
@@ -580,7 +582,7 @@ export async function createBooking(db: any, input: CreateInput): Promise<Create
         customer_name: input.customer.name, customer_email: input.customer.email, customer_phone: input.customer.phone,
         customer_timezone: input.customer.timezone, answers: input.answers, notes: input.notes,
         price_cents: service.price_cents || 0, amount_due_cents: due, currency: service.currency || 'aud',
-        payment_mode: service.payment_mode || 'none', payment_status: needsPayment ? 'pending' : 'none',
+        payment_mode: input.pass ? 'none' : (service.payment_mode || 'none'), payment_status: needsPayment ? 'pending' : 'none',
         manage_token: token, source: input.source || 'page',
       },
       p_exclude: null,
@@ -606,6 +608,16 @@ export async function createBooking(db: any, input: CreateInput): Promise<Create
   // before that the update just fails and instant bookings still get it below.
   if (input.clickRef) {
     try { await db.from('bookings').update({ source_click_id: input.clickRef }).eq('id', bookingId) } catch {}
+  }
+
+  // A class from their pass pays for it (under a lock: never more than the pass holds).
+  if (input.pass) {
+    const { usePass } = await import('@/lib/passes/server')
+    const used = await usePass(db, { companyId: company.id, pass: input.pass.row, bookingId, classAtMs: startMs, by: input.pass.by }).catch((e: any) => ({ ok: false as const, error: e?.message || 'Couldn’t use your pass. Please try again.' }))
+    if (!used.ok) {
+      await db.from('bookings').update({ status: 'expired', updated_at: new Date().toISOString() }).eq('id', bookingId)
+      return { ok: false, error: (used as { error: string }).error, status: 409 }
+    }
   }
 
   if (!needsPayment) {
@@ -870,7 +882,7 @@ export function policyFor(b: any, settings: BookingSettings, now = Date.now()) {
 
 // `alsoCancelled`: later visits of the same regular booking cancelled with it
 // (quietly) — the customer's one message says so.
-export async function cancelBooking(db: any, bookingId: string, opts: { by: 'customer' | 'business'; reason?: string | null; refund: boolean; notifyCustomer: boolean; origin: string; alsoCancelled?: number; alsoCancelledEvents?: InviteEvent[] }): Promise<{ ok: boolean; refunded?: number; refundError?: string; error?: string }> {
+export async function cancelBooking(db: any, bookingId: string, opts: { by: 'customer' | 'business'; reason?: string | null; refund: boolean; notifyCustomer: boolean; origin: string; alsoCancelled?: number; alsoCancelledEvents?: InviteEvent[]; returnPass?: boolean }): Promise<{ ok: boolean; refunded?: number; refundError?: string; error?: string; passReturned?: boolean }> {
   const ctx = await loadBookingCtx(db, bookingId)
   if (!ctx) return { ok: false, error: 'Booking not found' }
   const { b, company, service, settings } = ctx
@@ -890,9 +902,18 @@ export async function cancelBooking(db: any, bookingId: string, opts: { by: 'cus
     const r = await refundBooking(db, company, bk, null)
     if (r.ok) refunded = r.refunded || 0; else refundError = r.error
   }
+  // Paid with a pass: the class goes back to it when the team cancels (unless
+  // they say not to), or when the customer cancels before the cut-off.
+  let passReturned = false
+  if (b.pass_id) {
+    const inTime = Date.now() < Date.parse(b.starts_at) - settings.cancel_hours * HOUR
+    if (opts.by === 'business' ? opts.returnPass !== false : inTime) {
+      try { const { returnPass } = await import('@/lib/passes/server'); passReturned = await returnPass(db, b.company_id, b.id) } catch {}
+    }
+  }
   if (b.calendar_event_id) { try { await db.from('calendar_events').update({ status: 'cancelled' }).eq('id', b.calendar_event_id) } catch {} }
 
-  const refundTxt = refunded ? ` ${fmtMoney(refunded, b.currency)} refunded.` : ''
+  const refundTxt = refunded ? ` ${fmtMoney(refunded, b.currency)} refunded.` : passReturned ? ' The class went back on their pass.' : ''
   await systemNote(db, bk, `❌ Booking cancelled by ${opts.by === 'customer' ? 'the customer' : 'the team'}: ${b.service_name} — ${whenText(b)}.${refundTxt}${bk.cancel_reason ? ` Reason: ${bk.cancel_reason}` : ''}`)
   if (opts.by === 'customer') {
     await notifyCompany({ db, companyId: b.company_id, type: 'booking', conversationId: b.conversation_id || undefined, message: `❌ ${b.customer_name || 'A customer'} cancelled ${b.service_name}, ${whenText(b)}.${refundTxt}` })
@@ -903,7 +924,7 @@ export async function cancelBooking(db: any, bookingId: string, opts: { by: 'cus
   // A waitlist hold was never their booking (only an offer), so no
   // "your booking was cancelled" message for it.
   if (opts.notifyCustomer && !waitlistHold) await customerMessage(db, company, settings, bk, 'cancelled', { refunded, service, origin: opts.origin, alsoCancelled: opts.alsoCancelled, alsoCancelledEvents: opts.alsoCancelledEvents })
-  return { ok: true, refunded, refundError }
+  return { ok: true, refunded, refundError, passReturned }
 }
 
 export async function rescheduleBooking(db: any, bookingId: string, opts: { startMs: number; by: 'customer' | 'business'; notifyCustomer: boolean; origin: string }): Promise<{ ok: boolean; error?: string; status?: number }> {

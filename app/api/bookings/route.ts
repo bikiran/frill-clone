@@ -198,7 +198,7 @@ export async function PATCH(req: NextRequest) {
           events.push({ uid: l.id, title: `${l.service_name || b.service_name} — ${company?.name || ''}`, startMs: Date.parse(l.starts_at), endMs: Date.parse(l.ends_at), sequence: (l.reschedule_count || 0) + 1, cancelled: true })
         }
       }
-      const r = await cancelBooking(db, b.id, { by: 'business', reason: body.reason || null, refund, notifyCustomer: body.notify !== false, origin, alsoCancelled: also, alsoCancelledEvents: events })
+      const r = await cancelBooking(db, b.id, { by: 'business', reason: body.reason || null, refund, notifyCustomer: body.notify !== false, origin, alsoCancelled: also, alsoCancelledEvents: events, returnPass: body.returnPass !== false })
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 })
       refundedAll += r.refunded || 0
       if (refundedAll > 0) {
@@ -206,7 +206,7 @@ export async function PATCH(req: NextRequest) {
         await audit(req, db, companyId, 'refund_issued', `${who ? `${who} refunded` : 'Refunded'} $${(refundedAll / 100).toFixed(2)} on cancelling ${b.service_name || 'a booking'} for ${b.customer_name || 'a customer'}${also ? ` (and ${also} later visit${also === 1 ? '' : 's'})` : ''}${guard?.pinRequired ? ' (PIN checked)' : ''}`,
           { booking_id: b.id, amount_cents: refundedAll, conversation_id: b.conversation_id || null, by: guard?.actor?.userId || null })
       }
-      return NextResponse.json({ ok: true, refunded: refundedAll, refundError: r.refundError || null, alsoCancelled: also })
+      return NextResponse.json({ ok: true, refunded: refundedAll, refundError: r.refundError || null, alsoCancelled: also, passReturned: !!r.passReturned })
     }
     if (body.action === 'repeat') {
       const r = await repeatBooking(db, b.id, { everyWeeks: Number(body.everyWeeks), count: Number(body.count), dryRun: !!body.dryRun, notifyCustomer: body.notify !== false, origin })

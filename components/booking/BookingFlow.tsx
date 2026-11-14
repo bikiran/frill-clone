@@ -6,6 +6,7 @@ import { ParallaxBackdrop, MOTION_CSS } from '@/components/booking/motion'
 import AddressAutocomplete from '@/components/AddressAutocomplete'
 import { CalendarIcon, LockIcon } from '@/components/booking/icons'
 import { askHostForClickRef, captureClickRef } from '@/lib/click-ref-client'
+import { PassesEntry, PassShop, PassReturn, UsePass, readToken, PASSES_CSS, type ShopProduct, type PassMe } from '@/components/booking/Passes'
 
 // The public booking page: service → (staff) → time → details → pay/confirm.
 // A full day can lead to the booking waitlist instead (when the business keeps
@@ -75,11 +76,11 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
   const [staff, setStaff] = useState<string>('any')
   const [locationId, setLocationId] = useState<string>('')
   const [slot, setSlot] = useState<string | null>(null)
-  type Step = 'service' | 'time' | 'details' | 'waitlist'
+  type Step = 'service' | 'time' | 'details' | 'waitlist' | 'passes'
   const [step, setStepRaw] = useState<Step>('service')
   const [dir, setDir] = useState<'f' | 'b'>('f')
   const mainRef = useRef<HTMLElement>(null)
-  const ORDER = { service: 0, time: 1, details: 2, waitlist: 2 }
+  const ORDER = { service: 0, time: 1, details: 2, waitlist: 2, passes: 1 }
   const setStep = (next: Step) => {
     setDir(ORDER[next] >= ORDER[step] ? 'f' : 'b')
     setStepRaw(next)
@@ -99,6 +100,13 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
   const [offer, setOffer] = useState<OfferView | null>(null)
   const [offerNote, setOfferNote] = useState('')
   const pendingSlot = useRef<string | null>(null)
+  // Class packs and memberships (components/booking/Passes): what's for sale,
+  // the classes a pass can pay for, the pass picked for this booking, and a
+  // return from paying for one (?pass=&session_id=).
+  const [shop, setShop] = useState<{ products: ShopProduct[]; useFor: string[] | 'all' }>({ products: [], useFor: [] })
+  const [passPick, setPassPick] = useState<string | null>(null)
+  const [passRet, setPassRet] = useState<{ passId: string; sessionId: string | null; cancelled: boolean } | null>(null)
+  const [shopPick, setShopPick] = useState<string | null>(null)
 
   const query = slug ? `slug=${encodeURIComponent(slug)}` : `domain=${encodeURIComponent(domain || '')}`
   // ?i=<token> personal link from the inbox · ?embed=1 inside a website · ?src=widget|link
@@ -116,10 +124,26 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
       fetch(`/api/book?op=page&${query}`).then(r => r.json().then(d => ({ ok: r.ok, d }))),
       invite ? fetch(`/api/book?op=invite&${query}&token=${encodeURIComponent(invite)}`).then(r => r.json()).catch(() => ({})) : Promise.resolve({}),
       offerToken ? fetch(`/api/book/waitlist?op=offer&${query}&token=${encodeURIComponent(offerToken)}`).then(r => r.json()).catch(() => ({})) : Promise.resolve({}),
-    ]).then(([{ ok, d }, inv, of]: any) => {
+      fetch(`/api/book/passes?${query}`).then(r => r.json()).catch(() => ({})),
+    ]).then(([{ ok, d }, inv, of, ps]: any) => {
       if (!ok || !d?.company || !d.page || !Array.isArray(d.services)) { setLoadError(d?.error || 'This booking page isn’t available.'); return }
       d = { ...d, staff: d.staff || [], locations: d.locations || [] }
       setData(d)
+      const products: ShopProduct[] = Array.isArray(ps?.products) ? ps.products : []
+      setShop({ products, useFor: ps?.useFor === 'all' ? 'all' : Array.isArray(ps?.useFor) ? ps.useFor : [] })
+      // ?passes=1 (the business's "buy a pass" link), or back from paying for one.
+      const passId = sp.get('pass')
+      if (passId && /^[0-9a-f-]{36}$/i.test(passId)) {
+        setPassRet({ passId, sessionId: sp.get('session_id'), cancelled: sp.get('cancelled') === '1' })
+        setStepRaw('passes')
+        try { window.history.replaceState(null, '', window.location.pathname + '?passes=1') } catch {}
+        return
+      }
+      if (sp.get('passes') === '1' && products.length) {
+        setShopPick(sp.get('product'))
+        setStepRaw('passes')
+        return
+      }
       try { document.title = `Book online · ${d.company.name}` } catch {}
       const prefill = inv?.prefill
       if (prefill) setForm(f => ({ ...f, name: prefill.name || f.name, email: prefill.email || f.email, phone: prefill.phone || f.phone }))
@@ -169,6 +193,7 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
     return here.length ? here : all
   }, [data, service, serviceLocations, locationId])
 
+  useEffect(() => { setPassPick(null) }, [service?.id, slot])
   useEffect(() => { setStaff('any'); setSlot(pendingSlot.current); pendingSlot.current = null; setLocationId(serviceLocations.length === 1 ? serviceLocations[0].id : '') }, [service?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchSlots = useCallback(async (from: string, to: string) => {
@@ -179,7 +204,10 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
     return d
   }, [query, service?.id, staff, locationId])
 
-  const due = service ? (service.payment_mode === 'full' ? service.price_cents : service.payment_mode === 'deposit' ? service.deposit_cents : 0) : 0
+  const due = !service || passPick ? 0 : (service.payment_mode === 'full' ? service.price_cents : service.payment_mode === 'deposit' ? service.deposit_cents : 0)
+  const passCovers = !!service && (shop.useFor === 'all' || shop.useFor.includes(service.id))
+  const fillMe = (me: PassMe) => setForm(f => ({ ...f, name: f.name || me.name, email: f.email || me.email, phone: f.phone || me.phone }))
+  const openShop = () => { setPassRet(null); setShopPick(null); setService(null); setError(''); setStep('passes') }
   // Booking the time a waitlist text offered: the claim goes with the booking.
   const fromOffer = !!offer && (offer.state === 'open' || offer.state === 'held') && !!slot && !!service && offer.service?.id === service.id && Date.parse(offer.start) === Date.parse(slot)
   const today = dateInZone(Date.now(), tz)
@@ -230,14 +258,16 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
     if (!service || !slot || submitting) return
     setSubmitting(true); setError('')
     try {
+      const passToken = passPick && data?.company.slug ? readToken(data.company.slug) : ''
       const r = await fetch('/api/book', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...(passToken ? { Authorization: `Bearer ${passToken}` } : {}) },
         body: JSON.stringify({
           slug, domain, serviceId: service.id, staff, startsAt: slot, locationId: locationId || null,
           name: form.name, email: form.email, phone: form.phone, address: form.address, notes: form.notes,
           answers, timezone: viewerTz(),
           source: ctx.src, invite: ctx.invite, clv: ctx.clv || hostClv.current,
           ...(fromOffer ? { offer: offer!.token } : {}),
+          ...(passPick ? { passId: passPick } : {}),
         }),
       })
       const d = await r.json()
@@ -291,7 +321,8 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
             <Row icon={I.pin}>{loc ? loc.label : whereLabel(service)}</Row>
             {staffName && <Row icon={I.user}>{staffName}</Row>}
             {service.capacity > 1 && <Row icon={I.users}>Group · up to {service.capacity}</Row>}
-            {service.price_cents > 0 && <Row icon={I.card}>{money(service.price_cents, service.currency)}{service.payment_mode === 'deposit' ? ` · ${money(service.deposit_cents, service.currency)} deposit today` : service.payment_mode === 'full' ? ' · pay online' : ''}</Row>}
+            {passPick && step === 'details' && <Row icon={I.card}>With your pass</Row>}
+            {service.price_cents > 0 && !(passPick && step === 'details') && <Row icon={I.card}>{money(service.price_cents, service.currency)}{service.payment_mode === 'deposit' ? ` · ${money(service.deposit_cents, service.currency)} deposit today` : service.payment_mode === 'full' ? ' · pay online' : ''}</Row>}
             {slot && <Row icon={I.cal}><b style={{ color: '#111' }}>{slotLabel}</b></Row>}
           </div>
           {service.description && step === 'time' && <p style={{ marginTop: 16, color: '#6b7280', fontSize: 13.5, lineHeight: 1.6, whiteSpace: 'pre-line' }}>{service.description}</p>}
@@ -311,7 +342,7 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
         {summary}
         <main className="bk-main" ref={mainRef}>
           <div key={step} className={dir === 'f' ? 'bk-step-f' : 'bk-step-b'}>
-          {step !== 'service' && (data.services.length > 1 || step === 'details' || step === 'waitlist') && !(step === 'waitlist' && wlDone) && (
+          {step !== 'service' && (data.services.length > 1 || step === 'details' || step === 'waitlist' || step === 'passes') && !(step === 'waitlist' && wlDone) && !(step === 'passes' && passRet) && (
             <button type="button" onClick={() => { setError(''); setStep(step === 'details' || step === 'waitlist' ? 'time' : 'service') }} style={backBtn}>
               <Icon d={I.back} size={16} /> Back
             </button>
@@ -342,8 +373,14 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
                   </button>
                 ))}
               </div>
+              {shop.products.length > 0 && <PassesEntry count={shop.products.length} accent={accent} onOpen={openShop} />}
             </>
           )}
+
+          {step === 'passes' && (passRet
+            ? <PassReturn query={query} passId={passRet.passId} sessionId={passRet.sessionId} cancelled={passRet.cancelled}
+                onBook={() => { setPassRet(null); setStep('service') }} onShop={openShop} />
+            : <PassShop key={shopPick || 'all'} products={shop.products} query={slug ? { slug } : { domain }} preselect={shopPick} accent={accent} embed={ctx.embed} />)}
 
           {step === 'time' && service && (
             <>
@@ -428,14 +465,19 @@ export default function BookingFlow({ slug, domain, initialService }: { slug?: s
                 <Field label="Anything we should know?" wide><textarea className="bk-in" rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field>
               </div>
 
+              {passCovers && data.company.slug && !fromOffer && (
+                <UsePass slug={data.company.slug} query={query} serviceId={service.id} slot={slot} accent={accent}
+                  pick={passPick} onPick={setPassPick} onMe={fillMe} onShop={shop.products.length ? openShop : null} />
+              )}
+
               <div style={{ marginTop: 16, padding: '12px 14px', borderRadius: 12, background: '#f9fafb', border: '1px solid #f1f1f1', fontSize: 12.5, color: '#6b7280', lineHeight: 1.55 }}>
-                {policyText(data.page, due > 0, service.payment_mode)}
+                {passPick ? `A class comes off your pass when you book. ${data.page.cancel_hours ? `Cancel at least ${data.page.cancel_hours} hour${data.page.cancel_hours === 1 ? '' : 's'} before and it goes back on your pass.` : 'Cancel before the class and it goes back on your pass.'}` : policyText(data.page, due > 0, service.payment_mode)}
               </div>
               {fromOffer && <button type="button" onClick={leaveWaitlist} className="bk-quiet">Not interested any more? Leave the waitlist</button>}
               {error && <div style={errBox}>{error}</div>}
               <div className="bk-cta on bk-cta-col">
                 <button type="submit" disabled={submitting} className="bk-primary" style={{ width: '100%', height: 52, fontSize: 16, borderRadius: 14 }}>
-                  {submitting ? <Spinner light /> : due > 0 ? `Continue to payment · ${money(due, service.currency)}` : 'Confirm booking'}
+                  {submitting ? <Spinner light /> : passPick ? 'Book with my pass' : due > 0 ? `Continue to payment · ${money(due, service.currency)}` : 'Confirm booking'}
                 </button>
                 {due > 0 && <div className="bk-secure"><LockIcon size={12} />Secure payment by Stripe. Your time is held while you pay.</div>}
               </div>
@@ -578,6 +620,7 @@ export function Shell({ accent, children }: { accent: string; children: React.Re
       {!embed && <ParallaxBackdrop accent={accent} />}
       {embed && <style>{`html,body{background:transparent!important}.bk-card{box-shadow:none!important}`}</style>}
       <style>{MOTION_CSS}</style>
+      <style>{PASSES_CSS}</style>
       <style>{`
         @keyframes bkspin{to{transform:rotate(360deg)}}
         .bk-card{position:relative;z-index:1;max-width:1000px;margin:0 auto;background:rgba(255,255,255,.92);-webkit-backdrop-filter:saturate(1.4) blur(18px);backdrop-filter:saturate(1.4) blur(18px);border-radius:22px;border:1px solid rgba(0,0,0,.06);box-shadow:0 1px 2px rgba(0,0,0,.03),0 24px 60px -28px rgba(0,0,0,.22);display:grid;grid-template-columns:300px minmax(0,1fr);overflow:clip}

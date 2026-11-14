@@ -16,10 +16,11 @@ export const INDUSTRY_POSTS: BlogPost[] = [
     excerpt: 'Trial enquiries on Instagram at 9pm, a 6am class that’s full, a PT client who forgot, and a front desk that’s empty half the day. How gyms, PT studios and yoga and pilates studios run their messages, bookings and marketing in one place.',
     seoDescription: 'How gyms, PT, yoga and pilates studios use Colvy: answer enquiries fast, book classes and PT with reminders and waitlists, and win back quiet members.',
     category: 'Industry guides', accent: CORAL, icon: 'calendar',
-    date: '2026-11-13T15:00:00+11:00', dateLabel: 'Nov 13, 2026', readTime: '9 min read', author: 'The Colvy Team',
+    date: '2026-11-13T15:00:00+11:00', dateLabel: 'Nov 13, 2026', readTime: '10 min read', author: 'The Colvy Team',
     takeaways: [
       'Answer trial enquiries within minutes, on whichever channel they came in on. That’s where most new members are won or lost.',
       'Set each class up with a number of spots, so the booking page shows what’s left and a waitlist fills the gaps when someone drops out.',
+      'Sell class packs and memberships on your booking page. Members book with them instead of paying each time, and a class cancelled in time goes back on their pass.',
       'Reminders a day and two hours before, with “reply C to confirm”, cut the no-shows that leave a coach teaching an empty room.',
       'Book PT clients on repeat, weekly for up to 26 sessions, so the rhythm doesn’t depend on someone remembering.',
       'Tag members as you go (trial, member, lapsed, the classes they like) so your texts and emails go to the right people.',
@@ -34,7 +35,7 @@ This guide shows how a gym or studio runs that side of the business in Colvy: en
 
 Colvy is where your customer conversations, bookings and marketing live: Instagram and Facebook messages, website chat, texts, email and phone calls in one shared inbox, plus online booking, forms, campaigns and reviews.
 
-It isn’t membership software. If you take memberships by direct debit or run door access, keep the system that does that. Colvy sits alongside it and handles everything around it: the enquiry before someone joins, the class bookings and reminders, the questions and the follow-ups.
+It also sells class packs (“10 classes for $150”) and memberships billed to the member’s card each week, fortnight or month, through your own Stripe account, and members book classes with them on your booking page. What it doesn’t do: collect direct debits from bank accounts, or run door access. If you need those, keep the system that does them, and let Colvy handle everything around it: the enquiry before someone joins, the class bookings and reminders, the questions and the follow-ups.
 
 ## 1. Answer the trial enquiry before it goes cold
 
@@ -71,7 +72,23 @@ Then the reminders do the chasing for you:
 
 A spot that’s cancelled in time goes back on the timetable and to the waitlist, rather than standing empty.
 
-## 3. PT sessions that keep their rhythm
+## 3. Class packs and memberships
+
+Most members don’t want to pay class by class. In Bookings → Passes, set up what you sell:
+
+- **A class pack:** “10 classes for $150, use within 3 months”. Paid once, by card on your booking page, or in cash at the desk.
+- **A membership:** “$39 a week, unlimited classes”, or “8 classes a month”. Billed to the member’s card every week, fortnight or month through your own Stripe account, until they cancel.
+
+Each one can cover every class or only some, so a pack can be for yoga and pilates but not PT.
+
+When a member books, they choose **Use my pass** and sign in with a code sent to their email or mobile. A class comes off their pack, or their membership covers it, and they don’t pay again. Cancel within your window and the class goes back on their pass. Cancel late and it’s used, the same as a late cancellation.
+
+At the desk, you see who has what: classes left, when a pack expires, when a membership renews, and whose last payment didn’t go through. You can add a class as a goodwill gesture, give a free trial pack, or use someone’s pass for a booking they made by phone.
+
+> [!TRY] Set it up in Colvy
+> Bookings → Passes → For sale → New pass. Connect Stripe first (Settings → Payments) so members can pay by card.
+
+## 4. PT sessions that keep their rhythm
 
 Personal training is the opposite of a class: one client, one coach, the same time each week. Set PT up as its own service with capacity one, choose which coaches take it, and set how long it runs with any buffer before or after.
 
@@ -89,7 +106,7 @@ Two settings make the biggest difference:
 
 For studios without a front desk, Colvy’s [“I’m here” button](/product/check-in) helps too. From 30 minutes before an in-person session, the client’s booking page shows a big “I’m here” button. When they tap it, the coach gets an alert, without anyone stopping a set to check the door.
 
-## 4. Paperwork before the first session
+## 5. Paperwork before the first session
 
 New members usually need a sign-up form, a health questionnaire or a waiver before they train. Build them once with [Colvy forms](/channels/forms): text, choices, dates, file uploads and a **signature** field, with questions that only appear when they’re relevant (“Do you have an injury we should know about?” → “Tell us more”).
 
@@ -98,7 +115,7 @@ Send the link in the same chat where they booked, and the answers come back into
 > [!NOTE] Keep health details where they belong
 > Ask only what a coach needs to train someone safely, and keep detailed medical notes out of texts and group chats.
 
-## 5. Bring quiet members back
+## 6. Bring quiet members back
 
 Every gym has people who joined in January and haven’t been seen since March. A short, friendly text often does more than another round of ads.
 
@@ -114,7 +131,7 @@ Colvy’s AI campaign builder can draft the audience, the message and the timing
 
 Marketing texts and emails need consent and an easy way out. Colvy skips anyone without marketing consent or who has opted out, and stops texting anyone who replies STOP. Our guide to [SMS marketing consent in Australia](/blog/sms-marketing-consent-australia) covers the rest.
 
-## 6. Reviews, referrals and the poster by the door
+## 7. Reviews, referrals and the poster by the door
 
 Good reviews are what people check before they message you. When a booking finishes, Colvy can send a review request, if you use them, and you can reply to every Google review from the inbox.
 
@@ -126,14 +143,14 @@ For the poster by the door, the flyer at the café next door or the link in your
 
 - **Monday 6am:** the 6am class is full. Two people on the waitlist get offered the spots freed up by Sunday’s cancellations. Both book before the coach arrives.
 - **Tuesday:** a trial enquiry comes in on Instagram at 9:40pm. The AI agent answers with the beginner class times and the booking link, and she books for Saturday.
-- **Wednesday:** a PT client’s Thursday sessions are booked on repeat for the next 12 weeks, with a deposit on each.
+- **Wednesday:** a PT client’s Thursday sessions are booked on repeat for the next 12 weeks, with a deposit on each. Two trial members buy a 10-class pack on the booking page after their free class.
 - **Friday:** a text to everyone tagged **lapsed** about the new evening class. Four replies by lunchtime, all in the same inbox.
 - **Saturday:** the trial member taps “I’m here” at 7:52am. The coach meets her at the door.
 
 ## Getting started
 
 1. Connect Instagram, Facebook, your website chat and your business number.
-2. Add your classes and PT as services, with spots, coaches, payments and your cancellation window.
+2. Add your classes and PT as services, with spots, coaches, payments and your cancellation window. Then add your class packs and memberships under Bookings → Passes.
 3. Turn on reminders, the waitlist and missed-call text back.
 4. Build your sign-up form or waiver and save a reply with the link.
 5. Teach your AI agents the timetable, prices and FAQs.

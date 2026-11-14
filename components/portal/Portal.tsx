@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Shell } from '@/components/booking/BookingFlow'
-import type { PortalPublic, PortalMe, PortalComing, PortalAgain, PortalQuote, PortalInvoice, PortalOrder } from '@/lib/portal/types'
+import type { PortalPublic, PortalMe, PortalComing, PortalAgain, PortalQuote, PortalInvoice, PortalOrder, PortalPass } from '@/lib/portal/types'
 import type { PortalReceipt } from '@/lib/portal/receipts'
 import ReceiptDoc, { RECEIPT_CSS } from '@/components/portal/ReceiptDoc'
 
@@ -188,6 +188,7 @@ function Account({ biz, me, setMe, call, track, signOut }: {
 }) {
   const first = (me.me.name || '').trim().split(/\s+/)[0]
   const on = (k: string) => biz.sections[k] !== false
+  const passes = me.passes || []
   const coming = me.comingUp || [], pay = me.payments || [], quotes = me.quotes || [], invoices = me.invoices || [], jobs = me.jobs || [], orders = me.orders || [], again = me.bookAgain || []
   const waiting = quotes.filter(q => q.waiting)
   // Deposits to pay live on their own booking or quote; "To pay" counts them too.
@@ -198,6 +199,7 @@ function Account({ biz, me, setMe, call, track, signOut }: {
     on('coming_up') && { id: 'pt-coming', label: 'Coming up', n: coming.length },
     on('payments') && { id: payAt, label: 'To pay', n: toPay, hot: toPay > 0 },
     on('quotes') && { id: 'pt-quotes', label: invoices.length ? 'Quotes & invoices' : 'Quotes', n: waiting.length + depositsDue.length + invoicesDue.length, hot: waiting.length + depositsDue.length + invoicesDue.length > 0 },
+    passes.length > 0 && { id: 'pt-passes', label: 'Passes', n: passes.filter(p => p.live).length },
     on('orders') && { id: 'pt-orders', label: 'Orders', n: orders.length },
     on('messages') && { id: 'pt-msgs', label: 'Messages', n: null },
   ].filter(Boolean) as { id: string; label: string; n: number | null; hot?: boolean }[]
@@ -252,6 +254,14 @@ function Account({ biz, me, setMe, call, track, signOut }: {
         </section>
       )}
 
+      {passes.length > 0 && (
+        <section id="pt-passes" className="pt-card bk-rise">
+          <h2><span className="pt-ic"><Ic.ticket /></span>Passes and memberships</h2>
+          {passes.map(p => <PassRow key={p.id} p={p} bookUrl={`/book/${encodeURIComponent(biz.slug)}`} call={call}
+            onChanged={(id, when) => setMe({ ...me, passes: passes.map(x => x.id === id ? { ...x, canCancel: false, when } : x) })} />)}
+        </section>
+      )}
+
       {on('quotes') && (quotes.length > 0 || jobs.length > 0 || invoices.length > 0) && (
         <section id="pt-quotes" className="pt-card bk-rise">
           <h2><span className="pt-ic"><Ic.doc /></span>{invoices.length ? 'Quotes, jobs and invoices' : 'Quotes and jobs'}</h2>
@@ -293,6 +303,46 @@ function ComingRow({ c, track }: { c: PortalComing; track: (k: string, id?: stri
       {c.payUrl
         ? <a className="bk-primary pt-sm" href={c.payUrl} onClick={() => track('pay', c.id)}>Pay {money(c.payCents || 0)} deposit</a>
         : c.manageUrl && <a className="pt-btn" href={c.manageUrl} onClick={() => track('open_booking', c.id)}>Change or cancel</a>}
+    </div>
+  )
+}
+
+/** A class pack or membership: what's left, when it renews or expires, and (a membership) Cancel. */
+function PassRow({ p, bookUrl, call, onChanged }: {
+  p: PortalPass; bookUrl: string
+  call: (m: 'GET' | 'POST', q: string, b?: any) => Promise<{ ok: boolean; status: number; data: any }>
+  onChanged: (id: string, when: string | null) => void
+}) {
+  const [ask, setAsk] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const cancel = async () => {
+    setBusy(true); setErr('')
+    const r = await call('POST', '', { action: 'cancel_pass', id: p.id })
+    setBusy(false)
+    if (!r.ok) { setErr(r.data?.error || 'Something went wrong. Please try again.'); return }
+    setAsk(false); onChanged(p.id, r.data?.when || null)
+  }
+  return (
+    <div className="pt-item pt-pass">
+      <span className="pt-src" aria-hidden><Ic.ticket /></span>
+      <div className="pt-main">
+        <b>{p.name}</b>
+        <span>{p.kind === 'membership' ? p.price : p.gives}{p.when ? ` · ${p.when}` : ''}</span>
+        {ask && (
+          <span className="pt-ask">
+            Cancel your membership? It keeps working until {p.when ? p.when.replace(/^(Renews|Ends) /, '') : 'the end of the period you’ve paid for'}, and you won’t be charged again.{' '}
+            <button type="button" className="pt-link" disabled={busy} onClick={cancel}>{busy ? 'Cancelling…' : 'Yes, cancel it'}</button>{' · '}
+            <button type="button" className="pt-link" disabled={busy} onClick={() => setAsk(false)}>Keep it</button>
+          </span>
+        )}
+        {err && <em className="pt-rowerr" role="alert">{err}</em>}
+      </div>
+      <span className="pt-acts">
+        <span className={`pt-pill ${p.live ? 'ok' : ''}`}>{p.label}</span>
+        {p.live && <a className="pt-btn" href={bookUrl}>Book a class</a>}
+        {p.canCancel && !ask && <button type="button" className="pt-link" onClick={() => setAsk(true)}>Cancel</button>}
+      </span>
     </div>
   )
 }
@@ -503,6 +553,7 @@ const Ic = {
   globe: S(<><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></>),
   store: S(<><path d="M4 10v10h16V10M3 4h18l-1 6H4L3 4Z" /><path d="M10 20v-5h4v5" /></>),
   print: S(<><path d="M6 9V3h12v6" /><rect x="3" y="9" width="18" height="8" rx="2" /><path d="M7 14h10v7H7z" /></>),
+  ticket: S(<><path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4Z" /><path d="M14 6v12" /></>),
   again: S(<><path d="M3 12a9 9 0 0 1 15.4-6.4L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-15.4 6.4L3 16" /><path d="M3 21v-5h5" /></>),
 }
 
@@ -565,6 +616,8 @@ const PT_CSS = `
 .pt-again h3{margin:0;font-size:12px;font-weight:750;letter-spacing:.06em;text-transform:uppercase;color:#9ca3af}
 .pt-again .pt-item:first-of-type{border-top:none}
 .pt-acts{display:inline-flex;gap:8px;align-items:center}
+.pt-pass .pt-acts{flex-wrap:wrap;justify-content:flex-end}
+.pt-ask{display:block;margin-top:6px;padding:10px 12px;border-radius:12px;background:#fafafa;color:#374151!important;line-height:1.5}
 .pt-rowerr{font-style:normal;font-size:12.5px;color:#b91c1c}
 button.bk-primary.pt-sm:disabled{opacity:.7;cursor:default}
 .pt-none{margin:6px 0 0;font-size:14px;color:#9ca3af}

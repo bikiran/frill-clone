@@ -55,6 +55,23 @@ export async function POST(req: NextRequest) {
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
 
+    // Class packs and memberships (lib/passes): a business's own customers on
+    // its connected Stripe account (renewals, failed payments, cancellations).
+    // Connected accounts send every invoice and subscription event, not only
+    // ours: anything that isn't a pass falls through to the cases below.
+    if (event.account && ['invoice.paid', 'invoice.payment_succeeded', 'invoice.payment_failed', 'customer.subscription.updated', 'customer.subscription.deleted'].includes(event.type)) {
+      const obj = event.data?.object || {}
+      const ours = (obj.metadata?.kind || obj.subscription_details?.metadata?.kind || obj.parent?.subscription_details?.metadata?.kind) === 'pass_purchase'
+      try {
+        const { handlePassStripeEvent } = await import('@/lib/passes/server')
+        if (await handlePassStripeEvent(supabase, event, stripe)) return NextResponse.json({ received: true })
+      } catch (e: any) {
+        console.error('[webhook] pass event failed', e?.message || e)
+        // Ours: Stripe tries again later. Someone else's: nothing to do.
+        if (ours) return NextResponse.json({ error: 'Pass not updated; retry' }, { status: 503 })
+      }
+    }
+
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object
@@ -181,6 +198,25 @@ export async function POST(req: NextRequest) {
               await settleQuoteDeposit(supabase, String(meta.quoteId), s)
             }
           } catch (e) { console.error('[webhook] quote_deposit failed', e) }
+          break
+        }
+
+        // A class pack or membership bought on the booking page (lib/passes):
+        // the pass goes live once (the return page may have got there first).
+        if (meta.kind === 'pass_purchase' && meta.passId) {
+          try {
+            const acctOpt: any = event.account ? { stripeAccount: event.account } : undefined
+            let s: any = session
+            if (session.mode === 'payment') {
+              const piId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id
+              if (piId) { try { s = { ...session, payment_intent: await stripe.paymentIntents.retrieve(piId, { expand: ['latest_charge'] }, acctOpt) } } catch {} }
+            }
+            const { settlePurchase } = await import('@/lib/passes/server')
+            await settlePurchase(supabase, String(meta.passId), s, { stripe: { s: stripe, opts: acctOpt } })
+          } catch (e: any) {
+            console.error('[webhook] pass_purchase failed', e?.message || e)
+            return NextResponse.json({ error: 'Pass not updated; retry' }, { status: 503 })
+          }
           break
         }
 

@@ -45,6 +45,7 @@ export default function BookingsList({ companyId, bookings, timezone, scope, set
   const [range, setRange] = useState('all')
   const [sort, setSort] = useState('start')
   const [cancelling, setCancelling] = useState<any | null>(null)
+  const [passFor, setPassFor] = useState<any | null>(null)
   const router = useRouter()
   const [moving, setMoving] = useState<any | null>(null)
   const [noShow, setNoShow] = useState<any | null>(null)
@@ -149,13 +150,14 @@ export default function BookingsList({ companyId, bookings, timezone, scope, set
                 )}
               </div>
               <div style={{ display: 'grid', gap: 10 }}>
-                {list.map((b, i) => <Row key={b.id} b={b} i={i} t={t} dayChip={dayChip} onAct={act} onMove={setMoving} onCancel={setCancelling} onNoShow={setNoShow} onRepeat={setRepeating} canRepeat={!hasLater.has(b.id)} flash={flash} onJob={jobsOn ? makeJob : undefined} />)}
+                {list.map((b, i) => <Row key={b.id} b={b} i={i} t={t} dayChip={dayChip} onAct={act} onMove={setMoving} onCancel={setCancelling} onNoShow={setNoShow} onRepeat={setRepeating} canRepeat={!hasLater.has(b.id)} flash={flash} onJob={jobsOn ? makeJob : undefined} onPass={setPassFor} />)}
               </div>
             </section>
           ))}
         </div>
       )}
 
+      {passFor && <UsePassDialog companyId={companyId} b={passFor} onClose={() => setPassFor(null)} onDone={m => { setPassFor(null); flash(m); reload() }} />}
       {cancelling && <CancelDialog companyId={companyId} b={cancelling} laterInSeries={cancelling.series_id ? bookings.filter(x => x.series_id === cancelling.series_id && x.id !== cancelling.id && ['confirmed', 'pending'].includes(x.status) && x.starts_at > cancelling.starts_at).length : 0} onClose={() => setCancelling(null)} onDone={m => { setCancelling(null); flash(m); reload() }} />}
       {repeating && <RepeatDialog companyId={companyId} b={repeating} timezone={timezone} onClose={() => setRepeating(null)} onDone={m => { setRepeating(null); flash(m); reload() }} />}
       {noShow && <NoShowDialog companyId={companyId} b={noShow} onClose={() => setNoShow(null)} onDone={m => { setNoShow(null); flash(m); reload() }} />}
@@ -164,9 +166,10 @@ export default function BookingsList({ companyId, bookings, timezone, scope, set
   )
 }
 
-function Row({ b, i, t, dayChip, onAct, onMove, onCancel, onNoShow, onRepeat, canRepeat, flash, onJob }: {
+function Row({ b, i, t, dayChip, onAct, onMove, onCancel, onNoShow, onRepeat, canRepeat, flash, onJob, onPass }: {
   b: any; i: number; t: (iso: string) => string; dayChip: (iso: string) => string[]
   onAct: (b: any, a: string) => void; onMove: (b: any) => void; onCancel: (b: any) => void; onNoShow: (b: any) => void; onRepeat: (b: any) => void; canRepeat: boolean; flash: (m: string) => void
+  onPass?: (b: any) => void
   onJob?: (b: any) => void
 }) {
   // A time the waitlist is holding for someone ("in order") isn't awaiting payment.
@@ -222,6 +225,7 @@ function Row({ b, i, t, dayChip, onAct, onMove, onCancel, onNoShow, onRepeat, ca
                   {(b.status === 'confirmed' || b.status === 'completed') && b.service_id && canRepeat && <button onClick={() => { setMenu(false); onRepeat(b) }}><RepeatIcon /> {b.series_id ? 'Extend regular booking' : 'Repeat every few weeks'}</button>}
                   {b.status === 'confirmed' && past && <button onClick={() => { setMenu(false); onNoShow(b) }}><XIcon size={13} /> Mark no-show</button>}
                   {b.status === 'confirmed' && !past && <button onClick={() => { setMenu(false); onAct(b, 'complete') }}><CheckIcon size={14} /> Mark done</button>}
+                  {onPass && (b.status === 'confirmed' || b.status === 'pending') && !b.pass_id && b.payment_status !== 'paid' && b.contact_id && <button onClick={() => { setMenu(false); onPass(b) }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4Z" /><path d="M14 6v12" /></svg> Use a pass</button>}
                   {(b.status === 'completed' || b.status === 'no_show') && <button onClick={() => { setMenu(false); onAct(b, 'confirm') }}>Undo {b.status === 'completed' ? 'done' : 'no-show'}</button>}
                   {(b.status === 'confirmed' || b.status === 'pending') && past && <button className="danger" onClick={() => { setMenu(false); onCancel(b) }}>Cancel booking</button>}
                 </div>
@@ -241,6 +245,7 @@ function Row({ b, i, t, dayChip, onAct, onMove, onCancel, onNoShow, onRepeat, ca
             <span className={`bl-chip${b.payment_status === 'paid' ? ' dot' : ''}`} style={b.payment_status === 'paid' ? tint('#6366f1') : undefined}>{PAY[b.payment_status]} {money(b.payment_status === 'refunded' || b.payment_status === 'partially_refunded' ? b.refunded_cents : b.amount_due_cents, b.currency)}</span>
           )}
           {b.price_cents > b.amount_due_cents && b.status !== 'cancelled' && <span className="bl-chip">{money(b.price_cents - (b.payment_status === 'paid' ? b.amount_due_cents : 0), b.currency)} due on the day</span>}
+          {b.pass_id && <span className="bl-chip dot" style={tint('#4f46e5')} title="A class came off their pass or membership">Paid with a pass</span>}
           {b.series_id && <span className="bl-chip" title="Part of a regular booking (repeats every few weeks)"><RepeatIcon /> Regular</span>}
           {SOURCE[b.source] && <span className="bl-chip">{SOURCE[b.source]}</span>}
         </div>
@@ -330,6 +335,45 @@ const CSS = `
 @media (prefers-reduced-motion: reduce){.bl-card,.bl-menu,.bl-now::before{animation:none}}
 `
 
+/** Pay for a booking with one of the customer's passes (a phone or walk-in booking). */
+function UsePassDialog({ companyId, b, onClose, onDone }: { companyId: string; b: any; onClose: () => void; onDone: (m: string) => void }) {
+  const [opts, setOpts] = useState<{ id: string; name: string; label: string; when: string | null; ok: boolean; reason: string | null }[] | null>(null)
+  const [pick, setPick] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    api(`/api/passes?companyId=${companyId}&contactId=${b.contact_id}&booking=${b.id}`)
+      .then(d => { setOpts(d.options || []); const ok = (d.options || []).find((o: any) => o.ok); if (ok) setPick(ok.id) })
+      .catch(e => { setOpts([]); setError(e.message) })
+  }, [companyId, b.contact_id, b.id])
+  const go = async () => {
+    setBusy(true); setError('')
+    try { await api(`/api/passes/${pick}`, { method: 'POST', json: { companyId, action: 'use', bookingId: b.id } }); onDone('Paid with their pass') }
+    catch (e: any) { setError(e.message); setBusy(false) }
+  }
+  return (
+    <Modal title="Use a pass" onClose={onClose} width={460} footer={<>
+      <button onClick={onClose} className="cv-btn">Cancel</button>
+      <button onClick={go} disabled={busy || !pick} className="cv-btn cv-btn-primary">{busy ? 'One moment…' : 'Use it'}</button>
+    </>}>
+      <div style={{ fontSize: 14, marginBottom: 14 }}><b>{b.customer_name}</b> · {b.service_name}</div>
+      {opts === null ? <div style={{ color: '#71717a', fontSize: 13.5 }}>Finding their passes…</div> : !opts.length ? (
+        <div style={{ color: '#71717a', fontSize: 13.5, lineHeight: 1.5 }}>{b.customer_name?.split(' ')[0] || 'They'} {b.customer_name ? 'has' : 'have'} no class pass or membership. Sell one from Bookings → Passes.</div>
+      ) : (
+        <div style={{ display: 'grid', gap: 8 }} role="radiogroup">
+          {opts.map(o => (
+            <label key={o.id} style={{ ...row, padding: '10px 12px', borderRadius: 14, background: pick === o.id ? '#fff' : '#f4f4f5', boxShadow: pick === o.id ? 'inset 0 0 0 1.5px #18181b' : 'none', opacity: o.ok ? 1 : .6, cursor: o.ok ? 'pointer' : 'default' }}>
+              <input type="radio" name="bl-pass" checked={pick === o.id} disabled={!o.ok} onChange={() => setPick(o.id)} />
+              <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}><b style={{ fontSize: 14 }}>{o.name}</b><span style={{ fontSize: 12.5, color: '#71717a' }}>{o.ok ? `${o.label}${o.when ? ` · ${o.when}` : ''}` : o.reason}</span></span>
+            </label>
+          ))}
+        </div>
+      )}
+      {error && <div style={{ color: '#b91c1c', fontSize: 13, marginTop: 10 }}>{error}</div>}
+    </Modal>
+  )
+}
+
 function CancelDialog({ companyId, b, laterInSeries, onClose, onDone }: { companyId: string; b: any; laterInSeries: number; onClose: () => void; onDone: (m: string) => void }) {
   const paid = b.payment_status === 'paid'
   // Refunds need "Issue refunds" and, when the workspace has one, the refund PIN (checked on the server too).
@@ -342,14 +386,15 @@ function CancelDialog({ companyId, b, laterInSeries, onClose, onDone }: { compan
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [returnPass, setReturnPass] = useState(true)
   const giveBack = refund && mayRefund
   const needPin = giveBack && access.pinSet
   const go = async () => {
     setBusy(true); setError('')
     try {
-      const d = await api('/api/bookings', { method: 'PATCH', json: { companyId, id: b.id, action: 'cancel', refund: giveBack, notify, reason, series, ...(needPin ? { refundPin: pin } : {}) } })
+      const d = await api('/api/bookings', { method: 'PATCH', json: { companyId, id: b.id, action: 'cancel', refund: giveBack, notify, reason, series, returnPass, ...(needPin ? { refundPin: pin } : {}) } })
       const also = d.alsoCancelled ? ` (and ${d.alsoCancelled} later visit${d.alsoCancelled === 1 ? '' : 's'})` : ''
-      onDone(d.refundError ? `Cancelled${also} — refund failed: ${d.refundError}` : d.refunded ? `Cancelled${also} and refunded ${money(d.refunded, b.currency)}` : `Booking cancelled${also}`)
+      onDone(d.refundError ? `Cancelled${also} — refund failed: ${d.refundError}` : d.refunded ? `Cancelled${also} and refunded ${money(d.refunded, b.currency)}` : d.passReturned ? `Cancelled${also}. The class went back on their pass` : `Booking cancelled${also}`)
     } catch (e: any) { if (isPinError(e.code)) setPin(''); setError(e.message); setBusy(false) }
   }
   return (
@@ -365,6 +410,7 @@ function CancelDialog({ companyId, b, laterInSeries, onClose, onDone }: { compan
         {needPin && <RefundPinField value={pin} onChange={setPin} id="bk-refund-pin" />}
         {paid && !access.loading && !access.canRefund && <RefundNotAllowed />}
         {paid && !access.loading && access.canRefund && access.locked && <div style={{ fontSize: 13, color: '#b45309' }}>Refunds are locked for a while after wrong PINs. You can cancel now and refund later from Payments.</div>}
+        {b.pass_id && <label style={row}><Toggle on={returnPass} onChange={setReturnPass} /> Give the class back to their pass</label>}
         <label style={row}><Toggle on={notify} onChange={setNotify} /> Let the customer know (SMS / email)</label>
         {laterInSeries > 0 && <label style={row}><Toggle on={series} onChange={setSeries} /> Also cancel the {laterInSeries} later visit{laterInSeries === 1 ? '' : 's'} in this regular booking</label>}
         <textarea value={reason} onChange={e => setReason(e.target.value)} rows={2} placeholder="Reason (optional, included in the note on the conversation)" style={input} />

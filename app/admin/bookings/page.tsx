@@ -13,13 +13,14 @@ import AvailabilityTab from '@/components/booking/admin/AvailabilityTab'
 import BookingSettingsTab from '@/components/booking/admin/BookingSettingsTab'
 import TodayTab from '@/components/booking/admin/TodayTab'
 import WaitlistTab from '@/components/booking/admin/WaitlistTab'
+import PassesTab from '@/components/booking/admin/PassesTab'
 import EmbedDialog from '@/components/booking/admin/EmbedDialog'
 
 // Online booking & appointments: the bookings themselves, the services people
 // can book, when they can book, and the policy. The public page lives at
 // /book/<slug> (or <slug>.colvy.com/book).
 
-type Tab = 'today' | 'bookings' | 'waitlist' | 'services' | 'availability' | 'settings'
+type Tab = 'today' | 'bookings' | 'waitlist' | 'services' | 'passes' | 'availability' | 'settings'
 
 export default function BookingsPage() {
   const router = useRouter()
@@ -70,7 +71,7 @@ export default function BookingsPage() {
       if (!cid) { setLoading(false); return }
       setCompanyId(cid)
       const t = new URLSearchParams(window.location.search).get('tab') as Tab | null
-      if (t && ['today', 'bookings', 'waitlist', 'services', 'availability', 'settings'].includes(t)) setTab(t)
+      if (t && ['today', 'bookings', 'waitlist', 'services', 'passes', 'availability', 'settings'].includes(t)) setTab(t)
       await Promise.all([loadMeta(cid), loadServices(cid), loadBookings(cid, 'upcoming')])
       setLoading(false)
     })()
@@ -145,6 +146,7 @@ export default function BookingsPage() {
           ['bookings', 'Bookings', upcomingCount],
           ['waitlist', 'Waitlist', null],
           ['services', 'Services', services.length || null],
+          ['passes', 'Passes', null],
           ['availability', 'Availability', null],
           ['settings', 'Settings', null],
         ] as [Tab, string, number | null][]).map(([k, l, n]) => (
@@ -158,6 +160,7 @@ export default function BookingsPage() {
           {tab === 'bookings' && <BookingsList companyId={companyId} bookings={bookings} timezone={settings?.timezone || 'Australia/Melbourne'} scope={scope} setScope={setScope} reload={() => loadBookings(companyId, scope)} flash={flash} />}
           {tab === 'waitlist' && <WaitlistTab companyId={companyId} services={services} timezone={settings?.timezone || 'Australia/Melbourne'} enabled={savedWaitlistOn} onGoSettings={() => switchTab('settings')} flash={flash} />}
           {tab === 'services' && meta && <ServicesTab companyId={companyId} services={services} settings={settings} onGoAvailability={() => switchTab('availability')} reload={() => loadServices(companyId)} staff={meta.staff || []} locations={meta.locations || []} stripeReady={!!meta.stripeReady} bookingUrl={meta.bookingUrl} flash={flash} />}
+          {tab === 'passes' && <PassesTab companyId={companyId} flash={flash} />}
           {tab === 'availability' && settings && <AvailabilityTab settings={settings} setSettings={setSettings} staff={meta?.staff || []} locations={meta?.locations || []} />}
           {tab === 'settings' && settings && <BookingSettingsTab settings={settings} setSettings={setSettings} />}
         </>
