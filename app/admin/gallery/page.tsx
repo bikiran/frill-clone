@@ -9,7 +9,7 @@ import { useCompanyUser } from '../crm-settings/_shared'
 import MediaGallery from '@/components/MediaGallery'
 import ImageAnnotator from '@/components/ImageAnnotator'
 import VideoTrimmer from '@/components/VideoTrimmer'
-import MentionInput, { resolveMentions } from '@/components/MentionInput'
+import MentionInput, { resolveMentions, mentionsEveryone } from '@/components/MentionInput'
 import { useGoogleDrivePicker } from '@/components/GoogleDrivePicker'
 import PhoneUploadQR from '@/components/PhoneUploadQR'
 import { alertDialog, confirmDialog } from '@/components/ConfirmDialog'
@@ -1790,8 +1790,10 @@ function MediaDetailsPanel({ item, folders, categories, itemCats, companyId, use
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             companyId, userIds: ids, type: 'media_note',
-            title: `${me} mentioned you on a media item`,
+            // "@everyone": the whole team, by bell and email (not a text to every phone).
+            title: `${me} mentioned ${mentionsEveryone(body) ? 'everyone' : 'you'} on a media item`,
             body: body.slice(0, 200), link: '/admin/gallery',
+            ...(mentionsEveryone(body) ? { channels: ['in_app', 'email'] } : {}),
           }),
         })
       } catch { /* the note is saved regardless */ }

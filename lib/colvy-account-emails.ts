@@ -137,20 +137,22 @@ export function trialNudgeEmail(kind: string, business: string, billingUrl: stri
 
 // ── @mention (app/api/mentions/notify) ──────────────────────────────────────
 
-export function mentionEmail(o: { name: string; mentionedBy?: string | null; where: string; companyName: string; preview: string; link: string }): Mail {
+export function mentionEmail(o: { name: string; mentionedBy?: string | null; where: string; companyName: string; preview: string; link: string; everyone?: boolean }): Mail {
   const preview = String(o.preview || '').slice(0, 300)
   const by = o.mentionedBy || 'A teammate'
+  // "@everyone": the whole team was named, so say so rather than "you".
+  const whom = o.everyone ? 'everyone' : 'you'
   const { html, text } = colvyEmail({
-    preheader: preview ? `${by}: ${preview.slice(0, 90)}` : `${by} mentioned you in ${o.where}.`,
+    preheader: preview ? `${by}: ${preview.slice(0, 90)}` : `${by} mentioned ${whom} in ${o.where}.`,
     kicker: o.companyName,
-    pill: { tone: 'accent', text: `${by} mentioned you`, mark: '@' },
-    title: 'You were mentioned',
-    intro: [`Hi ${o.name},`, `**${by}** mentioned you in ${o.where} at ${o.companyName}.`],
+    pill: { tone: 'accent', text: `${by} mentioned ${whom}`, mark: '@' },
+    title: o.everyone ? 'The whole team was mentioned' : 'You were mentioned',
+    intro: [`Hi ${o.name},`, `**${by}** mentioned ${o.everyone ? '@everyone' : 'you'} in ${o.where} at ${o.companyName}.`],
     blocks: preview ? [{ type: 'quote', text: preview }] : [],
     cta: { label: 'Open in Colvy', url: o.link },
-    footerNote: 'You’re receiving this because a teammate @mentioned you in Colvy.',
+    footerNote: o.everyone ? 'You’re receiving this because a teammate @mentioned everyone in Colvy.' : 'You’re receiving this because a teammate @mentioned you in Colvy.',
   })
-  return { subject: `${o.mentionedBy || 'Someone'} mentioned you in ${o.where}`, html, text }
+  return { subject: `${o.mentionedBy || 'Someone'} mentioned ${whom} in ${o.where}`, html, text }
 }
 
 // ── Assigned / tagged (app/api/notify/members) ──────────────────────────────
