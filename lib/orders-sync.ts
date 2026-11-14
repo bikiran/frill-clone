@@ -107,9 +107,23 @@ function sourceFields(companyId: string, o: any, contactId: string | null) {
     // Do NOT fall back to created_at (the sync insert time) — that fabricated a
     // "now" date and made every order look 1 minute old.
     order_date: wooDateToISO(o) || o.order_date || null,
+    // An in-store sale (Prexty) and, when the same sale reached WooCommerce
+    // more than once, the order this one copies (V437, lib/pos-copies). Left
+    // out by insertResilient/updateResilient on a database without them.
+    ...boardPos(o),
     updated_at: new Date().toISOString(),
   }
 }
+
+/** The Orders board's copy of a woocommerce_orders row's in-store fields (V437). */
+export function boardPos(o: any): { pos_source: string | null; pos_sale_id: string | null; pos_copy_of: string | null } {
+  const inStore = o?.pos_source === 'prexty'
+  const copyOf = o?.detail?.pos_match?.copyOf?.number
+  return { pos_source: inStore ? 'prexty' : null, pos_sale_id: inStore ? (o.pos_sale_id || null) : null, pos_copy_of: copyOf ? String(copyOf) : null }
+}
+
+/** A copy of a sale that's already on the board: it gets no "new order" alert of its own. */
+export const isPosCopy = (o: any) => !!o?.detail?.pos_match?.copyOf
 
 // A row is only "new" for notification purposes if it was CREATED recently.
 // An INSERT into orders means "first time Colvy has seen this order" — which is
@@ -308,6 +322,11 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[], 
     }
   }
 
+  // Bring board rows up to date with their order's in-store sale and copy
+  // (V437), and give an unplaced in-store sale its shop. Its own query, so a
+  // database without the V437 columns only skips this step.
+  if (reconcile) await reconcileBoardPos(db, companyId, wooRows, existing)
+
   const fresh = wooRows.filter(o => !existing.has(String(o.woo_order_id)))
   if (!fresh.length) return 0
 
@@ -317,7 +336,10 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[], 
   const rows = fresh.map(o => {
     const src = sourceFields(companyId, o, contacts.get((o.customer_email || o.billing?.email || '').toLowerCase()) || null)
     const status = statusOf(o)
-    const outletId = status === 'click_and_collect' ? matchOutletId(locations, shippingMethodOf(o) || src.shipping_method) : null
+    // A Click & Collect order goes to its pickup outlet; an in-store sale to
+    // the shop it was rung up at (V410).
+    const outletId = (status === 'click_and_collect' ? matchOutletId(locations, shippingMethodOf(o) || src.shipping_method) : null)
+      || (o.pos_source === 'prexty' ? o.pos_location_id || null : null)
     return {
       ...src,
       status,
@@ -357,14 +379,48 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[], 
       const src = rows[i]
       const t = src.order_date ? new Date(src.order_date).getTime() : 0
       if (!t || now - t > RECENT_MS) continue
-      // The webhook (or another sync) may already have announced it.
-      if (!(await claimOrderAnnouncement(db, companyId, fresh[i].woo_order_id, wooPos(fresh[i]).saleId))) continue
+      // The webhook (or another sync) may already have announced it. A copy
+      // of a sale already on the board is claimed but never announced, and
+      // never claims the receipt: that's the original's to announce (this
+      // loop runs newest first, so a copy is usually seen before it).
+      const copy = isPosCopy(fresh[i])
+      if (!(await claimOrderAnnouncement(db, companyId, fresh[i].woo_order_id, copy ? null : wooPos(fresh[i]).saleId))) continue
+      if (copy) continue
       notifyNewOrder(companyId, src, wooOrderAlert(fresh[i], await shopOf(fresh[i])))
       sent++
     }
   }
 
   return fresh.length
+}
+
+/**
+ * Already-imported board rows whose in-store sale or copy changed at the
+ * source (an untagged copy matched to its Prexty receipt after it was
+ * imported, lib/pos-copies). Bounded; never moves an order someone placed.
+ */
+async function reconcileBoardPos(db: any, companyId: string, wooRows: any[], existing: Map<string, { id: string; store_location_id: string | null }>): Promise<void> {
+  const want = wooRows.filter(o => existing.has(String(o.woo_order_id)) && (o.pos_source === 'prexty' || isPosCopy(o)))
+  if (!want.length) return
+  const ids = want.map(o => existing.get(String(o.woo_order_id))!.id)
+  const have = new Map<string, any>()
+  for (let i = 0; i < ids.length; i += 300) {
+    const { data, error } = await db.from('orders').select('id, pos_source, pos_sale_id, pos_copy_of').in('id', ids.slice(i, i + 300))
+    if (error) return   // before V437
+    for (const r of data || []) have.set(r.id, r)
+  }
+  let n = 0
+  for (const o of want) {
+    if (n >= 400) break
+    const prev = existing.get(String(o.woo_order_id))!
+    const cur = have.get(prev.id) || {}
+    const next = boardPos(o)
+    const patch: any = {}
+    for (const k of ['pos_source', 'pos_sale_id', 'pos_copy_of'] as const) if ((cur[k] ?? null) !== next[k]) patch[k] = next[k]
+    if (!prev.store_location_id && o.pos_source === 'prexty' && o.pos_location_id) patch.store_location_id = o.pos_location_id
+    if (!Object.keys(patch).length) continue
+    try { await db.from('orders').update(patch).eq('id', prev.id); n++ } catch {}
+  }
 }
 
 // An order as integrations (Slack, webhooks, Zapier…) see it.
@@ -400,7 +456,7 @@ export async function upsertWooOrder(db: any, companyId: string, o: any, contact
   const cid = contactId ?? (await resolveContacts(db, companyId, [o])).get((o.customer_email || o.billing?.email || '').toLowerCase()) ?? null
   const src = sourceFields(companyId, o, cid)
 
-  const { data: prev } = await db.from('orders').select('id, status, shipped_at')
+  const { data: prev } = await db.from('orders').select('id, status, shipped_at, store_location_id')
     .eq('company_id', companyId).eq('sales_channel', 'woocommerce').eq('external_order_id', ext).maybeSingle()
 
   let orderId: string
@@ -410,6 +466,8 @@ export async function upsertWooOrder(db: any, companyId: string, o: any, contact
     // statuses (processing/pending/on-hold) leave the staff-owned status alone,
     // and we never downgrade an order that's already shipped or cancelled.
     const patch: any = { ...src }
+    // An unplaced in-store sale goes under the shop it was rung up at (V410).
+    if (!prev.store_location_id && o.pos_source === 'prexty' && o.pos_location_id) patch.store_location_id = o.pos_location_id
     const wl = String(o.status || '').toLowerCase()
     if (wl === 'completed' && prev.status !== 'shipped') {
       // A completed store order is live — advance to shipped even from a
@@ -439,6 +497,8 @@ export async function upsertWooOrder(db: any, companyId: string, o: any, contact
     // change it). Only on INSERT, so a manual reassignment is never clobbered.
     let outletId: string | null = null
     if (st === 'click_and_collect') { outletId = matchOutletId(await loadLocations(db, companyId), shippingMethodOf(o)) }
+    // An in-store sale belongs to the shop it was rung up at (V410).
+    if (!outletId && o.pos_source === 'prexty' && o.pos_location_id) outletId = o.pos_location_id
     const ins = await insertResilient(db, 'orders', [{
       ...src,
       status: st,
@@ -453,7 +513,7 @@ export async function upsertWooOrder(db: any, companyId: string, o: any, contact
     // A brand-new order just landed — ping the team's phones the way a new chat
     // does, so the Orders tab badge and a push both fire. Best-effort; never
     // block the sync on it. (Only on INSERT, so a status refresh doesn't re-alert.)
-    if (!opts?.quiet && await claimOrderAnnouncement(db, companyId, o.woo_order_id, wooPos(o).saleId)) notifyNewOrder(companyId, src, wooOrderAlert(o, await shopNamer(db, companyId)(o)))
+    if (!opts?.quiet && await claimOrderAnnouncement(db, companyId, o.woo_order_id, isPosCopy(o) ? null : wooPos(o).saleId) && !isPosCopy(o)) notifyNewOrder(companyId, src, wooOrderAlert(o, await shopNamer(db, companyId)(o)))
     emitIntegrationEvent(companyId, 'order.created', {
       ...orderEvent(src, orderId, `New order #${src.order_number}${src.total ? ` · $${Number(src.total).toFixed(2)}` : ''} · ${src.customer_name}`, { Status: statusMeta(st).label }, Array.isArray(o.line_items) ? o.line_items : []),
       dedupeKey: `order.created:${orderId}`,

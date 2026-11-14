@@ -5,6 +5,8 @@ import { logWebhookEvent } from '@/lib/webhook-log'
 import { normalizePrextyCustomer } from '@/lib/prexty-service'
 import { emitIntegrationEvent } from '@/lib/integration-events'
 import { outletRouting, locationForOutlet, locationName } from '@/lib/prexty-outlets'
+import { recordPrextyReceipt } from '@/lib/pos-copies'
+import { claimEvent } from '@/lib/order-alerts'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,6 +34,12 @@ function pick(obj: any, ...keys: string[]) {
   return null
 }
 const digits = (s: any) => String(s || '').replace(/\D/g, '')
+
+// Every delivery from a recognised store gets a 200 with ok: true, even when
+// there was nothing for Colvy to do with it (handled: false, and why) or Colvy
+// hit an error (logged). Prexty may read "ok: false" as a failed delivery and
+// send the sale again, and each retry can copy the sale into WooCommerce once
+// more. Only an unrecognised token or key is refused (401).
 const money = (n: any) => `$${(Number(n) || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 async function resolveCompany(db: any, req: NextRequest): Promise<{ companyId: string; base: string } | null> {
@@ -63,7 +71,7 @@ async function handleCustomerEvent(db: any, companyId: string, body: any) {
   await logWebhookEvent({ source: 'prexty', eventType: 'customer', companyId, payload: { prextyId, email, phone } })
 
   if (!email && !phone) {
-    return NextResponse.json({ ok: false, reason: 'Customer had no email or phone to match on' })
+    return NextResponse.json({ ok: true, handled: false, reason: 'Customer had no email or phone to match on' })
   }
 
   let contact: any = null
@@ -150,12 +158,29 @@ export async function POST(req: NextRequest) {
       name: pick(it, 'name', 'product_name', 'title') || 'Item',
       qty: Number(pick(it, 'qty', 'quantity', 'count')) || 1,
       price: Number(pick(it, 'price', 'unit_price', 'total', 'amount')) || 0,
+      sku: pick(it, 'sku', 'code', 'product_code', 'barcode'),
     }))
 
     await logWebhookEvent({ source: 'prexty', eventType: evt || 'order', companyId, payload: { orderId, orderNo, status, total, outletId, email, phone } })
 
+    // The shop the sale was rung up at, as a Colvy location (lib/prexty-outlets):
+    // matched by outlet name, or by id when the outlet map pins one.
+    let shopLoc: string | null = null
+    let shopName: string | null = null
+    try {
+      const r = await outletRouting(db, companyId)
+      shopLoc = locationForOutlet(outletName, r.locations, r.map) || locationForOutlet(outletId, r.locations, r.map)
+      shopName = locationName(shopLoc, r.locations)
+    } catch { /* unplaced, as before */ }
+
+    // Keep the receipt, walk-ins included, so its WooCommerce copy can be
+    // matched back to it when Prexty's tag is missing (lib/pos-copies).
+    if (orderId || orderNo) {
+      await recordPrextyReceipt(db, companyId, { orderId, orderNo, status, total, currency, items, outletId, outletName, locationId: shopLoc, createdAt, walkIn: !email && !phone })
+    }
+
     if (!orderId && !email && !phone) {
-      return NextResponse.json({ ok: false, reason: 'Order had no id or customer to attach to' })
+      return NextResponse.json({ ok: true, handled: false, reason: 'Nothing to attach: the sale has no id and no customer details' })
     }
 
     // ── Find-or-create the contact (email, else phone) ───────────────────────
@@ -183,15 +208,6 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Compose the order line ───────────────────────────────────────────────
-    // The shop the sale was rung up at, as a Colvy location (lib/prexty-outlets):
-    // matched by outlet name, or by id when the outlet map pins one.
-    let shopLoc: string | null = null
-    let shopName: string | null = null
-    try {
-      const r = await outletRouting(db, companyId)
-      shopLoc = locationForOutlet(outletName, r.locations, r.map) || locationForOutlet(outletId, r.locations, r.map)
-      shopName = locationName(shopLoc, r.locations)
-    } catch { /* unplaced, as before */ }
     const outletLabel = shopName || outletName || (outletId != null ? `Outlet ${outletId}` : null)
     const totalStr = total != null ? `${money(total)}${currency ? ` ${currency}` : ''}` : null
     const content = [
@@ -223,7 +239,7 @@ export async function POST(req: NextRequest) {
       // A thread nobody has placed yet goes under the sale's shop.
       try { await db.from('conversations').update({ assigned_location_id: shopLoc, assigned_auto: true }).eq('id', conv.id) } catch {}
     }
-    if (!conv) return NextResponse.json({ ok: false, reason: 'Could not create conversation' })
+    if (!conv) return NextResponse.json({ ok: true, handled: false, reason: 'Kept the sale, but could not open a conversation for it' })
 
     // ── Idempotency: one line per (order), updated in place on status change ─
     const { data: priorMsgs } = await db.from('messages')
@@ -247,20 +263,25 @@ export async function POST(req: NextRequest) {
       })
     }
 
+    // One sale, one alert: the receipt is claimed the same way its WooCommerce
+    // copy claims it (lib/order-alerts), so whichever arrives first announces
+    // the sale and the other stays quiet. A status change still alerts.
+    const announce = changed || (isNew && (!orderNo || await claimEvent(db, companyId, 0, `announced_pos:${String(orderNo).trim().slice(0, 80)}`)))
+
     if (isNew || changed) {
       await db.from('conversations').update({
         last_message: content.slice(0, 200), last_message_at: new Date().toISOString(),
         is_unread: true, status: 'open', unread_count: (conv.unread_count || 0) + 1,
       }).eq('id', conv.id)
 
-      try {
+      if (announce) try {
         await notifyCompany({
           db, companyId, type: 'order',
           message: `Prexty POS order #${orderNo} from ${custName || email || phone || 'a customer'} — ${totalStr || status}`,
           actorName: custName || 'Prexty POS', conversationId: conv.id,
         })
       } catch {}
-      try {
+      if (announce) try {
         await pushInboundMessage({
           companyId, conversationId: conv.id,
           title: `Prexty order #${orderNo}`,
@@ -284,7 +305,9 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     console.error('[prexty webhook]', e)
     await logWebhookEvent({ source: 'prexty', status: 'error', error: e?.message })
-    return NextResponse.json({ ok: false, error: e.message })
+    // Received, and the error is logged: still a 200 with ok: true, so Prexty
+    // doesn't send (and copy into WooCommerce) the same sale again.
+    return NextResponse.json({ ok: true, handled: false, error: e?.message || 'error' })
   }
 }
 

@@ -1,4 +1,5 @@
 import { posColumns, posSaleInfo, missingPosColumns, withoutPosColumns, orderDetail } from '@/lib/prexty-pos'
+import { isEligible, matchPosCopy, matchColumns, matchDetail, pendingRow, prextyActive, type PosMatch } from '@/lib/pos-copies'
 import { outletRouting, locationForOutlet } from '@/lib/prexty-outlets'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { decodeEntities } from '@/lib/decode-entities'
@@ -237,8 +238,25 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
       }
 
       // 1. Upsert individual order rows for the order history view
+      // In-store sales that reached WooCommerce without Prexty's tag, or more
+      // than once (lib/pos-copies): oldest first, so a copy sees the order it
+      // copies even when both arrive in this page.
+      const posCopies = new Map<number, PosMatch>()
+      const candidates = (orders || []).filter((o: any) => isEligible(o)).sort((a: any, b: any) => Number(a.id) - Number(b.id))
+      if (candidates.length && await prextyActive(supabase, companyId)) {
+        const pending: any[] = []
+        for (const o of candidates) {
+          const m = await matchPosCopy(supabase, companyId, o, { pending, prextyActive: true })
+          if (m) posCopies.set(Number(o.id), m)
+          pending.push(pendingRow(o, m))
+        }
+      }
+      const posOf = (o: any) => {
+        const m = posCopies.get(Number(o.id))
+        return m?.inStore ? { isPos: true, saleId: m.saleId || '', outlet: m.outlet || '', locationId: m.locationId } : { ...posSaleInfo(o), locationId: null as string | null }
+      }
       // The shop each in-store sale was rung up at (V410, lib/prexty-outlets).
-      const routing = (orders || []).some((o: any) => posSaleInfo(o).isPos) ? await outletRouting(supabase, companyId).catch(() => null) : null
+      const routing = (orders || []).some((o: any) => posOf(o).isPos) ? await outletRouting(supabase, companyId).catch(() => null) : null
       const orderRows = (orders as any[]).map((o: any) => ({
         company_id: companyId,
         woo_order_id: o.id,
@@ -265,11 +283,15 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
         // Normalised billing phone (last 9 digits) so SMS-only customers can be
         // matched to their orders via an index instead of a client-side scan.
         billing_phone_norm: String(o.billing?.phone || '').replace(/\D/g, '').slice(-9) || null,
-        // A Prexty in-store sale (V407), so the apps can badge it.
-        ...posColumns(o),
-        ...(routing && posSaleInfo(o).isPos ? { pos_location_id: locationForOutlet(posSaleInfo(o).outlet, routing.locations, routing.map) } : {}),
-        // The full invoice detail (V408), so the order sheet doesn't lose it.
-        detail: orderDetail(o),
+        // A Prexty in-store sale (V407), so the apps can badge it — tagged by
+        // Prexty, or matched to its sale (lib/pos-copies).
+        ...(posCopies.get(Number(o.id))?.inStore ? matchColumns(posCopies.get(Number(o.id))!) : posColumns(o)),
+        ...(posOf(o).isPos && (posOf(o).locationId || routing)
+          ? { pos_location_id: posOf(o).locationId || (routing ? locationForOutlet(posOf(o).outlet, routing.locations, routing.map) : null) }
+          : {}),
+        // The full invoice detail (V408), so the order sheet doesn't lose it,
+        // and why an untagged order counts as an in-store sale or a copy.
+        detail: { ...orderDetail(o), ...(posCopies.has(Number(o.id)) ? matchDetail(posCopies.get(Number(o.id))!) : {}) },
       })).filter((r: any) => r.woo_customer_id || r.customer_email)
       // Keep guest orders too — they have no woo_customer_id but DO have a
       // billing email, which is how the profile and inbox match orders to a
