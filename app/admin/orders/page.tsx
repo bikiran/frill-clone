@@ -34,6 +34,7 @@ import { loadStaffRows } from '@/lib/team-list'
 import type { OrderRefund } from '@/lib/order-refunds'
 import { sanitizeHtml } from '@/lib/safe-html'
 import { publishAiContext } from '@/lib/ai-context'
+import PrextyMark from '@/components/PrextyMark'
 
 type Order = any
 
@@ -47,6 +48,13 @@ export function ChannelIcon({ channel, size = 15 }: { channel?: string | null; s
   if (channel === 'shopify') return <PlatformLogo platform="shopify" size={size + 6} />
   return <span style={{ fontSize: size + 1 }}>{channelMeta(channel).icon}</span>
 }
+/** An order's source: Prexty's mark for an in-store sale (V437), else its channel's logo. */
+export function OrderSourceIcon({ o, size = 15 }: { o: any; size?: number }) {
+  if (o?.pos_source === 'prexty') return <PrextyMark size={size + 6} title={`In store${o.pos_sale_id ? ` · ${o.pos_sale_id}` : ''}`} />
+  return <ChannelIcon channel={o?.sales_channel} size={size} />
+}
+/** "In store · R50806" for an in-store sale, else null. */
+const inStoreText = (o: any): string | null => o?.pos_source === 'prexty' ? `In store${o.pos_sale_id ? ` · ${o.pos_sale_id}` : ''}` : null
 // Click & Collect — a storefront/shopping bag with a check, in place of the 🏬 emoji.
 export function ClickCollectIcon({ size = 14 }: { size?: number }) {
   return (
@@ -814,6 +822,11 @@ export default function OrdersPage() {
     })()
     return () => { off = true }
   }, [pageIdsKey, companyId, drawerId])
+  // The same sale reached WooCommerce more than once (lib/pos-copies): this
+  // row is a copy of an earlier order, to cancel in WooCommerce.
+  const copyFlag = (o: any) => o?.pos_copy_of
+    ? <span className="ord-flag ord-copy" title={`The same sale reached WooCommerce again as this order. Cancel it in WooCommerce to keep stock and sales right.`}>Copy of #{o.pos_copy_of}</span>
+    : null
   const noteFlag = (o: any) => {
     const f = noteFlags[o.id]
     const cust = !!String(o.customer_note || '').trim()
@@ -1086,6 +1099,8 @@ export default function OrdersPage() {
         .ord-num span { color: #a1a1aa; font-weight: 500; }
         .ord-num .ord-flag, .ord-flag { display: inline-flex; align-items: center; gap: 3px; height: 20px; margin-left: 7px; padding: 0 7px; border-radius: 999px; background: #fef3c7; color: #b45309; font-size: 11.5px; font-weight: 750; vertical-align: 1px; animation: ordFlagIn .4s cubic-bezier(.22,1,.36,1) both; }
         [data-theme="dark"] .ord-flag { background: rgba(245,158,11,.18); color: #fbbf24; }
+        .ord-flag.ord-copy { background: #fee2e2; color: #b91c1c; animation: none; }
+        [data-theme="dark"] .ord-flag.ord-copy { background: rgba(239,68,68,.18); color: #fca5a5; }
         @keyframes ordFlagIn { from { opacity: 0; transform: scale(.7); } to { opacity: 1; transform: none; } }
         @media (prefers-reduced-motion: reduce) { .ord-flag { animation: none; } }
         .ord-age { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; }
@@ -1422,23 +1437,23 @@ export default function OrdersPage() {
                   <tr key={o.id} className={`ord-row${drawerId === o.id ? ' open' : sel ? ' sel' : cc ? ' cc' : ''}`} onClick={() => openOrder(o.id)}>
                     <td onClick={e => { e.stopPropagation(); toggleOne(o.id) }}><input type="checkbox" className="ord-check" aria-label={`Select order ${o.order_number}`} checked={sel} onChange={() => {}} /></td>
                     <td className="ord-m">
-                      <div className="ord-m-top"><span><span className="ord-num"><span>#</span>{o.order_number}</span>{noteFlag(o)}<span className="ord-age" style={{ color: age.color }}>{age.label}</span></span><b style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(o.total, o.currency)}</b></div>
+                      <div className="ord-m-top"><span><span className="ord-num"><span>#</span>{o.order_number}</span>{noteFlag(o)}{copyFlag(o)}<span className="ord-age" style={{ color: age.color }}>{age.label}</span></span><b style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(o.total, o.currency)}</b></div>
                       <div className="ord-m-mid"><span className="ord-m-name">{o.customer_name || '—'}</span><span className="ord-tag" style={{ ['--tag' as any]: sm.fg }}>{sentence(sm.label)}</span></div>
-                      <div className="ord-m-sub"><ChannelIcon channel={o.sales_channel} size={12} /><span>{cc ? 'Click & Collect' : (o.shipping_method || 'Free shipping')} · {o.item_count || 0} item{(o.item_count || 0) === 1 ? '' : 's'}{(o.assignee_name || teamName(o.assignee_id)) ? ` · ${o.assignee_name || teamName(o.assignee_id)}` : ''}</span></div>
+                      <div className="ord-m-sub"><OrderSourceIcon o={o} size={12} /><span>{inStoreText(o) || (cc ? 'Click & Collect' : (o.shipping_method || 'Free shipping'))} · {o.item_count || 0} item{(o.item_count || 0) === 1 ? '' : 's'}{(o.assignee_name || teamName(o.assignee_id)) ? ` · ${o.assignee_name || teamName(o.assignee_id)}` : ''}</span></div>
                     </td>
-                    <td className="ord-num"><span>#</span>{o.order_number}{noteFlag(o)}</td>
+                    <td className="ord-num"><span>#</span>{o.order_number}{noteFlag(o)}{copyFlag(o)}</td>
                     <td><span className="ord-age" style={{ color: age.color }}>{age.label}</span></td>
                     <td className="ord-muted">{fmtDate(o.order_date)}</td>
                     <td style={{ fontWeight: 600 }}>{o.customer_name || '—'}</td>
                     <td>{o.item_count || 0}</td>
                     <td className="ord-muted" style={{ maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.primary_sku || '—'}</td>
-                    <td className="ord-muted">{cc
+                    <td className="ord-muted">{inStoreText(o) ? <span style={{ fontWeight: 600 }}>{inStoreText(o)}</span> : cc
                       ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600, color: '#2563eb' }}><ClickCollectIcon size={14} />Click &amp; Collect</span>
                       : (Number(o.shipping_total) || 0) > 0 ? <span>{o.shipping_method || 'Shipping'} <span style={{ color: 'var(--ink)', fontWeight: 600 }}>{fmtMoney(o.shipping_total, o.currency)}</span></span> : (o.shipping_method || 'Free')}</td>
                     <td><span className="ord-tag" style={{ ['--tag' as any]: sm.fg }}>{sentence(sm.label)}</span></td>
                     <td><Avatar name={o.assignee_name || teamName(o.assignee_id)} /></td>
                     <td style={{ textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(o.total, o.currency)}</td>
-                    <td><ChannelIcon channel={o.sales_channel} /></td>
+                    <td><OrderSourceIcon o={o} /></td>
                   </tr>
                 )
               })}
