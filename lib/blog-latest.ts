@@ -9,6 +9,232 @@ const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c'
 
 export const LATEST_POSTS: BlogPost[] = [
   {
+    // Facts about the other apps: their own websites, checked 14 November 2026.
+    slug: 'best-booking-app-small-business-australia',
+    cover: '/blog/best-booking-app-small-business-australia/cover.jpg',
+    title: 'The best booking app for small business in Australia: what to look for, and 5 compared',
+    excerpt: 'Salons, clinics, gyms, trades and cleaners all need online booking, deposits and reminders. What actually matters when you choose a booking app in Australia, and how Colvy, Timely, Fresha, Mindbody and ServiceM8 compare.',
+    seoDescription: 'Choosing a booking app for a small business in Australia: deposits, reminders, fees and AUD prices, with Colvy, Timely, Fresha, Mindbody and ServiceM8 compared.',
+    category: 'Buyer’s guide', accent: BLUE, icon: 'calendar',
+    date: '2026-11-14T10:00:00+11:00', dateLabel: 'Nov 14, 2026', readTime: '9 min read', author: 'The Colvy Team',
+    takeaways: [
+      'A booking app should take bookings around the clock, take a deposit when you want one, and send reminders people can reply to.',
+      'Check how it charges as you grow: per staff member, per location, by jobs, or a fee on each new client.',
+      'If you have regulars, look for repeat bookings, class packs and memberships.',
+      'The booking is only half of it. The questions, reschedules and calls around it need a home too.',
+    ],
+    content: `A booking app has one job on paper: let customers book without ringing you. In practice it also has to stop no-shows, look after the regular who comes every fortnight, and handle the “can I move to Thursday?” text that arrives at 9pm.
+
+This guide covers what to look for, then compares five apps Australian small businesses use: Colvy, Timely, Fresha, Mindbody and ServiceM8.
+
+> [!NOTE] We make Colvy
+> So read our part with that in mind. Every fact about the other apps comes from their own websites, checked on 14 November 2026. Prices and plans change, so check with each one before you decide.
+
+## What a good booking app does
+
+1. **Takes bookings 24/7.** A booking page you can link from your website, your Instagram bio and your Google Business Profile, showing only the times you’re actually free.
+2. **Takes a deposit when you want one.** A deposit, or the full price up front, is the simplest fix for no-shows, especially for long appointments and new customers.
+3. **Sends reminders people can answer.** A text the day before that someone can reply to works better than an email they never open.
+4. **Fills the gaps.** A waitlist that offers a cancelled spot to the next person, so a cancellation at 8am doesn’t become an empty chair at 9.
+5. **Looks after regulars.** Repeat bookings for the fortnightly clean or the weekly PT session, and class packs or memberships if you sell them.
+6. **Shows prices clearly.** Some apps show prices before GST, some after, and some in US dollars. Compare like with like.
+
+## How booking apps charge
+
+The headline price matters less than how it grows with you.
+
+| How it’s priced | What to watch |
+|---|---|
+| Per staff member | Fine for one or two people. Adds up as you hire. |
+| Per location | Simple for one site. Doubles with a second. |
+| By jobs or bookings | Check the price in your busiest month, not a quiet one. |
+| A fee on new clients | Marketplaces can charge a share of a new client’s first booking. |
+| One price for the team | Predictable. Check what’s included. |
+
+Check what texts cost too. Some apps include a set number of texts a month or per booking, then charge for each extra one.
+
+## Five booking apps compared
+
+| App | Best for | How it’s priced | Good to know |
+|---|---|---|---|
+| **Colvy** | Businesses that want bookings and every customer message in one place | A$179 a month, or A$149 a month billed yearly, GST included, for unlimited team members | Deposits, reminders, a waitlist, repeat bookings, class packs and memberships, with texts, calls, email, live chat, Instagram and Messenger in one inbox. No Xero or MYOB sync. |
+| **Timely** | Hair and beauty salons | From A$10, A$14 or A$18 a week before GST, depending on the plan, with unlimited team members | Online booking and deposits on every plan, and no new-client fees. Two-way texting is on its Thrive plan; packages are on Boost and Thrive. |
+| **Fresha** | Salons, spas and clinics that want to be found on a marketplace | Per team member. Prices depend on your country (its site showed us US prices) | Its marketplace can bring new clients, with a one-time fee on each: 20%, with a $6 minimum, on the pricing page we saw. Memberships and packages on both plans. |
+| **Mindbody** | Larger gyms and studios that want a full studio platform | A$89, A$279 or A$369 a month per location | Memberships and class packs with autopay. Email and SMS marketing is on its Growth plan only. A fee applies to a new client’s first purchase through the Mindbody app. |
+| **ServiceM8** | Trades who mainly need job management | Free for one user, then A$29 to A$349 a month depending on jobs a month, GST included | Online booking with deposits, recurring jobs, and Xero, QuickBooks Online and MYOB sync. Customers reply to its texts through a web page link. |
+
+## Which one fits your business
+
+### Salons, barbers and beauty
+
+Timely and Fresha are built for salons. Timely is the cheaper of the two if bookings are all you need; Fresha’s marketplace can bring new clients, at a fee for each one. Colvy suits salons whose clients mostly message on Instagram or by text, and who want those conversations, the booking and the reminder in one place. Our [no-shows guide for salons and barbers](/blog/salon-barber-no-shows) goes deeper.
+
+![An empty hair salon with styling chairs and mirrors](/blog/best-booking-app-small-business-australia/salon.jpg "A deposit on long appointments is the quickest fix for an empty chair.")
+
+### Clinics: physio, chiro and massage
+
+Look for deposits for new patients, reminders patients can reply to, and a way to book a treatment plan in one go. In Colvy, you can repeat a booking every 1 to 12 weeks for up to 26 visits, and calls can be recorded and summarised in the patient’s conversation on the Inbox and Everything plans. Read the [clinic guide](/blog/physio-chiro-massage-clinics).
+
+![Hands typing on a laptop beside a stethoscope](/blog/best-booking-app-small-business-australia/clinic.jpg "Book the whole treatment plan at once, and let the reminders do the chasing.")
+
+### Gyms and studios
+
+Mindbody is the most complete studio platform here, priced per location. Colvy covers class booking with a set number of spots, class packs (“10 classes for $150”) and memberships that renew automatically through your own Stripe account, with campaigns and AI agents in the same plan. See the [gym guide](/blog/gyms-fitness-studios) and [Colvy vs Mindbody](/compare/mindbody).
+
+### Trades, cleaners and home services
+
+Most trades need quotes and jobs more than a booking calendar. ServiceM8 is a mature job app with accounting sync. Colvy adds a booking page for services done at the customer’s address, quotes customers accept online, repeating jobs and invoices, beside every call and text. See [Colvy vs ServiceM8](/compare/servicem8) and our [cleaning business guide](/blog/cleaning-business-guide).
+
+![An electrician in a hard hat working on a switchboard](/blog/best-booking-app-small-business-australia/trades.jpg "For trades, the booking is usually the start of a quote and a job.")
+
+### Cafés and restaurants
+
+Table bookings are their own thing: covers, tables and no-shows. Colvy has [table reservations](/product/reservations) with a floor plan and deposits. Our [restaurant bookings guide](/blog/restaurant-reservations-guide) covers the rest.
+
+## Questions to ask in the free trial
+
+1. Book yourself as a customer, on your phone. How many taps did it take?
+2. Cancel and rebook as the customer. Does the freed-up time go to someone on the waitlist?
+3. Reply to the reminder text. Where does your reply go, and who sees it?
+4. Add a second staff member, or a second location. What happens to the price?
+5. What would your busiest month cost, including texts?
+6. Can you export your customers and leave without a contract?
+
+## Where Colvy fits, honestly
+
+Colvy is a booking app inside a shared inbox. It covers:
+
+- **Bookings:** online booking with deposits, paid by card into your own Stripe account.
+- **Reminders:** 24 hours before by text and email, and 2 hours before by text. Customers reply **C** to confirm or **R** to reschedule.
+- **Regulars:** a waitlist, repeat bookings, class packs and memberships.
+- **Conversations:** texts, calls, email, live chat, Instagram and Messenger in one inbox.
+- **AI:** five AI agents that answer questions and take bookings within limits you set.
+
+What it doesn’t do: there’s no marketplace sending you new clients, and no sync with Xero, MYOB or QuickBooks. If you need those, one of the apps above may suit you better.
+
+> [!TRY] Try it on a real booking
+> - Start free, then add one service and your opening hours.
+> - Book yourself from your phone, pay the deposit, and reply to the reminder.
+> - Add your team. The Inbox plan is one price however many people you add.
+
+[See online booking](/product/booking), [see pricing](/pricing) or [start free](/signup).`,
+  },
+  {
+    // Google's rules: support.google.com/contributionpolicy/answer/7400114,
+    // support.google.com/business/answer/3474122 and /16816815. ACCC:
+    // accc.gov.au/business/advertising-promoting-your-business/managing-online-reviews.
+    // All checked 14 November 2026.
+    slug: 'how-to-get-more-google-reviews',
+    cover: '/blog/how-to-get-more-google-reviews/cover.jpg',
+    title: 'How to get more Google reviews: 9 ways that work, and what Google doesn’t allow',
+    excerpt: 'Plenty of recent Google reviews win you more calls. How to get your review link and QR code, when and how to ask, a text you can copy, and the rules from Google and the ACCC that small businesses trip over.',
+    seoDescription: 'How to get more Google reviews for your small business: your review link and QR code, when to ask, a text to copy, and what Google and the ACCC don’t allow.',
+    category: 'Playbooks', accent: GREEN, icon: 'star',
+    date: '2026-11-14T10:30:00+11:00', dateLabel: 'Nov 14, 2026', readTime: '8 min read', author: 'The Colvy Team',
+    takeaways: [
+      'Ask every customer right after you’ve helped them, with a link they can tap. Don’t make them search for you.',
+      'Get your link and QR code from your Business Profile: Read reviews, then Get more reviews.',
+      'Google doesn’t allow incentives for reviews, or asking only the customers you expect to be happy.',
+      'Reply to every review, good and bad. The next customer reads your replies too.',
+    ],
+    content: `Before someone rings a plumber, books a facial or tries a new café, they check the Google reviews. A business with plenty of recent reviews, and thoughtful replies to them, looks busy and trustworthy. One with a handful from three years ago looks like a gamble.
+
+Getting more reviews is mostly a habit, not a trick. Here’s how to build it, and the rules to stay inside.
+
+## 1. Get your review link and QR code
+
+Every Business Profile has a link that opens the review form directly. Google’s steps:
+
+1. Go to your Business Profile at business.google.com.
+2. Select **Read reviews**, then **Get more reviews**.
+3. Select **Copy** to copy the link, or right-click the QR code and save the image.
+
+Google notes that the QR code can only be made in a computer’s browser, not on a phone. Save both somewhere your whole team can find them.
+
+## 2. Ask right after you’ve helped
+
+The best moment is straight after the good part: the job is signed off, the haircut is done, the parcel has arrived, the problem is fixed. A week later the feeling has faded, and your message is just another notification.
+
+Good moments to ask:
+
+- When the job is finished or the appointment ends.
+- When a customer says thanks in a message or on the phone.
+- When they confirm a problem you fixed is sorted.
+
+## 3. Send the link, so it’s one tap
+
+“Look us up on Google and leave a review” loses people at “look us up”. Send the link itself.
+
+\`\`\`chat
+title: Bright Spark Electrical · SMS
+you: Thanks for having us today, Sam. If you have a minute, a Google review helps other locals find us: [link]
+them: Done! Thanks for sorting it so quickly.
+\`\`\`
+
+Keep it short: who you are, thank you, the link. Don’t mention stars, and don’t say “if you were happy”.
+
+## 4. Ask in person, then send the link later
+
+Asking face to face works, but don’t stand over someone while they write. Google says businesses shouldn’t require or pressure customers to leave reviews while they’re on the premises. Ask, then text the link so they can do it when it suits them.
+
+![Two men at a shop counter, one handing over a receipt](/blog/how-to-get-more-google-reviews/counter.jpg "Ask at the counter, then send the link so they can do it at home.")
+
+## 5. Put the link where customers already look
+
+Google suggests a few places for your link or QR code:
+
+- On your receipts.
+- In thank-you emails.
+- At the end of a chat.
+- A printed QR code in your shop.
+
+Your email signature and the message that says a job is done are good spots too.
+
+## 6. Ask everyone, not only the happy ones
+
+It’s tempting to only ask the customers you think will give five stars. Google’s policy doesn’t allow it: businesses may not “discourage or prohibit negative reviews, or selectively solicit positive reviews from customers”.
+
+Asking everyone is better for you anyway. A few honest four-star reviews, and calm replies to the odd complaint, read as real. And if someone is unhappy, you want to know so you can fix it.
+
+## 7. Never pay, discount or gift for a review
+
+Google is clear that offering incentives, “like free or discounted goods or services”, in exchange for reviews is strictly prohibited. That includes a discount on the next visit, entry into a prize draw or a free coffee. Reviews posted because of an incentive can be removed.
+
+In Australia, the ACCC also warns that businesses offering incentives for positive reviews “risk misleading consumers and breaching the law”.
+
+## 8. Reply to every review
+
+Google’s advice is to reply to reviews and share your perspective, and to be “conversational, not promotional”. Thank people and mention what they said. For a bad review, reply once, calmly, and offer to sort it out directly. Never share a reviewer’s private details in a reply.
+
+Our guide on [how to reply to Google reviews](/blog/how-to-reply-to-google-reviews) has 12 examples you can copy.
+
+## 9. Make it the same step every time
+
+Reviews come from a routine, not a one-off push. Pick your moment (job signed off, appointment finished, order delivered), send the same short message every time, and don’t keep asking the same person.
+
+![A busy café with a chalkboard menu behind the counter](/blog/how-to-get-more-google-reviews/cafe.jpg "A QR code by the till and a link on the receipt do the asking for you.")
+
+## What to avoid
+
+| Don’t | Why |
+|---|---|
+| Write reviews yourself, or get staff, friends or family to | The ACCC says it’s against the law to create, or arrange for others to create, fake or misleading reviews. Reviews from family or staff can mislead when the connection isn’t disclosed. |
+| Offer a discount, gift or prize for a review | Google prohibits incentives for reviews. |
+| Pay for reviews | Google prohibits reviews that have been paid for. |
+| Ask only customers you expect to be happy | Google doesn’t allow selectively asking for positive reviews. |
+| Tell people what rating to give or what to write | Google allows asking for genuine reviews, without trying to influence the rating or what the review says. |
+| Hide or delete genuine negative reviews on your own website | The ACCC says removing genuine negative reviews may mislead consumers. |
+
+## How Colvy helps
+
+- **Google reviews in your inbox.** Connect your Business Profile and new reviews arrive beside your other conversations, so you can reply from there. The Reputation Agent can reply in your voice, and tells your team about 1 to 3 star reviews.
+- **Review requests after a booking or order.** Turn them on, and when a booking or order is finished, Colvy sends your review link by text, email or chat after a delay you choose.
+- **Considerate by default.** No requests in quiet hours (9pm to 9am unless you change them), on Sundays or on public holidays. Colvy never asks someone who has already left you a Google review, and asks each customer no more than once in 30 days.
+- **Ask by hand.** **Ask for a review** in the reply box puts a review request into the conversation for you to check and send.
+
+[See Google reviews in Colvy](/channels/google-reviews) or [start free](/signup).`,
+  },
+  {
     slug: 'call-forwarding-small-business-australia',
     cover: '/phones/call-forwarding.jpg',
     title: 'Call forwarding for small business in Australia: how it works and what it costs',
