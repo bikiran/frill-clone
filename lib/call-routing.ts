@@ -34,6 +34,12 @@ export type ForwardTarget = {
   screen: boolean
   /** The number the outside phone sees: the business's Colvy number, or the caller's own (Australian numbers only). */
   callerId: CallerIdMode
+  /**
+   * More outside numbers rung at the same time (up to MAX_FORWARD_ALSO):
+   * the first to answer (and press 1, with screening) takes the call, and
+   * the others stop ringing.
+   */
+  also: string[]
 }
 
 export type OrderStep = { userId: string; seconds: number }
@@ -84,6 +90,8 @@ export const FORWARD_SECONDS = { min: 5, max: 60, def: 25 }
 export const THEN_ALL_SECONDS_DEF = 20
 export const MENU_TIMEOUT = { min: 3, max: 15, def: 6 }
 export const MAX_ORDER_STEPS = 8
+/** Extra outside numbers rung with a forward (5 phones in all; Twilio allows 10). */
+export const MAX_FORWARD_ALSO = 4
 /** Ringing longer than this is more than callers wait for. */
 export const MAX_TOTAL_RING = 240
 export const MAX_GREETING = 600
@@ -113,7 +121,7 @@ export const MENU_ACTIONS: { id: MenuActionType; label: string }[] = [
 ]
 
 export function defaultForward(): ForwardTarget {
-  return { number: '', seconds: FORWARD_SECONDS.def, screen: true, callerId: 'business' }
+  return { number: '', seconds: FORWARD_SECONDS.def, screen: true, callerId: 'business', also: [] }
 }
 export function defaultOrder(): RingOrder {
   return { steps: [], thenAll: true, thenAllSeconds: THEN_ALL_SECONDS_DEF, thenForward: null }
@@ -205,12 +213,37 @@ function parseForward(raw: unknown, where: string, p: Problems | null, ctx: Chec
   if (number && ctx?.ownNumbers?.has(number)) p?.push(`${where}: that’s one of your own Colvy numbers, so the call would go round in circles.`)
   if (p && r.seconds !== undefined && clampInt(r.seconds, { ...FORWARD_SECONDS, def: -1 }) === -1) p.push(`${where}: ring time must be ${FORWARD_SECONDS.min}–${FORWARD_SECONDS.max} seconds.`)
   if (p && ctx && ctx.forwardAllowed === false) p.push(`${where}: call forwarding isn’t available on your plan. Contact Colvy to switch it on.`)
+  // More numbers rung at the same time: each an Australian line, none of the
+  // business's own, no repeats, at most MAX_FORWARD_ALSO.
+  const alsoRaw = Array.isArray(r.also) ? r.also : []
+  const also: string[] = []
+  for (const x of alsoRaw) {
+    if (String(x ?? '').trim() === '') continue
+    const n = auForwardNumber(x)
+    if (!n) { p?.push(`${where}: “${oneLine(x, 30)}” isn’t an Australian mobile or landline (like 0412 345 678).`); continue }
+    if (ctx?.ownNumbers?.has(n)) { p?.push(`${where}: ${formatAu(n)} is one of your own Colvy numbers, so the call would go round in circles.`); continue }
+    if (n === number || also.includes(n)) continue
+    also.push(n)
+  }
+  if (also.length > MAX_FORWARD_ALSO) p?.push(`${where}: ring at most ${MAX_FORWARD_ALSO + 1} phones at once.`)
   return {
     number: number || '',
     seconds: clampInt(r.seconds, FORWARD_SECONDS),
     screen: r.screen !== false,
     callerId: r.callerId === 'caller' ? 'caller' : 'business',
+    also: also.slice(0, MAX_FORWARD_ALSO),
   }
+}
+
+/** Every phone a forward rings, the main number first. */
+export const forwardNumbers = (t: Pick<ForwardTarget, 'number' | 'also'>): string[] =>
+  [t.number, ...(Array.isArray(t.also) ? t.also : [])].filter((n, i, a) => !!n && a.indexOf(n) === i)
+
+/** "0412 345 678", or "0412 345 678 and 2 more phones at once". */
+export function forwardWords(t: Pick<ForwardTarget, 'number' | 'also'>): string {
+  const all = forwardNumbers(t)
+  if (!all.length) return ''
+  return all.length === 1 ? formatAu(all[0]) : `${formatAu(all[0])} and ${all.length - 1} more phone${all.length === 2 ? '' : 's'} at once`
 }
 
 function parseOrder(raw: unknown, where: string, p: Problems | null, ctx: CheckCtx | null, opts: { needSteps: boolean }): RingOrder {
@@ -545,13 +578,19 @@ export function forwardTwiml(c: CallCtx, t: ForwardTarget, o: DialOpts & { route
   const actionCb = `${c.base}/api/twilio/voice/inbound-status?${cbQuery}&rang=fwd${o.routeQuery || ''}&fwd=1&scr=${t.screen ? 1 : 0}`
   const callerId = (t.callerId === 'caller' && passableCallerId(c.from)) || c.to
   const screenUrl = `${c.base}/api/twilio/voice/forward-screen?${cbQuery}&route=${encodeURIComponent(o.route)}&step=${o.step}&op=ask`
+  const noteUrl = `${c.base}/api/twilio/voice/forward-screen?${cbQuery}&route=${encodeURIComponent(o.route)}&step=${o.step}&op=note`
   const bridge = o.answerOnBridge === false ? `ringTone="au"` : `answerOnBridge="true"`
+  const phones = forwardNumbers(t)
+  // Several phones ring at once (one <Number> each); the first to connect
+  // takes the call and Twilio stops the rest. Without screening, a quick
+  // note of which phone answered (op=note, which connects straight away).
+  const url = t.screen ? screenUrl : phones.length > 1 ? noteUrl : ''
   return (
     `<Response>` +
       `<Dial timeout="${t.seconds}" ${bridge} callerId="${xmlEscape(callerId)}" record="record-from-answer-dual" ` +
         `recordingStatusCallback="${xmlEscape(recordingCb)}" recordingStatusCallbackEvent="completed" ` +
         `action="${xmlEscape(actionCb)}" method="POST">` +
-        `<Number${t.screen ? ` url="${xmlEscape(screenUrl)}" method="POST"` : ''}>${xmlEscape(t.number)}</Number>` +
+        phones.map(n => `<Number${url ? ` url="${xmlEscape(url)}" method="POST"` : ''}>${xmlEscape(n)}</Number>`).join('') +
       `</Dial>` +
     `</Response>`
   )
@@ -685,7 +724,7 @@ export function nextStep(c: CallCtx, steps: Step[], from: number, route: RouteKe
       if (!users.length) continue
       return { index: i, step, ringUsers: users, forwardTo: null, twiml: ringTwiml(c, users, step.seconds, { routeQuery, answerOnBridge }) }
     }
-    if (!step.target.number || step.target.number.replace(/\D/g, '') === to) continue
+    if (!step.target.number || forwardNumbers(step.target).some(n => n.replace(/\D/g, '') === to)) continue
     // Forwarding switched off for this business (plan, or Colvy's switch):
     // the step rings the team instead, so the call still reaches someone.
     if (!s.forwardAllowed) {
@@ -700,8 +739,8 @@ export function nextStep(c: CallCtx, steps: Step[], from: number, route: RouteKe
 // ── What a call did, in words ────────────────────────────────────────────────
 
 /** A step for the call's routing trail: "Rang 2 people", "Forwarded to 0412 345 678". */
-export function stepLabel(r: Pick<StepResult, 'ringUsers' | 'forwardTo'>): string {
-  if (r.forwardTo) return `Forwarded to ${formatAu(r.forwardTo)}`
+export function stepLabel(r: Pick<StepResult, 'ringUsers' | 'forwardTo'> & { forwardAlso?: number }): string {
+  if (r.forwardTo) return `Forwarded to ${formatAu(r.forwardTo)}${r.forwardAlso ? ` (+${r.forwardAlso} more at once)` : ''}`
   return `Rang ${r.ringUsers.length === 1 ? '1 person' : `${r.ringUsers.length} people`}`
 }
 
@@ -750,7 +789,7 @@ function fallbackWords(o: SummaryOpts): string {
 function orderWords(order: RingOrder, o: SummaryOpts): string {
   const parts = order.steps.map(s => `${nameOf(o, s.userId)} for ${s.seconds}s`)
   if (order.thenAll) parts.push(`everyone for ${order.thenAllSeconds}s`)
-  if (order.thenForward) parts.push(`forward to ${formatAu(order.thenForward.number)}`)
+  if (order.thenForward) parts.push(`forward to ${forwardWords(order.thenForward)}`)
   if (!parts.length) return 'everyone'
   const [first, ...rest] = parts
   return `${first}${rest.map(p => `, then ${p}`).join('')}`
@@ -760,7 +799,7 @@ function actionWords(a: MenuAction, o: SummaryOpts): string {
   switch (a.type) {
     case 'ring_all': return 'rings everyone'
     case 'ring_order': return `rings ${orderWords(a.order, o)}`
-    case 'forward': return `forwards to ${formatAu(a.forward.number)}`
+    case 'forward': return `forwards to ${forwardWords(a.forward)}`
     case 'voicemail': return 'goes to voicemail'
     case 'ai': return 'goes to the AI receptionist'
     case 'message': return a.then === 'hangup' ? 'plays a message and ends the call' : 'plays a message, then the menu again'
@@ -780,7 +819,7 @@ export function routingSummary(c: CallRouting, o: SummaryOpts = {}): string {
     case 'in_order':
       return `Calls ring ${orderWords(c.order, o)}. ${after}`
     case 'forward': {
-      const to = formatAu(c.forward.number) || 'your mobile'
+      const to = forwardWords(c.forward) || 'your mobile'
       const screen = c.forward.screen ? ' (they press 1 to take it)' : ''
       return c.forward.when === 'closed'
         ? `While you’re open, calls ring everyone at once for ${ring}s. When you’re closed, they forward to ${to} for ${c.forward.seconds}s${screen}. ${after}`

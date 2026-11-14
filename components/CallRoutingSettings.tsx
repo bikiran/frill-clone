@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { authFetch } from '@/lib/auth-fetch'
 import { CK_ICON, CkHead, CkOption, CkSave, CkStyle, CkToggle } from '@/components/calls/CallKit'
 import {
-  STRATEGIES, MENU_ACTIONS, MENU_KEYS, MAX_ORDER_STEPS, MAX_GREETING, MAX_LABEL, MAX_MESSAGE, STEP_SECONDS, MENU_TIMEOUT,
+  STRATEGIES, MENU_ACTIONS, MENU_KEYS, MAX_ORDER_STEPS, MAX_GREETING, MAX_LABEL, MAX_MESSAGE, STEP_SECONDS, MENU_TIMEOUT, MAX_FORWARD_ALSO,
   auForwardNumber, formatAu, defaultForward, defaultOrder, defaultMenu, menuSpeech, routingSummary, validateRouting,
   type CallRouting, type RingStrategy, type RingOrder, type ForwardTarget, type ForwardWhen, type Menu, type MenuAction,
   type MenuActionType, type MenuKey,
@@ -65,6 +65,55 @@ function SecondsSelect({ value, onChange, id, aria }: { value: number; onChange:
   )
 }
 
+// ── More phones rung at the same time ─────────────────────────────────────────
+
+/**
+ * Up to MAX_FORWARD_ALSO more outside phones that ring with the main one:
+ * whoever answers first (and presses 1, with screening) takes the call.
+ * Only good numbers are saved; what's being typed stays in the boxes.
+ */
+function AlsoRing({ idp, value, main, onChange }: { idp: string; value: string[]; main: string | null; onChange: (v: string[]) => void }) {
+  const [texts, setTexts] = useState<string[]>(() => value.map(formatAu))
+  // Follow a list set from outside (undo, a save), never what's being typed.
+  useEffect(() => {
+    setTexts(t => {
+      const typed = t.map(x => auForwardNumber(x)).filter(Boolean) as string[]
+      return typed.join() === value.join() ? t : value.map(formatAu)
+    })
+  }, [value.join()]) // eslint-disable-line react-hooks/exhaustive-deps
+  const commit = (next: string[]) => {
+    setTexts(next)
+    const good: string[] = []
+    for (const x of next) { const n = auForwardNumber(x); if (n && n !== main && !good.includes(n)) good.push(n) }
+    onChange(good)
+  }
+  return (
+    <div className="crs-also">
+      {texts.length > 0 && <p style={{ ...label, marginBottom: 6 }}>Also ring at the same time</p>}
+      {texts.map((t, i) => {
+        const n = auForwardNumber(t)
+        const dup = !!n && (n === main || texts.slice(0, i).some(x => auForwardNumber(x) === n))
+        const bad = !!t && (!n || dup)
+        return (
+          <div key={i} className="crs-also-row">
+            <input id={`${idp}-also-${i}`} value={t} inputMode="tel" placeholder="0412 345 678" autoComplete="off" aria-label={`Phone ${i + 2}`}
+              onChange={e => commit(texts.map((x, j) => (j === i ? e.target.value : x)))} aria-invalid={bad}
+              style={{ ...field, boxShadow: bad ? '0 0 0 1.5px #f59e0b' : undefined }} />
+            <button type="button" style={iconBtn} onClick={() => commit(texts.filter((_, j) => j !== i))} aria-label={`Remove phone ${i + 2}`}><Cross /></button>
+            {bad && <span className="crs-also-err">{dup ? 'Already on the list.' : 'An Australian mobile or landline.'}</span>}
+          </div>
+        )
+      })}
+      {texts.length < MAX_FORWARD_ALSO && (
+        <button type="button" style={{ ...addBtn, marginBottom: 12 }} onClick={() => setTexts(t => [...t, ''])} disabled={!main && !texts.length}>
+          + {texts.length ? 'Add another phone' : 'Ring more phones at the same time'}
+        </button>
+      )}
+      {texts.length > 0 && <p style={hint}>They all ring together; the first to answer takes the call and the rest stop ringing. Keep “press 1” on, so one phone’s voicemail can’t take the call from the others.</p>}
+    </div>
+  )
+}
+
 // ── An outside number to forward to ──────────────────────────────────────────
 
 function ForwardFields({ value, onChange, idp, when, onWhen, hoursKnown }: {
@@ -92,8 +141,9 @@ function ForwardFields({ value, onChange, idp, when, onWhen, hoursKnown }: {
         </div>
       </div>
       <p style={{ ...hint, color: text && !parsed ? '#b45309' : 'var(--ck-muted)', marginTop: 6 }}>
-        {!text ? 'Not 13, 1300 or 1800 numbers, and not overseas.' : parsed ? `Calls go to ${formatAu(parsed)}.` : 'Enter an Australian mobile (04…) or landline with its area code (02, 03, 07, 08). Not 13, 1300, 1800 or overseas numbers.'}
+        {!text ? 'Not 13, 1300 or 1800 numbers, and not overseas.' : parsed ? `Calls go to ${formatAu(parsed)}${value.also?.length ? ` and ${value.also.length === 1 ? 'one more phone' : `${value.also.length} more phones`} at the same time` : ''}.` : 'Enter an Australian mobile (04…) or landline with its area code (02, 03, 07, 08). Not 13, 1300, 1800 or overseas numbers.'}
       </p>
+      <AlsoRing idp={idp} value={value.also || []} main={parsed} onChange={also => onChange({ ...value, also })} />
       <Check on={value.screen} onChange={v => onChange({ ...value, screen: v })}
         text="Ask the person who answers to press 1"
         sub="They hear who the call is for before it connects. Without this, the phone’s own voicemail can pick up and the call counts as answered, so it never reaches your voicemail." />
@@ -381,6 +431,8 @@ export default function CallRoutingSettings({ companyId }: { companyId: string }
         .crs-num { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: color-mix(in srgb, var(--coral) 14%, var(--card, #fff)); color: var(--coral); font-size: 12.5px; font-weight: 800; flex-shrink: 0; }
         .ck-card.crs .crs-step select { background-color: var(--card, #fff) !important; }
         .crs-check { margin-bottom: 6px; }
+        .crs-also-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; align-items: center; margin-bottom: 8px; }
+        .crs-also-err { grid-column: 1 / -1; margin-top: -4px; font-size: 12px; color: #b45309; }
         .crs-row > .crs-check { flex: 1 1 240px; }
         .crs-note { margin: 0 0 12px; }
         .crs-hear { margin-bottom: 14px; padding: 14px 16px; border-radius: 18px; background: var(--ck-soft); }

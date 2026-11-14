@@ -20,6 +20,10 @@ const twiml = (body: string) => new NextResponse(`<?xml version="1.0" encoding="
 // runs this on the OUTSIDE phone's leg once it picks up, before connecting the
 // caller, who keeps hearing ringing meanwhile.
 //   op=ask    "Call for Roxy Aquarium from 0 4 0 0 … Press 1 to take the call."
+// When several phones ring at once (lib/call-routing forwardNumbers), each
+// leg runs this on its own; the first leg to connect takes the call.
+//   op=note   no screening, several phones: notes which phone answered, and
+//             connects straight away
 //   op=answer 1 → recorded as accepted for this step, and the call connects
 //             (an empty response bridges). Anything else, or nothing (the
 //             phone's own voicemail is listening), hangs this leg up, and the
@@ -44,10 +48,18 @@ export async function POST(req: NextRequest) {
     // Signed by Colvy's account or this business's own, not another business's.
     if (!(await twilioSignedFor(req, form, db, companyId))) return new NextResponse('Forbidden', { status: 403 })
 
+    // Which phone this leg rang (when several ring at once, the one that took it).
+    const legTo = get('To') || get('Called')
     if (op === 'answer') {
       if (get('Digits') !== '1') return twiml('<Response><Hangup/></Response>')
       const fwd = call.routing_state?.routing?.forward || {}
-      await noteRouting(db, callRowId, { forward: { ...fwd, route, step, accepted: true, acceptedSid: get('CallSid') } }, call)
+      await noteRouting(db, callRowId, { forward: { ...fwd, route, step, accepted: true, acceptedSid: get('CallSid'), ...(legTo ? { answeredTo: legTo } : {}) } }, call)
+      return twiml('<Response></Response>')
+    }
+    // No screening, several phones: note which one picked up, and connect.
+    if (op === 'note') {
+      const fwd = call.routing_state?.routing?.forward || {}
+      if (legTo) await noteRouting(db, callRowId, { forward: { ...fwd, route, step, answeredTo: legTo } }, call)
       return twiml('<Response></Response>')
     }
 

@@ -107,7 +107,8 @@ export async function POST(req: NextRequest) {
       const pickedUp = dialStatus === 'completed' || dialStatus === 'answered'
       // Accepted for THIS step (each forward step starts with a fresh note).
       const accepted = !screened || (fwd?.accepted === true && fwd.step === stepIndex && fwd.route === route)
-      const to = String(fwd?.to || '')
+      // The phone that took it (several can ring at once), else the main number.
+      const to = String((fwd?.step === stepIndex && fwd?.route === route && fwd?.answeredTo) || fwd?.to || '')
       ringOutcome = `forward_${dialStatus || 'unknown'}${pickedUp && !accepted ? '_not_accepted' : ''}: to=${to || '?'} dur=${durSecs}s`
       if (pickedUp && accepted && call?.company_id === companyId) {
         const parentStatus = (get('CallStatus') || '').toLowerCase()
