@@ -5,14 +5,14 @@
 // column a business doesn't have) just leaves that part empty.
 
 import { phoneKey, ilikeExact } from '@/lib/phone'
-import { manageUrl, phoneVariants, stripeReady, amountDue, createInvite, bookingPageUrl, reservePageUrl } from '@/lib/booking'
-import { quoteUrl, quoteDepositCheckout, loadCompany } from '@/lib/jobs/server'
+import { manageUrl, phoneVariants, stripeReady, amountDue, createInvite, bookingPageUrl, reservePageUrl, companyBase } from '@/lib/booking'
+import { quoteUrl, quoteDepositCheckout, loadCompany, companyTz, todayIn } from '@/lib/jobs/server'
 import { restaurantEnabled } from '@/lib/modules'
 import { JOB_STATUS_LABEL, QUOTE_STATUS_LABEL, fmtJobNumber } from '@/lib/jobs/status'
 import { resolveJobSettings } from '@/lib/jobs/settings'
 import { preferenceState, applyPreferences } from '@/lib/email-preferences'
 import { maskEmail, maskPhone, type PortalCompany } from '@/lib/portal/auth'
-import type { PortalMe, PortalComing, PortalAgain, PortalPayment, PortalQuote, PortalJob, PortalOrder, PortalMessage } from '@/lib/portal/types'
+import type { PortalMe, PortalComing, PortalAgain, PortalPayment, PortalQuote, PortalInvoice, PortalJob, PortalOrder, PortalMessage } from '@/lib/portal/types'
 
 const safe = async <T>(fn: () => Promise<T>, fallback: T): Promise<T> => { try { return await fn() } catch { return fallback } }
 const DAY = 86_400_000
@@ -180,11 +180,11 @@ async function paymentsDue(db: any, pc: PortalCompany, convIds: string[]): Promi
 }
 
 // ── Quotes and jobs ───────────────────────────────────────────────────────
-async function quotesAndJobs(db: any, pc: PortalCompany, contactId: string): Promise<{ quotes: PortalQuote[]; jobs: PortalJob[]; depositPayments: string[] }> {
+async function quotesAndJobs(db: any, pc: PortalCompany, contactId: string): Promise<{ quotes: PortalQuote[]; invoices: PortalInvoice[]; jobs: PortalJob[]; depositPayments: string[] }> {
   const { data: jobs } = await db.from('jobs').select('id, number, title, status, scheduled_start, updated_at, created_at')
     .eq('company_id', pc.company.id).eq('contact_id', contactId).order('created_at', { ascending: false }).limit(20)
   const list = jobs || []
-  if (!list.length) return { quotes: [], jobs: [], depositPayments: [] }
+  if (!list.length) return { quotes: [], invoices: [], jobs: [], depositPayments: [] }
   const ids = list.map((j: any) => j.id)
   const { data: qs } = await db.from('job_quotes').select('id, job_id, number, revision, status, total_cents, public_token, sent_at, accepted_at, valid_until, created_at, deposit_cents, deposit_status, deposit_payment_id')
     .eq('company_id', pc.company.id).in('job_id', ids).in('status', ['sent', 'accepted']).order('created_at', { ascending: false }).limit(20)
@@ -209,9 +209,23 @@ async function quotesAndJobs(db: any, pc: PortalCompany, contactId: string): Pro
     id: j.id, title: j.title || fmtJobNumber(j.number, js.job_prefix || 'J') || 'Job', status: j.status, statusLabel: (JOB_STATUS_LABEL as any)[j.status] || j.status,
     nextVisit: j.scheduled_start && Date.parse(j.scheduled_start) > Date.now() - 6 * 3600e3 ? j.scheduled_start : null,
   }))
-  // A deposit link they opened and didn't finish is also a pending payment;
-  // it shows on its quote, not twice.
-  return { quotes, jobs: jobsOut, depositPayments: (qs || []).map((q: any) => q.deposit_payment_id).filter(Boolean) }
+  // Invoices sent for their jobs (V434; none before it), unpaid ones first.
+  const { data: ivs } = await db.from('job_invoices').select('id, job_id, number, status, title, total_cents, credit_cents, paid_cents, due_date, public_token, sent_at, pay_payment_id')
+    .eq('company_id', pc.company.id).in('job_id', ids).in('status', ['sent', 'paid']).order('created_at', { ascending: false }).limit(20)
+  const today = todayIn(companyTz(pc.company))
+  const invoices: PortalInvoice[] = (ivs || []).filter((v: any) => v.public_token).map((v: any) => {
+    const due = Math.max(0, Number(v.total_cents) - Number(v.credit_cents))
+    const owing = v.status === 'sent' ? Math.max(0, due - Number(v.paid_cents)) : 0
+    const overdue = owing > 0 && !!v.due_date && v.due_date < today
+    return {
+      id: v.id, number: `${js.invoice_prefix || 'INV'}-${v.number}`, title: String(v.title || title.get(v.job_id) || ''),
+      cents: due, owing, status: v.status, statusLabel: owing <= 0 ? 'Paid' : overdue ? 'Overdue' : 'To pay',
+      dueDate: v.due_date || null, overdue, url: `${companyBase(pc.company).base}/i/${v.public_token}`, sentAt: v.sent_at || null,
+    }
+  }).sort((a: PortalInvoice, b: PortalInvoice) => (b.owing > 0 ? 1 : 0) - (a.owing > 0 ? 1 : 0))
+  // A deposit or invoice link they opened and didn't finish is also a pending
+  // payment; it shows on its quote or invoice, not twice.
+  return { quotes, invoices, jobs: jobsOut, depositPayments: [...(qs || []).map((q: any) => q.deposit_payment_id), ...(ivs || []).map((v: any) => v.pay_payment_id)].filter(Boolean) }
 }
 
 // ── Orders and receipts ───────────────────────────────────────────────────
@@ -333,7 +347,7 @@ export async function portalData(db: any, pc: PortalCompany, contactId: string, 
     on.coming_up ? safe(() => comingUp(db, pc, contact), []) : Promise.resolve(undefined),
     on.coming_up ? safe(() => bookAgain(db, pc, contactId), []) : Promise.resolve(undefined),
     on.payments ? safe(() => paymentsDue(db, pc, convIds), []) : Promise.resolve(undefined),
-    on.quotes ? safe(() => quotesAndJobs(db, pc, contactId), { quotes: [], jobs: [], depositPayments: [] as string[] }) : Promise.resolve(undefined),
+    on.quotes ? safe(() => quotesAndJobs(db, pc, contactId), { quotes: [], invoices: [], jobs: [], depositPayments: [] as string[] }) : Promise.resolve(undefined),
     on.orders ? safe(() => orders(db, pc, contact, convIds), []) : Promise.resolve(undefined),
     on.messages ? safe(() => messages(db, pc, convs[0] || null), { items: [], canReply: true }) : Promise.resolve(undefined),
   ])
@@ -342,7 +356,7 @@ export async function portalData(db: any, pc: PortalCompany, contactId: string, 
     ...(coming ? { comingUp: coming } : {}),
     ...(again ? { bookAgain: again } : {}),
     ...(pay ? { payments: qj?.depositPayments.length ? pay.filter(p => !qj.depositPayments.includes(p.id)) : pay } : {}),
-    ...(qj ? { quotes: qj.quotes, jobs: qj.jobs } : {}),
+    ...(qj ? { quotes: qj.quotes, invoices: qj.invoices, jobs: qj.jobs } : {}),
     ...(ords ? { orders: ords } : {}),
     ...(msgs ? { messages: msgs } : {}),
   }

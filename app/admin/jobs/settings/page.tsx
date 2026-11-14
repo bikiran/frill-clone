@@ -160,6 +160,30 @@ export default function JobSettingsPage() {
           </div>
         </Panel>
 
+        <Panel title="Invoices" sub="For the balance once the work’s done. Customers pay by card from the link.">
+          <div className="js-grid">
+            <div>
+              <label className="ak-label" htmlFor="js-terms-days">Payment due (days after the invoice)</label>
+              <input id="js-terms-days" className="ak-field" value={s.payment_terms_days} onChange={e => setS({ ...s, payment_terms_days: e.target.value.replace(/\D/g, '').slice(0, 3) })} inputMode="numeric" disabled={!canManage} />
+              <p className="ak-hint">{s.payment_terms_days === '0' ? 'Due on the day it’s sent.' : `e.g. sent today, due in ${s.payment_terms_days || 7} days.`}</p>
+            </div>
+            <div>
+              <label className="ak-label" htmlFor="js-ip">Invoice numbers start with</label>
+              <input id="js-ip" className="ak-field" value={s.invoice_prefix} onChange={e => setS({ ...s, invoice_prefix: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) })} disabled={!canManage} />
+              <p className="ak-hint">e.g. {s.invoice_prefix || 'INV'}-1001</p>
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label className="ak-label" htmlFor="js-paydet">Payment details</label>
+              <textarea id="js-paydet" className="ak-field" rows={3} value={s.invoice_payment_details} onChange={e => setS({ ...s, invoice_payment_details: e.target.value })} maxLength={1000} disabled={!canManage} placeholder={'Bank transfer: BSB 000-000, account 00000000\nPlease use the invoice number as the reference.'} />
+              <p className="ak-hint">Printed on every invoice{d.paymentsReady ? ', under the Pay by card button' : '. Set up card payments (Settings → Payments) to add a Pay button'}.</p>
+            </div>
+          </div>
+          <div className="js-row" style={{ marginTop: 6 }}>
+            <div><b>Chase late invoices</b><span>Text the customer 1, 7 and 14 days after the due date until it’s paid. Each invoice can turn this off.</span></div>
+            <Toggle on={s.invoice_reminders} onChange={v => setS({ ...s, invoice_reminders: v })} label="Chase late invoices" disabled={!canManage} />
+          </div>
+        </Panel>
+
         <Panel title="Price list" sub="Your usual rates and items, to add to a quote in one click." flush
           right={canManage && <button type="button" className="ak-btn sm go" onClick={() => setItem({ name: '', kind: 'labour', unit: 'hour', price: '', taxable: true })}>{Icon.plus}Add</button>}>
           {d.priceItems.length ? (
@@ -252,6 +276,8 @@ const toForm = (st: any) => ({
   deposit_value: st.default_deposit?.type === 'fixed' ? centsToInput(st.default_deposit.value) : String(st.default_deposit?.value || ''),
   job_prefix: st.job_prefix || 'J', quote_prefix: st.quote_prefix || 'Q',
   restrict_to_assigned: st.restrict_to_assigned === true, require_signature: st.require_signature === true,
+  invoice_prefix: st.invoice_prefix || 'INV', payment_terms_days: String(st.payment_terms_days ?? 7),
+  invoice_payment_details: st.invoice_payment_details || '', invoice_reminders: st.invoice_reminders !== false,
 })
 const fromForm = (f: any) => ({
   gst_registered: f.gst_registered, tax_rate: Number(f.tax_rate) || 0, prices_include_tax: f.prices_include_tax,
@@ -259,6 +285,8 @@ const fromForm = (f: any) => ({
   default_deposit: { type: f.deposit_type, value: f.deposit_type === 'fixed' ? inputToCents(f.deposit_value) : Number(f.deposit_value) || 0 },
   job_prefix: f.job_prefix, quote_prefix: f.quote_prefix,
   restrict_to_assigned: !!f.restrict_to_assigned, require_signature: !!f.require_signature,
+  invoice_prefix: f.invoice_prefix, payment_terms_days: f.payment_terms_days === '' ? 7 : Number(f.payment_terms_days),
+  invoice_payment_details: f.invoice_payment_details, invoice_reminders: !!f.invoice_reminders,
 })
 
 const PAGE_CSS = `

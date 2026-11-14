@@ -7,8 +7,8 @@ import { AdminPage, Panel } from '@/components/ui/AdminKit'
 import DateTimeField from '@/components/ui/DateTimeField'
 import { confirmDialog } from '@/components/ConfirmDialog'
 import {
-  api, apiRaw, useJobsCompany, StatusTag, QuoteTag, fmtWhen, fmtAgo, fmtDate, isoToLocal, localToIso, useToast, Toast, SetupNote, Icon, JB_CSS,
-  cacheKeys, readJobsCache, writeJobsCache, prefetchQuote,
+  api, apiRaw, useJobsCompany, StatusTag, QuoteTag, InvoiceTag, fmtWhen, fmtAgo, fmtDate, isoToLocal, localToIso, useToast, Toast, SetupNote, Icon, JB_CSS,
+  cacheKeys, readJobsCache, writeJobsCache, prefetchQuote, prefetchInvoice,
 } from '@/components/jobs/shared'
 import AddressAutocomplete from '@/components/AddressAutocomplete'
 import Link from 'next/link'
@@ -18,7 +18,7 @@ import { fmtMoney } from '@/lib/jobs/quote-math'
 
 // One job: its stage, details, who it's for and where it came from, who's on
 // it (with clash checks), the work timer, its checklist and photos, the
-// customer's sign-off, its quotes, and everything that's happened.
+// customer's sign-off, its quotes and invoices, and everything that's happened.
 
 export default function JobPage() {
   const { id } = useParams() as { id: string }
@@ -36,6 +36,7 @@ export default function JobPage() {
   const [note, setNote] = useState('')
   const [statusOpen, setStatusOpen] = useState(false)
   const [quoteMenu, setQuoteMenu] = useState(false)
+  const [invoiceMenu, setInvoiceMenu] = useState(false)
   const [templates, setTemplates] = useState<any[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [me, setMe] = useState('')
@@ -140,6 +141,14 @@ export default function JobPage() {
     if (templates === null) {
       try { const r = await api(`/api/jobs/settings?companyId=${companyId}`); setTemplates(r.templates || []) } catch { setTemplates([]) }
     }
+  }
+  const newInvoice = async (blank?: boolean) => {
+    setInvoiceMenu(false); setBusy(true)
+    try {
+      const r = await api('/api/jobs/invoices', { method: 'POST', json: { companyId, jobId: id, blank: !!blank } })
+      router.push(`/admin/jobs/invoices/${r.invoice.id}`)
+      prefetchInvoice(companyId, r.invoice.id)
+    } catch (e: any) { setToast(e.message); setBusy(false) }
   }
   const copyLink = (q: any) => {
     const url = `${d.quoteBase}/q/${q.public_token}`
@@ -270,6 +279,59 @@ export default function JobPage() {
             )}
           </Panel>
           )}
+
+          {d.seesMoney !== false && d.invoicesReady !== false && (() => {
+            const invs: any[] = d.invoices || []
+            const ipf = d.settings?.invoice_prefix || 'INV'
+            // The accepted quote can still be invoiced (nothing made from it yet).
+            const fromQuote = !!job.accepted_quote_id && !invs.some((v: any) => v.status !== 'void' && v.quote_id === job.accepted_quote_id)
+            const canBill = !partial && job.status !== 'cancelled'
+            const owing = (v: any) => Math.max(0, Number(v.total_cents) - Number(v.credit_cents) - Number(v.paid_cents))
+            return (
+              <Panel title="Invoices" sub="Bill the balance when the work’s done. They pay online, and late ones are chased for you."
+                right={canBill && (fromQuote ? (
+                  <div style={{ position: 'relative' }}>
+                    <button type="button" className="ak-btn sm go" onClick={() => setInvoiceMenu(o => !o)} disabled={busy} aria-haspopup="menu" aria-expanded={invoiceMenu}>{Icon.plus}New invoice</button>
+                    {invoiceMenu && (
+                      <div className="jb-menu" role="menu" style={{ right: 0, top: 38 }}>
+                        <button type="button" role="menuitem" onClick={() => newInvoice()}>From the accepted quote</button>
+                        <button type="button" role="menuitem" onClick={() => newInvoice(true)}>Blank invoice</button>
+                      </div>
+                    )}
+                  </div>
+                ) : <button type="button" className="ak-btn sm go" onClick={() => newInvoice(true)} disabled={busy}>{Icon.plus}New invoice</button>)}>
+                {partial ? <div className="jbp-skel-rows"><span /></div> : !invs.length ? (
+                  job.status === 'completed' && canBill
+                    ? <div className="jbp-bill"><div><b>The job’s done. Time to bill it.</b><span>{fromQuote ? 'The invoice starts from the accepted quote, with any deposit already taken off.' : 'Add what you did, and send it by text or email.'}</span></div><button type="button" className="ak-btn go" onClick={() => newInvoice(!fromQuote)} disabled={busy}>Create invoice</button></div>
+                    : <div className="jbp-empty">No invoices yet.</div>
+                ) : (
+                  <div className="jbp-quotes">
+                    {invs.map((v: any) => {
+                      const overdue = v.status === 'sent' && v.due_date && d.today && v.due_date < d.today && owing(v) > 0
+                      return (
+                        <div key={v.id} className="jbp-q">
+                          <Link href={`/admin/jobs/invoices/${v.id}`} className="jbp-q-main" onPointerEnter={() => prefetchInvoice(companyId, v.id)} onPointerDown={() => prefetchInvoice(companyId, v.id)} onFocus={() => prefetchInvoice(companyId, v.id)}>
+                            <div className="jbp-q-top"><b>{ipf}-{v.number}</b><InvoiceTag status={v.status} overdue={!!overdue} /></div>
+                            <span className="jbp-q-t">{v.title || 'Invoice'}</span>
+                            <span className="jbp-q-s">
+                              {v.status === 'draft' && `Draft, edited ${fmtAgo(v.updated_at)}`}
+                              {v.status === 'sent' && `${overdue ? 'Was due' : 'Due'} ${fmtDate(v.due_date)} · sent ${fmtAgo(v.sent_at)}${v.viewed_at ? ' · opened' : ''}${Number(v.paid_cents) > 0 ? ` · ${fmtMoney(v.paid_cents)} paid` : ''}${v.reminder_count ? ` · ${v.reminder_count} reminder${v.reminder_count === 1 ? '' : 's'} sent` : ''}`}
+                              {v.status === 'paid' && `Paid ${fmtAgo(v.paid_at)}`}
+                              {v.status === 'void' && 'Void'}
+                            </span>
+                          </Link>
+                          <div className="jbp-q-side">
+                            <b className="jb-num">{fmtMoney(v.status === 'sent' ? owing(v) : Math.max(0, Number(v.total_cents) - Number(v.credit_cents)))}</b>
+                            {v.public_token && v.status !== 'void' && v.status !== 'draft' && <button type="button" className="ak-icon-btn" onClick={() => { const url = `${d.quoteBase}/i/${v.public_token}`; navigator.clipboard?.writeText(url).then(() => setToast('Invoice link copied')).catch(() => setToast(url)) }} title="Copy the customer’s link" aria-label="Copy invoice link">{Icon.link}</button>}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </Panel>
+            )
+          })()}
 
           <Panel title="Activity">
             <div className="jbp-note">
@@ -418,6 +480,11 @@ const PAGE_CSS = `
 .jbp-tl li.t-quote_accepted .jbp-dot,.jbp-tl li.t-deposit_paid .jbp-dot{background:#22c55e}
 .jbp-tl li.t-quote_declined .jbp-dot{background:#ef4444}
 .jbp-tl li.t-quote_sent .jbp-dot,.jbp-tl li.t-quote_viewed .jbp-dot{background:#f59e0b}
+.jbp-tl li.t-invoice_paid .jbp-dot,.jbp-tl li.t-invoice_payment .jbp-dot{background:#22c55e}
+.jbp-tl li.t-invoice_sent .jbp-dot,.jbp-tl li.t-invoice_viewed .jbp-dot,.jbp-tl li.t-invoice_reminder .jbp-dot{background:#f59e0b}
+.jbp-bill{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:16px 18px;border-radius:16px;background:color-mix(in srgb,var(--coral) 9%,var(--f))}
+.jbp-bill b{display:block;font-size:15px}
+.jbp-bill span{display:block;margin-top:3px;font-size:13px;color:var(--mut)}
 .jbp-tl li.t-note .jbp-dot{background:var(--coral)}
 .jbp-tl-s{display:block;font-size:14px;line-height:1.45;color:var(--ink)}
 .jbp-tl-m{display:block;margin-top:2px;font-size:12px;color:var(--soft)}

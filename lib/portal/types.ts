@@ -22,6 +22,8 @@ export type PortalQuote = {
   /** The deposit an accepted quote asks for. `due`: it can be paid by card from the account page now. */
   deposit?: { cents: number; paid: boolean; due: boolean } | null
 }
+/** An invoice sent for a job. `owing`: still to pay (cents); `overdue`: past its due date. */
+export type PortalInvoice = { id: string; number: string; title: string; cents: number; owing: number; status: string; statusLabel: string; dueDate: string | null; overdue: boolean; url: string; sentAt: string | null }
 export type PortalJob = { id: string; title: string; status: string; statusLabel: string; nextVisit: string | null }
 export type PortalOrder = {
   id: string; kind: 'in_store' | 'online' | 'payment'; platform: string | null; number: string; at: string; cents: number; currency: string
@@ -37,6 +39,7 @@ export type PortalMe = {
   bookAgain?: PortalAgain[]
   payments?: PortalPayment[]
   quotes?: PortalQuote[]
+  invoices?: PortalInvoice[]
   jobs?: PortalJob[]
   orders?: PortalOrder[]
   messages?: { items: PortalMessage[]; canReply: boolean } | null

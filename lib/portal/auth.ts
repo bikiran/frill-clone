@@ -155,8 +155,8 @@ export async function endSession(db: any, sessionId: string) {
  * account of the contact it belongs to, for a day. Nothing for a record of
  * another business, or one with no contact.
  */
-export async function contactFromLink(db: any, companyId: string, link: { booking?: string; quote?: string }): Promise<string | null> {
-  const b = String(link.booking || ''), q = String(link.quote || '')
+export async function contactFromLink(db: any, companyId: string, link: { booking?: string; quote?: string; invoice?: string }): Promise<string | null> {
+  const b = String(link.booking || ''), q = String(link.quote || ''), inv = String(link.invoice || '')
   if (b && b.length >= 20 && b.length <= 80) {
     const { data } = await db.from('bookings').select('contact_id, company_id').eq('manage_token', b).maybeSingle()
     if (data && data.company_id === companyId && data.contact_id) return data.contact_id
@@ -165,6 +165,13 @@ export async function contactFromLink(db: any, companyId: string, link: { bookin
     const { data: qt } = await db.from('job_quotes').select('job_id, company_id').eq('public_token', q).maybeSingle()
     if (qt && qt.company_id === companyId && qt.job_id) {
       const { data: job } = await db.from('jobs').select('contact_id, company_id').eq('id', qt.job_id).maybeSingle()
+      if (job && job.company_id === companyId && job.contact_id) return job.contact_id
+    }
+  }
+  if (inv && inv.length >= 16 && inv.length <= 80) {
+    const { data: it } = await db.from('job_invoices').select('job_id, company_id, status').eq('public_token', inv).maybeSingle()
+    if (it && it.company_id === companyId && it.job_id && it.status !== 'draft') {
+      const { data: job } = await db.from('jobs').select('contact_id, company_id').eq('id', it.job_id).maybeSingle()
       if (job && job.company_id === companyId && job.contact_id) return job.contact_id
     }
   }
@@ -190,13 +197,13 @@ export function maskPhone(p?: string | null): string {
  * <business>.colvy.com/account, or colvy.com/account/<business> off the
  * subdomains. Null when it's off (or before V432).
  */
-export async function accountLink(db: any, company: any, link: { b?: string | null; q?: string | null }): Promise<string | null> {
+export async function accountLink(db: any, company: any, link: { b?: string | null; q?: string | null; i?: string | null }): Promise<string | null> {
   try {
     if (!company?.id || !company.slug) return null
     const { data, error } = await db.from('companies').select('portal_settings').eq('id', company.id).maybeSingle()
     if (error || !resolvePortalSettings(data?.portal_settings).enabled) return null
     const { companyBase } = await import('@/lib/booking')
-    const q = link.b ? `?b=${encodeURIComponent(link.b)}` : link.q ? `?q=${encodeURIComponent(link.q)}` : ''
+    const q = link.b ? `?b=${encodeURIComponent(link.b)}` : link.q ? `?q=${encodeURIComponent(link.q)}` : link.i ? `?i=${encodeURIComponent(link.i)}` : ''
     const { base, onSubdomain } = companyBase(company)
     return `${base}/account${onSubdomain ? '' : `/${encodeURIComponent(company.slug)}`}${q}`
   } catch { return null }

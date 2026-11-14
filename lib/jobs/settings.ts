@@ -17,6 +17,13 @@ export type JobSettings = {
   restrict_to_assigned: boolean
   /** Completing a job asks for the customer's signature first. */
   require_signature: boolean
+  invoice_prefix: string
+  /** Days from the invoice date to its due date. */
+  payment_terms_days: number
+  /** How else to pay (bank transfer details), printed on every invoice. */
+  invoice_payment_details: string
+  /** Text overdue invoices automatically (1, 7 and 14 days after the due date). */
+  invoice_reminders: boolean
 }
 
 export const DEFAULT_JOB_SETTINGS: JobSettings = {
@@ -30,6 +37,10 @@ export const DEFAULT_JOB_SETTINGS: JobSettings = {
   quote_prefix: 'Q',
   restrict_to_assigned: false,
   require_signature: false,
+  invoice_prefix: 'INV',
+  payment_terms_days: 7,
+  invoice_payment_details: '',
+  invoice_reminders: true,
 }
 
 const prefix = (v: any, d: string) => {
@@ -41,6 +52,7 @@ export function resolveJobSettings(raw: any): JobSettings {
   const r = raw && typeof raw === 'object' ? raw : {}
   const rate = Number(r.tax_rate)
   const days = Math.round(Number(r.quote_valid_days))
+  const terms = Math.round(Number(r.payment_terms_days))
   return {
     gst_registered: r.gst_registered !== false,
     tax_rate: Number.isFinite(rate) ? Math.min(100, Math.max(0, Math.round(rate * 100) / 100)) : DEFAULT_JOB_SETTINGS.tax_rate,
@@ -52,6 +64,10 @@ export function resolveJobSettings(raw: any): JobSettings {
     quote_prefix: prefix(r.quote_prefix, 'Q'),
     restrict_to_assigned: r.restrict_to_assigned === true,
     require_signature: r.require_signature === true,
+    invoice_prefix: prefix(r.invoice_prefix, 'INV'),
+    payment_terms_days: Number.isFinite(terms) ? Math.min(120, Math.max(0, terms)) : DEFAULT_JOB_SETTINGS.payment_terms_days,
+    invoice_payment_details: typeof r.invoice_payment_details === 'string' ? r.invoice_payment_details.slice(0, 1000) : '',
+    invoice_reminders: r.invoice_reminders !== false,
   }
 }
 

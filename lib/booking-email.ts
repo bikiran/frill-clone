@@ -568,6 +568,49 @@ export function quoteEmailHtml(i: QuoteEmailInput): string {
   })
 }
 
+// ── An invoice, or a reminder about one (Jobs & quotes) ─────────────────────
+
+export type InvoiceEmailInput = {
+  business: string; logoUrl?: string | null; accent?: string | null; hideBadge?: boolean
+  /** The message the team wrote (plain text; the invoice link is taken out of it). */
+  message: string
+  /** "INV-1007" */
+  label: string
+  title?: string | null
+  /** What's left to pay, formatted. */
+  due: string
+  /** "21 November 2026" */
+  dueDate?: string | null
+  url: string
+  /** 'new' (first send), 'resent', 'reminder' (not yet due or due today), 'overdue', 'paid' (nothing owing). */
+  kind: 'new' | 'resent' | 'reminder' | 'overdue' | 'paid'
+  accountUrl?: string | null
+}
+
+export function invoiceEmailHtml(i: InvoiceEmailInput): string {
+  const k = kit(i.accent)
+  const paid = i.kind === 'paid'
+  const pill: Pill = paid ? { tone: 'good', text: 'Paid', mark: '✓' }
+    : i.kind === 'overdue' ? { tone: 'warn', text: 'Overdue', mark: '!' }
+    : i.kind === 'reminder' ? { tone: 'accent', text: 'Reminder', mark: '●' }
+    : { tone: 'accent', text: i.kind === 'resent' ? 'Invoice' : 'New invoice', mark: '●' }
+  const blocks = [
+    summaryBlock(k, {
+      label: `Invoice ${i.label}`, big: i.due, bigNote: paid ? 'Nothing to pay' : 'Amount due',
+      rows: [...(i.title ? [['For', i.title] as [string, string]] : []), ...(i.dueDate && !paid ? [['Due', i.dueDate] as [string, string]] : [])],
+    }),
+    buttonBlock(k, i.url, paid ? `View invoice ${i.label}` : `View and pay invoice ${i.label}`),
+    accountBlock(k, i.accountUrl, `Your quotes, jobs, invoices and payments with ${i.business} in one place.`),
+    finePrint(k, `Or open this link: ${i.url}`),
+  ]
+  return shell(k, {
+    business: i.business, logoUrl: i.logoUrl, hideBadge: i.hideBadge, pill,
+    headline: i.kind === 'overdue' ? `Invoice ${i.label} is overdue` : i.kind === 'reminder' ? `A reminder about invoice ${i.label}` : `Your invoice ${i.label}`,
+    intro: paragraphs(i.message) || `Here’s your invoice from ${esc(i.business)}.`,
+    blocks, preheader: `${i.label}${i.title ? ` · ${i.title}` : ''} · ${i.due}${i.dueDate && !paid ? ` due ${i.dueDate}` : ''}`,
+  })
+}
+
 // ── A sign-in code for the customer's account (app/api/portal) ──────────────
 
 export type AccountCodeEmailInput = { business: string; logoUrl?: string | null; accent?: string | null; hideBadge?: boolean; code: string; mins: number }
