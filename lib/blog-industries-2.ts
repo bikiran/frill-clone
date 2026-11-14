@@ -355,7 +355,7 @@ A few weeks after a tattoo, a short message asking for a healed photo brings cli
 3. Build your consent form, and add the link to your confirmation note.
 4. Turn on reminders and the waitlist.
 
-Read our [guide to no-shows for salons and barbers](/blog/salon-barber-no-shows) for more. [Start free](/signup) today.`,
+Read our [guide to no-shows for salons and barbers](/blog/salon-barber-no-shows) for more. Using a booking app now? See [Colvy vs Fresha](/compare/fresha) and [Colvy vs Timely](/compare/timely). [Start free](/signup) today.`,
   },
   {
     slug: 'accountants-bookkeepers-lawyers',
@@ -511,6 +511,8 @@ Set your regular service up on your [booking page](/product/booking) to happen *
 
 Each visit gets a reminder, and customers can reply **C** to confirm or **R** to reschedule. If rain pushes a visit back, move the booking and Colvy texts the customer the new time.
 
+If you’d rather run regular work as jobs, with a checklist and a crew assigned, set a job to repeat every week, 2 weeks, 4 weeks, month or 3 months. Each visit becomes its own job, with the same address, team, checklist and price, on the board a few weeks ahead.
+
 ![A freshly mown lawn](/blog/home-services-garden-pool-pest/lawn.jpg "Book the fortnightly mow once, and the reminders do the rest.")
 
 ## 2. Quotes for one-off work
@@ -529,6 +531,8 @@ you: Hi Sue, all done at 8 Wattle Ave: hedges trimmed and green waste taken away
 them: Looks amazing, paid. Thanks!
 \`\`\`
 
+For bigger jobs, send an invoice for the balance from the job instead, by text or email, with the deposit already taken off. The customer pays by card online, and if it’s late, Colvy texts a reminder 1, 7 and 14 days after the due date.
+
 ## 4. Calls when you’re outside
 
 The phone rings when you’re on the mower. [Missed-call text back](/phones/missed-call-text-back) texts callers you couldn’t answer, with your booking link. Or [forward calls to your mobile](/phones/call-forwarding) only after hours.
@@ -546,6 +550,6 @@ Tag customers by service (**pest yearly**, **pool**, **hedges**) and send one [t
 3. Add your price list and quote terms.
 4. Turn on missed-call text back.
 
-Read our [cleaning business guide](/blog/cleaning-business-guide) and [trades guide](/blog/trades-quotes-jobs-guide) for more on quotes and jobs. [Start free](/signup) today.`,
+Read our [cleaning business guide](/blog/cleaning-business-guide) and [trades guide](/blog/trades-quotes-jobs-guide) for more on quotes and jobs, or see how Colvy compares with [ServiceM8](/compare/servicem8) and [Tradify](/compare/tradify). [Start free](/signup) today.`,
   },
 ]

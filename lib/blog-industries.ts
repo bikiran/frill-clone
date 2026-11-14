@@ -156,7 +156,7 @@ For the poster by the door, the flyer at the café next door or the link in your
 5. Teach your AI agents the timetable, prices and FAQs.
 6. Start tagging: trial, member, lapsed.
 
-Colvy’s Inbox plan is one price for your whole team, A$179 a month or A$149 a month billed yearly, GST included, with 3,000 texts a month. [Start free](/signup) and set up your timetable this afternoon.`,
+Colvy’s Inbox plan is one price for your whole team, A$179 a month or A$149 a month billed yearly, GST included, with 3,000 texts a month. Using Mindbody now? See [Colvy vs Mindbody](/compare/mindbody). [Start free](/signup) and set up your timetable this afternoon.`,
   },
   {
     slug: 'local-business-marketing',
@@ -415,6 +415,8 @@ Regular clients are the backbone of a cleaning business. Set up your regular cle
 
 Then book the rhythm once: open the confirmed booking and repeat it every 1, 2, 3 or 4 weeks (or 6, 8 or 12), for up to 26 visits. Colvy shows which dates are free first, skips any that clash, and sends the client one message with every date. Before each visit, they get a reminder and can reply **C** to confirm or **R** to reschedule.
 
+Would you rather run regular cleans as jobs, with a checklist and a team assigned? Set the job to repeat every week, 2 weeks, 4 weeks, month or 3 months. Each visit becomes its own job, with the same address, cleaners, checklist and price, on the board a few weeks ahead.
+
 ## 4. Jobs your team can work from
 
 For one-off and bigger jobs, the job in Colvy is the single place everyone works from:
@@ -424,6 +426,7 @@ For one-off and bigger jobs, the job in Colvy is the single place everyone works
 - **Photos** of the job, before and after, attached to the job itself.
 - **Time on the job**, with a work timer.
 - **The customer’s signature** at the end, on the cleaner’s phone.
+- **The invoice** for the balance, sent by text or email with the deposit already taken off. They pay by card online, and if it’s late, Colvy texts a reminder 1, 7 and 14 days after the due date.
 
 Field staff see only the jobs they’re on, not the whole business.
 
@@ -448,7 +451,7 @@ When a job is done, ask for a review while the customer is happy, and reply to e
 4. Build your end-of-lease checklist and quote request form.
 5. Invite your cleaners. They see only their own jobs.
 
-Our guide to [quotes and jobs for trades](/blog/trades-quotes-jobs-guide) goes deeper on quoting. [Start free](/signup) and send your first quote today.`,
+Our guide to [quotes and jobs for trades](/blog/trades-quotes-jobs-guide) goes deeper on quoting. Using a job app now? See [Colvy vs ServiceM8](/compare/servicem8) and [Colvy vs Tradify](/compare/tradify). [Start free](/signup) and send your first quote today.`,
   },
   {
     slug: 'mechanics-car-detailing',

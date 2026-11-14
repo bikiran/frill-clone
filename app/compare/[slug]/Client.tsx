@@ -29,62 +29,86 @@ const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c'
 // not confirmed either way. ✗ is only for things we're confident they don't
 // offer. Plans change, so the table says when it was checked.
 type Val = boolean | string
-type Slug = 'podium' | 'birdeye' | 'coax' | 'gorgias' | 'zendesk' | 'freshdesk' | 'intercom' | 'gladly' | 'manychat' | 'highlevel' | 'salesforce' | 'aircall' | 'dialpad' | 'ringcentral' | 'krispcall'
-type Row = { label: string; colvy?: Val; v: Partial<Record<Slug, Val>> }
+type Slug = 'podium' | 'birdeye' | 'coax' | 'gorgias' | 'zendesk' | 'freshdesk' | 'intercom' | 'gladly' | 'manychat' | 'highlevel' | 'salesforce' | 'aircall' | 'dialpad' | 'ringcentral' | 'krispcall' | 'servicem8' | 'tradify' | 'fresha' | 'timely' | 'mindbody'
+// `only`: the row shows on those pages alone. `hide`: it doesn't show on those.
+type Row = { label: string; colvy?: Val; v: Partial<Record<Slug, Val>>; only?: readonly Slug[]; hide?: readonly Slug[] }
 // The nine competitors checked in the first round. A shorthand for a value
 // they all share; competitors added later list only what was checked for them.
 const FIRST_NINE = ['podium', 'birdeye', 'coax', 'gorgias', 'zendesk', 'freshdesk', 'intercom', 'gladly', 'manychat'] as const
 const ALL_T = (val: Val): Partial<Record<Slug, Val>> => Object.fromEntries(FIRST_NINE.map(k => [k, val]))
 const HELPDESKS_T: Partial<Record<Slug, Val>> = { gorgias: true, zendesk: true, freshdesk: true, intercom: true, gladly: true }
+// Job apps for trades and cleaners, and booking apps for salons, clinics and
+// gyms (checked 14 November 2026). Their pages skip the online-store and
+// feedback-board rows, which don't apply, and add rows of their own.
+const FIELD = ['servicem8', 'tradify'] as const
+const SALON = ['fresha', 'timely', 'mindbody'] as const
+const NEW_FIVE = [...FIELD, ...SALON] as const
 
-const ROWS: { group: string; rows: Row[] }[] = [
+const ROWS: { group: string; hide?: readonly Slug[]; rows: Row[] }[] = [
+  { group: 'Jobs & invoices', rows: [
+    { label: 'Quotes accepted online, with a deposit', only: FIELD, v: { servicem8: true, tradify: 'Pro plan' } },
+    { label: 'Jobs: schedule, checklists, photos & signatures', only: FIELD, v: { servicem8: true, tradify: 'Pro and Plus plans' } },
+    { label: 'Repeating jobs', only: FIELD, v: { servicem8: true, tradify: 'Pro plan' } },
+    { label: 'Invoices paid online by card', only: FIELD, v: { servicem8: true, tradify: true } },
+    { label: 'Texts chasing overdue invoices', only: FIELD, v: {} },
+    { label: 'No monthly cap on jobs', only: FIELD, v: { servicem8: '30 to 1,500+, by plan' } },
+    { label: 'Xero, MYOB or QuickBooks sync', colvy: false, only: FIELD, v: { servicem8: true, tradify: true } },
+  ] },
+  { group: 'Classes, packs & memberships', rows: [
+    { label: 'Repeat appointments in one go', only: SALON, v: { fresha: true, mindbody: true } },
+    { label: 'Class packs (e.g. 10 classes)', only: SALON, v: { fresha: 'Packages', timely: 'Packages (Boost+)', mindbody: true } },
+    { label: 'Memberships billed automatically', only: SALON, v: { fresha: true, mindbody: true } },
+    { label: 'Customer accounts', only: SALON, v: { fresha: 'In the Fresha app', timely: true, mindbody: 'Sign-up; branded app add-on' } },
+    { label: 'No fee on new clients', only: SALON, v: { fresha: 'Fee on marketplace clients', timely: true, mindbody: 'Fee on Mindbody app clients' } },
+    { label: 'Xero or QuickBooks sync', colvy: false, only: SALON, v: { fresha: true, timely: 'Thrive plan' } },
+  ] },
   { group: 'Channels', rows: [
-    { label: 'SMS on Australian 🇦🇺 numbers', v: { podium: true, birdeye: true, coax: true, gorgias: 'Add-on', zendesk: 'Add-on', freshdesk: 'Add-on', intercom: 'Usage-based', gladly: true, manychat: 'Via your Twilio', highlevel: 'Usage-based', salesforce: 'Add-on, higher plans', aircall: 'Mobile numbers; rates on request', dialpad: '250 a month, pooled', ringcentral: 'Since July 2026; bundles extra', krispcall: 'Billed per message' } },
-    { label: 'WhatsApp', colvy: COMING_SOON.whatsapp ? 'Coming soon' : true, v: { birdeye: true, coax: true, intercom: 'Usage-based', gladly: true, manychat: true, highlevel: 'Add-on', salesforce: 'Add-on, higher plans', aircall: 'Add-on' } },
+    { label: 'SMS on Australian 🇦🇺 numbers', v: { podium: true, birdeye: true, coax: true, gorgias: 'Add-on', zendesk: 'Add-on', freshdesk: 'Add-on', intercom: 'Usage-based', gladly: true, manychat: 'Via your Twilio', highlevel: 'Usage-based', salesforce: 'Add-on, higher plans', aircall: 'Mobile numbers; rates on request', dialpad: '250 a month, pooled', ringcentral: 'Since July 2026; bundles extra', krispcall: 'Billed per message', servicem8: 'Customers reply by link', tradify: '20c a text', fresha: 'Automated texts', timely: 'Two-way on Thrive', mindbody: 'Via AI Concierge' } },
+    { label: 'WhatsApp', colvy: COMING_SOON.whatsapp ? 'Coming soon' : true, v: { birdeye: true, coax: true, intercom: 'Usage-based', gladly: true, manychat: true, highlevel: 'Add-on', salesforce: 'Add-on, higher plans', aircall: 'Add-on', fresha: 'Automated messages' } },
     { label: 'Instagram DMs', v: { ...ALL_T(true), highlevel: true, salesforce: 'Custom build' } },
-    { label: 'Facebook Messenger', v: { ...ALL_T(true), highlevel: true, salesforce: 'Add-on, higher plans' } },
-    { label: 'Email inbox (Gmail or any mailbox)', v: { podium: true, birdeye: 'Marketing', coax: true, gorgias: true, zendesk: true, freshdesk: true, intercom: true, gladly: true, manychat: 'Basic', highlevel: true, salesforce: true, dialpad: 'Separate Support product' } },
-    { label: 'Phone calls & voicemail', v: { podium: true, birdeye: 'Partial', coax: 'Add-on', gorgias: 'Add-on', zendesk: true, freshdesk: 'Add-on', intercom: 'Usage-based', gladly: true, manychat: false, highlevel: 'Usage-based', salesforce: 'Add-on, higher plans', aircall: true, dialpad: true, ringcentral: true, krispcall: true } },
-    { label: 'Google reviews', v: { podium: true, birdeye: true, coax: true, gorgias: false, zendesk: false, freshdesk: false, intercom: false, gladly: false, manychat: false, highlevel: true } },
-    { label: 'Live chat widget', v: { ...ALL_T(true), highlevel: true, salesforce: 'Pro Suite', dialpad: 'Separate Support product' } },
+    { label: 'Facebook Messenger', v: { ...ALL_T(true), highlevel: true, salesforce: 'Add-on, higher plans', mindbody: 'Messenger[ai]' } },
+    { label: 'Email inbox (Gmail or any mailbox)', v: { podium: true, birdeye: 'Marketing', coax: true, gorgias: true, zendesk: true, freshdesk: true, intercom: true, gladly: true, manychat: 'Basic', highlevel: true, salesforce: true, dialpad: 'Separate Support product', servicem8: 'Job emails; inbox from Growing', tradify: 'Enquiry inbox (Pro)' } },
+    { label: 'Phone calls & voicemail', v: { podium: true, birdeye: 'Partial', coax: 'Add-on', gorgias: 'Add-on', zendesk: true, freshdesk: 'Add-on', intercom: 'Usage-based', gladly: true, manychat: false, highlevel: 'Usage-based', salesforce: 'Add-on, higher plans', aircall: true, dialpad: true, ringcentral: true, krispcall: true, servicem8: 'Phone add-on', fresha: 'AI Concierge add-on' } },
+    { label: 'Google reviews', v: { podium: true, birdeye: true, coax: true, gorgias: false, zendesk: false, freshdesk: false, intercom: false, gladly: false, manychat: false, highlevel: true, servicem8: 'Review requests', fresha: true, timely: 'Requests (Boost+)' } },
+    { label: 'Live chat widget', v: { ...ALL_T(true), highlevel: true, salesforce: 'Pro Suite', dialpad: 'Separate Support product', servicem8: 'Third-party add-on', mindbody: 'AI Concierge web chat' } },
   ] },
   { group: 'AI', rows: [
-    { label: 'AI agents that answer on their own', colvy: 'Five, included', v: { podium: 'Paid add-on', birdeye: 'Quote-based', coax: 'Voice: all plans; chat: Enterprise', gorgias: 'Per interaction', zendesk: 'Allowance, then per resolution', freshdesk: 'Per session', intercom: 'Per outcome (Fin)', gladly: 'Per resolution or quote', manychat: 'Manychat AI', highlevel: 'Add-on or per use', salesforce: 'Higher plans, usage-based', aircall: 'Voice agents from A$150/mo', ringcentral: 'AI Receptionist, A$62/mo' } },
+    { label: 'AI agents that answer on their own', colvy: 'Five, included', v: { podium: 'Paid add-on', birdeye: 'Quote-based', coax: 'Voice: all plans; chat: Enterprise', gorgias: 'Per interaction', zendesk: 'Allowance, then per resolution', freshdesk: 'Per session', intercom: 'Per outcome (Fin)', gladly: 'Per resolution or quote', manychat: 'Manychat AI', highlevel: 'Add-on or per use', salesforce: 'Higher plans, usage-based', aircall: 'Voice agents from A$150/mo', ringcentral: 'AI Receptionist, A$62/mo', servicem8: 'AI Phone Agent (Phone add-on)', fresha: 'AI Concierge add-on', mindbody: 'AI Concierge: Growth, or Core add-on' } },
     { label: 'Name and style each AI agent', v: { podium: 'Name', gorgias: 'Name', zendesk: 'Name', freshdesk: true, intercom: true, gladly: 'Name', highlevel: true, salesforce: 'Higher plans' } },
-    { label: 'Call summaries, to-dos & transcripts', v: { podium: true, coax: 'Add-on', gladly: 'Add-on', manychat: false, highlevel: 'Usage-based (Labs)', salesforce: 'Video meetings; calls on higher plans', aircall: 'Professional, or add-on', dialpad: true, ringcentral: 'Depends on plan', krispcall: 'Paid AI add-on' } },
-    { label: 'AI campaign builder (audience, copy, timing)', v: { highlevel: 'Email (beta)', salesforce: 'Marketing Cloud add-on' } },
+    { label: 'Call summaries, to-dos & transcripts', v: { podium: true, coax: 'Add-on', gladly: 'Add-on', manychat: false, highlevel: 'Usage-based (Labs)', salesforce: 'Video meetings; calls on higher plans', aircall: 'Professional, or add-on', dialpad: true, ringcentral: 'Depends on plan', krispcall: 'Paid AI add-on', servicem8: 'Recording & transcripts (Phone add-on)', fresha: 'AI Concierge calls' } },
+    { label: 'AI campaign builder (audience, copy, timing)', v: { highlevel: 'Email (beta)', salesforce: 'Marketing Cloud add-on', timely: 'AI campaign copy' } },
     { label: 'AI voice typing', v: {} },
   ] },
   { group: 'Sell & deliver', rows: [
-    { label: 'WooCommerce orders beside each chat', colvy: 'Woo + Shopify', v: { podium: 'Via Zapier', coax: 'Coming soon', gorgias: true, zendesk: 'Via apps', freshdesk: 'Via apps', intercom: 'Via third-party', manychat: 'Via Zapier' } },
-    { label: '“Where’s my order?” automation', v: { coax: true, gorgias: true, highlevel: 'Shipping alerts', salesforce: 'Higher plans, usage-based' } },
-    { label: 'POS / ERP integrations', v: { podium: 'Limited', birdeye: 'Limited', coax: true, gorgias: 'Via integrations', zendesk: 'Limited', freshdesk: 'Limited', intercom: 'Limited', gladly: 'Limited', manychat: 'Limited', highlevel: 'Square, QuickBooks', salesforce: 'Via AppExchange (Pro)' } },
+    { label: 'WooCommerce orders beside each chat', hide: NEW_FIVE, colvy: 'Woo + Shopify', v: { podium: 'Via Zapier', coax: 'Coming soon', gorgias: true, zendesk: 'Via apps', freshdesk: 'Via apps', intercom: 'Via third-party', manychat: 'Via Zapier' } },
+    { label: '“Where’s my order?” automation', hide: NEW_FIVE, v: { coax: true, gorgias: true, highlevel: 'Shipping alerts', salesforce: 'Higher plans, usage-based' } },
+    { label: 'POS / ERP integrations', hide: NEW_FIVE, v: { podium: 'Limited', birdeye: 'Limited', coax: true, gorgias: 'Via integrations', zendesk: 'Limited', freshdesk: 'Limited', intercom: 'Limited', gladly: 'Limited', manychat: 'Limited', highlevel: 'Square, QuickBooks', salesforce: 'Via AppExchange (Pro)' } },
     { label: 'Payment links in the chat', v: { podium: true, birdeye: true, coax: true, manychat: 'Buy button (Pro)', highlevel: true, salesforce: 'In email & storefront' } },
-    { label: 'Delivery scheduling from the chat', v: {} },
-    { label: 'Back-in-stock waitlists & restock texts', v: {} },
-    { label: 'Online booking, deposits & reminders', v: { podium: 'Some industries', birdeye: true, coax: 'Via integrations', zendesk: 'Via apps', freshdesk: 'Via apps', intercom: 'Via apps', highlevel: true, salesforce: 'Meeting scheduling' } },
+    { label: 'Delivery scheduling from the chat', hide: NEW_FIVE, v: {} },
+    { label: 'Back-in-stock waitlists & restock texts', hide: NEW_FIVE, v: {} },
+    { label: 'Online booking, deposits & reminders', v: { podium: 'Some industries', birdeye: true, coax: 'Via integrations', zendesk: 'Via apps', freshdesk: 'Via apps', intercom: 'Via apps', highlevel: true, salesforce: 'Meeting scheduling', servicem8: true, tradify: 'Enquiry form; reminders (Pro)', fresha: true, timely: true, mindbody: 'Booking & reminders' } },
   ] },
   { group: 'Marketing', rows: [
-    { label: 'Email & SMS campaigns', colvy: 'Email + SMS', v: { podium: 'SMS', birdeye: true, coax: 'SMS + Messenger', zendesk: 'Via apps', freshdesk: 'WhatsApp app', intercom: true, gladly: 'Proactive, not marketing', manychat: 'Email; AU SMS via Twilio', highlevel: 'Usage-based', salesforce: 'Email; SMS add-on' } },
-    { label: 'Campaign reports in orders & revenue', v: { highlevel: 'Email only', salesforce: 'Pipeline revenue' } },
+    { label: 'Email & SMS campaigns', colvy: 'Email + SMS', v: { podium: 'SMS', birdeye: true, coax: 'SMS + Messenger', zendesk: 'Via apps', freshdesk: 'WhatsApp app', intercom: true, gladly: 'Proactive, not marketing', manychat: 'Email; AU SMS via Twilio', highlevel: 'Usage-based', salesforce: 'Email; SMS add-on', servicem8: 'Mailchimp sync', fresha: 'Charged per message', timely: 'SMS (Boost+); email via Mailchimp', mindbody: 'Growth plan only' } },
+    { label: 'Campaign reports in orders & revenue', hide: NEW_FIVE, v: { highlevel: 'Email only', salesforce: 'Pipeline revenue' } },
     { label: 'Scheduled replies (edit, send now or cancel)', v: { podium: true, birdeye: true, coax: true, zendesk: 'Add-on', manychat: 'Broadcasts only', highlevel: 'Schedule & cancel', salesforce: 'Email send-later' } },
     { label: 'Polls & surveys', v: { birdeye: true, intercom: true, gorgias: 'CSAT', zendesk: 'CSAT', freshdesk: 'CSAT', highlevel: true, salesforce: 'Add-on, higher plans' } },
   ] },
   { group: 'Team & self-service', rows: [
     { label: 'Help centre / knowledge base', v: { ...HELPDESKS_T, salesforce: 'Knowledge base; help centre on higher plans' } },
-    { label: 'iOS & Android app', v: { podium: true, birdeye: true, coax: true, gorgias: true, zendesk: true, freshdesk: true, intercom: true, gladly: 'Mobile browser', manychat: true, highlevel: true, salesforce: true, krispcall: true } },
+    { label: 'iOS & Android app', v: { podium: true, birdeye: true, coax: true, gorgias: true, zendesk: true, freshdesk: true, intercom: true, gladly: 'Mobile browser', manychat: true, highlevel: true, salesforce: true, krispcall: true, servicem8: true, tradify: true, fresha: true, timely: true, mindbody: true } },
     { label: 'Team notes', v: { ...HELPDESKS_T, highlevel: true, salesforce: true } },
-    { label: 'Tasks & reminders', v: { highlevel: true, salesforce: true } },
-    { label: 'Shared calendar', v: { highlevel: true } },
-    { label: 'Shared media gallery, photo markup & video trimming', v: { highlevel: 'Media + image editor', salesforce: 'File sharing' } },
+    { label: 'Tasks & reminders', v: { highlevel: true, salesforce: true, servicem8: 'Job checklists & tasks', tradify: 'Job tasks (Plus)' } },
+    { label: 'Shared calendar', v: { highlevel: true, servicem8: 'Job schedule', tradify: 'Job schedule', fresha: 'Appointment calendar', timely: 'Appointment calendar', mindbody: 'Class & appointment schedule' } },
+    { label: 'Shared media gallery, photo markup & video trimming', v: { highlevel: 'Media + image editor', salesforce: 'File sharing', servicem8: 'Job photos & videos', tradify: 'Job photos (Pro)' } },
   ] },
-  { group: 'Product feedback', rows: [
+  { group: 'Product feedback', hide: NEW_FIVE, rows: [
     { label: 'Ideas & feedback board', v: { podium: false, birdeye: false, coax: false, gorgias: false, intercom: false, gladly: false, manychat: false, salesforce: 'Higher plans (Experience Cloud)' } },
     { label: 'Public roadmap', v: ALL_T(false) },
     { label: 'Announcements / changelog', v: { ...ALL_T(false), intercom: true } },
   ] },
   { group: 'Local', rows: [
-    { label: 'Australian 🇦🇺 phone numbers', v: { podium: true, coax: true, zendesk: 'Limited', manychat: 'Via your Twilio', highlevel: true, salesforce: 'Add-on, higher plans', aircall: 'Local & mobile', dialpad: 'Local, mobile & 1800', ringcentral: 'Local, 1300 & 1800', krispcall: 'Local, mobile & 1800' } },
+    { label: 'Australian 🇦🇺 phone numbers', v: { podium: true, coax: true, zendesk: 'Limited', manychat: 'Via your Twilio', highlevel: true, salesforce: 'Add-on, higher plans', aircall: 'Local & mobile', dialpad: 'Local, mobile & 1800', ringcentral: 'Local, 1300 & 1800', krispcall: 'Local, mobile & 1800', servicem8: 'Phone add-on' } },
   ] },
 ]
 
@@ -97,6 +121,84 @@ type Cmp = {
 }
 
 const CMP: Record<string, Cmp> = {
+  // Job apps for trades and cleaners. From each vendor's Australian pricing,
+  // feature and help pages (servicem8.com/au, tradifyhq.com/au), checked 14
+  // November 2026. ServiceM8 prices are AUD with GST; Tradify's are AUD per
+  // user before GST.
+  servicem8: {
+    name: 'ServiceM8', accent: BLUE, heroTitle: 'The ServiceM8 alternative with', heroAccent: 'every customer chat in one place', heroSub: 'ServiceM8 is job management software for tradies, with plans priced by how many jobs you do each month. Colvy runs your quotes, jobs, invoices and repeating work from the same inbox as your calls, texts, emails, website chat, Instagram and Messenger, with no cap on jobs.',
+    stats: [{ big: 'No', label: 'cap on jobs a month' }, { big: '3,000', label: 'SMS a month included' }, { big: '5', label: 'AI agents in the plan' }],
+    tableNote: 'ServiceM8 is a mature job app for trades: quoting, scheduling, checklists, photos, signatures, recurring jobs, and sync with Xero, QuickBooks Online and MYOB, which Colvy doesn’t have. Its column shows its Australian pricing and feature pages on servicem8.com. Colvy is built around the conversation: every channel in one inbox, with the quote, job and invoice beside it.',
+    wins: [
+      { t: 'No cap on jobs', d: 'ServiceM8’s plans are priced by jobs a month: 50 on Starter ($29), 150 on Growing ($79), 500 on Premium ($149) and 1,500+ on Premium Plus ($349), in AUD with GST. Colvy doesn’t count jobs: quote, schedule and invoice as many as you win.' },
+      { t: 'Texts included, with real replies', d: 'ServiceM8’s two-way SMS sends each text with a “Reply here” link to a web page. In Colvy, customers simply reply to your text. Colvy’s Inbox plan includes 3,000 SMS a month for A$179, GST included; ServiceM8 includes 3,000 on Premium Plus, at $349.' },
+      { t: 'Every channel in one inbox', d: 'Calls, texts, email, live chat on your website, Instagram and Messenger land in one Colvy inbox, beside the customer’s quotes and jobs. ServiceM8 lists website chat as a third-party add-on with its own fees.' },
+      { t: 'AI that answers for you', d: 'ServiceM8’s Office Agent Pro is $49 a month, and its AI Phone Agent comes with the Connect Plus phone plan. Colvy’s Inbox plan includes five AI agents that answer questions, take bookings and ask for reviews, within limits you set.' },
+      { t: 'Invoices that chase themselves', d: 'Send the invoice for the balance by text or email, with the deposit already taken off. Customers pay by card online, and if it’s still unpaid, Colvy texts a reminder 1, 7 and 14 days after the due date.' },
+      { t: 'Australian 🇦🇺 support & pricing', d: 'Local team, Australian numbers and prices in AUD with GST included. Cancel anytime.' },
+    ],
+    checklist: ['Quotes customers accept online, with a deposit', 'Jobs with checklists, photos, time and signatures', 'Invoices paid online, with automatic reminders', 'Repeating jobs: weekly, fortnightly, monthly', 'Calls, SMS, email, chat and social in one inbox', 'Online booking with deposits and reminders', 'Five AI agents included', 'No lock-in contracts — cancel anytime'],
+  },
+  tradify: {
+    name: 'Tradify', accent: CYAN, heroTitle: 'The Tradify alternative with', heroAccent: 'one price for the whole crew', heroSub: 'Tradify is job management software for tradies, priced per user. Colvy gives your whole team quotes, jobs, invoices and repeating work, in the same inbox as your calls, texts, emails, website chat, Instagram and Messenger, at one AUD price.',
+    stats: [{ big: '1', label: 'price for the whole team' }, { big: '3,000', label: 'SMS a month included' }, { big: 'A$179', label: 'a month, GST included' }],
+    tableNote: 'Tradify is built for tradies, with quoting, scheduling, timesheets, progress invoicing, recurring jobs on Pro, and sync with QuickBooks Online, Xero and MYOB, which Colvy doesn’t have. Its column shows its Australian pricing and feature pages on tradifyhq.com. Colvy adds every customer channel in one inbox, with the quote, job and invoice beside the conversation.',
+    wins: [
+      { t: 'One price for the whole crew', d: 'Tradify is priced per user: $52 AUD a user a month on Pro, before GST, so a team of five pays $260 a month plus GST. Colvy’s Inbox plan is one price for unlimited team members: A$179 a month, or A$149 a month billed yearly, GST included.' },
+      { t: 'Texts included', d: 'Texts from Tradify cost 20c each. Colvy’s Inbox and Everything plans include 3,000 SMS a month, then prepaid credits from A$0.15 a text.' },
+      { t: 'Customers book themselves', d: 'Tradify’s enquiry form brings requests in for you to schedule. Colvy adds a booking page where customers pick a time for a service at their address, pay a deposit if you ask for one, and get reminders.' },
+      { t: 'Every channel in one inbox', d: 'Calls, texts, email, live chat on your website, Instagram and Messenger land in one Colvy inbox, beside the customer’s quotes and jobs.' },
+      { t: 'Repeating jobs and AI in one plan', d: 'Tradify’s recurring jobs start on Pro, and its SmartTools AI is on Plus only. Colvy’s repeating jobs, invoices with automatic reminders and five AI agents all come with the Inbox plan.' },
+      { t: 'Australian 🇦🇺 support & pricing', d: 'Local team, Australian numbers and prices in AUD with GST included. Cancel anytime.' },
+    ],
+    checklist: ['Quotes customers accept online, with a deposit', 'Jobs with checklists, photos, time and signatures', 'Invoices paid online, with automatic reminders', 'Repeating jobs: weekly, fortnightly, monthly', 'Customers book online, at their address', 'Calls, SMS, email, chat and social in one inbox', 'One price for unlimited team members, GST included', 'No lock-in contracts — cancel anytime'],
+  },
+  // Booking apps for salons, clinics and gyms. From each vendor's own pricing,
+  // feature and help pages, checked 14 November 2026: Timely's Australian
+  // prices (ex GST) and Mindbody's /en-au pages. fresha.com showed us US
+  // pricing, so the Fresha copy names no AUD price.
+  fresha: {
+    name: 'Fresha', accent: PURPLE, heroTitle: 'The Fresha alternative with', heroAccent: 'no fees on new clients', heroSub: 'Fresha is booking software for salons, spas and clinics, with a marketplace that charges a fee when it brings you a new client. Colvy gives you a booking page, packs and memberships, and every client channel in one inbox: texts, calls, email, website chat, Instagram and Messenger.',
+    stats: [{ big: '$0', label: 'new-client fees' }, { big: '3,000', label: 'SMS a month included' }, { big: '1', label: 'price for the whole team' }],
+    tableNote: 'Fresha is a full booking platform: online booking with deposits, memberships and packages, Google review replies in every plan, and Xero and QuickBooks connections. Its column shows fresha.com, which showed us US pricing, so check Fresha’s Australian prices. Colvy adds two-way texting, calls, email, live chat and social in one inbox, at one AUD price for the team.',
+    wins: [
+      { t: 'No fees on new clients', d: 'When a new client finds you on Fresha’s marketplace, Fresha charges a one-time fee: 20%, with a $6 minimum, on the pricing page we saw. Colvy doesn’t run a marketplace, so it never charges you for a new client.' },
+      { t: 'Texts included', d: 'Fresha includes 100 automated texts a month (per team member on its Team plan), then charges for each one, and charges for every marketing text. Colvy’s Inbox plan includes 3,000 SMS a month, then prepaid credits from A$0.15 a text.' },
+      { t: 'Real two-way texting', d: 'Fresha’s client chat runs in the Fresha app. With Colvy, clients text your Australian number, call it, email, chat on your website or message you on Instagram and Messenger, and your team answers it all from one inbox.' },
+      { t: 'AI agents included', d: 'Fresha’s AI Concierge is an add-on, priced per location. Colvy’s Inbox plan includes five AI agents that answer questions, take bookings and ask for reviews, within limits you set.' },
+      { t: 'One price for the team', d: 'Fresha’s Team plan is priced per team member. Colvy’s Inbox plan is one price for unlimited team members: A$179 a month, or A$149 a month billed yearly, GST included.' },
+      { t: 'Australian 🇦🇺 support & pricing', d: 'Local team, Australian numbers and prices in AUD with GST included. Cancel anytime.' },
+    ],
+    checklist: ['Online booking with deposits and reminders', 'Packs and memberships that renew automatically', 'Repeat appointments in one go', 'Calls, SMS, email, chat and social in one inbox', 'Review requests and Google review replies', 'Client accounts for bookings and passes', 'Five AI agents included', 'No marketplace fees on new clients'],
+  },
+  timely: {
+    name: 'Timely', accent: PINK, heroTitle: 'The Timely alternative with', heroAccent: 'every channel in one inbox', heroSub: 'Timely is booking and payment software for hair and beauty businesses. Colvy gives you online booking, deposits, packs and memberships, plus two-way texting, calls, email, website chat, Instagram and Messenger in one inbox, at one AUD price for the team.',
+    stats: [{ big: '1', label: 'inbox for every channel' }, { big: '3,000', label: 'SMS a month included' }, { big: '5', label: 'AI agents included' }],
+    tableNote: 'Timely is a popular booking system for salons, with online booking and deposits on every plan, unlimited team members, no new-client fees, and Xero and QuickBooks on its Thrive plan. Its column shows its Australian pricing and feature pages on gettimely.com. Colvy adds two-way texting, calls, email, live chat and social in one inbox, with packs and memberships on your booking page.',
+    wins: [
+      { t: 'Two-way texting, included', d: 'Timely’s dedicated number for two-way texts is on its Thrive plan. In Colvy, clients text your Australian number and your team replies from the shared inbox, with 3,000 SMS a month on the Inbox plan.' },
+      { t: 'Texts to use your way', d: 'Timely includes one to three texts per booking, depending on the plan, then charges for extras. Colvy’s 3,000 SMS a month go wherever you need them: reminders, replies or campaigns.' },
+      { t: 'Every channel in one inbox', d: 'Timely adds booking buttons to Instagram, Facebook and Messenger. Colvy brings the messages in too: calls, texts, email, live chat on your website, Instagram and Messenger, all answered from one inbox.' },
+      { t: 'Packs and memberships', d: 'Sell packs (“10 visits for $150”) and memberships that renew automatically, from your booking page and paid into your own Stripe account. Clients use them when they book and see what’s left in their account.' },
+      { t: 'AI agents that answer for you', d: 'Colvy’s Inbox plan includes five AI agents that answer questions, take bookings and ask for reviews, within limits you set, and hand over to your team when they should.' },
+      { t: 'Australian 🇦🇺 support & pricing', d: 'Local team, Australian numbers and prices in AUD with GST included. Cancel anytime.' },
+    ],
+    checklist: ['Online booking with deposits and reminders', 'Packs and memberships that renew automatically', 'Repeat appointments in one go', 'Two-way texts on your Australian number', 'Calls, SMS, email, chat and social in one inbox', 'Review requests and Google review replies', 'Five AI agents included', 'No lock-in contracts — cancel anytime'],
+  },
+  mindbody: {
+    name: 'Mindbody', accent: INDIGO, heroTitle: 'The Mindbody alternative with', heroAccent: 'campaigns and AI in one plan', heroSub: 'Mindbody is business software for fitness, wellness and beauty, priced per location, with email and SMS marketing on its top plan. Colvy gives gyms and studios class booking, class packs, memberships, campaigns and five AI agents, with every channel in one inbox, at one AUD price.',
+    stats: [{ big: 'A$179', label: 'a month, GST included' }, { big: '5', label: 'AI agents included' }, { big: '3,000', label: 'SMS a month included' }],
+    tableNote: 'Mindbody is a deep studio platform: class scheduling, memberships and class packs with autopay, a branded app add-on and the Mindbody marketplace app. Its column shows its Australian pricing and feature pages on mindbodyonline.com. Colvy keeps classes, packs and memberships in the same place as every conversation with your members.',
+    wins: [
+      { t: 'Campaigns without the top plan', d: 'Mindbody includes email and SMS marketing on its Growth plan, A$369 a month per location. Colvy’s Inbox plan includes email and SMS campaigns and 3,000 texts a month, for A$179 a month, or A$149 billed yearly, GST included.' },
+      { t: 'AI included', d: 'Mindbody’s AI Concierge is included on Growth, an add-on on Core, and not offered on Go. Colvy’s Inbox plan includes five AI agents that answer questions, take bookings and ask for reviews, within limits you set.' },
+      { t: 'Class packs and memberships', d: 'Sell “10 classes for $150” packs and memberships that renew automatically, from your booking page and paid into your own Stripe account. Members use them when they book, and see classes left and their next renewal in their account.' },
+      { t: 'No fees on new members', d: 'When a new client first buys through the Mindbody app, Mindbody charges a 20% fee, with a cap. Colvy doesn’t run a marketplace, so it never charges you for a new client.' },
+      { t: 'Every channel in one inbox', d: 'Calls, texts, email, live chat on your website, Instagram and Messenger land in one Colvy inbox, so your front desk answers members from one place.' },
+      { t: 'Australian 🇦🇺 support & pricing', d: 'Local team, Australian numbers and prices in AUD with GST included. Cancel anytime.' },
+    ],
+    checklist: ['Class timetable with online booking', 'Class packs and memberships that renew automatically', 'Members see classes left in their account', 'Email and SMS campaigns, 3,000 texts a month', 'Calls, SMS, email, chat and social in one inbox', 'Review requests and Google review replies', 'Five AI agents included', 'No lock-in contracts — cancel anytime'],
+  },
   // KrispCall: from its plans, pricing and help pages on krispcall.com and
   // help.krispcall.com, checked 13 November 2026. Its prices are shown with a
   // plain "$", so the copy doesn't name a currency for them.
@@ -419,7 +521,7 @@ export default function ComparePage() {
               <div style={{ padding: '14px 12px', textAlign: 'center', color: accent }}>Colvy</div>
               <div style={{ padding: '14px 12px', textAlign: 'center' }}>{c.name}</div>
             </div>
-            {ROWS.map(g => (
+            {ROWS.map(g => ({ ...g, rows: g.hide?.includes(sl) ? [] : g.rows.filter(r => (!r.only || r.only.includes(sl)) && !r.hide?.includes(sl)) })).filter(g => g.rows.length).map(g => (
               <div key={g.group} role="rowgroup">
                 <div style={{ padding: '16px 18px 8px', borderTop: `1px solid ${rowLine}`, fontSize: 11.5, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: accent }}>{g.group}</div>
                 {g.rows.map(r => (

@@ -1085,6 +1085,8 @@ Two small automations do a lot of quiet work after the appointment:
 
 No-shows drop when booking is easy, a deposit backs the long appointments, reminders take one tap to answer, and cancelling early is easier than ghosting. Put those four things in place and the empty chair at 2:15 becomes a rare event instead of a weekly one.
 
+Switching from another booking app? See [Colvy vs Fresha](/compare/fresha) and [Colvy vs Timely](/compare/timely).
+
 [Start free](/signup) or [see Colvy for service businesses](/for/service-businesses).`,
   },
   {
