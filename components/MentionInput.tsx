@@ -34,9 +34,33 @@ interface Props {
   ariaLabel?: string
 }
 
-/** Everyone named with @ in the text, matched against the team list. */
+/**
+ * "@everyone" names the whole team at once, like a group chat. It's a word of
+ * its own (start of the text or after a space / bracket, not glued to a
+ * following letter), so "@everyones" or an email address isn't one.
+ */
+export const EVERYONE_HANDLE = 'everyone'
+const EVERYONE_RE = /(^|[\s(])@everyone(?![\w])/i
+export function mentionsEveryone(text: string): boolean {
+  return EVERYONE_RE.test(String(text || ''))
+}
+
+/** Does a half-typed "@token" fit "everyone"? (An empty token does.) */
+export function everyoneMatches(query: string | null | undefined): boolean {
+  return query != null && EVERYONE_HANDLE.startsWith(String(query).toLowerCase())
+}
+
+/** Everyone named with @ in the text, matched against the team list. "@everyone" is the whole list. */
 export function resolveMentions(text: string, team: TeamMember[]): TeamMember[] {
   if (!text) return []
+  if (mentionsEveryone(text)) {
+    const seen = new Set<string>()
+    return team.filter(m => {
+      if (!m?.name || !m.id || seen.has(m.id)) return false
+      seen.add(m.id)
+      return true
+    })
+  }
   const found: TeamMember[] = []
   // Longest names first, each match used up, so "@Amit Panta" doesn't also
   // count as "@Amit" (the app's rule).
@@ -63,8 +87,14 @@ const MentionInput = forwardRef<HTMLTextAreaElement | HTMLInputElement, Props>(f
   const [query, setQuery] = useState<string | null>(null)
   const [index, setIndex] = useState(0)
 
-  const matches = query === null ? [] : team.filter(m =>
+  const people = query === null ? [] : team.filter(m =>
     (m.name || '').toLowerCase().includes(query.toLowerCase())).slice(0, 6)
+  // "@everyone" leads the list while the token still fits it, once there's
+  // more than one person to tell.
+  const withEveryone = team.length > 1 && everyoneMatches(query)
+  const matches: (TeamMember & { everyone?: boolean })[] = withEveryone
+    ? [{ id: '__everyone', name: EVERYONE_HANDLE, everyone: true }, ...people]
+    : people
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -93,18 +123,19 @@ const MentionInput = forwardRef<HTMLTextAreaElement | HTMLInputElement, Props>(f
     setIndex(0)
   }
 
-  const apply = (m: TeamMember) => {
+  const apply = (m: TeamMember & { everyone?: boolean }) => {
     const el = ref.current
     const caret = el?.selectionStart ?? value.length
     const before = value.slice(0, caret)
     const at = before.lastIndexOf('@')
     if (at === -1) return
-    const next = value.slice(0, at) + `@${m.name} ` + value.slice(caret)
+    const handle = m.everyone ? EVERYONE_HANDLE : m.name
+    const next = value.slice(0, at) + `@${handle} ` + value.slice(caret)
     onChange(next, resolveMentions(next, team))
     setQuery(null)
     // Put the caret after the inserted name.
     requestAnimationFrame(() => {
-      const pos = at + m.name.length + 2
+      const pos = at + handle.length + 2
       try { el?.setSelectionRange(pos, pos); el?.focus() } catch {}
     })
   }
@@ -165,10 +196,14 @@ const MentionInput = forwardRef<HTMLTextAreaElement | HTMLInputElement, Props>(f
                 padding: '8px 12px', border: 'none', cursor: 'pointer', fontSize: 13,
                 background: i === index ? 'var(--peach)' : '#fff', color: 'var(--ink)',
               }}>
-              <span style={{ width: 25, height: 25, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
-                {(m.name || '?').charAt(0).toUpperCase()}
-              </span>
-              {m.name}
+              {m.everyone ? <EveryoneRow count={team.length} /> : (
+                <>
+                  <span style={{ width: 25, height: 25, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                    {(m.name || '?').charAt(0).toUpperCase()}
+                  </span>
+                  {m.name}
+                </>
+              )}
             </button>
           ))}
         </div>
@@ -176,5 +211,20 @@ const MentionInput = forwardRef<HTMLTextAreaElement | HTMLInputElement, Props>(f
     </div>
   )
 })
+
+/** The "@everyone" row in a mention picker: a group icon, the handle, and who it reaches. */
+export function EveryoneRow({ count, size = 25 }: { count: number; size?: number }) {
+  return (
+    <>
+      <span aria-hidden style={{ width: size, height: size, borderRadius: '50%', background: 'var(--ink, #0f1119)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <svg width={Math.round(size * 0.56)} height={Math.round(size * 0.56)} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      </span>
+      <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, lineHeight: 1.25 }}>
+        <span style={{ fontWeight: 700 }}>@everyone</span>
+        <span style={{ fontSize: 11.5, color: '#6b7280' }}>Notify the whole team{count > 1 ? ` · ${count} people` : ''}</span>
+      </span>
+    </>
+  )
+}
 
 export default MentionInput

@@ -10,7 +10,7 @@ import AssigneePicker from '@/components/AssigneePicker'
 import AttachmentUploader, { isMediaAttachment } from '@/components/AttachmentUploader'
 import TaskEditor from '@/components/TaskEditor'
 import RichTextEditor from '@/components/RichTextEditor'
-import MentionInput, { resolveMentions } from '@/components/MentionInput'
+import MentionInput, { resolveMentions, mentionsEveryone } from '@/components/MentionInput'
 import { enrichNames } from '@/lib/team-names'
 import { loadStaffRows } from '@/lib/team-list'
 import { useDraft } from '@/lib/drafts'
@@ -2267,8 +2267,10 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             companyId, userIds: mentionIds, type: 'task_comment',
-            title: `${me} mentioned you on a task`,
+            // "@everyone": the whole team, by bell and email (not a text to every phone).
+            title: `${me} mentioned ${mentionsEveryone(comment) ? 'everyone' : 'you'} on a task`,
             body: comment.trim().slice(0, 200), link: '/admin/tasks',
+            ...(mentionsEveryone(comment) ? { channels: ['in_app', 'email'] } : {}),
           }),
         })
       } catch { /* the comment is saved either way */ }

@@ -28,7 +28,7 @@ import { confirmDialog, confirmNotify } from '@/components/ConfirmDialog'
 import { notifyIntegrations } from '@/lib/integrations-notify'
 import { authFetch } from '@/lib/auth-fetch'
 import SendReceipt from '@/components/orders/SendReceipt'
-import MentionInput, { resolveMentions } from '@/components/MentionInput'
+import MentionInput, { resolveMentions, mentionsEveryone } from '@/components/MentionInput'
 import { enrichNames } from '@/lib/team-names'
 import { loadStaffRows } from '@/lib/team-list'
 import type { OrderRefund } from '@/lib/order-refunds'
@@ -2584,7 +2584,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
       authFetch('/api/mentions/notify', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyId, conversationId: convId, userIds: ids, mentionedBy: me.name, preview: body.slice(0, 300),
-          context: `a note on order #${order.order_number}`, orderRef: String(order.order_number || order.id) }),
+          context: `a note on order #${order.order_number}`, orderRef: String(order.order_number || order.id), everyone: mentionsEveryone(body) }),
       }).catch(() => {})
     }
     setNoteBody('')

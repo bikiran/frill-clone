@@ -17,6 +17,7 @@ import { Icon, sendChannelGlyph, toolBtn } from '@/components/inbox/inbox-shared
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useInbox } from '@/components/inbox/InboxContext'
 import PlanLockCard from '@/components/PlanLockCard'
+import { EveryoneRow } from '@/components/MentionInput'
 import { replyNeedsInbox } from '@/lib/plan-gate'
 
 export default function InboxComposer() {
@@ -619,10 +620,14 @@ export default function InboxComposer() {
             {mentionMatches.map((m: any, i: number) => (
               <button key={m.id} type="button" onClick={() => applyMention(m)}
                 style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: '8px 12px', border: 'none', background: i === mentionIndex ? 'var(--peach)' : '#fff', cursor: 'pointer', fontSize: 13, color: 'var(--ink)' }}>
-                <span style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
-                  {(m.name || '?').charAt(0).toUpperCase()}
-                </span>
-                {m.name}
+                {m.everyone ? <EveryoneRow count={m.count} size={26} /> : (
+                  <>
+                    <span style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                      {(m.name || '?').charAt(0).toUpperCase()}
+                    </span>
+                    {m.name}
+                  </>
+                )}
               </button>
             ))}
           </div>

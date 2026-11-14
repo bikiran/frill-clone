@@ -11,7 +11,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import AssigneePicker from '@/components/AssigneePicker'
 import AttachmentUploader, { isMediaAttachment } from '@/components/AttachmentUploader'
-import MentionInput, { resolveMentions } from '@/components/MentionInput'
+import MentionInput, { resolveMentions, mentionsEveryone } from '@/components/MentionInput'
 import { useDraft } from '@/lib/drafts'
 import { notifyIntegrations } from '@/lib/integrations-notify'
 import { LinkedOrderCard, OrderSearchModal } from '@/components/tasks/OrderLink'
@@ -195,7 +195,7 @@ export default function TaskEditor({ companyId, team, outlets = [], me, userId, 
       }
       assignedIds.delete(userId as any); mentionedIds.delete(userId as any)
 
-      const notifyMembers = async (ids: string[], titleText: string, type: string) => {
+      const notifyMembers = async (ids: string[], titleText: string, type: string, channels?: string[]) => {
         if (ids.length === 0) return
         try {
           await authFetch('/api/notify/members', {
@@ -203,12 +203,15 @@ export default function TaskEditor({ companyId, team, outlets = [], me, userId, 
             body: JSON.stringify({
               companyId, userIds: ids, type,
               title: titleText, body: title.trim().slice(0, 200), link: '/admin/tasks',
+              ...(channels ? { channels } : {}),
             }),
           })
         } catch { /* the task is created either way */ }
       }
       await notifyMembers(Array.from(assignedIds), `${me} assigned you a task`, 'task_assigned')
-      await notifyMembers(Array.from(mentionedIds), `${me} mentioned you in a task`, 'task_mention')
+      // "@everyone": the whole team, by bell and email (not a text to every phone).
+      const all = mentionsEveryone(title)
+      await notifyMembers(Array.from(mentionedIds), `${me} mentioned ${all ? 'everyone' : 'you'} in a task`, 'task_mention', all ? ['in_app', 'email'] : undefined)
       await draft.discard()
       onSaved()
     } catch (e: any) { console.error('[task create] payload was', row); alertDialog('Could not create task: ' + e.message); setSaving(false) }

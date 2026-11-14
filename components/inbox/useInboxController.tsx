@@ -28,7 +28,7 @@ import { boardUrl } from '@/lib/redirect'
 import { enrichNames } from '@/lib/team-names'
 import { broadcastMessage } from '@/lib/chat-broadcast'
 import { uploadQueue } from '@/lib/upload-queue'
-import MentionInput, { resolveMentions as resolveTeamMentions } from '@/components/MentionInput'
+import MentionInput, { resolveMentions as resolveTeamMentions, mentionsEveryone, everyoneMatches, EVERYONE_HANDLE } from '@/components/MentionInput'
 import { SelectPopover, MenuAvatar } from '@/components/ui/SelectMenu'
 import { NT_CSS } from '@/components/inbox/ContactPanelBits'
 import { notifyIntegrations } from '@/lib/integrations-notify'
@@ -3675,7 +3675,7 @@ export function useInboxController() {
     // Notify anyone @mentioned in a sidebar note, same as an internal message —
     // mentions should work anywhere they can be typed.
     try {
-      const ids = resolveMentions(body)
+      const ids = resolveMentions(body).filter(uid => uid !== user?.id)
       if (ids.length) {
           await (supabase as any).from('mention_notifications').insert(
             ids.map((uid: string) => ({
@@ -3687,7 +3687,7 @@ export function useInboxController() {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               companyId, conversationId: selected.id, userIds: ids,
-              mentionedBy: author, preview: body.slice(0, 300),
+              mentionedBy: author, preview: body.slice(0, 300), everyone: mentionsEveryone(body),
               context: `a note on ${contact?.name || selected.subject || 'a conversation'}`,
             }),
           }).catch(() => {})
@@ -3871,7 +3871,7 @@ export function useInboxController() {
     const assigneeUid = assignee?.user_id || ''
     const groups: Array<[string[], string]> = [
       [Array.from(notify.keys()).filter(uid => uid === assigneeUid), `${me} assigned you a task`],
-      [Array.from(notify.keys()).filter(uid => uid !== assigneeUid), `${me} mentioned you in a task`],
+      [Array.from(notify.keys()).filter(uid => uid !== assigneeUid), `${me} mentioned ${mentionsEveryone(newTask) ? 'everyone' : 'you'} in a task`],
     ]
     for (const [userIds, title] of groups) {
       if (userIds.length === 0) continue
@@ -5596,7 +5596,8 @@ export function useInboxController() {
             return low.includes(`@${compact}`) || low.includes(`@${first}`)
           })
           .map((m: any) => m.user_id)
-        const mentionedIds = Array.from(new Set([...typed, ...picked].filter(Boolean))) as string[]
+        // Never yourself (an @everyone note shouldn't ping the person writing it).
+        const mentionedIds = (Array.from(new Set([...typed, ...picked].filter(Boolean))) as string[]).filter(uid => uid !== user?.id)
         // A voice note (or any staged media) rides along with the note, staying
         // internal — never handed to a delivery channel.
         const noteAttachments = stagedMedia.map(stagedToAttachment)
@@ -5623,7 +5624,7 @@ export function useInboxController() {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               companyId, conversationId: selected.id, userIds: mentionedIds,
-              mentionedBy: senderName, preview: content.slice(0, 300),
+              mentionedBy: senderName, preview: content.slice(0, 300), everyone: mentionsEveryone(content),
               context: `a conversation with ${contact?.name || selected.subject || 'a customer'}`,
             }),
           }).catch(() => {})
@@ -6668,6 +6669,10 @@ export function useInboxController() {
   // were typed out, pasted, or edited after selecting — and could notify
   // someone whose mention had since been deleted.
   const resolveMentions = (text: string): string[] => {
+    // "@everyone" is the whole team (owner and staff).
+    if (mentionsEveryone(text)) {
+      return Array.from(new Set(teamMembers.map((m: any) => m.user_id).filter(Boolean))) as string[]
+    }
     const handles = Array.from(new Set(
       (String(text || '').match(/@([\w.\-]+)/g) || []).map(h => h.slice(1).toLowerCase())
     ))
@@ -6698,17 +6703,23 @@ export function useInboxController() {
     )
   }
   // Team members matching the in-progress @token.
-  const mentionMatches = mentionQuery === null ? [] : teamMembers.filter((m: any) =>
-    !mentionQuery || (m.name || '').toLowerCase().includes(mentionQuery.toLowerCase())
-  ).slice(0, 6)
+  // "@everyone" leads the list while the token still fits it, once there's
+  // more than one person on the team.
+  const mentionMatches: any[] = mentionQuery === null ? [] : [
+    ...(teamMembers.length > 1 && everyoneMatches(mentionQuery) ? [{ id: '__everyone', user_id: null, name: EVERYONE_HANDLE, everyone: true, count: teamMembers.length }] : []),
+    ...teamMembers.filter((m: any) =>
+      !mentionQuery || (m.name || '').toLowerCase().includes(mentionQuery.toLowerCase())
+    ).slice(0, 6),
+  ]
   // Replace the in-progress "@token" with the chosen member's handle, switch the
   // composer into internal mode (a mention is inherently a staff-only action),
   // and remember them so the note can notify them on send.
   const applyMention = (m: any) => {
     if (!m) return
-    const handle = String(m.name || '').replace(/\s+/g, '')
+    const handle = m.everyone ? EVERYONE_HANDLE : String(m.name || '').replace(/\s+/g, '')
     setReply(prev => prev.replace(/@([\w.\-]*)$/, `@${handle} `))
-    setMentionedUsers(prev => prev.some(p => p.user_id === m.user_id) ? prev : [...prev, m])
+    // "@everyone" is read back from the text on send; a person is remembered too.
+    if (!m.everyone) setMentionedUsers(prev => prev.some(p => p.user_id === m.user_id) ? prev : [...prev, m])
     setMentionQuery(null)
     setInternalMode(true)
     textareaRef.current?.focus()

@@ -19,13 +19,17 @@ const admin = () => createClient(
  * are written, and deliberately fail-soft: the in-app notification is already
  * recorded, so an email problem must never surface as a failed action.
  *
- * Body: { companyId, conversationId, userIds: string[], mentionedBy, preview, context?, orderRef? }
+ * Body: { companyId, conversationId, userIds: string[], mentionedBy, preview, context?, orderRef?, everyone? }
  * (orderRef: an order's number or id; the email and text then link to the order)
+ * (everyone: the note said "@everyone". The bell, push and email say "mentioned
+ *  everyone", and nobody is texted: one note to the whole team shouldn't send a
+ *  text to every phone, and cost a text each, every time.)
  */
 export async function POST(req: NextRequest) {
   try {
-    const { companyId, conversationId, userIds: asked, mentionedBy, preview, context, orderRef } =
+    const { companyId, conversationId, userIds: asked, mentionedBy, preview, context, orderRef, everyone: everyoneRaw } =
       await req.json()
+    const everyone = everyoneRaw === true
     // A mention in an order's notes links to that order (a number or an id only).
     const order = typeof orderRef === 'string' && /^[\w-]{1,64}$/.test(orderRef) ? orderRef : null
 
@@ -84,7 +88,7 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify({
           companyId,
           userIds,
-          title: `${mentionedBy || 'Someone'} mentioned you`,
+          title: `${mentionedBy || 'Someone'} mentioned ${everyone ? 'everyone' : 'you'}`,
           body: preview || context || 'You were mentioned in a conversation.',
           conversationId: conversationId || null,
         }),
@@ -111,7 +115,7 @@ export async function POST(req: NextRequest) {
           user_id: uid,
           company_id: companyId,
           type: 'mention',
-          message: `${mentionedBy || 'A teammate'} mentioned you in ${where}`,
+          message: `${mentionedBy || 'A teammate'} mentioned ${everyone ? 'everyone' : 'you'} in ${where}`,
           actor_name: mentionedBy || null,
           conversation_id: conversationId || null,
           is_read: false,
@@ -125,7 +129,7 @@ export async function POST(req: NextRequest) {
     let smsSent = 0
     try {
       const siteBase = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
-      const withPhone = (members || []).filter((m: any) => m.phone)
+      const withPhone = everyone ? [] : (members || []).filter((m: any) => m.phone)
       for (const m of withPhone) {
         try {
           const text = `${mentionedBy || 'A teammate'} mentioned you in ${where}${snippet ? `: ${snippet.slice(0, 120)}` : ''}\n${link}`
@@ -150,7 +154,7 @@ export async function POST(req: NextRequest) {
       try {
         // Raw values in: the layout (lib/colvy-email) escapes everything shown.
         const mail = mentionEmail({
-          name: m.name || 'there', mentionedBy, where, companyName, preview: snippet, link,
+          name: m.name || 'there', mentionedBy, where, companyName, preview: snippet, link, everyone,
         })
         const res = await fetch('https://api.resend.com/emails', {
           method: 'POST',
