@@ -24,6 +24,7 @@ import { checklistActivity } from '@/lib/task-checklist'
 import ChecklistItemText from '@/components/ChecklistItemText'
 import EmptyScroll from '@/components/EmptyScroll'
 import { LinkedOrderCard, OrderSearchModal } from '@/components/tasks/OrderLink'
+import AiAssistedBadge from '@/components/AiAssistedBadge'
 
 function parseTs(d: string | null | undefined): Date | null {
   if (!d) return null
@@ -2295,6 +2296,13 @@ function TaskDetail({ task, conv, team, outlets = [], companyId, me, userId, onP
             {et.label}
           </span>
         )
+      })()}
+      {/* Colvy AI created it or changed it when someone asked: say so, top right. */}
+      {(() => {
+        const aiAct = activity.find((a: any) => /colvy ai/i.test(String(a.actor_name || '')))
+        if (task.source !== 'colvy_ai' && !aiAct) return null
+        const tip = aiAct ? [aiAct.detail, aiAct.actor_name, fmtAgo(aiAct.created_at)].filter(Boolean).join(' · ') : `Created by Colvy AI${task.created_by ? `, asked by ${task.created_by}` : ''}`
+        return <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '-4px 0 6px' }}><AiAssistedBadge title={tip} /></div>
       })()}
       <textarea value={task.title || task.text || ''} onChange={e => patch({ title: e.target.value })} rows={2} aria-label="Task title"
         style={{ width: '100%', border: 'none', padding: 0, fontSize: 23, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--ink)', resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', lineHeight: 1.25, background: 'transparent' }} />

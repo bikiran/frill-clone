@@ -7,6 +7,7 @@ import { useBodyClass } from '@/lib/body-class'
 import { usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { readAiContext } from '@/lib/ai-context'
+import { revertNoteChange } from '@/lib/note-ai'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Colvy AI — floating command bar (web + mobile).
@@ -52,6 +53,7 @@ function suggestionsFor(path: string): string[] {
   if (path.includes('/contacts')) return ['Call this contact', 'Send them a booking link', 'Book an appointment next Tuesday 10am']
   if (path.includes('/orders')) return ['Show pending orders', 'Show orders with no outlet', 'How did we do this week?', "What's out of stock?"]
   if (path.includes('/calendar')) return ['Book a delivery for Friday 9am', 'Remind me about it the night before']
+  if (path.includes('/notes')) return ['Add items to this checklist', 'Tick what’s done', 'Summarise this note', 'Make a note from my last call']
   if (path.includes('/tasks')) return ['Create a high-priority task', 'Mark a task done', 'Reassign a task']
   if (path.includes('/calls')) return ['Summarise my last call', 'Create a task from this call', 'Remind me to call them back tomorrow']
   return ['How did we do this week?', 'Reply to my latest Google review', 'Send a payment link to a customer', "What's out of stock?"]
@@ -61,7 +63,7 @@ const SUGGEST_LABEL: Record<string, string> = {
   task: 'View tasks', reminder: 'View reminders', calendar_event: 'Open calendar', message: 'Open conversation', order: 'Open orders',
   payment_link: 'Open conversation', media_request: 'Open conversation', review_reply: 'Open reviews', comment_reply: 'Open comments',
   ticket_reply: 'Open ticket', booking_link: 'Open conversation', fact: 'Open AI knowledge', idea: 'Open roadmap',
-  form: 'Edit form', poll: 'Open poll', survey: 'Open survey', memory: 'Review it', waitlist: 'Open Waitlists',
+  form: 'Edit form', poll: 'Open poll', survey: 'Open survey', memory: 'Review it', waitlist: 'Open Waitlists', note: 'Open note',
 }
 
 export default function ColvyAssistant({ companyId, userId, agentName }: { companyId?: string | null; userId?: string | null; agentName?: string | null }) {
@@ -243,7 +245,7 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
         if (idx >= 0) copy[idx] = reply; else copy.push(reply)
         return copy
       })
-      if (res.ok) runClientActions(data.clientActions)
+      if (res.ok) { runClientActions(data.clientActions); announceChanges(data.cards) }
     } catch (e: any) {
       setMsgs(m => {
         const copy = m.slice()
@@ -276,6 +278,7 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
         }
         return copy
       })
+      if (res.ok) announceChanges(data.card ? [data.card] : [])
     } catch (e: any) {
       setMsgs(m => { const copy = m.slice(); const t = copy[msgIdx]; if (t && t.role === 'assistant') copy[msgIdx] = { role: 'assistant', error: e?.message || 'Network error.', confirm: null }; return copy })
     } finally { setBusy(false) }
@@ -297,11 +300,43 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
     setMsgs(m => { const copy = m.slice(); const t = copy[msgIdx]; if (t && t.role === 'assistant') copy[msgIdx] = { role: 'assistant', text: 'Okay, I won\'t send it.', confirm: null }; return copy })
   }
 
+  // Tell the page what Colvy AI just changed (a note, a task…), so it shows
+  // the change at once instead of waiting for a refresh.
+  function announceChanges(cards: any[] | null | undefined) {
+    for (const c of cards || []) {
+      if (!c?.entityType) continue
+      try { window.dispatchEvent(new CustomEvent('colvy:ai-changed', { detail: { entityType: c.entityType, entityId: c.entityId || null, created: c?.undo?.entityType === 'note' } })) } catch {}
+    }
+  }
+
   // Undo a reversible action by removing the row we just created. RLS is
   // permissive, so the client can do this directly and immediately.
   async function undo(card: Card) {
     if (!card.undo) return
-    const { entityType, entityId, restore, rows, taskAddition } = card.undo as any
+    const { entityType, entityId, restore, rows, taskAddition, noteChange } = card.undo as any
+    // Notes go through /api/notes, which checks this person can see the note.
+    if (entityType === 'note' || entityType === 'note_update') {
+      try {
+        if (entityType === 'note') {
+          const r = await authFetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'delete', id: entityId }) })
+          if (!r.ok) throw new Error('failed')
+        } else {
+          const g = await authFetch(`/api/notes?companyId=${companyId}&id=${entityId}`)
+          const d = await g.json()
+          if (!d?.note) throw new Error('gone')
+          const patch = revertNoteChange(d.note, noteChange)
+          const r = await authFetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, action: 'update', id: entityId, ...patch, aiUndoneAt: noteChange?.logAt || null }) })
+          if (!r.ok) throw new Error('failed')
+        }
+        try { window.dispatchEvent(new CustomEvent('colvy:ai-changed', { detail: { entityType, entityId, undone: true } })) } catch {}
+        setToast({ text: 'Undone' })
+        setMsgs(m => m.map(msg => msg.role === 'assistant' && msg.cards
+          ? { ...msg, cards: msg.cards.map(c => c === card ? { ...c, kind: '__undone', title: 'Removed', lines: [], undo: null } : c) }
+          : msg))
+      } catch { setToast({ text: "Couldn't undo that" }) }
+      setTimeout(() => setToast(null), 2500)
+      return
+    }
     const table = entityType === 'calendar_event' ? 'calendar_events' : entityType === 'sale' ? 'conversation_sales' : entityType === 'order_outlet' ? 'orders'
       : entityType === 'form' ? 'forms' : entityType === 'poll' ? 'polls' : entityType === 'survey' ? 'surveys' : 'conversation_tasks'
     try {
@@ -575,7 +610,10 @@ export default function ColvyAssistant({ companyId, userId, agentName }: { compa
           transition:opacity .24s cubic-bezier(.22,1,.36,1),transform .3s cubic-bezier(.22,1,.36,1)}
         .cai-open .cai-panel{opacity:1;transform:none;pointer-events:auto}
         .cai-open .cai-scrim{opacity:1;pointer-events:auto}
-        @media (min-width:861px){.cai-scrim{background:transparent}}
+        /* On a desktop the panel sits beside the page, which stays usable:
+           scroll it, click it, edit the note you're asking about. (Escape or
+           the close button shut the panel.) On a phone it's a sheet over a dim. */
+        @media (min-width:861px){.cai-scrim{background:transparent}.cai-open .cai-scrim{pointer-events:none}}
         @media (max-width:640px){
           .cai-panel{left:0;right:0;bottom:0;width:100%;height:calc(100dvh - 40px);border-radius:22px 22px 0 0;transform:translate3d(0,40px,0)}
         }

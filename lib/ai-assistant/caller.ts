@@ -89,6 +89,15 @@ export async function scopeContext(db: any, ctx: AssistantContext, c: any): Prom
     own('contacts', c?.contactId), own('conversations', c?.conversationId), own('calls', c?.callId),
     own('company_locations', c?.outletId), own('support_tickets', ticketRef),
   ])
+  // The note open on the Notes page — only one this person can see.
+  ctx.noteId = null
+  const noteRef = typeof c?.noteId === 'string' ? c.noteId.trim() : ''
+  if (UUID.test(noteRef)) {
+    try {
+      const { data: n } = await db.from('notes').select('id, created_by, shared_with_team, shared_members, trashed_at').eq('company_id', ctx.companyId).eq('id', noteRef).maybeSingle()
+      if (n && !n.trashed_at && (n.created_by === ctx.userId || n.shared_with_team || (Array.isArray(n.shared_members) && n.shared_members.some((m: any) => m?.id === ctx.userId)))) ctx.noteId = n.id
+    } catch {}
+  }
   ctx.currentRoute = c?.currentRoute || null
   ctx.contactId = contactId
   ctx.conversationId = conversationId
