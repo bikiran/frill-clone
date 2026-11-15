@@ -23,6 +23,7 @@ import { memoryForPrompt, memoryBlock, followedMemory, memoryAnswers } from '@/l
 import { statusMeta } from '@/lib/orders'
 import { orderProgress } from '@/lib/order-progress'
 import { modelFor, trackAi } from '@/lib/ai-models'
+import { collapsePosCopies } from '@/lib/pos-sale-key'
 
 
 export type DraftSource = { id: string; kind: 'knowledge' | 'product' | 'order'; label: string; url?: string | null }
@@ -34,18 +35,20 @@ export type DraftResult =
 
 // The customer's latest orders (by email, then phone).
 async function findOrders(db: any, companyId: string, email: string | null, phone: string | null) {
-  const pick = 'woo_order_id, status, total, currency, order_date, line_items'
+  const pick = 'woo_order_id, status, total, currency, order_date, line_items, pos_source, pos_sale_id, pos_outlet'
   let rows: any[] = []
+  // A few spare rows, then each in-store sale once (Prexty sometimes sends one
+  // sale to WooCommerce several times, lib/pos-sale-key).
   if (email) {
     const { data } = await db.from('woocommerce_orders').select(pick).eq('company_id', companyId)
-      .ilike('customer_email', email).order('order_date', { ascending: false }).limit(5)
-    rows = data || []
+      .ilike('customer_email', email).order('order_date', { ascending: false }).limit(8)
+    rows = collapsePosCopies(data || []).slice(0, 5)
   }
   const tail = String(phone || '').replace(/\D/g, '').slice(-9)
   if (!rows.length && tail.length >= 8) {
     const { data } = await db.from('woocommerce_orders').select(pick).eq('company_id', companyId)
-      .eq('billing_phone_norm', tail).order('order_date', { ascending: false }).limit(5)
-    rows = data || []
+      .eq('billing_phone_norm', tail).order('order_date', { ascending: false }).limit(8)
+    rows = collapsePosCopies(data || []).slice(0, 5)
   }
   // Shopify orders live in the operational orders table; shape them the same.
   try {

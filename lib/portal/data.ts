@@ -13,6 +13,7 @@ import { resolveJobSettings } from '@/lib/jobs/settings'
 import { preferenceState, applyPreferences } from '@/lib/email-preferences'
 import { maskEmail, maskPhone, type PortalCompany } from '@/lib/portal/auth'
 import type { PortalMe, PortalComing, PortalAgain, PortalPayment, PortalQuote, PortalInvoice, PortalJob, PortalOrder, PortalMessage, PortalPass } from '@/lib/portal/types'
+import { collapsePosCopies } from '@/lib/pos-sale-key'
 
 const safe = async <T>(fn: () => Promise<T>, fallback: T): Promise<T> => { try { return await fn() } catch { return fallback } }
 const DAY = 86_400_000
@@ -253,7 +254,9 @@ async function orders(db: any, pc: PortalCompany, contact: any, convIds: string[
         const { data: wi } = await db.from('woocommerce_integrations').select('store_url').eq('company_id', companyId).limit(1)
         store = String(wi?.[0]?.store_url || '').replace(/\/+$/, '')
       }
-      for (const o of rows) {
+      // One in-store sale Prexty sent to WooCommerce several times is one
+      // receipt (lib/pos-sale-key).
+      for (const o of collapsePosCopies(rows)) {
         const k = String(o.woo_order_id ?? o.id)
         if (seen.has(k)) continue
         seen.add(k)

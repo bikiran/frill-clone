@@ -137,5 +137,50 @@ console.log('the database lookup')
   ok(m?.by === 'likely' && m.inStore, 'no receipts: an order made the way Prexty makes them is called in store', m)
 }
 
+// ── The same receipt on several orders (tagged copies) ──────────────────────
+console.log('one receipt on several WooCommerce orders')
+const sale = (id, x = {}) => ({ woo_order_id: id, pos_source: 'prexty', pos_sale_id: 'R10001', pos_outlet: 'Coburg', total: 80, status: 'completed', ...x })
+ok(P.saleKey(sale(1)) === P.saleKey(sale(2, { total: '80.00', pos_sale_id: 'r10001', pos_outlet: 'COBURG' })), 'same receipt, total and shop: the same sale (case and number format aside)')
+ok(P.saleKey(sale(1)) !== P.saleKey(sale(2, { total: -80 })), 'a refund under the same receipt number is not a copy')
+ok(P.saleKey(sale(1)) !== P.saleKey(sale(2, { pos_outlet: 'Preston' })), 'the same receipt number at another shop is another sale')
+ok(P.saleKey({ woo_order_id: 3, total: 80, status: 'completed' }) === null, 'an online order has no sale key')
+{
+  const online = { woo_order_id: 90, total: 80, status: 'completed' }
+  const rows = [sale(103), sale(101), online, sale(102)]
+  const { kept, copies } = P.splitPosCopies(rows)
+  ok(kept.length === 2 && kept[0].woo_order_id === 101 && kept[1] === online, 'three copies of one sale: one shown (the earliest), the online order untouched, order kept', kept.map(r => r.woo_order_id))
+  ok(copies.map(r => r.woo_order_id).join() === '103,102', 'the other two are the copies', copies.map(r => r.woo_order_id))
+  const lifetime = kept.filter(r => !['cancelled', 'refunded'].includes(r.status)).reduce((s, r) => s + Number(r.total), 0)
+  ok(lifetime === 160, 'lifetime counts the sale once ($80 + $80 online)', lifetime)
+}
+{
+  const { kept } = P.splitPosCopies([sale(101, { status: 'cancelled' }), sale(102), sale(103)])
+  ok(kept.length === 1 && kept[0].woo_order_id === 102, 'the first copy was cancelled in WooCommerce: the live one is shown', kept)
+  const all = P.splitPosCopies([sale(101, { status: 'cancelled' }), sale(102, { status: 'cancelled' })]).kept
+  ok(all.length === 1 && all[0].woo_order_id === 101, 'all cancelled: one shown, still cancelled', all)
+}
+{
+  const marked = { woo_order_id: 128881, total: 14.95, detail: { pos_match: { copyOf: { number: '128880' } } } }
+  const orig = { woo_order_id: 128880, total: 14.95 }
+  ok(P.splitPosCopies([marked, orig]).kept.length === 1, 'an order marked as a copy is dropped when its original is listed')
+  ok(P.splitPosCopies([marked]).kept.length === 1, '…and kept when the original is not (nothing to show it under)')
+  ok(P.collapsePosCopies([]).length === 0 && P.collapsePosCopies(null).length === 0, 'empty or missing lists are fine')
+}
+{
+  const tagged = (id, x = {}) => ({ id, number: String(id), total: '80.00', billing: { email: 'sam@example.com' }, line_items: [leaf],
+    meta_data: [{ key: '_prexty_source', value: 'pos' }, { key: '_prexty_sale_id', value: 'R10001' }, { key: '_prexty_outlet', value: 'Coburg' }], ...x })
+  const db = fakeDb({ woocommerce_orders: [{ company_id: CO, woo_order_id: 500, total: 80, pos_source: 'prexty', pos_sale_id: 'R10001', pos_outlet: 'Coburg', pos_location_id: 'loc-coburg' }] })
+  let map = await P.findTaggedCopies(db, CO, [tagged(501), tagged(502)])
+  ok(map.get(501)?.copyOf?.number === '500' && map.get(502)?.copyOf?.number === '500' && map.get(501)?.inStore && map.get(501)?.locationId === 'loc-coburg', 'two more orders with a saved receipt: both copies of the saved one, at its shop', [...map.entries()])
+  map = await P.findTaggedCopies(fakeDb({ woocommerce_orders: [] }), CO, [tagged(602), tagged(601)])
+  ok(!map.has(601) && map.get(602)?.copyOf?.number === '601', 'both arrive together: the lower order id is the sale', [...map.entries()])
+  map = await P.findTaggedCopies(db, CO, [tagged(500)])
+  ok(map.size === 0, 'the sale itself is never a copy of itself')
+  map = await P.findTaggedCopies(db, CO, [tagged(503, { total: '-80.00' })])
+  ok(map.size === 0, 'a refund under the same receipt is not a copy')
+  map = await P.findTaggedCopies(db, CO, [{ ...tagged(504), meta_data: [] }])
+  ok(map.size === 0, 'an untagged order is left to the receipt matcher')
+}
+
 console.log(failures ? `\n${failures} failed` : '\nall passed')
 process.exit(failures ? 1 : 0)

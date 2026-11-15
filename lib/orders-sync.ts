@@ -3,6 +3,7 @@ import { mapWooStatus, mapWooPayment, wooDateToISO, variationFromMeta, statusMet
 import { emitIntegrationEvent } from '@/lib/integration-events'
 import { claimOrderAnnouncement, inStoreLabel, wooPos, wooPushIcon } from '@/lib/order-alerts'
 import { locationForOutlet, locationName, outletRouting } from '@/lib/prexty-outlets'
+import { saleKey } from '@/lib/pos-sale-key'
 
 // The shipping method name from a woocommerce_orders row or a raw Woo order.
 function shippingMethodOf(o: any): string | null {
@@ -244,6 +245,10 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[], 
   // already-synced orders is gated. Defaults ON.
   const reconcile = opts?.reconcile !== false
 
+  // The same in-store receipt on several orders in this batch: the later ones
+  // are copies (marked before the board import, so they're flagged and quiet).
+  await markBatchCopies(db, companyId, wooRows)
+
   const extIds = wooRows.map(o => String(o.woo_order_id)).filter(Boolean)
   const existing = new Map<string, { id: string; order_date: string | null; status: string | null; payment_status: string | null; store_location_id: string | null; shipping_method: string | null }>()
   for (let i = 0; i < extIds.length; i += 300) {
@@ -392,6 +397,36 @@ export async function syncWooOrders(db: any, companyId: string, wooRows: any[], 
   }
 
   return fresh.length
+}
+
+/**
+ * Tagged in-store sales that appear more than once in this batch — the same
+ * receipt, total and shop on several WooCommerce orders (lib/pos-sale-key) —
+ * but weren't marked as copies when they were saved (they arrived together, or
+ * before this check existed). Marks the later ones as copies of the earliest,
+ * on the row in hand and on its woocommerce_orders row. Bounded; never throws.
+ */
+async function markBatchCopies(db: any, companyId: string, wooRows: any[]): Promise<void> {
+  try {
+    const first = new Map<string, any>()
+    for (const o of wooRows) {
+      const k = saleKey(o)
+      if (!k) continue
+      const cur = first.get(k)
+      if (!cur || Number(o.woo_order_id) < Number(cur.woo_order_id)) first.set(k, o)
+    }
+    let n = 0
+    for (const o of wooRows) {
+      if (n >= 200) break
+      const orig = first.get(saleKey(o) || '')
+      if (!orig || orig === o || isPosCopy(o)) continue
+      // Point at the sale itself, never at another copy.
+      const of = orig.detail?.pos_match?.copyOf || { wooOrderId: Number(orig.woo_order_id), number: String(orig.woo_order_id) }
+      o.detail = { ...(o.detail || {}), pos_match: { by: 'copy', inStore: true, saleId: o.pos_sale_id || null, copyOf: of } }
+      try { await db.from('woocommerce_orders').update({ detail: o.detail }).eq('company_id', companyId).eq('woo_order_id', o.woo_order_id) } catch {}
+      n++
+    }
+  } catch { /* the import goes ahead without it */ }
 }
 
 /**

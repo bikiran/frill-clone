@@ -20,6 +20,9 @@
 // for orders Colvy created itself.
 
 import { posSaleInfo } from '@/lib/prexty-pos'
+import { saleKey } from '@/lib/pos-sale-key'
+
+export { saleKey, splitPosCopies, collapsePosCopies } from '@/lib/pos-sale-key'
 
 export type PosMatch = {
   by: 'receipt' | 'copy' | 'likely'
@@ -225,6 +228,55 @@ export async function matchPosCopy(db: any, companyId: string, order: any, opts?
   } catch {
     return null
   }
+}
+
+/**
+ * Tagged in-store sales that WooCommerce holds more than once: the same receipt
+ * number, total and shop on several orders (lib/pos-sale-key). The lowest order
+ * id is the sale; every later one is a copy of it, so the Orders board flags it
+ * ("Copy of #…"), it posts no second "In-store sale" line in the customer's
+ * chat and no second alert. `orders` are WooCommerce REST orders (one page of a
+ * sync, or the one a webhook delivered). Returns order id → match, copies only.
+ * Never throws.
+ */
+export async function findTaggedCopies(db: any, companyId: string, orders: any[]): Promise<Map<number, PosMatch>> {
+  const out = new Map<number, PosMatch>()
+  try {
+    const tagged = (orders || [])
+      .map(o => ({ o, info: posSaleInfo(o) }))
+      .filter(x => x.o?.id && x.info.isPos && str(x.info.saleId))
+    if (!companyId || !tagged.length) return out
+    const saleIds = Array.from(new Set(tagged.map(x => str(x.info.saleId))))
+    const { data, error } = await db.from('woocommerce_orders')
+      .select('woo_order_id, total, pos_source, pos_sale_id, pos_outlet, pos_location_id')
+      .eq('company_id', companyId).in('pos_sale_id', saleIds).limit(1000)
+    if (error) return out
+    // What's stored, with this batch's own orders as they are now.
+    const byId = new Map<number, any>()
+    for (const r of data || []) byId.set(Number(r.woo_order_id), r)
+    for (const x of tagged) {
+      const id = Number(x.o.id)
+      byId.set(id, { ...(byId.get(id) || {}), woo_order_id: id, total: x.o.total, pos_source: 'prexty', pos_sale_id: x.info.saleId, pos_outlet: x.info.outlet || null })
+    }
+    const first = new Map<string, any>()
+    for (const r of byId.values()) {
+      const k = saleKey(r)
+      if (!k) continue
+      const cur = first.get(k)
+      if (!cur || Number(r.woo_order_id) < Number(cur.woo_order_id)) first.set(k, r)
+    }
+    for (const x of tagged) {
+      const id = Number(x.o.id)
+      const orig = first.get(saleKey(byId.get(id)) || '')
+      if (!orig || Number(orig.woo_order_id) === id) continue
+      out.set(id, {
+        by: 'copy', inStore: true, saleId: str(x.info.saleId) || null, outlet: str(x.info.outlet) || null,
+        locationId: orig.pos_location_id || null,
+        copyOf: { wooOrderId: Number(orig.woo_order_id), number: String(orig.woo_order_id) },
+      })
+    }
+  } catch { /* best-effort: an order is never held back by this */ }
+  return out
 }
 
 /** Untagged, no customer details, not made by Colvy, has items: worth checking. */

@@ -236,6 +236,9 @@ export async function GET(req: NextRequest) {
     ...(phones.length ? [[cols, (q: Builder) => q.or([...orderOr, `customer_phone_norm.in.(${phones.join(',')})`].join(','))] as Try] : []),
     [cols, (q: Builder) => q.or(orderOr.join(','))],
   ]
+  // With the copy flag (V437) when the database has it: a second copy of one
+  // in-store sale (Prexty sent it to WooCommerce twice) is not a second order.
+  const orderTriesPos: Try[] = [...orderTries(ORDER_COLS + ', pos_copy_of'), ...orderTries(ORDER_COLS)]
   const WOO_COLS = 'id, woo_order_id, total, currency, status, order_date'
   // By email: the lower-cased customer_email_norm (V265), which an index
   // serves; before V265, a case-insensitive match over the store's orders.
@@ -269,7 +272,7 @@ export async function GET(req: NextRequest) {
       if (seen.has(w.id) || synced.has('id:' + w.id) || synced.has('woo:' + String(w.woo_order_id))) return false
       seen.add(w.id); return true
     })
-    return { orders: orderRows, woo }
+    return { orders: orderRows.filter(o => !o.pos_copy_of), woo }
   }
 
   // Short links sent to this person (for click events).
@@ -305,7 +308,7 @@ export async function GET(req: NextRequest) {
       // A database from before those has no team notes.
       ...(readMsgs ? [[MSG_COLS], ['id, conversation_id, sender_type, sender_name, content, created_at']] as Try[] : []),
     ], (q, ids) => q.in('conversation_id', ids), convChunks) : none,
-    want('order') ? pull('orders', 'order_date', EVENT_LIMIT, orderTries(ORDER_COLS), q => q.eq('company_id', companyId)) : none,
+    want('order') ? pull('orders', 'order_date', EVENT_LIMIT, orderTriesPos, q => q.eq('company_id', companyId)) : none,
     want('order') ? pullWoo(wooByEmail) : none,
     want('order') ? pullWoo(wooByPhone) : none,
     want('booking') ? pull('bookings', 'created_at', EVENT_LIMIT, [['id, service_name, starts_at, timezone, status, staff_name, location_label, conversation_id, created_at']],
@@ -640,7 +643,7 @@ export async function GET(req: NextRequest) {
   async function summarise(): Promise<TimelineSummary> {
     const canOrders = allowed('order'), canPay = allowed('payment')
     const [ords, wooE, wooP, sales, paid, tasks, lastMsg, lastCall, next, gRev, rev] = await Promise.all([
-      canOrders ? fetchRows('orders', orderTries(ORDER_COLS), q => q.eq('company_id', companyId), { limit: 1000 }) : none,
+      canOrders ? fetchRows('orders', orderTriesPos, q => q.eq('company_id', companyId), { limit: 1000 }) : none,
       canOrders ? wooByEmail(WOO_COLS, { limit: 1000 }) : none,
       canOrders ? wooByPhone(WOO_COLS, { limit: 1000 }) : none,
       canPay ? fetchRows('conversation_sales', [['id, amount, currency']], (q, ids) => q.eq('company_id', companyId).or(byPerson(ids)), { limit: 1000, ids: convChunks }) : none,
