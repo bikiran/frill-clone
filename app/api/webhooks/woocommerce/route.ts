@@ -20,7 +20,7 @@ import { recoverAbandonedCarts } from '@/lib/abandoned-carts'
 import { readStoreJson } from '@/lib/store-response'
 import { forgetWooOrders } from '@/lib/woocommerce-service'
 import { outletRouting, locationForOutlet, locationName } from '@/lib/prexty-outlets'
-import { findTaggedCopies, matchDetail } from '@/lib/pos-copies'
+import { findTaggedCopies, matchPosCopy, matchColumns, matchDetail } from '@/lib/pos-copies'
 
 // A product changed in WooCommerce. Keep the synced catalogue's stock current,
 // and when it's back IN stock, text everyone on its back-in-stock waitlist
@@ -295,19 +295,28 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   // it was rung up at: the Prexty outlet maps to a Colvy location
   // (lib/prexty-outlets), so the thread files under Somerton or Oakleigh rather
   // than "Website".
-  const pos = posSaleInfo(order)
+  const tagged = posSaleInfo(order)
+  // Not tagged, but from Prexty all the same? On a store with Prexty connected,
+  // an order that didn't come through the website checkout (and wasn't made in
+  // Colvy) is Prexty's: matched to its receipt, to an identical order a few
+  // minutes earlier, or known by how Prexty creates orders (lib/pos-copies). It
+  // is an in-store sale, never an "Online order", and the customer gets no
+  // online-order message.
+  const untagged = tagged.isPos ? null : await matchPosCopy(db, companyId, order)
+  const pos = untagged?.inStore ? { isPos: true, saleId: untagged.saleId || '', outlet: untagged.outlet || '' } : tagged
   // Prexty sometimes sends one sale to WooCommerce more than once: the same
   // receipt on an earlier order makes this one a copy (lib/pos-copies). A copy
   // posts no second "In-store sale" line in the chat and no second alert; the
   // Orders board flags it ("Copy of #…") so it can be cancelled in WooCommerce.
-  const posCopy = pos.isPos && pos.saleId ? (await findTaggedCopies(db, companyId, [order])).get(Number(order.id)) || null : null
-  let posLoc: string | null = null
+  const posCopy = untagged?.copyOf ? untagged
+    : tagged.isPos && tagged.saleId ? (await findTaggedCopies(db, companyId, [order])).get(Number(order.id)) || null : null
+  let posLoc: string | null = untagged?.inStore ? untagged.locationId : null
   let posShop: string | null = pos.outlet || null
-  if (pos.isPos && pos.outlet) {
+  if (pos.isPos && (pos.outlet || posLoc)) {
     try {
       const r = await outletRouting(db, companyId)
-      posLoc = locationForOutlet(pos.outlet, r.locations, r.map)
-      posShop = locationName(posLoc, r.locations) || pos.outlet
+      if (!posLoc && pos.outlet) posLoc = locationForOutlet(pos.outlet, r.locations, r.map)
+      posShop = locationName(posLoc, r.locations) || pos.outlet || null
     } catch { /* unplaced, as before */ }
   }
   // The customer's mobile, so an SMS reply threads back into THIS conversation
@@ -736,12 +745,12 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       attribution,
       attributed_at: attribution ? new Date().toISOString() : null,
       // A Prexty in-store sale (V407), so the apps can badge it.
-      ...posColumns(order),
+      ...(untagged?.inStore ? matchColumns(untagged) : posColumns(order)),
       // …and the shop it was matched to (V410).
       ...(pos.isPos ? { pos_location_id: posLoc } : {}),
       // The full invoice detail (V408), so the order sheet doesn't lose it.
       // …and, for a second copy of one in-store sale, the order it copies.
-      detail: { ...orderDetail(order), ...(posCopy ? matchDetail(posCopy) : {}) },
+      detail: { ...orderDetail(order), ...(untagged ? matchDetail(untagged) : posCopy ? matchDetail(posCopy) : {}) },
     }
     const { data: existingOrder } = await db.from('woocommerce_orders')
       .select('id').eq('company_id', companyId).eq('woo_order_id', order.id).maybeSingle()

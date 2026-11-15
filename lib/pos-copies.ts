@@ -15,9 +15,11 @@
 //   • otherwise, when it looks exactly like this store's other Prexty orders
 //     (created the same way, no customer details), an in-store sale without
 //     its receipt number.
-// Only for stores with Prexty connected, only for orders with no customer
-// email, phone or address (a website checkout always has an email), and never
-// for orders Colvy created itself.
+// Only for stores with Prexty connected, and never for an order placed through
+// the website checkout (created_via checkout / store-api: those are the online
+// orders) or one Colvy created itself. Everything else on such a store comes
+// from Prexty — a walk-in "Customer" account, a placeholder email, or a real
+// customer's in-store sale — so it is never called an "Online order".
 
 import { posSaleInfo } from '@/lib/prexty-pos'
 import { saleKey } from '@/lib/pos-sale-key'
@@ -54,6 +56,24 @@ export function isGuestShape(o: any): boolean {
   const b = o?.billing || {}
   const s = o?.shipping || {}
   return !str(b.email || o?.customer_email) && !str(b.phone) && !str(b.address_1) && !str(s.address_1)
+}
+
+/** Placed through the website's own checkout: an online order, never Prexty's. */
+export const isWebsiteOrder = (o: any) => CHECKOUT_VIA.has(str(o?.created_via ?? o?.detail?.created_via).toLowerCase())
+
+/**
+ * Who the order is for, as far as copies go: the email, else the phone, else
+ * the WooCommerce customer account, else "guest". Two copies of one sale are
+ * always for the same buyer.
+ */
+export function buyerKey(o: any): string {
+  const b = o?.billing || {}
+  const email = str(b.email || o?.customer_email).toLowerCase()
+  if (email) return 'e:' + email
+  const phone = str(b.phone).replace(/\D/g, '').slice(-9)
+  if (phone.length >= 8) return 'p:' + phone
+  const cid = Number(o?.customer_id ?? o?.woo_customer_id) || 0
+  return cid ? 'c:' + cid : 'guest'
 }
 
 /** An order Colvy itself created (Create order in the inbox): never a Prexty copy. */
@@ -125,8 +145,11 @@ export function decidePosCopy(i: {
     const r = free[0]
     return { by: 'receipt', inStore: true, saleId: r.saleNo, outlet: r.outlet, locationId: r.locationId, copyOf: null }
   }
+  // Made the way this store's tagged Prexty orders are made. Before any tagged
+  // order has taught us that, the REST API (how Prexty sends its sales).
   const via = str(order.createdVia).toLowerCase()
-  if (via && !CHECKOUT_VIA.has(via) && i.learnedVia.map(v => v.toLowerCase()).includes(via)) {
+  const learned = i.learnedVia.map(v => v.toLowerCase()).filter(Boolean)
+  if (via && !CHECKOUT_VIA.has(via) && (learned.length ? learned.includes(via) : via === 'rest-api')) {
     return { by: 'likely', inStore: true, saleId: null, outlet: null, locationId: null, copyOf: null }
   }
   return null
@@ -161,6 +184,7 @@ export async function matchPosCopy(db: any, companyId: string, order: any, opts?
     const totalCents = cents(order.total)
     const units = unitsOf(order)
     const fp = fingerprint(order)
+    const buyer = buyerKey(order)
     const iso = (t: number) => new Date(t).toISOString()
 
     // Receipts Prexty's webhook sent around then (V437).
@@ -182,7 +206,7 @@ export async function matchPosCopy(db: any, companyId: string, order: any, opts?
 
     // Earlier orders with the same items and total, no customer details.
     const { data: near } = await db.from('woocommerce_orders')
-      .select('woo_order_id, total, line_items, billing, customer_email, order_date, pos_source, pos_sale_id, pos_outlet, pos_location_id, detail')
+      .select('woo_order_id, woo_customer_id, total, line_items, billing, customer_email, order_date, pos_source, pos_sale_id, pos_outlet, pos_location_id, detail')
       .eq('company_id', companyId)
       .gte('order_date', iso(time - COPY_WINDOW_MS)).lte('order_date', iso(time + 60_000))
       .neq('woo_order_id', Number(order.id))
@@ -191,7 +215,8 @@ export async function matchPosCopy(db: any, companyId: string, order: any, opts?
       && Math.abs(orderTime(r) - time) <= COPY_WINDOW_MS)
     const rows: any[] = [...(near || []), ...pendingNear.filter(p => !(near || []).some((n: any) => Number(n.woo_order_id) === Number(p.woo_order_id)))]
     const twins: TwinCandidate[] = rows
-      .filter(r => Number(r.woo_order_id) < Number(order.id) && cents(r.total) === totalCents && isGuestShape(r) && fingerprint(r) === fp)
+      .filter(r => Number(r.woo_order_id) < Number(order.id) && cents(r.total) === totalCents && buyerKey(r) === buyer && fingerprint(r) === fp
+        && !isWebsiteOrder(r))
       .map(r => ({
         wooOrderId: Number(r.woo_order_id), number: String(r.woo_order_id), time: orderTime(r),
         isPos: r.pos_source === 'prexty',
@@ -279,10 +304,60 @@ export async function findTaggedCopies(db: any, companyId: string, orders: any[]
   return out
 }
 
-/** Untagged, no customer details, not made by Colvy, has items: worth checking. */
+/**
+ * Worth checking: untagged, has items, not made by Colvy, and not a website
+ * checkout — either no customer details at all, or created some other way
+ * (Prexty's REST API, a walk-in "Customer" account, a placeholder email).
+ */
 export function isEligible(order: any): boolean {
-  return !posSaleInfo(order).isPos && isGuestShape(order) && !madeByColvy(order)
-    && Array.isArray(order?.line_items) && order.line_items.length > 0
+  if (posSaleInfo(order).isPos || madeByColvy(order) || isWebsiteOrder(order)) return false
+  if (!Array.isArray(order?.line_items) || !order.line_items.length) return false
+  return isGuestShape(order) || !!str(order?.created_via)
+}
+
+/** A saved woocommerce_orders row as the WooCommerce order the matcher reads. */
+function asOrder(r: any): any {
+  return {
+    id: Number(r.woo_order_id), number: String(r.woo_order_id), total: r.total, line_items: r.line_items || [],
+    billing: r.billing || {}, shipping: r.detail?.shipping || {}, customer_id: Number(r.woo_customer_id) || 0,
+    created_via: r.detail?.created_via || null, meta_data: [],
+    date_created_gmt: r.order_date ? new Date(r.order_date).toISOString().replace(/\.\d+Z$/, '') : null,
+  }
+}
+
+/**
+ * Orders from the last day that were saved as online orders before they could
+ * be matched (they came in before this check, or their receipt came later):
+ * untagged, not a website checkout, no match yet. Matched now, oldest first,
+ * and saved, so the Orders board and the customer's history catch up. Never
+ * one Colvy made or one linked to a chat (attribution set): a saved row can't
+ * show Colvy's own marks, so those are left as they are. `rows` are
+ * woocommerce_orders rows; matched ones are updated in place. Bounded; never
+ * throws. Returns how many were matched.
+ */
+export async function rematchRecent(db: any, companyId: string, rows: any[], max = 60): Promise<number> {
+  let n = 0
+  try {
+    const dayAgo = Date.now() - 24 * 3_600_000
+    const todo = (rows || [])
+      .filter(r => r && r.pos_source !== 'prexty' && !r.detail?.pos_match && !r.detail?.colvy && !r.attribution
+        && isEligible(asOrder(r)) && orderTime(r) >= dayAgo)
+      .sort((a, b) => Number(a.woo_order_id) - Number(b.woo_order_id))
+      .slice(0, max)
+    if (!todo.length || !(await prextyActive(db, companyId))) return 0
+    const pending: any[] = []
+    for (const r of todo) {
+      const order = asOrder(r)
+      const m = await matchPosCopy(db, companyId, order, { pending, prextyActive: true })
+      pending.push(pendingRow(order, m))
+      if (!m) continue
+      const patch: any = { detail: { ...(r.detail || {}), ...matchDetail(m) } }
+      if (m.inStore) Object.assign(patch, matchColumns(m), m.locationId ? { pos_location_id: m.locationId } : {})
+      const { error } = await db.from('woocommerce_orders').update(patch).eq('company_id', companyId).eq('woo_order_id', r.woo_order_id)
+      if (!error) { Object.assign(r, patch); n++ }
+    }
+  } catch { /* the sync goes ahead without it */ }
+  return n
 }
 
 /** Is Prexty connected for this business? */
@@ -299,7 +374,7 @@ export async function prextyActive(db: any, companyId: string): Promise<boolean>
  */
 export function pendingRow(order: any, m: PosMatch | null): any {
   return {
-    woo_order_id: Number(order.id), total: order.total, line_items: order.line_items || [], billing: order.billing || {},
+    woo_order_id: Number(order.id), woo_customer_id: Number(order.customer_id) || null, total: order.total, line_items: order.line_items || [], billing: order.billing || {},
     customer_email: order.billing?.email || null, order_date: new Date(orderTime(order)).toISOString(),
     pos_source: m?.inStore ? 'prexty' : null, pos_sale_id: m?.inStore ? m.saleId : null,
     pos_outlet: m?.inStore ? m.outlet : null, pos_location_id: m?.inStore ? m.locationId : null,
