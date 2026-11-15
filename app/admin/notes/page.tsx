@@ -20,6 +20,9 @@ import { confirmDialog } from '@/components/ConfirmDialog'
 import { renderNotePrintHtml, noteBodyForPrint } from '@/lib/note-print'
 import { loadStaffRows } from '@/lib/team-list'
 import EmptyScroll from '@/components/EmptyScroll'
+import AiAssistedBadge from '@/components/AiAssistedBadge'
+import { aiAssist, peopleEdits } from '@/lib/note-ai'
+import { publishAiContext } from '@/lib/ai-context'
 
 type Note = {
   id: string; title: string; body: string; checklist: ChecklistItem[]; attachments: any[]
@@ -47,7 +50,7 @@ function editors(log: { name?: string; email?: string; at?: string }[]): { key: 
 // A note with its list fields filled in, from the list or the single-note read.
 const fullNote = (n: any): any => ({ ...n, checklist: n.checklist || [], attachments: n.attachments || [], tags: n.tags || [], shared_members: n.shared_members || [], comments: n.comments || [], edit_log: n.edit_log || [], linked_tasks: n.linked_tasks || [] })
 
-type ChecklistItem = { id: string; text: string; done: boolean; image?: string | null; due?: string | null; flagged?: boolean; qty?: number; sku?: string | null; productId?: any; price?: string | null }
+type ChecklistItem = { id: string; text: string; done: boolean; image?: string | null; due?: string | null; flagged?: boolean; qty?: number; sku?: string | null; productId?: any; price?: string | null; ai?: boolean }
 
 const rid = () => Math.random().toString(36).slice(2, 9)
 const isAudio = (a: any) => a?.kind === 'audio' || (a?.type || '').startsWith('audio/')
@@ -359,6 +362,25 @@ export default function NotesPage() {
       .subscribe()
     return () => { try { (supabase as any).removeChannel(ch) } catch {} }
   }, [companyId, loadList, refreshActiveNote])
+
+  // Colvy AI knows which note is open ("add to this checklist"), and when it
+  // changes a note the list and the open note show it straight away.
+  useEffect(() => { publishAiContext({ noteId: activeId }) }, [activeId])
+  useEffect(() => {
+    const onChanged = async (e: any) => {
+      const t = String(e?.detail?.entityType || '')
+      if (!t.startsWith('note')) return
+      const id = e?.detail?.entityId
+      await loadList()
+      if (!id) return
+      // A note it just made opens; one it made and then undid closes.
+      if (e?.detail?.undone && t === 'note') { if (activeIdRef.current === id) setActiveId(null); return }
+      if (e?.detail?.created) { setTab('notes'); setActiveId(id); return }
+      if (id === activeIdRef.current) refreshActiveNote(id)
+    }
+    window.addEventListener('colvy:ai-changed', onChanged)
+    return () => window.removeEventListener('colvy:ai-changed', onChanged)
+  }, [loadList, refreshActiveNote])
 
   const createNote = async () => {
     if (!companyId) return
@@ -802,6 +824,10 @@ export default function NotesPage() {
                 <div className="ne-meta">
                   <button onClick={() => setActiveId(null)} className="notes-back" style={{ ...metaBtn, display: 'none', alignItems: 'center', gap: 4 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>Notes</button>
                   <span>{saving ? 'Saving…' : 'Saved'} · {fmtAgo(note.updated_at)}</span>
+                  {(() => {
+                    const ai = aiAssist(note.edit_log)
+                    return ai ? <AiAssistedBadge title={[ai.what, ai.by ? `asked by ${ai.by}` : null, fmtAgo(ai.at)].filter(Boolean).join(' · ')} /> : null
+                  })()}
                   <span style={{ flex: 1 }} />
                   {!note.cover_image && <>
                     <button onClick={() => coverInput.current?.click()} style={metaBtn}>Add cover</button>
@@ -980,6 +1006,11 @@ export default function NotesPage() {
                       {c.productId != null && c.image && <img src={c.image} alt="" style={{ width: 30, height: 30, borderRadius: 7, objectFit: 'cover', flexShrink: 0, border: '1px solid var(--border)' }} />}
                       <input className="nchk-input" value={c.text} onChange={e => queueSave({ ...note, checklist: note.checklist.map(x => x.id === c.id ? { ...x, text: e.target.value } : x) })}
                         placeholder="List item" style={{ color: c.done ? 'var(--slate)' : 'var(--ink)', textDecoration: c.done ? 'line-through' : 'none' }} />
+                      {c.ai && (
+                        <span title="Added by Colvy AI" aria-label="Added by Colvy AI" style={{ flexShrink: 0, color: '#e0533f', display: 'inline-flex', opacity: 0.85 }}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9z"/></svg>
+                        </span>
+                      )}
                       {/* Quantity stepper for product items. */}
                       {c.productId != null && (
                         <span className="nchk-qty">
@@ -1142,15 +1173,15 @@ export default function NotesPage() {
                 </div>
               </div>
 
-              {(note.edit_log || []).length > 0 && (
+              {peopleEdits(note.edit_log).length > 0 && (
                 <div className="ne-sec">
                   <div className="ne-sec-head">
                     <span className="ne-sec-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
                     <h3 className="ne-sec-title">Contributions from viewers</h3>
-                    <span className="ne-count">{(note.edit_log || []).length} {(note.edit_log || []).length === 1 ? 'edit' : 'edits'}</span>
+                    <span className="ne-count">{peopleEdits(note.edit_log).length} {peopleEdits(note.edit_log).length === 1 ? 'edit' : 'edits'}</span>
                   </div>
                   {/* One row per person (their edits counted), newest first, not the same name over and over. */}
-                  {editors(note.edit_log || []).slice(0, 8).map(p => (
+                  {editors(peopleEdits(note.edit_log)).slice(0, 8).map(p => (
                     <div key={p.key} className="ne-person">
                       <span className="ne-avatar">{(p.name || '?').charAt(0).toUpperCase()}</span>
                       <div style={{ minWidth: 0, flex: 1 }}>

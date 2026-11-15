@@ -7,7 +7,7 @@
 // asked can't miss it. It's tagged with the page it came from, so it never
 // leaks onto another page.
 
-export type AiPageContext = { conversationId?: string | null; contactId?: string | null; orderId?: string | null; callId?: string | null; outletId?: string | null }
+export type AiPageContext = { conversationId?: string | null; contactId?: string | null; orderId?: string | null; callId?: string | null; outletId?: string | null; noteId?: string | null }
 
 export function publishAiContext(detail: AiPageContext) {
   if (typeof window === 'undefined') return

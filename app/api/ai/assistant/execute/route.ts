@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     const r = await executeAction(db, ctx, tool, args)
     await recordAssistantAction(db, ctx, tool, args, r, true)
     if (!r.ok) return NextResponse.json({ error: r.error || 'Could not complete that.' }, { status: 400 })
-    return NextResponse.json({ ok: true, card: r.card ? { ...r.card, undo: r.undo || null } : null })
+    return NextResponse.json({ ok: true, card: r.card ? { ...r.card, undo: r.undo || null, entityType: r.entityType || null, entityId: r.entityId || null } : null })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Assistant error' }, { status: 500 })
   }

@@ -17,6 +17,7 @@ import { STAFF_FILTER } from '@/lib/team-list'
 import { staffUserIds } from '@/lib/company-access'
 import { resolveWaitlistProduct, unresolvedText, addToWaitlist, isInStock, wooOptions } from '@/lib/waitlist-add'
 import { assistantAddedBy, waitlistEntryHref } from '@/lib/waitlist-ai'
+import { applyNoteChange, aiLogEntry, htmlToText, newItemId, textToHtml, type NoteChange } from '@/lib/note-ai'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Colvy AI assistant — controlled tool layer.
@@ -47,6 +48,8 @@ export type AssistantContext = {
   callId?: string | null
   outletId?: string | null
   ticketId?: string | null
+  /** The note open on the Notes page: "this note", "the checklist". */
+  noteId?: string | null
   /** The business number the customer rang (phone AI): its store answers stock questions first. */
   dialledNumber?: string | null
 }
@@ -221,6 +224,52 @@ export const ASSISTANT_TOOLS: ToolDef[] = [
         contactId: { type: 'string' },
       },
       required: ['title', 'startsAt'],
+    },
+  },
+  {
+    name: 'search_notes', safety: 'read',
+    description: "Find notes on the Notes page that this person can see, by words in the title, text or checklist. With no query, the most recent ones.",
+    input_schema: { type: 'object', properties: { query: { type: 'string' }, limit: { type: 'number' } } },
+  },
+  {
+    name: 'get_note', safety: 'read',
+    description: "Read a note: its title, text and numbered checklist (with item ids, ticks, quantities and flags). Leave noteId out for the open note.",
+    input_schema: { type: 'object', properties: { noteId: { type: 'string' } } },
+  },
+  {
+    name: 'create_note', safety: 'immediate',
+    description: "Create a note on the Notes page (a list, a plan, things to remember), optionally with checklist items, a reminder and tags. Reversible. For work someone must do, use create_task instead.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string' },
+        text: { type: 'string', description: 'the note text, plain; new lines become paragraphs' },
+        items: { type: 'array', items: { type: 'string' }, description: 'checklist items' },
+        reminderAt: { type: 'string', description: 'ISO 8601' },
+        tags: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['title'],
+    },
+  },
+  {
+    name: 'update_note', safety: 'immediate',
+    description: "Change a note: add, tick, untick, remove, flag or unflag checklist items, add text, rename it, set or clear its reminder, add tags. Reversible. Leave noteId out for the open note (\"add to the checklist\" on the Notes page means it). Name items by their text or their number in the list.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        noteId: { type: 'string' },
+        addItems: { type: 'array', items: { type: 'string' } },
+        tickItems: { type: 'array', items: { type: 'string' } },
+        untickItems: { type: 'array', items: { type: 'string' } },
+        removeItems: { type: 'array', items: { type: 'string' } },
+        flagItems: { type: 'array', items: { type: 'string' } },
+        unflagItems: { type: 'array', items: { type: 'string' } },
+        appendText: { type: 'string' },
+        title: { type: 'string' },
+        reminderAt: { type: 'string', description: 'ISO 8601' },
+        clearReminder: { type: 'boolean' },
+        addTags: { type: 'array', items: { type: 'string' } },
+      },
     },
   },
   {
@@ -622,6 +671,31 @@ const firstName = (n?: string | null) => String(n || '').trim().split(/\s+/)[0] 
 const fillLink = (text: string, link: string) => text.includes('{link}') ? text.replace(/\{link\}/g, link) : `${text.trim()} ${link}`
 
 // ── READ tools: return plain data for the model ──────────────────────────────
+// ── Notes: only ones this person can see (their own, shared with the team, or
+// shared with them), as on the Notes page (app/api/notes). ──────────────────────
+const noteVisible = (n: any, userId: string) => !!n && !n.trashed_at && !!userId
+  && (n.created_by === userId || n.shared_with_team || (Array.isArray(n.shared_members) && n.shared_members.some((m: any) => m?.id === userId)))
+
+async function visibleNotes(D: any, ctx: AssistantContext): Promise<any[]> {
+  const { data } = await D.from('notes').select('*').eq('company_id', ctx.companyId).limit(500)
+  return (data || []).filter((n: any) => noteVisible(n, ctx.userId))
+    .sort((a: any, b: any) => (b.id === ctx.noteId ? 1 : 0) - (a.id === ctx.noteId ? 1 : 0) || String(b.updated_at || '').localeCompare(String(a.updated_at || '')))
+}
+
+/** The named note, else the open one, if this person can see it. */
+async function loadNote(D: any, ctx: AssistantContext, ref?: unknown): Promise<any | null> {
+  const id = String(ref || ctx.noteId || '').trim()
+  if (!id) return null
+  if (/^[0-9a-f-]{36}$/i.test(id)) {
+    const { data } = await D.from('notes').select('*').eq('company_id', ctx.companyId).eq('id', id).maybeSingle()
+    return noteVisible(data, ctx.userId) ? data : null
+  }
+  // A title the model passed instead of an id.
+  const q = id.toLowerCase()
+  const rows = (await visibleNotes(D, ctx)).filter((n: any) => String(n.title || '').toLowerCase().includes(q))
+  return rows.length === 1 ? rows[0] : rows.find((n: any) => String(n.title || '').toLowerCase() === q) || null
+}
+
 export async function runReadTool(db: SupabaseClient, ctx: AssistantContext, name: string, args: any): Promise<any> {
   const D = db as any
   if (BUILDER_TOOL_NAMES.has(name)) return runBuilderRead(D, ctx, name, args)
@@ -777,6 +851,28 @@ export async function runReadTool(db: SupabaseClient, ctx: AssistantContext, nam
         handledBy: c.agent_name || c.answered_by || null, when: fmtDateTime(c.created_at),
         summary: c.ai_summary || null, todos, sentiment: c.sentiment || null,
         hasTranscript: !!(c.transcript_en || c.transcription),
+      },
+    }
+  }
+  if (name === 'search_notes') {
+    const q = String(args?.query || '').trim().toLowerCase()
+    const rows = (await visibleNotes(D, ctx)).filter((n: any) => !q || [n.title, htmlToText(n.body), ...(Array.isArray(n.checklist) ? n.checklist.map((i: any) => i?.text) : [])].some(t => String(t || '').toLowerCase().includes(q)))
+    return {
+      notes: rows.slice(0, Math.min(Number(args?.limit) || 10, 25)).map((n: any) => {
+        const list = Array.isArray(n.checklist) ? n.checklist : []
+        return { id: n.id, title: n.title || 'Untitled', open: n.id === ctx.noteId, items: list.length ? `${list.filter((i: any) => i?.done).length}/${list.length} ticked` : null, updated: fmtDate(n.updated_at), excerpt: htmlToText(n.body).slice(0, 140) }
+      }),
+    }
+  }
+  if (name === 'get_note') {
+    const n = await loadNote(D, ctx, args?.noteId)
+    if (!n) return { error: args?.noteId || ctx.noteId ? 'That note isn’t one you can see.' : 'No note is open. Find it with search_notes.' }
+    const list = Array.isArray(n.checklist) ? n.checklist : []
+    return {
+      note: {
+        id: n.id, title: n.title || 'Untitled', text: htmlToText(n.body).slice(0, 3000),
+        checklist: list.map((i: any, k: number) => ({ number: k + 1, id: i.id, text: i.text, done: !!i.done, qty: i.qty || null, flagged: !!i.flagged, due: i.due ? fmtDate(i.due) : null })),
+        reminder: n.reminder_at ? fmtDate(n.reminder_at) : null, tags: n.tags || [], sharedWithTeam: !!n.shared_with_team,
       },
     }
   }
@@ -1020,6 +1116,49 @@ export async function executeAction(db: SupabaseClient, ctx: AssistantContext, n
     }
     await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Created task', tool: name, entityType: 'task', entityId: ins.id, input: row, result: { title } })
     return { ok: true, entityType: 'task', entityId: ins.id, card, undo: { entityType: 'task', entityId: ins.id } }
+  }
+
+  if (name === 'create_note') {
+    const title = String(args?.title || '').trim()
+    if (!title) return { ok: false, error: 'A note needs a title.' }
+    const items = (Array.isArray(args?.items) ? args.items : []).map((t: any) => String(t || '').trim()).filter(Boolean).slice(0, 60)
+      .map((text: string) => ({ id: newItemId(), text, done: false, ai: true }))
+    const tags = (Array.isArray(args?.tags) ? args.tags : []).map((t: any) => String(t || '').trim().replace(/^#/, '')).filter(Boolean).slice(0, 10)
+    const row: any = {
+      company_id: ctx.companyId, title, body: textToHtml(String(args?.text || '')),
+      created_by: ctx.userId || null, created_by_name: ctx.userName || null,
+      checklist: items, tags, reminder_at: args?.reminderAt || null,
+      edit_log: [aiLogEntry(ctx.userName, 'Created this note')],
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    }
+    const ins = await insertResilient(D, 'notes', row, ['edit_log', 'tags', 'reminder_at', 'created_by_name'])
+    if (!ins.id) return { ok: false, error: ins.error || 'Could not create the note.' }
+    await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Created note', tool: name, entityType: 'note', entityId: ins.id, input: { title, items: items.length }, result: { title } })
+    const card = { kind: 'note', title, lines: [items.length ? `${items.length} checklist item${items.length === 1 ? '' : 's'}` : null, args?.reminderAt ? `Reminder ${fmtDate(args.reminderAt)}` : null].filter(Boolean), href: `/admin/notes?open=${ins.id}` }
+    return { ok: true, entityType: 'note', entityId: ins.id, card, undo: { entityType: 'note', entityId: ins.id } }
+  }
+
+  if (name === 'update_note') {
+    const n = await loadNote(D, ctx, args?.noteId)
+    if (!n) return { ok: false, error: args?.noteId || ctx.noteId ? 'That note isn’t one you can see.' : 'Which note? Open it on the Notes page, or tell me its name.' }
+    const arr = (v: any) => (Array.isArray(v) ? v : v ? [v] : []).map((x: any) => String(x ?? '')).filter(Boolean)
+    const change: NoteChange = {
+      addItems: arr(args?.addItems), tickItems: arr(args?.tickItems), untickItems: arr(args?.untickItems), removeItems: arr(args?.removeItems),
+      flagItems: arr(args?.flagItems), unflagItems: arr(args?.unflagItems), appendText: args?.appendText || '', title: args?.title || '',
+      reminderAt: args?.reminderAt || null, clearReminder: !!args?.clearReminder, addTags: arr(args?.addTags),
+    }
+    const { patch, undo, done, missing } = applyNoteChange(n, change)
+    const title = n.title || 'Untitled note'
+    if (!Object.keys(patch).length) {
+      return { ok: false, error: missing.length ? `I couldn't find ${missing.map(m => `"${m}"`).join(', ')} on "${title}".` : `Nothing to change on "${title}" (${done.join('; ') || 'already like that'}).` }
+    }
+    const entry = aiLogEntry(ctx.userName, done.join(' · '))
+    const log = [...(Array.isArray(n.edit_log) ? n.edit_log : []), entry].slice(-100)
+    const up = await updateResilient(D, 'notes', n.id, { ...patch, edit_log: log, updated_at: new Date().toISOString() }, ['edit_log', 'tags', 'reminder_at'])
+    if (!up.ok) return { ok: false, error: up.error || 'Could not change the note.' }
+    await logAiEvent(D, { companyId: ctx.companyId, userId: ctx.userId, action: 'Updated note', tool: name, entityType: 'note', entityId: n.id, input: change, result: { done, missing } })
+    const card = { kind: 'note', title, lines: [...done, missing.length ? `Couldn't find: ${missing.join('; ')}` : null].filter(Boolean), href: `/admin/notes?open=${n.id}` }
+    return { ok: true, entityType: 'note', entityId: n.id, card, undo: { entityType: 'note_update', entityId: n.id, noteChange: { ...undo, logAt: entry.at } } as any }
   }
 
   if (name === 'add_to_waitlist') {
@@ -1647,6 +1786,12 @@ export function readToolCard(name: string, result: any): any | null {
         (r.topProducts || []).length ? { heading: 'Top products', rows: r.topProducts.slice(0, 5).map((p: any) => ({ label: p.key, value: `${p.count}` })) } : null,
         (r.channels || []).length ? { heading: 'Channels', rows: r.channels.slice(0, 5).map((c: any) => ({ label: c.key, value: `${c.count}` })) } : null,
       ].filter(Boolean),
+    }
+  }
+  if (name === 'search_notes' && Array.isArray(result?.notes)) {
+    return {
+      kind: 'list', title: result.notes.length ? `${result.notes.length} note${result.notes.length === 1 ? '' : 's'}` : 'No matching notes',
+      rows: result.notes.slice(0, 8).map((n: any) => ({ label: n.title, sub: [n.items, n.updated].filter(Boolean).join(' · '), href: `/admin/notes?open=${n.id}` })),
     }
   }
   if (name === 'list_out_of_stock' && Array.isArray(result?.items)) {

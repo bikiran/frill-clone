@@ -89,11 +89,16 @@ export async function POST(req: NextRequest) {
     if (action === 'update') {
       const patch: any = { updated_at: new Date().toISOString() }
       for (const f of ['title', 'body', 'checklist', 'attachments', 'cover_image', 'allow_public_edit', 'tags', 'reminder_at', 'pinned', 'shared_with_team', 'shared_members', 'comments', 'linked_tasks', 'notebook']) if (body[f] !== undefined) patch[f] = body[f]
+      // Undo of a Colvy AI change: its "Assisted by Colvy AI" entry goes too.
+      if (typeof body.aiUndoneAt === 'string' && body.aiUndoneAt) {
+        const { data: cur } = await db.from('notes').select('edit_log').eq('id', body.id).eq('company_id', companyId).maybeSingle()
+        if (Array.isArray(cur?.edit_log)) patch.edit_log = cur.edit_log.filter((e: any) => !(e?.ai && e.at === body.aiUndoneAt))
+      }
       let { error } = await db.from('notes').update(patch).eq('id', body.id).eq('company_id', companyId)
       // If a newer column (V234–V240) isn't migrated yet, drop those keys and
       // retry so the core fields still save.
       if (error && missing(error.message)) {
-        for (const f of ['tags', 'reminder_at', 'pinned', 'shared_with_team', 'shared_members', 'comments', 'linked_tasks', 'notebook']) delete patch[f]
+        for (const f of ['tags', 'reminder_at', 'pinned', 'shared_with_team', 'shared_members', 'comments', 'linked_tasks', 'notebook', 'edit_log']) delete patch[f]
         const retry = await db.from('notes').update(patch).eq('id', body.id).eq('company_id', companyId)
         error = retry.error
       }
