@@ -9,6 +9,8 @@
 //   • a delivery that's booked.
 // The formatting is pure (tested in scripts/agent-activity.test.mjs).
 
+import { collapsePosCopies } from '@/lib/pos-sale-key'
+
 export type ActivityKind = 'instore' | 'order' | 'payment' | 'sale' | 'delivery'
 export type ActivityItem = {
   kind: ActivityKind
@@ -141,15 +143,17 @@ export async function loadCustomerActivity(db: any, companyId: string, opts: { c
     // WooCommerce: in-store (Prexty) and online, by email then phone.
     safe(async () => {
       const seen = new Set<string>()
-      const add = (rows: any[]) => { for (const r of rows || []) { const k = String(r.woo_order_id ?? r.id); if (seen.has(k)) continue; seen.add(k); items.push(wooItem(r)) } }
+      const raw: any[] = []
       if (email) {
         const { data } = await db.from('woocommerce_orders').select('*').eq('company_id', companyId).ilike('customer_email', email).gte('order_date', since).order('order_date', { ascending: false }).limit(6)
-        add(data || [])
+        raw.push(...(data || []))
       }
       if (tail.length >= 8) {
         const { data } = await db.from('woocommerce_orders').select('*').eq('company_id', companyId).eq('billing_phone_norm', tail).gte('order_date', since).order('order_date', { ascending: false }).limit(6)
-        add(data || [])
+        raw.push(...(data || []))
       }
+      // One in-store sale Prexty sent to WooCommerce several times is one purchase.
+      for (const r of collapsePosCopies(raw)) { const k = String(r.woo_order_id ?? r.id); if (seen.has(k)) continue; seen.add(k); items.push(wooItem(r)) }
     }),
     // Shopify orders (the operational table).
     safe(async () => {

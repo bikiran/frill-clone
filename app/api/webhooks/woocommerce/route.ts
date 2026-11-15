@@ -20,6 +20,7 @@ import { recoverAbandonedCarts } from '@/lib/abandoned-carts'
 import { readStoreJson } from '@/lib/store-response'
 import { forgetWooOrders } from '@/lib/woocommerce-service'
 import { outletRouting, locationForOutlet, locationName } from '@/lib/prexty-outlets'
+import { findTaggedCopies, matchDetail } from '@/lib/pos-copies'
 
 // A product changed in WooCommerce. Keep the synced catalogue's stock current,
 // and when it's back IN stock, text everyone on its back-in-stock waitlist
@@ -295,6 +296,11 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   // (lib/prexty-outlets), so the thread files under Somerton or Oakleigh rather
   // than "Website".
   const pos = posSaleInfo(order)
+  // Prexty sometimes sends one sale to WooCommerce more than once: the same
+  // receipt on an earlier order makes this one a copy (lib/pos-copies). A copy
+  // posts no second "In-store sale" line in the chat and no second alert; the
+  // Orders board flags it ("Copy of #…") so it can be cancelled in WooCommerce.
+  const posCopy = pos.isPos && pos.saleId ? (await findTaggedCopies(db, companyId, [order])).get(Number(order.id)) || null : null
   let posLoc: string | null = null
   let posShop: string | null = pos.outlet || null
   if (pos.isPos && pos.outlet) {
@@ -398,7 +404,7 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
   const { data: seenBefore } = await db.from('order_chat_events').select('id').match(dupeKey).maybeSingle()
   let seenEvent: any = seenBefore
   if (!seenEvent && !(await claimEvent(db, companyId, Number(order.id), status, { conversation_id: conv.id }))) seenEvent = { id: 'claimed' }
-  if (!seenEvent) {
+  if (!seenEvent && !posCopy) {
     // If an order message already exists for this order (from an earlier
     // status), UPDATE it in place so the thread shows the current status
     // instead of leaving a stale "pending" line behind. Then also post the
@@ -734,7 +740,8 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
       // …and the shop it was matched to (V410).
       ...(pos.isPos ? { pos_location_id: posLoc } : {}),
       // The full invoice detail (V408), so the order sheet doesn't lose it.
-      detail: orderDetail(order),
+      // …and, for a second copy of one in-store sale, the order it copies.
+      detail: { ...orderDetail(order), ...(posCopy ? matchDetail(posCopy) : {}) },
     }
     const { data: existingOrder } = await db.from('woocommerce_orders')
       .select('id').eq('company_id', companyId).eq('woo_order_id', order.id).maybeSingle()

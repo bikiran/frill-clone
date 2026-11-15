@@ -10,6 +10,7 @@ import { contactMessageHref } from '@/lib/channel-choice'
 import { notifyIntegrations } from '@/lib/integrations-notify'
 import CustomerTimeline from '@/components/CustomerTimeline'
 import EmptyScroll from '@/components/EmptyScroll'
+import { collapsePosCopies } from '@/lib/pos-sale-key'
 
 export default function CustomerProfilePage() {
   const searchParams = useSearchParams()
@@ -179,6 +180,9 @@ export default function CustomerProfilePage() {
             }
           } catch {}
           ordersData.sort((a: any, b: any) => (b.order_date || '').localeCompare(a.order_date || ''))
+          // One in-store sale Prexty sent to WooCommerce several times counts
+          // once (lib/pos-sale-key).
+          ordersData = collapsePosCopies(ordersData)
 
           // Live fallback: if nothing has synced yet, pull orders straight from
           // WooCommerce (same as the inbox sidebar does), so the profile isn't

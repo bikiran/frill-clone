@@ -2,6 +2,7 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { customerSummary, locationSummary, parseTs, windowFor, type ItemRow, type OrderRow } from '@/lib/insights-summary'
+import { collapsePosCopies } from '@/lib/pos-sale-key'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -28,21 +29,24 @@ async function readAll<T>(db: any, companyId: string, cols: string, since: numbe
   const { count } = await head
   const total = Math.min(cap, count || 0)
   const offsets = Array.from({ length: Math.ceil(total / PAGE) }, (_, i) => i * PAGE)
-  const out: T[] = []
+  const out: any[] = []
   for (let i = 0; i < offsets.length; i += 6) {
     const batch = await Promise.all(offsets.slice(i, i + 6).map(o => {
       let q = db.from('woocommerce_orders').select(cols).eq('company_id', companyId)
       if (since) q = q.gte('order_date', new Date(since).toISOString())
       return q.order('order_date', { ascending: false }).range(o, o + PAGE - 1)
     }))
-    for (const r of batch) for (const row of r.data || []) out.push(map(row))
+    for (const r of batch) for (const row of r.data || []) out.push(row)
   }
-  return out
+  // One in-store sale Prexty sent to WooCommerce several times counts once
+  // (lib/pos-sale-key), in revenue and in order counts alike.
+  return collapsePosCopies(out).map(map)
 }
 
 // Only the fields the summaries use; the address comes out of the billing
 // JSON as plain columns rather than the whole object.
-const ORDER_COLS = 'total, status, order_date, customer_email, woo_customer_id, city:billing->>city, pc:billing->>postcode, st:billing->>state, fn:billing->>first_name, ln:billing->>last_name, em:billing->>email'
+const POS_COLS = 'woo_order_id, pos_source, pos_sale_id, pos_outlet'
+const ORDER_COLS = POS_COLS + ', total, status, order_date, customer_email, woo_customer_id, city:billing->>city, pc:billing->>postcode, st:billing->>state, fn:billing->>first_name, ln:billing->>last_name, em:billing->>email'
 function orderRow(o: any): OrderRow {
   const email = String(o.customer_email || o.em || '').toLowerCase()
   const name = [o.fn, o.ln].filter(Boolean).join(' ').trim() || email || 'Guest'
@@ -90,7 +94,7 @@ export async function GET(req: NextRequest) {
     // window (all time is capped to the latest 8,000 orders).
     const since = w.all ? null : w.start
     const itemKey = `${companyId}:${since ? Math.floor(since / 3600000) : 'all'}`
-    const items = await cached(itemsCache, itemKey, () => readAll(db, companyId!, 'status, order_date, line_items', since, (o: any): ItemRow => ({
+    const items = await cached(itemsCache, itemKey, () => readAll(db, companyId!, POS_COLS + ', total, status, order_date, line_items', since, (o: any): ItemRow => ({
       at: parseTs(o.order_date), status: String(o.status || ''),
       items: (o.line_items || []).map((li: any) => ({ name: String(li?.name || 'Item'), total: Number(li?.total) || 0, qty: Number(li?.quantity) || 1 })),
     }), since ? MAX : 8000)).catch(() => null)

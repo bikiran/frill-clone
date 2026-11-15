@@ -1,5 +1,5 @@
 import { posColumns, posSaleInfo, missingPosColumns, withoutPosColumns, orderDetail } from '@/lib/prexty-pos'
-import { isEligible, matchPosCopy, matchColumns, matchDetail, pendingRow, prextyActive, type PosMatch } from '@/lib/pos-copies'
+import { isEligible, matchPosCopy, matchColumns, matchDetail, pendingRow, prextyActive, findTaggedCopies, type PosMatch } from '@/lib/pos-copies'
 import { outletRouting, locationForOutlet } from '@/lib/prexty-outlets'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { decodeEntities } from '@/lib/decode-entities'
@@ -251,6 +251,13 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
           pending.push(pendingRow(o, m))
         }
       }
+      // …and tagged sales WooCommerce holds more than once (same receipt): the
+      // later ones are copies, flagged on the board, kept out of spend totals.
+      const taggedCopies = await findTaggedCopies(supabase, companyId, orders || [])
+      const copyOfOrder = (o: any): PosMatch | null => {
+        const m = taggedCopies.get(Number(o.id)) || posCopies.get(Number(o.id))
+        return m?.copyOf ? m : null
+      }
       const posOf = (o: any) => {
         const m = posCopies.get(Number(o.id))
         return m?.inStore ? { isPos: true, saleId: m.saleId || '', outlet: m.outlet || '', locationId: m.locationId } : { ...posSaleInfo(o), locationId: null as string | null }
@@ -291,7 +298,7 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
           : {}),
         // The full invoice detail (V408), so the order sheet doesn't lose it,
         // and why an untagged order counts as an in-store sale or a copy.
-        detail: { ...orderDetail(o), ...(posCopies.has(Number(o.id)) ? matchDetail(posCopies.get(Number(o.id))!) : {}) },
+        detail: { ...orderDetail(o), ...(posCopies.has(Number(o.id)) ? matchDetail(posCopies.get(Number(o.id))!) : taggedCopies.has(Number(o.id)) ? matchDetail(taggedCopies.get(Number(o.id))!) : {}) },
       })).filter((r: any) => r.woo_customer_id || r.customer_email)
       // Keep guest orders too — they have no woo_customer_id but DO have a
       // billing email, which is how the profile and inbox match orders to a
@@ -354,6 +361,8 @@ export async function syncPage(body: any): Promise<{ status: number; body: any }
         }
       }
       for (const o of orders as any[]) {
+        // A second copy of one in-store sale is not a second purchase.
+        if (copyOfOrder(o)) continue
         const cid = o.customer_id
         const email = (o.billing?.email || '').toLowerCase().trim()
         if (cid) {
