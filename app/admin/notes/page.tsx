@@ -32,6 +32,21 @@ type Note = {
 }
 // Field names mirror colvy-mobile (lib/notes.ts NoteChecklistItem) so items
 // sync both ways: due, qty, productId, image, sku, price, flagged.
+// Viewers' edits grouped by person: how many, and the latest, newest first.
+function editors(log: { name?: string; email?: string; at?: string }[]): { key: string; name: string; email: string; count: number; at: string }[] {
+  const by = new Map<string, { key: string; name: string; email: string; count: number; at: string }>()
+  for (const e of log || []) {
+    const key = `${String(e?.name || '').trim().toLowerCase()}|${String(e?.email || '').trim().toLowerCase()}`
+    const cur = by.get(key)
+    if (!cur) by.set(key, { key, name: String(e?.name || ''), email: String(e?.email || ''), count: 1, at: String(e?.at || '') })
+    else { cur.count++; if (String(e?.at || '') > cur.at) cur.at = String(e?.at || '') }
+  }
+  return Array.from(by.values()).sort((a, b) => b.at.localeCompare(a.at))
+}
+
+// A note with its list fields filled in, from the list or the single-note read.
+const fullNote = (n: any): any => ({ ...n, checklist: n.checklist || [], attachments: n.attachments || [], tags: n.tags || [], shared_members: n.shared_members || [], comments: n.comments || [], edit_log: n.edit_log || [], linked_tasks: n.linked_tasks || [] })
+
 type ChecklistItem = { id: string; text: string; done: boolean; image?: string | null; due?: string | null; flagged?: boolean; qty?: number; sku?: string | null; productId?: any; price?: string | null }
 
 const rid = () => Math.random().toString(36).slice(2, 9)
@@ -198,15 +213,34 @@ export default function NotesPage() {
     setDragCheck({ from: ci, to: ci })
   }
 
+  // Opening a note is instant: the list already holds every note in full (and
+  // queueSave keeps it up to date with each edit), so the note shows from there
+  // straight away, then refreshes quietly in the background. It used to wait for
+  // that fetch with the previous note still on screen, and a slow reply for a
+  // note already left could replace the one now open.
+  const listRef = useRef<Note[]>([])
+  listRef.current = list
+  const trashRef = useRef<Note[]>([])
+  trashRef.current = trashList
   useEffect(() => {
     if (!companyId || !activeId) { setNote(null); return }
+    const row = listRef.current.find(n => n.id === activeId) || trashRef.current.find(n => n.id === activeId)
+    if (row) setNote(fullNote(row))
+    let gone = false
     ;(async () => {
       try {
         const res = await authFetch(`/api/notes?companyId=${companyId}&userId=${uid}&id=${activeId}`)
         const d = await res.json()
-        if (d.note) setNote({ ...d.note, checklist: d.note.checklist || [], attachments: d.note.attachments || [], tags: d.note.tags || [], shared_members: d.note.shared_members || [], comments: d.note.comments || [], edit_log: d.note.edit_log || [], linked_tasks: d.note.linked_tasks || [] })
+        // Still this note, and nothing typed into it since it opened.
+        if (gone || !d.note || (row && dirtyRef.current)) return
+        // Remount the editor only when the text really changed elsewhere.
+        const bodyChanged = noteRef.current?.id === activeId && (noteRef.current?.body || '') !== (d.note.body || '')
+        setNote(fullNote(d.note))
+        if (bodyChanged) setRemoteVer(v => v + 1)
       } catch {}
     })()
+    return () => { gone = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId, activeId])
 
   const saveTimer = useRef<any>(null)
@@ -517,7 +551,7 @@ export default function NotesPage() {
         .ne-scroll { flex: 1; overflow-y: auto; }
         .ne-inner { max-width: 1280px; margin: 0 auto; padding: 30px 76px 60px; }
         .ne-footer { border-top: 1px solid #f0f0f2; background: #fff; padding: 12px 76px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
-        .nchk-row { display: flex; align-items: center; gap: 11px; padding: 7px 8px; border-radius: 11px; transition: background .12s, box-shadow .12s, opacity .12s; }
+        .nchk-row { display: flex; align-items: center; gap: 11px; padding: 8px 10px; border-radius: 14px; transition: background .12s, box-shadow .12s, opacity .12s; }
         .nchk-row:hover { background: var(--canvas); }
         .nchk-grip { cursor: grab; color: var(--slate); display: flex; padding: 3px 2px; opacity: 0.3; touch-action: none; transition: opacity .12s, color .12s; }
         .nchk-row:hover .nchk-grip { opacity: 0.65; }
@@ -529,14 +563,46 @@ export default function NotesPage() {
         .nchk-del { opacity: 0; background: none; border: none; color: var(--slate); cursor: pointer; font-size: 20px; line-height: 1; padding: 2px 6px; border-radius: 7px; transition: opacity .12s, background .12s, color .12s; }
         .nchk-row:hover .nchk-del { opacity: 1; }
         .nchk-del:hover { background: var(--peach); color: var(--coral); }
-        .nchk-act { flex-shrink: 0; width: 28px; height: 28px; border-radius: 7px; border: none; background: none; color: var(--slate); opacity: 0.4; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; transition: opacity .12s, background .12s, color .12s; }
+        .nchk-act { flex-shrink: 0; width: 30px; height: 30px; border-radius: 999px; border: none; background: none; color: var(--slate); opacity: 0.4; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; transition: opacity .12s, background .12s, color .12s; }
         .nchk-row:hover .nchk-act { opacity: 0.72; }
         .nchk-act:hover { background: var(--canvas); opacity: 1; }
         .nchk-act[data-on="true"] { color: var(--coral); opacity: 1; }
+        /* A flag is always red, whatever the workspace's brand colour (as in the app). */
+        .nchk-act.nchk-flag[data-on="true"] { color: #ef4444; }
+        [data-theme="dark"] .nchk-act.nchk-flag[data-on="true"] { color: #f87171; }
         .nchk-act:disabled { opacity: 0.3; cursor: default; }
-        .nchk-qty { flex-shrink: 0; display: inline-flex; align-items: center; gap: 2px; border: 1px solid var(--border); border-radius: 9px; padding: 1px; background: #fff; }
-        .nchk-qty button { width: 26px; height: 26px; border: none; background: none; color: var(--slate); font-size: 17px; line-height: 1; cursor: pointer; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; }
-        .nchk-qty button:hover { background: var(--canvas); color: var(--coral); }
+        .nchk-qty { flex-shrink: 0; display: inline-flex; align-items: center; gap: 2px; border-radius: 999px; padding: 2px; background: #f4f4f5; }
+        .nchk-qty button { width: 28px; height: 28px; border: none; background: none; color: #52525b; font-size: 17px; line-height: 1; cursor: pointer; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; transition: background .12s, box-shadow .12s, color .12s; }
+        .nchk-qty button:hover { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(16,24,40,.1); }
+        [data-theme="dark"] .nchk-qty { background: rgba(255,255,255,.07); }
+        [data-theme="dark"] .nchk-qty button:hover { background: rgba(255,255,255,.12); }
+        /* Sellio sections under the note: one soft card each, a bold header with
+           its count, pill buttons, grey fields. */
+        .ne-sec { margin-top: 18px; padding: 16px 18px 14px; border-radius: 20px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 1px 2px rgba(16,24,40,.04); }
+        .ne-sec-head { display: flex; align-items: center; gap: 10px; min-height: 34px; margin-bottom: 10px; flex-wrap: wrap; }
+        .ne-sec-ic { width: 32px; height: 32px; border-radius: 11px; background: #f4f4f5; color: #3f3f46; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .ne-sec-title { margin: 0; font-size: 15.5px; font-weight: 800; letter-spacing: -.01em; color: var(--ink); }
+        .ne-count { font-size: 12px; font-weight: 700; color: #52525b; background: #f4f4f5; border-radius: 999px; padding: 2px 9px; }
+        .ne-sec-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; position: relative; }
+        .ne-sec .cv-btn { height: 34px; padding: 0 14px; font-size: 13.5px; }
+        .ne-progress { height: 5px; border-radius: 999px; background: #f0f0f2; overflow: hidden; margin: -2px 0 10px; }
+        .ne-progress > span { display: block; height: 100%; border-radius: inherit; background: var(--coral); transition: width .35s cubic-bezier(.22,1,.36,1); }
+        .ne-empty { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 14px; background: #fafafa; color: var(--slate); font-size: 13.5px; margin: 0; }
+        .nchk-addrow { display: flex; align-items: center; gap: 10px; width: 100%; margin-top: 4px; padding: 9px 10px; border: none; border-radius: 14px; background: none; color: var(--slate); font: inherit; font-size: 14.5px; font-weight: 600; cursor: pointer; text-align: left; transition: background .12s, color .12s; }
+        .nchk-addrow:hover { background: #f4f4f5; color: var(--ink); }
+        .nchk-addrow .nchk-plus { width: 24px; height: 24px; border-radius: 8px; background: #f4f4f5; color: #52525b; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; margin-left: 30px; }
+        .nchk-addrow:hover .nchk-plus { background: #fff; box-shadow: 0 1px 2px rgba(16,24,40,.1); }
+        .ne-task { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 14px; background: #fafafa; transition: background .12s; }
+        .ne-task:hover { background: #f4f4f5; }
+        .ne-person { display: flex; align-items: center; gap: 10px; padding: 8px 4px; }
+        .ne-person + .ne-person { border-top: 1px solid #f4f4f5; }
+        .ne-avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--coral); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; flex-shrink: 0; }
+        [data-theme="dark"] .ne-sec { background: var(--card); box-shadow: 0 0 0 1px rgba(255,255,255,.07); }
+        [data-theme="dark"] .ne-sec-ic, [data-theme="dark"] .ne-count, [data-theme="dark"] .nchk-addrow .nchk-plus { background: rgba(255,255,255,.07); color: var(--slate); }
+        [data-theme="dark"] .ne-progress { background: rgba(255,255,255,.08); }
+        [data-theme="dark"] .ne-empty, [data-theme="dark"] .ne-task { background: rgba(255,255,255,.04); }
+        [data-theme="dark"] .nchk-addrow:hover, [data-theme="dark"] .ne-task:hover { background: rgba(255,255,255,.07); }
+        [data-theme="dark"] .ne-person + .ne-person { border-top-color: rgba(255,255,255,.06); }
         .nchk-qty-n { min-width: 22px; text-align: center; font-size: 13.5px; font-weight: 700; color: var(--ink); }
         @media (max-width: 860px) {
           .ne-inner { padding: 16px 16px 32px; }
@@ -880,11 +946,20 @@ export default function NotesPage() {
                 onEditing={() => { dirtyRef.current = true }}
                 placeholder="Start writing… use @ to mention a teammate, / for a voice note" mentions={team} bordered={false} big enableVoice companyId={companyId} toolbarPortal={toolbarEl} blockDrag minHeight={200} maxHeight={'none' as any} />
 
-              <div style={{ marginTop: 22, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>Checklist</h3>
-                  {(note.checklist || []).length > 0 && <span style={{ fontSize: 12, color: 'var(--slate)' }}>{checklistDone}/{note.checklist.length}</span>}
+              <div className="ne-sec" style={{ marginTop: 26 }}>
+                <div className="ne-sec-head">
+                  <span className="ne-sec-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
+                  <h3 className="ne-sec-title">Checklist</h3>
+                  {(note.checklist || []).length > 0 && <span className="ne-count">{checklistDone}/{note.checklist.length}</span>}
+                  <div className="ne-sec-actions">
+                    <button type="button" className="cv-btn" onClick={() => setProdPicker(true)}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+                      Add products</button>
+                  </div>
                 </div>
+                {(note.checklist || []).length > 0 && (
+                  <div className="ne-progress" aria-hidden><span style={{ width: `${Math.round((checklistDone / note.checklist.length) * 100)}%` }} /></div>
+                )}
                 <div ref={checkListRef}>
                 {(note.checklist || []).map((c, ci) => (
                   <div key={c.id} data-check-row style={{ position: 'relative' }}>
@@ -924,7 +999,7 @@ export default function NotesPage() {
                         onClick={() => setChkDateFor(v => v === c.id ? null : c.id)}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                       </button>
-                      <button className="nchk-act" data-on={!!c.flagged} title={c.flagged ? 'Remove flag' : 'Flag'}
+                      <button className="nchk-act nchk-flag" data-on={!!c.flagged} title={c.flagged ? 'Remove flag' : 'Flag'}
                         onClick={() => patchCheck(c.id, { flagged: !c.flagged })}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill={c.flagged ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
                       </button>
@@ -966,16 +1041,10 @@ export default function NotesPage() {
                   <div style={{ position: 'relative', height: 0 }}><div style={{ position: 'absolute', top: -2, left: 40, right: 8, height: 2.5, borderRadius: 2, background: 'var(--coral)', boxShadow: '0 0 0 3px rgba(255,122,107,0.16)' }} /></div>
                 )}
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 8, marginLeft: 8, flexWrap: 'wrap' }}>
-                  <button onClick={() => queueSave({ ...note, checklist: [...(note.checklist || []), { id: rid(), text: '', done: false }] })}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: 'var(--coral)', fontSize: 14.5, fontWeight: 700, cursor: 'pointer', padding: '4px 0' }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                    Add item</button>
-                  <button onClick={() => setProdPicker(true)}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: 'var(--coral)', fontSize: 14.5, fontWeight: 700, cursor: 'pointer', padding: '4px 0' }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
-                    Add products</button>
-                </div>
+                <button type="button" className="nchk-addrow" onClick={() => queueSave({ ...note, checklist: [...(note.checklist || []), { id: rid(), text: '', done: false }] })}>
+                  <span className="nchk-plus"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+                  Add an item
+                </button>
               </div>
 
               <ChecklistProductPicker
@@ -986,13 +1055,17 @@ export default function NotesPage() {
                 onAdd={addProductToChecklist}
               />
 
-              <div style={{ marginTop: 22 }}>
-                <h3 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>Voice notes</h3>
+              <div className="ne-sec">
+                <div className="ne-sec-head">
+                  <span className="ne-sec-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg></span>
+                  <h3 className="ne-sec-title">Voice notes</h3>
+                  {audios.length > 0 && <span className="ne-count">{audios.length}</span>}
+                </div>
                 {audios.map((a) => {
                   const gi = (note.attachments || []).indexOf(a)
                   const nm = a.name || 'Voice note'
                   return (
-                    <div key={gi} style={{ borderRadius: 16, marginBottom: 8, background: '#fff', boxShadow: '0 0 0 1px rgba(0,0,0,.06), 0 1px 2px rgba(16,24,40,.04)', padding: '8px 10px 10px' }}>
+                    <div key={gi} className="ne-task" style={{ display: 'block', marginBottom: 8, padding: '8px 10px 10px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
                         <input value={nm} onChange={e => setAllAttachments((note.attachments || []).map((x, j) => j === gi ? { ...x, name: e.target.value } : x))}
@@ -1011,34 +1084,29 @@ export default function NotesPage() {
                 <VoiceRecorder companyId={companyId} onRecorded={a => setAllAttachments([...(note.attachments || []), a])} />
               </div>
 
-              <div style={{ marginTop: 22 }}>
-                <h3 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>Photos &amp; videos</h3>
+              <div className="ne-sec">
+                <div className="ne-sec-head">
+                  <span className="ne-sec-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></span>
+                  <h3 className="ne-sec-title">Photos &amp; videos</h3>
+                  {media.length > 0 && <span className="ne-count">{media.length}</span>}
+                </div>
                 <AttachmentUploader companyId={companyId} value={media} onChange={next => setAllAttachments([...next, ...audios])} folder="notes" />
               </div>
 
               {/* Linked tasks — attach tasks to this note (reverse of a task's linked notes). */}
-              <div style={{ marginTop: 22 }}>
-                <h3 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 800, color: 'var(--ink)' }}>Linked tasks</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                  {(note.linked_tasks || []).length === 0 && <p style={{ margin: 0, fontSize: 13, color: 'var(--slate)' }}>No tasks linked.</p>}
-                  {(note.linked_tasks || []).map(t => (
-                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 12px', borderRadius: 14, background: '#fff', boxShadow: '0 0 0 1px rgba(0,0,0,.06)' }}>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={t.done ? '#16a34a' : 'var(--coral)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>{t.done ? <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></> : <><circle cx="12" cy="12" r="9"/></>}</svg>
-                      <button onClick={() => router.push(`/admin/tasks?task=${t.id}`)} title="Open task"
-                        style={{ flex: 1, minWidth: 0, textAlign: 'left', border: 'none', background: 'none', color: 'var(--ink)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', padding: 0, textDecoration: t.done ? 'line-through' : 'none' }}>{t.title || 'Untitled task'}</button>
-                      <button onClick={() => queueSave({ ...note, linked_tasks: (note.linked_tasks || []).filter(x => x.id !== t.id) })} title="Unlink" style={{ background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', fontSize: 16, lineHeight: 1, flexShrink: 0 }}>×</button>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ position: 'relative', marginTop: 8 }}>
-                  <button onClick={() => setTaskPicker(v => !v)}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid var(--border)', background: 'var(--canvas)', color: 'var(--coral)', fontSize: 13, fontWeight: 700, cursor: 'pointer', padding: '8px 12px', borderRadius: 9 }}>
+              <div className="ne-sec">
+                <div className="ne-sec-head">
+                  <span className="ne-sec-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span>
+                  <h3 className="ne-sec-title">Linked tasks</h3>
+                  {(note.linked_tasks || []).length > 0 && <span className="ne-count">{(note.linked_tasks || []).length}</span>}
+                  <div className="ne-sec-actions">
+                  <button type="button" className="cv-btn" aria-expanded={taskPicker} onClick={() => setTaskPicker(v => !v)}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     Link a task
                   </button>
                   {taskPicker && (<>
                     <div onClick={() => setTaskPicker(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
-                    <div style={{ position: 'absolute', top: '110%', left: 0, zIndex: 41, width: 320, maxWidth: '90vw', background: '#fff', borderRadius: 16, boxShadow: '0 0 0 1px rgba(0,0,0,.06), 0 16px 40px -8px rgba(0,0,0,.22)', padding: 8 }}>
+                    <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 41, width: 320, maxWidth: '90vw', background: '#fff', borderRadius: 16, boxShadow: '0 0 0 1px rgba(0,0,0,.06), 0 16px 40px -8px rgba(0,0,0,.22)', padding: 8 }}>
                       <input autoFocus value={taskQuery} onChange={e => setTaskQuery(e.target.value)} placeholder="Search tasks…"
                         style={{ width: '100%', boxSizing: 'border-box', padding: '8px 12px', borderRadius: 10, border: '1.5px solid transparent', background: '#f4f4f5', fontSize: 13, outline: 'none', marginBottom: 6 }} />
                       <div style={{ maxHeight: 260, overflowY: 'auto' }}>
@@ -1059,24 +1127,44 @@ export default function NotesPage() {
                       </div>
                     </div>
                   </>)}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {(note.linked_tasks || []).length === 0 && <p className="ne-empty">No tasks linked yet. Link one to keep the note and the work together.</p>}
+                  {(note.linked_tasks || []).map(t => (
+                    <div key={t.id} className="ne-task">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={t.done ? '#16a34a' : 'var(--coral)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>{t.done ? <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></> : <><circle cx="12" cy="12" r="9"/></>}</svg>
+                      <button onClick={() => router.push(`/admin/tasks?task=${t.id}`)} title="Open task"
+                        style={{ flex: 1, minWidth: 0, textAlign: 'left', border: 'none', background: 'none', color: 'var(--ink)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', padding: 0, textDecoration: t.done ? 'line-through' : 'none' }}>{t.title || 'Untitled task'}</button>
+                      <button onClick={() => queueSave({ ...note, linked_tasks: (note.linked_tasks || []).filter(x => x.id !== t.id) })} title="Unlink" style={{ background: 'none', border: 'none', color: 'var(--slate)', cursor: 'pointer', fontSize: 16, lineHeight: 1, flexShrink: 0 }}>×</button>
+                    </div>
+                  ))}
                 </div>
               </div>
 
               {(note.edit_log || []).length > 0 && (
-                <div style={{ marginTop: 22, padding: '12px 14px', borderRadius: 16, background: '#fafafa', boxShadow: '0 0 0 1px rgba(0,0,0,.05)' }}>
-                  <p style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--slate)' }}>Contributions from viewers</p>
-                  {(note.edit_log || []).slice().reverse().slice(0, 8).map((e, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--ink)', padding: '3px 0' }}>
-                      <span style={{ width: 22, height: 22, borderRadius: '50%', background: 'var(--coral)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10.5, fontWeight: 800, flexShrink: 0 }}>{(e.name || '?').charAt(0).toUpperCase()}</span>
-                      <span style={{ fontWeight: 700 }}>{e.name}</span>
-                      {e.email && <span style={{ color: 'var(--slate)', fontSize: 12 }}>{e.email}</span>}
-                      <span style={{ marginLeft: 'auto', color: 'var(--slate)', fontSize: 12 }}>{fmtAgo(e.at)}</span>
+                <div className="ne-sec">
+                  <div className="ne-sec-head">
+                    <span className="ne-sec-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+                    <h3 className="ne-sec-title">Contributions from viewers</h3>
+                    <span className="ne-count">{(note.edit_log || []).length} {(note.edit_log || []).length === 1 ? 'edit' : 'edits'}</span>
+                  </div>
+                  {/* One row per person (their edits counted), newest first, not the same name over and over. */}
+                  {editors(note.edit_log || []).slice(0, 8).map(p => (
+                    <div key={p.key} className="ne-person">
+                      <span className="ne-avatar">{(p.name || '?').charAt(0).toUpperCase()}</span>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name || 'Someone'}</div>
+                        {p.email && <div style={{ fontSize: 12, color: 'var(--slate)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.email}</div>}
+                      </div>
+                      <span className="ne-count" style={{ flexShrink: 0 }}>{p.count} {p.count === 1 ? 'edit' : 'edits'}</span>
+                      <span style={{ flexShrink: 0, minWidth: 82, textAlign: 'right', color: 'var(--slate)', fontSize: 12.5 }}>{fmtAgo(p.at)}</span>
                     </div>
                   ))}
                 </div>
               )}
 
-              <NoteComments noteId={note.id} companyId={companyId || undefined} accent="var(--coral,#ff7a6b)" authorName={me} members={team} initial={note.comments || []} />
+              <NoteComments card noteId={note.id} companyId={companyId || undefined} accent="var(--coral,#ff7a6b)" authorName={me} members={team} initial={note.comments || []} />
                 </div>
               </div>
 

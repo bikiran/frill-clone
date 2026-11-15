@@ -225,7 +225,7 @@ function ItemRow({ item: c, accent, onToggle, onText, onQty, onRemove }: {
               {meta ? <span style={{ fontSize: 12.5, color: '#6b7280' }}>{meta}</span> : null}
               {due ? <span style={{ fontSize: 11.5, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: due.overdue ? '#fef2f2' : '#f1f5f9', color: due.overdue ? '#dc2626' : '#475569' }}>{due.text}</span> : null}
               {c.flagged ? (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#fff7ed', color: '#ea580c' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#fef2f2', color: '#dc2626' }}>
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M5 2a1 1 0 0 1 1 1v.5h11.2a1 1 0 0 1 .8 1.6L15.6 8.5l2.4 3.4a1 1 0 0 1-.8 1.6H6V21a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1z"/></svg>
                   Flagged
                 </span>
