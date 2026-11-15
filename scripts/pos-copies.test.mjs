@@ -46,11 +46,11 @@ ok(m?.copyOf?.number === '128880', 'a third copy still points at the original, n
 m = P.decidePosCopy({ ...base, receipts: [receipt('R50806'), receipt('R50807', 2)], usedSaleIds: new Set(['R50806']), twins: [twin(128880, 3, { isPos: true, saleId: 'R50806' })] })
 ok(m?.by === 'receipt' && m.saleId === 'R50807' && !m.copyOf, 'two walk-ins buying the same thing: two receipts, two sales', m)
 m = P.decidePosCopy({ ...base, receipts: [receipt('R50806', 0, { totalCents: 2990 })] })
-ok(m === null, 'a receipt for a different total is not this sale')
+ok(m?.by !== 'receipt' && !m?.saleId, 'a receipt for a different total is not this sale', m)
 m = P.decidePosCopy({ ...base, receipts: [receipt('R50806', 0, { units: 3 })] })
-ok(m === null, 'a receipt with a different number of items is not this sale')
+ok(m?.by !== 'receipt' && !m?.saleId, 'a receipt with a different number of items is not this sale', m)
 m = P.decidePosCopy({ ...base, receipts: [receipt('R50806', -240)] })
-ok(m === null, 'a receipt from four hours earlier is too long ago')
+ok(m?.by !== 'receipt' && !m?.saleId, 'a receipt from four hours earlier is too long ago', m)
 
 console.log('without receipts (Prexty webhook not set up)')
 m = P.decidePosCopy({ ...base, learnedVia: ['rest-api'] })
@@ -59,17 +59,22 @@ m = P.decidePosCopy({ ...base, learnedVia: ['rest-api'], twins: [twin(128880, 3,
 ok(m?.by === 'copy' && m.inStore && m.copyOf?.number === '128880', 'and the later copies are copies of it, in store', m)
 m = P.decidePosCopy({ ...base, twins: [twin(128880, 3)] })
 ok(m?.by === 'copy' && !m.inStore && m.copyOf?.number === '128880', 'a copy of an ordinary order: flagged as a copy, not called in store', m)
+m = P.decidePosCopy({ ...base, order: { ...base.order, createdVia: 'admin' } })
+ok(m === null, 'nothing to go on (made in WooCommerce admin, nothing learned): left as it was')
 m = P.decidePosCopy({ ...base })
-ok(m === null, 'nothing to go on: left as it was')
+ok(m?.by === 'likely' && m.inStore, 'nothing learned yet: an order sent through the REST API (how Prexty sends sales) is in store', m)
+m = P.decidePosCopy({ ...base, learnedVia: ['prexty-pos'] })
+ok(m === null, 'once the store’s Prexty orders show how they’re made, only that counts', m)
 m = P.decidePosCopy({ ...base, order: { ...base.order, createdVia: 'checkout' }, learnedVia: ['checkout'] })
 ok(m === null, 'a website checkout is never called in store')
 m = P.decidePosCopy({ ...base, twins: [twin(128890, 5)] })
-ok(m === null, 'an identical order placed AFTER this one is not its original')
+ok(!m?.copyOf, 'an identical order placed AFTER this one is not its original', m)
 
 // ── matchPosCopy against a small fake database ──────────────────────────────
 function fakeDb(tables) {
   return {
     from(table) {
+      if (!tables[table]) tables[table] = []
       const filters = []
       let limit = Infinity, order = null, single = false
       const q = {
@@ -82,6 +87,14 @@ function fakeDb(tables) {
         order: (k, o) => { order = [k, o?.ascending !== false]; return q },
         limit: (n) => { limit = n; return q },
         maybeSingle: () => { single = true; return q },
+        update: (patch) => {
+          const uf = []
+          const u = {
+            eq: (k, v) => { uf.push(r => r[k] === v); return u },
+            then: (res, rej) => { for (const r of tables[table]) if (uf.every(f => f(r))) Object.assign(r, patch); return Promise.resolve({ error: null }).then(res, rej) },
+          }
+          return u
+        },
         then: (res, rej) => {
           let rows = (tables[table] || []).filter(r => filters.every(f => f(r)))
           if (order) rows = [...rows].sort((a, b) => (a[order[0]] < b[order[0]] ? -1 : 1) * (order[1] ? 1 : -1))
@@ -124,7 +137,9 @@ console.log('the database lookup')
 {
   const db = fakeDb({ prexty_integrations: [{ company_id: CO, is_active: true }], prexty_receipts: [], woocommerce_orders: [] })
   ok(await P.matchPosCopy(db, CO, guestOrder(128880, 3, { meta_data: [{ key: '_prexty_source', value: 'pos' }] })) === null, 'a tagged order is handled the normal way')
-  ok(await P.matchPosCopy(db, CO, guestOrder(128880, 3, { billing: { email: 'sam@example.com' } })) === null, 'a website order with an email is never touched')
+  ok(await P.matchPosCopy(db, CO, guestOrder(128880, 3, { created_via: 'checkout', billing: { email: 'sam@example.com', address_1: '1 Example St' } })) === null, 'a website checkout order is never touched')
+  ok(await P.matchPosCopy(db, CO, guestOrder(128880, 3, { created_via: 'store-api', billing: { email: 'sam@example.com' } })) === null, '…nor a block-checkout one')
+  ok(await P.matchPosCopy(db, CO, guestOrder(128880, 3, { meta_data: [{ key: '_colvy_created_by', value: 'Alex' }], billing: { email: 'sam@example.com' } })) === null, '…nor one made in Colvy')
 }
 {
   // No Prexty webhook: learn from the store's tagged orders, then catch the copies.
@@ -180,6 +195,46 @@ ok(P.saleKey({ woo_order_id: 3, total: 80, status: 'completed' }) === null, 'an 
   ok(map.size === 0, 'a refund under the same receipt is not a copy')
   map = await P.findTaggedCopies(db, CO, [{ ...tagged(504), meta_data: [] }])
   ok(map.size === 0, 'an untagged order is left to the receipt matcher')
+}
+
+// ── From Prexty without the tag, with a placeholder email or a walk-in account ──
+console.log('never an "Online order" when it came from Prexty')
+{
+  const walkIn = (id, mins, x = {}) => guestOrder(id, mins, { customer_id: 77, billing: { first_name: 'Customer', email: 'walkin@shop.example', phone: '' }, ...x })
+  ok(P.isEligible(walkIn(1, 0)), 'a walk-in "Customer" with a placeholder email, sent through the REST API: checked')
+  ok(!P.isEligible(walkIn(1, 0, { created_via: 'checkout' })), 'the same through the website checkout: an online order, not checked')
+  ok(P.buyerKey(walkIn(1, 0)) === 'e:walkin@shop.example' && P.buyerKey(guestOrder(1, 0, { customer_id: 77 })) === 'c:77' && P.buyerKey(guestOrder(1, 0)) === 'guest', 'buyer: email, else phone, else account, else guest')
+  const db = fakeDb({
+    prexty_integrations: [{ company_id: CO, is_active: true }], prexty_receipts: [],
+    woocommerce_orders: [row(127000, -600, { pos_source: 'prexty', pos_sale_id: 'R49000', detail: { created_via: 'rest-api' } })],
+  })
+  m = await P.matchPosCopy(db, CO, walkIn(128912, 3))
+  ok(m?.by === 'likely' && m.inStore, 'it is an in-store sale (made the way this store’s Prexty orders are)', m)
+  db.from('woocommerce_orders') // keep the fake honest
+  const saved = { ...row(128912, 3), woo_customer_id: 77, billing: { first_name: 'Customer', email: 'walkin@shop.example' }, customer_email: 'walkin@shop.example', pos_source: 'prexty', detail: { created_via: 'rest-api', pos_match: { by: 'likely', inStore: true, saleId: null, copyOf: null } } }
+  const db2 = fakeDb({ prexty_integrations: [{ company_id: CO, is_active: true }], prexty_receipts: [], woocommerce_orders: [saved] })
+  m = await P.matchPosCopy(db2, CO, walkIn(128913, 4))
+  ok(m?.by === 'copy' && m.inStore && m.copyOf?.number === '128912', 'the same sale again a minute later, same walk-in account: a copy', m)
+  m = await P.matchPosCopy(db2, CO, walkIn(128914, 4, { billing: { first_name: 'Robin', email: 'robin@example.com' } }))
+  ok(m?.by === 'likely' && !m.copyOf, 'someone else buying the same thing: their own sale, not a copy', m)
+}
+{
+  // Today's orders saved as online orders before this check: put right by the scheduled sync.
+  const rows = [
+    { ...row(128893, 1), woo_customer_id: 77, customer_email: 'walkin@shop.example', billing: { email: 'walkin@shop.example' }, detail: { created_via: 'rest-api' } },
+    { ...row(128894, 1.5), woo_customer_id: 77, customer_email: 'walkin@shop.example', billing: { email: 'walkin@shop.example' }, detail: { created_via: 'rest-api' } },
+    { ...row(128895, 2), customer_email: 'sam@example.com', billing: { email: 'sam@example.com' }, detail: { created_via: 'checkout' } },
+    { ...row(128896, 2.5), customer_email: 'jo@example.com', billing: { email: 'jo@example.com' }, attribution: 'chat_order', detail: { created_via: 'rest-api' } },
+  ].map(r => ({ ...r, order_date: new Date(Date.now() - 30 * MIN + (r.woo_order_id - 128893) * MIN).toISOString() }))
+  const db = fakeDb({ prexty_integrations: [{ company_id: CO, is_active: true }], prexty_receipts: [], woocommerce_orders: rows.map(r => ({ ...r })) })
+  const n = await P.rematchRecent(db, CO, rows)
+  const by = id => rows.find(r => r.woo_order_id === id)
+  ok(n === 2, 'two of today’s orders put right', n)
+  ok(by(128893).pos_source === 'prexty' && by(128893).detail.pos_match?.by === 'likely', '#128893 is now an in-store sale', by(128893))
+  ok(by(128894).pos_source === 'prexty' && by(128894).detail.pos_match?.copyOf?.number === '128893', '#128894 is a copy of it', by(128894).detail)
+  ok(!by(128895).pos_source && !by(128895).detail.pos_match, 'the website checkout order is left alone')
+  ok(!by(128896).pos_source && !by(128896).detail.pos_match, 'an order linked to a chat (possibly made in Colvy) is left alone')
+  ok(P.orderTime({ order_date: '2026-11-15T00:00:00Z' }) === Date.parse('2026-11-15T00:00:00Z'), 'a saved row’s time is read from order_date')
 }
 
 console.log(failures ? `\n${failures} failed` : '\nall passed')

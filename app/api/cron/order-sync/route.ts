@@ -5,6 +5,7 @@ import { syncWooOrders } from '@/lib/orders-sync'
 import { syncPage } from '@/app/api/woocommerce/sync/route'
 import { logJobRun } from '@/lib/job-log'
 import { companyFlagEnabled } from '@/lib/feature-flags'
+import { rematchRecent } from '@/lib/pos-copies'
 
 export const maxDuration = 60
 export const dynamic = 'force-dynamic'
@@ -89,6 +90,10 @@ export async function GET(req: NextRequest) {
       // Per-company operational flag: auto-reconcile defaults ON, but a super
       // admin can switch it off for a company (new orders still import).
       const reconcile = await companyFlagEnabled(db, integ.company_id, 'order_auto_reconcile')
+      // Today's orders saved as online orders before they could be matched to
+      // Prexty (lib/pos-copies): in-store sales and copies, put right before
+      // they're mirrored onto the board.
+      await rematchRecent(db, integ.company_id, [...wooById.values()])
       const synced = await syncWooOrders(db, integ.company_id, [...wooById.values()], { reconcile })
       results.push({ company: integ.company_id, synced, changed: changedIds.size, reconcile })
     } catch (e: any) {

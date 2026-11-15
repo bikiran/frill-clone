@@ -53,6 +53,8 @@ export function orderDetail(order: any): Record<string, any> {
     date_paid: order?.date_paid || null,
     date_completed: order?.date_completed || null,
     created_via: order?.created_via || null,
+    // Made in Colvy (Create order in the inbox): never a Prexty sale.
+    colvy: meta.some((m: any) => /^_colvy_/.test(String(m?.key || ''))) || null,
     prexty: Object.keys(pos).length ? pos : null,
   }
 }
