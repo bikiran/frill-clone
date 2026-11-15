@@ -28,9 +28,11 @@ function Body({ text, accent }: { text: string; accent: string }) {
     : <span key={i}>{p}</span>)}</>
 }
 
-export default function NoteComments({ code, noteId, companyId, accent = '#ff7a6b', authorName, members = [], initial = [] }: {
+export default function NoteComments({ code, noteId, companyId, accent = '#ff7a6b', authorName, members = [], initial = [], card = false }: {
   code?: string; noteId?: string; companyId?: string; accent?: string
   authorName?: string; members?: { id: string; name: string }[]; initial?: NoteComment[]
+  /** The admin's Sellio look: its own soft card, grey field, notes as bubbles, a pill button. */
+  card?: boolean
 }) {
   const isPublic = !!code
   const [list, setList] = useState<NoteComment[]>(Array.isArray(initial) ? initial : [])
@@ -82,12 +84,27 @@ export default function NoteComments({ code, noteId, companyId, accent = '#ff7a6
   }
 
   return (
-    <div style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid var(--border,#e5e7eb)' }}>
+    <div className={card ? 'ne-sec nc-card' : undefined} style={card ? undefined : { marginTop: 28, paddingTop: 20, borderTop: '1px solid var(--border,#e5e7eb)' }}>
+      {card && <style>{`
+        .nc-card .nc-field { background: #f4f4f5; border: 1.5px solid transparent !important; border-radius: 16px !important; transition: background .15s, border-color .15s, box-shadow .15s; }
+        .nc-card .nc-field:focus { background: #fff; border-color: #d4d4d8 !important; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 16%, transparent); }
+        .nc-card .nc-bubble { background: #f4f4f5; border-radius: 4px 16px 16px 16px; padding: 8px 12px; margin-top: 4px; }
+        [data-theme="dark"] .nc-card .nc-field, [data-theme="dark"] .nc-card .nc-bubble { background: rgba(255,255,255,.06); }
+        [data-theme="dark"] .nc-card .nc-field:focus { background: var(--card); }
+      `}</style>}
+      {card ? (
+        <div className="ne-sec-head">
+          <span className="ne-sec-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+          <h3 className="ne-sec-title">Notes</h3>
+          {list.length > 0 && <span className="ne-count">{list.length}</span>}
+        </div>
+      ) : (
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: 'var(--ink,#1a1a1a)' }}>Notes</h3>
         {list.length > 0 && <span style={{ fontSize: 12, color: 'var(--slate,#6b7280)' }}>{list.length}</span>}
       </div>
+      )}
 
       {list.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
@@ -99,7 +116,7 @@ export default function NoteComments({ code, noteId, companyId, accent = '#ff7a6
                   <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--ink,#1a1a1a)' }}>{c.name}</span>
                   <span style={{ fontSize: 11.5, color: 'var(--slate,#9ca3af)' }}>{ago(c.at)}</span>
                 </div>
-                <div style={{ fontSize: 14, color: 'var(--ink,#1a1a1a)', lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}><Body text={c.body} accent={accent} /></div>
+                <div className={card ? 'nc-bubble' : undefined} style={{ fontSize: 14, color: 'var(--ink,#1a1a1a)', lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word', width: card ? 'fit-content' : undefined, maxWidth: '100%' }}><Body text={c.body} accent={accent} /></div>
               </div>
             </div>
           ))}
@@ -116,7 +133,7 @@ export default function NoteComments({ code, noteId, companyId, accent = '#ff7a6
           </div>
         )}
         {/* The bordered box IS the textarea, so the whole visible area is clickable. */}
-        <textarea ref={taRef} value={text} onChange={e => onText(e.target.value)} rows={3}
+        <textarea ref={taRef} value={text} onChange={e => onText(e.target.value)} rows={3} className={card ? 'nc-field' : undefined}
           onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); post() } }}
           placeholder={members.length ? 'Leave a note… use @ to mention someone' : 'Leave a note…'}
           style={{ display: 'block', width: '100%', boxSizing: 'border-box', minHeight: 84, border: '1px solid var(--border,#e5e7eb)', borderRadius: 14, padding: '12px 14px', outline: 'none', resize: 'vertical', fontSize: 14.5, lineHeight: 1.5, background: '#fff', color: 'var(--ink,#1a1a1a)', fontFamily: 'inherit' }} />
@@ -133,10 +150,17 @@ export default function NoteComments({ code, noteId, companyId, accent = '#ff7a6
           </div>
         )}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+          {card ? (
+            <button onClick={post} disabled={busy || !text.trim()} className="cv-btn cv-btn-primary">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              {busy ? 'Posting…' : 'Post note'}
+            </button>
+          ) : (
           <button onClick={post} disabled={busy || !text.trim()}
             style={{ padding: '8px 16px', borderRadius: 9, border: 'none', background: (busy || !text.trim()) ? 'var(--border,#e5e7eb)' : accent, color: '#fff', fontSize: 13, fontWeight: 700, cursor: (busy || !text.trim()) ? 'default' : 'pointer' }}>
             {busy ? 'Posting…' : 'Post note'}
           </button>
+          )}
         </div>
       </div>
     </div>
