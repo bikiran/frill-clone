@@ -173,13 +173,22 @@ export default function InboxList() {
           {/* Open / Closed — a status menu like Sellio's — and the other filters */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10 }}>
             <div style={{ position: 'relative' }} data-status-menu>
+              {searchTerm.trim() ? (
+                // While searching, open and closed chats both show (closed ones
+                // are tagged); the tab comes back when the search is cleared.
+                <span className="il-status" title="Search looks through open and closed chats" style={{ cursor: 'default' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  Open &amp; closed
+                </span>
+              ) : (
               <button type="button" onClick={() => setShowStatusMenu(v => !v)} aria-haspopup="menu" aria-expanded={showStatusMenu}
                 className={`il-status${showStatusMenu ? ' on' : ''}`} title="Filter by status">
                 {statusFilter === 'open' ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M3 13.5 5.6 5.4A1.5 1.5 0 0 1 7 4.5h10a1.5 1.5 0 0 1 1.4.9l2.6 8.1V18.5A1.5 1.5 0 0 1 19.5 20h-15A1.5 1.5 0 0 1 3 18.5z"/><path d="M3.4 13.5h4.8l1.6 2.5h4.4l1.6-2.5h4.8"/></svg> : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="12" cy="12" r="9"/><polyline points="8 12.5 11 15.5 16 9.5"/></svg>}
                 {statusFilter === 'open' ? 'Open' : 'Closed'}
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ color: '#71717a' }}><polyline points="6 9 12 15 18 9"/></svg>
               </button>
-              {showStatusMenu && (
+              )}
+              {showStatusMenu && !searchTerm.trim() && (
                 <div className="th-menu" role="menu" style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, width: 210, zIndex: 40, transformOrigin: 'top left' }}>
                   <p className="th-menu-label">Filter by status</p>
                   {([['open', 'Open'], ['closed', 'Closed']] as const).map(([k, label]) => (
@@ -381,6 +390,16 @@ export default function InboxList() {
                   </span>
                 </span>
                 <span className="ilc-mid">
+                  {/* While searching: a closed or snoozed chat, tagged (on this line, so the name keeps its room). */}
+                  {searchTerm.trim() && (() => {
+                    const st = String((conv as any).status || '')
+                    const snz = (conv as any).snoozed_until
+                    const label = st === 'closed' || st === 'resolved' ? 'Closed'
+                      : snz && new Date(snz).getTime() > Date.now() ? 'Snoozed' : null
+                    return label ? <span className="ilc-state" title={`This chat is ${label.toLowerCase()}; opening it doesn't reopen it`}>{label === 'Closed'
+                      ? <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="20 6 9 17 4 12"/></svg>
+                      : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>}{label}</span> : null
+                  })()}
                   {callMatches(activeCall, { conversationId: c.id, contactId: c.contact_id, phone: contact.phone || c.sms_number || (conv as any).subject || (typeof displayName === 'string' ? displayName : '') }) ? (
                     <p style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 12, color: '#059669', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', animation: 'livePulse 1.6s ease-in-out infinite', flexShrink: 0 }} />

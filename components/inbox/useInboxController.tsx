@@ -6389,7 +6389,11 @@ export function useInboxController() {
     // set (the 5s poll used to do exactly that). This is the source of truth for
     // which tab a row belongs to; the query is just an optimisation.
     const isClosed = ['closed', 'resolved'].includes(String((c as any).status || ''))
-    if ((statusFilter === 'closed') !== isClosed) return false
+    // A search looks through open AND closed chats (each closed one is tagged
+    // in the list): finding Tracey shouldn't depend on whether her chat was
+    // closed. Without a search, the tab decides.
+    const searching = !!searchTerm.trim()
+    if (!searching && (statusFilter === 'closed') !== isClosed) return false
     // Location filter (whole Inbox & CRM). "all" shows everything; otherwise
     // only conversations assigned to the chosen outlet. Conversations with no
     // location assigned show under "all" only.
@@ -6410,7 +6414,7 @@ export function useInboxController() {
     if ((c as any).is_spam && statusFilter === 'open') return false
     // Snoozed conversations drop out of the list until their time is up.
     const snz = (c as any).snoozed_until
-    if (snz && (parseTs(snz)?.getTime() || 0) > Date.now() && statusFilter === 'open') return false
+    if (snz && (parseTs(snz)?.getTime() || 0) > Date.now() && statusFilter === 'open' && !searching) return false
 
     // Advanced filters from the Filter panel. These must be evaluated even when
     // the search box is empty — an early `if (!searchTerm) return true` used to
