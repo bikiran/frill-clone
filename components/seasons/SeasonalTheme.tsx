@@ -10,6 +10,7 @@ import { currentSeason, setAppearance, subscribeAppearance, type SeasonId } from
 
 const Halloween = dynamic(() => import('./Halloween'), { ssr: false })
 const Christmas = dynamic(() => import('./Christmas'), { ssr: false })
+const Neon = dynamic(() => import('./Neon'), { ssr: false })
 
 export default function SeasonalTheme() {
   const pathname = usePathname() || '/'
@@ -35,5 +36,6 @@ export default function SeasonalTheme() {
 
   if (season === 'halloween') return <Halloween calm={calm} />
   if (season === 'christmas') return <Christmas calm={calm} />
+  if (season === 'neon') return <Neon calm={calm} />
   return null
 }

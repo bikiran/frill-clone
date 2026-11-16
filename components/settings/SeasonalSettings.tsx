@@ -48,6 +48,26 @@ function DatePick({ value, onChange, aria }: { value: string; onChange: (v: stri
 
 // Little moving postcards of each theme.
 function Postcard({ id }: { id: SeasonId }) {
+  if (id === 'neon') return (
+    <svg className="sst-card-art" viewBox="0 0 320 96" preserveAspectRatio="xMidYMid slice" aria-hidden>
+      <defs>
+        <linearGradient id="sst-ns" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#0b0322" /><stop offset=".55" stopColor="#4a1166" /><stop offset="1" stopColor="#ff6f61" /></linearGradient>
+        <linearGradient id="sst-nsun" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#fff27a" /><stop offset=".5" stopColor="#ffb84d" /><stop offset="1" stopColor="#ff2d95" /></linearGradient>
+      </defs>
+      <rect width="320" height="62" fill="url(#sst-ns)" />
+      {[[24, 10], [64, 22], [110, 8], [212, 14], [296, 24], [250, 6]].map(([x, y], i) => <circle key={i} cx={x} cy={y} r={i % 2 ? 0.9 : 1.2} fill="#fff" opacity={0.75} />)}
+      <g className="sst-nsun"><circle cx="160" cy="62" r="30" fill="url(#sst-nsun)" />{[44, 50, 55, 59].map(y => <rect key={y} x="126" y={y} width="68" height="2.2" fill="#3a0f55" />)}</g>
+      <path d="M96 62V44h12v-8h10v26zM200 62V40h10v-6h12v28zM124 62v-12h8v12zM186 62v-16h10v16z" fill="#1c0a35" />
+      <rect y="62" width="320" height="34" fill="#12052a" />
+      <path d="M0 62h320" stroke="#ff2d95" strokeWidth="1.6" />
+      <g className="sst-ngrid" stroke="#ff2d95" strokeWidth="1" opacity=".75">{[68, 76, 87].map(y => <path key={y} d={`M0 ${y}h320`} />)}</g>
+      <g stroke="#22e4ff" strokeWidth="1" opacity=".55">{[-200, -120, -40, 40, 120, 200].map(x => <path key={x} d={`M${160 + x * 0.25} 62 L${160 + x * 1.3} 96`} />)}</g>
+      <g fill="#07020f">
+        <path d="M30 96c2-18 4-30 3-44l4-1c1 14-1 28-3 45z" /><path d="M34 52c-10-10-22-10-30-4 10-2 18 0 26 8zM34 52c-2-12-10-20-20-22 8 4 14 12 16 24zM34 52c4-12 14-18 26-16-10 2-18 8-22 18zM34 52c12-4 24 0 30 8-10-4-20-4-28 0z" />
+        <path d="M290 96c-2-18-4-30-3-44l-4-1c-1 14 1 28 3 45z" /><path d="M286 52c10-10 22-10 30-4-10-2-18 0-26 8zM286 52c2-12 10-20 20-22-8 4-14 12-16 24zM286 52c-4-12-14-18-26-16 10 2 18 8 22 18zM286 52c-12-4-24 0-30 8 10-4 20-4 28 0z" />
+      </g>
+    </svg>
+  )
   if (id === 'christmas') return (
     <svg className="sst-card-art" viewBox="0 0 320 96" preserveAspectRatio="xMidYMid slice" aria-hidden>
       <defs><linearGradient id="sst-xs" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#0f1f3d" /><stop offset="1" stopColor="#24467a" /></linearGradient></defs>
@@ -155,7 +175,7 @@ export default function SeasonalSettings({ value, onChange }: { value: SeasonalC
             </div>
           )}
           <div className="sst-row">
-            <span className="sst-k">Night mode<small>{open.id === 'halloween' ? 'Switch to dark mode while it runs, for the full spooky look.' : 'Switch to dark mode while it runs: a snowy night with the northern lights.'}</small></span>
+            <span className="sst-k">Night mode<small>{open.id === 'halloween' ? 'Switch to dark mode while it runs, for the full spooky look.' : open.id === 'neon' ? 'Switch to dark mode while it runs: the neon glows best at night.' : 'Switch to dark mode while it runs: a snowy night with the northern lights.'}</small></span>
             <Switch on={p.night} onChange={v => set(open.id, { night: v })} label="Night mode" />
           </div>
           <div className="sst-row">
@@ -232,6 +252,10 @@ const CSS = `
 .sst-snow{animation:sst-snow 7s linear infinite}
 .sst-light{animation:sst-twinkle 1.6s ease-in-out infinite alternate}
 .sst-light.l1{animation-delay:-.4s}.sst-light.l2{animation-delay:-.8s}.sst-light.l3{animation-delay:-1.2s}
+.sst-nsun{animation:sst-nsun 5s ease-in-out infinite alternate}
+.sst-ngrid{animation:sst-ngrid 1.2s linear infinite}
+@keyframes sst-nsun{from{transform:translateY(0)}to{transform:translateY(4px)}}
+@keyframes sst-ngrid{from{transform:translateY(0);opacity:.4}to{transform:translateY(8px);opacity:.9}}
 @keyframes sst-fly{from{transform:translate(-60px,44px)}to{transform:translate(360px,18px)}}
 @keyframes sst-flash{0%,100%{opacity:0}2%{opacity:.55}4%{opacity:.1}6%{opacity:.4}14%{opacity:0}}
 @keyframes sst-candle{0%,100%{opacity:1}30%{opacity:.75}33%{opacity:1}62%{opacity:.85}}

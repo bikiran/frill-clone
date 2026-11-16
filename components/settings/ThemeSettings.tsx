@@ -95,6 +95,13 @@ function Board({ name, logo, accent, dark, radius, season }: { name: string; log
           <svg className="thp-pk" viewBox="0 0 100 90" aria-hidden><ellipse cx="30" cy="55" rx="24" ry="30" fill="#c2410c" /><ellipse cx="70" cy="55" rx="24" ry="30" fill="#c2410c" /><ellipse cx="50" cy="55" rx="27" ry="33" fill="#f97316" /><path d="M29 47 40 38l2 12zM71 47 60 38l-2 12zM27 64c8 11 38 11 46 0l-6 2-4-4-4 5-6-4-5 4-5-4-4 4z" fill="#ffd166" /><path d="M50 20c-4-8-2-14 6-17" stroke="#4d5b1f" strokeWidth="5" fill="none" strokeLinecap="round" /></svg>
         </>
       )}
+      {season === 'neon' && (
+        <>
+          <span className="thp-nsun" />
+          <span className="thp-ntube" />
+          <svg className="thp-npalm" viewBox="0 0 60 80" aria-hidden><path d="M28 80c2-16 3-30 2-44l4-1c1 14 0 28-2 45z" /><path d="M31 36C24 26 14 25 6 30c9-1 16 2 22 9zM31 36c-1-10-6-18-14-21 6 4 10 11 11 22zM31 36c3-10 11-15 21-13-8 2-14 7-17 15zM31 36c9-4 19-2 25 5-8-3-16-3-23 0z" /></svg>
+        </>
+      )}
       {season === 'christmas' && (
         <>
           <svg className="thp-lights" viewBox="0 0 300 14" preserveAspectRatio="none" aria-hidden>
@@ -459,6 +466,11 @@ const ART_CSS = `
 .thp-snow{position:absolute;inset:48px 0 0;pointer-events:none;background-image:radial-gradient(circle,#fff 0 1.4px,transparent 2px),radial-gradient(circle,#fff 0 1px,transparent 1.6px);background-size:60px 60px,38px 38px;background-position:0 0,19px 11px;opacity:.85;animation:thp-snow 6s linear infinite}
 .thp-board:not(.dark) .thp-snow{background-image:radial-gradient(circle,#b8cbe3 0 1.4px,transparent 2px),radial-gradient(circle,#c9d8eb 0 1px,transparent 1.6px)}
 .thp-tree{position:absolute;right:12px;bottom:6px;width:30px}
+.thp-nsun{position:absolute;top:56px;right:18px;width:40px;height:40px;border-radius:50%;background:linear-gradient(180deg,#fff27a,#ffb84d 45%,#ff2d95);-webkit-mask:linear-gradient(180deg,#000 55%,transparent 55% 62%,#000 62% 72%,transparent 72% 80%,#000 80%);mask:linear-gradient(180deg,#000 55%,transparent 55% 62%,#000 62% 72%,transparent 72% 80%,#000 80%);filter:drop-shadow(0 0 10px rgba(255,45,149,.5))}
+.thp-ntube{position:absolute;left:0;right:0;top:44px;height:2px;background:linear-gradient(90deg,#ff2d95,#22e4ff,#ff2d95);box-shadow:0 0 8px rgba(255,45,149,.7);animation:thp-bulb 1.6s ease-in-out infinite alternate}
+.thp-npalm{position:absolute;right:10px;bottom:4px;width:34px;fill:#3b1150;transform-origin:50% 100%;animation:thp-nsway 4s ease-in-out infinite alternate}
+.thp-board.dark .thp-npalm{fill:#07020f;filter:drop-shadow(0 0 1px rgba(255,45,149,.7))}
+@keyframes thp-nsway{from{transform:rotate(-2deg)}to{transform:rotate(2deg)}}
 @keyframes thp-bulb{from{opacity:.45}to{opacity:1}}
 @keyframes thp-snow{to{background-position:0 60px,19px 49px}}
 @keyframes thp-pulse{50%{box-shadow:0 0 0 6px rgba(34,197,94,0)}}

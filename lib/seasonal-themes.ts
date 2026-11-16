@@ -1,5 +1,5 @@
-// Seasonal themes (Settings → Theme → Seasonal theme): Halloween and
-// Christmas, each on its own dates. A theme dresses the app up (components/seasons) while it's
+// Seasonal themes (Settings → Theme → Seasonal theme): Halloween, Neon
+// Nights and Christmas, each on its own dates. A theme dresses the app up (components/seasons) while it's
 // on: always, or between two dates every year. The workspace's choice is saved
 // with the rest of its look (site_settings 'general' → seasonal); anyone can
 // still turn the effects off on their own device.
@@ -9,7 +9,7 @@
 // data-season (the running theme's id). AppChrome feeds it the saved settings;
 // the Settings page feeds it edits as they happen, so changes show at once.
 
-export type SeasonId = 'halloween' | 'christmas'
+export type SeasonId = 'halloween' | 'neon' | 'christmas'
 
 export type SeasonDef = {
   id: SeasonId
@@ -26,6 +26,7 @@ export type SeasonDef = {
 
 export const SEASONS: SeasonDef[] = [
   { id: 'halloween', name: 'Halloween', blurb: 'Lightning, bats, fog and glowing jack-o’-lanterns.', from: '10-15', to: '11-01', night: true, ready: true },
+  { id: 'neon', name: 'Neon Nights', blurb: 'A synthwave sunset, neon palms and a convertible cruising the boulevard.', from: '11-14', to: '11-30', night: true, ready: true },
   { id: 'christmas', name: 'Christmas', blurb: 'Falling snow, fairy lights, Santa’s sleigh and a snowy village.', from: '12-01', to: '12-31', night: false, ready: true },
 ]
 
