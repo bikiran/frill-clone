@@ -4,6 +4,7 @@ import { COLVY_CONTACT } from '@/lib/colvy-contact'
 import { soonLabel } from '@/lib/feature-availability'
 import { ratingSummary } from '@/lib/testimonials'
 import LetsTalk from '@/components/marketing/LetsTalk'
+import BackToTop from '@/components/marketing/BackToTop'
 
 // "Ask AI about Colvy": open an AI assistant with a question about Colvy
 // already asked (each takes it as ?q=). Colvy's own opens the site chat.
@@ -54,33 +55,8 @@ export default function MarketingFooter({ dark = false, talk = true }: { dark?: 
   return (
     <>
     {talk && <LetsTalk dark={dark} />}
-    {/* Back to the top: a round button sitting on the footer's top edge, on
-        the right. Outside the <footer> so a page that lets the browser skip
-        the footer's painting until it's near (content-visibility) doesn't
-        clip its top half. */}
-    <div className="cvf-up-row">
-      <style>{`
-        .cvf-up-row{ position:relative; z-index:3; max-width:1280px; height:0; margin:0 auto; }
-        .cvf-up{ position:absolute; right:24px; top:0; transform:translateY(-50%); width:54px; height:54px; padding:0; border:none; border-radius:50%; background:#fff; color:#0b0c14; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 0 0 1px rgba(15,17,25,0.08), 0 14px 30px -10px rgba(15,17,25,0.35); transition:background .2s, color .2s, box-shadow .2s, transform .25s cubic-bezier(.22,1,.36,1); }
-        .cvf-up::before{ display:none; }
-        .cvf-up svg{ transition:transform .25s cubic-bezier(.22,1,.36,1); }
-        .cvf-up:hover{ background:${CORAL}; color:#fff; transform:translateY(calc(-50% - 3px)); box-shadow:0 16px 34px -10px rgba(255,106,77,0.6); }
-        .cvf-up:hover svg{ transform:translateY(-2px); }
-        .cvf-up:active{ transform:translateY(-50%) scale(.94); }
-        .cvf-up:focus-visible{ outline:2px solid ${CORAL}; outline-offset:3px; }
-        .cvf-up.dk{ background:#1a1b26; color:#fff; box-shadow:0 0 0 1px rgba(255,255,255,0.14), 0 14px 30px -10px rgba(0,0,0,0.7); }
-        .cvf-up.dk:hover{ background:${CORAL}; }
-        @media (max-width:760px){ .cvf-up{ right:20px; width:50px; height:50px; } }
-        @media (prefers-reduced-motion: reduce){ .cvf-up, .cvf-up svg{ transition:none; } }
-      `}</style>
-      <button type="button" className={`cvf-up${dark ? ' dk' : ''}`} aria-label="Back to top" title="Back to top"
-        onClick={() => {
-          const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-          window.scrollTo({ top: 0, behavior: still ? 'auto' : 'smooth' })
-        }}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 19V5" /><path d="M5 12l7-7 7 7" /></svg>
-      </button>
-    </div>
+    {/* Back to the top, popping out on the footer's top edge. */}
+    <BackToTop dark={dark} />
     <footer style={{ background: bg, color: text, padding: '0' }}>
       <style>{`
         .cvf-wrap{ max-width:1280px; margin:0 auto; padding:72px 24px 28px; }
