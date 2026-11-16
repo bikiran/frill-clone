@@ -487,6 +487,17 @@ export const INBOX_CSS = `
         .il-chip-n { min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; background: color-mix(in srgb, var(--coral) 14%, #fff); color: var(--coral); }
         .il-chip.on .il-chip-n { background: rgba(255,255,255,.18); color: #fff; }
         .il-search { width: 100%; box-sizing: border-box; height: 38px; padding: 0 14px 0 38px; border: 1.5px solid transparent; border-radius: 999px; background: #f4f4f5; font: inherit; font-size: 14px; color: #111; outline: none; transition: background .15s ease, border-color .15s ease, box-shadow .15s ease; }
+        /* Search still looking through the whole inbox: a sweep along the box's foot, and a quiet line in place of "No matches". */
+        .il-search-busy { position: absolute; left: 18px; right: 18px; bottom: 1px; height: 2px; border-radius: 2px; overflow: hidden; pointer-events: none; }
+        .il-search-busy::after { content: ''; position: absolute; top: 0; bottom: 0; width: 35%; border-radius: 2px; background: var(--coral, #ff6a4d); animation: ilSweep 1s cubic-bezier(.45,0,.25,1) infinite; }
+        @keyframes ilSweep { from { left: -35%; } to { left: 100%; } }
+        .il-searching { display: flex; align-items: center; justify-content: center; gap: 9px; padding: 34px 16px; font-size: 13px; color: #71717a; }
+        .il-searching-dots { display: inline-flex; gap: 4px; }
+        .il-searching-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--coral, #ff6a4d); animation: ilDot 1s ease-in-out infinite; }
+        .il-searching-dots i:nth-child(2) { animation-delay: .15s; }
+        .il-searching-dots i:nth-child(3) { animation-delay: .3s; }
+        @keyframes ilDot { 0%, 80%, 100% { opacity: .3; transform: none; } 40% { opacity: 1; transform: translateY(-3px); } }
+        @media (prefers-reduced-motion: reduce) { .il-search-busy::after, .il-searching-dots i { animation: none; } }
         .il-search::placeholder { color: #a1a1aa; }
         .il-search:focus { background: #fff; border-color: #d4d4d8; box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 16%, transparent); }
         .il-loc { width: 100%; height: 36px; padding: 0 34px 0 36px; border: none; border-radius: 999px; background: #f4f4f5; font: inherit; font-size: 13.5px; font-weight: 600; color: #18181b; cursor: pointer; appearance: none; -webkit-appearance: none; transition: background .15s ease; }

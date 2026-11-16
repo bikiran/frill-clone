@@ -6230,25 +6230,77 @@ export function useInboxController() {
     dismissAiField(field as any, value)
   }
 
-  // When searching inside message bodies / notes / tasks / activity (not just
-  // the contact card or last message), query those tables server-side and
-  // remember which conversations matched, so the list filter includes them.
+  // The whole-inbox search: contacts, message bodies, notes, tasks, activity
+  // and AI text are looked up server-side, so a match beyond the loaded page
+  // (or deep inside an old message) still shows. Built to feel instant:
+  // - every lookup starts at once (they used to run one after another, and the
+  //   name lookup, the one most searches need, came last);
+  // - results show as each lookup lands, names usually first;
+  // - a search done in the last 30s comes straight back (backspacing, retyping);
+  // - one-letter searches stay local (every row contains an "a").
+  // Until a search's lookups are all back, `searchPending` lets the list say
+  // "Searching…" rather than "No matches".
+  const SEARCH_SCOPES = ['all', 'contact', 'messages', 'notes', 'tasks', 'activity', 'ai']
+  // Which match describes a row when several do (the old run order).
+  const HIT_RANK: Record<string, number> = { Message: 1, Note: 2, Task: 3, Activity: 4, 'AI summary': 5, Transcript: 6, 'Action item': 7, contact: 8 }
+  const searchCache = useRef(new Map<string, { at: number; hits: Record<string, { field: string; snippet: string }>; extra: any[] }>())
+  const searchQ = searchTerm.trim()
+  const searchKey = searchQ.length >= 2 && companyId && SEARCH_SCOPES.includes(searchScope) ? `${companyId}|${searchScope}|${searchQ.toLowerCase()}` : ''
+  // Worked out while rendering, not in the effect, so the first paint of a new
+  // search already says "Searching…" instead of flashing "No matches".
+  const [searchDoneKey, setSearchDoneKey] = useState('')
+  const searchFresh = (k: string) => { const c = searchCache.current.get(k); return !!c && Date.now() - c.at < 30_000 }
+  const searchPending = !!searchKey && searchDoneKey !== searchKey && !searchFresh(searchKey)
   useEffect(() => {
     const q = searchTerm.trim()
-    if (!q || !companyId || !['all', 'contact', 'messages', 'notes', 'tasks', 'activity', 'ai'].includes(searchScope)) {
+    const key = searchKey
+    if (!key) {
       setSearchMsgHits({})
       setSearchExtraConvs([])
+      return
+    }
+    const cached = searchCache.current.get(key)
+    if (cached && searchFresh(key)) {
+      setSearchMsgHits(cached.hits)
+      setSearchExtraConvs(cached.extra)
+      setSearchDoneKey(key)
       return
     }
     let cancelled = false
     const run = async () => {
       const hits: Record<string, { field: string; snippet: string }> = {}
+      const extra: any[] = []
+      const pulled = new Set<string>()
+      const loaded = new Set(conversations.map((c: any) => c.id))
       const like = `%${q.replace(/[%_]/g, m => '\\' + m)}%`
-      // Record a hit once per conversation — the first (most relevant, in scope
-      // order) match wins, so "All" doesn't clobber a message match with a
-      // weaker one from another table.
       const mark = (id: string, field: string, text: string) => {
-        if (id && !hits[id]) hits[id] = { field, snippet: makeSnippet(text, q) }
+        if (!id) return
+        const was = hits[id]
+        if (!was || (HIT_RANK[field] ?? 9) < (HIT_RANK[was.field] ?? 9)) hits[id] = { field, snippet: field === 'contact' ? '' : makeSnippet(text, q) }
+      }
+      // Show what's been found so far, pulling in matching conversations that
+      // aren't in the loaded page (with their contacts and phone links).
+      const publish = async () => {
+        if (cancelled) return
+        setSearchMsgHits({ ...hits })
+        const missing = Object.keys(hits).filter(id => !loaded.has(id) && !pulled.has(id))
+        missing.forEach(id => pulled.add(id))
+        if (missing.length) {
+          const got: any[] = []
+          for (let i = 0; i < missing.length; i += 100) {
+            const { data } = await (supabase as any).from('conversations')
+              .select('*').eq('company_id', companyId).in('id', missing.slice(i, i + 100))
+            got.push(...(data || []))
+          }
+          const cids = Array.from(new Set(got.map((c: any) => c.contact_id).filter(Boolean)))
+          if (cids.length) {
+            const byId = await contactsByIds(cids as string[])
+            for (const c of got) (c as any).contacts = c.contact_id ? byId[c.contact_id] || null : null
+          }
+          await linkPhoneThreads(companyId, got)
+          extra.push(...got)
+        }
+        if (!cancelled) setSearchExtraConvs([...extra])
       }
       const collect = async (table: string, col: string, field: string) => {
         try {
@@ -6257,102 +6309,91 @@ export function useInboxController() {
           for (const r of data || []) if (r.conversation_id) mark(r.conversation_id, field, String(r[col] || ''))
         } catch { /* table/column may not exist; skip */ }
       }
-      if (searchScope === 'all' || searchScope === 'messages') await collect('messages', 'content', 'Message')
-      if (searchScope === 'all' || searchScope === 'notes') await collect('conversation_notes', 'content', 'Note')
-      if (searchScope === 'all' || searchScope === 'tasks') await collect('conversation_tasks', 'text', 'Task')
-      if (searchScope === 'all' || searchScope === 'activity') await collect('conversation_events', 'detail', 'Activity')
+      const lookups: (() => Promise<void>)[] = []
+      const any = (...s: string[]) => s.includes(searchScope)
 
-      // AI-generated content: a call's transcription and AI summary (on the
-      // `calls` table, which carries conversation_id), plus the conversation's
-      // own AI summary and action items (stored on the conversation row itself).
-      if (searchScope === 'all' || searchScope === 'ai') {
-        // Calls link to a conversation directly, so the shared collector works.
-        await collect('calls', 'ai_summary', 'AI summary')
-        await collect('calls', 'transcription', 'Transcript')
-        await collect('calls', 'transcript_en', 'Transcript')
-        // The conversation-level AI summary keyed by the conversation's own id.
-        try {
-          const { data } = await (supabase as any).from('conversations')
-            .select('id, ai_summary').eq('company_id', companyId).ilike('ai_summary', like).limit(500)
-          for (const r of data || []) if (r.id) mark(r.id, 'AI summary', String(r.ai_summary || ''))
-        } catch { /* column may not exist; skip */ }
-        // Action items live in a jsonb array (ai_todos = [{ text, done }]).
-        // ilike can't reach inside jsonb, so pull the rows that have to-dos and
-        // match their text in JS. Bounded, and most rows have none.
-        try {
-          const ql = q.toLowerCase()
-          const { data } = await (supabase as any).from('conversations')
-            .select('id, ai_todos').eq('company_id', companyId).not('ai_todos', 'is', null).limit(1000)
-          for (const r of data || []) {
-            const todos = Array.isArray(r.ai_todos) ? r.ai_todos : []
-            const hit = todos.find((t: any) => String(typeof t === 'string' ? t : (t?.text || '')).toLowerCase().includes(ql))
-            if (hit && r.id) mark(r.id, 'Action item', String(typeof hit === 'string' ? hit : (hit?.text || '')))
-          }
-        } catch { /* column may not exist; skip */ }
-      }
-
-      // Match the WHOLE inbox by the contact's identity (name / email / phone),
-      // not just the loaded page. Previously a name search only matched rows
-      // already on screen, so a contact further down the list didn't appear
-      // until you hit "Load more". Resolve matching contacts, then mark all of
-      // their conversations as hits so the pull-in below fetches them.
-      if (searchScope === 'all' || searchScope === 'contact') {
+      // The contact's identity (name / email / phone) across the WHOLE inbox,
+      // not just the loaded page; their phone threads that were never linked
+      // to them (started before the contact existed) match by number.
+      if (any('all', 'contact')) lookups.push(async () => {
         try {
           const safe = q.replace(/[%_]/g, m => '\\' + m).replace(/[(),]/g, ' ')
-          const { data: cts } = await (supabase as any).from('contacts')
-            .select('id, phone').eq('company_id', companyId)
-            .or(`name.ilike.%${safe}%,email.ilike.%${safe}%,phone.ilike.%${safe}%`).limit(500)
-          const cids = (cts || []).map((c: any) => c.id).filter(Boolean)
-          // Their phone threads that were never linked to them (started before
-          // the contact existed) match by number.
-          const tails = Array.from(new Set((cts || []).map((c: any) => digitsOf(c.phone).slice(-9)).filter((t: string) => t.length >= 8))).slice(0, 40)
-          if (tails.length) {
-            try {
+          const who = `name.ilike.%${safe}%,email.ilike.%${safe}%,phone.ilike.%${safe}%`
+          // The contact rows the list shows (fewer columns if this database
+          // lacks some), so their conversations need no second contacts trip.
+          let cts: any[] = []
+          for (let at = contactColsAt; at < CONTACT_COLS.length; at++) {
+            const r = await (supabase as any).from('contacts').select(CONTACT_COLS[at]).eq('company_id', companyId).or(who).limit(500)
+            if (!r.error) { cts = r.data || []; contactColsAt = at; break }
+          }
+          const byId: Record<string, any> = Object.fromEntries(cts.map((c: any) => [c.id, c]))
+          const cids = cts.map((c: any) => c.id).filter(Boolean)
+          const tails = Array.from(new Set(cts.map((c: any) => digitsOf(c.phone).slice(-9)).filter((t: string) => t.length >= 8))).slice(0, 40)
+          await Promise.all([
+            // Their phone threads never linked to them match by number (the
+            // pull-in links them).
+            tails.length ? (async () => {
+              try {
+                const { data: cv } = await (supabase as any).from('conversations')
+                  .select('id').eq('company_id', companyId).is('contact_id', null)
+                  .or(tails.map(t => `sms_number.ilike.%${t}%`).join(',')).limit(200)
+                for (const r of cv || []) if (r.id) mark(r.id, 'contact', '')
+              } catch { /* skip */ }
+            })() : null,
+            // Their conversations, whole, in one trip: the ones beyond the
+            // loaded page go straight into the list with the contact attached.
+            ...Array.from({ length: Math.ceil(cids.length / 100) }, (_, k) => (async () => {
               const { data: cv } = await (supabase as any).from('conversations')
-                .select('id').eq('company_id', companyId).is('contact_id', null)
-                .or(tails.map(t => `sms_number.ilike.%${t}%`).join(',')).limit(200)
-              for (const r of cv || []) if (r.id) mark(r.id, 'contact', '')
-            } catch { /* skip */ }
-          }
-          for (let i = 0; i < cids.length; i += 100) {
-            const { data: cv } = await (supabase as any).from('conversations')
-              .select('id').eq('company_id', companyId).in('contact_id', cids.slice(i, i + 100)).limit(1000)
-            // Contact matches highlight in the row's name/last-message directly,
-            // so no snippet is needed — mark the field only.
-            for (const r of cv || []) if (r.id) mark(r.id, 'contact', '')
-          }
+                .select('*').eq('company_id', companyId).in('contact_id', cids.slice(k * 100, k * 100 + 100)).limit(1000)
+              for (const r of cv || []) {
+                if (!r.id) continue
+                // Contact matches highlight in the row's name directly; no snippet.
+                mark(r.id, 'contact', '')
+                if (!loaded.has(r.id) && !pulled.has(r.id)) { pulled.add(r.id); r.contacts = byId[r.contact_id] || null; extra.push(r) }
+              }
+            })()),
+          ])
         } catch { /* skip */ }
+      })
+      if (any('all', 'messages')) lookups.push(() => collect('messages', 'content', 'Message'))
+      if (any('all', 'notes')) lookups.push(() => collect('conversation_notes', 'content', 'Note'))
+      if (any('all', 'tasks')) lookups.push(() => collect('conversation_tasks', 'text', 'Task'))
+      if (any('all', 'activity')) lookups.push(() => collect('conversation_events', 'detail', 'Activity'))
+      // AI-generated text: a call's summary and transcript (calls carry
+      // conversation_id), the conversation's own AI summary, and its action
+      // items (a jsonb array ilike can't reach, so matched here).
+      if (any('all', 'ai')) {
+        lookups.push(() => collect('calls', 'ai_summary', 'AI summary'))
+        lookups.push(() => collect('calls', 'transcription', 'Transcript'))
+        lookups.push(() => collect('calls', 'transcript_en', 'Transcript'))
+        lookups.push(async () => {
+          try {
+            const { data } = await (supabase as any).from('conversations')
+              .select('id, ai_summary').eq('company_id', companyId).ilike('ai_summary', like).limit(500)
+            for (const r of data || []) if (r.id) mark(r.id, 'AI summary', String(r.ai_summary || ''))
+          } catch { /* column may not exist; skip */ }
+        })
+        lookups.push(async () => {
+          try {
+            const ql = q.toLowerCase()
+            const { data } = await (supabase as any).from('conversations')
+              .select('id, ai_todos').eq('company_id', companyId).not('ai_todos', 'is', null).limit(1000)
+            for (const r of data || []) {
+              const todos = Array.isArray(r.ai_todos) ? r.ai_todos : []
+              const hit = todos.find((t: any) => String(typeof t === 'string' ? t : (t?.text || '')).toLowerCase().includes(ql))
+              if (hit && r.id) mark(r.id, 'Action item', String(typeof hit === 'string' ? hit : (hit?.text || '')))
+            }
+          } catch { /* column may not exist; skip */ }
+        })
       }
-      if (!cancelled) setSearchMsgHits(hits)
-
-      // Pull in any matching conversations that aren't in the loaded page, so a
-      // search reaches the WHOLE inbox — Instagram, Messenger, older threads —
-      // not just the most recent 50. Without this, searching "Biki" only found
-      // conversations already on screen, which skewed heavily to recent SMS.
-      const loadedIds = new Set(conversations.map((c: any) => c.id))
-      const missing = Object.keys(hits).filter(id => !loadedIds.has(id))
-      if (missing.length && !cancelled) {
-        const extra: any[] = []
-        for (let i = 0; i < missing.length; i += 100) {
-          const { data } = await (supabase as any).from('conversations')
-            .select('*').eq('company_id', companyId).in('id', missing.slice(i, i + 100))
-          extra.push(...(data || []))
-        }
-        // Attach contacts for the newly pulled conversations.
-        const cids = Array.from(new Set(extra.map((c: any) => c.contact_id).filter(Boolean)))
-        if (cids.length) {
-          const byId = await contactsByIds(cids as string[])
-          for (const c of extra) (c as any).contacts = c.contact_id ? byId[c.contact_id] || null : null
-        }
-        await linkPhoneThreads(companyId, extra)
-        if (!cancelled && extra.length) {
-          setSearchExtraConvs(extra)
-        }
-      } else if (!cancelled) {
-        setSearchExtraConvs([])
-      }
+      await Promise.allSettled(lookups.map(fn => fn().then(publish)))
+      if (cancelled) return
+      setSearchDoneKey(key)
+      const cache = searchCache.current
+      cache.set(key, { at: Date.now(), hits: { ...hits }, extra: [...extra] })
+      if (cache.size > 30) cache.delete(cache.keys().next().value as string)
     }
-    const t = setTimeout(run, 300)
+    const t = setTimeout(run, 120)
     return () => { cancelled = true; clearTimeout(t) }
   }, [searchTerm, searchScope, companyId])
 
@@ -6498,7 +6539,11 @@ export function useInboxController() {
   const AUTO_FILL_TARGET = 20
   const AUTO_FILL_CEILING = 500
   useEffect(() => {
-    const filterActive = assignFilter !== 'all' || locationFilter !== 'all' || activeFilterCount > 0 || !!searchTerm.trim()
+    // Not for a search: the search looks through the whole inbox itself, and
+    // paging 50 at a time behind it (up to 500) made every search wait on
+    // round trip after round trip.
+    if (searchTerm.trim()) return
+    const filterActive = assignFilter !== 'all' || locationFilter !== 'all' || activeFilterCount > 0
     if (!filterActive) return
     if (convLoadingRef.current) return
     if (!hasMoreConvs) return
@@ -6789,7 +6834,7 @@ export function useInboxController() {
     resetFilters, revealedMsgs, reviewAlready, reviewChannel, saleDismissed, saveCard, saveContact,
     saveOrderEdit, saveScheduledEdit, saveSingleField, savedCards, savingContact,
     scheduleMessage, scheduleMsgAt, scheduledBusy, scheduledList, scheduledWhen,
-    schedulingMsg, scrollBottom, searchForwardTargets, searchMsgHits, searchProducts,
+    schedulingMsg, scrollBottom, searchForwardTargets, searchMsgHits, searchPending, searchProducts,
     searchScope, searchTerm, selectConversation, selected, sendAndClose, sendChannel, sendCoupon,
     sendInteractive, sendInvoiceInChat, sendMediaRequest, sendOrderPaymentRequest, sendPayment,
     sendPicker, sendPickupReady, sendProductMessage, sendProofOfDelivery, sendReply,

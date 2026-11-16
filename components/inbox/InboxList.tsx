@@ -6,7 +6,7 @@
 
 import Link from 'next/link'
 import EmptyScroll from '@/components/EmptyScroll'
-import { Fragment } from 'react'
+import { Fragment, startTransition, useEffect, useRef, useState } from 'react'
 import BrandLogo, { type BrandKey } from '@/components/BrandLogo'
 import PrextyMark from '@/components/PrextyMark'
 import { callMatches } from '@/lib/active-call'
@@ -21,12 +21,27 @@ export default function InboxList() {
   const {
     activeCall, activeFilterCount, assignArrows, assignFilter, assignScrollRef, colvyAt, colvyRowEl,
     companyId, companyInfo, conversations, filteredConvs, hasMoreConvs, isManager, isMobile,
-    listAnim, listCollapsed, locationFilter, outlets, pinnedIds, searchMsgHits, searchScope,
+    listAnim, listCollapsed, locationFilter, outlets, pinnedIds, searchMsgHits, searchPending, searchScope,
     searchTerm, selectConversation, selected, setAssignFilter, setConvLimit, setConversations,
     setCtxMenu, setLocationFilter, setSearchScope, setSearchTerm, setShowAddContact, setShowCompose,
     setShowFilters, setShowStatusMenu, setSidebarCollapsed, setStatusFilter, showStatusMenu,
     statusFilter, teamMembers,
   } = useInbox()
+  // The search box keeps its own text, so a key press repaints only this box
+  // and the whole inbox catches up as a low-priority update (a transition the
+  // next key press can interrupt). Typing never waits on the list. A search
+  // set from elsewhere (the clear button, a link) still lands in the box.
+  const [draft, setDraft] = useState(searchTerm)
+  const sent = useRef(searchTerm)
+  useEffect(() => {
+    if (searchTerm !== sent.current) { sent.current = searchTerm; setDraft(searchTerm) }
+  }, [searchTerm])
+  const typeSearch = (v: string) => {
+    setDraft(v)
+    sent.current = v
+    startTransition(() => setSearchTerm(v))
+  }
+  const clearSearch = () => { setDraft(''); sent.current = ''; setSearchTerm(''); setSearchScope('all') }
   return (
     <>
       {/* ── LEFT: Conversation list ─────────────────────────────────────────── */}
@@ -81,10 +96,12 @@ export default function InboxList() {
           <div className="il-fold" inert={listCollapsed}><div>
           <div style={{ position: 'relative' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#71717a', pointerEvents: 'none' }}><circle cx="11" cy="11" r="7"/><line x1="20.5" y1="20.5" x2="16" y2="16"/></svg>
-            <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search conversations…" aria-label="Search conversations"
-              className="il-search" style={{ paddingRight: searchTerm ? 36 : undefined }} />
-            {searchTerm && (
-              <button type="button" onClick={() => { setSearchTerm(''); setSearchScope('all') }}
+            <input value={draft} onChange={e => typeSearch(e.target.value)} placeholder="Search conversations…" aria-label="Search conversations"
+              className="il-search" style={{ paddingRight: draft ? 36 : undefined }} />
+            {/* While the whole-inbox lookups are out: a thin sweep along the box's foot. */}
+            {searchPending && draft.trim().length > 1 && <span className="il-search-busy" aria-hidden />}
+            {draft && (
+              <button type="button" onClick={clearSearch}
                 title="Clear search"
                 style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 22, height: 22, borderRadius: '50%', border: 'none', background: '#e5e7eb', color: '#6b7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -223,6 +240,13 @@ export default function InboxList() {
           {filteredConvs.length === 0 && colvyAt !== 0 && (() => {
             // An empty list that still feels alive, worded for what's being looked at.
             const term = searchTerm.trim()
+            // Still looking through the whole inbox: say so, not "No matches".
+            if (term && searchPending) return (
+              <div className="il-searching" role="status">
+                <span className="il-searching-dots" aria-hidden><i /><i /><i /></span>
+                Searching all conversations…
+              </div>
+            )
             const [title, line] = term ? ['No matches', `Nothing matches “${term}”. Try a name, number or a word from the chat.`]
               : statusFilter === 'closed' ? ['No closed conversations', 'Conversations you close will show up here.']
               : activeFilterCount > 0 || locationFilter !== 'all' ? ['Nothing matches these filters', 'Try clearing a filter to see more.']
