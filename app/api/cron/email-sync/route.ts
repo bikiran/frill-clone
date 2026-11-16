@@ -27,7 +27,7 @@ function admin() {
  * all — it only moved when someone pressed the button — so new customer email
  * simply sat in Gmail until an agent thought to check.
  *
- * Driven from the admin app every 2 minutes (see app/admin/layout.tsx). A Vercel
+ * Driven from the admin app every 2 minutes (see app/admin/AdminShell.tsx). A Vercel
  * cron would be tidier, but the Hobby plan only allows DAILY crons — a
  * five-minute schedule is an invalid config and blocks the deployment entirely.
  *

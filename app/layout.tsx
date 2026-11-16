@@ -12,13 +12,14 @@ import PhoneHost from '@/components/PhoneHost'
 // Open Graph URLs. Falls back to the production domain when the env var is unset.
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
-// On phones the keyboard shrinks the page instead of covering its bottom (where
-// the inbox's reply box is). Chrome's default draws the keyboard over the page.
-// Safari ignores this and moves the page itself.
+// The browser's own keyboard handling everywhere (the keyboard is drawn over
+// the page, and a field being typed in is scrolled into view), so a marketing
+// page doesn't re-lay out under the visitor's finger. The app opts into
+// shrinking the page for the keyboard instead (app/admin/layout.tsx), where the
+// reply box sits at the bottom. Safari ignores both and moves the page itself.
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  interactiveWidget: 'resizes-content',
 }
 
 // Site-wide metadata defaults. Individual pages override `title` (the template
