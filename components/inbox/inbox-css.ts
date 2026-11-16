@@ -556,6 +556,12 @@ export const INBOX_CSS = `
         .ilc-where svg { flex-shrink: 0; }
         .ilc-where span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .ilc.sel .ilc-where { background: #f6f6f7; box-shadow: none; }
+        /* While searching, a closed or snoozed chat is found too, tagged so it's clear it isn't open. */
+        .ilc-state { display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; height: 18px; box-sizing: border-box; padding: 0 7px 0 5px; border-radius: 999px; background: #f4f4f5; color: #52525b; font-size: 10.5px; font-weight: 650; letter-spacing: .01em; }
+        .ilc-state svg { flex-shrink: 0; }
+        .ilc.sel .ilc-state { background: #fff; box-shadow: inset 0 0 0 1px #e4e4e7; }
+        [data-theme="dark"] .ilc-state { background: #27272a; color: #a1a1aa; }
+        [data-theme="dark"] .ilc.sel .ilc-state { background: #18181b; box-shadow: inset 0 0 0 1px #3f3f46; }
 
         /* Desktop: the list folds to a strip of avatars and back. The column's
            width is the only thing that moves; inside it everything keeps its
