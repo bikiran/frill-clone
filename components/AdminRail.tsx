@@ -1,6 +1,6 @@
 'use client'
 
-// The admin's navigation on wider screens (app/admin/layout.tsx), like
+// The admin's navigation on wider screens (app/admin/AdminShell.tsx), like
 // Sellio's: a slim rail of big icons with their names underneath. The section
 // you're in sits on a white tile with its icon filled in Colvy coral. Pointing
 // at a section (or tabbing to it) opens a panel beside the rail with all of its

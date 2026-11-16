@@ -114,7 +114,7 @@ export interface SuiteDef {
   features: FeatureDef[]
 }
 
-// Suites mirror the admin sidebar's groups (app/admin/layout.tsx) so the Team
+// Suites mirror the admin sidebar's groups (app/admin/AdminShell.tsx) so the Team
 // page's access checklist reads in the same order as the menu. Only the
 // grouping is presentational: access is stored per feature KEY, so moving a
 // feature between suites never changes anyone's access. Never rename a key.

@@ -3,7 +3,7 @@
 // Phones: while the on-screen keyboard is up, mark <html class="kb-open"> so
 // screens can make room above it. The bottom tabs and the banners step aside
 // (globals.css) and the inbox's email box sheds its To row (inbox page). The
-// root layout also asks the browser to shrink the page for the keyboard
+// admin layout also asks the browser to shrink the page for the keyboard
 // (viewport interactive-widget=resizes-content) instead of drawing it over the
 // bottom of the page, where the reply box is.
 //
