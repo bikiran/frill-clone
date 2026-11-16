@@ -9,6 +9,173 @@ const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c'
 
 export const LATEST_POSTS: BlogPost[] = [
   {
+    slug: 'colvy-is-a-culture',
+    cover: '/blog/colvy-is-a-culture/cover.jpg',
+    title: 'Colvy is a culture, not just software',
+    excerpt: 'Seasonal themes, a mascot with moods, AI agents with names and faces, and the small touches that make the app you open fifty times a day feel like yours. Serious about work, playful about teamwork.',
+    seoDescription: 'Seasonal themes, a mascot with moods, AI agents with names and faces: the small touches that make Colvy feel like a team, not just software.',
+    category: 'Inside Colvy', accent: CORAL, icon: 'sparkle',
+    date: '2026-11-16T15:00:00+11:00', dateLabel: 'Nov 16, 2026', readTime: '6 min read', author: 'The Colvy Team',
+    takeaways: [
+      'You open your inbox fifty times a day. It should feel good, not grey.',
+      'Seasonal themes dress the whole app up for Halloween, Christmas and Neon Nights, on dates you choose.',
+      'Colvy AI and your AI agents have names, faces and moods, so you always know who did what.',
+      'Every bit of fun can be switched off, and none of it ever gets between you and a customer.',
+    ],
+    content: `Most business software looks like a tax return. Grey boxes, tiny type, a spinner. You open it fifty times a day because you have to, and nobody has ever smiled at it.
+
+We think that's a waste. The inbox is where your team spends its day: answering the regular who wants the usual, calming the customer whose parcel went missing, closing the sale at 9pm. If it's where you work, it might as well feel like somewhere you want to be.
+
+So Colvy has a personality. Here's what that looks like, and why we bother.
+
+## Serious about work. Playful about teamwork.
+
+That's the rule. Every playful thing in Colvy sits around the work, never in front of it. Nothing slows a reply down, nothing covers a customer's message, nothing gets in the way of a payment. And every bit of it can be switched off, by the business or by each person on their own device.
+
+## The app dresses up for the season
+
+Colvy has seasonal themes, and they go further than a new colour.
+
+- **Halloween**: lightning, bats, drifting fog and glowing jack-o’-lanterns, with the whole app in its spooky night mode.
+- **Christmas**: falling snow, fairy lights strung along the top of the app, a snowy village, and Santa's sleigh flying past now and then. The Colvy mascot wears a Santa hat.
+- **Neon Nights**: an 80s evening. A striped sun setting behind a neon city, palms swaying, a convertible cruising along the bottom of the screen, and the mascot in aviator shades.
+
+![Three people laughing together over their laptops](/blog/colvy-is-a-culture/laughing.jpg "Work you enjoy is work you do properly.")
+
+You choose when they run: always, or between two dates every year. You can let customers see the theme on your public board and help centre too. Anyone on the team can turn the effects off just for themselves. Checkout, sign-in, booking pages and the chat widget on your website always stay plain, because nobody wants snow falling on a payment form.
+
+> [!TIP] Try one now
+> In **Settings → Theme**, every theme has a **Preview** button that plays all its effects for 20 seconds. Nothing changes for your team until you switch it on.
+
+## A mascot with moods
+
+Colvy AI lives in a little orb in the corner. It blinks. It looks around. When you close it, it comes back with one of fifteen different entrances: a pop, a drop, a genie swirl. It's a small thing, and people notice.
+
+Your customers have moods too. Mark a conversation as happy, neutral or upset and a little face flies across to the customer's name and stays there: the happy one hops, the neutral one glances about, the upset one gives off a puff of steam. Before you reply, you already know how the conversation is going.
+
+## AI agents with names and faces
+
+Colvy's AI agents (Support, Sales, Reception, Operations and Reputation) don't have to be “the AI”. Give each one a name your team will actually use, pick one of twelve shapes, slide the colour, or upload a photo: your logo, your mascot, the shop dog. Their eyes follow your cursor.
+
+Then, when an agent is handling a conversation, a bar above the reply box says so: *Kai is answering this conversation*, with a **Take control** button right next to it. And anything Colvy AI adds to a note or a task is marked **Assisted by Colvy AI**, so you always know what a person did and what the AI did.
+
+## Nothing is ever just empty
+
+An empty inbox, no open tickets, a clear task list: those are good moments, so they get a little animation of cards drifting past instead of a blank grey box. Even our website's “back to top” button pops out with a spin and a burst of confetti when you reach the bottom.
+
+None of this is essential. All of it makes the place feel looked after.
+
+![A team sharing a meal around a long table](/blog/colvy-is-a-culture/team-table.jpg "Teams that enjoy their tools use them properly.")
+
+## Built with you, not just for you
+
+Culture runs both ways. Every Colvy workspace has a private chat with the Colvy team, right in the inbox, for questions, ideas and the odd “this would be nice”. Our ideas board and roadmap are public: you can see what we're building next and vote on what should come after. A lot of what's in this article started as someone's message.
+
+And the team side of Colvy is built for teams: **@everyone** in a note or a task reaches the whole team, assignments show faces rather than email addresses, and the people who answered a customer are named on the conversation.
+
+## Why bother?
+
+Because tools shape habits. When an app feels good, people keep it open, reply faster and log things properly, because it's not a chore. When it feels like a tax return, everything ends up in someone's head or on a sticky note.
+
+We'd rather your team enjoyed the place where they look after your customers.
+
+[Start free](/signup), switch on a theme, and name your first AI agent.`,
+  },
+  {
+    slug: 'how-to-record-a-lead',
+    cover: '/blog/how-to-record-a-lead/cover.jpg',
+    title: 'How to record a lead without chasing forms',
+    excerpt: 'A customer calls, and suddenly you’re hunting for a pen, or emailing them a form they’ll never fill in. Here’s how to capture every lead from the call or chat itself, and never lose one again.',
+    seoDescription: 'Stop sending forms to new leads. Capture names, emails and addresses from the call or chat itself, then follow up with tags, tasks and notes in one place.',
+    category: 'How-to', accent: BLUE, icon: 'phone',
+    date: '2026-11-16T14:00:00+11:00', dateLabel: 'Nov 16, 2026', readTime: '7 min read', author: 'The Colvy Team',
+    takeaways: [
+      'Don’t send a new lead a form. Capture their details from the conversation you’re already having.',
+      'Calls through your Colvy number are recorded and transcribed, and the AI fills in a missing name, email and address.',
+      'Details people type in a text or chat are picked up and saved to their contact too.',
+      'Add tags, notes and tasks from the side panel while you talk, so the follow-up is already set when you hang up.',
+    ],
+    content: `A new customer rings. They want a quote, or they're asking whether you have something in stock. It's a good call, and at the end of it you realise you have no idea how to keep hold of them.
+
+So you do what most small businesses do. You scribble their name on whatever's nearby. Or you say “I'll email you a form” and send a link they never open. Or you ask them to spell their email over the phone, twice, and still get it wrong. A week later the sticky note is gone and so is the lead.
+
+![A desk covered in paperwork and forms](/blog/how-to-record-a-lead/paperwork.jpg "Forms are the reason half your leads never get recorded.")
+
+## The problem with forms
+
+Forms feel organised, but they put the work on the customer at exactly the wrong moment. They've just told you what they need. Asking them to stop and fill in a form, on their phone, adds a step, and a lot of people never take it.
+
+The better way is to record the lead from the conversation you're already having.
+
+## 1. Every call and message is already a record
+
+In Colvy, every call to your business number, every text, every website chat, every Instagram or Messenger message and every email lands in one inbox, in a conversation tied to that person. You don't create the record: the moment someone gets in touch, they're there, with their number or handle, and every message since.
+
+So the first rule of recording a lead is simple: talk to them in Colvy, and you can't lose them.
+
+## 2. Calls are recorded, transcribed and summed up
+
+Calls through your Colvy number are recorded from the moment they're answered. When the call ends, Colvy writes a transcript and an AI summary of what was said, and suggests tasks: send the quote, check stock, call back Tuesday. They appear right in the conversation.
+
+\`\`\`chat
+title: Call · 6 min 12 s
+event: Call recorded and transcribed
+ai: Summary: Jordan wants a quote for a 4m deck with steps, ideally before Christmas. Prefers email. Lives in Brunswick.
+draft: Task: Send the deck quote to Jordan by Thursday
+\`\`\`
+
+It also listens for the details you'd normally scramble to write down. If the caller says their name, email or address, Colvy fills them into the contact: name, email, street, suburb and postcode. It only fills fields that are empty, so it never overwrites something your team already typed.
+
+> [!NOTE] Let callers know
+> It's good practice, and in some places the law, to tell people their call may be recorded. A line in your greeting covers it.
+
+## 3. Details people type are saved too
+
+Leads don't always call. When someone texts or chats with you and writes down their phone number, email or address in the conversation, Colvy picks it up and saves it to their contact, with a small **AI** badge so you can see where it came from. Wrong? Dismiss it in one click and it won't come back.
+
+That's the “send me your details” email you no longer have to write.
+
+## 4. Fill in the rest from the side panel, while you talk
+
+Next to every conversation is the customer's panel. During the call, you can:
+
+- **Add or fix their details**: name, email, phone, address, company.
+- **Tag them** so they're easy to find later: *quote sent*, *wholesale*, *deck*, whatever fits how you work.
+- **Write a note** for the team, like “wants Merbau, not pine” or “call after 3pm”.
+- **Add a task** with a due date and an owner, so the follow-up is set before you hang up.
+
+You don't have to finish it all on the call. Start with a name and a tag, and add the rest as the conversation goes on.
+
+![Two people at a front desk going over details on a tablet](/blog/how-to-record-a-lead/front-desk.jpg "Record the lead while you talk, not after.")
+
+## 5. Follow up without remembering to
+
+A lead is only worth something if you get back to them. In Colvy:
+
+- **Tasks** show up on the Tasks page and on the conversation, with who's on it and when it's due.
+- **Scheduled messages** let you write the follow-up now and send it on Thursday morning.
+- **@mentions** in a note bring in a teammate: “@Sam can you price the steps?”
+- **The timeline** on each contact shows every call, message, note, task and order in one place, so whoever picks it up next knows the whole story.
+
+## 6. Find them in seconds, months later
+
+Because everything lives on the contact, you can find a lead by their name, number or email, or by a word from the conversation (“deck”, “Brunswick”), even if it's been months and the chat is long closed.
+
+## A checklist for your next new lead
+
+| On the call or chat | Colvy does it for you |
+|---|---|
+| Talk to them through Colvy | The conversation and contact are created |
+| Let them say their details naturally | Name, email and address are filled in from the call or chat |
+| Tag them and add one note | — |
+| Add the follow-up task with a due date | Suggested tasks appear after calls |
+| — | The transcript, summary and timeline are kept on the contact |
+
+No forms, no sticky notes, no “sorry, what was your email again?”. Every person who calls, texts or chats is recorded the moment they get in touch, and stays recorded.
+
+[Start free](/signup) and record your next lead without lifting a pen.`,
+  },
+  {
     // Facts about the other apps: their own websites, checked 14 November 2026.
     slug: 'best-booking-app-small-business-australia',
     cover: '/blog/best-booking-app-small-business-australia/cover.jpg',
