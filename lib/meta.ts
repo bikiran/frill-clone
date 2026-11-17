@@ -48,12 +48,22 @@ export const META_MESSAGING_SCOPES = [
 
 const MESSAGING_ENABLED = process.env.META_ENABLE_MESSAGING_SCOPES === 'true'
 
-// What we actually request: the four Page scopes, plus the messaging scopes only
-// when the app is approved for them (env flag). Default → Page scopes only.
-export const META_SCOPES = (MESSAGING_ENABLED
+// Meta approves permissions one at a time. META_EXTRA_SCOPES lists the ones
+// from META_MESSAGING_SCOPES that are approved so far, e.g.
+//   META_EXTRA_SCOPES=pages_messaging
+// and later
+//   META_EXTRA_SCOPES=pages_messaging,instagram_basic,instagram_manage_messages
+// Anything not in that list is ignored, so a typo can't break the login.
+// (META_ENABLE_MESSAGING_SCOPES=true still means "all of them".)
+export const META_EXTRA_SCOPES = String(process.env.META_EXTRA_SCOPES || '')
+  .split(/[\s,]+/).map(x => x.trim().toLowerCase()).filter(x => META_MESSAGING_SCOPES.includes(x))
+
+// What we actually request: the four Page scopes, plus the messaging scopes the
+// app is approved for (env). Default → Page scopes only.
+export const META_SCOPES = Array.from(new Set(MESSAGING_ENABLED
   ? [...META_PAGE_SCOPES, ...META_MESSAGING_SCOPES]
-  : META_PAGE_SCOPES
-).join(',')
+  : [...META_PAGE_SCOPES, ...META_EXTRA_SCOPES]
+)).join(',')
 
 export function isMetaConfigured(): boolean {
   return !!(META_APP_ID && META_APP_SECRET && META_REDIRECT_URI)
@@ -132,18 +142,25 @@ export async function listManagedPages(userToken: string): Promise<{ pages?: any
 
 // Subscribe a Page to webhooks: DMs (messages) AND its feed, so both Messenger
 // messages and comments on the Page's posts reach our webhook in real time.
+// The message fields need pages_messaging; when the Page's token doesn't have
+// it (not approved yet, or connected before it was), the whole call fails, so
+// fall back to the feed alone. Comments keep working, and the error says why
+// Messenger messages won't arrive.
 export async function subscribePageWebhooks(pageId: string, pageToken: string): Promise<{ ok: boolean; error?: string }> {
-  const res = await fetch(`${GRAPH}/${pageId}/subscribed_apps`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      subscribed_fields: ['messages', 'messaging_postbacks', 'message_reactions', 'feed'],
-      access_token: pageToken,
-    }),
-  })
-  const data = await res.json()
-  if (!res.ok) return { ok: false, error: data?.error?.message || 'Webhook subscription failed' }
-  return { ok: true }
+  const sub = async (fields: string[]) => {
+    const res = await fetch(`${GRAPH}/${pageId}/subscribed_apps`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subscribed_fields: fields, access_token: pageToken }),
+    })
+    const data = await res.json().catch(() => ({}))
+    return res.ok ? null : (data?.error?.message || 'Webhook subscription failed')
+  }
+  const full = await sub(['messages', 'messaging_postbacks', 'message_reactions', 'feed'])
+  if (!full) return { ok: true }
+  const feed = await sub(['feed'])
+  if (feed) return { ok: false, error: full }
+  return { ok: false, error: `Messenger messages aren’t subscribed (${full}). Comments are. Connect Facebook again once Colvy asks for the Messenger permission.` }
 }
 
 // Which apps this Page sends webhooks to, read live from Meta
