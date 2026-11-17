@@ -137,7 +137,7 @@ export default function PowersChip({ companyId }: { companyId: string | null }) 
         <LevelRing level={w.level} progress={w.progress} size={24} stroke={2.6} />
         <Coin size={15} />
         <span className="pw-num">{(shown ?? coins).toLocaleString()}</span>
-        {focusOn && <span className="pw-focus" title="Focus Shield is on"><PowerIcon name="shield" size={13} stroke={2.2} /></span>}
+        {focusOn && <span className="pw-shield" title="Focus Shield is on"><PowerIcon name="shield" size={13} stroke={2.2} /></span>}
         {floats.map(f => <span key={f.id} className={`pw-float${f.neg ? ' neg' : ''}`} aria-hidden>{!f.neg && <Coin size={13} />}{f.text}</span>)}
       </button>
 
@@ -216,7 +216,7 @@ const CSS = `
 .pw-chip.glow{animation:pwGlow 1.5s ease-out}
 @keyframes pwGlow{0%{box-shadow:0 0 0 1px rgba(0,0,0,.08),0 0 0 0 rgba(255,106,77,.55)}40%{box-shadow:0 0 0 1px rgba(255,106,77,.5),0 0 0 9px rgba(255,106,77,0)}100%{box-shadow:0 0 0 1px rgba(0,0,0,.08)}}
 .pw-num{font-variant-numeric:tabular-nums;letter-spacing:-.01em}
-.pw-focus{display:inline-flex;color:#0ea5e9;margin-left:-1px}
+.pw-chip .pw-shield{display:inline-flex;color:#0ea5e9;margin-left:-1px}
 .pw-ring{position:relative;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--ink)}
 .pw-ring svg{position:absolute;inset:0}
 .pw-ring b{position:relative;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
