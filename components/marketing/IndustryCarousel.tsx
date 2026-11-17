@@ -8,8 +8,9 @@ import AiBuddy from '@/components/AiBuddy'
 // industry with its neighbours peeking either side. Over the photo a customer
 // asks something typical for that trade, Colvy AI types, then answers. Three
 // things Colvy does for that industry sit underneath. It moves on by itself
-// while on screen (not while hovered), and the arrows, the side cards or a
-// swipe change it by hand. With reduced motion it doesn't advance and the
+// while on screen (not while hovered): a small ring in the card's corner
+// fills up and is the clock, so pausing it pauses the carousel too. The
+// arrows, the side cards or a swipe change it by hand. With reduced motion it doesn't advance and the
 // chat shows straight away. Made-up conversations.
 
 type Industry = {
@@ -102,11 +103,6 @@ export default function IndustryCarousel({ dark = false, text, muted }: { dark?:
     return () => t.forEach(clearTimeout)
   }, [at, onScreen, still])
 
-  useEffect(() => {
-    if (still || !onScreen || held) return
-    const t = setTimeout(() => setAt(a => (a + 1) % N), STEP_MS)
-    return () => clearTimeout(t)
-  }, [at, onScreen, held, still])
 
   const go = (d: number) => setAt(a => (a + d + N) % N)
   const cur = INDUSTRIES[at]
@@ -121,8 +117,9 @@ export default function IndustryCarousel({ dark = false, text, muted }: { dark?:
       </div>
 
       <div ref={rootRef} className="ind-track" role="region" aria-roledescription="carousel" aria-label="Colvy by industry"
-        onMouseEnter={() => setHeld(true)} onMouseLeave={() => setHeld(false)}
-        onFocus={() => setHeld(true)} onBlur={() => setHeld(false)}
+        // Hover (a real mouse) or keyboard focus pauses it; a tap on a phone doesn't.
+        onPointerEnter={e => { if (e.pointerType === 'mouse') setHeld(true) }} onPointerLeave={e => { if (e.pointerType === 'mouse') setHeld(false) }}
+        onFocus={e => { if ((e.target as HTMLElement).matches?.(':focus-visible')) setHeld(true) }} onBlur={() => setHeld(false)}
         onPointerDown={e => { swipe.current = e.clientX }}
         onPointerUp={e => { const s = swipe.current; swipe.current = null; if (s != null && Math.abs(e.clientX - s) > 44) go(e.clientX < s ? 1 : -1) }}>
         {INDUSTRIES.map((x, i) => {
@@ -139,6 +136,15 @@ export default function IndustryCarousel({ dark = false, text, muted }: { dark?:
 
               {where === 'mid' && (
                 <>
+                  {!still && (
+                    <span className={`ind-timer${held || !onScreen ? ' paused' : ''}`} key={`timer-${at}`} aria-hidden="true">
+                      <svg viewBox="0 0 36 36">
+                        <circle cx="18" cy="18" r="13" className="bg" />
+                        <circle cx="18" cy="18" r="13" className="fg" style={{ animationDuration: `${STEP_MS}ms` }}
+                          onAnimationEnd={e => { if (e.animationName === 'indTimer') setAt(a => (a + 1) % N) }} />
+                      </svg>
+                    </span>
+                  )}
                   <div className="ind-chat" key={`chat-${at}`}>
                     {stage >= 1 && <div className="ind-ask">{x.ask}</div>}
                     {stage === 2 && <div className="ind-dots" aria-label="Colvy AI is typing"><i /><i /><i /></div>}
@@ -214,6 +220,14 @@ const IND_CSS = `
 .ind-reply p{margin:0 0 9px;font-size:clamp(14px,1vw,16px);line-height:1.45;font-weight:500}
 .ind-reply span{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#71717a}
 
+.ind-timer{position:absolute;top:clamp(16px,1.8vw,26px);left:clamp(16px,1.8vw,26px);z-index:2;width:34px;height:34px;border-radius:50%;background:rgb(20 16 14 / .3);backdrop-filter:blur(10px) saturate(1.3);-webkit-backdrop-filter:blur(10px) saturate(1.3);box-shadow:inset 0 0 0 1px rgba(255,255,255,.18),0 6px 16px rgba(0,0,0,.14);animation:indTimerIn .55s cubic-bezier(.34,1.7,.5,1) .15s both}
+.ind-timer svg{display:block;width:100%;height:100%;transform:rotate(-90deg)}
+.ind-timer circle{fill:none;stroke-width:3}
+.ind-timer .bg{stroke:rgba(255,255,255,.26)}
+.ind-timer .fg{stroke:#fff;stroke-linecap:round;stroke-dasharray:81.7;stroke-dashoffset:81.7;animation:indTimer linear forwards}
+.ind-timer.paused .fg{animation-play-state:paused}
+@keyframes indTimer{to{stroke-dashoffset:0}}
+@keyframes indTimerIn{from{opacity:0;transform:scale(.4)}}
 .ind-arrow{position:absolute;top:50%;z-index:3;width:38px;height:38px;margin-top:-19px;border-radius:50%;border:0;background:#fff;color:#18181b;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.18);transition:transform .2s ease}
 .ind-arrow::before{display:none !important}
 .ind-arrow:hover{transform:scale(1.08)}
@@ -246,7 +260,7 @@ const IND_CSS = `
   .ind-cap{left:18px;right:18px;bottom:18px;max-width:none}
   .ind-cap p{font-size:13.5px}
   .ind-chat{left:18px;right:18px;width:auto;top:18px;bottom:auto}
-  .ind-ask{max-width:88%}
+  .ind-ask{max-width:calc(100% - 46px)}
   .ind-reply{align-self:flex-start;max-width:92%}
   .ind-chips{flex-direction:column;align-items:flex-start;gap:12px;width:max-content;max-width:calc(100% - 48px)}
   .ind-chips li{padding:0}

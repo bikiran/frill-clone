@@ -11,6 +11,7 @@ import ColvyAppDemo from '@/components/ColvyAppDemo'
 import TeamInboxDemo from '@/components/marketing/TeamInboxDemo'
 import ChannelFlow from '@/components/marketing/ChannelFlow'
 import IndustryCarousel from '@/components/marketing/IndustryCarousel'
+import AutomationCanvas from '@/components/marketing/AutomationCanvas'
 import JustShipped from '@/components/marketing/JustShipped'
 import HowItWorks from '@/components/marketing/HowItWorks'
 import ScrollStory from '@/components/ScrollStory'
@@ -530,6 +531,9 @@ export default function LandingPage() {
         </Reveal>
         <ChannelFlow />
       </section>
+
+      {/* AUTOMATIONS — a little flow people can drag around. */}
+      <div style={{ background: bg }}><AutomationCanvas dark={dark} text={text} muted={muted} /></div>
 
       {/* SCROLL STORY — pins while you scroll; colours shift and the product
           cards fly between beats (Linktree-style). Wrapped in a div so the
