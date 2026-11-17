@@ -338,6 +338,8 @@ export function queueMissedCallText(p: { db: any; companyId: string | null | und
   const work = async () => {
     const r = await sendMissedCallText({ db, companyId, callId })
     log.info('[missed call text]', callId, r)
+    // The business's "missed call" automations (Settings → Automations), once per call.
+    try { const { runMissedCallAutomations } = await import('@/lib/automations/engine'); await runMissedCallAutomations(db, companyId, callId) } catch (e: any) { log.warn('[automations] missed call', e?.message || e) }
   }
   try { after(work) } catch { void work() }
 }

@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     // the workspace is the conversation's own: a companyId in the body used to
     // let another workspace's AI settings answer this customer.
     if (!isInternalCall(req)) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
-    const { conversationId } = await req.json()
+    const { conversationId, fromAutomation } = await req.json()
     if (!conversationId) return NextResponse.json({ error: 'conversationId required' }, { status: 400 })
     const { data: owner } = await admin().from('conversations').select('company_id, channel, sms_number, contact_id').eq('id', conversationId).maybeSingle()
     if (!owner?.company_id) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
@@ -38,6 +38,21 @@ export async function POST(req: NextRequest) {
     // Spam, a blocked sender, or a message Colvy hid for review: the AI stays out of it.
     const quiet = await quietVerdict(admin(), conversationId)
     if (quiet) return NextResponse.json({ ok: true, skipped: `protection: ${quiet}` })
+
+    // The business's own automations (Settings → Automations) go first. One that
+    // replied or paused Colvy AI here means the AI stays quiet on this message,
+    // unless the flow handed it to Colvy AI. A flow's "Hand to Colvy AI" after a
+    // Wait comes back here with fromAutomation, and doesn't run the flows again.
+    let auto: import('@/lib/automations/engine').EventResult | null = null
+    if (!fromAutomation) {
+      try { const { runMessageAutomations } = await import('@/lib/automations/engine'); auto = await runMessageAutomations(admin(), conversationId) } catch (e) { console.warn('[automations] inbound', e) }
+    }
+    const { aiStandsDown } = await import('@/lib/automations/engine')
+    const standDown = aiStandsDown(auto)
+    if (standDown) {
+      try { await admin().from('ai_actions').insert({ company_id: owner.company_id, conversation_id: conversationId, action: 'skipped', allowed: false, blocked_reason: standDown }) } catch {}
+      return NextResponse.json({ ok: true, replied: false, reason: standDown, automations: auto })
+    }
 
     // An SMS customer who opted out (or can't be checked) gets no AI run at all:
     // the reply would be refused anyway, and the AI could already have issued a

@@ -456,6 +456,10 @@ export async function POST(req: NextRequest) {
     if (!/\[TICK-\d+\]/i.test(subject || '') && auth !== 'fail' && bodyFetch !== 'pending') {
       const convId = conv.id
       after(async () => {
+        // The business's automations first; one that replied or paused Colvy AI keeps the agent out.
+        let standDown: string | null = null
+        try { const { runMessageAutomations, aiStandsDown } = await import('@/lib/automations/engine'); standDown = aiStandsDown(await runMessageAutomations(db, convId, { channel: 'email' })) } catch (e) { console.warn('[automations] email inbound', e) }
+        if (standDown) return
         try { const { startSupportAgentForConversation } = await import('@/lib/agent/inbound'); await startSupportAgentForConversation(db, convId, { debounceMs: 0, run: false, channel: 'email' }) } catch (e) { console.warn('[agent] email inbound', e) }
       })
     }

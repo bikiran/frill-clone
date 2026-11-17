@@ -32,6 +32,7 @@ export const SETTINGS_NAV: SettingsGroup[] = [
   { title: 'Inbox', items: [
     { label: 'Channels', href: '/admin/crm-settings/channels', icon: 'radio' },
     { label: 'Automatic replies', href: '/admin/crm-settings/auto-replies', icon: 'reply' },
+    { label: 'Automations', href: '/admin/crm-settings/automations', icon: 'flow' },
     { label: 'Time savers', href: '/admin/crm-settings/power-ups', icon: 'zap' },
     { label: 'Conversation actions', href: '/admin/crm-settings/conversation-actions', icon: 'pointer' },
     { label: 'Custom fields', href: '/admin/crm-settings/custom-fields', icon: 'list' },
@@ -96,6 +97,7 @@ export const SETTINGS_ICONS: Record<string, string[]> = {
   radio: ['M12 13.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z', 'M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7', 'M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8'],
   reply: ['M9.5 14.5 4.5 9.5l5-5', 'M4.5 9.5H14a5.5 5.5 0 0 1 5.5 5.5v4'],
   zap: ['M13 2.5 4.5 13.5H12L11 21.5l8.5-11H12z'],
+  flow: ['M4 4.5h6v5H4z', 'M14 14.5h6v5h-6z', 'M7 9.5v2.5a2.5 2.5 0 0 0 2.5 2.5H14'],
   pointer: ['M5 3.5 18.5 10l-6 1.5L10 17.5z', 'm12.5 11.5 5 5'],
   list: ['M9 6h11M9 12h11M9 18h11', 'M4.5 6h.01M4.5 12h.01M4.5 18h.01'],
   archive: ['M3.5 4.5h17v4h-17z', 'M5 8.5v10a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5v-10', 'M10 12.5h4'],

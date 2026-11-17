@@ -264,7 +264,7 @@ export default function AutomationCanvas({ dark = false, text, muted }: { dark?:
         <div className="ac-node" data-node="task" style={{ ['--nc' as string]: '#d97706' }}>
           <span className="ac-port in" data-port="task.in" />
           <div className="ac-nh"><span className="ac-ni"><Ico d={ICON.check} /></span>Task</div>
-          <p>Check the refund within 1 hour</p>
+          <p>Check the refund today</p>
         </div>
 
         <div className="ac-node" data-node="ai" style={{ ['--nc' as string]: '#ff6a4d' }}>
@@ -277,7 +277,7 @@ export default function AutomationCanvas({ dark = false, text, muted }: { dark?:
           ? <span className="ac-hint" aria-hidden="true"><Ico d={ICON.hand} s={15} />Drag a step</span>
           : <button type="button" className="ac-tidy" onClick={() => tidyRef.current()}>Tidy up</button>}
       </div>
-      <p className="ac-foot" style={{ color: muted }}>The visual builder is coming to Colvy soon. Keyword replies, Colvy AI answers and auto-assign work today.</p>
+      <p className="ac-foot" style={{ color: muted }}>Build flows like this in Colvy: Settings → Automations. Replies, assigning, tags, tasks, waits and Colvy AI, joined however you like.</p>
     </section>
   )
 }

@@ -273,9 +273,14 @@ export async function POST(req: NextRequest) {
 
         // The Support / Reception Agent, if the business switched it on for this
         // channel (lib/agent/inbound.ts decides; a burst of messages is one run).
-        if (text) {
+        // The business's automations go first (lib/automations/engine); one that
+        // replied or paused Colvy AI here keeps the agents out of this message.
+        {
           const convId = conv.id
           after(async () => {
+            let standDown: string | null = null
+            try { const { runMessageAutomations, aiStandsDown } = await import('@/lib/automations/engine'); standDown = aiStandsDown(await runMessageAutomations(db, convId)) } catch (e) { console.warn('[automations] meta inbound', e) }
+            if (!text || standDown) return
             try { const { startSupportAgentForConversation } = await import('@/lib/agent/inbound'); await startSupportAgentForConversation(db, convId) } catch (e) { console.warn('[agent] meta inbound', e) }
           })
         }

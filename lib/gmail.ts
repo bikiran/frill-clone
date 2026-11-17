@@ -654,8 +654,13 @@ export async function syncGmailChannel(
 
     // The Support / Reception Agent, if switched on for email: queued here, run
     // by the agent worker within a minute. Ticket replies stay with the ticket.
+    // The business's automations go first; one that replied or paused Colvy AI keeps the agent out.
     if (!/\[TICK-\d+\]/i.test(subject || '')) {
-      try { const { startSupportAgentForConversation } = await import('@/lib/agent/inbound'); await startSupportAgentForConversation(db, conv.id, { debounceMs: 0, run: false, channel: 'email' }) } catch (e) { console.warn('[agent] gmail inbound', e) }
+      let standDown: string | null = null
+      try { const { runMessageAutomations, aiStandsDown } = await import('@/lib/automations/engine'); standDown = aiStandsDown(await runMessageAutomations(db, conv.id, { channel: 'email' })) } catch (e) { console.warn('[automations] gmail inbound', e) }
+      if (!standDown) {
+        try { const { startSupportAgentForConversation } = await import('@/lib/agent/inbound'); await startSupportAgentForConversation(db, conv.id, { debounceMs: 0, run: false, channel: 'email' }) } catch (e) { console.warn('[agent] gmail inbound', e) }
+      }
     }
 
     // Route ticket replies back onto the ticket. Agent ticket replies carry
