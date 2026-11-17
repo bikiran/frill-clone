@@ -1,5 +1,6 @@
 import LegalPage from '@/components/LegalPage'
 import GoogleUserData from './GoogleUserData'
+import MetaUserData from './MetaUserData'
 import AnalyticsOptOut from './AnalyticsOptOut'
 import { pageMeta } from '@/lib/seo'
 
@@ -9,6 +10,7 @@ export default function Privacy() {
   return (
     <LegalPage slug="privacy">
       <GoogleUserData />
+      <MetaUserData />
       <AnalyticsOptOut />
     </LegalPage>
   )

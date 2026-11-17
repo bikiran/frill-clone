@@ -209,7 +209,12 @@ export default function MetaChannelsPage() {
             onClick={async e => {
               e.preventDefault()
               if (!configured) { setMsg('Configure the Meta app first (see above).'); return }
-              const href = setupHref((e.currentTarget as HTMLAnchorElement).href)
+              let href = setupHref((e.currentTarget as HTMLAnchorElement).href)
+              // Meta App Review recordings: open this page with ?appreview=1 and the
+              // login asks for the Messenger / Instagram permissions under review
+              // too. Only people with a role on the Meta app can grant those before
+              // approval, so customers never use it (there's no button for it).
+              if (new URLSearchParams(window.location.search).get('appreview') === '1') href += `${href.includes('?') ? '&' : '?'}scopes=full&noconfig=1`
               try { window.location.href = await withConnectTicket(href, companyId!, 'meta') } catch (er: any) { setMsg(er.message) }
             }}
             style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '11px 16px', borderRadius: 999, background: '#1877F2', color: '#fff', fontSize: 13.5, fontWeight: 700, textDecoration: 'none', opacity: configured ? 1 : 0.6 }}>
