@@ -151,6 +151,10 @@
     {
       "path": "/api/cron/powers",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/automations",
+      "schedule": "* * * * *"
     }
   ]
 }

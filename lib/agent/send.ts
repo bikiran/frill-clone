@@ -29,6 +29,8 @@ export async function sendAgentMessage(db: any, opts: {
   agentName?: string | null
   /** Reply on this channel instead of the conversation's (default: the run's input.channel). */
   channel?: string | null
+  /** The message's metadata instead of the agent's (automations label their own replies). Keep agent_name in it. */
+  meta?: Record<string, any> | null
 }): Promise<{ ok: boolean; error?: string; channel?: string }> {
   const raw = String(opts.text || '').trim()
   if (!raw) return { ok: false, error: 'Nothing to send.' }
@@ -37,7 +39,7 @@ export async function sendAgentMessage(db: any, opts: {
     db.from('companies').select('name').eq('id', opts.companyId).maybeSingle(),
   ])
   if (!conv) return { ok: false, error: 'Conversation not found.' }
-  const meta = { agent_run_id: opts.runId, agent_name: opts.agentName || 'Support Agent', approved_by: opts.approvedBy?.name || null, approved_by_id: opts.approvedBy?.id || null, edited: !!opts.edited }
+  const meta = opts.meta ? { agent_name: opts.agentName || 'Automation', ...opts.meta } : { agent_run_id: opts.runId, agent_name: opts.agentName || 'Support Agent', approved_by: opts.approvedBy?.name || null, approved_by_id: opts.approvedBy?.id || null, edited: !!opts.edited }
   // The channel the customer wrote on, recorded on the run: an email threaded
   // onto an order (chat) conversation is answered by email.
   let runChannel: string | null = null

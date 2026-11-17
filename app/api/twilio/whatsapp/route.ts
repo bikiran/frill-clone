@@ -102,6 +102,10 @@ export async function POST(req: NextRequest) {
         try {
           const [access, consent] = await Promise.all([whatsappAccess(db, companyId), whatsappOptOut(db, companyId, from)])
           if (!access.ok || consent !== 'ok') return
+          // The business's automations first; one that replied or paused Colvy AI keeps the agent out.
+          let standDown: string | null = null
+          try { const { runMessageAutomations, aiStandsDown } = await import('@/lib/automations/engine'); standDown = aiStandsDown(await runMessageAutomations(db, convId, { channel: 'whatsapp' })) } catch (e) { console.warn('[automations] whatsapp inbound', e) }
+          if (standDown) return
           await startSupportAgentForConversation(db, convId)
         } catch (e) { console.warn('[agent] whatsapp inbound', e) }
       }
