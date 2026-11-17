@@ -168,6 +168,8 @@ export default function UseSheet({ power, companyId, me, conversationId, convers
 }
 
 const CSS = `
+.pus-back{--f:#f4f4f5;--line:#ececee;--mut:#71717a;--soft:#8e8e93}
+[data-theme="dark"] .pus-back{--f:#2a2a2e;--line:#2e2e33;--mut:#a1a1aa;--soft:#8b8b90}
 .pus-back{position:fixed;inset:0;z-index:9500;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(10,12,20,.32);animation:pusFade .2s ease}
 @keyframes pusFade{from{opacity:0}}
 .pus{width:min(440px,100%);max-height:calc(100vh - 32px);overflow:auto;padding:18px;border-radius:24px;background:var(--card,#fff);color:var(--ink);box-shadow:0 30px 80px -24px rgba(10,12,20,.45);animation:pusIn .32s cubic-bezier(.2,1.1,.35,1)}

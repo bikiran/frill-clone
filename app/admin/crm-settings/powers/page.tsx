@@ -10,13 +10,16 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Panel, Toggle } from '@/components/ui/AdminKit'
 import { apiRaw } from '@/components/jobs/shared'
-import { RULES, POWERS, ROLE_CHOICES, type PowersConfig } from '@/lib/powers/config'
+import { RULES, POWERS, ROLE_CHOICES, ALL_FEATURES, ruleAvailable, type PowersConfig, type Features, type Feature } from '@/lib/powers/config'
 import { Coin, PowerIcon } from '@/components/powers/PowerIcon'
 import { refreshPowers } from '@/lib/powers/client'
 import { useCompanyUser, SettingsPage } from '../_shared'
 
 type Member = { id: string; name: string; role: string; locationId: string | null; coins: number; xp: number; level: number; title: string }
-type Data = { enabled: boolean; enabledAt: string | null; config: PowersConfig; team: Member[]; locations: { id: string; label: string }[]; audit: any[] }
+type Data = { enabled: boolean; enabledAt: string | null; config: PowersConfig; features?: Features; team: Member[]; locations: { id: string; label: string }[]; audit: any[] }
+
+// Why a rule isn't listed: the business doesn't use that part of Colvy (yet).
+const WHY_NOT: Record<Feature, string> = { jobs: 'Jobs is off', orders: 'no store connected', calls: 'no business phone line', reviews: 'Google reviews not connected' }
 
 export default function PowersSettings() {
   const { companyId, loading } = useCompanyUser()
@@ -40,13 +43,15 @@ export default function PowersSettings() {
     const r = await apiRaw('/api/powers/settings', { method: 'PATCH', json: { companyId, ...patch } })
     setSaving(false)
     if (!r.ok) { setErr(r.data?.error || 'Could not save.'); return false }
-    setD(x => x ? { ...x, enabled: r.data.enabled, enabledAt: r.data.enabledAt, config: r.data.config } : x)
+    setD(x => x ? { ...x, enabled: r.data.enabled, enabledAt: r.data.enabledAt, config: r.data.config, features: r.data.features || x.features } : x)
     setDraft(r.data.config)
     setSaved(true); setTimeout(() => setSaved(false), 1800)
     void refreshPowers(true)
     return true
   }
   const set = (fn: (c: PowersConfig) => PowersConfig) => setDraft(c => (c ? fn(structuredClone(c)) : c))
+  const features = d?.features || ALL_FEATURES
+  const hidden = RULES.filter(r => !ruleAvailable(r.id, features))
 
   return (
     <SettingsPage title="Colvy Powers" sub="Coins and XP for real work, and small, friendly powers to spend them on. Serious about work, playful about teamwork.">
@@ -76,21 +81,31 @@ export default function PowersSettings() {
             </div>
           </Panel>
 
-          <Panel title="What earns what" sub="Rewards come from the work itself, checked on the server. The same piece of work pays once, and taking it back (reopening a task) takes the reward back.">
+          <Panel title="What earns what" sub="Rewards come from the work itself, checked on the server. The same piece of work pays once, and undoing it (reopening a task, cancelling an order) takes the reward back. Per day is per person; 0 means no limit beyond the daily limits below.">
             <div className="pws-rows">
-              <div className="pws-row pws-hrow"><span /><span>Coins</span><span>XP</span><span /></div>
-              {RULES.map(r => {
+              <div className="pws-row pws-hrow"><span /><span>Coins</span><span>XP</span><span>Per day</span><span /></div>
+              {RULES.filter(r => ruleAvailable(r.id, features)).map(r => {
                 const v = draft.rules[r.id]
                 return (
                   <div key={r.id} className={`pws-row${v.on ? '' : ' off'}`}>
-                    <div className="pws-row-t"><b>{r.label}</b><small>{r.hint}</small></div>
+                    <div className="pws-row-t">
+                      <b>{r.label}</b><small>{r.hint}</small>
+                      {r.id === 'time' && (
+                        <span className="pws-every">Every <Num value={v.every || 60} min={15} max={480} onChange={n => set(c => { c.rules.time.every = n; return c })} /> minutes of active use</span>
+                      )}
+                    </div>
                     <Num value={v.coins} max={500} onChange={n => set(c => { c.rules[r.id].coins = n; return c })} />
                     <Num value={v.xp} max={500} onChange={n => set(c => { c.rules[r.id].xp = n; return c })} />
+                    {r.id === 'active' ? <span className="pws-fixed" title="Once a day">1</span>
+                      : <Num value={v.max} max={500} onChange={n => set(c => { c.rules[r.id].max = n; return c })} />}
                     <Toggle on={v.on} label={r.label} onChange={on => set(c => { c.rules[r.id].on = on; return c })} />
                   </div>
                 )
               })}
             </div>
+            {hidden.length > 0 && (
+              <p className="pws-hidden">Not shown, because your business doesn’t use them yet: {hidden.map(r => `${r.label} (${WHY_NOT[r.needs!]})`).join(', ')}. They appear here, and start paying, once you do.</p>
+            )}
           </Panel>
 
           <Panel title="Daily limits" sub="Per person, per day in your business’s time zone. Keeps it fair and stops anyone farming.">
@@ -121,7 +136,7 @@ export default function PowersSettings() {
             </div>
           </Panel>
 
-          <ChallengesAdmin companyId={companyId!} />
+          <ChallengesAdmin companyId={companyId!} features={features} />
 
           <div className="ak-grid2">
             <Panel title="Leaderboard" sub="Names, levels and counts only. Never customers or messages.">
@@ -244,8 +259,9 @@ function Coins({ d, companyId, onDone }: { d: Data; companyId: string; onDone: (
 }
 
 const SCOPE_LABEL: Record<string, string> = { daily: 'Each person, daily', weekly: 'Each person, weekly', team: 'Whole team, weekly' }
-const METRIC_LABEL: Record<string, string> = { resolve: 'Conversations resolved', task: 'Tasks completed', job: 'Jobs completed', thanks: 'Thanks received', feedback: 'Happy reviews' }
-function ChallengesAdmin({ companyId }: { companyId: string }) {
+const METRIC_LABEL: Record<string, string> = { resolve: 'Conversations resolved', reply: 'Customer replies', call: 'Calls answered', task: 'Tasks completed', job: 'Jobs completed', order: 'Orders fulfilled', thanks: 'Thanks received', feedback: 'Happy reviews' }
+function ChallengesAdmin({ companyId, features }: { companyId: string; features: Features }) {
+  const metrics = Object.entries(METRIC_LABEL).filter(([k]) => ruleAvailable(k, features))
   const [list, setList] = useState<any[] | null>(null)
   const [f, setF] = useState({ title: '', scope: 'daily', metric: 'resolve', target: '10', rewardCoins: '50', rewardXp: '50' })
   const [err, setErr] = useState('')
@@ -266,7 +282,7 @@ function ChallengesAdmin({ companyId }: { companyId: string }) {
       <div className="pws-chform">
         <input className="ak-field sm" value={f.title} maxLength={80} onChange={e => setF({ ...f, title: e.target.value })} placeholder="Close 10 conversations today" />
         <select className="ak-select sm" value={f.scope} onChange={e => setF({ ...f, scope: e.target.value })}>{Object.entries(SCOPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
-        <select className="ak-select sm" value={f.metric} onChange={e => setF({ ...f, metric: e.target.value })}>{Object.entries(METRIC_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+        <select className="ak-select sm" value={f.metric} onChange={e => setF({ ...f, metric: e.target.value })}>{metrics.map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
         <label className="pws-mini">Target<input className="ak-field sm" inputMode="numeric" value={f.target} onChange={e => setF({ ...f, target: e.target.value.replace(/\D/g, '').slice(0, 5) })} /></label>
         <label className="pws-mini">Coins<input className="ak-field sm" inputMode="numeric" value={f.rewardCoins} onChange={e => setF({ ...f, rewardCoins: e.target.value.replace(/\D/g, '').slice(0, 4) })} /></label>
         <label className="pws-mini">XP<input className="ak-field sm" inputMode="numeric" value={f.rewardXp} onChange={e => setF({ ...f, rewardXp: e.target.value.replace(/\D/g, '').slice(0, 4) })} /></label>
@@ -277,7 +293,7 @@ function ChallengesAdmin({ companyId }: { companyId: string }) {
         <div className="ak-list" style={{ marginTop: 10 }}>
           {list.map(c => (
             <div key={c.id} className="ak-row">
-              <div className="ak-row-t"><b style={{ opacity: c.active ? 1 : .55 }}>{c.title}</b><small>{SCOPE_LABEL[c.scope]} · {c.target} {METRIC_LABEL[c.metric]?.toLowerCase()} · {c.reward_coins} coins, {c.reward_xp} XP</small></div>
+              <div className="ak-row-t"><b style={{ opacity: c.active && ruleAvailable(c.metric, features) ? 1 : .55 }}>{c.title}</b><small>{SCOPE_LABEL[c.scope]} · {c.target} {METRIC_LABEL[c.metric]?.toLowerCase()} · {c.reward_coins} coins, {c.reward_xp} XP{ruleAvailable(c.metric, features) ? '' : ' · hidden: your business doesn’t use this now'}</small></div>
               <Toggle on={c.active} label={c.active ? 'Pause' : 'Resume'} onChange={() => void toggle(c)} />
               <button type="button" className="ak-icon-btn danger" aria-label="Remove" onClick={() => void del(c)}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></svg>
@@ -300,7 +316,7 @@ const CSS = `
 .pws-on-ic.on{background:var(--coral);color:#fff;transform:rotate(-8deg)}
 .pws-promise{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:14px;padding-top:12px;box-shadow:0 -1px 0 var(--line);font-size:12.5px;color:var(--mut)}
 .pws-rows{display:flex;flex-direction:column}
-.pws-row{display:grid;grid-template-columns:minmax(0,1fr) 84px 84px 44px;align-items:center;gap:10px;padding:10px 0;transition:opacity .2s}
+.pws-row{display:grid;grid-template-columns:minmax(0,1fr) 76px 76px 76px 44px;align-items:center;gap:10px;padding:10px 0;transition:opacity .2s}
 .pws-row+.pws-row{box-shadow:0 -1px 0 var(--line)}
 .pws-row.off .pws-row-t,.pws-row.off .pws-num{opacity:.45}
 .pws-hrow{padding:0 0 4px;font-size:12px;font-weight:600;color:var(--soft)}
@@ -308,6 +324,10 @@ const CSS = `
 .pws-prow{grid-template-columns:minmax(0,1fr) 90px 84px 70px 44px}
 .pws-row-t b{display:block;font-size:14px}
 .pws-row-t small{display:block;margin-top:2px;font-size:12px;line-height:1.4;color:var(--soft)}
+.pws-every{display:inline-flex;align-items:center;gap:6px;margin-top:7px;font-size:12.5px;font-weight:600;color:var(--mut)}
+.pws-every .pws-num{width:64px;height:30px}
+.pws-fixed{display:flex;align-items:center;height:36px;padding:0 10px;border-radius:11px;font-size:14px;font-weight:650;color:var(--soft)}
+.pws-hidden{margin:12px 0 0;padding:10px 12px;border-radius:14px;background:color-mix(in srgb,var(--f) 60%,transparent);font-size:12.5px;line-height:1.5;color:var(--mut)}
 .pws-pname{display:flex;gap:10px;align-items:flex-start}
 .pws-pic{width:28px;height:28px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;border-radius:9px;background:var(--pc);color:#fff}
 .pws-num{display:flex;align-items:center;gap:4px;height:36px;padding:0 10px;border-radius:11px;background:var(--f)}
@@ -343,7 +363,8 @@ const CSS = `
 .pws-bar .ak-btn.ghost{background:rgba(255,255,255,.14);color:inherit}
 .pws-saved{position:sticky;bottom:16px;margin:10px auto 0;width:max-content;padding:9px 16px;border-radius:999px;background:#16a34a;color:#fff;font-size:13.5px;font-weight:650;animation:akIn .3s cubic-bezier(.22,1,.36,1)}
 @media (max-width:760px){
-  .pws-row{grid-template-columns:minmax(0,1fr) 64px 64px 44px;gap:6px}
+  .pws-row{grid-template-columns:minmax(0,1fr) 54px 54px 54px 44px;gap:5px}
+  .pws-row .pws-num{padding:0 8px}
   .pws-prow{grid-template-columns:minmax(0,1fr) 72px 44px;}
   .pws-prow .pws-num:nth-of-type(2),.pws-prow .pws-num:nth-of-type(3),.pws-prow.pws-hrow span:nth-child(3),.pws-prow.pws-hrow span:nth-child(4){display:none}
   .pws-row-t small{display:none}

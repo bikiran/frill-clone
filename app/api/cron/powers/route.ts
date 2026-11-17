@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
   const startedAt = new Date().toISOString()
   const t0 = Date.now()
   const db = powersDb()
-  const totals = { companies: 0, resolve: 0, task: 0, feedback: 0, reversed: 0, errors: 0 }
+  const totals = { companies: 0, resolve: 0, task: 0, feedback: 0, reply: 0, call: 0, order: 0, reversed: 0, errors: 0 }
   try {
     const { data, error } = await db.from('powers_settings').select('company_id').eq('enabled', true).limit(2000)
     if (error) {
@@ -33,7 +33,8 @@ export async function GET(req: NextRequest) {
       try {
         const st = await loadPowers(db, row.company_id)
         const c = await sweepCompany(db, row.company_id, st)
-        totals.companies++; totals.resolve += c.resolve; totals.task += c.task; totals.feedback += c.feedback; totals.reversed += c.reversed
+        totals.companies++; totals.resolve += c.resolve; totals.task += c.task; totals.feedback += c.feedback
+        totals.reply += c.reply; totals.call += c.call; totals.order += c.order; totals.reversed += c.reversed
       } catch (e: any) {
         totals.errors++
         console.error('[cron/powers]', row.company_id, e?.message)

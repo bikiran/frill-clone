@@ -16,6 +16,7 @@ import { dirname, join } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const MIGRATION = join(here, '..', 'migrations', 'COLVY_V438_COLVY_POWERS.sql')
+const MIGRATION2 = join(here, '..', 'migrations', 'COLVY_V439_POWERS_MORE_WAYS.sql')
 const DB = 'colvy_powers_test'
 const asRoot = process.getuid?.() === 0 && !process.env.PGUSER
 const quote = (a) => `'${a.replace(/'/g, `'\\''`)}'`
@@ -71,7 +72,11 @@ console.log('migration')
 const migration = readFileSync(MIGRATION, 'utf8')
 sqlFile(migration)
 sqlFile(migration)
-ok(sql(`select count(*) from information_schema.tables where table_name like 'powers_%'`) === '7', 'creates the 7 tables, and runs twice without error')
+ok(sql(`select count(*) from information_schema.tables where table_name like 'powers_%'`) === '7', 'V438 creates the 7 tables, and runs twice without error')
+const migration2 = readFileSync(MIGRATION2, 'utf8')
+sqlFile(migration2)
+sqlFile(migration2)
+ok(sql(`select count(*) from information_schema.tables where table_name like 'powers_%'`) === '8', 'V439 adds the activity table, and runs twice without error')
 
 const award = (co, u, c, x, idem, o = {}) => j(`select public.powers_award('${co}','${u}',${c},${x},'${o.kind || 'reward'}','${o.rule || 'resolve'}','conversation','${o.ref || 'c1'}',${idem ? `'${idem}'` : 'null'},'${o.day || D1}',${o.capC ?? 'null'},${o.capX ?? 'null'},null,${o.reason ? `'${o.reason}'` : 'null'})`)
 const wallet = (co, u) => j(`select coalesce((select row_to_json(w)::text from public.powers_wallets w where company_id='${co}' and user_id='${u}'), '{}')`)
@@ -215,6 +220,38 @@ lb = JSON.parse(sql(`select coalesce(json_agg(t), '[]') from public.powers_leade
 ok(lb.every(x => x.task === 0 || x.user_id === U3) && (lb.find(x => x.user_id === U3)?.task ?? 0) === 0, 'reversed rewards drop out of the totals', lb)
 // Company B's only reward was reversed above; A's many rewards must not show up there.
 ok(JSON.parse(sql(`select coalesce(json_agg(t), '[]') from public.powers_leaderboard('${B}', '2000-01-01', null) t`)).length === 0, 'another business’s totals never include this one’s')
+
+console.log('time in the app')
+const beat = (u, day = D1, gap = 50) => j(`select public.powers_beat('${A}','${u}','${day}',${gap})`)
+let b1 = beat(U3)
+ok(b1.minutes === 1 && b1.counted, 'the first minute of the day counts', b1)
+let b2 = beat(U3)
+ok(b2.minutes === 1 && !b2.counted, 'a second beat within the minute doesn’t (another tab, an eager page)', b2)
+sql(`update public.powers_activity set last_beat_at = now() - interval '61 seconds' where user_id = '${U3}'`)
+b2 = beat(U3)
+ok(b2.minutes === 2 && b2.counted, 'a minute later it counts again', b2)
+res = await Promise.all(Array.from({ length: 15 }, () => sqlAsync(`select public.powers_beat('${A}','${U2}','${D1}',50)`)))
+st = res.map(x => x.code === 0 ? JSON.parse(x.out) : { err: x.err })
+ok(st.filter(x => x.counted).length === 1 && Math.max(...st.map(x => x.minutes)) === 1, '15 tabs beating at once: one minute', st.filter(x => x.err || x.counted))
+ok(beat(U3, '2026-11-17').minutes === 1, 'a new day starts from one')
+ok(beat(U3, D1).minutes === 2, 'yesterday’s count stays with yesterday')
+let other = j(`select public.powers_beat('${B}','${U3}','${D1}',50)`)
+ok(other.minutes === 1, 'minutes are kept per business', other)
+
+console.log('new rewards in the totals')
+sql(`insert into public.powers_ledger (company_id,user_id,coins,xp,kind,rule,day) values ('${A}','${U2}',2,2,'reward','reply','2026-11-20'),('${A}','${U2}',2,2,'reward','reply','2026-11-20'),('${A}','${U2}',5,5,'reward','call','2026-11-20'),('${A}','${U2}',5,5,'reward','order','2026-11-20')`)
+const nt = JSON.parse(sql(`select row_to_json(t) from public.powers_leaderboard('${A}','2026-11-20','2026-11-21','${U2}') t`))
+ok(nt.reply === 2 && nt.call === 1 && nt.order === 1 && nt.xp === 14, 'replies, calls and orders are totalled', nt)
+const CH2 = sql(`insert into public.powers_challenges (company_id, title, scope, metric, target) values ('${A}', 'Answer 10 calls', 'daily', 'call', 10) returning id`)
+ok(/^[0-9a-f-]{36}$/.test(CH2), 'a challenge can count calls')
+let badMetric = false
+try { sql(`insert into public.powers_challenges (company_id, title, scope, metric, target) values ('${A}', 'x', 'daily', 'nonsense', 1)`) } catch { badMetric = true }
+ok(badMetric, 'an unknown metric is refused')
+for (const role of ['anon', 'authenticated']) {
+  let denied = 0
+  for (const q of [`select public.powers_beat('${A}','${U1}','${D1}',0)`, `select count(*) from public.powers_activity`]) { try { sqlFile(`set role ${role}; ${q};`) } catch { denied++ } }
+  ok(denied === 2, `${role} can’t count minutes or read them`, denied)
+}
 
 console.log('challenges')
 const CH = sql(`insert into public.powers_challenges (company_id, title, scope, metric, target) values ('${C}', 'Close 5 today', 'daily', 'resolve', 5) returning id`)

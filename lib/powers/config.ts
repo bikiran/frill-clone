@@ -7,17 +7,35 @@
 // and spent on powers. Neither can be bought, cashed out or moved to another
 // workspace. Levels unlock looks only, never permissions.
 
-export type RuleId = 'resolve' | 'task' | 'job' | 'feedback' | 'thanks' | 'challenge'
-export type Rule = { on: boolean; coins: number; xp: number }
+export type RuleId =
+  | 'resolve' | 'reply' | 'call' | 'task' | 'job' | 'order' | 'feedback' | 'thanks' | 'active' | 'time' | 'challenge'
+/** max: times a day per person (0 = no limit). every: minutes per "time in Colvy" reward. */
+export type Rule = { on: boolean; coins: number; xp: number; max: number; every?: number }
 
-export const RULES: { id: RuleId; label: string; hint: string; coins: number; xp: number }[] = [
-  { id: 'resolve', label: 'Resolve a conversation', hint: 'Closed after a real reply from you. Reopening and closing again doesn’t pay twice.', coins: 10, xp: 10 },
-  { id: 'task', label: 'Complete an assigned task', hint: 'A task you made for yourself and ticked within 10 minutes doesn’t count.', coins: 15, xp: 15 },
-  { id: 'job', label: 'Complete a job', hint: 'Everyone assigned to the job.', coins: 25, xp: 25 },
-  { id: 'feedback', label: 'Positive customer feedback', hint: 'A 4 or 5 star Google review that names you.', coins: 30, xp: 30 },
-  { id: 'thanks', label: 'A teammate says thanks', hint: 'Each person can thank up to 3 teammates a day.', coins: 10, xp: 5 },
-  { id: 'challenge', label: 'Finish a challenge', hint: 'The challenge’s own reward is used when it sets one.', coins: 50, xp: 50 },
+/** What a business has set up; a rule about something it doesn't use isn't shown or paid. */
+export type Feature = 'jobs' | 'orders' | 'calls' | 'reviews'
+export type Features = Record<Feature, boolean>
+export const ALL_FEATURES: Features = { jobs: true, orders: true, calls: true, reviews: true }
+
+export type RuleDef = { id: RuleId; label: string; hint: string; coins: number; xp: number; max: number; every?: number; needs?: Feature }
+export const RULES: RuleDef[] = [
+  { id: 'resolve', label: 'Resolve a conversation', hint: 'Closed after a real reply from you. Reopening and closing again doesn’t pay twice.', coins: 10, xp: 10, max: 0 },
+  { id: 'reply', label: 'Reply to a customer', hint: 'Each customer message you answer, once: the first real reply gets it. One-word replies, notes and AI replies don’t count.', coins: 2, xp: 2, max: 50 },
+  { id: 'call', label: 'Answer a customer’s call', hint: 'An incoming call you picked up and talked on for at least 20 seconds. Voicemails don’t count.', coins: 5, xp: 5, max: 40, needs: 'calls' },
+  { id: 'task', label: 'Complete an assigned task', hint: 'A task you made for yourself and ticked within 10 minutes doesn’t count.', coins: 15, xp: 15, max: 0 },
+  { id: 'job', label: 'Complete a job', hint: 'Everyone assigned to the job.', coins: 25, xp: 25, max: 0, needs: 'jobs' },
+  { id: 'order', label: 'Fulfil an order', hint: 'You marked it shipped, collected or completed in Colvy. Orders that arrive already complete don’t count, and undoing it takes the reward back.', coins: 5, xp: 5, max: 50, needs: 'orders' },
+  { id: 'feedback', label: 'Positive customer feedback', hint: 'A 4 or 5 star Google review that names you.', coins: 30, xp: 30, max: 0, needs: 'reviews' },
+  { id: 'thanks', label: 'A teammate says thanks', hint: 'Each person can thank up to 3 teammates a day.', coins: 10, xp: 5, max: 0 },
+  { id: 'active', label: 'Active on Colvy today', hint: 'Once a day, the first time you’re actually using the app, not just a tab left open.', coins: 5, xp: 5, max: 1 },
+  { id: 'time', label: 'Time in Colvy', hint: 'For active use: typing, clicking, scrolling. Idle time and tabs left open don’t count.', coins: 5, xp: 10, max: 8, every: 60 },
+  { id: 'challenge', label: 'Finish a challenge', hint: 'The challenge’s own reward is used when it sets one.', coins: 50, xp: 50, max: 0 },
 ]
+export const ruleDef = (id: string) => RULES.find(r => r.id === id) || null
+/** Is this rule about something the business uses? */
+export const ruleAvailable = (id: string, f: Features) => { const n = ruleDef(id)?.needs; return !n || f[n] !== false }
+/** "Every hour", "Every 30 minutes": the time rule's own label. */
+export const everyLabel = (min: number) => min % 60 === 0 ? (min === 60 ? 'Every hour in Colvy' : `Every ${min / 60} hours in Colvy`) : `Every ${min} minutes in Colvy`
 export const RULE_IDS = RULES.map(r => r.id)
 
 // ── Powers ───────────────────────────────────────────────────────────────────
@@ -108,7 +126,7 @@ export const ROLE_CHOICES = ['owner', 'admin', 'editor'] as const
 
 export function defaultConfig(): PowersConfig {
   return {
-    rules: Object.fromEntries(RULES.map(r => [r.id, { on: true, coins: r.coins, xp: r.xp }])) as Record<RuleId, Rule>,
+    rules: Object.fromEntries(RULES.map(r => [r.id, { on: true, coins: r.coins, xp: r.xp, max: r.max, ...(r.every ? { every: r.every } : {}) }])) as Record<RuleId, Rule>,
     caps: { ...DEFAULT_CAPS },
     powers: Object.fromEntries(POWERS.map(p => [p.id, { on: true, price: p.price, cooldown: p.cooldown, daily: p.daily }])) as Record<PowerId, PowerSetting>,
     leaderboard: 'everyone',
@@ -129,7 +147,11 @@ export function cleanConfig(raw: any): PowersConfig {
   const rules = { ...d.rules }
   for (const r of RULES) {
     const v = src.rules?.[r.id]
-    if (v && typeof v === 'object') rules[r.id] = { on: v.on !== false, coins: int(v.coins, 0, 500, r.coins), xp: int(v.xp, 0, 500, r.xp) }
+    if (v && typeof v === 'object') rules[r.id] = {
+      on: v.on !== false, coins: int(v.coins, 0, 500, r.coins), xp: int(v.xp, 0, 500, r.xp),
+      max: r.id === 'active' ? 1 : int(v.max, 0, 500, r.max),
+      ...(r.every ? { every: int(v.every, 15, 480, r.every) } : {}),
+    }
   }
   const caps = {
     coins: int(src.caps?.coins, 0, 5000, d.caps.coins),
@@ -206,6 +228,32 @@ export function teammateNamedIn(text: any, team: { id: string; name: string }[])
     hits.push(ids[0])
   }
   return hits.length === 1 ? hits[0] : null
+}
+
+export type ThreadMsg = { id: string; conversation_id: string; sender_type?: string | null; sender_id?: string | null; content?: string | null; is_internal?: boolean | null; metadata?: any; created_at: string }
+
+/**
+ * Who answered each customer message. Walks a conversation's messages in
+ * order: the first real reply from a person (not a note, not the AI, not an
+ * automatic message, not "ok thanks") after the customer writes answers the
+ * customer's latest message, once. Several replies in a row answer it once;
+ * several customer messages in a row are answered once (the latest is the
+ * key). Messages must be sorted oldest first.
+ */
+export function creditReplies(msgs: ThreadMsg[]): { userId: string; idem: string; conversationId: string; at: string }[] {
+  const out: { userId: string; idem: string; conversationId: string; at: string }[] = []
+  const pending = new Map<string, string>()   // conversation → latest unanswered customer message
+  for (const m of msgs) {
+    if (m.sender_type === 'visitor') { pending.set(m.conversation_id, m.id); continue }
+    if (m.sender_type !== 'agent' || m.is_internal || !m.sender_id || !UUID.test(m.sender_id)) continue
+    if (m.metadata?.tracking || m.metadata?.auto) continue
+    if (!isMeaningfulReply(m.content)) continue
+    const v = pending.get(m.conversation_id)
+    if (!v) continue
+    pending.delete(m.conversation_id)
+    out.push({ userId: m.sender_id, idem: `reply:${v}`, conversationId: m.conversation_id, at: m.created_at })
+  }
+  return out
 }
 
 /** Effective XP after Double XP (×2) and Team Boost (×1.5). Coins never multiply. */
