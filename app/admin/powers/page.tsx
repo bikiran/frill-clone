@@ -220,7 +220,7 @@ function Thanks({ p, companyId, focus }: { p: PowersMe; companyId: string; focus
     pingTeam()
   }
   return (
-    <Panel title="Say thanks" sub="Thank a teammate for something they did. They earn the reward, not you." className={focus ? 'pw-focus' : ''}>
+    <Panel title="Say thanks" sub="Thank a teammate for something they did. They earn the reward, not you." className={focus ? 'pw-thanks-hl' : ''}>
       {team.length === 0 ? <p className="pw-fine">No teammates are taking part yet.</p> : (
         <>
           <div className="pw-people">
@@ -434,6 +434,9 @@ function Avatar({ name, src, cosm, size }: { name: string; src?: string | null; 
 
 const CSS = `
 .pw-tabs{margin-bottom:16px}
+.pw-ov .pw-ring{position:relative;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--ink)}
+.pw-ov .pw-ring svg{position:absolute;inset:0}
+.pw-ov .pw-ring b{position:relative;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
 .pw-sk{display:flex;flex-direction:column;gap:12px}
 .pw-sk span{display:block;height:120px;border-radius:22px;background:linear-gradient(90deg,rgba(127,127,140,.08),rgba(127,127,140,.15),rgba(127,127,140,.08));background-size:200% 100%;animation:pwSk 1.3s ease-in-out infinite}
 @keyframes pwSk{to{background-position:-200% 0}}
@@ -468,7 +471,7 @@ const CSS = `
 .pw-msg.ok{color:#067647;display:flex;align-items:center;gap:6px}
 .pw-heart{display:inline-block;animation:pwHeart .7s cubic-bezier(.2,1.5,.4,1)}
 @keyframes pwHeart{0%{transform:scale(.2)}60%{transform:scale(1.35)}100%{transform:none}}
-.ak-panel.pw-focus{box-shadow:0 0 0 2px color-mix(in srgb,#e11d48 45%,transparent),0 1px 2px rgba(16,24,40,.04)}
+.ak-panel.pw-thanks-hl{box-shadow:0 0 0 2px color-mix(in srgb,#e11d48 45%,transparent),0 1px 2px rgba(16,24,40,.04)}
 .pw-live{display:flex;flex-wrap:wrap;gap:8px}
 .pw-live div{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 14px 0 6px;border-radius:999px;background:color-mix(in srgb,var(--pc) 10%,var(--card,#fff));box-shadow:0 0 0 1px color-mix(in srgb,var(--pc) 25%,transparent)}
 .pw-live-ic{width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:var(--pc);color:#fff}
