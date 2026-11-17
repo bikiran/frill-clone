@@ -6,6 +6,8 @@
 // inbox controller through useInbox().
 
 import { useState } from 'react'
+import UseSheet from '@/components/powers/UseSheet'
+import { PowerIcon } from '@/components/powers/PowerIcon'
 import { useRouter } from 'next/navigation'
 import { MOODS, MOOD_COLOR, MOOD_LABEL, MoodBadge, MoodFace, isMood, launchMood } from '@/components/inbox/Mood'
 import { decodeEntities as dec } from '@/lib/decode-entities'
@@ -27,7 +29,11 @@ export default function ThreadTop() {
     setShowSnooze, setStatus, setTabletContact, showActions, showAssignMenu, showMoveMenu,
     showMsgSearch, showProducts, showSnooze, showToast, snoozeConversation, tabletContact,
     teamMembers, togglePin, user, wooOrders, storeConnected,
+    powersMe,
   } = useInbox()
+  const [powerUse, setPowerUse] = useState<null | 'priority_pin' | 'nudge'>(null)
+  const powersOn = !!(powersMe?.enabled && powersMe.eligible && (powersMe.team || []).length > 1)
+  const powerOn = (id: string) => powersOn && !!powersMe?.powers?.some((p: any) => p.id === id)
   // The teammate's current name, not the copy taken at assignment.
   const assignee = assigneeName(selected, teamMembers)
   // Jobs & quotes: turn this enquiry into a job (only when the module is on).
@@ -296,6 +302,11 @@ export default function ThreadTop() {
           )
         })()}
 
+        {powerUse && powersMe && companyId && (
+          <UseSheet power={powerUse} companyId={companyId} me={powersMe} conversationId={selected.id}
+            conversationLabel={String((selected as any).contacts?.name || (selected as any).visitor_name || (selected as any).last_message || 'This conversation').slice(0, 80)}
+            onClose={() => setPowerUse(null)} />
+        )}
         {/* More: snooze, copy link, merge, AI summary, and the customer's mood */}
         <div style={{ position: 'relative' }} data-actions-menu>
           <button type="button" onClick={() => setShowActions(v => !v)} title="More actions" aria-label="More actions" aria-expanded={showActions}
@@ -316,6 +327,16 @@ export default function ThreadTop() {
               {jobsOn && (
                 <button type="button" onClick={() => { setShowActions(false); createJob() }} className="th-menu-row" disabled={makingJob}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M3 12.5h18"/></svg> {makingJob ? 'Creating job…' : 'Create job'}
+                </button>
+              )}
+              {powerOn('priority_pin') && (
+                <button type="button" onClick={() => { setShowActions(false); setPowerUse('priority_pin') }} className="th-menu-row">
+                  <PowerIcon name="pin" size={16} stroke={2} /> Pin for a teammate
+                </button>
+              )}
+              {powerOn('nudge') && (
+                <button type="button" onClick={() => { setShowActions(false); setPowerUse('nudge') }} className="th-menu-row">
+                  <PowerIcon name="nudge" size={16} stroke={2} /> Nudge a teammate about this
                 </button>
               )}
               <button type="button" onClick={() => { generateAiSummary(); setActivePanel('info'); setShowActions(false) }} className="th-menu-row">

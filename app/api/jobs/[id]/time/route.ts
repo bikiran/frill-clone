@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import { jobMoved } from '@/lib/powers/server'
 import { audit } from '@/lib/activity-logging'
 import { jobsDb, json, logJobEvent, emitJobEvent, isMissingJobsSchema, setupNeeded } from '@/lib/jobs/server'
 import { jobContext, closeOpenEntries, syncJob, notifyPeople } from '@/lib/jobs/field'
@@ -75,6 +76,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         .eq('company_id', companyId).eq('id', id).eq('status', job.status).select('*')
       if (!done?.length) return json({ error: 'Someone else just changed this job. Refresh to see it.' }, 409)
       await syncJob(db, done[0], company)
+      await jobMoved(db, companyId, done[0], job.status, 'completed')   // Colvy Powers, when the business uses it
       const s = await state(db, companyId, id, access.userId)
       const summary = `Finished the job (${fmtDuration(s.time.totalSeconds)} on the clock)`
       await logJobEvent(db, { companyId, jobId: id, type: 'completed', actorId: access.userId, actorName: access.name, summary, data: { seconds: s.time.totalSeconds } })

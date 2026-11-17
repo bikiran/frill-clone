@@ -27,6 +27,7 @@ export const SETTINGS_NAV: SettingsGroup[] = [
     { label: 'Privacy', href: '/admin/settings#privacy', icon: 'lock' },
     { label: 'Languages', href: '/admin/settings#languages', icon: 'globe' },
     { label: 'Activity log', href: '/admin/settings/audit-logs', icon: 'history' },
+    { label: 'Colvy Powers', href: '/admin/crm-settings/powers', icon: 'zap' },
   ] },
   { title: 'Inbox', items: [
     { label: 'Channels', href: '/admin/crm-settings/channels', icon: 'radio' },

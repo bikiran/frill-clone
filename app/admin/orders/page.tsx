@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react'
+import { powersHint } from '@/lib/powers/client'
 import { useSearchParams } from 'next/navigation'
 import { createPortal } from 'react-dom'
 import { decodeEntities } from '@/lib/decode-entities'
@@ -2645,6 +2646,7 @@ function OrderDrawer({ order, companyId, me, team, locations, accent, allTags, t
     const done = !(t.done || t.status === 'done')
     setTasks(ts => ts.map(x => x.id === t.id ? { ...x, done, status: done ? 'done' : 'todo' } : x))
     try { await (supabase as any).from('conversation_tasks').update({ done, status: done ? 'done' : 'todo', completed_at: done ? new Date().toISOString() : null }).eq('id', t.id) } catch {}
+    powersHint('task', t.id)
   }
   const addTag = async (t: string) => {
     const tag = t.trim(); if (!tag) return

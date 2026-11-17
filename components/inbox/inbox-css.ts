@@ -488,7 +488,12 @@ export const INBOX_CSS = `
         .il-chip.on .il-chip-n { background: rgba(255,255,255,.18); color: #fff; }
         .il-search { width: 100%; box-sizing: border-box; height: 38px; padding: 0 14px 0 38px; border: 1.5px solid transparent; border-radius: 999px; background: #f4f4f5; font: inherit; font-size: 14px; color: #111; outline: none; transition: background .15s ease, border-color .15s ease, box-shadow .15s ease; }
         /* Search still looking through the whole inbox: a sweep along the box's foot, and a quiet line in place of "No matches". */
-        .il-search-busy { position: absolute; left: 18px; right: 18px; bottom: 1px; height: 2px; border-radius: 2px; overflow: hidden; pointer-events: none; }
+        .ilc-ppin{display:inline-flex;align-items:center;gap:4px;height:19px;padding:0 3px 0 7px;margin-right:2px;border-radius:999px;background:color-mix(in srgb,var(--coral) 13%,transparent);color:var(--coral);font-size:11px;font-weight:700;flex-shrink:0;animation:ilcPpin .5s cubic-bezier(.2,1.3,.4,1)}
+.ilc-ppin i{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;font-style:normal;font-size:12px;line-height:1;cursor:pointer;opacity:.7}
+.ilc-ppin i:hover{opacity:1;background:color-mix(in srgb,var(--coral) 20%,transparent)}
+@keyframes ilcPpin{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.ilc-ppin{animation:none}}
+.il-search-busy { position: absolute; left: 18px; right: 18px; bottom: 1px; height: 2px; border-radius: 2px; overflow: hidden; pointer-events: none; }
         .il-search-busy::after { content: ''; position: absolute; top: 0; bottom: 0; width: 35%; border-radius: 2px; background: var(--coral, #ff6a4d); animation: ilSweep 1s cubic-bezier(.45,0,.25,1) infinite; }
         @keyframes ilSweep { from { left: -35%; } to { left: 100%; } }
         .il-searching { display: flex; align-items: center; justify-content: center; gap: 9px; padding: 34px 16px; font-size: 13px; color: #71717a; }

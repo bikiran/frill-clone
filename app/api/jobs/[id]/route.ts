@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import { jobMoved } from '@/lib/powers/server'
 import { audit } from '@/lib/activity-logging'
 import { canMoveJob, isJobStatus, JOB_STATUS_LABEL, type JobStatus } from '@/lib/jobs/status'
 import { companyBase, stripeReady } from '@/lib/booking'
@@ -161,6 +162,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
       // Finishing or cancelling stops anyone's running timer; the Calendar entry follows.
       if (to === 'completed' || to === 'cancelled') await closeOpenEntries(db, moved[0])
       await syncJob(db, moved[0], company)
+      if (to === 'completed' || from === 'completed') await jobMoved(db, companyId, moved[0], from, to)   // Colvy Powers rewards
       if (to === 'completed' && job.created_by && job.created_by !== access.userId) {
         await notifyPeople(db, { companyId, userIds: [job.created_by], exclude: access.userId, type: 'job_completed', title: `${access.name} completed ${label}`, body: job.title, link: `/admin/jobs/${id}`, origin: req.nextUrl.origin })
       }

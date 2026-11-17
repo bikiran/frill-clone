@@ -147,6 +147,10 @@
     {
       "path": "/api/cron/forwarding-overage",
       "schedule": "10 2 * * *"
+    },
+    {
+      "path": "/api/cron/powers",
+      "schedule": "*/10 * * * *"
     }
   ]
 }
