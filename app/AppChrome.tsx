@@ -13,6 +13,7 @@ import LiveChat from '@/components/LiveChat'
 import OverlayWatch from '@/components/OverlayWatch'
 import UpdateNotification from '@/components/UpdateNotification'
 import NotificationsPanel, { notificationSoundOn, inWorkspace } from '@/components/NotificationsPanel'
+import PowersChip from '@/components/powers/PowersChip'
 import Analytics from '@/components/Analytics'
 import { NEUTRAL_ICON } from '@/lib/tenant-meta'
 import { setAppearance } from '@/lib/seasonal-themes'
@@ -985,6 +986,8 @@ export default function AppChrome({
             <div className="flex items-center gap-3">
               {user ? (
                 <>
+                  {/* Colvy Powers: shows only when the business has it on */}
+                  {pathname?.startsWith('/admin') && company?.id && <PowersChip companyId={company.id} />}
                   {/* Notification icon */}
                   <div ref={notifMenuRef} className="relative">
                   <button

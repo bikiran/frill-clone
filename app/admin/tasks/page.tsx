@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react'
+import { powersHint, powersCheck } from '@/lib/powers/client'
 import { WhyLink } from '@/components/WhyAgent'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -934,6 +935,7 @@ export default function TasksPage() {
     if (!await writeTaskFields(id, fields)) return
     logActivity(id, diffActivity(prev, fields))
     if (fields.status === 'done' && prev && statusOf(prev) !== 'done') announceCompletion(prev)
+    if (fields.status !== undefined) powersHint('task', id)   // Colvy Powers (a no-op when it's off)
   }
   const setStatus = (t: any, status: string) =>
     patchTask(t.id, { status, done: status === 'done', completed_at: status === 'done' ? new Date().toISOString() : null })
@@ -980,6 +982,7 @@ export default function TasksPage() {
     try { await (supabase as any).from('conversation_tasks').update({ status, done: status === 'done', completed_at: status === 'done' ? new Date().toISOString() : null }).in('id', ids) } catch (e: any) { alertDialog('Could not update: ' + e.message); return }
     ids.forEach(id => logActivity(id, [{ kind: 'status', detail: status === 'done' ? 'completed this task' : `moved this to ${ACT_LABEL[status] || status}` }]))
     if (status === 'done') ids.forEach(id => { const t = tasks.find(x => x.id === id); if (t && statusOf(t) !== 'done') announceCompletion(t) })
+    void powersCheck()
     exitSelect()
     if (companyId) loadTasks(companyId)
   }

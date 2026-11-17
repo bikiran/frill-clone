@@ -1,6 +1,7 @@
 'use client'
 
 import { authFetch } from '@/lib/auth-fetch'
+import { powersHint } from '@/lib/powers/client'
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
@@ -176,6 +177,7 @@ export default function OrderDetailPage() {
     const done = !(t.done || t.status === 'done')
     setTasks(ts => ts.map(x => x.id === t.id ? { ...x, done, status: done ? 'done' : 'todo' } : x))
     try { await (supabase as any).from('conversation_tasks').update({ done, status: done ? 'done' : 'todo', completed_at: done ? new Date().toISOString() : null }).eq('id', t.id) } catch {}
+    powersHint('task', t.id)
   }
   const addTag = (t: string) => { const tag = t.trim(); if (!tag) return; const next = Array.from(new Set([...(order.tags || []), tag])); patchOrder({ tags: next }); setAddingTag(false) }
   const removeTag = (t: string) => patchOrder({ tags: (order.tags || []).filter((x: string) => x !== t) })

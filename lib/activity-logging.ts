@@ -56,6 +56,8 @@ export type ActivityType =
   | 'ai_agent_updated'
   | 'phone_number_updated'
   | 'phone_number_removed'
+  | 'powers_settings_updated'
+  | 'powers_coins_adjusted'
 
 interface ActivityLog {
   company_id: string

@@ -5,6 +5,7 @@
 // returned values through InboxContext.
 
 import { peekCompanyUser, readCache, resolveCompanyUser, writeCache } from '@/lib/client-cache'
+import { powersHint, usePowers, powersApi, refreshPowers, pingTeam } from '@/lib/powers/client'
 import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { getEffectiveEntitlements } from '@/lib/entitlements-client'
 import { flagEnabled } from '@/lib/feature-flags'
@@ -3907,6 +3908,7 @@ export function useInboxController() {
     const { error } = await (supabase as any).from('conversation_tasks').update(patch).eq('id', task.id)
     // Before the status columns existed: keep the plain checkbox working.
     if (error) await (supabase as any).from('conversation_tasks').update({ done }).eq('id', task.id)
+    powersHint('task', task.id)
   }
   const saveTaskEdit = async (id: string) => {
     const body = editTaskText.trim()
@@ -5338,16 +5340,31 @@ export function useInboxController() {
       setPinnedIds(prev => { const n = new Set(prev); wasPinned ? n.add(id) : n.delete(id); return n })
     }
   }
+  // Colvy Powers: a teammate's Priority Pin floats a conversation to the top
+  // of MY inbox for 30 minutes (on top of my own pins), tagged with who pinned
+  // it. I can unpin it. Nothing here when the business has Powers off.
+  const powersMe = usePowers(companyId)
+  const priorityPins = useMemo(() => new Map<string, { id: string; from: string; endsAt: string }>(
+    ((powersMe?.live?.pins || []) as any[]).filter(p => Date.parse(p.endsAt) > Date.now()).map(p => [p.conversationId, p])), [powersMe?.live])
+  const dismissPriorityPin = async (convId: string) => {
+    const pin = priorityPins.get(convId)
+    if (!pin) return
+    await powersApi('/api/powers/dismiss', { companyId, id: pin.id })
+    await refreshPowers(true)
+    pingTeam()
+  }
+  const pinKey = useMemo(() => Array.from(new Set([...Array.from(pinnedIds), ...Array.from(priorityPins.keys())])).sort().join(','), [pinnedIds, priorityPins])
+
   // A pinned conversation must stay visible even when it's no longer in the
   // recent page the inbox loads (otherwise it vanishes on reload). Fetch the
   // pinned rows by id and merge them into the list below.
   const [pinnedExtraConvs, setPinnedExtraConvs] = useState<any[]>([])
   useEffect(() => {
-    if (!companyId || pinnedIds.size === 0) { setPinnedExtraConvs([]); return }
+    if (!companyId || !pinKey) { setPinnedExtraConvs([]); return }
     let cancelled = false
     ;(async () => {
       try {
-        const ids = Array.from(pinnedIds)
+        const ids = pinKey.split(',')
         const rows: any[] = []
         for (let i = 0; i < ids.length; i += 100) {
           const { data } = await (supabase as any).from('conversations')
@@ -5364,7 +5381,7 @@ export function useInboxController() {
       } catch { if (!cancelled) setPinnedExtraConvs([]) }
     })()
     return () => { cancelled = true }
-  }, [pinnedIds, companyId])
+  }, [pinKey, companyId])
 
   // ── Move or view enquiries across outlets ─────────────────────────────────
   const [showMoveMenu, setShowMoveMenu] = useState(false)
@@ -5450,6 +5467,7 @@ export function useInboxController() {
     }
     loadConversations()
     showToast('Enquiry closed')
+    if (!wasClosed) powersHint('resolve', conv.id)
   }
   const reopenConv = async (conv: any) => {
     const wasClosed = ['closed', 'resolved'].includes(String(conv.status || ''))
@@ -5976,7 +5994,7 @@ export function useInboxController() {
     setSelected(s => s ? { ...s, status } : s)
     // Log a legible timeline entry for the close/reopen transition; fall back to
     // the generic status_change note for other moves.
-    if (nowClosed && !wasClosed) logEvent('closed', 'Enquiry closed.')
+    if (nowClosed && !wasClosed) { logEvent('closed', 'Enquiry closed.'); powersHint('resolve', selected.id) }
     else if (!nowClosed && wasClosed) logEvent('reopened', 'Enquiry opened again.')
     else logEvent('status_change', `Status changed to ${status}`)
     loadConversations()
@@ -6517,9 +6535,9 @@ export function useInboxController() {
     return contactMatch || surfaceMatch || deepHit
   })
     .sort((a: any, b: any) => {
-      // Pinned conversations float to the top (per-user), then normal ordering.
-      const pa = pinnedIds.has(a.id) ? 1 : 0
-      const pb = pinnedIds.has(b.id) ? 1 : 0
+      // A teammate's Priority Pin first, then my own pins, then normal ordering.
+      const pa = priorityPins.has(a.id) ? 2 : pinnedIds.has(a.id) ? 1 : 0
+      const pb = priorityPins.has(b.id) ? 2 : pinnedIds.has(b.id) ? 1 : 0
       if (pa !== pb) return pb - pa
       const ta = convTs(a)
       const tb = convTs(b)
@@ -6601,7 +6619,7 @@ export function useInboxController() {
     if (colvy.unread > 0) return 0
     const t = Date.parse(colvy.last?.at || '')
     if (!Number.isFinite(t)) return -1
-    const i = filteredConvs.findIndex(c => !pinnedIds.has(c.id) && (Date.parse((c as any).last_message_at || '') || 0) < t)
+    const i = filteredConvs.findIndex(c => !pinnedIds.has(c.id) && !priorityPins.has(c.id) && (Date.parse((c as any).last_message_at || '') || 0) < t)
     return i >= 0 ? i : hasMoreConvs ? -1 : filteredConvs.length
   })()
   const colvyRowEl = <ColvyChatRow key="colvy-chat" summary={colvy} active={colvyOpen && !selected} onOpen={openColvy} />
@@ -6826,7 +6844,7 @@ export function useInboxController() {
     openScheduleMsg, openTicket, orderBilling, orderDateFrom, orderDateTo, orderGallery,
     orderPrefillCart, orderSearch, outboundChannel, outlets, payAddress,
     payAmount, payDesc, paySending, saleSuggestion, salePrefill, setSalePrefill, pickerItems, pickupModal, pickupSending,
-    pinnedIds, podFiles, podNote, podSending, prextyCustomer, productError, productQuery, productSearchedFor,
+    pinnedIds, priorityPins, dismissPriorityPin, powersMe, podFiles, podNote, podSending, prextyCustomer, productError, productQuery, productSearchedFor,
     productSearching, productSent, products, protectionBusy, quickIndex, quickMatches, quickMenuRef,
     quickMrBusy, reactToMessage, recSeconds, recording, refundOrder, reloadThread, renderLinkTools,
     renderModeHead, renderNotesSection, renderSendMenu, renderTasksSection, renderTextWithLinks,

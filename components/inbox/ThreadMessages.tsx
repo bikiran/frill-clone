@@ -49,8 +49,17 @@ export default function ThreadMessages() {
     setShowReactPicker, setStoryView, showMsgSearch, showOriginalMsgs, showReactPicker, showToast,
     tasks, teamMembers, textareaRef, threadIndex, threadWin, threadWinRef, toggleBlockContact,
     toggleMsgOriginal, translateMsg, translatingMsgs, updateOrderStatus, user, visibleReadBy,
-    wooOrders, setDeliveryView, openOrderInPanel,
+    wooOrders, setDeliveryView, openOrderInPanel, powersMe,
   } = useInbox()
+  // Colvy Powers (when the business has it on): a teammate's VIP Crown and
+  // status sit next to their name on their messages.
+  const pwLive = powersMe?.enabled ? powersMe.live : null
+  const pwBadge = (id: any) => {
+    if (!pwLive || !id) return null
+    const crown = pwLive.crowns?.[id], st = pwLive.statuses?.[id]
+    if (!crown && !st) return null
+    return <span title={[crown ? 'VIP Crown' : '', st ? `${st.emoji} ${st.text}`.trim() : ''].filter(Boolean).join(' · ')}>{crown ? ' 👑' : ''}{st?.emoji ? ` ${st.emoji}` : ''}</span>
+  }
   return (
     <>
       {/* Messages */}
@@ -659,7 +668,7 @@ export default function ThreadMessages() {
                     <AiSparkIcon size={10} /> Delivered by Colvy
                   </p>
                 ) : (
-                  <p style={{ margin: '0 4px 3px 0', fontSize: 10, color: '#9ca3af', textAlign: 'right' }}>{msg.sender_name || 'Team'}</p>
+                  <p style={{ margin: '0 4px 3px 0', fontSize: 10, color: '#9ca3af', textAlign: 'right' }}>{msg.sender_name || 'Team'}{pwBadge((msg as any).sender_id)}</p>
                 ))}
 
                 {/* Reply-to quote */}

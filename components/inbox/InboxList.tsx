@@ -21,7 +21,7 @@ export default function InboxList() {
   const {
     activeCall, activeFilterCount, assignArrows, assignFilter, assignScrollRef, colvyAt, colvyRowEl,
     companyId, companyInfo, conversations, filteredConvs, hasMoreConvs, isManager, isMobile,
-    listAnim, listCollapsed, locationFilter, outlets, pinnedIds, searchMsgHits, searchPending, searchScope,
+    listAnim, listCollapsed, locationFilter, outlets, pinnedIds, priorityPins, dismissPriorityPin, searchMsgHits, searchPending, searchScope,
     searchTerm, selectConversation, selected, setAssignFilter, setConvLimit, setConversations,
     setCtxMenu, setLocationFilter, setSearchScope, setSearchTerm, setShowAddContact, setShowCompose,
     setShowFilters, setShowStatusMenu, setSidebarCollapsed, setStatusFilter, showStatusMenu,
@@ -397,6 +397,19 @@ export default function InboxList() {
               </span>
               <span className="ilc-main">
                 <span className="ilc-top">
+                  {priorityPins.has(conv.id) && (() => {
+                    const pin = priorityPins.get(conv.id)!
+                    const mins = Math.max(1, Math.round((Date.parse(pin.endsAt) - Date.now()) / 60000))
+                    return (
+                      <span className="ilc-ppin" title={`${pin.from} pinned this for you · ${mins} min left`}>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M9 3.5h6l-1 5 3.5 3.5H6.5L10 8.5z" /><rect x="11.2" y="12" width="1.6" height="8.5" rx=".8" /></svg>
+                        {pin.from.split(' ')[0]}
+                        <i role="button" tabIndex={0} aria-label="Unpin" title="Unpin"
+                          onClick={e => { e.stopPropagation(); void dismissPriorityPin(conv.id) }}
+                          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); void dismissPriorityPin(conv.id) } }}>×</i>
+                      </span>
+                    )
+                  })()}
                   {pinnedIds.has(conv.id) && (
                     <span title="Pinned" className="ilc-pin">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14l-1.5-3V7a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7z"/></svg>
