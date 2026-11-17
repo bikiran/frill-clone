@@ -8,7 +8,11 @@ import { useEffect, useState } from 'react'
 // OAuth token flow + Picker here, then postMessages the selected files (with the
 // access token) back to the opener window (which may be any *.colvy.com subdomain).
 
-const SCOPE = 'https://www.googleapis.com/auth/drive.readonly'
+// Only the files the person picks (Google's recommended scope with the
+// Picker), not their whole Drive. The Picker needs the app id (the Cloud
+// project number, the first part of the OAuth client id) for the picked files
+// to be shared with Colvy.
+const SCOPE = 'https://www.googleapis.com/auth/drive.file'
 
 declare global {
   interface Window { gapi?: any; google?: any }
@@ -65,6 +69,7 @@ export default function DriveConnect() {
             const picker = new window.google.picker.PickerBuilder()
               .enableFeature(window.google.picker.Feature.MULTISELECT_ENABLED)
               .setOAuthToken(accessToken)
+              .setAppId(clientId!.split('-')[0])
               .setDeveloperKey(apiKey!)
               .addView(view)
               .setCallback((data: any) => {
