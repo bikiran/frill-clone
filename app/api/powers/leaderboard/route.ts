@@ -1,16 +1,16 @@
 import { NextRequest } from 'next/server'
-import { powersDb, powersCaller, loadPowers, roster, eligible, todayIn, json } from '@/lib/powers/server'
+import { powersDb, powersCaller, loadPowers, roster, eligible, todayIn, json, ruleOn } from '@/lib/powers/server'
 import { periodStart, levelFor } from '@/lib/powers/config'
 import { addDays } from '@/lib/booking-time'
 
 export const dynamic = 'force-dynamic'
 
-// GET ?companyId&period=week|month&board=xp|resolve|task|job|thanks|challenge
+// GET ?companyId&period=week|month&board=xp|resolve|reply|call|task|job|order|thanks|feedback|challenge
 // The leaderboard for this week or month, in the business's time zone.
 // Names, levels and counts only, never customers or messages. The business
 // chooses: everyone ranked, team totals only (no names), or off.
 
-const BOARDS = ['xp', 'resolve', 'task', 'job', 'thanks', 'feedback', 'challenge'] as const
+const BOARDS = ['xp', 'resolve', 'reply', 'call', 'task', 'job', 'order', 'thanks', 'feedback', 'challenge'] as const
 
 export async function GET(req: NextRequest) {
   try {
@@ -22,10 +22,13 @@ export async function GET(req: NextRequest) {
     const st = await loadPowers(db, companyId!)
     if (!st.enabled || st.missing) return json({ error: 'Colvy Powers is off for this workspace.' }, 409)
     const mode = st.config.leaderboard
-    if (mode === 'off') return json({ mode: 'off', rows: [] })
+    if (mode === 'off') return json({ mode: 'off', rows: [], boards: [] })
 
     const period = sp.get('period') === 'month' ? 'month' : 'week'
-    const board = (BOARDS as readonly string[]).includes(sp.get('board') || '') ? sp.get('board')! : 'xp'
+    // Only boards for rules that are on and about something the business uses
+    // (no Jobs board without the Jobs module); anything else shows XP.
+    const boards = BOARDS.filter(b => b === 'xp' || ruleOn(st, b))
+    const board = (boards as readonly string[]).includes(sp.get('board') || '') ? sp.get('board')! : 'xp'
     const today = todayIn(st.tz)
     const since = periodStart(today, period)
     const until = period === 'week' ? addDays(since, 7) : nextMonth(since)
@@ -39,7 +42,7 @@ export async function GET(req: NextRequest) {
     const score = (id: string) => Number(by.get(id)?.[board] || 0)
 
     const teamTotal = people.reduce((n, m) => n + score(m.id), 0)
-    if (mode === 'team') return json({ mode, period, board, since, until, team: { total: teamTotal, people: people.length }, rows: [] })
+    if (mode === 'team') return json({ mode, period, board, boards, since, until, team: { total: teamTotal, people: people.length }, rows: [] })
 
     const { data: wallets } = await db.from('powers_wallets').select('user_id, xp').eq('company_id', companyId)
     const xpOf = new Map<string, number>((wallets || []).map((w: any) => [w.user_id, w.xp]))
@@ -48,7 +51,7 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
     let rank = 0, prev = -1
     rows.forEach((r: any, i) => { if (r.score !== prev) { rank = i + 1; prev = r.score } r.rank = rank })
-    return json({ mode, period, board, since, until, team: { total: teamTotal, people: people.length }, rows })
+    return json({ mode, period, board, boards, since, until, team: { total: teamTotal, people: people.length }, rows })
   } catch (e: any) {
     return json({ error: e?.message || 'Could not load the leaderboard.' }, 500)
   }

@@ -13,8 +13,9 @@ import { loadStaffRows } from '@/lib/team-list'
 import { dateInTz, isValidTimeZone } from '@/lib/booking-time'
 import {
   cleanConfig, canTakePart, levelFor, boostedXp, isMeaningfulReply, isTrivialSelfTask, teammateNamedIn,
-  type PowersConfig, type RuleId,
+  creditReplies, ruleAvailable, ALL_FEATURES, type PowersConfig, type RuleId, type Features,
 } from '@/lib/powers/config'
+import { jobsEnabled } from '@/lib/modules'
 
 export const powersDb = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -80,7 +81,7 @@ export async function powersCaller(req: Request, db: any, companyId: any): Promi
 }
 
 // ── The business's settings ──────────────────────────────────────────────────
-export type PowersState = { missing?: boolean; enabled: boolean; enabledAt: string | null; config: PowersConfig; tz: string; ownerId: string | null }
+export type PowersState = { missing?: boolean; enabled: boolean; enabledAt: string | null; config: PowersConfig; tz: string; ownerId: string | null; features: Features }
 const SETTINGS_TTL = 15_000
 const states = new Map<string, { s: PowersState; at: number }>()
 export const forgetPowers = (companyId: string) => { states.delete(companyId) }
@@ -88,9 +89,10 @@ export const forgetPowers = (companyId: string) => { states.delete(companyId) }
 export async function loadPowers(db: any, companyId: string): Promise<PowersState> {
   const hit = states.get(companyId)
   if (hit && Date.now() - hit.at < SETTINGS_TTL) return hit.s
-  const [set, co] = await Promise.all([
+  const [set, co, features] = await Promise.all([
     db.from('powers_settings').select('enabled, enabled_at, config').eq('company_id', companyId).maybeSingle(),
-    db.from('companies').select('owner_id, booking_settings').eq('id', companyId).maybeSingle(),
+    db.from('companies').select('owner_id, booking_settings, modules, industry').eq('id', companyId).maybeSingle(),
+    featuresOf(db, companyId),
   ])
   const tzRaw = String(co?.data?.booking_settings?.timezone || '')
   const s: PowersState = {
@@ -100,6 +102,7 @@ export async function loadPowers(db: any, companyId: string): Promise<PowersStat
     config: cleanConfig(set?.data?.config),
     tz: tzRaw && isValidTimeZone(tzRaw) ? tzRaw : 'Australia/Melbourne',
     ownerId: co?.data?.owner_id || null,
+    features: { ...features, jobs: co?.data ? jobsEnabled(co.data) : true },
   }
   if (states.size > 500) states.clear()
   states.set(companyId, { s, at: Date.now() })
@@ -107,6 +110,26 @@ export async function loadPowers(db: any, companyId: string): Promise<PowersStat
 }
 
 export const todayIn = (tz: string, at = Date.now()) => dateInTz(at, tz)
+
+// What the business has set up. A rule about something it doesn't use (jobs
+// without the Jobs module, orders with no store, calls with no Colvy number,
+// reviews with no Google profile) isn't shown and never pays. A read that
+// fails counts as "set up", so nothing disappears on a hiccup.
+async function featuresOf(db: any, companyId: string): Promise<Features> {
+  const any = (q: PromiseLike<any>) => Promise.resolve(q).then((r: any) => (r?.error ? null : (r?.data?.length || 0) > 0), () => null)
+  const active = (t: string) => any(db.from(t).select('id').eq('company_id', companyId).eq('is_active', true).limit(1))
+  const [woo, shopify, prexty, numbers, recentCall, google] = await Promise.all([
+    active('woocommerce_integrations'), active('shopify_integrations'), active('prexty_integrations'),
+    any(db.from('phone_numbers').select('id').eq('company_id', companyId).neq('status', 'released').limit(1)),
+    any(db.from('calls').select('id').eq('company_id', companyId).gt('started_at', new Date(Date.now() - 60 * 864e5).toISOString()).limit(1)),
+    any(db.from('google_business_accounts').select('id').eq('company_id', companyId).or('is_active.is.null,is_active.eq.true').limit(1)),
+  ])
+  const yes = (...v: (boolean | null)[]) => v.some(x => x === true) || v.every(x => x === null)
+  return { ...ALL_FEATURES, orders: yes(woo, shopify, prexty), calls: yes(numbers, recentCall), reviews: google !== false }
+}
+
+/** On, and about something this business uses. */
+export const ruleOn = (st: PowersState, id: RuleId) => !!st.config.rules[id]?.on && ruleAvailable(id, st.features || ALL_FEATURES)
 
 // ── The team ─────────────────────────────────────────────────────────────────
 export type Member = { id: string; name: string; role: string; locationId: string | null; avatar: string | null; isOwner: boolean }
@@ -162,7 +185,14 @@ export async function pay(db: any, companyId: string, st: PowersState, o: {
   actorId?: string | null; uncapped?: boolean   // uncapped: a challenge's own reward, set by the business
 }): Promise<Paid> {
   const rule = st.config.rules[o.rule]
-  if (!st.enabled || !rule?.on) return { status: 'off', rule: o.rule, coins: 0, xp: 0 }
+  if (!st.enabled || !ruleOn(st, o.rule)) return { status: 'off', rule: o.rule, coins: 0, xp: 0 }
+  // How many times a day this rule pays one person (0 = no limit). The day's
+  // coin and XP caps, checked inside the database, stay the hard limit.
+  if (rule.max > 0) {
+    const { count } = await db.from('powers_ledger').select('id', { count: 'exact', head: true })
+      .eq('company_id', companyId).eq('user_id', o.userId).eq('rule', o.rule).eq('kind', 'reward').eq('day', todayIn(st.tz)).is('reversed_at', null)
+    if ((count || 0) >= rule.max) return { status: 'capped', rule: o.rule, coins: 0, xp: 0, ref: o.refId }
+  }
   const coins = o.coins ?? rule.coins
   const boosts = await boostsFor(db, companyId, o.userId).catch(() => ({ double: false, team: false }))
   const xp = boostedXp(o.xp ?? rule.xp, boosts)
@@ -297,6 +327,110 @@ export async function sweepUser(db: any, companyId: string, st: PowersState, me:
 
   // Tasks I was paid for that are no longer done (unticked or deleted): take it back.
   out.push(...await reverseUndoneTasks(db, companyId, st, me.id))
+
+  // Replies, calls and orders from the last day.
+  const replyConvs = (mine || []).map((r: any) => r.conversation_id).filter(isUuid)
+  out.push(...await payReplies(db, companyId, st, Array.from(new Set<string>(replyConvs)).slice(0, 60), Date.parse(since), me.id))
+  out.push(...await payCalls(db, companyId, st, since, me.id))
+  out.push(...await payOrders(db, companyId, st, since, me.id))
+  out.push(...await reverseUndoneOrders(db, companyId, st, me.id))
+  return out
+}
+
+// ── Replies ──────────────────────────────────────────────────────────────────
+// Each customer message is answered once, by whoever sent the first real reply
+// after it (lib/powers/config creditReplies). Reads a week of the
+// conversations so a reply to an older message still finds it; pays only
+// replies from the window. `only` limits it to one person (the in-app check).
+async function payReplies(db: any, companyId: string, st: PowersState, convIds: string[], sinceMs: number, only: string | null, byId?: Map<string, Member>): Promise<Paid[]> {
+  const out: Paid[] = []
+  if (!ruleOn(st, 'reply') || !convIds.length) return out
+  // The customer may have written before Powers was on; only replies after
+  // it (sinceMs is never earlier than switching on) are paid.
+  const week = new Date(Date.now() - 7 * 864e5).toISOString()
+  const [{ data: msgs }, { data: convs }] = await Promise.all([
+    db.from('messages').select('id, conversation_id, sender_type, sender_id, content, is_internal, metadata, created_at')
+      .in('conversation_id', convIds).gt('created_at', week).order('created_at', { ascending: true }).limit(4000),
+    db.from('conversations').select('id, is_spam, merged_into').eq('company_id', companyId).in('id', convIds),
+  ])
+  const real = new Set<string>((convs || []).filter((c: any) => !c.is_spam && !c.merged_into).map((c: any) => c.id))
+  for (const c of creditReplies((msgs || []).filter((m: any) => real.has(m.conversation_id)))) {
+    if (Date.parse(c.at) <= sinceMs) continue
+    if (only && c.userId !== only) continue
+    if (byId && !eligible(st, byId.get(c.userId))) continue
+    const r = await pay(db, companyId, st, { userId: c.userId, rule: 'reply', refType: 'conversation', refId: c.conversationId, idem: c.idem })
+    if (r.status === 'ok') out.push(r)
+  }
+  return out
+}
+
+// ── Calls: an incoming call someone picked up and talked on (20 s or more) ──
+async function payCalls(db: any, companyId: string, st: PowersState, since: string, only: string | null, byId?: Map<string, Member>): Promise<Paid[]> {
+  const out: Paid[] = []
+  if (!ruleOn(st, 'call')) return out
+  let q = db.from('calls').select('id, answered_by_user_id, duration_seconds, is_voicemail, direction, started_at')
+    .eq('company_id', companyId).eq('direction', 'inbound').gte('duration_seconds', 20).gt('started_at', since).limit(300)
+  q = only ? q.eq('answered_by_user_id', only) : q.not('answered_by_user_id', 'is', null)
+  const { data: calls } = await q
+  for (const c of calls || []) {
+    if (c.is_voicemail || Number(c.duration_seconds) < 20 || !isUuid(c.answered_by_user_id)) continue
+    if (byId && !eligible(st, byId.get(c.answered_by_user_id))) continue
+    const r = await pay(db, companyId, st, { userId: c.answered_by_user_id, rule: 'call', refType: 'call', refId: c.id, idem: `call:${c.id}`, meta: { seconds: c.duration_seconds } })
+    if (r.status === 'ok') out.push(r)
+  }
+  return out
+}
+
+// ── Orders: whoever marked it shipped, collected or completed in Colvy ──────
+// Orders that arrive already complete from a store or the till have no
+// person behind the change, so they pay nobody.
+const ORDER_DONE_EVENTS = ['shipped', 'collected', 'delivered', 'status_changed']
+const orderDone = (o: any) => o && (o.status === 'shipped' || o.fulfilment_status === 'fulfilled') && !['cancelled', 'refunded'].includes(String(o.status || ''))
+
+async function payOrders(db: any, companyId: string, st: PowersState, since: string, only: string | null, byId?: Map<string, Member>): Promise<Paid[]> {
+  const out: Paid[] = []
+  if (!ruleOn(st, 'order')) return out
+  let q = db.from('order_events').select('order_id, actor_id, type, created_at').eq('company_id', companyId)
+    .in('type', ORDER_DONE_EVENTS).gt('created_at', since).order('created_at', { ascending: false }).limit(500)
+  if (only) q = q.eq('actor_id', only)
+  const { data: mineEv } = await q
+  const ids = Array.from(new Set<string>((mineEv || []).map((e: any) => e.order_id).filter(isUuid))).slice(0, 200)
+  if (!ids.length) return out
+  // Everyone's events on these orders: the last person to move it gets it.
+  const [{ data: orders }, { data: evs }] = await Promise.all([
+    db.from('orders').select('id, status, fulfilment_status').eq('company_id', companyId).in('id', ids),
+    db.from('order_events').select('order_id, actor_id, type, created_at').eq('company_id', companyId).in('order_id', ids).in('type', ORDER_DONE_EVENTS).order('created_at', { ascending: false }).limit(2000),
+  ])
+  const lastBy = new Map<string, any>()
+  for (const e of evs || []) if (isUuid(e.actor_id) && !lastBy.has(e.order_id)) lastBy.set(e.order_id, e)
+  for (const o of orders || []) {
+    if (!orderDone(o)) continue
+    const e = lastBy.get(o.id)
+    if (!e || Date.parse(e.created_at) <= Date.parse(since)) continue
+    if (only && e.actor_id !== only) continue
+    if (byId && !eligible(st, byId.get(e.actor_id))) continue
+    const r = await pay(db, companyId, st, { userId: e.actor_id, rule: 'order', refType: 'order', refId: o.id, idem: `order:${o.id}` })
+    if (r.status === 'ok') out.push(r)
+  }
+  return out
+}
+
+/** Orders I was paid for that aren't done any more (cancelled, refunded, moved back): take it back. */
+async function reverseUndoneOrders(db: any, companyId: string, st: PowersState, userId: string | null): Promise<Paid[]> {
+  const out: Paid[] = []
+  let q = db.from('powers_ledger').select('ref_id, idem_key').eq('company_id', companyId).eq('kind', 'reward').eq('rule', 'order')
+    .is('reversed_at', null).gt('created_at', new Date(Date.now() - 14 * 864e5).toISOString()).limit(300)
+  if (userId) q = q.eq('user_id', userId)
+  const { data: paid } = await q
+  const ids = (paid || []).map((p: any) => p.ref_id).filter(isUuid)
+  if (!ids.length) return out
+  const { data: orders } = await db.from('orders').select('id, status, fulfilment_status').eq('company_id', companyId).in('id', ids)
+  const byId = new Map<string, any>((orders || []).map((o: any) => [o.id, o]))
+  for (const p of paid || []) {
+    if (orderDone(byId.get(p.ref_id))) continue
+    const r = await takeBack(db, companyId, st, p.idem_key, byId.get(p.ref_id) ? 'The order isn’t complete any more.' : 'The order was deleted.')
+    if (r.status === 'ok') out.push({ status: 'reversed', rule: 'order', coins: r.coins, xp: r.xp, ref: p.ref_id })
+  }
   return out
 }
 
@@ -321,7 +455,7 @@ async function reverseUndoneTasks(db: any, companyId: string, st: PowersState, u
 
 /** The background sweep for one business: everyone's recent work, reviews, undone tasks. */
 export async function sweepCompany(db: any, companyId: string, st: PowersState) {
-  const counts = { resolve: 0, task: 0, feedback: 0, reversed: 0 }
+  const counts = { resolve: 0, task: 0, feedback: 0, reply: 0, call: 0, order: 0, reversed: 0 }
   if (!st.enabled) return counts
   const team = await roster(db, companyId, st.ownerId)
   const byId = new Map(team.map(m => [m.id, m]))
@@ -345,8 +479,16 @@ export async function sweepCompany(db: any, companyId: string, st: PowersState) 
   }
   counts.reversed += (await reverseUndoneTasks(db, companyId, st, null)).length
 
+  // Replies, calls and orders, everyone's.
+  const { data: replied } = await db.from('messages').select('conversation_id').eq('company_id', companyId).eq('sender_type', 'agent').gt('created_at', since).limit(1000)
+  const replyConvs = Array.from(new Set<string>((replied || []).map((m: any) => m.conversation_id).filter(isUuid))).slice(0, 200)
+  counts.reply += (await payReplies(db, companyId, st, replyConvs, Date.parse(since), null, byId)).length
+  counts.call += (await payCalls(db, companyId, st, since, null, byId)).length
+  counts.order += (await payOrders(db, companyId, st, since, null, byId)).length
+  counts.reversed += (await reverseUndoneOrders(db, companyId, st, null)).length
+
   // Happy reviews that name one teammate.
-  if (st.config.rules.feedback.on) {
+  if (ruleOn(st, 'feedback')) {
     const rsince = new Date(Math.max(Date.now() - 3 * 864e5, Date.parse(st.enabledAt || '') || 0)).toISOString()
     const { data: reviews } = await db.from('google_reviews').select('id, star_rating, comment, created_at').eq('company_id', companyId).gte('star_rating', 4).gt('created_at', rsince).limit(100)
     for (const rv of reviews || []) {

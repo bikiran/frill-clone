@@ -1,8 +1,8 @@
 import { NextRequest } from 'next/server'
-import { powersDb, powersCaller, loadPowers, roster, eligible, walletOf, todayIn, json, MIGRATION_HINT } from '@/lib/powers/server'
+import { powersDb, powersCaller, loadPowers, roster, eligible, walletOf, todayIn, json, ruleOn, MIGRATION_HINT } from '@/lib/powers/server'
 import { liveFor, EMPTY_LIVE } from '@/lib/powers/live'
 import { addDays } from '@/lib/booking-time'
-import { POWERS, RULES } from '@/lib/powers/config'
+import { POWERS, RULES, everyLabel } from '@/lib/powers/config'
 import { checkAchievements } from '@/lib/powers/achievements'
 
 export const dynamic = 'force-dynamic'
@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
       db.from('powers_ledger').select('id, kind, rule, coins, xp, reason, meta, actor_id, ref_type, created_at').eq('company_id', companyId).eq('user_id', caller.userId).order('created_at', { ascending: false }).limit(20),
       liveFor(db, companyId!, caller.userId, names).catch(() => EMPTY_LIVE),
     ])
-    const badges = await checkAchievements(db, companyId!, caller.userId, wallet).catch(() => ({ fresh: [] as string[], list: [] as any[] }))
+    const badges = await checkAchievements(db, companyId!, caller.userId, wallet, false, st.features).catch(() => ({ fresh: [] as string[], list: [] as any[] }))
     // A streak that missed yesterday (and today) is over, unless a Streak Saver covers one day.
     const last = wallet.streak_day as string | null
     const alive = !!last && (last >= addDays(today, -1) || (last === addDays(today, -2) && wallet.savers > 0))
@@ -47,7 +47,12 @@ export async function GET(req: NextRequest) {
       recent: (recent.data || []).map((r: any) => ({ ...r, actor: r.actor_id ? names.get(r.actor_id) || null : null })),
       live,
       achievements: badges.list, freshAchievements: badges.fresh,
-      rules: RULES.filter(r => cfg.rules[r.id].on).map(r => ({ id: r.id, label: r.label, coins: cfg.rules[r.id].coins, xp: cfg.rules[r.id].xp })),
+      // Only what this business has turned on and actually uses (no "Complete a job" without Jobs).
+      rules: RULES.filter(r => ruleOn(st, r.id)).map(r => {
+        const c = cfg.rules[r.id]
+        return { id: r.id, label: r.id === 'time' ? everyLabel(c.every || 60) : r.label, hint: r.hint, coins: c.coins, xp: c.xp, max: c.max, ...(r.id === 'time' ? { every: c.every || 60 } : {}) }
+      }),
+      features: st.features,
       powers: POWERS.filter(p => cfg.powers[p.id].on).map(p => ({ id: p.id, price: cfg.powers[p.id].price, cooldown: cfg.powers[p.id].cooldown, daily: cfg.powers[p.id].daily })),
       leaderboard: cfg.leaderboard,
       team: team.filter(m => eligible(st, m)).map(m => ({ id: m.id, name: m.name, avatar: m.avatar })),

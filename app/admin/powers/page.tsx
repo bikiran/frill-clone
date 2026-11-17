@@ -14,6 +14,7 @@ import { usePowers, powersApi, refreshPowers, pingTeam, type PowersMe } from '@/
 import { POWERS, powerDef } from '@/lib/powers/config'
 import { Coin, LevelRing, PowerIcon } from '@/components/powers/PowerIcon'
 import UseSheet from '@/components/powers/UseSheet'
+import PowerPreview from '@/components/powers/PowerPreview'
 
 type Tab = 'overview' | 'shop' | 'challenges' | 'leaderboard' | 'badges'
 const TABS: { id: Tab; label: string }[] = [
@@ -54,7 +55,7 @@ function Powers() {
           <div className="pw-off">
             <span className="pw-off-ic"><PowerIcon name="bolt" size={26} stroke={2} /></span>
             <b>Colvy Powers is off for this workspace</b>
-            <p>When it’s on, your team earns coins and XP for real work (resolving conversations, finishing tasks and jobs, a teammate’s thanks) and spends coins on small, friendly powers. No real money, nothing that changes who can see what.</p>
+            <p>When it’s on, your team earns coins and XP for real work (answering and resolving conversations, finishing tasks, a teammate’s thanks) and spends coins on small, friendly powers. No real money, nothing that changes who can see what.</p>
             {p.isAdmin
               ? <Link href="/admin/crm-settings/powers" className="ak-btn go">Set it up</Link>
               : <p className="pw-fine">Ask the owner or an admin to turn it on in Settings.</p>}
@@ -83,7 +84,7 @@ function Powers() {
       </div>
       <div key={tab} className="ak-in">
         {tab === 'overview' && <Overview p={p} companyId={companyId!} focusThanks={want === 'thanks'} />}
-        {tab === 'shop' && <Shop p={p} companyId={companyId!} />}
+        {tab === 'shop' && <Shop p={p} companyId={companyId!} onEarn={() => { go('overview'); window.setTimeout(() => document.getElementById('pw-earn')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 250) }} />}
         {tab === 'challenges' && <Challenges companyId={companyId!} isAdmin={!!p.isAdmin} />}
         {tab === 'leaderboard' && <Leaderboard p={p} companyId={companyId!} />}
         {tab === 'badges' && <Badges p={p} />}
@@ -94,12 +95,15 @@ function Powers() {
 
 // ── Overview ──────────────────────────────────────────────────────────────────
 const RULE_LABEL: Record<string, string> = {
-  resolve: 'Resolved a conversation', task: 'Completed a task', job: 'Completed a job', feedback: 'Named in a happy review',
-  thanks: 'A teammate said thanks', challenge: 'Finished a challenge', grant: 'Coins from', revoke: 'Coins taken back by', gift: 'Gift',
+  resolve: 'Resolved a conversation', reply: 'Replied to a customer', call: 'Answered a call', task: 'Completed a task', job: 'Completed a job',
+  order: 'Fulfilled an order', feedback: 'Named in a happy review', thanks: 'A teammate said thanks', active: 'Active on Colvy today',
+  time: 'Time in Colvy', challenge: 'Finished a challenge',
 }
+const mins = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}` : `${m} min`)
 function ledgerLine(r: any): { text: string; sub?: string } {
   if (r.kind === 'reward') {
     if (r.rule === 'thanks') return { text: `${r.meta?.from || 'A teammate'} said thanks`, sub: r.meta?.note }
+    if (r.rule === 'time' && r.meta?.minutes) return { text: `${mins(Number(r.meta.minutes))} in Colvy today` }
     if (r.rule === 'challenge') return { text: 'Finished a challenge', sub: r.meta?.title }
     return { text: RULE_LABEL[r.rule] || 'Reward' }
   }
@@ -156,14 +160,18 @@ function Overview({ p, companyId, focusThanks }: { p: PowersMe; companyId: strin
 
       <div className="ak-grid2">
         <Thanks p={p} companyId={companyId} focus={focusThanks} />
-        <Panel title="How you earn" sub="Real work only. The same piece of work pays once.">
-          <div className="pw-rules">
-            {(p.rules || []).map(r => (
-              <div key={r.id}><span>{RULE_LABEL[r.id] ? RULE_LABEL[r.id].replace('Resolved a', 'Resolve a').replace('Completed', 'Complete').replace('Finished', 'Finish').replace('A teammate said thanks', 'A teammate’s thanks').replace('Named in a happy review', 'A happy review that names you') : r.label}</span>
-                <b><Coin size={13} />{r.coins}<small>· {r.xp} XP</small></b></div>
-            ))}
-          </div>
-        </Panel>
+        <div id="pw-earn">
+          <Panel title="How you earn" sub="Real work only. The same piece of work pays once.">
+            <div className="pw-rules">
+              {(p.rules || []).map(r => (
+                <div key={r.id} title={r.hint}>
+                  <span className="pw-rule-l">{r.label}{r.max ? <small>{r.max === 1 ? 'Once a day' : `Up to ${r.max} a day`}</small> : null}</span>
+                  <b><Coin size={13} />{r.coins}<small>· {r.xp} XP</small></b>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        </div>
       </div>
 
       {mine.length > 0 && (
@@ -244,37 +252,50 @@ function Thanks({ p, companyId, focus }: { p: PowersMe; companyId: string; focus
 }
 
 // ── Shop ──────────────────────────────────────────────────────────────────────
-function Shop({ p, companyId }: { p: PowersMe; companyId: string }) {
+function Shop({ p, companyId, onEarn }: { p: PowersMe; companyId: string; onEarn: () => void }) {
   const [use, setUse] = useState<string | null>(null)
+  const [peek, setPeek] = useState<string | null>(null)
   const coins = p.wallet?.coins ?? 0
   const list = (p.powers || []).map(x => ({ ...powerDef(x.id)!, price: x.price, cooldown: x.cooldown, daily: x.daily })).filter(x => x.id)
+  const shown = list.find(x => x.id === peek)
+  // The example uses real first names: you, and a teammate.
+  const names = { me: p.me?.name || '', mate: (p.team || []).find(t => t.id !== p.me?.id)?.name || '' }
   return (
     <>
       <div className="pw-shop">
         {list.map(pw => {
-          const short = pw.id !== 'gift' && pw.price > coins
+          const short = pw.id === 'gift' ? coins < 1 : pw.price > coins
           return (
-            <div key={pw.id} className="pw-card" style={{ ['--pc' as any]: pw.color }}>
+            <div key={pw.id} className={`pw-card${short ? ' short' : ''}`} style={{ ['--pc' as any]: pw.color }} role="button" tabIndex={0}
+              aria-label={`${pw.name}: how it works`} onClick={() => setPeek(pw.id)}
+              onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setPeek(pw.id) } }}>
               <span className="pw-card-ic"><PowerIcon name={pw.icon} size={22} stroke={2} /></span>
               <b>{pw.name}</b>
               <p>{pw.blurb}</p>
               <div className="pw-card-f">
                 <span className="pw-price"><Coin size={15} />{pw.id === 'gift' ? `up to ${pw.price}` : pw.price}</span>
-                <button type="button" className="ak-btn sm dark" disabled={short} onClick={() => setUse(pw.id)}>{short ? `${pw.price - coins} more` : 'Use'}</button>
+                {short
+                  ? <button type="button" className="ak-btn sm pw-more" onClick={e => { e.stopPropagation(); setPeek(pw.id) }}>{pw.id === 'gift' ? 'Earn coins first' : `${pw.price - coins} more`}</button>
+                  : <button type="button" className="ak-btn sm dark" onClick={e => { e.stopPropagation(); setUse(pw.id) }}>Use</button>}
               </div>
-              <span className="pw-card-meta">{pw.minutes ? (pw.minutes >= 60 ? `${pw.minutes / 60}h` : `${pw.minutes} min`) : 'Instant'}{pw.cooldown ? ` · every ${pw.cooldown >= 60 ? `${Math.round(pw.cooldown / 60)}h` : `${pw.cooldown} min`}` : ''}{pw.daily ? ` · ${pw.daily}/day` : ''}</span>
+              <span className="pw-card-meta"><span>{pw.minutes ? (pw.minutes >= 60 ? `${pw.minutes / 60}h` : `${pw.minutes} min`) : 'Instant'}{pw.cooldown ? ` · every ${pw.cooldown >= 60 ? `${Math.round(pw.cooldown / 60)}h` : `${pw.cooldown} min`}` : ''}{pw.daily ? ` · ${pw.daily}/day` : ''}</span>
+                <span className="pw-how"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden><path d="M2.5 1.5v7l6-3.5z" fill="currentColor" /></svg>How it works</span></span>
             </div>
           )
         })}
       </div>
       <p className="pw-note">Coins are earned, never bought, and can’t be cashed out. Powers are just for fun: none of them change what anyone can see or do at work, and anything aimed at someone can be dismissed.</p>
+      {shown && (
+        <PowerPreview power={shown.id} price={shown.price} cooldown={shown.cooldown} daily={shown.daily} coins={coins} names={names}
+          onClose={() => setPeek(null)} onUse={() => { setPeek(null); setUse(shown.id) }} onEarn={() => { setPeek(null); onEarn() }} />
+      )}
       {use && <UseSheet power={use} companyId={companyId} me={p} onClose={() => setUse(null)} />}
     </>
   )
 }
 
 // ── Challenges ────────────────────────────────────────────────────────────────
-const METRIC: Record<string, string> = { resolve: 'conversations resolved', task: 'tasks completed', job: 'jobs completed', thanks: 'thanks received', feedback: 'happy reviews' }
+const METRIC: Record<string, string> = { resolve: 'conversations resolved', reply: 'customer replies', call: 'calls answered', task: 'tasks completed', job: 'jobs completed', order: 'orders fulfilled', thanks: 'thanks received', feedback: 'happy reviews' }
 function Challenges({ companyId, isAdmin }: { companyId: string; isAdmin: boolean }) {
   const [list, setList] = useState<any[] | null>(null)
   useEffect(() => { powersApi(`/api/powers/challenges?companyId=${companyId}`, undefined, 'GET').then(r => setList(r.ok ? r.data.challenges || [] : [])) }, [companyId])
@@ -308,10 +329,17 @@ function Challenges({ companyId, isAdmin }: { companyId: string; isAdmin: boolea
 }
 
 // ── Leaderboard ───────────────────────────────────────────────────────────────
-const BOARDS = [{ id: 'xp', label: 'XP' }, { id: 'resolve', label: 'Resolved' }, { id: 'task', label: 'Tasks' }, { id: 'job', label: 'Jobs' }, { id: 'thanks', label: 'Thanks' }]
+const BOARDS = [
+  { id: 'xp', label: 'XP' }, { id: 'resolve', label: 'Resolved' }, { id: 'reply', label: 'Replies' }, { id: 'call', label: 'Calls' },
+  { id: 'task', label: 'Tasks' }, { id: 'job', label: 'Jobs' }, { id: 'order', label: 'Orders' }, { id: 'thanks', label: 'Thanks' },
+]
 function Leaderboard({ p, companyId }: { p: PowersMe; companyId: string }) {
   const [period, setPeriod] = useState<'week' | 'month'>('week')
   const [board, setBoard] = useState('xp')
+  // Only boards for rules that are on here and about something the business
+  // uses: no Jobs board without the Jobs module, no Calls without a phone line.
+  const boards = BOARDS.filter(b => b.id === 'xp' || (p.rules || []).some(r => r.id === b.id))
+  useEffect(() => { if (!boards.some(b => b.id === board)) setBoard('xp') }, [boards, board])
   const [data, setData] = useState<any>(null)
   const [who, setWho] = useState<string | null>(null)
   useEffect(() => {
@@ -330,13 +358,13 @@ function Leaderboard({ p, companyId }: { p: PowersMe; companyId: string }) {
           <button className={period === 'week' ? 'on' : ''} onClick={() => setPeriod('week')}>This week</button>
           <button className={period === 'month' ? 'on' : ''} onClick={() => setPeriod('month')}>This month</button>
         </div>
-        <div className="pw-boards">{BOARDS.map(b => <button key={b.id} className={`ak-chip${board === b.id ? ' on' : ''}`} onClick={() => setBoard(b.id)}>{b.label}</button>)}</div>
+        <div className="pw-boards">{boards.map(b => <button key={b.id} className={`ak-chip${board === b.id ? ' on' : ''}`} onClick={() => setBoard(b.id)}>{b.label}</button>)}</div>
       </div>
       {!data ? <div className="pw-sk"><span /><span /></div> : data.error ? <div className="ak-note bad">{data.error}</div> : data.mode === 'team' ? (
         <Panel>
           <div className="pw-team">
             <span className="pw-kicker">The whole team, {period === 'week' ? 'this week' : 'this month'}</span>
-            <b>{Number(data.team.total).toLocaleString()} {unit || BOARDS.find(b => b.id === board)?.label.toLowerCase()}</b>
+            <b>{Number(data.team.total).toLocaleString()} {unit || boards.find(b => b.id === board)?.label.toLowerCase()}</b>
             <p>Together, across {data.team.people} {data.team.people === 1 ? 'person' : 'people'}. This workspace shows team totals only.</p>
           </div>
         </Panel>
@@ -460,6 +488,8 @@ const CSS = `
 .pw-rules{display:flex;flex-direction:column}
 .pw-rules div{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;font-size:14px}
 .pw-rules div+div{box-shadow:0 -1px 0 var(--line)}
+.pw-rule-l{display:flex;flex-direction:column;min-width:0}
+.pw-rule-l small{margin:1px 0 0!important;font-size:12px}
 .pw-rules b{display:inline-flex;align-items:center;gap:4px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .pw-rules small{font-weight:500;color:var(--soft);margin-left:3px}
 .pw-people{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
@@ -490,7 +520,14 @@ const CSS = `
 .pw-card p{flex:1;margin:0;font-size:13.5px;line-height:1.5;color:var(--mut)}
 .pw-card-f{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px}
 .pw-price{display:inline-flex;align-items:center;gap:5px;font-weight:800;font-variant-numeric:tabular-nums}
-.pw-card-meta{font-size:11.5px;color:var(--soft)}
+.pw-card{cursor:pointer;outline:none}
+.pw-card:focus-visible{box-shadow:0 0 0 2px var(--pc)}
+.pw-card-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--soft)}
+.pw-how{display:inline-flex;align-items:center;gap:4px;font-weight:650;color:var(--pc);opacity:.85;white-space:nowrap;transition:opacity .15s}
+.pw-card:hover .pw-how{opacity:1}
+.pw-card.short .pw-card-ic{filter:saturate(.75)}
+.ak-btn.pw-more{background:var(--f);box-shadow:none;color:var(--mut)}
+.ak-btn.pw-more:hover{color:var(--ink)}
 .pw-note{margin:16px 2px 0;font-size:13px;line-height:1.55;color:var(--soft)}
 .pw-chs{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:12px}
 .pw-ch{display:flex;flex-direction:column;gap:6px;padding:18px;border-radius:22px;background:var(--card,#fff);box-shadow:0 0 0 1px rgba(0,0,0,.05),0 1px 2px rgba(16,24,40,.04)}

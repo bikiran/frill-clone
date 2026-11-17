@@ -5,7 +5,7 @@
 // returned values through InboxContext.
 
 import { peekCompanyUser, readCache, resolveCompanyUser, writeCache } from '@/lib/client-cache'
-import { powersHint, usePowers, powersApi, refreshPowers, pingTeam } from '@/lib/powers/client'
+import { powersHint, powersSoon, usePowers, powersApi, refreshPowers, pingTeam } from '@/lib/powers/client'
 import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { getEffectiveEntitlements } from '@/lib/entitlements-client'
 import { flagEnabled } from '@/lib/feature-flags'
@@ -5537,6 +5537,9 @@ export function useInboxController() {
     if (!internalMode && !inboxIncluded && replyNeedsInbox(composeChannel(), selected.channel)) { showToast(GATED.inbox.locked); return }
     flushReply()
     setSending(true)
+    // Colvy Powers: a real reply to a customer may earn a little (the server
+    // decides, a few seconds after it lands). Nothing happens when Powers is off.
+    if (!internalMode) powersSoon()
     let content = replyNow.current.trim()
     const senderName = myName
     const voice = voiceKind(content, dictatedRef.current)

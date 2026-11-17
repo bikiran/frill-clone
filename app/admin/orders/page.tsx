@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react'
-import { powersHint } from '@/lib/powers/client'
+import { powersHint, powersSoon } from '@/lib/powers/client'
 import { useSearchParams } from 'next/navigation'
 import { createPortal } from 'react-dom'
 import { decodeEntities } from '@/lib/decode-entities'
@@ -860,6 +860,8 @@ export default function OrdersPage() {
       if (event && companyId) {
         await (supabase as any).from('order_events').insert(ids.map(id => ({ order_id: id, company_id: companyId, type: event.type, detail: event.detail, actor_id: me.id, actor_name: me.name })))
       }
+      // Colvy Powers: fulfilling an order may earn a little (undoing it takes it back).
+      if (patch.status || patch.fulfilment_status) powersSoon()
     } catch {}
   }
   const setStatus = (ids: string[], status: string) => patchOrder(ids, { status, ...(status === 'shipped' ? { shipped_at: new Date().toISOString(), fulfilment_status: 'fulfilled' } : {}) }, { type: status === 'shipped' ? 'shipped' : status === 'packed' ? 'packed' : 'status_changed', detail: `Status set to ${statusMeta(status).label}` })

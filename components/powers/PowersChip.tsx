@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
-import { usePowers, powersApi, refreshPowers, type PowersEvent } from '@/lib/powers/client'
+import { usePowers, usePowersHeartbeat, powersApi, refreshPowers, type PowersEvent } from '@/lib/powers/client'
 import { Coin, LevelRing, PowerIcon } from '@/components/powers/PowerIcon'
 
 type Toast = { id: string; icon: React.ReactNode; title: string; body?: string; tone?: string; action?: { label: string; href: string }; dismissId?: string; ttl?: number }
@@ -22,6 +22,7 @@ const writeSeen = (s: Set<string>) => { try { sessionStorage.setItem(seenKey, JS
 
 export default function PowersChip({ companyId }: { companyId: string | null }) {
   const p = usePowers(companyId)
+  usePowersHeartbeat(companyId, !!(p?.enabled && p.eligible))
   const [open, setOpen] = useState(false)
   const [shown, setShown] = useState<number | null>(null)       // the coin count on screen (ticks toward the real one)
   const [floats, setFloats] = useState<{ id: number; text: string; neg?: boolean }[]>([])

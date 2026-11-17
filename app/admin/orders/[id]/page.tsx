@@ -1,7 +1,7 @@
 'use client'
 
 import { authFetch } from '@/lib/auth-fetch'
-import { powersHint } from '@/lib/powers/client'
+import { powersHint, powersSoon } from '@/lib/powers/client'
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { peekCompanyUser } from '@/lib/client-cache'
@@ -134,6 +134,7 @@ export default function OrderDetailPage() {
         const { data } = await (supabase as any).from('order_events').insert(row).select().maybeSingle()
         if (data) setEvents(e => [data, ...e])
       }
+      if (patch.status || patch.fulfilment_status) powersSoon()
     } catch {}
   }
   const logItemEvent = async (type: string, detail: string) => {

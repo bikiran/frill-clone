@@ -7,7 +7,7 @@ An optional layer, off by default, that each business switches on in **Settings 
 ## What people see
 
 - **Top-bar chip** (admin only, when on and you take part): your level ring and coins. Earning makes a coin pop under the chip and the number tick over; a level-up glows once. Click for level, streak, today's coins and shortcuts.
-- **/admin/powers**: Overview (level, XP bar, coins, streak, today against the daily limit, *Say thanks*, how you earn, recent activity), Power Shop, Challenges, Leaderboard (podium, week or month, by XP / resolved / tasks / jobs / thanks; tap a person for their profile), Badges.
+- **/admin/powers**: Overview (level, XP bar, coins, streak, today against the daily limit, *Say thanks*, how you earn, recent activity), Power Shop (tap any power, even one you can't afford yet, for a short animated "How it works"), Challenges, Leaderboard (podium, week or month, by XP / resolved / replies / calls / tasks / jobs / orders / thanks, only for what the business uses; tap a person for their profile), Badges.
 - **Inbox**: a teammate's Priority Pin floats a conversation to the top of *your* list for 30 minutes, tagged "📌 Jamie ×" (× unpins). Thread menu → *Pin for a teammate* / *Nudge a teammate about this*. VIP Crown and status emoji appear beside a teammate's name on their messages.
 - **Small moments** (bottom-right, dismissable, never over work): a nudge, team confetti (2 seconds, no clicks blocked), a spotlight. Quiet while your Focus Shield is up.
 - **Reduced motion**: same information, no movement.
@@ -44,13 +44,20 @@ The browser never says "pay me". It says "check my recent work" (`/api/powers/ch
 | Rule | Paid when (server-checked) | Key |
 |---|---|---|
 | Resolve +10 | Conversation closed, not spam or merged, a customer wrote, and **you** sent a real reply (≥ 3 words, not "ok/thanks") since it last paid | `resolve:<conv>:<latest customer message>`: reopen/close pays nothing; a new customer message plus a new real reply can pay again |
+| Reply +2 (50 a day) | Each customer message is answered once, by the first real reply from a person after it (not a note, the AI, an automatic message or "ok thanks"); several customer messages in a row are answered once | `reply:<customer message>` |
+| Call +5 (40 a day) | An incoming call you picked up and talked on for 20 s or more; not voicemail | `call:<id>` |
+| Order +5 (50 a day) | You marked it shipped, collected or completed in Colvy (the latest person to move it; orders arriving already complete pay nobody) | `order:<id>`; cancelled, refunded or moved back → reversed |
+| Active today +5 | The first minute of real use in the day | `active:<user>:<day>` |
+| Time in Colvy +5 (8 a day) | Every N minutes of real use (N set by the business, 60 by default). The page sends one beat a minute only while the tab is visible and the person typed, clicked, scrolled or touched in the last two minutes; one tab beats for all, and `powers_beat` counts at most one a minute | `time:<user>:<day>:<step>` |
 | Task +15 | Done, **assigned** to you; not a task you made yourself and ticked within 10 minutes | `task:<id>`; unticked or deleted → reversed |
 | Job +25 | Moved to Completed (jobs routes call the hook directly), each assignee | `job:<id>:<user>`; reopened → reversed |
 | Feedback +30 | A 4–5★ Google review whose text names exactly one teammate by first name | `review:<id>` |
 | Thanks +10 | A teammate thanks you (max 3 a day per giver, once per pair per day) | `thanks:<from>:<to>:<day>` |
 | Challenge | Its own reward, once per period | `challenge:<id>:<period>:<user>` |
 
-Daily caps (default 150 coins / 300 XP per person, in the business's time zone) apply to rewards. The cron sweep covers work done anywhere (the phone app included) and reviews; the same keys mean the in-app check and the sweep never pay twice.
+Each rule also has a per-person daily limit the business can change (0 = none); the overall daily caps (default 150 coins / 300 XP per person, in the business's time zone) stay the hard limit.
+
+**Only what the business uses.** Rules, leaderboard boards, challenge types and badges about something a business hasn't set up are hidden and never pay: Jobs without the Jobs module, orders with no store or till connected, calls with no Colvy number (or call in the last 60 days), reviews with no Google profile. Settings lists what's hidden and why. A failed check counts as "set up", so nothing disappears on a hiccup. The cron sweep covers work done anywhere (the phone app included) and reviews; the same keys mean the in-app check and the sweep never pay twice.
 
 ## Safety
 
@@ -74,11 +81,11 @@ Daily caps (default 150 coins / 300 XP per person, in the business's time zone) 
 
 ## Tests
 
-- `scripts/powers-sql.test.mjs` (real Postgres, 52 checks): balances, idempotency, caps, cooldowns, limits, gifts, reversals, streaks and Streak Savers, tenant isolation, who may call the functions, concurrency (20 parallel claims pay once; 20 parallel buys on 90 coins buy exactly 3; 30 parallel two-way gifts with no deadlocks and no coin lost), challenge counting, leaderboard totals.
-- `scripts/powers.test.mjs` (73 checks): levels, settings bounds, who takes part, real-reply and trivial-task rules, review name matching, boosts, periods, task credit.
-- End to end through the real app against the real SQL (77 checks), plus screens on desktop, phone, dark mode and reduced motion.
+- `scripts/powers-sql.test.mjs` (real Postgres, 65 checks, V438 + V439): balances, idempotency, caps, cooldowns, limits, gifts, reversals, streaks and Streak Savers, tenant isolation, who may call the functions, concurrency (20 parallel claims pay once; 20 parallel buys on 90 coins buy exactly 3; 30 parallel two-way gifts with no deadlocks and no coin lost), challenge counting, leaderboard totals.
+- `scripts/powers.test.mjs` (101 checks): levels, settings bounds and per-day limits, who takes part, real-reply and trivial-task rules, who a reply pays, what a business uses, review name matching, boosts, periods, task credit.
+- End to end through the real app against the real SQL (117 checks: replies, calls, orders and their reversal, time in Colvy across tabs, per-rule limits, Jobs hidden until the module is on), plus screens on desktop, phone, dark mode and reduced motion, including the Power Shop's "How it works" pop-up.
 
 ## Rollout
 
-1. Run `migrations/COLVY_V438_COLVY_POWERS.sql` in the Supabase SQL editor.
+1. Run `migrations/COLVY_V438_COLVY_POWERS.sql`, then `migrations/COLVY_V439_POWERS_MORE_WAYS.sql`, in the Supabase SQL editor. (Without V439 everything else works; time in Colvy stays quiet and challenges can't count replies, calls or orders.)
 2. Settings → Colvy Powers → switch on. Adjust prices, limits, challenges and visibility to taste.

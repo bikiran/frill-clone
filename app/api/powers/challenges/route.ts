@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { powersDb, powersCaller, loadPowers, clip, isUuid, json, MIGRATION_HINT } from '@/lib/powers/server'
+import { ruleAvailable } from '@/lib/powers/config'
 import { challengesFor } from '@/lib/powers/challenges'
 
 export const dynamic = 'force-dynamic'
@@ -12,7 +13,7 @@ export const dynamic = 'force-dynamic'
 //   DELETE ?companyId&id              remove (admins)
 
 const SCOPES = ['daily', 'weekly', 'team']
-const METRICS = ['resolve', 'task', 'job', 'thanks', 'feedback']
+const METRICS = ['resolve', 'reply', 'call', 'task', 'job', 'order', 'thanks', 'feedback']
 const n = (v: any, lo: number, hi: number) => { const x = Math.round(Number(v)); return Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : null }
 
 export async function GET(req: NextRequest) {
@@ -27,10 +28,11 @@ export async function GET(req: NextRequest) {
     if (sp.get('all') === '1') {
       if (!caller.isAdmin) return json({ error: 'Only owners and admins can manage challenges.' }, 403)
       const { data } = await db.from('powers_challenges').select('*').eq('company_id', companyId).order('created_at', { ascending: false }).limit(100)
-      return json({ challenges: data || [] })
+      return json({ challenges: data || [], features: st.features })
     }
     if (!st.enabled) return json({ challenges: [] })
-    return json({ challenges: await challengesFor(db, companyId!, st, caller.userId) })
+    // A challenge about something the business no longer uses (Jobs turned off…) is hidden.
+    return json({ challenges: (await challengesFor(db, companyId!, st, caller.userId)).filter((c: any) => ruleAvailable(c.metric, st.features)) })
   } catch (e: any) {
     return json({ error: e?.message || 'Could not load challenges.' }, 500)
   }
@@ -47,6 +49,8 @@ export async function POST(req: NextRequest) {
     if (title.length < 3) return json({ error: 'Give the challenge a short name.' }, 400)
     if (!SCOPES.includes(body.scope)) return json({ error: 'Pick daily, weekly or team.' }, 400)
     if (!METRICS.includes(body.metric)) return json({ error: 'Pick what counts toward it.' }, 400)
+    const st = await loadPowers(db, body.companyId)
+    if (!ruleAvailable(body.metric, st.features)) return json({ error: 'This business doesn’t use that yet, so nothing would count toward it.' }, 400)
     const target = n(body.target, 1, 10000)
     if (!target) return json({ error: 'Set a target of at least 1.' }, 400)
     const { count } = await db.from('powers_challenges').select('id', { count: 'exact', head: true }).eq('company_id', body.companyId).eq('active', true)
@@ -55,7 +59,10 @@ export async function POST(req: NextRequest) {
       company_id: body.companyId, title, scope: body.scope, metric: body.metric, target,
       reward_coins: n(body.rewardCoins, 0, 5000) ?? 50, reward_xp: n(body.rewardXp, 0, 5000) ?? 50, created_by: caller.userId,
     }).select('*').single()
-    if (error) throw error
+    if (error) {
+      if (/metric_check/.test(error.message || '')) return json({ error: 'Run migrations/COLVY_V439_POWERS_MORE_WAYS.sql to count replies, calls and orders in challenges.' }, 503)
+      throw error
+    }
     return json({ challenge: data })
   } catch (e: any) {
     return json({ error: e?.message || 'Could not add the challenge.' }, 500)

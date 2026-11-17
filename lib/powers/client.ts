@@ -20,7 +20,8 @@ export type PowersMe = {
   live?: any
   achievements?: { code: string; name: string; hint: string; icon: string; earned: boolean; at: string | null }[]
   freshAchievements?: string[]
-  rules?: { id: string; label: string; coins: number; xp: number }[]
+  rules?: { id: string; label: string; hint?: string; coins: number; xp: number; max?: number; every?: number }[]
+  features?: { jobs: boolean; orders: boolean; calls: boolean; reviews: boolean }
   powers?: { id: string; price: number; cooldown: number; daily: number }[]
   leaderboard?: 'everyone' | 'team' | 'off'
   team?: { id: string; name: string; avatar: string | null }[]
@@ -87,17 +88,74 @@ export async function powersCheck(hint?: { type: 'resolve' | 'task'; id: string 
   try {
     const r = await authFetch('/api/powers/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, hint: hint || null }) })
     if (!r.ok) return
-    const d = await r.json()
-    for (const x of d.results || []) {
-      if (x.status === 'ok') celebrate({ kind: 'earned', coins: x.coins, xp: x.xp, rule: x.rule, leveledUp: x.leveledUp, level: x.level, title: x.title })
-      else if (x.status === 'reversed') celebrate({ kind: 'reversed', coins: x.coins, xp: x.xp, rule: x.rule })
-    }
-    if (d.results?.length && state?.wallet && d.wallet) {
-      state = { ...state, wallet: { ...state.wallet, ...d.wallet } }
-      lastLoad = Date.now()
-      emit()
-    }
+    showResults(await r.json())
   } catch {}
+}
+
+function showResults(d: any) {
+  for (const x of d?.results || []) {
+    if (x.status === 'ok') celebrate({ kind: 'earned', coins: x.coins, xp: x.xp, rule: x.rule, leveledUp: x.leveledUp, level: x.level, title: x.title })
+    else if (x.status === 'reversed') celebrate({ kind: 'reversed', coins: x.coins, xp: x.xp, rule: x.rule })
+  }
+  if (d?.results?.length && state?.wallet && d.wallet) {
+    state = { ...state, wallet: { ...state.wallet, ...d.wallet } }
+    lastLoad = Date.now()
+    emit()
+  }
+}
+
+let soonTimer = 0
+/**
+ * A quiet check a few seconds after something that might pay (a reply sent,
+ * an order marked shipped). Several in a row make one request.
+ */
+export function powersSoon() {
+  if (typeof window === 'undefined' || !state?.enabled || !state.eligible) return
+  window.clearTimeout(soonTimer)
+  soonTimer = window.setTimeout(() => void powersCheck(), 4000)
+}
+
+// ── Time in Colvy ────────────────────────────────────────────────────────────
+// Once a minute, only while the tab is visible and the person has clicked,
+// typed, scrolled or touched in the last two minutes, the page tells the
+// server "a minute of real use". One open tab beats for all of them (the
+// others see its timestamp and stay quiet), and the server counts at most one
+// a minute anyway. A tab left open over lunch counts nothing.
+const BEAT_KEY = 'colvy:powers-beat'
+let lastInput = 0
+let beatStop = false
+const markInput = () => { lastInput = Date.now() }
+async function beat(co: string) {
+  if (beatStop || !state?.enabled || !state.eligible || co !== companyId) return
+  if (!state.rules?.some(r => r.id === 'active' || r.id === 'time')) return
+  if (document.visibilityState !== 'visible' || Date.now() - lastInput > 120_000) return
+  try {
+    const other = Number(localStorage.getItem(BEAT_KEY) || 0)
+    if (Date.now() - other < 45_000) return
+    localStorage.setItem(BEAT_KEY, String(Date.now()))
+  } catch {}
+  try {
+    const r = await authFetch('/api/powers/beat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId: co }) })
+    if (!r.ok) return
+    const d = await r.json()
+    if (d.setup || d.enabled === false) { beatStop = true; return }
+    showResults(d)
+  } catch {}
+}
+
+/** Mounted once (the top-bar chip). Does nothing while Powers is off. */
+export function usePowersHeartbeat(company: string | null | undefined, on: boolean) {
+  useEffect(() => {
+    if (!company || !on) return
+    beatStop = false
+    lastInput = Date.now()
+    const evs = ['pointerdown', 'keydown', 'wheel', 'touchstart', 'scroll'] as const
+    let throttle = 0
+    const onInput = () => { const t = Date.now(); if (t - throttle > 5000) { throttle = t; markInput() } }
+    evs.forEach(e => window.addEventListener(e, onInput, { passive: true, capture: true }))
+    const iv = window.setInterval(() => void beat(company), 60_000)
+    return () => { window.clearInterval(iv); evs.forEach(e => window.removeEventListener(e, onInput, { capture: true } as any)) }
+  }, [company, on])
 }
 
 // A live "something changed" ping between teammates' screens, over the

@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
     const byUser = new Map((wallets.data || []).map((w: any) => [w.user_id, w]))
     const names = new Map(team.map(m => [m.id, m.name]))
     return json({
-      enabled: st.enabled, enabledAt: st.enabledAt, config: st.config,
+      enabled: st.enabled, enabledAt: st.enabledAt, config: st.config, features: st.features,
       team: team.map(m => {
         const w: any = byUser.get(m.id) || { coins: 0, xp: 0, streak: 0 }
         const lv = levelFor(w.xp)
@@ -68,7 +68,7 @@ export async function PATCH(req: NextRequest) {
     const what = enabled !== before.enabled ? (enabled ? 'Turned Colvy Powers on' : 'Turned Colvy Powers off') : 'Changed the Colvy Powers settings'
     await audit(req, db, body.companyId, 'powers_settings_updated', what, { enabled })
     const st = await loadPowers(db, body.companyId)
-    return json({ enabled: st.enabled, enabledAt: st.enabledAt, config: st.config })
+    return json({ enabled: st.enabled, enabledAt: st.enabledAt, config: st.config, features: st.features })
   } catch (e: any) {
     if (isMissingPowersSchema(e)) return json({ setup: true, error: MIGRATION_HINT }, 503)
     return json({ error: e?.message || 'Could not save.' }, 500)
