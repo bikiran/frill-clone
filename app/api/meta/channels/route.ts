@@ -87,8 +87,14 @@ export async function POST(req: NextRequest) {
       const status = igLogin
         ? await getInstagramSubscription(String(row.ig_account_id), row.page_access_token)
         : await getPageSubscription(String(row.page_id), row.page_access_token)
-      // Keep the connection's error line in step with what Meta just said.
-      await db.from('meta_channels').update({ last_error: status.subscribed ? null : (subscribeError || status.error || 'Not subscribed to webhooks: new messages won’t arrive.') }).eq('id', id)
+      // Keep the connection's error line in step with what Meta just said. A
+      // Facebook Page subscribed for comments only (no "messages" field) gets
+      // no Messenger messages, so say so.
+      const noMessages = status.subscribed && !igLogin && row.platform === 'facebook' && !status.fields.includes('messages')
+      const line = !status.subscribed
+        ? (subscribeError || status.error || 'Not subscribed to webhooks: new messages won’t arrive.')
+        : noMessages ? (subscribeError || 'Subscribed for comments only: Messenger messages won’t arrive. Connect Facebook again so Colvy gets the Messenger permission, then Subscribe now.') : null
+      await db.from('meta_channels').update({ last_error: line }).eq('id', id)
       return NextResponse.json({
         ...status, subscribeError, checkedAt: new Date().toISOString(),
         endpoint: igLogin ? `GET graph.instagram.com/${row.ig_account_id}/subscribed_apps` : `GET graph.facebook.com/${row.page_id}/subscribed_apps`,
