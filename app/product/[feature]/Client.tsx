@@ -9,6 +9,7 @@ import SeoFaqSection from '@/components/marketing/SeoFaqSection'
 import MarketingNav from '@/components/MarketingNav'
 import FeatureMockup, { MockKind } from '@/components/FeatureMockups'
 import FeatureIcon from '@/components/FeatureIcon'
+import AutomationCanvas from '@/components/marketing/AutomationCanvas'
 import { SellioStyles, SPill, SGhost, STrust, SHead, SBento, SSteps, SLinkRow, SCta, SExplore } from '@/components/marketing/Sellio'
 
 // Feature deep-dive page (ideas / roadmap / announcements / knowledgebase),
@@ -23,6 +24,7 @@ const PINK = '#ff4d8d'
 const CYAN = '#0891b2'
 const TEAL = '#0d9488'
 const INDIGO = '#4f46e5'
+const AMBER = '#d97706'
 const INK = '#0f1119'
 
 const PAGES: Record<string, any> = {
@@ -438,18 +440,52 @@ const PAGES: Record<string, any> = {
     cta: 'Send campaigns people reply to',
   },
   automation: {
-    icon: 'target', color: TEAL, mock: 'automation', subtitle: 'Automation',
-    title: 'Let the routine run itself',
-    hero: 'Auto-route conversations, send follow-ups, request reviews and trigger actions on the events that matter — set it once, it runs always.',
+    icon: 'flow', color: TEAL, mock: 'automation', subtitle: 'Automations', isNew: true, showcase: 'automation',
+    title: 'Draw it once. It runs every time',
+    hero: 'A visual, drag-and-drop builder for what happens when a customer writes in or a call is missed. Reply, assign, tag, create a task, wait, or hand it to Colvy AI, on every channel.',
     features: [
-      { icon: 'target', title: 'Auto-routing', desc: 'Send each chat to the right team.' },
-      { icon: 'bell', title: 'Follow-ups', desc: 'Nudge quotes and check-ins on autopilot.' },
-      { icon: 'link', title: 'Event triggers', desc: 'When this happens, do that.' },
-      { icon: 'lock', title: 'You stay in control', desc: 'Test, pause or tweak anytime.' },
-      { icon: 'calendar', title: 'Scheduled replies', desc: 'Queue a message for the right moment, on any channel.' },
-      { icon: 'inbox', title: 'Reopens on new activity', desc: 'A closed chat comes back to Open when the customer writes or orders.' },
+      { icon: 'flow', title: 'Drag, drop, join', desc: 'Drag steps onto the canvas and draw a line from one to the next. Pan, pinch and zoom, on a computer or a phone.' },
+      { icon: 'split', title: 'Yes or no checks', desc: 'The message mentions a word, it came in on a channel, you’re open or closed, a customer tag, a new customer, still waiting for a reply.' },
+      { icon: 'bolt', title: 'Real actions', desc: 'Reply with their first name, assign a teammate, tag them, create a task, add a note, notify the team or close the chat.' },
+      { icon: 'clock', title: 'Waits', desc: 'Wait 15 minutes, a day or a week, then check again: has anyone replied yet?' },
+      { icon: 'play', title: 'Try it first', desc: 'Type a made-up message and watch the path it takes light up. Nothing is sent.' },
+      { icon: 'ai', title: 'Works with Colvy AI', desc: 'Send refunds to a person and let Colvy AI answer the rest. Colvy AI stays quiet when an automation has already replied.' },
+      { icon: 'inbox', title: 'Every channel', desc: 'Website chat, SMS, Messenger, Instagram, WhatsApp, email and missed calls.' },
+      { icon: 'chart', title: 'Runs you can read', desc: 'Every run, step by step, for each customer, with a link to the conversation.' },
+      { icon: 'shield', title: 'Safe by default', desc: 'Once per message, a cool-down per conversation, and never for spam or anyone who opted out of texts.' },
     ],
-    cta: 'Automate the busywork',
+    steps: [
+      { title: 'Pick a starting point', desc: 'After-hours reply, refunds to a person, nobody replied in 15 minutes, welcome new customers, missed-call follow-up, or a blank canvas.' },
+      { title: 'Make it yours', desc: 'Drag in checks and actions, join them up, and write the replies in your own words. It saves as you go.' },
+      { title: 'Try it', desc: 'Walk a made-up message through it and see exactly which steps would run.' },
+      { title: 'Switch it on', desc: 'It goes live once nothing is left to fix, and Runs shows what it did for each customer.' },
+    ],
+    related: [{ label: 'AI agents', href: '/ai-agents' }, { label: 'Missed-call text back', href: '/phones/missed-call-text-back' }, { label: 'Shared inbox', href: '/product/inbox' }, { label: 'Colvy Powers', href: '/product/powers' }],
+    cta: 'Build your first automation',
+  },
+  powers: {
+    icon: 'trophy', color: AMBER, mock: 'powers', subtitle: 'Colvy Powers', isNew: true,
+    title: 'Serious about work. Playful about teamwork',
+    hero: 'Team rewards for the work that matters to customers. Your team earns XP and coins for real replies, resolved chats, calls, tasks and happy reviews, then spends coins on small, friendly power-ups.',
+    features: [
+      { icon: 'coin', title: 'Earned from real work', desc: 'Replying to customers, resolving conversations, answering calls, finishing tasks and jobs, fulfilling orders and happy reviews that name you.' },
+      { icon: 'trophy', title: 'Levels and leaderboards', desc: 'Fifty levels from Rookie to Colvy Master, and weekly or monthly leaderboards by XP, replies, calls, tasks or orders.' },
+      { icon: 'pin', title: 'Power-ups', desc: 'Priority Pin a chat to the top of a teammate’s inbox, send a Nudge, a Confetti Bomb or a Spotlight, or wear a VIP Crown.' },
+      { icon: 'flame', title: 'Streaks and badges', desc: 'Earn something every day to keep a streak, and collect badges like Inbox hero and Team favourite.' },
+      { icon: 'target', title: 'Challenges', desc: 'Set daily, weekly or whole-team goals, like “close 8 conversations today”, with their own rewards.' },
+      { icon: 'thumbsup', title: 'Say thanks', desc: 'Teammates thank each other for a hand with a tricky customer, and the thanks pays coins.' },
+      { icon: 'shield', title: 'Hard to game', desc: 'One-word replies, AI replies, self-made tasks ticked straight away and reopened chats don’t pay. Daily limits on everything.' },
+      { icon: 'moon', title: 'Never in the way', desc: 'Focus Shield pauses the fun for 30 minutes, and customer messages always come first. Reduced motion is respected.' },
+      { icon: 'lock', title: 'Yours to set', desc: 'Off until you switch it on. Choose what earns what, prices, limits, who takes part and who sees the leaderboard.' },
+    ],
+    steps: [
+      { title: 'Switch it on', desc: 'In Settings → Colvy Powers. Only work done after that point earns anything.' },
+      { title: 'Work as usual', desc: 'Replies, resolved chats, calls, tasks and orders earn XP and coins as they happen. A coin pops in the top bar.' },
+      { title: 'Spend coins', desc: 'On power-ups for a teammate, the whole team or yourself, each with a cooldown and a daily limit.' },
+      { title: 'Celebrate', desc: 'Levels, badges, streaks and the weekly leaderboard, or team totals only if you prefer.' },
+    ],
+    related: [{ label: 'Tasks', href: '/product/tasks' }, { label: 'Shared inbox', href: '/product/inbox' }, { label: 'Insights', href: '/product/insights' }, { label: 'Automations', href: '/product/automation' }],
+    cta: 'Switch on Colvy Powers',
   },
 }
 
@@ -557,6 +593,9 @@ export default function FeaturePage() {
           </div>
         </div>
       </section>
+
+      {/* A live piece of the product, when the page has one (the automation canvas). */}
+      {page.showcase === 'automation' && <div style={{ background: bg }}><AutomationCanvas dark={dark} text={text} muted={muted} /></div>}
 
       {/* FEATURES — bento grid on a soft band in the page's colour */}
       <section style={{ padding: 'clamp(72px, 10vw, 120px) 24px', background: dark ? '#0d0e17' : `linear-gradient(180deg, ${color}0f, ${color}05)` }}>

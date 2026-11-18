@@ -27,6 +27,8 @@ export const PICKED_GUIDES: Record<string, string[]> = {
   'phones/voip': ['virtual-phone-number-australia'],
   'product/orders': ['order-update-notifications'],
   'product/notes': ['internal-notes-voice-notes'],
+  'product/automation': ['automations-builder-guide', 'customer-service-automation-small-business', 'after-hours-auto-reply-examples'],
+  'product/powers': ['colvy-powers-team-rewards'],
 }
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
