@@ -72,16 +72,16 @@ function Flow() {
     <div className="js-stack" style={{ width: 330 }}>
       <div className="js-ui js-canvas">
         <svg viewBox="0 0 330 150" width="330" height="150" style={{ position: 'absolute', inset: 0 }} aria-hidden>
-          <path d="M112 41 C 128 41, 120 75, 136 75" className="js-wire" />
-          <path d="M226 66 C 244 66, 236 34, 252 34" className="js-wire" />
-          <path d="M226 84 C 244 84, 236 116, 252 116" className="js-wire" />
-          <path d="M112 41 C 128 41, 120 75, 136 75" pathLength={100} className="js-wire-on" style={a('js-wire-run', 0.5)} />
-          <path d="M226 66 C 244 66, 236 34, 252 34" pathLength={100} className="js-wire-on yes" style={a('js-wire-run', 1.5)} />
+          <path d="M98 41 C 106 41, 104 75, 112 75" className="js-wire" />
+          <path d="M210 66 C 220 66, 218 34, 228 34" className="js-wire" />
+          <path d="M210 84 C 220 84, 218 116, 228 116" className="js-wire" />
+          <path d="M98 41 C 106 41, 104 75, 112 75" pathLength={100} className="js-wire-on" style={a('js-wire-run', 0.5)} />
+          <path d="M210 66 C 220 66, 218 34, 228 34" pathLength={100} className="js-wire-on yes" style={a('js-wire-run', 1.5)} />
         </svg>
-        {node(10, 22, CORAL, 'When', 'Customer writes', 0)}
-        {node(136, 56, PINK, 'Check', 'Mentions “refund”', 0.9)}
-        {node(252, 16, BLUE, 'Then', 'Assign to Jamie', 2.0, { width: 70 })}
-        {node(252, 98, '#9b5cff', 'Else', 'Colvy AI', -1, { width: 70, opacity: 0.55 })}
+        {node(8, 22, CORAL, 'When', 'Customer writes', 0, { width: 90 })}
+        {node(112, 56, PINK, 'Check', 'Mentions “refund”', 0.9, { width: 98 })}
+        {node(228, 14, BLUE, 'Then', 'Assign to Jamie', 2.0, { width: 96 })}
+        {node(228, 98, '#9b5cff', 'Else', 'Colvy AI', -1, { width: 96, opacity: 0.55 })}
         <span className="js-yes" style={a('js-pop', 1.4)}>Yes</span>
       </div>
       <div className="js-toast js-booked" style={a('js-pop', 2.6)}>
@@ -102,8 +102,8 @@ function Power() {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 800, fontSize: 12.5 }}>Casey</div>
             <div style={{ position: 'relative', height: 15, fontSize: 10.5, color: '#8a8f9c' }}>
-              <span className="js-la" style={a('js-label-a', -0.65, { position: 'absolute' })}>Specialist · 6,420 XP</span>
-              <span className="js-lb" style={a('js-label-b', -0.65, { position: 'absolute', color: '#b45309', fontWeight: 800 })}>Level up! 🎉</span>
+              <span className="js-la" style={a('js-label-a', -0.65, { position: 'absolute', whiteSpace: 'nowrap' })}>Specialist · 6,420 XP</span>
+              <span className="js-lb" style={a('js-label-b', -0.65, { position: 'absolute', whiteSpace: 'nowrap', color: '#b45309', fontWeight: 800 })}>Level up! 🎉</span>
             </div>
           </div>
           <span className="js-chip" style={{ background: '#fff4d6', color: '#a16207' }}>🪙 <span style={{ position: 'relative', display: 'inline-block', width: 22, height: 13 }}><span className="js-la" style={a('js-label-a', -1.35, { position: 'absolute', left: 0 })}>248</span><span className="js-lb" style={a('js-label-b', -1.35, { position: 'absolute', left: 0 })}>258</span></span></span>
@@ -482,14 +482,14 @@ const CSS = `
 .js-wk{flex:1;text-align:center;padding:6px 0;border-radius:9px;background:#fff1ec;color:#c2410c;font-size:10.5px;font-weight:800;box-shadow:0 0 0 1px #ffd8cb inset}
 
 .js-canvas{position:relative;width:330px;height:150px;padding:0;background:#f6f6f8;background-image:radial-gradient(circle,#d9d9de 1px,transparent 1.2px);background-size:12px 12px;overflow:hidden}
-.js-node{position:absolute;width:102px;display:flex;align-items:center;gap:7px;padding:7px 8px;border-radius:11px;background:#fff;box-shadow:0 0 0 1.5px #e7e7ea,0 6px 14px -8px rgba(15,17,25,.3);font-size:10px;line-height:1.15}
+.js-node{position:absolute;width:102px;display:flex;align-items:center;gap:6px;padding:7px;border-radius:11px;background:#fff;box-shadow:0 0 0 1.5px #e7e7ea,0 6px 14px -8px rgba(15,17,25,.3);font-size:10px;line-height:1.15}
 .js-node i{display:block;font-style:normal;font-size:8px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--nc)}
 .js-node b{display:block;font-size:10.5px;font-weight:800;color:${INK}}
-.js-nic{flex:0 0 auto;width:20px;height:20px;border-radius:7px}
+.js-nic{flex:0 0 auto;width:16px;height:16px;border-radius:6px}
 .js-wire{fill:none;stroke:#c9c9d1;stroke-width:1.6}
 .js-wire-on{fill:none;stroke:${CORAL};stroke-width:2.6;stroke-linecap:round;stroke-dasharray:100;stroke-dashoffset:100}
 .js-wire-on.yes{stroke:#16a34a}
-.js-yes{position:absolute;left:204px;top:38px;padding:2px 7px;border-radius:99px;background:#dcfce7;color:#15803d;font-size:9.5px;font-weight:800}
+.js-yes{position:absolute;left:196px;top:34px;padding:2px 7px;border-radius:99px;background:#dcfce7;color:#15803d;font-size:9.5px;font-weight:800}
 .js-coin{position:absolute;right:6px;top:0;padding:4px 9px;border-radius:99px;background:#fff4d6;color:#a16207;font-weight:900;font-size:12px;box-shadow:0 10px 24px rgba(0,0,0,.3);z-index:2}
 .js-lvl{position:relative;flex:0 0 auto;width:38px;height:38px;border-radius:50%;background:conic-gradient(${AMBER} 0 70%, #f1f2f6 70% 100%);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px}
 .js-lvl::before{content:'';position:absolute;inset:4px;border-radius:50%;background:#fff}
