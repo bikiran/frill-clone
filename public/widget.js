@@ -221,6 +221,10 @@
     else { popup.classList.remove('open'); popup.classList.remove('fullscreen', 'expanded', 'compact'); sizeMode = 'normal'; btn.style.display = ''; applyPosition(); renderBtn(false); notifyOpen(false) }
   }
 
+  // A page can open the chat itself, e.g. a "Chat now" button on a Colvy
+  // listing page: window.dispatchEvent(new Event('colvy:open')).
+  window.addEventListener('colvy:open', function () { if (!open) toggle() })
+
   // ── Drag the bubble to any of 6 zones ─────────────────────────────────────
   // Visitors can reposition the launcher: top/middle/bottom × left/right. The
   // choice is remembered per site.

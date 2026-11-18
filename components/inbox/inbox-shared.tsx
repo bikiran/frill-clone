@@ -25,6 +25,8 @@ export type Conversation = {
   page_url: string | null; page_title: string | null; page_history: any[]; page_seen_at?: string | null
   last_message: string | null; last_message_at: string
   unread_count: number; is_unread: boolean; updated_at: string
+  /** The Marketplace listing this conversation is about (V441). */
+  listing_id?: string | null
   contact?: Contact | null
 }
 export type Message = {

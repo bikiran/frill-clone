@@ -1,4 +1,5 @@
 import { internalHeaders } from '@/lib/internal-call'
+import { creditListingPayment } from '@/lib/listings-server'
 // Shared "a chat payment just succeeded" handler, used by BOTH the Stripe
 // webhook and the verify-payment reconciler so the two paths can't diverge or
 // double-fire. It:
@@ -199,6 +200,9 @@ export async function confirmChatPayment(
       }
     }
   } catch { /* analytics only — never affect payment processing */ }
+  // Marketplace listings: a payment in a conversation about a listing is that
+  // listing's sale (lib/listings-server.ts; counted once per payment).
+  await creditListingPayment(db, { id: pay.id, company_id: pay.company_id, conversation_id: pay.conversation_id, amount_cents: pay.amount_cents })
 
   // Tell the business's integrations (Slack, webhooks, Zapier…).
   try {
