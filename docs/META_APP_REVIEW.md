@@ -163,3 +163,59 @@ comments on the business's Instagram posts, so staff can reply publicly, or
 reply privately where Meta allows it, from one place. It helps the user because
 customers asking questions in the comments get answered, and nothing gets lost
 under a busy post.
+
+---
+
+## 4. Customers' names and photos: Business Asset User Profile Access
+
+Messenger messages arrive with only an ID for the sender. Meta shares the
+sender's name and profile photo only with apps that have **Advanced Access to
+"Business Asset User Profile Access"**. Without it, Meta returns an empty
+profile and gives no error. Until then:
+
+- Colvy takes the name from the Page's conversation list, which needs only
+  `pages_messaging`. If that gives none, the customer shows as "Messenger
+  user".
+- There's no photo, so customers show their initials.
+- If the conversation is already linked to a customer, alerts use that
+  customer's name.
+
+The Page's card under **Settings → Channels → Instagram & Messenger** shows
+whether Meta is sharing them. It checks against the last person who messaged
+the Page.
+
+Meta's documentation says the feature needs App Review and a verified
+business.
+
+**Request it.** In the Meta dashboard, go to **App Review → Permissions and
+Features**, find **Business Asset User Profile Access** and choose **Request
+advanced access**. If the app's business isn't verified yet, Meta asks for
+that first.
+
+### Notes to paste
+
+**How Colvy uses it.** Colvy is a shared inbox for small businesses. When a
+customer messages the business's Facebook Page, Colvy shows the customer's name
+and profile photo beside their conversation and in the team's notifications.
+That way staff can tell customers apart, and know who they're answering. The
+name and photo are shown only to the business's own team, inside Colvy. They
+aren't used for advertising, and aren't shared with anyone else.
+
+**How it helps the user.** Without it, every customer appears as the same
+"Messenger user" with no photo. Staff can't tell who they're replying to, and
+two customers' questions get mixed up.
+
+### Screencast
+
+Use a test Facebook account that has a role on the app. Before approval, Meta
+normally lets the feature work for people with a role, but check that it does
+before recording. Record in English, with captions.
+
+1. From the test account, message the Page.
+2. In Colvy, show the conversation arriving in the inbox list with the
+   customer's name and profile photo. Caption: "Business Asset User Profile
+   Access: the customer's name and photo, so the team knows who they're
+   talking to."
+3. Open the conversation and show the name and photo at the top. Reply, and
+   show the reply arriving in Messenger.
+4. Show the team's notification naming the customer.

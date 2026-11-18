@@ -13,7 +13,7 @@ import BrandLogo from '@/components/BrandLogo'
 // Meta (GET /{page-id}/subscribed_apps) each time the page opens. Colvy
 // subscribes a Page automatically when it's connected; this shows the result,
 // lets you subscribe again, and shows Meta's response as returned.
-type SubStatus = { subscribed: boolean; fields: string[]; app: { id: string | null; name: string | null } | null; raw: any; error?: string; subscribeError?: string | null; checkedAt?: string; endpoint?: string; via?: string }
+type SubStatus = { subscribed: boolean; fields: string[]; app: { id: string | null; name: string | null } | null; raw: any; error?: string; subscribeError?: string | null; checkedAt?: string; endpoint?: string; via?: string; profile?: { shared: boolean; name: boolean } | null }
 function WebhookStatus({ channelId, active, onChanged }: { channelId: string; active: boolean; onChanged: () => void }) {
   const [st, setSt] = useState<SubStatus | null>(null)
   const [busy, setBusy] = useState<'' | 'check' | 'subscribe'>('check')
@@ -58,6 +58,15 @@ function WebhookStatus({ channelId, active, onChanged }: { channelId: string; ac
             : st.error ? <>{st.error}. </> : <>Colvy’s app isn’t in this account’s webhook subscriptions. </>}
           {time && <>Checked with Meta at {time}.</>}
           {st.subscribeError && <span style={{ color: '#b42318' }}> Subscribing failed: {st.subscribeError}</span>}
+        </p>
+      )}
+      {tone === 'ok' && st?.profile && (
+        <p style={{ margin: '3px 0 0 16px', fontSize: 12, color: 'var(--slate)', lineHeight: 1.5 }}>
+          {st.profile.shared
+            ? <>Customer names and photos: <b style={{ color: 'var(--ink)' }}>shared by Meta</b>.</>
+            : st.profile.name
+              ? <>Customer photos: <b style={{ color: 'var(--ink)' }}>not shared by Meta yet</b>, so customers show their initials. Names come from the conversation.</>
+              : <>Customer names and photos: <b style={{ color: 'var(--ink)' }}>not shared by Meta yet</b>, so new customers show as “Messenger user” until you add their name.</>}
         </p>
       )}
       {showRaw && st?.raw && (

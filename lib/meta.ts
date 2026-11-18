@@ -244,23 +244,27 @@ export async function fetchPageComment(
   } catch { return null }
 }
 
-// Fetch a sender's profile (name, avatar) so the contact isn't just an opaque id.
-// The sender's name and photo. The profile endpoint needs Meta's "Business
-// Asset User Profile Access" (granted in App Review); until then Meta refuses
-// it for anyone without a role on the app. So when it gives no name, ask the
-// Page's conversation list instead, whose participants carry the name with the
-// messaging permission alone. Meta's refusal is logged so it can be seen.
+// The sender's name and photo. Meta only shares them with apps that have
+// Advanced Access to its "Business Asset User Profile Access" feature (App
+// Review). Without it Meta doesn't refuse: it answers with no name and no
+// photo. So when there's no name, ask the Page's conversation list instead,
+// whose participants carry the name with the messaging permission alone (but
+// never a photo). `shared` says whether Meta's profile lookup gave anything,
+// for the Channels page. Meta's reason is logged when there's no name.
+export const PROFILE_NOT_SHARED = 'Meta didn’t share this person’s name or photo. It only does once the app has “Business Asset User Profile Access”.'
 export async function fetchMetaProfile(
   userId: string, pageToken: string, platform: 'facebook' | 'instagram', pageId?: string | null
-): Promise<{ name?: string; avatar?: string; error?: string }> {
-  let name: string | undefined, avatar: string | undefined, error: string | undefined
+): Promise<{ name?: string; avatar?: string; error?: string; shared: boolean }> {
+  let name: string | undefined, avatar: string | undefined, error: string | undefined, shared = false
   try {
-    const fields = platform === 'instagram' ? 'name,username,profile_pic' : 'first_name,last_name,profile_pic'
+    const fields = platform === 'instagram' ? 'name,username,profile_pic' : 'name,first_name,last_name,profile_pic'
     const res = await fetch(`${GRAPH}/${userId}?fields=${fields}&access_token=${encodeURIComponent(pageToken)}`)
     const d = await res.json().catch(() => ({}))
     if (res.ok) {
-      name = (platform === 'instagram' ? (d.name || d.username) : [d.first_name, d.last_name].filter(Boolean).join(' ')) || undefined
+      name = (platform === 'instagram' ? (d.name || d.username) : (d.name || [d.first_name, d.last_name].filter(Boolean).join(' '))) || undefined
       avatar = d.profile_pic || undefined
+      shared = !!(name || avatar)
+      if (!shared) error = PROFILE_NOT_SHARED
     } else {
       error = d?.error?.message || `Meta answered ${res.status}`
     }
@@ -273,13 +277,19 @@ export async function fetchMetaProfile(
       const people: any[] = d?.data?.[0]?.participants?.data || []
       const them = people.find(p => String(p.id) === String(userId))
       const found = them?.name || them?.username
-      if (found) { name = found; error = undefined }
+      if (found) name = found
       else if (!res.ok && !error) error = d?.error?.message || `Meta answered ${res.status}`
     } catch { /* keep the first error */ }
   }
   if (!name && error) console.warn('[meta] no name for', platform, 'sender', userId, '—', error)
-  return { name, avatar, error }
+  return { name, avatar, error: name ? undefined : error, shared }
 }
 
 /** The stand-in names used when Meta gives none, so a later message can try again. */
 export const PLACEHOLDER_META_NAMES = new Set(['Messenger user', 'Instagram user', 'Facebook user'])
+
+/** A contact's name if it's a real one: not empty and not one of the stand-ins. */
+export function realMetaName(n: unknown): string | null {
+  const s = typeof n === 'string' ? n.trim() : ''
+  return s && !PLACEHOLDER_META_NAMES.has(s) ? s : null
+}
