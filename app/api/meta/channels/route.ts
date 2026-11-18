@@ -1,7 +1,7 @@
 import { requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { isMetaConfigured, getPageSubscription, subscribePageWebhooks } from '@/lib/meta'
+import { isMetaConfigured, getPageSubscription, subscribePageWebhooks, fetchMetaProfile } from '@/lib/meta'
 import { isInstagramLoginConfigured, INSTAGRAM_REDIRECT_URI, isIgLoginChannel, getInstagramSubscription, subscribeInstagramWebhooks } from '@/lib/instagram-login'
 
 export const dynamic = 'force-dynamic'
@@ -95,8 +95,23 @@ export async function POST(req: NextRequest) {
         ? (subscribeError || status.error || 'Not subscribed to webhooks: new messages won’t arrive.')
         : noMessages ? (subscribeError || 'Subscribed for comments only: Messenger messages won’t arrive. Connect Facebook again so Colvy gets the Messenger permission, then Subscribe now.') : null
       await db.from('meta_channels').update({ last_error: line }).eq('id', id)
+      // Whether Meta shares customers' names and photos, tried on the person
+      // who last messaged this Page (Messenger only). Meta needs its "Business
+      // Asset User Profile Access" feature for that; without it, the name comes
+      // from the conversation and there's no photo. null: nobody to try on yet.
+      let profile: { shared: boolean; name: boolean } | null = null
+      if (!igLogin && row.platform === 'facebook') {
+        const { data: last } = await db.from('conversations').select('meta_user_id')
+          .eq('meta_channel_id', id).not('meta_user_id', 'is', null)
+          .order('last_message_at', { ascending: false }).limit(1)
+        const psid = last?.[0]?.meta_user_id
+        if (psid) {
+          const p = await fetchMetaProfile(String(psid), row.page_access_token, 'facebook', String(row.page_id))
+          profile = { shared: p.shared, name: !!p.name }
+        }
+      }
       return NextResponse.json({
-        ...status, subscribeError, checkedAt: new Date().toISOString(),
+        ...status, subscribeError, checkedAt: new Date().toISOString(), profile,
         endpoint: igLogin ? `GET graph.instagram.com/${row.ig_account_id}/subscribed_apps` : `GET graph.facebook.com/${row.page_id}/subscribed_apps`,
         via: igLogin ? 'instagram' : row.platform === 'instagram' ? 'page' : 'facebook',
       })

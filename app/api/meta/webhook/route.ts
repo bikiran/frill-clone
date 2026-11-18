@@ -2,7 +2,7 @@ import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
-import { META_VERIFY_TOKEN, META_APP_SECRET, fetchMetaProfile, fetchPageComment, PLACEHOLDER_META_NAMES } from '@/lib/meta'
+import { META_VERIFY_TOKEN, META_APP_SECRET, fetchMetaProfile, fetchPageComment, realMetaName } from '@/lib/meta'
 import { isIgLoginChannel, fetchInstagramUserProfile, fetchInstagramComment, INSTAGRAM_APP_SECRET } from '@/lib/instagram-login'
 import { linkContactIdentity } from '@/lib/identity'
 import { rehostRemoteMedia } from '@/lib/media-rehost'
@@ -161,32 +161,61 @@ export async function POST(req: NextRequest) {
 
         const companyId = channel.company_id
 
-        // Find-or-create the contact by their Meta user id.
+        // Find-or-create the contact by their Meta user id. Two contacts can
+        // carry the same id (nothing in the table stops it), so take a list and
+        // prefer one with a real name, rather than .maybeSingle(), which gives
+        // nothing at all when there are two.
         let contact: any = null
         const { data: existing } = await db.from('contacts').select('*')
-          .eq('company_id', companyId).eq('meta_user_id', senderId).maybeSingle()
-        contact = existing
+          .eq('company_id', companyId).eq('meta_user_id', senderId)
+          .order('created_at', { ascending: true }).limit(5)
+        contact = (existing || []).find((c: any) => realMetaName(c.name)) || existing?.[0] || null
+        // None, but they've written before and that conversation belongs to a
+        // customer (confirming a match moves the conversation, and the id only
+        // moves with it when the customer has none): that's who it is, rather
+        // than a new "Messenger user" beside them.
+        if (!contact) {
+          const { data: prior } = await db.from('conversations').select('contact_id')
+            .eq('company_id', companyId).eq('meta_user_id', senderId).not('contact_id', 'is', null)
+            .order('last_message_at', { ascending: false }).limit(1)
+          if (prior?.[0]?.contact_id) {
+            const { data } = await db.from('contacts').select('*').eq('id', prior[0].contact_id).eq('company_id', companyId).maybeSingle()
+            contact = data || null
+            // Same rule as confirming a match: the id goes on the customer
+            // only when they don't already carry one.
+            if (contact && !contact.meta_user_id) {
+              await db.from('contacts').update({ meta_user_id: senderId }).eq('id', contact.id).then(() => {}, () => {})
+              contact.meta_user_id = senderId
+            }
+          }
+        }
         const lookUp = () => isIgLoginChannel(channel)
           ? fetchInstagramUserProfile(senderId, channel.page_access_token)
           : fetchMetaProfile(senderId, channel.page_access_token, platform, channel.page_id)
+        // Meta's photo links expire within days, so keep a copy of the photo.
+        const keepPhoto = async (url?: string) => url ? ((await rehostRemoteMedia(db, url, 'meta-avatars'))?.url || url) : null
+        // A photo Meta gave on this message, so the conversation's contact can
+        // have it too (see below).
+        let freshPhoto: string | null = null
         if (!contact) {
           const prof: any = await lookUp()
+          freshPhoto = await keepPhoto(prof.avatar)
           const { data: created, error: createErr } = await db.from('contacts').insert({
             company_id: companyId,
             name: prof.name || (platform === 'instagram' ? 'Instagram user' : 'Messenger user'),
-            avatar_url: prof.avatar || null,
+            avatar_url: freshPhoto,
             meta_user_id: senderId,
             source: platform,
           }).select().maybeSingle()
           if (createErr) console.warn('[meta] contact not created', createErr.message)
           contact = created
-        } else if (!contact.name || PLACEHOLDER_META_NAMES.has(contact.name) || !contact.avatar_url) {
+        } else if (!realMetaName(contact.name) || !contact.avatar_url) {
           // No real name (Meta refused it last time) or no photo yet: ask again,
           // and only fill what's missing; a name someone typed in is kept.
           const prof: any = await lookUp()
           const patch: Record<string, any> = {}
-          if (prof.name && (!contact.name || PLACEHOLDER_META_NAMES.has(contact.name))) patch.name = prof.name
-          if (prof.avatar && !contact.avatar_url) patch.avatar_url = prof.avatar
+          if (prof.name && !realMetaName(contact.name)) patch.name = prof.name
+          if (prof.avatar && !contact.avatar_url) patch.avatar_url = freshPhoto = await keepPhoto(prof.avatar)
           if (Object.keys(patch).length) {
             await db.from('contacts').update(patch).eq('id', contact.id)
             Object.assign(contact, patch)
@@ -217,7 +246,7 @@ export async function POST(req: NextRequest) {
         if (!conv) {
           const { data: newConv } = await db.from('conversations').insert({
             company_id: companyId, channel: platform,
-            subject: `${platform === 'instagram' ? 'Instagram' : 'Messenger'} — ${contact?.name || 'DM'}`,
+            subject: `${platform === 'instagram' ? 'Instagram' : 'Messenger'} — ${realMetaName(contact?.name) || 'DM'}`,
             contact_id: contact?.id || null,
             meta_channel_id: channel.id,
             meta_user_id: senderId,
@@ -228,11 +257,27 @@ export async function POST(req: NextRequest) {
           }).select().maybeSingle()
           conv = newConv ? { ...newConv, __created: true } : null
         }
+        // The name the team sees. The inbox shows the conversation's contact,
+        // which isn't always the one keyed on this Meta id (a confirmed match
+        // moves the conversation onto the customer). Its name comes first; then
+        // this contact's, when it's a real one. Either can lack a photo, so a
+        // photo from Meta goes to whichever is missing one.
+        let convContact: any = null
+        if (conv?.contact_id && conv.contact_id !== contact?.id) {
+          const { data } = await db.from('contacts').select('id, name, avatar_url').eq('id', conv.contact_id).maybeSingle()
+          convContact = data || null
+        }
+        const shownName = realMetaName(convContact?.name) || realMetaName(contact?.name)
+        const photo = freshPhoto || contact?.avatar_url || null
+        if (convContact && !convContact.avatar_url && photo) {
+          await db.from('contacts').update({ avatar_url: photo }).eq('id', convContact.id).then(() => {}, () => {})
+        }
+
         // An existing conversation is marked unread / reopened only once its
         // message is actually saved (a duplicate must not bump the count).
         const touchConversation = conv && !conv.__created ? async () => {
           // Customer DM'd a closed enquiry — log the reopen before we flip it.
-          await logEnquiryReopened(db, { conversationId: conv.id, companyId, prevStatus: conv.status, actorName: contact?.name || null, via: platform === 'instagram' ? 'Instagram message' : 'Messenger message' })
+          await logEnquiryReopened(db, { conversationId: conv.id, companyId, prevStatus: conv.status, actorName: shownName, via: platform === 'instagram' ? 'Instagram message' : 'Messenger message' })
           await db.from('conversations').update({
             status: 'open', is_unread: true,
             unread_count: (conv.unread_count || 0) + 1,
@@ -253,7 +298,7 @@ export async function POST(req: NextRequest) {
         const { data: insertedMsg, error: insertErr } = await db.from('messages').insert({
           conversation_id: conv.id, company_id: companyId,
           sender_type: 'visitor',
-          sender_name: contact?.name || null,
+          sender_name: shownName,
           content: text,
           delivery_channel: platform,
           meta_message_id: mid,
@@ -269,7 +314,7 @@ export async function POST(req: NextRequest) {
         // Small copies of any photos for the inbox tiles (after the response;
         // the payload is signed, and Meta's links expire, so do it now).
         scheduleMessageThumbs(db, insertedMsg?.id, attachments, { trusted: true })
-        await emitInboundEvent(db, { companyId, conversationId: conv.id, text, channel: platform, name: contact?.name || null, messageId: insertedMsg?.id || null })
+        await emitInboundEvent(db, { companyId, conversationId: conv.id, text, channel: platform, name: shownName, messageId: insertedMsg?.id || null })
 
         // The Support / Reception Agent, if the business switched it on for this
         // channel (lib/agent/inbound.ts decides; a burst of messages is one run).
@@ -325,7 +370,7 @@ export async function POST(req: NextRequest) {
 
         // Alert the team: in-app bell + a phone push carrying conversationId, so
         // the notification gets the Reply / Mark-read quick actions.
-        const who = contact?.name || (platform === 'instagram' ? 'an Instagram user' : 'a Facebook user')
+        const who = shownName || (platform === 'instagram' ? 'an Instagram user' : 'a Facebook user')
         const channelName = platform === 'instagram' ? 'Instagram' : 'Facebook'
         try {
           await notifyCompany({
