@@ -221,3 +221,33 @@ before recording. Record in English, with captions.
 3. Open the conversation and show the name and photo at the top. Reply, and
    show the reply arriving in Messenger.
 4. Show the team's notification naming the customer.
+
+---
+
+## 5. "Feature unavailable: Facebook Login is currently unavailable for this app"
+
+Facebook shows this on its own login screen, before Colvy is involved. It
+usually works for you (an admin of the Meta app) but not for a teammate or a
+customer business connecting their own Page. Usual causes, most likely first:
+
+1. **A permission Colvy asks for only has Standard Access.** Standard Access
+   works only for people with a role on the app. In the Meta dashboard, go to
+   **App Review → Permissions and Features**. Every permission Colvy requests
+   needs **Advanced Access**: `public_profile`, `pages_show_list`,
+   `pages_read_engagement`, `pages_manage_metadata`, `pages_manage_engagement`,
+   and `pages_messaging` (when it's in `META_EXTRA_SCOPES`). Approved
+   permissions can be switched to Advanced Access there. Others need App
+   Review. Advanced Access needs a verified business.
+2. **The dashboard has required actions waiting**, such as a data use checkup,
+   a missing privacy policy URL, an app icon or a contact email. Meta can
+   restrict the app until they're done.
+3. **The app isn't Live.**
+4. **A temporary problem at Meta.** Try again later.
+
+**To connect a Page today, without waiting:** the person who owns the Page
+adds you (an app admin) to the Page with full control, in the Page's settings
+under **Page access**. Then you choose **Connect Facebook & Instagram** in
+Colvy and pick that Page. It connects with your login, and you set its outlet
+on the Page's card. Or add the teammate as a **Tester** under **App roles →
+Roles**. They accept the invitation at developers.facebook.com, and then the
+login works for them.
