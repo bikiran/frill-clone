@@ -77,6 +77,7 @@ export const OG_PHOTOS: Record<string, string> = {
   'product/tasks': '/photos/tasks.jpg',
   'product/broadcasts': '/photos/broadcasts.jpg',
   'product/automation': '/photos/automation.jpg',
+  'product/powers': '/photos/powers.jpg',
   'product/booking': '/solutions/bookings.jpg',
   'compare/podium': '/compare/hero.jpg',
   'compare/birdeye': '/compare/hero.jpg',

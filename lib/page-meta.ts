@@ -32,7 +32,8 @@ export const PRODUCT_META: Record<string, PageMeta> = {
   calendar: { title: 'Shared Calendar & Appointment Reminders', description: 'Schedule and manage appointments alongside your conversations in Colvy.' },
   tasks: { title: 'Tasks & Follow-ups from Customer Chats', description: 'Turn conversations into tasks and never drop a follow-up with Colvy.' },
   broadcasts: { title: 'Email & SMS Campaigns and Bulk SMS Broadcasts', description: 'Email and SMS campaigns built with Colvy AI: smart audiences, a drag-and-drop designer, texts from your Australian number and reports in orders and revenue.' },
-  automation: { title: 'Customer Messaging Automation', description: 'Automate replies, routing and follow-ups so your team focuses on the conversations that matter, with Colvy.' },
+  automation: { title: 'Visual Automation Builder for Customer Messages', description: 'Drag-and-drop automations for chat, SMS, Messenger, Instagram, WhatsApp, email and missed calls: reply, assign, tag, create tasks, wait or hand to Colvy AI.' },
+  powers: { title: 'Colvy Powers: Team Rewards, Levels and Leaderboards', description: 'Gamify customer service the healthy way: XP and coins for real replies, resolved chats, calls and tasks, plus levels, streaks, challenges and power-ups.' },
 }
 
 // /channels/<slug>

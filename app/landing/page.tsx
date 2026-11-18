@@ -440,9 +440,9 @@ export default function LandingPage() {
             {/* Left: copy */}
             <div style={{ maxWidth: 620 }}>
               {/* What's new, as a chip that opens it */}
-              <a href="/email-sms-marketing" className="cv-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 9, padding: '5px 12px 5px 5px', borderRadius: 999, marginBottom: 24, background: dark ? 'rgba(255,255,255,0.06)' : '#fff', boxShadow: dark ? 'inset 0 0 0 1px rgba(255,255,255,0.1)' : '0 6px 18px -8px rgba(15,17,25,0.18), inset 0 0 0 1px rgba(15,17,25,0.07)', color: text, fontSize: 13.5, fontWeight: 700, textDecoration: 'none' }}>
+              <a href="/product/automation" className="cv-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 9, padding: '5px 12px 5px 5px', borderRadius: 999, marginBottom: 24, background: dark ? 'rgba(255,255,255,0.06)' : '#fff', boxShadow: dark ? 'inset 0 0 0 1px rgba(255,255,255,0.1)' : '0 6px 18px -8px rgba(15,17,25,0.18), inset 0 0 0 1px rgba(15,17,25,0.07)', color: text, fontSize: 13.5, fontWeight: 700, textDecoration: 'none' }}>
                 <span style={{ padding: '4px 10px', borderRadius: 999, background: CORAL, color: '#fff', fontSize: 11.5, fontWeight: 800, letterSpacing: '0.02em' }}>New</span>
-                <span className="cv-lg">Email &amp; SMS campaigns, built with Colvy AI</span><span className="cv-sm">Email &amp; SMS campaigns</span>
+                <span className="cv-lg">Automations: a drag-and-drop builder for every channel</span><span className="cv-sm">Drag-and-drop automations</span>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }} aria-hidden><path d="M5 12h14M13 6l6 6-6 6" /></svg>
               </a>
               <h1 className="cv-h1" style={{ fontSize: 'clamp(46px, 6.8vw, 92px)', fontWeight: 900, lineHeight: 0.97, letterSpacing: '-0.035em', margin: '0 0 24px' }}>

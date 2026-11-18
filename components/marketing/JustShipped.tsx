@@ -1,7 +1,8 @@
 'use client'
 
 // Landing "Just shipped": the newest features as a bento of photo cards, each
-// with a small live piece of the product playing over its photo: the floor plan
+// with a small live piece of the product playing over its photo: an automation
+// lighting up its path, coins and a level-up from Colvy Powers, the floor plan
 // filling up, a guest tapping "I'm here", a quote being accepted, a sign-in
 // code arriving, a tax invoice printing, a repeat booking and a waitlist offer.
 //
@@ -17,13 +18,17 @@ const GREEN = '#00c48c'
 const BLUE = '#2b59ff'
 const CYAN = '#0891b2'
 const INDIGO = '#4f46e5'
+const TEAL = '#0d9488'
+const AMBER = '#f59e0b'
 const INK = '#0f1119'
 const MONO = 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace'
 
-type Key = 'res' | 'chk' | 'job' | 'acc' | 'rec' | 'reg'
+type Key = 'aut' | 'pow' | 'res' | 'chk' | 'job' | 'acc' | 'rec' | 'reg'
 type Feature = { key: Key; icon: keyof typeof ICONS; title: string; desc: string; cta: string; href: string; color: string; img: string }
 
 const FEATURES: Feature[] = [
+  { key: 'aut', icon: 'flow', title: 'Automations', desc: 'Draw what happens when a customer writes in or a call is missed: reply, assign, tag, create a task, wait or hand to Colvy AI. Try it, then switch it on.', cta: 'See automations', href: '/product/automation', color: TEAL, img: '/new/automation.webp' },
+  { key: 'pow', icon: 'trophy', title: 'Colvy Powers', desc: 'XP, coins, levels and friendly power-ups for real work: replies, resolved chats, calls, tasks and happy reviews.', cta: 'See Colvy Powers', href: '/product/powers', color: AMBER, img: '/new/powers.webp' },
   { key: 'res', icon: 'utensils', title: 'Table reservations', desc: 'A table booking page, a live floor plan, covers and pacing, deposits for bigger groups and no-show tools.', cta: 'See reservations', href: '/product/reservations', color: PINK, img: '/new/reservations.webp' },
   { key: 'chk', icon: 'hand', title: '“I’m here” check-in', desc: 'Guests tap “I’m here” on their booking page. Your team gets an alert and sees them as arrived.', cta: 'See check-in', href: '/product/check-in', color: GREEN, img: '/new/check-in.webp' },
   { key: 'job', icon: 'briefcase', title: 'Jobs & quotes', desc: 'Quotes customers accept online, a jobs board and calendar, clash checks, checklists, photos and sign-off.', cta: 'See jobs', href: '/product/jobs', color: BLUE, img: '/new/jobs.webp' },
@@ -33,6 +38,8 @@ const FEATURES: Feature[] = [
 ]
 
 const ICONS = {
+  flow: <><rect x="3" y="3" width="7" height="6" rx="1.5" /><rect x="14" y="15" width="7" height="6" rx="1.5" /><path d="M6.5 9v3a3 3 0 0 0 3 3H14" /></>,
+  trophy: <><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" /><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" /><path d="M18 2H6v7a6 6 0 0 0 12 0V2z" /></>,
   utensils: <><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" /><path d="M7 2v20" /><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" /></>,
   hand: <><path d="M18 11V6a2 2 0 0 0-4 0" /><path d="M14 10V4a2 2 0 0 0-4 0v2" /><path d="M10 10.5V6a2 2 0 0 0-4 0v8" /><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" /></>,
   briefcase: <><rect width="20" height="14" x="2" y="7" rx="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /></>,
@@ -52,6 +59,68 @@ const CYCLE = 9
 const a = (kf: string, d = 0, extra: CSSProperties = {}): CSSProperties => ({ animation: `${kf} ${CYCLE}s cubic-bezier(0.16,1,0.3,1) ${d}s infinite both`, ...extra })
 
 // ── The live pieces ─────────────────────────────────────────────────────────
+
+// An automation: the message comes in, the check says yes, the path lights up.
+function Flow() {
+  const node = (x: number, y: number, c: string, kind: string, title: string, d: number, extra: CSSProperties = {}) => (
+    <div className="js-node" style={{ left: x, top: y, ...(d >= 0 ? a('js-node-on', d) : {}), ['--nc' as string]: c, ...extra } as CSSProperties}>
+      <span className="js-nic" style={{ background: c }} />
+      <span><i>{kind}</i><b>{title}</b></span>
+    </div>
+  )
+  return (
+    <div className="js-stack" style={{ width: 330 }}>
+      <div className="js-ui js-canvas">
+        <svg viewBox="0 0 330 150" width="330" height="150" style={{ position: 'absolute', inset: 0 }} aria-hidden>
+          <path d="M112 41 C 128 41, 120 75, 136 75" className="js-wire" />
+          <path d="M226 66 C 244 66, 236 34, 252 34" className="js-wire" />
+          <path d="M226 84 C 244 84, 236 116, 252 116" className="js-wire" />
+          <path d="M112 41 C 128 41, 120 75, 136 75" pathLength={100} className="js-wire-on" style={a('js-wire-run', 0.5)} />
+          <path d="M226 66 C 244 66, 236 34, 252 34" pathLength={100} className="js-wire-on yes" style={a('js-wire-run', 1.5)} />
+        </svg>
+        {node(10, 22, CORAL, 'When', 'Customer writes', 0)}
+        {node(136, 56, PINK, 'Check', 'Mentions “refund”', 0.9)}
+        {node(252, 16, BLUE, 'Then', 'Assign to Jamie', 2.0, { width: 70 })}
+        {node(252, 98, '#9b5cff', 'Else', 'Colvy AI', -1, { width: 70, opacity: 0.55 })}
+        <span className="js-yes" style={a('js-pop', 1.4)}>Yes</span>
+      </div>
+      <div className="js-toast js-booked" style={a('js-pop', 2.6)}>
+        <span className="js-dot" style={{ background: GREEN }} />Live · assigned to Jamie
+      </div>
+    </div>
+  )
+}
+
+// Colvy Powers: a reply pays, the coins tick over, the level bar fills and levels up.
+function Power() {
+  return (
+    <div className="js-stack" style={{ width: 236, paddingTop: 22 }}>
+      <span className="js-coin" style={a('js-coin-fly', 0.6)}>+10 🪙</span>
+      <div className="js-ui" style={{ padding: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span className="js-lvl"><span className="js-la" style={a('js-label-a', -0.65, { position: 'absolute' })}>12</span><span className="js-lb" style={a('js-label-b', -0.65, { position: 'absolute' })}>13</span></span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 800, fontSize: 12.5 }}>Casey</div>
+            <div style={{ position: 'relative', height: 15, fontSize: 10.5, color: '#8a8f9c' }}>
+              <span className="js-la" style={a('js-label-a', -0.65, { position: 'absolute' })}>Specialist · 6,420 XP</span>
+              <span className="js-lb" style={a('js-label-b', -0.65, { position: 'absolute', color: '#b45309', fontWeight: 800 })}>Level up! 🎉</span>
+            </div>
+          </div>
+          <span className="js-chip" style={{ background: '#fff4d6', color: '#a16207' }}>🪙 <span style={{ position: 'relative', display: 'inline-block', width: 22, height: 13 }}><span className="js-la" style={a('js-label-a', -1.35, { position: 'absolute', left: 0 })}>248</span><span className="js-lb" style={a('js-label-b', -1.35, { position: 'absolute', left: 0 })}>258</span></span></span>
+        </div>
+        <div style={{ height: 7, borderRadius: 99, background: '#f1f2f6', overflow: 'hidden', marginTop: 11 }}>
+          <i style={a('js-xp', 0.3, { display: 'block', height: '100%', borderRadius: 99, background: `linear-gradient(90deg, ${AMBER}, ${CORAL})` })} />
+        </div>
+        <div style={{ display: 'flex', gap: 5, marginTop: 10 }}>
+          {['📌 Pin', '🎉 Confetti', '⚡ 2× XP'].map(t => <span key={t} className="js-chip">{t}</span>)}
+        </div>
+      </div>
+      <div className="js-alert" style={a('js-drop', 2.4, { position: 'absolute', left: -10, right: -10, bottom: -38 })}>
+        <span className="js-dot" style={{ background: AMBER }} /><span style={{ flex: 1 }}><b>Jamie</b> sent confetti 🎉</span>
+      </div>
+    </div>
+  )
+}
 
 const TABLES: { k: 'c' | 'r'; x: number; y: number; w?: number; h?: number; r?: number; seats: number; at: number }[] = [
   { k: 'c', x: 38, y: 36, r: 15, seats: 2, at: 0.5 },
@@ -204,7 +273,7 @@ function Regular() {
   )
 }
 
-const LIVE: Record<Key, ComponentType> = { res: FloorPlan, chk: CheckIn, job: Quote, acc: SignIn, rec: Receipt, reg: Regular }
+const LIVE: Record<Key, ComponentType> = { aut: Flow, pow: Power, res: FloorPlan, chk: CheckIn, job: Quote, acc: SignIn, rec: Receipt, reg: Regular }
 
 // ── The section ─────────────────────────────────────────────────────────────
 
@@ -262,7 +331,7 @@ export default function JustShipped({ dark }: { dark: boolean }) {
   }
 
   // "customer accounts." wears the gradient.
-  const words = 'New: tables, jobs and customer accounts.'.split(' ')
+  const words = 'New: automations you draw, and Colvy Powers.'.split(' ')
 
   return (
     <section ref={secRef} id="new" className={`js-sec${dark ? ' dk' : ''}`} style={{ scrollMarginTop: 80 }}>
@@ -279,7 +348,7 @@ export default function JustShipped({ dark }: { dark: boolean }) {
                 <Fragment key={i}><span className="js-w"><span style={{ transitionDelay: `${i * 0.07}s` }} className={i >= words.length - 2 ? 'js-grad' : ''}>{w}</span></span>{i < words.length - 1 ? ' ' : ''}</Fragment>
               ))}
             </h2>
-            <p className="js-lede">Table reservations for restaurants and cafés, jobs and quotes for trades, regular bookings and a waitlist for appointments, and an account page where your customers see it all, receipts included.</p>
+            <p className="js-lede">A drag-and-drop automation builder for every channel, team rewards that make busy days more fun, plus table reservations, jobs and quotes, regular bookings, and an account page where your customers see it all.</p>
           </div>
           <nav className="js-index" aria-label="What’s new">
             {FEATURES.map((f, i) => (
@@ -353,8 +422,8 @@ const CSS = `
 .js-index svg{opacity:.4;transition:opacity .2s, transform .2s}
 .js-index a:hover svg{opacity:1;transform:translateX(3px)}
 
-.js-bento{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:repeat(3,352px);gap:18px;grid-template-areas:"res res chk" "job acc chk" "job rec reg"}
-.js-res{grid-area:res}.js-chk{grid-area:chk}.js-job{grid-area:job}.js-acc{grid-area:acc}.js-rec{grid-area:rec}.js-reg{grid-area:reg}
+.js-bento{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:repeat(4,352px);gap:18px;grid-template-areas:"aut aut pow" "res res chk" "job acc chk" "job rec reg"}
+.js-aut{grid-area:aut}.js-pow{grid-area:pow}.js-res{grid-area:res}.js-chk{grid-area:chk}.js-job{grid-area:job}.js-acc{grid-area:acc}.js-rec{grid-area:rec}.js-reg{grid-area:reg}
 
 .js-card{--x:50%;--y:50%;position:relative;display:block;border-radius:26px;overflow:hidden;color:#fff;text-decoration:none;background:#151824;
   box-shadow:0 0 0 1px rgba(255,255,255,.09) inset, 0 30px 60px rgba(0,0,0,.35);
@@ -367,17 +436,19 @@ const CSS = `
 .js-card:hover .js-photo,.js-card.on .js-photo{transform:scale(1.08)}
 .js-tint{position:absolute;inset:0;background:var(--c);mix-blend-mode:soft-light;opacity:.5}
 .js-scrim{position:absolute;inset:0;background:linear-gradient(180deg,rgba(15,17,25,.25) 0%,rgba(15,17,25,.38) 40%,rgba(15,17,25,.93) 100%)}
-.js-res .js-scrim{background:linear-gradient(90deg,rgba(15,17,25,.94) 0%,rgba(15,17,25,.7) 42%,rgba(15,17,25,.22) 100%),linear-gradient(180deg,transparent 50%,rgba(15,17,25,.5))}
+.js-res .js-scrim,.js-aut .js-scrim{background:linear-gradient(90deg,rgba(15,17,25,.94) 0%,rgba(15,17,25,.7) 42%,rgba(15,17,25,.22) 100%),linear-gradient(180deg,transparent 50%,rgba(15,17,25,.5))}
 .js-spot{position:absolute;inset:0;opacity:0;transition:opacity .3s;background:radial-gradient(360px circle at var(--x) var(--y),color-mix(in srgb,var(--c) 34%,transparent),transparent 60%);mix-blend-mode:screen}
 .js-card:hover .js-spot{opacity:1}
 
 .js-zone{position:absolute;left:22px;right:22px;top:22px;height:150px;display:flex;align-items:flex-start;justify-content:flex-end;pointer-events:none}
 .js-chk .js-zone,.js-job .js-zone{height:auto;bottom:210px;align-items:center;justify-content:center}
-.js-res .js-zone{left:auto;right:40px;top:0;bottom:0;height:auto;width:330px;align-items:center;justify-content:center}
+.js-res .js-zone,.js-aut .js-zone{left:auto;right:40px;top:0;bottom:0;height:auto;width:330px;align-items:center;justify-content:center}
 .js-copy{position:absolute;left:24px;right:24px;bottom:22px;display:flex;flex-direction:column}
-.js-res .js-copy{right:auto;max-width:min(380px,48%);bottom:26px}
+.js-res .js-copy,.js-aut .js-copy{right:auto;max-width:min(380px,48%);bottom:26px}
 .js-title{display:flex;align-items:center;gap:10px;font-size:21px;font-weight:900;letter-spacing:-.02em;margin-bottom:8px}
-.js-res .js-title{font-size:clamp(24px,2.6vw,32px)}
+.js-res .js-title,.js-aut .js-title{font-size:clamp(24px,2.6vw,32px)}
+.js-aut .js-zone{width:360px}
+.js-pow .js-zone{height:auto;bottom:200px;align-items:center;justify-content:center}
 .js-ic{flex:0 0 auto;width:34px;height:34px;border-radius:11px;display:inline-flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--c) 30%,transparent);box-shadow:0 0 0 1px color-mix(in srgb,var(--c) 60%,transparent) inset;backdrop-filter:blur(6px)}
 .js-desc{font-size:14px;line-height:1.5;color:rgba(255,255,255,.78);margin-bottom:12px}
 .js-cta{display:inline-flex;align-items:center;gap:7px;font-size:13.5px;font-weight:800}
@@ -410,6 +481,24 @@ const CSS = `
   -webkit-mask:conic-gradient(from -45deg at bottom,#0000,#000 1deg 89deg,#0000 90deg) 50%/12px 100%;mask:conic-gradient(from -45deg at bottom,#0000,#000 1deg 89deg,#0000 90deg) 50%/12px 100%;border-radius:4px 4px 0 0}
 .js-wk{flex:1;text-align:center;padding:6px 0;border-radius:9px;background:#fff1ec;color:#c2410c;font-size:10.5px;font-weight:800;box-shadow:0 0 0 1px #ffd8cb inset}
 
+.js-canvas{position:relative;width:330px;height:150px;padding:0;background:#f6f6f8;background-image:radial-gradient(circle,#d9d9de 1px,transparent 1.2px);background-size:12px 12px;overflow:hidden}
+.js-node{position:absolute;width:102px;display:flex;align-items:center;gap:7px;padding:7px 8px;border-radius:11px;background:#fff;box-shadow:0 0 0 1.5px #e7e7ea,0 6px 14px -8px rgba(15,17,25,.3);font-size:10px;line-height:1.15}
+.js-node i{display:block;font-style:normal;font-size:8px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--nc)}
+.js-node b{display:block;font-size:10.5px;font-weight:800;color:${INK}}
+.js-nic{flex:0 0 auto;width:20px;height:20px;border-radius:7px}
+.js-wire{fill:none;stroke:#c9c9d1;stroke-width:1.6}
+.js-wire-on{fill:none;stroke:${CORAL};stroke-width:2.6;stroke-linecap:round;stroke-dasharray:100;stroke-dashoffset:100}
+.js-wire-on.yes{stroke:#16a34a}
+.js-yes{position:absolute;left:204px;top:38px;padding:2px 7px;border-radius:99px;background:#dcfce7;color:#15803d;font-size:9.5px;font-weight:800}
+.js-coin{position:absolute;right:6px;top:0;padding:4px 9px;border-radius:99px;background:#fff4d6;color:#a16207;font-weight:900;font-size:12px;box-shadow:0 10px 24px rgba(0,0,0,.3);z-index:2}
+.js-lvl{position:relative;flex:0 0 auto;width:38px;height:38px;border-radius:50%;background:conic-gradient(${AMBER} 0 70%, #f1f2f6 70% 100%);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px}
+.js-lvl::before{content:'';position:absolute;inset:4px;border-radius:50%;background:#fff}
+.js-lvl span{z-index:1}
+@keyframes js-wire-run{0%{stroke-dashoffset:100}10%,84%{stroke-dashoffset:0}92%,100%{stroke-dashoffset:100}}
+@keyframes js-node-on{0%{box-shadow:0 0 0 1.5px #e7e7ea,0 6px 14px -8px rgba(15,17,25,.3)}4%{box-shadow:0 0 0 2px var(--nc),0 0 0 6px color-mix(in srgb,var(--nc) 22%,transparent)}82%{box-shadow:0 0 0 2px var(--nc),0 0 0 6px color-mix(in srgb,var(--nc) 22%,transparent)}90%,100%{box-shadow:0 0 0 1.5px #e7e7ea,0 6px 14px -8px rgba(15,17,25,.3)}}
+@keyframes js-coin-fly{0%{opacity:0;transform:translateY(14px) scale(.8)}6%{opacity:1;transform:none}30%{opacity:1;transform:translateY(-4px)}40%,100%{opacity:0;transform:translateY(-16px)}}
+@keyframes js-xp{0%{width:32%}12%{width:100%}16%{width:4%}84%{width:4%}92%,100%{width:32%}}
+
 /* Paused until on screen */
 .js-card [style*="animation"]{animation-play-state:paused!important}
 .js-card.run [style*="animation"]{animation-play-state:running!important}
@@ -436,11 +525,8 @@ const CSS = `
 @media (max-width:1040px){
   .js-head{grid-template-columns:1fr;gap:26px}
   .js-index{display:none}
-  .js-bento{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:400px 470px 380px 360px;grid-template-areas:"res res" "chk job" "acc rec" "reg reg"}
+  .js-bento{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:400px 400px 470px 400px 400px;grid-template-areas:"aut aut" "res res" "chk job" "acc rec" "pow reg"}
   .js-chk .js-zone,.js-job .js-zone{bottom:196px}
-  .js-reg .js-copy{right:auto;max-width:48%}
-  .js-reg .js-zone{left:auto;right:30px;top:0;bottom:0;height:auto;align-items:center}
-  .js-reg .js-scrim{background:linear-gradient(90deg,rgba(15,17,25,.94) 0%,rgba(15,17,25,.6) 50%,rgba(15,17,25,.25) 100%)}
 }
 @media (max-width:680px){
   .js-wrap{padding:0}
@@ -448,11 +534,12 @@ const CSS = `
   .js-bento{display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;padding:6px 20px 24px;scroll-padding:0 20px}
   .js-bento::-webkit-scrollbar{display:none}
   .js-card{flex:0 0 min(84vw,340px);height:500px;scroll-snap-align:start}
-  .js-zone,.js-res .js-zone,.js-chk .js-zone,.js-job .js-zone,.js-reg .js-zone{left:16px;right:16px;top:16px;bottom:206px;width:auto;height:auto;align-items:center;justify-content:center}
-  .js-copy,.js-res .js-copy,.js-reg .js-copy{left:20px;right:20px;max-width:none;bottom:20px}
-  .js-res .js-scrim,.js-reg .js-scrim{background:linear-gradient(180deg,rgba(15,17,25,.25) 0%,rgba(15,17,25,.38) 40%,rgba(15,17,25,.93) 100%)}
-  .js-res .js-title{font-size:22px}
+  .js-zone,.js-res .js-zone,.js-aut .js-zone,.js-pow .js-zone,.js-chk .js-zone,.js-job .js-zone,.js-reg .js-zone{left:16px;right:16px;top:16px;bottom:206px;width:auto;height:auto;align-items:center;justify-content:center}
+  .js-copy,.js-res .js-copy,.js-aut .js-copy,.js-reg .js-copy{left:20px;right:20px;max-width:none;bottom:20px}
+  .js-res .js-scrim,.js-aut .js-scrim,.js-reg .js-scrim{background:linear-gradient(180deg,rgba(15,17,25,.25) 0%,rgba(15,17,25,.38) 40%,rgba(15,17,25,.93) 100%)}
+  .js-res .js-title,.js-aut .js-title{font-size:22px}
   .js-res .js-stack{transform:scale(.92)}
+  .js-aut .js-stack{transform:scale(.86)}
   .js-booked{left:-6px;right:auto;bottom:-22px}
   .js-dots{display:flex;justify-content:center;gap:8px;margin-top:2px}
   .js-dots button{width:8px;height:8px;border-radius:99px;border:none;padding:0;background:rgba(255,255,255,.28);cursor:pointer;transition:width .3s, background .3s}
@@ -464,6 +551,7 @@ const CSS = `
   .js-ripple,.js-ring,.js-la{display:none}
   .js-lb{opacity:1}
   .js-tbl{fill:${PINK};stroke:${PINK}}.js-tbl-n{fill:#fff}
+  .js-wire-on{stroke-dashoffset:0}.js-coin{display:none}
   .js-track .js-step:last-child{background:${BLUE};color:#fff}
 }
 `

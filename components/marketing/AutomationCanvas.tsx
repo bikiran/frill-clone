@@ -44,6 +44,7 @@ const ICON = {
   user: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
   check: 'M9 11l3 3L22 4 M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11',
   hand: 'M18 11V6a2 2 0 0 0-4 0v5 M14 10V4a2 2 0 0 0-4 0v6 M10 10.5V6a2 2 0 0 0-4 0v8 M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15',
+  arrow: 'M5 12h14 M13 6l6 6-6 6',
 }
 
 export default function AutomationCanvas({ dark = false, text, muted }: { dark?: boolean; text: string; muted: string }) {
@@ -227,9 +228,10 @@ export default function AutomationCanvas({ dark = false, text, muted }: { dark?:
     <section className={`ac${dark ? ' dark' : ''}`} style={{ color: text }}>
       <style>{AC_CSS}</style>
       <div className="ac-head">
-        <span className="ac-eyebrow">Automations</span>
-        <h2>Set it up once. Colvy handles the rest.</h2>
-        <p style={{ color: muted }}>When a customer writes in, Colvy sorts it, answers it or hands it to the right person. Grab a step and move it around.</p>
+        <span className="ac-eyebrow">Automations · New</span>
+        <h2>Draw it once. Colvy runs it every time.</h2>
+        <p style={{ color: muted }}>A drag-and-drop builder for what happens when a customer writes in or a call is missed: Colvy sorts it, answers it or hands it to the right person. Grab a step and move it around.</p>
+        <a className="ac-more" href="/product/automation">See the automation builder <Ico d={ICON.arrow} s={15} /></a>
       </div>
 
       <div ref={canvasRef} className="ac-canvas">
@@ -289,6 +291,10 @@ const AC_CSS = `
 .ac-eyebrow{display:inline-flex;padding:6px 14px;border-radius:999px;background:color-mix(in srgb,#ff6a4d 12%,transparent);color:#ff6a4d;font-size:13px;font-weight:700;letter-spacing:.02em}
 .ac-head h2{margin:0;font-size:clamp(30px,4.6vw,52px);font-weight:900;letter-spacing:-.03em;line-height:1.05;text-wrap:balance}
 .ac-head p{margin:0;font-size:clamp(16px,1.6vw,18.5px);line-height:1.6;max-width:600px}
+.ac-more{display:inline-flex;align-items:center;gap:7px;margin-top:2px;padding:10px 18px;border-radius:999px;background:var(--ink);color:var(--card);font-size:14.5px;font-weight:700;text-decoration:none;transition:transform .2s cubic-bezier(.34,1.6,.5,1),box-shadow .2s}
+.ac-more:hover{transform:translateY(-2px);box-shadow:0 10px 24px -10px rgba(0,0,0,.4)}
+.ac-more svg{transition:transform .2s}
+.ac-more:hover svg{transform:translateX(3px)}
 .ac-canvas{position:relative;max-width:1100px;height:480px;margin:0 auto;border-radius:28px;overflow:hidden;background-color:var(--bg);background-image:radial-gradient(var(--dot) 1.2px,transparent 1.3px);background-size:22px 22px;box-shadow:inset 0 0 0 1px var(--line);touch-action:pan-y}
 .ac-links{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
 .ac-link{fill:none;stroke:var(--link);stroke-width:1.6}

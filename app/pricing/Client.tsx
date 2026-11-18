@@ -31,7 +31,7 @@ const INK = '#0f1119'
 const TIERS = [
   { id: 'free', name: 'Free', tagline: 'Try the feedback suite', accent: '#6b7280', monthly: 0, annual: 0, badge: null, cta: 'Get started free', smsNote: false, features: ['Ideas & feedback board', 'Public roadmap', 'Announcements / changelog', '1 poll & 1 survey', 'Help center (10 articles)', 'Feedback widget', '2 team members', 'Community support'] },
   { id: 'feedback', name: 'Feedback', tagline: 'For product & feedback teams', accent: PURPLE, monthly: 39, annual: 29, badge: null, cta: 'Start free trial', smsNote: false, features: ['Everything in Free', 'Unlimited ideas & voting', 'Unlimited polls, surveys & forms', 'Private + public roadmaps', 'Unlimited help center articles', 'Customisable widget', 'Remove Colvy branding', 'Unlimited team members', 'Email support'] },
-  { id: 'omnichannel', name: 'Inbox', tagline: 'For sales & support teams', accent: BLUE, monthly: 179, annual: 149, badge: null, cta: 'Start free trial', smsNote: true, features: ['Live chat inbox', 'Contacts & CRM', 'SMS & voice calls', soonLabel('WhatsApp', 'whatsapp'), '3,000 SMS / month included*', 'WooCommerce sync', 'Broadcast & scheduled campaigns', 'Online booking & deposits', 'Five AI agents (support, bookings, sales, orders, reviews)', 'AI flow automation', 'Review dashboard', 'Unlimited team members', 'Priority support'] },
+  { id: 'omnichannel', name: 'Inbox', tagline: 'For sales & support teams', accent: BLUE, monthly: 179, annual: 149, badge: null, cta: 'Start free trial', smsNote: true, features: ['Live chat inbox', 'Contacts & CRM', 'SMS & voice calls', soonLabel('WhatsApp', 'whatsapp'), '3,000 SMS / month included*', 'WooCommerce sync', 'Broadcast & scheduled campaigns', 'Online booking & deposits', 'Five AI agents (support, bookings, sales, orders, reviews)', 'Drag-and-drop automation builder', 'Review dashboard', 'Unlimited team members', 'Priority support'] },
   { id: 'everything', name: 'Everything', tagline: 'The full Colvy platform', accent: CORAL, monthly: 259, annual: 209, badge: 'Best value', cta: 'Start free trial', smsNote: true, features: ['Feedback suite + Inbox', 'All five AI agents', '3,000 SMS / month included*', 'White-label branding', 'Custom domain', 'Advanced analytics', 'AI writing assistant', 'Unlimited team members', 'Priority support'] },
 ]
 
@@ -66,7 +66,7 @@ const COMPARE: { group: string; rows: { label: string; cells: (boolean | string)
     { label: 'Back-in-stock waitlists (WooCommerce & Shopify)', cells: [false, false, true, true] },
     { label: 'Abandoned cart capture (WooCommerce & Shopify)', cells: [false, false, true, true] },
     { label: 'Broadcast & scheduled campaigns', cells: [false, false, true, true] },
-    { label: 'AI flow automation', cells: [false, false, true, true] },
+    { label: 'Drag-and-drop automation builder (every channel)', cells: [false, false, true, true] },
     { label: 'Review dashboard', cells: [false, false, true, true] },
     { label: 'Online booking, deposits & reminders', cells: [false, false, true, true] },
   ] },
@@ -82,6 +82,7 @@ const COMPARE: { group: string; rows: { label: string; cells: (boolean | string)
     { label: 'Custom domain', cells: [false, false, false, true] },
     { label: 'Advanced analytics', cells: [false, false, false, true] },
     { label: 'AI writing assistant', cells: [false, false, false, true] },
+    { label: 'Colvy Powers: team rewards, levels & power-ups', cells: [true, true, true, true] },
     { label: 'Team members', cells: ['2', 'Unlimited', 'Unlimited', 'Unlimited'] },
     { label: 'Support', cells: ['Community', 'Email', 'Priority', 'Priority'] },
   ] },

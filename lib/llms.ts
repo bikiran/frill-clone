@@ -97,6 +97,8 @@ const PAGES: { label: string; path: string; note: string }[] = [
   { label: 'Jobs & quotes', path: '/product/jobs', note: 'quotes accepted online and jobs for trades and home services' },
   { label: 'Customer accounts', path: '/product/customer-accounts', note: 'a self-service account page for a business’s customers' },
   { label: 'Receipts & tax invoices', path: '/product/receipts', note: 'printable receipts and tax invoices in customer accounts' },
+  { label: 'Automations', path: '/product/automation', note: 'a visual drag-and-drop builder for replies, assigning, tags, tasks, waits and Colvy AI on every channel' },
+  { label: 'Colvy Powers', path: '/product/powers', note: 'team rewards: XP, coins, levels, streaks, challenges, leaderboards and power-ups for real work' },
   { label: 'WhatsApp shared inbox', path: '/whatsapp-shared-inbox', note: COMING_SOON.whatsapp ? 'how it works; coming to Colvy' : 'WhatsApp in the shared inbox' },
   { label: 'All-in-one customer platform', path: '/all-in-one-customer-platform', note: 'the whole platform end to end' },
   { label: 'Integrations', path: '/integrations', note: 'WooCommerce, Shopify, Stripe, Slack, Zapier' },

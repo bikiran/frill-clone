@@ -11,7 +11,7 @@ export type MockKind =
   | 'inbox' | 'crm' | 'gallery' | 'notes' | 'orders' | 'payments' | 'links'
   | 'insights' | 'calendar' | 'tasks' | 'broadcasts' | 'automation'
   | 'ideas' | 'roadmap' | 'announcements' | 'kb' | 'booking' | 'waitlist' | 'carts' | 'voice'
-  | 'reservations' | 'checkin' | 'jobs' | 'portal' | 'receipt'
+  | 'reservations' | 'checkin' | 'jobs' | 'portal' | 'receipt' | 'powers'
 
 const TITLES: Record<MockKind, string> = {
   inbox: 'Shared inbox', crm: 'Customer profile', gallery: 'Media gallery', notes: 'Internal notes',
@@ -19,7 +19,7 @@ const TITLES: Record<MockKind, string> = {
   calendar: 'Calendar', tasks: 'Tasks', broadcasts: 'Broadcast', automation: 'Automation',
   ideas: 'Ideas board', roadmap: 'Roadmap', announcements: 'Changelog', kb: 'Help centre', booking: 'Book online',
   waitlist: 'Back-in-stock waitlists', carts: 'Abandoned carts', voice: 'Colvy Voice',
-  reservations: 'Reservations · Friday', checkin: 'Your booking', jobs: 'Jobs & quotes', portal: 'Your account', receipt: 'Orders and receipts',
+  reservations: 'Reservations · Friday', checkin: 'Your booking', jobs: 'Jobs & quotes', portal: 'Your account', receipt: 'Orders and receipts', powers: 'Colvy Powers',
 }
 
 interface Theme { bg: string; panel: string; ink: string; sub: string; border: string; accent: string; soft: string; dark: boolean }
@@ -524,17 +524,95 @@ function Broadcasts(T: Theme) {
   )
 }
 
+// The automation builder: a trigger, a yes/no check and the two paths, on a dotted canvas.
 function Automation(T: Theme) {
-  const node = (label: string, tag: string, col: string) => (
-    <Card T={T} style={{ padding: 9, display: 'flex', alignItems: 'center', gap: 8 }}>
-      <span style={{ width: 22, height: 22, borderRadius: 7, background: hex(col, '22'), color: col, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 900 }}>{tag}</span>
-      <div><div style={{ fontSize: 8.5, color: T.sub, fontWeight: 700 }}>{label}</div><Line w={80} c={T.border} style={{ marginTop: 3 }} /></div>
-    </Card>
+  const dot = T.dark ? 'rgba(255,255,255,0.10)' : 'rgba(15,17,25,0.12)'
+  const node = (x: number, y: number, col: string, kind: string, title: string, sub: string, glyph: string, ports: ('out' | 'yes' | 'no')[] = ['out'], inPort = true) => (
+    <g>
+      <rect x={x} y={y} width={118} height={46} rx={11} fill={T.bg} stroke={T.border} strokeWidth={1.2} />
+      <rect x={x + 9} y={y + 10} width={26} height={26} rx={8} fill={col} />
+      <text x={x + 22} y={y + 27.5} textAnchor="middle" fontSize={12} fontWeight={900} fill="#fff">{glyph}</text>
+      <text x={x + 42} y={y + 17} fontSize={6.6} fontWeight={800} fill={col} letterSpacing={0.4}>{kind}</text>
+      <text x={x + 42} y={y + 27} fontSize={8.4} fontWeight={800} fill={T.ink}>{title}</text>
+      <text x={x + 42} y={y + 37} fontSize={6.8} fill={T.sub}>{sub}</text>
+      {inPort && <circle cx={x} cy={y + 23} r={3.4} fill={T.bg} stroke={T.sub} strokeWidth={1.4} />}
+      {ports.map(p => {
+        const cy = y + (p === 'yes' ? 16 : p === 'no' ? 33 : 23)
+        const c = p === 'yes' ? '#16a34a' : p === 'no' ? '#a1a1aa' : T.sub
+        return <g key={p}>{p !== 'out' && <text x={x + 112} y={cy + 2.4} textAnchor="end" fontSize={6} fontWeight={800} fill={c}>{p === 'yes' ? 'Yes' : 'No'}</text>}<circle cx={x + 118} cy={cy} r={3.6} fill={c} /></g>
+      })}
+    </g>
   )
-  const arrow = <div style={{ display: 'flex', justifyContent: 'center' }}><div style={{ width: 2, height: 12, background: T.border }} /></div>
+  const curve = (x1: number, y1: number, x2: number, y2: number, c: string, lit = false) => {
+    const dx = Math.max(16, (x2 - x1) / 2)
+    return <path d={`M${x1} ${y1} C${x1 + dx} ${y1} ${x2 - dx} ${y2} ${x2} ${y2}`} fill="none" stroke={c} strokeWidth={lit ? 2.2 : 1.6} strokeDasharray={lit ? '5 4' : undefined} />
+  }
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-      {node('When', '⚡', T.accent)}{arrow}{node('If', '?', '#f59e0b')}{arrow}{node('Then', '→', '#10b981')}
+    <svg viewBox="0 0 400 214" width="100%" style={{ display: 'block', borderRadius: 10 }} aria-hidden>
+      <defs><pattern id="fm-dots" width="12" height="12" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1.1" fill={dot} /></pattern></defs>
+      <rect width="400" height="214" fill={T.panel} />
+      <rect width="400" height="214" fill="url(#fm-dots)" />
+      {curve(126, 107, 142, 99, T.sub)}
+      {curve(260, 92, 274, 40, '#16a34a', true)}
+      {curve(260, 109, 274, 128, '#a1a1aa')}
+      {node(8, 84, '#ff6a4d', 'WHEN', 'Customer writes', 'Any channel', '⚡', ['out'], false)}
+      {node(142, 76, '#e11d74', 'CHECK', 'Mentions “refund”', 'Yes or no', '?', ['yes', 'no'])}
+      {node(274, 17, '#2b6bff', 'ACTION', 'Assign to Jamie', 'They get a notification', '→')}
+      {node(274, 105, '#9b5cff', 'ACTION', 'Hand to Colvy AI', 'If it’s switched on', '✦')}
+      <g>
+        <rect x={274} y={168} width={118} height={30} rx={15} fill={hex(T.accent, '22')} />
+        <circle cx={290} cy={183} r={4} fill="#16a34a" />
+        <text x={300} y={186} fontSize={8.6} fontWeight={800} fill={T.ink}>Live · ran 128 times</text>
+      </g>
+      <g>
+        <rect x={8} y={168} width={128} height={30} rx={15} fill={T.bg} stroke={T.border} />
+        <text x={24} y={186.5} fontSize={8.6} fontWeight={800} fill={T.ink}>▶  Try it: “I need a refund”</text>
+      </g>
+    </svg>
+  )
+}
+
+// Colvy Powers: your level and coins, the week's leaderboard and a few powers.
+function Powers(T: Theme) {
+  const board = [['Jamie', 1460, '#2b59ff', '🥇'], ['Casey', 1120, '#ff6a4d', '🥈'], ['Morgan', 620, '#10b981', '🥉']] as const
+  const powers = [['📌', 'Priority Pin', 100, '#ff6a4d'], ['🎉', 'Confetti Bomb', 50, '#ec4899'], ['⚡', 'Double XP', 200, '#22c55e']] as const
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+      <Card T={T} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 10 }}>
+        <div style={{ width: 42, height: 42, borderRadius: '50%', background: `conic-gradient(${T.accent} 0 32%, ${T.border} 32% 100%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <div style={{ width: 32, height: 32, borderRadius: '50%', background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 900, color: T.ink }}>12</div>
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: T.ink }}>Level 12 · Specialist</div>
+          <div style={{ fontSize: 9, color: T.sub, marginTop: 2 }}>🔥 6-day streak · 6,420 / 7,200 XP</div>
+        </div>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 9px', borderRadius: 999, background: '#fff4d6', color: '#a16207', fontSize: 11, fontWeight: 900 }}>🪙 248</span>
+      </Card>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: 9 }}>
+        <Card T={T} style={{ padding: 9 }}>
+          <div style={{ fontSize: 9, fontWeight: 800, color: T.sub, letterSpacing: '.04em', marginBottom: 6 }}>THIS WEEK</div>
+          {board.map(([n, xp, c, m], i) => (
+            <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '4px 0', borderTop: i ? `1px solid ${T.border}` : 'none' }}>
+              <span style={{ fontSize: 11 }}>{m}</span>
+              <Avatar t={n[0]} c={c} s={18} />
+              <span style={{ flex: 1, fontSize: 10, fontWeight: 700, color: T.ink }}>{n}</span>
+              <span style={{ fontSize: 9.5, fontWeight: 800, color: T.sub, fontVariantNumeric: 'tabular-nums' }}>{xp.toLocaleString('en-AU')} XP</span>
+            </div>
+          ))}
+        </Card>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {powers.map(([e, n, price, c]) => (
+            <Card key={n} T={T} style={{ padding: '6px 8px', display: 'flex', alignItems: 'center', gap: 7 }}>
+              <span style={{ width: 20, height: 20, borderRadius: 7, background: hex(c, '22'), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>{e}</span>
+              <span style={{ flex: 1, fontSize: 9.5, fontWeight: 800, color: T.ink }}>{n}</span>
+              <Chip bg="#fff4d6" fg="#a16207">🪙 {price}</Chip>
+            </Card>
+          ))}
+        </div>
+      </div>
+      <div style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 999, background: hex(T.accent, '18'), color: T.ink, fontSize: 9.5, fontWeight: 700 }}>
+        <span style={{ fontWeight: 900, color: T.accent }}>+2 coins</span> Replied to Priya · <span style={{ color: T.sub }}>just now</span>
+      </div>
     </div>
   )
 }
@@ -585,7 +663,7 @@ const RENDER: Record<MockKind, (T: Theme) => React.ReactNode> = {
   inbox: Inbox, crm: Crm, gallery: Gallery, notes: Notes, orders: Orders, payments: Payments,
   links: Links, insights: Insights, calendar: Calendar, broadcasts: Broadcasts, automation: Automation,
   ideas: Ideas, announcements: Announcements, kb: Kb, booking: Booking, waitlist: Waitlist, carts: Carts, voice: Voice,
-  reservations: Reservations, checkin: Checkin, jobs: Jobs, portal: Portal, receipt: Receipt,
+  reservations: Reservations, checkin: Checkin, jobs: Jobs, portal: Portal, receipt: Receipt, powers: Powers,
   tasks: (T) => Kanban(T, [['To do', '#6b7280'], ['Doing', T.accent], ['Done', '#10b981']], { 0: 2, 1: 2, 2: 1 }),
   roadmap: (T) => Kanban(T, [['Planned', '#6b7280'], ['Building', T.accent], ['Shipped', '#10b981']], { 0: 2, 1: 1, 2: 2 }),
 }

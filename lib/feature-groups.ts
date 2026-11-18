@@ -14,10 +14,9 @@ export const FEATURE_GROUPS: FeatureGroup[] = [
     { icon: 'user', color: BLUE, title: 'Contacts & CRM', desc: 'A profile that fills itself in', href: '/product/crm' },
     { icon: 'phone', color: GREEN, title: 'Business phone', desc: 'Australian numbers, calls in the app', href: '/phones' },
     { icon: 'ai', color: PURPLE, title: 'AI agents', desc: 'Answer, book and follow up, with limits', href: '/ai-agents' },
-    { icon: 'pen', color: PINK, title: 'Notes', desc: 'Private team notes on any thread', href: '/product/notes' },
     { icon: 'folder', color: PURPLE, title: 'Media gallery', desc: 'Photos and videos, ready to send', href: '/product/gallery' },
     { icon: 'mic', color: TEAL, title: 'Voice typing', desc: 'Speak a reply, send it polished', href: '/product/voice-typing' },
-    { icon: 'target', color: TEAL, title: 'Automation', desc: 'Routing, follow-ups and triggers', href: '/product/automation' },
+    { icon: 'flow', color: TEAL, title: 'Automations', desc: 'A drag-and-drop builder for every channel', href: '/product/automation', isNew: true },
   ] },
   { title: 'Bookings, tables & jobs', desc: 'Appointments, restaurant tables and trade jobs, beside the conversation.', items: [
     { icon: 'calendar', color: CORAL, title: 'Online booking', desc: 'Deposits, reminders, regular bookings, waitlist', href: '/product/booking' },
@@ -25,7 +24,11 @@ export const FEATURE_GROUPS: FeatureGroup[] = [
     { icon: 'hand', color: GREEN, title: '“I’m here” check-in', desc: 'Guests tell you they’ve arrived', href: '/product/check-in', isNew: true },
     { icon: 'briefcase', color: BLUE, title: 'Jobs & quotes', desc: 'Quotes accepted online, jobs with sign-off', href: '/product/jobs', isNew: true },
     { icon: 'calendar', color: BLUE, title: 'Calendar', desc: 'Bookings and events in one view', href: '/product/calendar' },
+  ] },
+  { title: 'Work as a team', desc: 'Notes, tasks and rewards that keep everyone moving.', items: [
+    { icon: 'trophy', color: AMBER, title: 'Colvy Powers', desc: 'XP, coins, levels and power-ups for real work', href: '/product/powers', isNew: true },
     { icon: 'kanban', color: PURPLE, title: 'Tasks', desc: 'Turn any chat into a to-do', href: '/product/tasks' },
+    { icon: 'pen', color: PINK, title: 'Notes', desc: 'Private team notes on any thread', href: '/product/notes' },
   ] },
   { title: 'Sell and get paid', desc: 'Orders, payments and recovered sales, right in the chat.', items: [
     { icon: 'tag', color: CORAL, title: 'Orders', desc: 'WooCommerce and Shopify in the inbox', href: '/product/orders' },
