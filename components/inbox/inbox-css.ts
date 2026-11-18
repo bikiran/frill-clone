@@ -108,8 +108,12 @@ export const INBOX_CSS = `
             backdrop-filter: saturate(180%) blur(12px);
             -webkit-backdrop-filter: saturate(180%) blur(12px);
           }
+          /* Basis 0, not auto: the header wraps (for the tools tray), and a
+             wrapping row places items by their basis, so a long name with
+             its mood face and channel chip pushed the ⋯ onto a row of its
+             own. At 0 the name just takes what's left and truncates. */
           .inbox-thread-header .inbox-header-name {
-            flex: 1 1 auto !important;
+            flex: 1 1 0 !important;
             min-width: 0 !important;
           }
           .inbox-thread-header .inbox-header-name p:first-child { font-size: 16px !important; }

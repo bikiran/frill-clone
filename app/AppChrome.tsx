@@ -909,10 +909,16 @@ export default function AppChrome({
         <Analytics />
         {/* Header */}
         <header ref={headerRef} className="cv-app-header sticky top-0 z-40 backdrop-blur-md border-b bg-white/80" style={{ borderColor: 'var(--border)' }}>
-          <style>{`@media (min-width: 861px) { .cv-hdr-logo-admin { display: none !important; } }`}</style>
-          <nav className="h-14 px-6 flex items-center justify-between">
+          {/* The workspace name stays on one line and shortens with "…"; on a
+              narrow phone with a logo, the logo alone says whose workspace it
+              is, so the Powers chip, bell and avatar keep their room. (It used
+              to wrap onto two lines and run under the Powers chip.) */}
+          <style>{`@media (min-width: 861px) { .cv-hdr-logo-admin { display: none !important; } }
+            .cv-hdr-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            @media (max-width: 480px) { .cv-hdr-has-logo .cv-hdr-name { display: none; } }`}</style>
+          <nav className="h-14 px-3 sm:px-6 flex items-center justify-between gap-2">
             {/* Left: logo */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               {/* On admin pages the sidebar drawer slides in from the LEFT, so the
                   hamburger belongs on the left too (next to the menu it opens).
                   Marketing pages keep their hamburger on the right (their drawer
@@ -928,15 +934,15 @@ export default function AppChrome({
               {/* Logo */}
               {/* On admin pages the rail shows the workspace logo (wider than
                   860px), so the header doesn't repeat it there. */}
-              <Link href={isSubdomain ? homePath : '/'} className={`flex items-center gap-2 font-bold text-lg transition-smooth hover:opacity-70${pathname?.startsWith('/admin') ? ' cv-hdr-logo-admin' : ''}`}>
+              <Link href={isSubdomain ? homePath : '/'} className={`flex items-center gap-2 font-bold text-lg transition-smooth hover:opacity-70 min-w-0${pathname?.startsWith('/admin') ? ' cv-hdr-logo-admin' : ''}${isSubdomain && company?.logo_url ? ' cv-hdr-has-logo' : ''}`}>
               {/* On subdomains show company branding; on colvy.com show Colvy */}
               {isSubdomain && company ? (
                 <>
                   {company.logo_url
-                    ? <img src={company.logo_url} alt={company.name} className="h-7 w-auto" onError={(e: any) => { e.target.style.display='none' }} />
+                    ? <img src={company.logo_url} alt={company.name} className="h-7 w-auto" style={{ maxWidth: 120, flexShrink: 0, objectFit: 'contain' }} onError={(e: any) => { e.target.style.display='none' }} />
                     : <div style={{ width: 28, height: 28, borderRadius: 8, background: company.accent_color || 'var(--coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>{company.name?.[0]?.toUpperCase()}</div>
                   }
-                  <span style={{ color: 'var(--coral)' }}>{company.name}</span>
+                  <span className="cv-hdr-name" style={{ color: 'var(--coral)' }}>{company.name}</span>
                 </>
               ) : (
                 <>
@@ -983,7 +989,7 @@ export default function AppChrome({
             </div>
 
             {/* Right side */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
               {user ? (
                 <>
                   {/* Colvy Powers: shows only when the business has it on */}
