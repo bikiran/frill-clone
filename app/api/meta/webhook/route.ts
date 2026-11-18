@@ -181,6 +181,12 @@ export async function POST(req: NextRequest) {
           if (prior?.[0]?.contact_id) {
             const { data } = await db.from('contacts').select('*').eq('id', prior[0].contact_id).eq('company_id', companyId).maybeSingle()
             contact = data || null
+            // Same rule as confirming a match: the id goes on the customer
+            // only when they don't already carry one.
+            if (contact && !contact.meta_user_id) {
+              await db.from('contacts').update({ meta_user_id: senderId }).eq('id', contact.id).then(() => {}, () => {})
+              contact.meta_user_id = senderId
+            }
           }
         }
         const lookUp = () => isIgLoginChannel(channel)
