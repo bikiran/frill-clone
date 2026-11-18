@@ -104,6 +104,7 @@ export async function buildContext(db: any, companyId: string, opts: { conversat
     }
   }
   if (!cust.length) cust.push('Customer: not identified yet.')
+  cust.push(`Identity: ${verification === 'verified' ? 'verified (messaging from the phone number on file)' : verification === 'probable' ? 'probably this customer (linked to the conversation, not proven)' : 'unknown'}`)
   // The Marketplace listing this conversation is about (lib/listings.ts):
   // what it is, the price, whether it has sold.
   const listing = await listingContext(db, companyId, opts.conversationId)
@@ -111,7 +112,6 @@ export async function buildContext(db: any, companyId: string, opts: { conversat
     cust.push(`\n${listing.text}`)
     refs.push({ type: 'listing', id: listing.listing.id, label: listing.listing.title })
   }
-  cust.push(`Identity: ${verification === 'verified' ? 'verified (messaging from the phone number on file)' : verification === 'probable' ? 'probably this customer (linked to the conversation, not proven)' : 'unknown'}`)
 
   // What they've bought and paid lately (in-store sales, orders, payment links,
   // sales the team recorded, a booked delivery), so "I've paid" can be checked.
