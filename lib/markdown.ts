@@ -114,9 +114,10 @@ export function renderMarkdown(md: string): string {
     if (/^###\s+/.test(line)) { flushPara(); out.push(`<h3>${inline(esc(line.replace(/^###\s+/, '')))}</h3>`); i++; continue }
     if (/^##\s+/.test(line)) { flushPara(); out.push(`<h2>${inline(esc(line.replace(/^##\s+/, '')))}</h2>`); i++; continue }
     if (/^(---|\*\*\*|___)\s*$/.test(line)) { flushPara(); out.push('<hr />'); i++; continue }
-    if (/^!\[[^\]]*\]\([^)]+\)\s*$/.test(line)) {  // standalone image, optional "caption"
+    // Standalone image, optional "caption". The caption may hold brackets, e.g. "(Example data.)".
+    const m = line.match(/^!\[([^\]]*)\]\(\s*(\S+?)(?:\s+"([^"]*)")?\s*\)\s*$/)
+    if (m) {
       flushPara()
-      const m = line.match(/^!\[([^\]]*)\]\(\s*(\S+)(?:\s+"([^"]*)")?\s*\)/)!
       const src = m && /^(https?:\/\/|\/)/i.test(m[2]) ? m[2] : ''
       if (src) out.push(`<figure><img src="${esc(src).replace(/"/g, '&quot;')}" alt="${esc(m[1]).replace(/"/g, '&quot;')}" loading="lazy" />${m[3] ? `<figcaption>${inline(esc(m[3]))}</figcaption>` : ''}</figure>`)
       i++; continue
