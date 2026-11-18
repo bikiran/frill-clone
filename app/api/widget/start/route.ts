@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { checkBurst, callerKey } from '@/lib/rate-limit'
 import { clickRefFromVisit } from '@/lib/link-channels'
+import { attachListingFromPage } from '@/lib/listings-server'
 import { stitchLinkClick } from '@/lib/link-stitch'
 import { ilikeExact, exactEmailRow } from '@/lib/phone'
 import { planAllows } from '@/lib/plan-gate'
@@ -210,6 +211,9 @@ export async function POST(req: NextRequest) {
     if (clickRef) {
       await stitchLinkClick(db, { companyId, clickRef, contactId, conversationId: conv.id, contactIsNew: contactCreated })
     }
+    // Marketplace listings: a chat started on a listing's page is about that
+    // listing (lib/listings-server.ts). Only this company's listings count.
+    await attachListingFromPage(db, { companyId, conversationId: conv.id, pageUrl: page.url, contactId })
 
     return NextResponse.json({
       ok: true,

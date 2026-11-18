@@ -18,6 +18,7 @@ import { smsKeyword, STOP_WORDS, START_WORDS, recordSmsKeyword, textOptOut, reso
 import { findContactByPhone } from '@/lib/contact-capture'
 import { scheduleMessageThumbs } from '@/lib/image-thumb'
 import { placeByLine } from '@/lib/location-lines'
+import { attachListingFromText } from '@/lib/listings-server'
 
 export interface InboundAttachment {
   url: string
@@ -129,6 +130,10 @@ export async function ingestInboundSms(params: {
   }
 
   if (!conv) return { conversationId: null }
+
+  // Marketplace listings: a text with a listing's code ("Is TANK4 still
+  // available?") is about that listing (lib/listings-server.ts).
+  if (text && !optingOut) await attachListingFromText(db, { companyId, conversationId: conv.id, text, contactId: conv.contact_id || matchedContactId || null })
 
   const { data: insertedMsg } = await db.from('messages').insert({
     conversation_id: conv.id, company_id: companyId,

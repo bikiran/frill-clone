@@ -67,6 +67,7 @@ const MORE_GROUPS: { title: string; items: { href: string; label: string; icon: 
     title: 'Insights',
     items: [
       { href: '/admin/link-reports', label: 'Link reports', icon: I.links },
+      { href: '/admin/listings', label: 'Marketplace listings', icon: I.links },
       { href: '/admin/analytics', label: 'Analytics', icon: I.analytics },
     ],
   },

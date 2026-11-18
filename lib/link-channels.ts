@@ -17,7 +17,9 @@ export const PUBLIC_LINK_CHANNELS: { id: string; label: string; short: string }[
   { id: 'public_other', label: 'Other', short: 'Other' },
 ]
 
-const PUBLIC_IDS = new Set(PUBLIC_LINK_CHANNELS.map(c => c.id))
+// 'marketplace': the tracked link behind a Marketplace listing's page
+// (lib/listings.ts). Made on the Listings page, so it isn't a choice above.
+const PUBLIC_IDS = new Set([...PUBLIC_LINK_CHANNELS.map(c => c.id), 'marketplace'])
 
 /**
  * A link posted publicly (a Reel, a poster…), as opposed to one sent to a
@@ -27,9 +29,10 @@ const PUBLIC_IDS = new Set(PUBLIC_LINK_CHANNELS.map(c => c.id))
 export const isPublicChannel = (channel: unknown): boolean => PUBLIC_IDS.has(String(channel || ''))
 
 /** Labels for Link Reports — the public channels plus a readable "Other". */
-export const PUBLIC_CHANNEL_LABEL: Record<string, string> = Object.fromEntries(
-  PUBLIC_LINK_CHANNELS.map(c => [c.id, c.id === 'public_other' ? 'Other shared link' : c.label]),
-)
+export const PUBLIC_CHANNEL_LABEL: Record<string, string> = {
+  ...Object.fromEntries(PUBLIC_LINK_CHANNELS.map(c => [c.id, c.id === 'public_other' ? 'Other shared link' : c.label])),
+  marketplace: 'Marketplace listing',
+}
 
 // ── Click reference (?clv=) ─────────────────────────────────────────────────
 // link_clicks.id is a UUID. Anything else is ignored before it reaches a query.

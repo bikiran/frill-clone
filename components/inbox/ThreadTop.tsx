@@ -17,6 +17,7 @@ import { CHANNEL_NAME, STATUS_COLOR, STATUS_ICON, assigneeName, initials, timeAg
 import { useInbox } from '@/components/inbox/InboxContext'
 import { createJobFrom, useJobsEnabled } from '@/components/jobs/createJob'
 import { confirmDialog, alertDialog } from '@/components/ConfirmDialog'
+import ListingStrip from '@/components/inbox/ListingStrip'
 
 export default function ThreadTop() {
   const {
@@ -398,6 +399,9 @@ export default function ThreadTop() {
           It was pure noise. The sparkle beside each AI-filled contact
           field (with its "Auto added by Colvy AI" tooltip) already says
           the same thing, once, where it matters. */}
+
+      {/* The Marketplace listing this conversation is about (lib/listings.ts). */}
+      {selected.listing_id && <ListingStrip companyId={companyId} listingId={selected.listing_id} conversationId={selected.id} />}
 
       {/* Page history banner — LIVE CHAT ONLY.
           "Currently on: <page>" claims the customer is browsing the site

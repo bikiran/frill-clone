@@ -181,6 +181,7 @@ export const PERMISSION_SUITES: SuiteDef[] = [
       { key: 'waitlists', label: 'Waitlists', paths: ['/admin/waitlists'], restrictedDefault: false },
       { key: 'links', label: 'Links Generator', paths: ['/admin/links'] },
       { key: 'link_reports', label: 'Link Reports', paths: ['/admin/link-reports'] },
+      { key: 'listings', label: 'Marketplace Listings', paths: ['/admin/listings'] },
       { key: 'reviews', label: 'Reviews', paths: ['/admin/reviews'] },
       { key: 'social', label: 'Social Engagement', paths: ['/admin/social'] },
     ],

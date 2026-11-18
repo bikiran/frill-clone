@@ -76,6 +76,8 @@ export function isOwnSurface(target: string, co: CompanySurfaces): boolean {
   if (colvyHosts().includes(host)) {
     const p = u.pathname.toLowerCase()
     if (slug && (p === `/book/${slug}` || p.startsWith(`/book/${slug}/`))) return true
+    // A Marketplace listing's page on a preview / local copy (lib/listings.ts).
+    if (slug && p.startsWith(`/item/${slug}/`)) return true
     return p.startsWith('/f/')
   }
   if (host.endsWith('.colvy.com') || NOT_OURS.test(host)) return false

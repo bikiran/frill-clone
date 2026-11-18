@@ -187,6 +187,8 @@ const SECTIONS: NavSection[] = [
     { label: 'Links', items: [
       { label: 'Links Generator', href: '/admin/links', icon: 'link' },
       { label: 'Link Reports', href: '/admin/link-reports', icon: 'analytics' },
+      // Facebook Marketplace / Gumtree listings with their own page and code.
+      { label: 'Marketplace Listings', href: '/admin/listings', icon: 'orders' },
     ] },
   ] },
   { key: 'feedback', label: 'Feedback', glyph: 'feedback', groups: [

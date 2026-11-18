@@ -1,4 +1,5 @@
 import { visitorConversation } from '@/lib/widget-access'
+import { attachListingFromPage } from '@/lib/listings-server'
 import { internalHeaders } from '@/lib/internal-call'
 import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -79,7 +80,7 @@ export async function POST(req: NextRequest) {
     // The conversation must exist AND belong to the company being claimed —
     // otherwise a caller could post into another business's inbox by guessing.
     // …and be the thread this visitor started (lib/widget-access.ts).
-    const conv = await visitorConversation(req, db, companyId, conversationId, 'status')
+    const conv = await visitorConversation(req, db, companyId, conversationId, 'status, page_url')
     if (!conv) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
 
     // A visitor messaging a closed enquiry from the live-chat widget reopens it
@@ -93,6 +94,10 @@ export async function POST(req: NextRequest) {
         via: 'live chat message',
       })
     }
+
+    // Marketplace listings: an ongoing chat, now written from a listing's page,
+    // is about that listing (a no-op for any other page).
+    if (senderType === 'visitor') await attachListingFromPage(db, { companyId, conversationId, pageUrl: (conv as { page_url?: string | null }).page_url })
 
     const { data: message, error } = await db.from('messages').insert({
       conversation_id: conversationId,

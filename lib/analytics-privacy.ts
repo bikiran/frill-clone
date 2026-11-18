@@ -18,7 +18,7 @@ export type AnalyticsScope = 'marketing' | 'app' | null
 // <slug>.colvy.com/admin): measured, events tied to the workspace.
 const APP_PREFIXES = ['/admin', '/onboarding', '/upgrade', '/profile', '/signin', '/signup', '/forgot-password', '/reset-password', '/team/join', '/drive-connect', '/oauth']
 // A business's customer-facing pages: never measured, on any host.
-const BUSINESS_PUBLIC_PREFIXES = ['/u/', '/pay/', '/m/', '/l/', '/n/', '/p/', '/r/', '/f/', '/forms/', '/polls/', '/surveys/', '/booking/', '/book/', '/widget', '/custom/', '/user/']
+const BUSINESS_PUBLIC_PREFIXES = ['/u/', '/pay/', '/m/', '/item/', '/l/', '/n/', '/p/', '/r/', '/f/', '/forms/', '/polls/', '/surveys/', '/booking/', '/book/', '/widget', '/custom/', '/user/']
 // The Super Admin console has its own analytics (this one) and isn't a visitor.
 const NEVER_PREFIXES = ['/platform-admin']
 
