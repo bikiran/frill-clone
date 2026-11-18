@@ -13,7 +13,7 @@ import BrandLogo from '@/components/BrandLogo'
 // Meta (GET /{page-id}/subscribed_apps) each time the page opens. Colvy
 // subscribes a Page automatically when it's connected; this shows the result,
 // lets you subscribe again, and shows Meta's response as returned.
-type SubStatus = { subscribed: boolean; fields: string[]; app: { id: string | null; name: string | null } | null; raw: any; error?: string; subscribeError?: string | null; checkedAt?: string; endpoint?: string; via?: string; profile?: { shared: boolean; name: boolean } | null }
+type SubStatus = { subscribed: boolean; fields: string[]; app: { id: string | null; name: string | null } | null; raw: any; error?: string; subscribeError?: string | null; checkedAt?: string; endpoint?: string; via?: string; profile?: { shared: boolean; name: boolean } | null; noReferrals?: boolean }
 function WebhookStatus({ channelId, active, onChanged }: { channelId: string; active: boolean; onChanged: () => void }) {
   const [st, setSt] = useState<SubStatus | null>(null)
   const [busy, setBusy] = useState<'' | 'check' | 'subscribe'>('check')
@@ -44,7 +44,7 @@ function WebhookStatus({ channelId, active, onChanged }: { channelId: string; ac
         </span>
         {tone === 'ok' && st?.app?.name && <span style={{ fontSize: 12, color: C.fg }}>· app “{st.app.name}”</span>}
         <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 12, alignItems: 'center' }}>
-          {(tone === 'bad' || tone === 'warn') && active && (
+          {(tone === 'bad' || tone === 'warn' || (tone === 'ok' && st?.noReferrals)) && active && (
             <button type="button" onClick={() => run('resubscribe')} disabled={!!busy} style={{ padding: '5px 11px', borderRadius: 999, border: 'none', background: 'var(--coral)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{busy === 'subscribe' ? 'Subscribing…' : 'Subscribe now'}</button>
           )}
           {st && <button type="button" onClick={() => run('webhook_status')} disabled={!!busy} style={link}>{busy === 'check' ? 'Checking…' : 'Re-check'}</button>}
@@ -58,6 +58,11 @@ function WebhookStatus({ channelId, active, onChanged }: { channelId: string; ac
             : st.error ? <>{st.error}. </> : <>Colvy’s app isn’t in this account’s webhook subscriptions. </>}
           {time && <>Checked with Meta at {time}.</>}
           {st.subscribeError && <span style={{ color: '#b42318' }}> Subscribing failed: {st.subscribeError}</span>}
+        </p>
+      )}
+      {tone === 'ok' && st?.noReferrals && (
+        <p style={{ margin: '3px 0 0 16px', fontSize: 12, color: 'var(--slate)', lineHeight: 1.5 }}>
+          Marketplace listing links: <b style={{ color: 'var(--ink)' }}>not receiving “messaging_referrals” yet</b>. The listing still comes across when the buyer sends the prefilled message. Choose Subscribe now so it's attached as soon as a returning buyer opens the link.
         </p>
       )}
       {tone === 'ok' && st?.profile && (

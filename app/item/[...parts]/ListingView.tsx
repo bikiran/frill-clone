@@ -1,5 +1,6 @@
 'use client'
 
+import { MESSENGER } from '@/components/BrandLogo'
 import { useEffect, useRef, useState } from 'react'
 
 // The buyer-facing listing page: photos, price, details and the ways to reach
@@ -16,6 +17,8 @@ type Props = {
   textNumberLabel: string | null
   callNumber: string | null
   smsBody: string
+  /** The business's Facebook Page in Messenger, with this listing (lib/listings.ts messengerLink). */
+  messengerUrl?: string | null
 }
 
 const I = {
@@ -29,7 +32,7 @@ const I = {
   right: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="m9 18 6-6-6-6" /></svg>,
 }
 
-export default function ListingView({ listing: l, business: b, textNumber, textNumberLabel, callNumber, smsBody }: Props) {
+export default function ListingView({ listing: l, business: b, textNumber, textNumberLabel, callNumber, smsBody, messengerUrl }: Props) {
   const [shown, setShown] = useState(0)
   const strip = useRef<HTMLDivElement>(null)
   const photos = l.photos.length ? l.photos : []
@@ -188,6 +191,19 @@ export default function ListingView({ listing: l, business: b, textNumber, textN
 
           <div className="lv-btns">
             <button type="button" className="lv-btn primary" onClick={openChat}>{I.chat} {l.sold ? 'Ask about something similar' : 'Chat now'}</button>
+            {messengerUrl && (
+              <a className="lv-btn soft" href={messengerUrl} target="_blank" rel="noopener noreferrer">
+                <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden>
+                  <defs>
+                    <radialGradient id="lv-msgr" cx="19%" cy="99%" r="109%">
+                      <stop offset="0" stopColor="#0099FF" /><stop offset=".6" stopColor="#A033FF" /><stop offset=".9" stopColor="#FF5280" /><stop offset="1" stopColor="#FF7061" />
+                    </radialGradient>
+                  </defs>
+                  <path fill="url(#lv-msgr)" d={MESSENGER} />
+                </svg>
+                Message us on Messenger
+              </a>
+            )}
             {(sms || callNumber) && (
               <div className={sms && callNumber ? 'lv-row' : ''}>
                 {sms && <a className="lv-btn soft" href={sms}>{I.sms} Text us</a>}

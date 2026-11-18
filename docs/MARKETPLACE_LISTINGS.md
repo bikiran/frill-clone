@@ -14,11 +14,34 @@ So Colvy brings the buyer to you instead. Each listing gets:
   photos, price, condition, pick-up place and description. The page has
   **Chat now**, **Text us** and **Call** buttons, and **Buy online** when the
   listing is linked to a product in your WooCommerce or Shopify store.
+- **Message us on Messenger**, on the same page, when your Facebook Page is
+  connected in Colvy. It opens your Page in Messenger with a message ready to
+  send, which includes the listing's code.
 - **A short code** buyers can text to your Colvy number, like `TANK4`.
 
-A chat started on the page, or a text with the code, arrives in your inbox
-with the listing attached. The conversation shows an "Asking about" card with
-the listing, plus a **Sold to them** button.
+A chat started on the page, a text with the code, or a Messenger or Instagram
+message with the code arrives in your inbox with the listing attached. The
+conversation shows an "Asking about" card with the listing, plus a **Sold to
+them** button. Your AI agent and Colvy AI are told about the listing too: the
+item, price, condition, pick-up place, description and whether it has sold.
+
+### Marketplace's own chats
+
+Buyers who message you on Marketplace itself write to your personal profile.
+Meta doesn't let any app read those chats, so they don't come into Colvy. Reply
+there with the text under **Share it**. It links to the listing's page, where
+**Message us on Messenger** moves the conversation to your Page, and into
+Colvy.
+
+The Messenger button needs no setup beyond the connected Page. If the buyer has
+messaged your Page before, the listing can be attached as soon as they open the
+link, before they type. For that, the Page needs Meta's `messaging_referrals`
+event:
+
+1. In the Meta dashboard, go to **Webhooks → Page** and tick
+   `messaging_referrals`.
+2. In Colvy, go to **Settings → Channels → Instagram & Messenger** and choose
+   **Subscribe now** on the Page's card.
 
 ## Setting it up
 
@@ -48,7 +71,7 @@ with one listing first.
 | Number | Counted from |
 |---|---|
 | **Views** | Visits to the listing's page (link previews and bots aren't counted) |
-| **Enquiries** | Conversations about the listing: chats from its page, texts with its code |
+| **Enquiries** | Conversations about the listing: chats from its page, texts or Messenger/Instagram messages with its code |
 | **Sales** | Marked as sold; a payment link paid in the listing's conversation; a WooCommerce or Shopify order from that customer within 7 days |
 | **Revenue** | The sale price, or what was paid |
 

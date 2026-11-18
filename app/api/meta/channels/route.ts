@@ -110,8 +110,12 @@ export async function POST(req: NextRequest) {
           profile = { shared: p.shared, name: !!p.name }
         }
       }
+      // Subscribed before listing links existed: they open in Messenger but
+      // the listing only follows once the message is sent. "Subscribe now"
+      // adds it (the app needs messaging_referrals ticked in Meta's dashboard).
+      const noReferrals = status.subscribed && !igLogin && row.platform === 'facebook' && status.fields.includes('messages') && !status.fields.includes('messaging_referrals')
       return NextResponse.json({
-        ...status, subscribeError, checkedAt: new Date().toISOString(), profile,
+        ...status, subscribeError, checkedAt: new Date().toISOString(), profile, noReferrals,
         endpoint: igLogin ? `GET graph.instagram.com/${row.ig_account_id}/subscribed_apps` : `GET graph.facebook.com/${row.page_id}/subscribed_apps`,
         via: igLogin ? 'instagram' : row.platform === 'instagram' ? 'page' : 'facebook',
       })

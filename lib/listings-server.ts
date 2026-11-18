@@ -6,7 +6,7 @@
 // errors: a listing must never get in the way of the message or the payment.
 
 import { creditLink } from '@/lib/link-stitch'
-import { enquiryLine, findCodeInText, listingRefFromUrl, listingUrl, type Listing } from '@/lib/listings'
+import { codeFromRef, enquiryLine, findCodeInText, listingFacts, listingRefFromUrl, listingUrl, type EnquiryVia, type Listing } from '@/lib/listings'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
@@ -103,7 +103,7 @@ export async function listingForText(db: Db, companyId: string, text: unknown): 
  * customer is asking about, and credit the listing's link with the enquiry.
  * Does nothing when the conversation is already about this listing.
  */
-export async function attachListing(db: Db, o: { companyId: string; conversationId: string; listing: Listing; via: 'page' | 'sms'; contactId?: string | null }): Promise<boolean> {
+export async function attachListing(db: Db, o: { companyId: string; conversationId: string; listing: Listing; via: EnquiryVia; contactId?: string | null }): Promise<boolean> {
   try {
     const { data: conv } = await db.from('conversations').select('id, company_id, listing_id, contact_id').eq('id', o.conversationId).maybeSingle()
     if (!conv || conv.company_id !== o.companyId || o.listing.company_id !== o.companyId) return false
@@ -133,10 +133,50 @@ export async function attachListingFromPage(db: Db, o: { companyId: string; conv
   if (listing) await attachListing(db, { ...o, listing, via: 'page' })
 }
 
-/** A text that mentions a listing's code: attach that listing. */
-export async function attachListingFromText(db: Db, o: { companyId: string; conversationId: string; text: unknown; contactId?: string | null }): Promise<void> {
+/** A text (or a Messenger / Instagram message) that mentions a listing's code: attach that listing. */
+export async function attachListingFromText(db: Db, o: { companyId: string; conversationId: string; text: unknown; contactId?: string | null; via?: EnquiryVia }): Promise<void> {
   const listing = await listingForText(db, o.companyId, o.text)
-  if (listing) await attachListing(db, { ...o, listing, via: 'sms' })
+  if (listing) await attachListing(db, { ...o, listing, via: o.via || 'sms' })
+}
+
+/** A Messenger ref from a listing's m.me link (see messengerLink): attach that listing. */
+export async function attachListingFromRef(db: Db, o: { companyId: string; conversationId: string; ref: unknown; contactId?: string | null }): Promise<boolean> {
+  const code = codeFromRef(o.ref)
+  if (!code) return false
+  const listing = await listingByCode(db, o.companyId, code)
+  if (!listing || listing.status === 'hidden') return false
+  return attachListing(db, { ...o, listing, via: 'messenger' })
+}
+
+/**
+ * The business's Facebook Page for a listing's Messenger button: the id of an
+ * active Page connection (not an Instagram-only one), or null. m.me takes the
+ * Page's id as well as its username.
+ */
+export async function messengerPageFor(db: Db, companyId: string): Promise<string | null> {
+  try {
+    const { data } = await db.from('meta_channels').select('page_id, created_at')
+      .eq('company_id', companyId).eq('platform', 'facebook').eq('is_active', true)
+      .order('created_at', { ascending: true }).limit(5)
+    const row = (data || []).find((r: { page_id?: string }) => /^[0-9]+$/.test(String(r.page_id || '')))
+    return row ? String(row.page_id) : null
+  } catch { return null }
+}
+
+/**
+ * What the AI agent and Colvy AI are told about the listing a conversation is
+ * about, or null when it isn't about one (or listings aren't set up yet).
+ */
+export async function listingContext(db: Db, companyId: string, conversationId: string | null | undefined): Promise<{ text: string; listing: Listing } | null> {
+  if (!conversationId) return null
+  try {
+    const { data: conv, error } = await db.from('conversations').select('listing_id').eq('company_id', companyId).eq('id', conversationId).maybeSingle()
+    if (error || !conv?.listing_id) return null
+    const { data: l } = await db.from('listings').select(LISTING_COLS).eq('company_id', companyId).eq('id', conv.listing_id).maybeSingle()
+    if (!l) return null
+    const slug = await companySlug(db, companyId)
+    return { text: listingFacts(l, slug ? pageUrlFor(slug, l.code) : null), listing: l }
+  } catch { return null }
 }
 
 /**
