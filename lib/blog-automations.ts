@@ -214,6 +214,8 @@ Colvy Powers is off until an owner or admin switches it on in **Settings → Col
 
 It's included on every plan. Read more on the [Colvy Powers page](/product/powers), or see why we think [Colvy is a culture, not just software](/blog/colvy-is-a-culture).
 
+When you're ready, [set it up step by step](/blog/how-to-set-up-colvy-powers), pick a few [team challenge ideas](/blog/team-challenge-ideas), and read what we learned about [gamification that works](/blog/gamification-customer-service-teams).
+
 [Start free](/signup) and switch on Colvy Powers for your team.`,
   },
   {

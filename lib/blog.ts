@@ -7,6 +7,7 @@ import { INDUSTRY_POSTS } from '@/lib/blog-industries'
 import { INDUSTRY_POSTS_2 } from '@/lib/blog-industries-2'
 import { FEATURE_POSTS } from '@/lib/blog-features'
 import { AUTOMATION_POSTS } from '@/lib/blog-automations'
+import { POWERS_POSTS } from '@/lib/blog-powers'
 
 const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c', TEAL = '#0d9488'
 
@@ -1747,7 +1748,7 @@ More on how it works: [WhatsApp shared inbox for teams](/whatsapp-shared-inbox).
   },
 ]
 
-export const POSTS: BlogPost[] = [...AUTOMATION_POSTS, ...FEATURE_POSTS, ...INDUSTRY_POSTS_2, ...INDUSTRY_POSTS, ...LATEST_POSTS, ...EARLIER_POSTS]
+export const POSTS: BlogPost[] = [...POWERS_POSTS, ...AUTOMATION_POSTS, ...FEATURE_POSTS, ...INDUSTRY_POSTS_2, ...INDUSTRY_POSTS, ...LATEST_POSTS, ...EARLIER_POSTS]
 
 export function getPost(slug: string): BlogPost | undefined {
   return POSTS.find(p => p.slug === slug)
