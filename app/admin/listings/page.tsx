@@ -267,6 +267,7 @@ function ListingSheet({ row, companyId, number, numberLabel, onClose, onEdit, on
             <div className="ml-block">
               <div className="ml-block-h"><b>Reply when someone messages you on Marketplace</b><button type="button" className="ml-link" onClick={() => copy(words.reply, 'reply')}>{copied === 'reply' ? 'Copied' : 'Copy'}</button></div>
               <p>{words.reply}</p>
+              <p className="ml-hint" style={{ marginTop: 8 }}>Marketplace chats go to your personal Messenger, which Colvy can’t read. This moves the buyer across. If Marketplace offers an automatic reply when you post the listing, paste this in there so every buyer gets it.</p>
             </div>
             <p className="ml-hint">
               {number ? <>Buyers can also text <b>{row.code}</b> to <b>{numberLabel}</b>. The text arrives with this listing attached.</> : <>Get a Colvy number under Settings → Calls &amp; SMS and buyers can text <b>{row.code}</b> to it.</>}

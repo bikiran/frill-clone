@@ -260,8 +260,9 @@ export function codeFromRef(ref: unknown): string | null {
 export function messengerLink(page: string, l: Pick<Listing, 'title' | 'code'>): string | null {
   const p = String(page || '').trim()
   if (!/^[A-Za-z0-9.]+$/.test(p)) return null
-  const q = new URLSearchParams({ ref: listingRef(l.code), text: listingCopy(l, '').smsBody })
-  return `https://m.me/${p}?${q.toString()}`
+  // %20 for spaces, as Meta's own examples write it (URLSearchParams would
+  // write "+", which Messenger doesn't always read as a space).
+  return `https://m.me/${p}?ref=${encodeURIComponent(listingRef(l.code))}&text=${encodeURIComponent(listingCopy(l, '').smsBody)}`
 }
 
 /**
