@@ -328,7 +328,8 @@ async function requestDetails(db: any, conv: any, body: any, req: NextRequest) {
   const base = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, '')
   const res = await fetch(`${base}/api/meta/send`, {
     method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ conversationId: conv.id, content: message, agentName: body.userName || 'Agent' }),
+    // A teammate pressed "Request details", so it's a person's reply.
+    body: JSON.stringify({ conversationId: conv.id, content: message, agentName: body.userName || 'Agent', sentByPerson: true }),
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) return NextResponse.json({ error: data.error || 'Could not send the request' }, { status: 502 })

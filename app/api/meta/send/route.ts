@@ -18,7 +18,11 @@ const admin = () => createClient(
 // Sends an agent's reply out over Messenger / Instagram DM.
 export async function POST(req: NextRequest) {
   try {
-    const { conversationId, content, agentName, attachmentUrl, attachmentKind, skipChatMessage } = await req.json()
+    const { conversationId, content, agentName, attachmentUrl, attachmentKind, skipChatMessage, sentByPerson } = await req.json()
+    // Who is sending: a signed-in teammate replying from the inbox, or our own
+    // server. Server sends are automatic (AI agents, automations, reminders,
+    // scheduled messages) unless the route says a person pressed the button.
+    const byPerson = !isInternalCall(req) || sentByPerson === true
     if (!conversationId || (!content && !attachmentUrl)) {
       return NextResponse.json({ error: 'conversationId and content (or attachment) are required' }, { status: 400 })
     }
@@ -83,9 +87,12 @@ export async function POST(req: NextRequest) {
     }
 
     // Meta's messaging windows, keyed off the customer's last message:
-    //   ≤ 24h            → a normal RESPONSE reply.
-    //   24h – 7 days     → allowed only with the HUMAN_AGENT tag (a human agent
-    //                      answering a customer). We send with that tag.
+    //   ≤ 24h            → a normal RESPONSE reply, from anyone.
+    //   24h – 7 days     → allowed only with the HUMAN_AGENT tag, and Meta's
+    //                      policy is that the tag is for a PERSON answering.
+    //                      So a teammate's reply gets the tag; an automatic
+    //                      message (AI, automation, reminder, scheduled send)
+    //                      is refused with a clear reason instead.
     //   > 7 days         → not allowed by Meta at all; block with a clear reason.
     const { data: lastInbound } = await db.from('messages')
       .select('created_at').eq('conversation_id', conversationId).eq('sender_type', 'visitor')
@@ -97,8 +104,15 @@ export async function POST(req: NextRequest) {
         error: 'Meta doesn\'t allow a reply more than 7 days after the customer\'s last message. Reach them on another channel (SMS or email) instead.',
       }, { status: 400 })
     }
-    // Outside 24h (but within 7 days) → use the Human Agent tag.
-    const tag = lastAt && sinceMs > 24 * 3600 * 1000 ? 'HUMAN_AGENT' : undefined
+    // Outside 24h (but within 7 days): a person's reply uses the Human Agent
+    // tag; an automatic one can't be sent.
+    const outside24h = !!lastAt && sinceMs > 24 * 3600 * 1000
+    if (outside24h && !byPerson) {
+      return NextResponse.json({
+        error: 'Meta only lets a person on your team reply more than 24 hours after the customer’s last message. Automatic messages can’t be sent now: reply from the inbox, or reach them by SMS or email.',
+      }, { status: 400 })
+    }
+    const tag = outside24h ? 'HUMAN_AGENT' : undefined
 
     // Instagram-Login accounts send through graph.instagram.com with their own
     // token (me/messages); Page-linked channels use the Page Send API.
