@@ -38,7 +38,9 @@ permission, so its messages never reach the inbox.
    subscribed", the token still lacks `pages_messaging`: go back to step 2 or 4.
 6. **In the Meta dashboard, check Webhooks → Page.** The callback is
    `https://<your domain>/api/meta/webhook`, the verify token matches
-   `META_VERIFY_TOKEN`, and the `messages` field is subscribed.
+   `META_VERIFY_TOKEN`, and the `messages` field is subscribed. Also tick
+   `messaging_referrals`. Marketplace listings' Messenger buttons use it (see
+   `docs/MARKETPLACE_LISTINGS.md`).
 7. **Test.** From a personal Facebook account, message the Page. It should
    appear in the Colvy inbox within seconds. Reply from Colvy and check it
    arrives in Messenger.

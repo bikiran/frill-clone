@@ -4,8 +4,8 @@ import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import { recordLinkClick } from '@/lib/link-click'
 import { cleanClickRef } from '@/lib/link-channels'
-import { cleanCode, conditionLabel, listingCopy, localNumber, priceText, sourceLabel, type Listing } from '@/lib/listings'
-import { LISTING_COLS, pageUrlFor, textNumber } from '@/lib/listings-server'
+import { cleanCode, conditionLabel, listingCopy, localNumber, messengerLink, priceText, sourceLabel, type Listing } from '@/lib/listings'
+import { LISTING_COLS, messengerPageFor, pageUrlFor, textNumber } from '@/lib/listings-server'
 import ListingView from './ListingView'
 
 // A Marketplace listing's page: <slug>.colvy.com/item/<code> (or
@@ -91,7 +91,7 @@ export default async function ListingPage({ params, searchParams }: Props) {
     if (clickId) redirect(`/item/${parts.map(p => encodeURIComponent(p)).join('/')}?clv=${encodeURIComponent(clickId)}`)
   }
 
-  const number = await textNumber(db, company.id)
+  const [number, page] = await Promise.all([textNumber(db, company.id), messengerPageFor(db, company.id)])
   const callNumber = number || company.business_phone || null
   const url = pageUrlFor(company.slug, l.code)
   const copy = listingCopy(l, url, number ? localNumber(number) : null)
@@ -109,6 +109,7 @@ export default async function ListingPage({ params, searchParams }: Props) {
       textNumberLabel={number ? localNumber(number) : null}
       callNumber={callNumber}
       smsBody={copy.smsBody}
+      messengerUrl={page ? messengerLink(page, l) : null}
     />
   )
 }

@@ -140,7 +140,7 @@ export async function listManagedPages(userToken: string): Promise<{ pages?: any
   return { pages: data.data || [] }
 }
 
-// Subscribe a Page to webhooks: DMs (messages) AND its feed, so both Messenger
+// Subscribe a Page to webhooks: DMs (messages), listing-link referrals and its feed, so both Messenger
 // messages and comments on the Page's posts reach our webhook in real time.
 // The message fields need pages_messaging; when the Page's token doesn't have
 // it (not approved yet, or connected before it was), the whole call fails, so
@@ -156,7 +156,12 @@ export async function subscribePageWebhooks(pageId: string, pageToken: string): 
     const data = await res.json().catch(() => ({}))
     return res.ok ? null : (data?.error?.message || 'Webhook subscription failed')
   }
-  const full = await sub(['messages', 'messaging_postbacks', 'message_reactions', 'feed'])
+  // messaging_referrals: a listing's Messenger link opened in an existing
+  // chat (lib/listings.ts). Asked for first; if the app isn't set up for it in
+  // the Meta dashboard, messages must still arrive, so try again without it.
+  const MESSENGER = ['messages', 'messaging_postbacks', 'message_reactions', 'feed']
+  if (!(await sub([...MESSENGER, 'messaging_referrals']))) return { ok: true }
+  const full = await sub(MESSENGER)
   if (!full) return { ok: true }
   const feed = await sub(['feed'])
   if (feed) return { ok: false, error: full }

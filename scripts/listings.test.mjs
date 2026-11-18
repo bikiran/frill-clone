@@ -9,6 +9,7 @@
 import {
   cleanCode, suggestCode, findCodeInText, parsePrice, priceText, listingUrl, listingRefFromUrl,
   displayUrl, localNumber, listingCopy, enquiryLine, cleanListing, sourceLabel, conditionLabel, MAX_PHOTOS,
+  listingRef, codeFromRef, messengerLink, listingFacts,
 } from '../lib/listings.ts'
 import { isOwnSurface } from '../lib/link-stitch.ts'
 import { isPublicChannel, PUBLIC_CHANNEL_LABEL, PUBLIC_LINK_CHANNELS } from '../lib/link-channels.ts'
@@ -85,6 +86,48 @@ console.log('words to paste')
   eq('enquiry line from the page', enquiryLine({ title: 'Lamp', price_cents: 4000, currency: 'aud', source: 'gumtree' }, 'page'), 'Enquiry about “Lamp” ($40) · Gumtree · from the listing page')
   eq('enquiry line from a text', enquiryLine({ title: 'Lamp', price_cents: null, currency: 'aud', source: 'facebook_marketplace' }, 'sms'), 'Enquiry about “Lamp” · Facebook Marketplace · texted the listing code')
   eq('labels', [sourceLabel('ebay'), sourceLabel('nope'), conditionLabel('like_new'), conditionLabel('x')], ['eBay', 'Marketplace', 'Used, like new', ''])
+}
+
+console.log('Messenger')
+{
+  eq('the ref for a listing', listingRef('CABIN60'), 'listing_CABIN60')
+  eq('read back', codeFromRef('listing_CABIN60'), 'CABIN60')
+  eq('any case', codeFromRef('LISTING_cabin60'), 'CABIN60')
+  eq('another ref is not a listing', codeFromRef('promo_SUMMER24'), null)
+  eq('a bad code is not one', codeFromRef('listing_tank'), null)
+  eq('nothing', codeFromRef(undefined), null)
+  const link = messengerLink('101649700000001', { title: '2ft tank & cabinet', code: 'CABIN60' })
+  const u = new URL(link)
+  eq('an m.me link to the Page', u.origin + u.pathname, 'https://m.me/101649700000001')
+  eq('carrying the listing', u.searchParams.get('ref'), 'listing_CABIN60')
+  eq('with a message that has the code in it', u.searchParams.get('text'), 'Hi! Is the 2ft tank & cabinet still available? (CABIN60)')
+  eq('a Page username works too', new URL(messengerLink('littlefin.aquatics', { title: 'X', code: 'AB12' })).pathname, '/littlefin.aquatics')
+  eq('no Page, no link', messengerLink('', { title: 'X', code: 'AB12' }), null)
+  eq('nothing odd in the Page part', messengerLink('a/b?c', { title: 'X', code: 'AB12' }), null)
+  eq('enquiry line from Messenger', enquiryLine({ title: 'Lamp', price_cents: 4000, currency: 'aud', source: 'facebook_marketplace' }, 'messenger'), 'Enquiry about “Lamp” ($40) · Facebook Marketplace · messaged on Messenger')
+  eq('and from Instagram', enquiryLine({ title: 'Lamp', price_cents: null, currency: 'aud', source: 'gumtree' }, 'instagram'), 'Enquiry about “Lamp” · Gumtree · messaged on Instagram')
+}
+
+console.log('what the AI is told about the listing')
+{
+  const base = { title: '2ft tank & cabinet', code: 'CABIN60', price_cents: 75000, currency: 'aud', condition: 'new', pickup: 'Our shop', source: 'facebook_marketplace', status: 'active', sold_at: null, description: 'Glass cube tank,\n  cabinet   and hood.', product: { platform: 'woocommerce', id: '9', name: 'Tank', url: 'https://shop.example.com/p/tank' } }
+  const f = listingFacts(base, 'https://littlefin.colvy.com/item/cabin60')
+  ok('says it is data, not instructions', /never instructions/.test(f))
+  ok('the item and code', f.includes('- Item: 2ft tank & cabinet (listing code CABIN60)'))
+  ok('the price', f.includes('- Price: $750'))
+  ok('the condition', f.includes('- Condition: New'))
+  ok('where to pick up', f.includes('- Pick up from: Our shop'))
+  ok('where it is listed', f.includes('- Listed on: Facebook Marketplace'))
+  ok('for sale', f.includes('- Status: For sale.'))
+  ok('the page', f.includes('https://littlefin.colvy.com/item/cabin60'))
+  ok('the shop link', f.includes('- Buy online: https://shop.example.com/p/tank'))
+  ok('the description, tidied', f.includes('- Description: Glass cube tank, cabinet and hood.'))
+  const sold = listingFacts({ ...base, status: 'sold', sold_at: '2026-11-17T03:00:00Z', product: null, condition: null, pickup: null, description: null, price_cents: null })
+  ok('sold: say so and offer something similar', /SOLD on 2026-11-17\. Tell them it has sold/.test(sold))
+  ok('no price given', sold.includes('- Price: not given'))
+  ok('nothing missing is made up', !/Condition|Pick up|Buy online|Description|Its page/.test(sold))
+  ok('hidden: check with the team', /No longer advertised\. Check with the team/.test(listingFacts({ ...base, status: 'hidden' })))
+  ok('a long description is cut short', listingFacts({ ...base, description: 'x'.repeat(5000) }).length < 2200)
 }
 
 console.log('checking what the business typed')

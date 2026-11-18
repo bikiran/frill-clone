@@ -14,6 +14,7 @@ import { protectInbound } from '@/lib/conversation-protection'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 import { classifyOne } from '@/lib/social-sync'
 import { emitInboundEvent } from '@/lib/integration-hooks'
+import { attachListingFromRef, attachListingFromText } from '@/lib/listings-server'
 
 // Room for the Support Agent to answer after the response (after()).
 export const maxDuration = 300
@@ -124,8 +125,31 @@ export async function POST(req: NextRequest) {
           }
         }
 
+        // A listing's Messenger link (lib/listings.ts messengerLink) carries a
+        // ref. Meta passes it on a messaging_referrals event when someone with
+        // an earlier chat opens the link, on the Get Started postback in a new
+        // chat, or on the message itself.
+        const ref: string | null = event.referral?.ref || event.postback?.referral?.ref || event.message?.referral?.ref || null
+
         // Nothing usable? (e.g. a delivery receipt, a reaction with no content)
-        if (!text && attachments.length === 0 && !storyReply) continue
+        if (!text && attachments.length === 0 && !storyReply) {
+          // Just the link opened: put the listing on their conversation now, so
+          // it's there before they type. Someone new has no conversation yet;
+          // their message carries the listing's code instead.
+          if (ref && platform === 'facebook') {
+            try {
+              const { data: ch } = await db.from('meta_channels').select('company_id')
+                .eq('platform', 'facebook').eq('page_id', recipientId).eq('is_active', true).maybeSingle()
+              if (ch?.company_id) {
+                const { data: recent } = await db.from('conversations').select('id, contact_id')
+                  .eq('company_id', ch.company_id).eq('meta_user_id', senderId)
+                  .order('last_message_at', { ascending: false }).limit(1)
+                if (recent?.[0]) await attachListingFromRef(db, { companyId: ch.company_id, conversationId: recent[0].id, ref, contactId: recent[0].contact_id })
+              }
+            } catch (e) { console.warn('[meta] listing ref', e) }
+          }
+          continue
+        }
 
         // Already have this message? Meta delivers at least once and retries, and
         // an account connected two ways can get each message twice, sometimes at
@@ -294,6 +318,14 @@ export async function POST(req: NextRequest) {
           }).eq('id', conv.id)
         } : null
         if (!conv) continue
+
+        // About a Marketplace listing? Its link's ref, or its code in the
+        // message (the Messenger button prefills "… (CABIN60)"). Before the
+        // message, so the enquiry line sits above it.
+        if (ref || text) {
+          const attached = ref ? await attachListingFromRef(db, { companyId, conversationId: conv.id, ref, contactId: contact?.id || null }) : false
+          if (!attached && text) await attachListingFromText(db, { companyId, conversationId: conv.id, text, contactId: contact?.id || null, via: platform === 'instagram' ? 'instagram' : 'messenger' })
+        }
 
         const { data: insertedMsg, error: insertErr } = await db.from('messages').insert({
           conversation_id: conv.id, company_id: companyId,

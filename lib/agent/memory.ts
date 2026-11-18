@@ -14,6 +14,7 @@
 // Every slice carries a reference, saved on the run (context_refs), so "why did
 // Colvy do this?" can point at exactly what the agent knew.
 
+import { listingContext } from '@/lib/listings-server'
 import { colvyWeek, weekText } from '@/lib/business-hours'
 import { renderMemory } from './business-memory'
 import { loadCustomerActivity } from './customer-activity'
@@ -103,6 +104,13 @@ export async function buildContext(db: any, companyId: string, opts: { conversat
     }
   }
   if (!cust.length) cust.push('Customer: not identified yet.')
+  // The Marketplace listing this conversation is about (lib/listings.ts):
+  // what it is, the price, whether it has sold.
+  const listing = await listingContext(db, companyId, opts.conversationId)
+  if (listing) {
+    cust.push(`\n${listing.text}`)
+    refs.push({ type: 'listing', id: listing.listing.id, label: listing.listing.title })
+  }
   cust.push(`Identity: ${verification === 'verified' ? 'verified (messaging from the phone number on file)' : verification === 'probable' ? 'probably this customer (linked to the conversation, not proven)' : 'unknown'}`)
 
   // What they've bought and paid lately (in-store sales, orders, payment links,
