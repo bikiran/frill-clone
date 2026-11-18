@@ -1,7 +1,7 @@
 import type { BlogPost } from '@/lib/blog'
 
-// Customer stories and a playbook (November 2026). The Roxy Aquarium stories
-// describe how the shop uses Colvy, as its owner described it: no figures,
+// Case studies and a playbook (November 2026). The Roxy Aquarium case studies
+// describe how the store uses Colvy, as its owner described it: no figures,
 // no quotes, store locations and handles left out at the owner's request.
 // Every feature named is one Colvy has (inbox channels, customer matching,
 // locations, gallery, payment links, deliveries, tickets with response and
@@ -14,10 +14,10 @@ export const STORY_POSTS: BlogPost[] = [
   {
     slug: 'roxy-aquarium-one-inbox',
     cover: '/blog/roxy-aquarium-one-inbox/cover.jpg',
-    title: 'How Colvy helped Roxy Aquarium bring scattered customer messages into one inbox',
-    excerpt: 'Roxy Aquarium’s customers wrote in from everywhere: email, the website, live chat, Facebook, Messenger and Instagram. Here’s how one shared inbox in Colvy brought it all together.',
-    seoDescription: 'How aquarium shop Roxy Aquarium moved email, website, live chat, Facebook, Messenger and Instagram messages into one shared inbox with Colvy.',
-    category: 'Customer stories', accent: TEAL, icon: 'inbox',
+    title: 'Case study: How Colvy helped Roxy Aquarium bring scattered customer messages into one inbox',
+    excerpt: 'Roxy Aquarium’s customers wrote in from everywhere: email, the website, live chat, Facebook, Messenger and Instagram. The challenge, the solution and what changed when it all moved into one shared inbox in Colvy.',
+    seoDescription: 'Case study: how aquarium store Roxy Aquarium moved email, website, live chat, Facebook, Messenger and Instagram messages into one Colvy inbox.',
+    category: 'Case study', accent: TEAL, icon: 'inbox',
     date: '2026-11-19T10:30:00+11:00', dateLabel: 'Nov 19, 2026', readTime: '6 min read', author: 'The Colvy Team',
     takeaways: [
       'Customers pick the channel. A shop that answers in six places needs one place to see them all.',
@@ -25,9 +25,20 @@ export const STORY_POSTS: BlogPost[] = [
       'Stores, assignments and notes make it clear who is answering, so nobody gets two replies, or none.',
       'Start with the channels your customers use most, then add the rest.',
     ],
-    content: `Roxy Aquarium is an aquarium and pet shop in Melbourne, with more than one store and an online shop. Fish keepers ask a lot of questions, and that's a good thing. What's in stock? Will this fish get along with the ones I've got? Why has the water gone cloudy? When will my order arrive?
+    content: `| At a glance | |
+|---|---|
+| **Business** | Roxy Aquarium |
+| **Industry** | Aquarium and pet store |
+| **Where** | Melbourne: more than one store, plus an online shop |
+| **The challenge** | Customer messages scattered across email, the website, live chat, Facebook, Messenger and Instagram |
+| **The solution** | One shared Colvy inbox for every channel, with one history per customer |
+| **Colvy features used** | [Shared inbox](/product/inbox), [Facebook and Instagram](/channels/meta), [email](/channels/email), [live chat](/channels/chat-widget), [website forms](/channels/forms), [calls and texts](/channels/phones), locations, assignments and notes |
 
-Those questions never came from one place. They arrived by:
+Fish keepers ask a lot of questions, and that's a good thing. What's in stock? Will this fish get along with the ones I've got? Why has the water gone cloudy? When will my order arrive? For Roxy Aquarium, the questions were never the problem. Where they arrived was.
+
+## The challenge: messages from everywhere
+
+Roxy Aquarium's customers got in touch by:
 
 - **email**
 - the **website**, through its contact form
@@ -38,9 +49,7 @@ Those questions never came from one place. They arrived by:
 
 Each one had its own app, its own notifications and its own history. Answering customers meant checking all of them, all day.
 
-## What scattered messages cost a shop
-
-None of this is anyone's fault. It's what happens when customer conversations are spread across apps that were each built for something else:
+That's not anyone's fault. It's what happens when customer conversations are spread across apps that were each built for something else:
 
 - Someone has to keep checking every app, or messages sit unseen.
 - A message seen on one person's phone isn't seen by the rest of the team.
@@ -48,11 +57,11 @@ None of this is anyone's fault. It's what happens when customer conversations ar
 - When a customer moves from Instagram to a phone call, the history doesn't come with them, so they explain it all again.
 - Nobody can say, at a glance, what's still waiting for a reply.
 
-For a shop with more than one store, there's one more question on top: which store is this customer talking to?
+With more than one store, there was one more question on top: which store is this customer talking to?
 
-## One inbox for every channel
+## The solution: one inbox for every channel
 
-In Colvy, Roxy Aquarium connected its channels to one shared inbox:
+Roxy Aquarium connected its channels to one shared inbox in Colvy:
 
 - **Facebook and Instagram**: Messenger chats, Instagram messages, and comments on posts, all through the shop's [Facebook Page](/channels/meta).
 - **Email**: the shop's [email address](/channels/email), with attachments and replies kept in the thread.
@@ -64,7 +73,7 @@ In Colvy, Roxy Aquarium connected its channels to one shared inbox:
 
 Each conversation shows where it came from, and the reply goes back the same way. A Messenger question gets a Messenger reply, and an email gets an email. The customer never has to switch apps to hear back.
 
-## One customer, one history
+### One customer, one history
 
 Customers don't stick to one channel. Someone might comment on an Instagram post, ask the price on Messenger, then call to check stock before driving in.
 
@@ -76,7 +85,7 @@ them: Hi, I asked on Instagram last week about a heater for my 2ft tank. Is it b
 you: Hi Sam! Yes, it came in yesterday. Want us to put one aside at the shop?
 \`\`\`
 
-## Clear on who's answering
+### Clear on who's answering
 
 With more than one store, "who's got this one?" matters. In Colvy:
 
@@ -84,22 +93,27 @@ With more than one store, "who's got this one?" matters. In Colvy:
 - **A conversation can be assigned** to the person handling it, so it's obvious who's on it.
 - **Internal notes and @mentions** stay with the conversation, out of the customer's sight. A question for the other store doesn't need a separate group chat.
 
-## Nothing waits unnoticed
+### Nothing waits unnoticed
 
 Unread conversations stay at the top with a count, and the team gets notifications on their phones from the Colvy app. When a customer has been waiting, the conversation shows for how long. What's waiting is visible to everyone, not just to whoever happened to see the notification.
 
-![A reef aquarium with clownfish](/blog/roxy-aquarium-one-inbox/reef.jpg "Fish keepers ask a lot of questions. Every one of them now lands in the same place.")
-
-## Even Marketplace buyers find their way in
+### Even Marketplace buyers find their way in
 
 Facebook Marketplace chats go to a personal profile, and no app can read those. So each Marketplace listing gets its own page in Colvy, with the photos, price and details, plus buttons to chat, message the shop's Page on Messenger, text or call. Buyers can also text the listing's short code. Either way, the conversation arrives in the inbox with the listing attached.
 
-## What changed
+![A reef aquarium with clownfish](/blog/roxy-aquarium-one-inbox/reef.jpg "Fish keepers ask a lot of questions. Every one of them now lands in the same place.")
 
-- **One place to check**, instead of six apps.
-- **Everyone sees the same conversations** and the same history.
-- **Customers hear back from the business**, not from whoever's phone the message happened to reach.
-- **A new team member can pick up any conversation** without asking what happened before.
+## The results
+
+| Before | With Colvy |
+|---|---|
+| Six apps to check | One inbox |
+| Each channel with its own history | One history per customer, with their orders |
+| Messages seen by whoever's phone they reached | The whole team sees the same conversations |
+| No clear owner for a reply | Assigned conversations, with notes for the team |
+| Hard to tell what's waiting | Unread at the top, with how long each customer has waited |
+
+Customers hear back from the business, not from whoever happened to see the notification. A new team member can pick up any conversation without asking what happened before.
 
 > [!TIP] Bringing your own messages together
 > - Start with the channels your customers use most. For many shops, that's Messenger, Instagram and email.
@@ -112,10 +126,10 @@ Read next: [how Colvy helped Roxy Aquarium grow](/blog/roxy-aquarium-growing-wit
   {
     slug: 'roxy-aquarium-growing-with-colvy',
     cover: '/blog/roxy-aquarium-growing-with-colvy/cover.jpg',
-    title: 'How Colvy helped Roxy Aquarium, an aquarium and pet shop, grow its business',
-    excerpt: 'Showing the fish in stock, taking the payment in the chat, answering on time, tracking problems as tickets, and running the shop on tasks and a calendar. How Roxy Aquarium uses Colvy to grow.',
-    seoDescription: 'How Roxy Aquarium, an aquarium and pet shop, grows with Colvy: one inbox, a photo gallery, payment links, on-time support, tickets, tasks and a calendar.',
-    category: 'Customer stories', accent: CORAL, icon: 'cart',
+    title: 'Case study: How Colvy helped Roxy Aquarium, an aquarium and pet store, grow its business',
+    excerpt: 'Showing the fish in stock, taking the payment in the chat, answering on time, tracking problems as tickets, and running the shop on tasks and a calendar. The challenge, the solution and the results.',
+    seoDescription: 'Case study: how aquarium and pet store Roxy Aquarium grows with Colvy: one inbox, a gallery, payment links, on-time support, tickets, tasks, a calendar.',
+    category: 'Case study', accent: CORAL, icon: 'cart',
     date: '2026-11-19T10:15:00+11:00', dateLabel: 'Nov 19, 2026', readTime: '7 min read', author: 'The Colvy Team',
     takeaways: [
       'A shop grows in small moments: a customer is ready to buy, and the shop is ready to answer, show and take the payment.',
@@ -123,9 +137,30 @@ Read next: [how Colvy helped Roxy Aquarium grow](/blog/roxy-aquarium-growing-wit
       'Anything that takes more than one reply becomes a ticket, with an owner and a time it’s due.',
       'Tasks and a shared calendar turn "someone should" into a name and a date.',
     ],
-    content: `Growth in a shop rarely comes from one big change. It comes from hundreds of small moments. A customer is ready to buy, and the shop is ready to answer the question, show them the stock and take the payment before they lose interest. Or a problem gets sorted properly, so they come back.
+    content: `| At a glance | |
+|---|---|
+| **Business** | Roxy Aquarium |
+| **Industry** | Aquarium and pet store |
+| **Where** | Melbourne: more than one store, plus an online shop |
+| **The challenge** | Turning more questions into sales, keeping support on time, and keeping the stores and the online shop organised |
+| **The solution** | One customer record behind every conversation, payment, ticket, task and booking |
+| **Colvy features used** | [Shared inbox](/product/inbox), [gallery](/product/gallery), [payment links](/product/payments), deliveries, [tickets](/solutions/customer-support), DOA claims, [tasks](/product/tasks), [calendar](/product/calendar) |
 
-Roxy Aquarium is an aquarium and pet shop in Melbourne, with more than one store and an online shop. Here's how the team uses Colvy to make more of those moments go well, day after day.
+Growth in a shop rarely comes from one big change. It comes from hundreds of small moments. A customer is ready to buy, and the shop is ready to answer the question, show them the stock and take the payment before they lose interest. Or a problem gets sorted properly, so they come back.
+
+## The challenge
+
+For an aquarium and pet store, those moments happen all day, across every channel:
+
+- **Questions that are really sales.** "Have you got any rams in?" is a customer ready to buy, if they get an answer and can see the fish.
+- **Sales that stall.** "I'll take it" is easy to lose when paying means a trip to the shop or a bank transfer.
+- **Support after the sale.** A heater stops working, the water turns cloudy, or a new fish isn't eating. Customers want answers quickly.
+- **Problems that take more than one reply,** like a warranty claim, a special order or livestock that arrives dead.
+- **A team spread across stores,** with jobs to share and deliveries to keep track of.
+
+Roxy Aquarium wanted every one of those moments to go well, every day, without depending on someone's memory.
+
+## The solution
 
 | What the shop needs | How it uses Colvy |
 |---|---|
@@ -137,11 +172,11 @@ Roxy Aquarium is an aquarium and pet shop in Melbourne, with more than one store
 | Know who's doing what | Tasks |
 | Know what's on, and when | The calendar |
 
-## 1. One inbox for every message
+### 1. One inbox for every message
 
-Customers write to Roxy Aquarium by email, through the website, on live chat, and on Facebook, Messenger and Instagram. In Colvy, all of it lands in one [shared inbox](/product/inbox), with one history per customer. That came first, and everything below builds on it. The full story is in [how Roxy Aquarium brought scattered messages into one inbox](/blog/roxy-aquarium-one-inbox).
+Customers write to Roxy Aquarium by email, through the website, on live chat, and on Facebook, Messenger and Instagram. In Colvy, all of it lands in one [shared inbox](/product/inbox), with one history per customer. That came first, and everything below builds on it. Read the [case study on bringing scattered messages into one inbox](/blog/roxy-aquarium-one-inbox).
 
-## 2. Showing the stock: the gallery
+### 2. Showing the stock: the gallery
 
 Fish keepers want to see the actual fish, not a stock photo. The team keeps photos and videos of what's in the tanks in Colvy's [gallery](/product/gallery), sorted into folders, and sends them into any chat in a tap. Photos that customers send, like a picture of their own tank, are kept there too.
 
@@ -153,7 +188,7 @@ event: Video sent from the gallery
 them: They look great. Can I get two?
 \`\`\`
 
-## 3. Taking the payment in the chat
+### 3. Taking the payment in the chat
 
 The moment a customer says "I'll take it" is the moment to take the payment. With [payment links](/product/payments), the team sends a secure link in the same conversation, and the customer pays by card on their phone. The conversation shows when it's paid, and the sale is recorded against that customer.
 
@@ -168,18 +203,16 @@ From there, the order can be picked up in store or booked in for delivery, and t
 
 ![A goldfish bowl with orange fish](/blog/roxy-aquarium-growing-with-colvy/fishbowl.jpg "A sale that starts with a question and ends with a payment, all in one conversation.")
 
-## 4. Support on time
+### 4. Support on time
 
-What happens after the sale matters as much as the sale. A heater stops working. The water turns cloudy. A new fish isn't eating. Customers want answers quickly, and an answer a day late can feel like no answer at all.
-
-Colvy helps the team reply on time:
+What happens after the sale matters as much as the sale, and an answer a day late can feel like no answer at all. Colvy helps the team reply on time:
 
 - **Unread conversations stay at the top**, and the team gets phone notifications.
 - **Each conversation shows how long the customer has been waiting.**
 - **Conversations are assigned**, so it's clear who is replying.
 - **Quick replies** cover the questions that come up every week, like water testing, quarantine and opening hours.
 
-## 5. Tickets for anything that takes more than one reply
+### 5. Tickets for anything that takes more than one reply
 
 Some things can't be sorted in one message: a faulty filter that needs a warranty claim, a special order from a supplier, or livestock that arrives dead. In Colvy, those become [support tickets](/solutions/customer-support), raised from the conversation, email or the help centre.
 
@@ -187,7 +220,7 @@ Each ticket has an owner, a status, and due times for the first response and the
 
 For livestock, Colvy has a **DOA (dead on arrival) claim**, linked to the customer's order. The team can refund part of an item's quantity, so one fish out of five is refunded fairly and quickly.
 
-## 6. Running the business on tasks
+### 6. Running the business on tasks
 
 A shop runs on jobs that need doing: call a customer back, order more of a fish that keeps selling out, do the water change on a display tank, check the quarantine tanks. With [tasks](/product/tasks), every job has a name, an owner and a due date. Tasks can be created straight from a conversation, so "we'll let you know when they're in" becomes a task with someone's name on it.
 
@@ -195,11 +228,11 @@ A shop runs on jobs that need doing: call a customer back, order more of a fish 
 
 @mentions bring a teammate in when needed, and everyone can see what's done and what's due, at either store.
 
-## 7. A calendar everyone can see
+### 7. A calendar everyone can see
 
 Deliveries, pick-ups, bookings and tasks with due dates show up on Colvy's [calendar](/product/calendar), day by day, linked to the customer they're for. Everyone sees what's on today, so a promised delivery doesn't depend on one person's memory.
 
-## How it adds up
+## The results
 
 None of these tools is magic on its own. What makes the difference is that they all work from the same customer record:
 
@@ -210,6 +243,14 @@ None of these tools is magic on its own. What makes the difference is that they 
 
 Nothing has to be copied between apps, and nothing depends on someone remembering.
 
+| Before | With Colvy |
+|---|---|
+| "What does it look like?" meant a trip to the shop | Photos and videos sent from the gallery in a tap |
+| "I'll take it" meant paying later | A payment link in the same chat |
+| Problems tracked in someone's head | Tickets with an owner and due times |
+| Jobs on sticky notes | Tasks with a name and a due date |
+| Deliveries remembered by one person | A calendar the whole team can see |
+
 For Roxy Aquarium, that means more questions answered while the customer is still keen, more sales closed in the chat, and problems sorted properly instead of forgotten. And the team knows what to do each day.
 
 > [!TRY] Try it in your shop
@@ -218,7 +259,7 @@ For Roxy Aquarium, that means more questions answered while the customer is stil
 > - Send a payment link the next time a customer says "I'll take it".
 > - Turn the next "we'll let you know" into a task with a due date.
 
-Read next: [how Roxy Aquarium brought scattered messages into one inbox](/blog/roxy-aquarium-one-inbox), and [why a business can't run on social media alone](/blog/social-media-isnt-enough-for-business). Or [start free](/signup).`,
+Read next: [the case study on bringing scattered messages into one inbox](/blog/roxy-aquarium-one-inbox), and [why a business can't run on social media alone](/blog/social-media-isnt-enough-for-business). Or [start free](/signup).`,
   },
   {
     slug: 'social-media-isnt-enough-for-business',
@@ -303,7 +344,7 @@ When someone leaves the team, you remove their access in Colvy, and every conver
 
 ## What this looks like in practice
 
-Roxy Aquarium, an aquarium and pet shop in Melbourne, was getting messages from email, its website, live chat, Facebook, Messenger and Instagram. Read [how they brought them into one inbox](/blog/roxy-aquarium-one-inbox), and [how they use Colvy to grow](/blog/roxy-aquarium-growing-with-colvy).
+Roxy Aquarium, an aquarium and pet store in Melbourne, was getting messages from email, its website, live chat, Facebook, Messenger and Instagram. Read the case studies: [how they brought them into one inbox](/blog/roxy-aquarium-one-inbox), and [how they use Colvy to grow](/blog/roxy-aquarium-growing-with-colvy).
 
 > [!TIP] A simple way to start
 > - List every place customers contact you. Most businesses find more than they expected.
