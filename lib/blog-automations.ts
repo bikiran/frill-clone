@@ -112,6 +112,8 @@ Automations talk to your customers, so the builder is careful for you:
 
 The automation builder is part of the **Inbox** and **Everything** plans. See [pricing](/pricing) for the details, or read more on the [automation builder page](/product/automation).
 
+Ready for more? Learn how to [route messages to the right person](/blog/route-customer-messages-automatically), [use rules and AI together](/blog/automation-vs-ai-customer-service), [follow up automatically](/blog/customer-follow-up-automation) and [pick keywords that work](/blog/keyword-automation-ideas).
+
 [Start free](/signup) and draw your first automation.`,
   },
   {
