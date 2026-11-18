@@ -3,6 +3,8 @@ import Client from './Client'
 import { pageMeta } from '@/lib/seo'
 import JsonLd from '@/components/JsonLd'
 import { breadcrumbJsonLd } from '@/lib/seo-faqs'
+import { GuidesProvider } from '@/components/marketing/RelatedGuides'
+import { guidesFor } from '@/lib/guides-for'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
 
@@ -16,7 +18,7 @@ export default function Page() {
   return (
     <>
       <JsonLd data={breadcrumbJsonLd(SITE_URL, [{ name: 'AI Agents', path: 'ai-agents' }])} />
-      <Client />
+      <GuidesProvider guides={guidesFor('ai-agents')}><Client /></GuidesProvider>
     </>
   )
 }

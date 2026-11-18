@@ -9,6 +9,7 @@ import { FEATURE_POSTS } from '@/lib/blog-features'
 import { AUTOMATION_POSTS } from '@/lib/blog-automations'
 import { POWERS_POSTS } from '@/lib/blog-powers'
 import { AUTOMATION_POSTS_2 } from '@/lib/blog-automations-2'
+import { AI_AGENT_POSTS } from '@/lib/blog-ai-agents'
 
 const CORAL = '#ff6a4d', BLUE = '#2b59ff', PURPLE = '#7c5cff', GREEN = '#00c48c', TEAL = '#0d9488'
 
@@ -312,6 +313,8 @@ When someone on the team edits a draft before sending it, Colvy looks at what ch
 ## Getting started
 
 The AI agents are included on the Inbox and Everything plans. Turn them on in **AI Agents**, leave them on drafts for the first week, and move each one to live as you come to trust it.
+
+Setting them up? Read [how much an AI agent should do on its own](/blog/ai-agent-autonomy-levels), [how to teach it your business](/blog/teach-ai-agent-your-business), [which jobs to hand over first](/blog/ai-agents-jobs-to-hand-over-first) and [how to connect your other tools](/blog/connect-tools-to-ai-agents).
 
 [Meet the agents](/ai-agents) or [start free](/signup).`,
   },
@@ -1749,7 +1752,7 @@ More on how it works: [WhatsApp shared inbox for teams](/whatsapp-shared-inbox).
   },
 ]
 
-export const POSTS: BlogPost[] = [...AUTOMATION_POSTS_2, ...POWERS_POSTS, ...AUTOMATION_POSTS, ...FEATURE_POSTS, ...INDUSTRY_POSTS_2, ...INDUSTRY_POSTS, ...LATEST_POSTS, ...EARLIER_POSTS]
+export const POSTS: BlogPost[] = [...AI_AGENT_POSTS, ...AUTOMATION_POSTS_2, ...POWERS_POSTS, ...AUTOMATION_POSTS, ...FEATURE_POSTS, ...INDUSTRY_POSTS_2, ...INDUSTRY_POSTS, ...LATEST_POSTS, ...EARLIER_POSTS]
 
 export function getPost(slug: string): BlogPost | undefined {
   return POSTS.find(p => p.slug === slug)

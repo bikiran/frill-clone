@@ -9,6 +9,7 @@ import FeatureIcon from '@/components/FeatureIcon'
 import AgentCustomiser from '@/components/marketing/AgentCustomiser'
 import { DEFAULT_AGENT_FACES } from '@/lib/agent-faces'
 import InviteCta from '@/components/InviteCta'
+import RelatedGuides from '@/components/marketing/RelatedGuides'
 import { AGENTS, AGENT_PILLARS, AGENT_PLANS_LABEL, CONTROL_STEPS, type MarketingAgent } from '@/lib/agents-marketing'
 
 // /ai-agents: Colvy's five AI agents, how much they do on their own, and what
@@ -206,6 +207,8 @@ export default function AiAgentsPage() {
           ))}
         </div>
       </section>
+
+      <RelatedGuides accent={CORAL} dark={dark} title="Get more from your AI team." sub="Practical guides to setting your agents up, and deciding what they do on their own." />
 
       {/* CTA */}
       <section style={{ padding: 'clamp(60px, 8vw, 100px) 24px', textAlign: 'center', background: `linear-gradient(135deg, ${CORAL}, #ff4d8d 55%, #7c5cff)` }}>
