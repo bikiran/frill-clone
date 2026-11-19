@@ -19,7 +19,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 /**
  * POST /api/listings/<id>/sold
  *   { companyId, conversationId?, price? }   sold (to the customer in that conversation, if given)
- *   { companyId, undo: true }                not sold after all: back up for sale
+ *   { companyId, undo: true }                not sold after all: back up for sale (and a
+ *                                            note in the buyer’s chat)
  *
  * A sale counts once on the listing's link: a payment taken in Colvy for it
  * already counts (lib/listings-server creditListingPayment), so marking the
@@ -44,6 +45,15 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       updated_by: access.userId || null, updated_at: new Date().toISOString(),
     }).eq('id', l.id).eq('company_id', companyId)
     if (l.short_link_id) await db.from('link_conversions').delete().eq('link_id', l.short_link_id).eq('order_id', saleKey).eq('stage', 'paid')
+    // The buyer's chat said "Marked as sold"; say it's back up for sale there
+    // too, so the thread isn't left saying it went (once, if undone twice).
+    if (l.status === 'sold' && l.sold_conversation_id) {
+      await db.from('messages').insert({
+        conversation_id: l.sold_conversation_id, company_id: companyId, sender_type: 'system',
+        content: `Not sold after all: “${l.title}” is back up for sale`,
+        metadata: { kind: 'listing_unsold', listing_id: l.id },
+      })
+    }
   } else {
     let conv: any = null
     if (body.conversationId) {
