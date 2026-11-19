@@ -401,7 +401,7 @@ export default function ThreadTop() {
           the same thing, once, where it matters. */}
 
       {/* The Marketplace listing this conversation is about (lib/listings.ts). */}
-      {selected.listing_id && <ListingStrip companyId={companyId} listingId={selected.listing_id} conversationId={selected.id} />}
+      {selected.listing_id && <ListingStrip companyId={companyId} listingId={selected.listing_id} conversationId={selected.id} customerName={contact?.name} />}
 
       {/* Page history banner — LIVE CHAT ONLY.
           "Currently on: <page>" claims the customer is browsing the site
