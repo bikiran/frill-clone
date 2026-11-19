@@ -2,6 +2,7 @@
 
 import { useEffect, useCallback } from 'react'
 import VideoPlayer from '@/components/VideoPlayer'
+import { rememberFromVideo, videoAspect } from '@/lib/video-aspect'
 
 export type MediaItem = { url: string; name?: string; kind?: string; poster?: string; processing?: boolean }
 
@@ -36,6 +37,10 @@ export default function MediaGallery({ items, index, onClose, onIndex, onViewDet
 
   if (count === 0 || !items[index]) return null
   const current = items[index]
+  // The videos either side, whose shape isn't known yet: fetch just their
+  // metadata now, so stepping to one opens at its own size straight away.
+  const ahead = count > 1 ? [...new Set([(index + 1) % count, (index - 1 + count) % count])]
+    .map(i => items[i]).filter(it => it && it.kind === 'video' && !it.processing && !videoAspect(it.url)) : []
 
   return (
     <div
@@ -101,6 +106,11 @@ export default function MediaGallery({ items, index, onClose, onIndex, onViewDet
         )}
       </div>
 
+      {ahead.map(it => (
+        <video key={`ahead:${it.url}`} src={it.url} preload="metadata" muted playsInline aria-hidden
+          onLoadedMetadata={rememberFromVideo(it.url)} style={{ display: 'none' }} />
+      ))}
+
       {/* Next */}
       {count > 1 && (
         <button onClick={(e) => { e.stopPropagation(); go(1) }} aria-label="Next"
@@ -120,7 +130,7 @@ export default function MediaGallery({ items, index, onClose, onIndex, onViewDet
                   {it.poster
                     ? <img loading="lazy" decoding="async" src={it.poster} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     // No still frame stored → let the browser pull the first frame.
-                    : <video src={`${it.url}#t=0.1`} preload="metadata" muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
+                    : <video src={`${it.url}#t=0.1`} preload="metadata" muted playsInline onLoadedMetadata={rememberFromVideo(it.url)} style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
                   <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
                     <span style={{ width: 20, height: 20, borderRadius: '50%', background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <svg width="9" height="9" viewBox="0 0 24 24" fill="#fff"><polygon points="6 3 20 12 6 21 6 3" /></svg>
