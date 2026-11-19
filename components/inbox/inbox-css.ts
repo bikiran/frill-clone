@@ -36,6 +36,13 @@ export const INBOX_CSS = `
           .inbox-col-thread .inbox-composer { border-radius: 0 0 18px 18px; }
           .inbox-empty-thread { border-radius: 18px; }
         }
+        /* Tablet and desktop: the name block grows from 0, so in a narrow
+           thread column (list and contact panel both open) the buttons took
+           the whole row and squeezed the customer's name to nothing. It keeps
+           room for a name now, and the buttons wrap onto the next row. */
+        @media (min-width: 768px) {
+          .inbox-thread-header .inbox-header-name { min-width: min(130px, 100%) !important; }
+        }
 
         /* A message that has just arrived (or just been sent) rises into place
            from its own corner; what was already there when the thread opened
@@ -73,7 +80,7 @@ export const INBOX_CSS = `
             height: calc(100dvh - 56px - var(--admin-banners-h, 0px)) !important;
             max-height: calc(100dvh - 56px - var(--admin-banners-h, 0px)) !important;
           }
-          html.kb-open .cg-wrap { display: none; }
+          html.kb-open .cg-wrap, html.kb-open .lst { display: none; }
           html.kb-open .ecmp:has(.email-rte:focus) .ecmp-to { display: none !important; }
           html.kb-open .email-rte { min-height: 72px !important; max-height: 30dvh !important; }
           /* One pane at a time on phones */

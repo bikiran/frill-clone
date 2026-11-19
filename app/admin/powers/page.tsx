@@ -15,6 +15,7 @@ import { POWERS, powerDef } from '@/lib/powers/config'
 import { Coin, LevelRing, PowerIcon } from '@/components/powers/PowerIcon'
 import UseSheet from '@/components/powers/UseSheet'
 import PowerPreview from '@/components/powers/PowerPreview'
+import StatSheet, { type StatKind } from '@/components/powers/StatSheet'
 
 type Tab = 'overview' | 'shop' | 'challenges' | 'leaderboard' | 'badges'
 const TABS: { id: Tab; label: string }[] = [
@@ -83,7 +84,7 @@ function Powers() {
         {tabs.map(t => <button key={t.id} role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'on' : ''} onClick={() => go(t.id)}>{t.label}</button>)}
       </div>
       <div key={tab} className="ak-in">
-        {tab === 'overview' && <Overview p={p} companyId={companyId!} focusThanks={want === 'thanks'} />}
+        {tab === 'overview' && <Overview p={p} companyId={companyId!} focusThanks={want === 'thanks'} onShop={() => go('shop')} />}
         {tab === 'shop' && <Shop p={p} companyId={companyId!} onEarn={() => { go('overview'); window.setTimeout(() => document.getElementById('pw-earn')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 250) }} />}
         {tab === 'challenges' && <Challenges companyId={companyId!} isAdmin={!!p.isAdmin} />}
         {tab === 'leaderboard' && <Leaderboard p={p} companyId={companyId!} />}
@@ -127,8 +128,11 @@ const left = (iso: string) => {
   return m < 60 ? `${Math.ceil(m)} min left` : `${Math.round(m / 60)}h left`
 }
 
-function Overview({ p, companyId, focusThanks }: { p: PowersMe; companyId: string; focusThanks: boolean }) {
+function Overview({ p, companyId, focusThanks, onShop }: { p: PowersMe; companyId: string; focusThanks: boolean; onShop: () => void }) {
   const w = p.wallet!
+  // Tap the level card or a tile for a short animated pop-up on what it means (as in the app).
+  const [stat, setStat] = useState<StatKind | null>(null)
+  const tap = (k: StatKind) => ({ onClick: () => setStat(k), 'aria-haspopup': 'dialog' as const })
   const live = p.live || {}
   const me = p.me!.id
   const mine: { id?: string; label: string; ends: string; power: string; end?: boolean }[] = []
@@ -141,7 +145,8 @@ function Overview({ p, companyId, focusThanks }: { p: PowersMe; companyId: strin
 
   return (
     <div className="pw-ov">
-      <div className="pw-hero">
+      <div className="pw-hero pw-tap" role="button" tabIndex={0} aria-label={`Level ${w.level}, ${w.title}: what levels mean`} {...tap('level')}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStat('level') } }}>
         <div className="pw-hero-ring"><LevelRing level={w.level} progress={w.progress} size={92} stroke={6} /></div>
         <div style={{ minWidth: 0, flex: 1 }}>
           <span className="pw-kicker">Level {w.level}</span>
@@ -152,11 +157,12 @@ function Overview({ p, companyId, focusThanks }: { p: PowersMe; companyId: strin
       </div>
 
       <div className="ak-tiles">
-        <div className="ak-tile"><span className="ak-tile-l">Coins</span><span className="ak-tile-v pw-v"><Coin size={20} />{w.coins.toLocaleString()}</span><span className="ak-tile-s">{w.earned.toLocaleString()} earned in total</span></div>
-        <div className="ak-tile"><span className="ak-tile-l">Streak</span><span className="ak-tile-v">🔥 {w.streak} {w.streak === 1 ? 'day' : 'days'}</span><span className="ak-tile-s">Best {w.bestStreak}{w.savers ? ` · ${w.savers} Streak Saver${w.savers > 1 ? 's' : ''}` : ''}</span></div>
-        <div className="ak-tile"><span className="ak-tile-l">Today</span><span className="ak-tile-v pw-v"><Coin size={20} />+{p.today?.coins ?? 0}</span>
-          <span className="pw-cap"><i style={{ width: `${Math.round(capPct * 100)}%` }} /></span><span className="ak-tile-s">Daily limit {p.today?.capCoins ?? 0} coins</span></div>
+        <button type="button" className="ak-tile pw-tap" {...tap('coins')}><span className="ak-tile-l">Coins</span><span className="ak-tile-v pw-v"><Coin size={20} />{w.coins.toLocaleString()}</span><span className="ak-tile-s">{w.earned.toLocaleString()} earned in total</span></button>
+        <button type="button" className="ak-tile pw-tap" {...tap('streak')}><span className="ak-tile-l">Streak</span><span className="ak-tile-v">🔥 {w.streak} {w.streak === 1 ? 'day' : 'days'}</span><span className="ak-tile-s">Best {w.bestStreak}{w.savers ? ` · ${w.savers} Streak Saver${w.savers > 1 ? 's' : ''}` : ''}</span></button>
+        <button type="button" className="ak-tile pw-tap" {...tap('today')}><span className="ak-tile-l">Today</span><span className="ak-tile-v pw-v"><Coin size={20} />+{p.today?.coins ?? 0}</span>
+          <span className="pw-cap"><i style={{ width: `${Math.round(capPct * 100)}%` }} /></span><span className="ak-tile-s">Daily limit {p.today?.capCoins ?? 0} coins</span></button>
       </div>
+      {stat && <StatSheet kind={stat} p={p} onClose={() => setStat(null)} onShop={onShop} />}
 
       <div className="ak-grid2">
         <Thanks p={p} companyId={companyId} focus={focusThanks} />
@@ -474,6 +480,12 @@ const CSS = `
 .pw-off p{max-width:520px;margin:0;font-size:14.5px;line-height:1.55;color:var(--mut)}
 .pw-fine{margin:0;font-size:13px;color:var(--soft)}
 .pw-hero{display:flex;align-items:center;gap:22px;margin-bottom:14px;padding:22px 24px;border-radius:26px;background:radial-gradient(120% 140% at 0% 0%,color-mix(in srgb,var(--coral) 14%,var(--card,#fff)),var(--card,#fff) 60%);box-shadow:0 0 0 1px rgba(0,0,0,.05),0 1px 2px rgba(16,24,40,.04)}
+.pw-tap{cursor:pointer;transition:transform .22s cubic-bezier(.2,1.2,.4,1),box-shadow .22s}
+button.ak-tile.pw-tap{width:100%;border:none;font:inherit;text-align:left;color:inherit}
+.pw-tap:hover{transform:translateY(-2px);box-shadow:0 0 0 1px rgba(0,0,0,.06),0 12px 28px -16px rgba(16,24,40,.32)}
+.pw-tap:active{transform:scale(.97);transition-duration:.09s}
+.pw-tap:focus-visible{outline:2px solid var(--coral);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){.pw-tap,.pw-tap:hover,.pw-tap:active{transform:none;transition:none}}
 .pw-hero-ring{animation:pwRingIn .7s cubic-bezier(.2,1.2,.4,1)}
 @keyframes pwRingIn{from{opacity:0;transform:scale(.7) rotate(-40deg)}to{opacity:1;transform:none}}
 .pw-kicker{font-size:12.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--coral)}
