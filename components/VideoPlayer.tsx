@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState, useEffect, useCallback } from 'react'
+import { useVideoAspect } from '@/lib/video-aspect'
 
 // An Apple-style video player: a big centred play/pause with ∓10s skips, a
 // smooth draggable scrubber, and a live thumbnail preview while scrubbing.
@@ -35,7 +36,9 @@ function Skip({ dir }: { dir: -1 | 1 }) {
 // `fit`: the box (CSS lengths, e.g. 90vw × 74vh) the video should fill. Without
 // it a small clip — a 176×320 picture-message video — plays at its own tiny size
 // with the controls crammed on top; with it, it's scaled up (aspect kept) to
-// fill the box like any other video.
+// fill the box like any other video. Until the clip's shape is known (from its
+// poster, a clip seen before, or its metadata) the player fills the whole box,
+// rather than sitting at the browser's 300×150 with its controls squashed.
 export default function VideoPlayer({ src, style, autoPlay = true, poster, ambient = false, fit, onError }: { src: string; style?: React.CSSProperties; autoPlay?: boolean; poster?: string; ambient?: boolean; fit?: { w: string; h: string }; onError?: () => void }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const vRef = useRef<HTMLVideoElement>(null)
@@ -46,7 +49,12 @@ export default function VideoPlayer({ src, style, autoPlay = true, poster, ambie
   const hideTimer = useRef<any>(null)
 
   const [playing, setPlaying] = useState(false)
-  const [aspect, setAspect] = useState<number | null>(null)
+  const { aspect, onLoadedMetadata: noteAspect } = useVideoAspect(src, poster)
+  // Metadata in; stalled waiting for data; couldn't be played at all.
+  const [meta, setMeta] = useState(false)
+  const [waiting, setWaiting] = useState(false)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => { setMeta(false); setWaiting(false); setFailed(false) }, [src])
   const [cur, setCur] = useState(0)
   const [dur, setDur] = useState(0)
   const [buffered, setBuffered] = useState(0)
@@ -157,6 +165,10 @@ export default function VideoPlayer({ src, style, autoPlay = true, poster, ambie
   useEffect(() => { wake(); return () => clearTimeout(hideTimer.current) }, [wake])
 
   const chromeOn = visible || !playing || scrubbing
+  // Still fetching a clip that's meant to start by itself, or stalled for data:
+  // the big play button spins (and still works, for browsers that won't
+  // autoplay until it's pressed).
+  const loading = !failed && (waiting || (autoPlay && !meta))
 
   return (
     <div ref={wrapRef} onMouseMove={wake} onMouseLeave={() => { if (playing && !scrubbing) setVisible(false) }}
@@ -167,11 +179,14 @@ export default function VideoPlayer({ src, style, autoPlay = true, poster, ambie
         <canvas ref={bgRef} width={64} height={36} aria-hidden
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(34px) saturate(1.5)', transform: 'scale(1.25)', zIndex: 0, pointerEvents: 'none' }} />
       )}
-      <video ref={vRef} src={src} playsInline autoPlay={autoPlay} poster={poster} preload={autoPlay ? 'auto' : 'metadata'} onClick={toggle} onError={onError}
-        onLoadedData={() => setFirstFrame(true)} onPlaying={() => setFirstFrame(true)}
-        onLoadedMetadata={e => { const v = e.currentTarget; if (v.videoWidth && v.videoHeight) setAspect(v.videoWidth / v.videoHeight) }}
+      <video ref={vRef} src={src} playsInline autoPlay={autoPlay} poster={poster} preload={autoPlay ? 'auto' : 'metadata'} onClick={toggle}
+        onError={() => { setFailed(true); onError?.() }}
+        onLoadedData={() => setFirstFrame(true)} onPlaying={() => { setFirstFrame(true); setWaiting(false) }}
+        onWaiting={() => setWaiting(true)} onCanPlay={() => setWaiting(false)}
+        onLoadedMetadata={e => { noteAspect(e); setMeta(true) }}
         style={{ display: 'block', maxWidth: '100%', maxHeight: '100%', position: 'relative', zIndex: 1, ...style,
           ...(fit && aspect && !isFs ? { width: `min(${fit.w}, calc(${fit.h} * ${aspect.toFixed(4)}))`, height: 'auto', aspectRatio: String(aspect) } : null),
+          ...(fit && !aspect && !isFs ? { width: fit.w, height: fit.h, objectFit: 'contain' } : null),
           ...(isFs ? { width: '100%', height: '100%', objectFit: 'contain' } : null) }} />
 
       {/* Poster shown over the video until its first frame decodes — no black
@@ -181,11 +196,21 @@ export default function VideoPlayer({ src, style, autoPlay = true, poster, ambie
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', zIndex: 1, background: '#000', pointerEvents: 'none' }} />
       )}
 
+      <style>{'@keyframes vpSpin{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){[style*="vpSpin"]{animation-duration:2.4s!important}}'}</style>
+      {failed && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 16, background: 'rgba(0,0,0,0.72)', color: '#fff', textAlign: 'center' }}>
+          <b style={{ fontSize: 15 }}>This video can’t be played here</b>
+          <a href={src} target="_blank" rel="noreferrer" style={{ fontSize: 13.5, fontWeight: 700, color: '#fff', textDecoration: 'underline' }}>Open the file</a>
+        </div>
+      )}
+
       {/* Centre transport: rewind 10 · play/pause · forward 10 */}
       <div style={{ position: 'absolute', inset: 0, zIndex: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 30, pointerEvents: 'none', opacity: chromeOn ? 1 : 0, transition: 'opacity .25s ease' }}>
         <button title="Back 10 seconds" onClick={() => skip(-10)} style={circle(52)}><Skip dir={-1} /></button>
-        <button title={playing ? 'Pause' : 'Play'} onClick={toggle} style={circle(72)}>
-          {playing
+        <button title={loading ? 'Loading…' : playing ? 'Pause' : 'Play'} aria-label={loading ? 'Loading video' : playing ? 'Pause' : 'Play'} onClick={toggle} style={circle(72)}>
+          {loading
+            ? <span aria-hidden style={{ width: 30, height: 30, borderRadius: '50%', border: '3px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'vpSpin .8s linear infinite' }} />
+            : playing
             ? <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1.3" /><rect x="14" y="5" width="4" height="14" rx="1.3" /></svg>
             : <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor" style={{ marginLeft: 3 }}><path d="M7 5.5v13a1 1 0 0 0 1.5.87l11-6.5a1 1 0 0 0 0-1.74l-11-6.5A1 1 0 0 0 7 5.5z" /></svg>}
         </button>

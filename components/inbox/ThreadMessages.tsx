@@ -5,6 +5,7 @@
 // inbox controller through useInbox().
 
 import DraftTasks from '@/components/DraftTasks'
+import LoneChatVideo from '@/components/inbox/LoneChatVideo'
 import { draftsCollapsed } from '@/lib/task-dedupe'
 import { threadHeaderLine } from '@/lib/thread-header'
 import LiveCallBanner from '@/components/LiveCallBanner'
@@ -701,7 +702,10 @@ export default function ThreadMessages() {
                   // A story-reply bubble hugs its portrait preview (≈150px)
                   // instead of stretching wide with empty space beside it.
                   maxWidth: (msg as any).metadata?.story_reply ? 182 : (atts.some((a: any) => a.kind === 'image' || a.kind === 'video') ? 300 : undefined),
-                  width: (msg as any).metadata?.story_reply ? 'fit-content' : undefined,
+                  // Media with no text hugs the media: as a block it stretched to
+                  // the column, which is as wide as the "Received … Read by"
+                  // line under it, leaving bubble colour beside the clip.
+                  width: (msg as any).metadata?.story_reply || (!msg.content && atts.some((a: any) => a.kind === 'image' || a.kind === 'video')) ? 'fit-content' : undefined,
                 }}>
                   {isAgent && (msg as any).metadata?.voice && (
                     <div style={{ display: 'flex', justifyContent: 'flex-end', margin: atts.length ? '4px 8px 2px' : '0 0 2px' }}>
@@ -845,13 +849,15 @@ export default function ThreadMessages() {
                                          isn't the usual black leader frame. Only set a
                                          poster when we actually have one — an empty
                                          poster forces that black first frame. */}
-                                      <video
+                                      {n === 1 && !loneVideoWithText ? (
+                                        <LoneChatVideo src={toPublicUrl(a.url)} poster={videoPoster(a)} />
+                                      ) : <video
                                         src={a.thumbUrl ? toPublicUrl(a.url) : toPublicUrl(a.url) + '#t=0.1'}
                                         preload="metadata"
                                         muted
                                         playsInline
                                         {...(a.thumbUrl ? { poster: toPublicUrl(a.thumbUrl) } : {})}
-                                        style={{ width: loneVideoWithText || n !== 1 ? '100%' : 'auto', height: loneVideoWithText || n !== 1 ? '100%' : 'auto', maxWidth: '100%', maxHeight: loneVideoWithText ? undefined : n === 1 ? 280 : undefined, objectFit: loneVideoWithText || n !== 1 ? 'cover' : 'contain', display: 'block', pointerEvents: 'none', background: '#111' }} />
+                                        style={{ width: loneVideoWithText || n !== 1 ? '100%' : 'auto', height: loneVideoWithText || n !== 1 ? '100%' : 'auto', maxWidth: '100%', maxHeight: loneVideoWithText ? undefined : n === 1 ? 280 : undefined, objectFit: loneVideoWithText || n !== 1 ? 'cover' : 'contain', display: 'block', pointerEvents: 'none', background: '#111' }} />}
                                       <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                         <div style={{ width: 38, height: 38, borderRadius: 19, background: 'rgba(0,0,0,0.55)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>▶</div>
                                       </div>
