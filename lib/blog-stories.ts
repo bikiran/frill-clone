@@ -1,6 +1,6 @@
 import type { BlogPost } from '@/lib/blog'
 
-// Case studies and a playbook (November 2026). The Roxy Aquarium case studies
+// Case studies and playbooks (November 2026). The Roxy Aquarium case studies
 // describe how the store uses Colvy, as its owner described it: no figures,
 // no quotes, store locations and handles left out at the owner's request.
 // Every feature named is one Colvy has (inbox channels, customer matching,
@@ -260,6 +260,112 @@ For Roxy Aquarium, that means more questions answered while the customer is stil
 > - Turn the next "we'll let you know" into a task with a due date.
 
 Read next: [the case study on bringing scattered messages into one inbox](/blog/roxy-aquarium-one-inbox), and [why a business can't run on social media alone](/blog/social-media-isnt-enough-for-business). Or [start free](/signup).`,
+  },
+  {
+    slug: 'social-media-orders-customers-gap',
+    cover: '/blog/social-media-orders-customers-gap/cover.jpg',
+    title: 'Why social media alone can’t keep your orders and customers in sync',
+    excerpt: 'Social media is excellent for being discovered and starting conversations. But your orders live in your store, and each platform keeps its conversations inside its own walls. Here’s why that gap matters, and how Colvy closes it while you keep using social media.',
+    seoDescription: 'Social media doesn’t connect to your orders or customer records. Why that gap matters, and how Colvy brings your chats, orders and customers together.',
+    category: 'Playbooks', accent: TEAL, icon: 'cart',
+    date: '2026-11-20T09:00:00+11:00', dateLabel: 'Nov 20, 2026', readTime: '7 min read', author: 'The Colvy Team',
+    takeaways: [
+      'Social media is built for discovery and conversation, not for running orders or keeping customer records.',
+      'Orders placed on your website or in store don’t appear in a social inbox, so every order question means checking several systems.',
+      'Each platform keeps conversations, contacts and data inside its own app, under rules it sets.',
+      'Colvy brings social messages, orders and customer records into one place, so you can keep using social media without depending on it.',
+    ],
+    content: `Social media has given small businesses something they never had before: a shopfront in front of millions of people. Customers find you in their feed, comment on a post, and send a message to ask a question. For many businesses, that's now where most first conversations begin.
+
+That's worth a great deal. But there's an important difference between starting a conversation with a customer and looking after that customer. Once someone has bought from you, the details that matter (their orders, payments, deliveries and history with your business) live somewhere else. That's where social media, on its own, starts to fall short.
+
+## Where the gap shows up
+
+### Your orders aren't where the conversation is
+
+A customer sends a message on Instagram: "Has my order shipped yet?" It's a simple question, but the answer isn't in Instagram. It's in your online store, or in your point of sale if they bought in person.
+
+So your team switches between apps. They find the message, search the store for the customer's name, hope it's the right person, check the status, then come back and reply. Repeat that for every order question in a busy week and it adds up to hours of work, and slower answers for your customers.
+
+### The same customer is a different person everywhere
+
+On Instagram, a customer is a profile name and a photo. In your online store, she's a full name with an email address. At the counter, she paid by card and left a phone number. To your business she's one loyal customer. To your systems, she's three strangers.
+
+Social platforms don't connect to your store's customer records, and your store doesn't know who's messaging you. Without that link, a returning customer can be treated like a first enquiry, and nobody can see what she has bought before.
+
+### Each platform keeps things within its own walls
+
+This isn't a criticism; it's simply how the platforms are designed. Each one is built to keep activity inside its own app, with its own inbox, its own shop features and its own insights. The platform decides:
+
+- what you can see about the people who contact you
+- how long you have to reply. On Messenger and Instagram, for example, replies are limited once 24 hours have passed since the customer's last message, and generally aren't allowed at all after seven days.
+- which conversations can be connected to outside tools. Facebook Marketplace chats with a personal profile, for example, can't be.
+- when features change, and how
+
+When a business runs entirely inside these walls, its customer relationships do too.
+
+### The tools stop at the message
+
+A social inbox is good at chat. It isn't designed to take a payment for an order, issue a refund, schedule a delivery, raise a support ticket, or remind a teammate to follow up next week. Those jobs end up spread across other systems, with the conversation in one place and the work in another.
+
+## How Colvy closes the gap
+
+Colvy sits between your social channels and the rest of your business. Messages still arrive from Facebook, Instagram and the other places your customers like to use, but they land somewhere that also knows your orders, your customers and your team.
+
+![An Instagram conversation in Colvy, with the customer’s online orders and an in-store sale listed above the chat](/blog/social-media-orders-customers-gap/orders-in-chat.jpg "Her online orders and an in-store sale, right above her Instagram message. (Example data.)")
+
+### Orders beside every conversation
+
+Connect your [WooCommerce](/integrations/woocommerce) or [Shopify](/integrations/shopify) store, and in-store sales from Prexty POS, and a customer's orders appear right above the conversation: what they've spent, how many orders they've placed, the latest status, and whether they're new or returning. "Has my order shipped?" can be answered in the same window it was asked.
+
+### One customer, one record
+
+Colvy matches orders to customers by email address and phone number. When the same person contacts you on Instagram, by email and by text, those conversations can be linked to one customer. Their whole history stays in one place, whichever channel they use next.
+
+### Do the work from the conversation
+
+From the same screen, your team can send a [payment link](/product/payments), record a sale, refund an order, schedule a delivery, send tracking details, raise a ticket or add a [task](/product/tasks) for a teammate. The conversation and the work stay together.
+
+### Room to move when a platform's rules get in the way
+
+If a platform's reply window has closed and the customer has given you a phone number or email address, you can carry on by [SMS](/channels/sms) or [email](/channels/email) from the same conversation. For Facebook Marketplace, Colvy gives each listing a code and a link that brings buyers into a conversation your team can manage.
+
+### A customer list that belongs to you
+
+Followers belong to the platform. Your customers in Colvy are your own records: names, contact details, orders and conversations. With their consent, you can reach them through [SMS and email campaigns](/product/broadcasts), without paying to boost a post.
+
+## Keep using social media, with Colvy alongside it
+
+None of this means stepping back from social media. Keep posting, keep showing your work, and keep being found. Colvy helps you make more of it:
+
+- **Messages and comments in one inbox.** [Messenger, Instagram messages and comments on your posts](/channels/meta) arrive alongside email, website chat and texts.
+- **Replies on the channel they chose.** A Messenger question gets a Messenger reply, so the customer never has to switch apps.
+- **Public or private replies to comments.** Answer a comment on your post, or move the conversation into a private message, from Colvy.
+- **Help when it's busy.** An [AI agent](/ai-agents) can draft replies using what Colvy knows about your products and the customer, for your team to check and send.
+- **Links you can follow through.** Share [trackable links](/product/links) in your posts and chats, and see which ones lead to a sale.
+
+## Social media alone, or with Colvy
+
+| | Social media alone | Social media with Colvy |
+|---|---|---|
+| Customer messages | A separate inbox in each app | Facebook, Instagram, email, website chat and SMS in one shared inbox |
+| Orders | Checked separately in your store or point of sale | Shown beside the conversation, online and in store |
+| Customer records | A different profile on each platform | One customer, matched by email and phone |
+| After the reply window closes | Limited by the platform's rules | Carry on by SMS or email when the customer has shared their details |
+| Payments, refunds and deliveries | Handled in other systems | Handled from the conversation |
+| Reaching past customers | Paid promotion to followers | Your own list, with consent, by SMS and email |
+
+> [!TIP] Three small steps to start
+> - Connect your Facebook Page, your Instagram account and your online store to one inbox.
+> - When you take an order through a social chat, ask for an email address or phone number, so the chat and the order can be matched.
+> - Keep your posting routine as it is. Let social media bring people in, and let Colvy look after what happens next.
+
+## Read next
+
+- [Why a business can’t run on social media alone](/blog/social-media-isnt-enough-for-business)
+- [Case study: how Roxy Aquarium brought scattered customer messages into one inbox](/blog/roxy-aquarium-one-inbox)
+
+Social media is a wonderful way to be found, and it will keep being one. Running a business through it alone, though, means working inside walls you don't control, with your orders and customers on the other side. Colvy brings them together, so you can use social media for what it does best and run everything else from a place that's yours. [Start free](/signup), or [see how the inbox works](/product/inbox).`,
   },
   {
     slug: 'social-media-isnt-enough-for-business',
