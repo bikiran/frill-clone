@@ -11,6 +11,7 @@ import Link from 'next/link'
 import { authFetch } from '@/lib/auth-fetch'
 import { COLVY_CONTACT } from '@/lib/colvy-contact'
 import type { ColvyItem } from '@/lib/colvy-chat-core'
+import { isSendEnter } from '@/lib/enter-sends'
 
 const LOGO = '/icon-192.png'
 const SUMMARY_MS = 60_000
@@ -297,7 +298,7 @@ export function ColvyChatThread({ companyId, onBack, onRead }: { companyId: stri
               </div>
               <textarea ref={box} className="cmp-input" value={text} onChange={e => setText(e.target.value)} maxLength={4000}
                 placeholder="Message the Colvy team…" aria-label="Message the Colvy team"
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send() } }} />
+                onKeyDown={e => { if (isSendEnter(e)) { e.preventDefault(); send() } }} />
               <div className="cmp-bar">
                 <span className="cc-note">A real person on the Colvy team reads and answers this.</span>
                 <button type="button" className="cc-send" onClick={send} disabled={!sendable}
