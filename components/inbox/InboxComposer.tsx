@@ -19,6 +19,7 @@ import { useInbox } from '@/components/inbox/InboxContext'
 import PlanLockCard from '@/components/PlanLockCard'
 import { EveryoneRow } from '@/components/MentionInput'
 import { replyNeedsInbox } from '@/lib/plan-gate'
+import { isSendEnter } from '@/lib/enter-sends'
 
 export default function InboxComposer() {
   const {
@@ -696,7 +697,9 @@ export default function InboxComposer() {
               }
               if (e.key === 'Escape') { setShowQuickMenu(false); return }
             }
-            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply() }
+            // Enter sends on a computer. On a phone's keyboard it adds a new
+            // line and the Send button sends (lib/enter-sends).
+            if (isSendEnter(e)) { e.preventDefault(); sendReply() }
           }}
           placeholder={internalMode
             ? 'Write a note for your team — @ to mention someone'

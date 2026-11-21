@@ -5530,7 +5530,17 @@ export function useInboxController() {
   // reply "Voice typed" / "Voice assisted" (lib/voice-typed).
   const dictatedRef = useRef<string[]>([])
   useEffect(() => { if (!reply) dictatedRef.current = [] }, [reply])
+  // One send at a time per conversation. The reply stays in the box until it
+  // has gone, so a second Enter or tap on Send while the first was still on its
+  // way used to send it again: one reply went out three times.
+  const sendingFor = useRef<Set<string>>(new Set())
   const sendReply = async () => {
+    const id = selected?.id
+    if (!id || sendingFor.current.has(id)) return
+    sendingFor.current.add(id)
+    try { await sendReplyOnce() } finally { sendingFor.current.delete(id) }
+  }
+  const sendReplyOnce = async () => {
     if ((!replyNow.current.trim() && stagedMedia.length === 0) || !selected || !user) return
     // Live chat, email, Instagram and Messenger replies need the Inbox plan
     // (internal notes don't). The card above the reply box says so too.
