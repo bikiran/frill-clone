@@ -139,6 +139,8 @@ export async function POST(req: NextRequest) {
           page_title: page.title || null,
           last_message_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
+          // On the page right now: replies stay in the live chat.
+          page_seen_at: new Date().toISOString(),
         }
         if (phone) update.sms_number = phone
         if (pageHistory.length) update.page_history = pageHistory
@@ -174,6 +176,7 @@ export async function POST(req: NextRequest) {
           status: 'open', is_unread: true,
           page_url: page.url || null, page_title: page.title || null,
           last_message_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+          page_seen_at: new Date().toISOString(),
         }).eq('id', prior[0].id)
         conv = prior[0]
       }
@@ -199,6 +202,9 @@ export async function POST(req: NextRequest) {
           : (page.url ? [{ url: page.url, title: page.title || null, ts: new Date().toISOString() }] : []),
         last_message_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        // They're on the page this moment: replies stay in the live chat
+        // (the widget's heartbeat keeps this fresh while they're there).
+        page_seen_at: new Date().toISOString(),
       }).select('id').maybeSingle()
       if (convErr) {
         console.error('[widget start] conversation insert failed', convErr)

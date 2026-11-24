@@ -125,6 +125,8 @@ export async function POST(req: NextRequest) {
       unread_count: 1,
       status: 'open',
       updated_at: new Date().toISOString(),
+      // Someone typing in the chat is on the page: replies stay live.
+      ...(senderType === 'visitor' ? { page_seen_at: new Date().toISOString() } : {}),
     }).eq('id', conversationId)
 
     // Spam and inappropriate messages (lib/conversation-protection): checked

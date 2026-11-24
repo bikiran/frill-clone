@@ -22,6 +22,7 @@ import { useAiDraft } from '@/components/AiDraft'
 import { useReplyTranslate } from '@/components/inbox/ReplyTranslate'
 import { useDraft } from '@/lib/drafts'
 import { ColvyChatRow, useColvySummary } from '@/components/inbox/ColvyChat'
+import { isLiveOnPage } from '@/lib/channel-choice'
 import { alertDialog, confirmDialog, confirmNotify } from '@/components/ConfirmDialog'
 import { fillTemplateVars, type TemplateVars } from '@/lib/composer-templates'
 import { readJsonSafe, uploadAttachment } from '@/lib/upload-attachment'
@@ -1288,6 +1289,28 @@ export function useInboxController() {
   // Has the customer written on this thread at all (any channel)?
   const customerSpoke = useMemo(() => messages.some((m: any) => m && m.sender_type !== 'agent' && m.sender_type !== 'system' && !m.is_internal), [messages])
 
+  // A website chat thread. Its visitor messages carry the column default
+  // delivery_channel 'chat' (app/api/widget/message sets none), which on any
+  // other thread says nothing, so it's only read as "live chat" here.
+  const isWidgetThread = ['widget', 'live_chat'].includes(String((selected as any)?.channel || '').toLowerCase())
+  // Is the customer in the live chat right now? Their widget heartbeat
+  // (page_seen_at, fresh while the chat is open on a visible tab), or a chat
+  // message from them in the last 3 minutes. Replies go by SMS (then email)
+  // only once neither holds: they've left the chat.
+  const liveChatNow = useMemo(() => {
+    if (isOnPageNow) return true
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i] as any
+      if (!m || m.sender_type === 'agent' || m.sender_type === 'system' || m.is_internal) continue
+      const dc = String(m.delivery_channel || '').toLowerCase()
+      const inChat = ['widget', 'live_chat'].includes(dc) || ((dc === 'chat' || !dc) && isWidgetThread)
+      const at = m.created_at ? parseTs(m.created_at) : null
+      return inChat && !!at && Date.now() - at.getTime() < 180000
+    }
+    return false
+    // nowTick: re-judged every 20s, so a customer who left stops counting.
+  }, [isOnPageNow, messages, isWidgetThread, nowTick])
+
   // Where is this customer ACTUALLY talking, right now? The conversation's
   // stored channel goes stale the moment someone moves from the web widget to
   // SMS, which is why threads kept insisting they were "live chat" (and kept
@@ -1307,6 +1330,9 @@ export function useInboxController() {
       if (!m || m.sender_type === 'agent' || m.sender_type === 'system' || m.is_internal) continue
       const dc = String(m.delivery_channel || '').toLowerCase()
       if (dc && dc !== 'chat') return dc
+      // A website chat visitor's message (default 'chat'): they wrote in the
+      // chat. Without this, one SMS reply became "the" channel of the thread.
+      if (isWidgetThread) return 'widget'
     }
     // The customer hasn't messaged on this thread (an order or cart thread of
     // Colvy's own messages): the shared rule decides — their last channel
@@ -1319,7 +1345,7 @@ export function useInboxController() {
       if (dc && dc !== 'chat') return dc
     }
     return String((selected as any)?.channel || 'widget').toLowerCase()
-  }, [messages, selected?.id, (selected as any)?.channel, channelPick, customerSpoke])
+  }, [messages, selected?.id, (selected as any)?.channel, channelPick, customerSpoke, isWidgetThread])
 
   const isWebChat = ['widget', 'chat'].includes(activeChannel)
   // Where a reply or an action (payment link, coupon, form…) actually goes. A
@@ -1328,12 +1354,21 @@ export function useInboxController() {
   const outboundChannel = useMemo(() => {
     // A Colvy chat is answered in the app only (see sendReply).
     if (String((selected as any)?.channel || '') === 'colvy') return 'colvy'
-    if (!['phone', 'call', 'voice'].includes(activeChannel)) return activeChannel
     const s = selected as any
+    // A website chat customer who has left the chat: a reply goes by SMS
+    // (if they can be texted), else email, as sendReply does. While they're
+    // in the chat it stays there.
+    if (isWidgetThread && ['widget', 'chat'].includes(activeChannel) && !liveChatNow) {
+      const noSmsOptIn = channelPick?.convId === s?.id && channelPick?.smsOptIn === false
+      if ((s?.sms_number || s?.phone || contact?.phone) && !noSmsOptIn) return 'sms'
+      if (contact?.email || s?.customer_email) return 'email'
+      return activeChannel
+    }
+    if (!['phone', 'call', 'voice'].includes(activeChannel)) return activeChannel
     if (s?.sms_number || s?.phone || contact?.phone || s?.contacts?.phone) return 'sms'
     if (contact?.email || s?.customer_email) return 'email'
     return 'chat'
-  }, [activeChannel, selected, contact?.phone, contact?.email])
+  }, [activeChannel, selected, contact?.phone, contact?.email, isWidgetThread, liveChatNow, channelPick])
   // The channel the composer shows ("Sending by …"): the one picked with
   // "Use email" / "Use SMS", else the automatic choice. Everything the
   // composer sends — polls, payment links, card-save links — goes this way.
@@ -5792,11 +5827,21 @@ export function useInboxController() {
     // customer is on a widget (calls, imports and untagged rows have no channel),
     // and treating '' as live-chat was routing SMS replies into a widget that
     // doesn't exist on most accounts. Also require that this conversation has a
-    // widget heartbeat history at all (page_seen_at ever set) before trusting the
-    // "recently active in chat" fallback.
+    // widget heartbeat history at all (page_seen_at ever set) or is a website
+    // chat thread before trusting the "recently active in chat" fallback.
     const lastInIsChat = ['chat', 'widget', 'live_chat'].includes(lastInCh)
-    const hasWidgetHistory = !!(selected as any)?.page_seen_at
-    const visitorOnLiveChat = isOnPageNow || (hasWidgetHistory && lastInRecent && lastInIsChat)
+    // The heartbeat as it is right now, not as this thread was loaded: a chat
+    // that started moments ago had none in the list's copy, so its customer
+    // looked gone and the reply went out by SMS while they sat in the chat.
+    let seenAt: string | null = (selected as any)?.page_seen_at || null
+    if (sendChannel === 'auto' && (isWidgetThread || seenAt)) {
+      try {
+        const { data: fresh } = await (supabase as any).from('conversations').select('page_seen_at').eq('id', selected.id).maybeSingle()
+        if (fresh?.page_seen_at) seenAt = fresh.page_seen_at
+      } catch {}
+    }
+    const hasWidgetHistory = !!seenAt || isWidgetThread
+    const visitorOnLiveChat = isOnPageNow || isLiveOnPage(seenAt) || liveChatNow || (hasWidgetHistory && lastInRecent && lastInIsChat)
 
     // A website chat visitor who didn't tick "Continue this conversation by
     // text" isn't texted automatically (lib/channel-choice); choosing SMS
