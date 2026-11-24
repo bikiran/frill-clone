@@ -73,6 +73,14 @@ export const SHOPIFY_SCOPES = [
 export const shopifyAppConfigured = () => shopifyApps().length > 0
 export const shopifyRedirectUri = () => process.env.SHOPIFY_REDIRECT_URI || 'https://colvy.com/api/shopify/callback'
 const scopes = () => process.env.SHOPIFY_SCOPES || SHOPIFY_SCOPES
+// The private app (shopify.app.private.toml) also asks for write_app_proxy:
+// Shopify won't release a new app with an app proxy without it. The public app
+// was created before that rule and deploys without it, so it isn't added there
+// (it would send every connected store back through a permission screen).
+export const PRIVATE_APP_EXTRA_SCOPES = ['write_app_proxy']
+const scopesFor = (app: ShopifyApp) => app.private
+  ? Array.from(new Set([...scopes().split(','), ...PRIVATE_APP_EXTRA_SCOPES].map(s => s.trim()).filter(Boolean))).join(',')
+  : scopes()
 
 // Webhooks Colvy subscribes each store to. The compliance topics (customers/data_request,
 // customers/redact, shop/redact) are declared in the app's configuration, not
@@ -105,7 +113,7 @@ export const isShopDomain = (s: string) => SHOP_RE.test(String(s || ''))
 export function buildAuthorizeUrl(shop: string, state: string, app: ShopifyApp = PUBLIC_APP()): string {
   const q = new URLSearchParams({
     client_id: app.key,
-    scope: scopes(),
+    scope: scopesFor(app),
     redirect_uri: shopifyRedirectUri(),
     state,
   })
