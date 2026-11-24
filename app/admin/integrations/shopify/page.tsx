@@ -16,6 +16,20 @@ const missingScopes = (s: any) => {
   return s?.auth_type === 'oauth' && have.length ? NEWER_SCOPES.filter(x => !have.includes(x)) : []
 }
 
+// Why the last Shopify install stopped, left by the server in a readable
+// cookie on .colvy.com (lib/shopify-install installFailed): a failed install
+// lands on colvy.com, and signing in there drops the ?shopify_error. Read once.
+function takeInstallError(): string {
+  try {
+    const m = document.cookie.match(/(?:^|;\s*)colvy_shopify_error=([^;]*)/)
+    if (!m) return ''
+    const host = window.location.hostname
+    const domain = host === 'colvy.com' || host.endsWith('.colvy.com') ? '; domain=.colvy.com' : ''
+    document.cookie = `colvy_shopify_error=; Max-Age=0; path=/${domain}`
+    return decodeURIComponent(m[1])
+  } catch { return '' }
+}
+
 const fmt = (d?: string | null) => (d ? new Date(d).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '')
 
 export default function ShopifyIntegrationPage() {
@@ -67,6 +81,8 @@ export default function ShopifyIntegrationPage() {
           setSuccess(`${s?.store_name || 'Your store'} is connected. Importing customers now.`)
           runSync(connected)
         }
+        const lastError = takeInstallError()
+        if (lastError && !params.get('shopify_error') && !connected) setError(lastError)
         if (document.cookie.includes('colvy_shopify_pending=')) {
           const r = await authFetch(`/api/shopify/claim?companyId=${companyId}`)
           const p = await r.json().catch(() => ({}))

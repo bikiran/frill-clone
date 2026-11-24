@@ -340,9 +340,16 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
 
   // Just installed Colvy in Shopify and signed in: take them to the Shopify
   // page to connect the store (once per tab — they can still go elsewhere).
+  // Same when the install stopped, so they see why (lib/shopify-install).
   useEffect(() => {
     if (!authed || pathname === '/admin/integrations/shopify') return
     try {
+      const failed = document.cookie.match(/(?:^|;\s*)colvy_shopify_error=([^;]*)/)?.[1]
+      if (failed && sessionStorage.getItem('colvy_shopify_error_seen') !== failed) {
+        sessionStorage.setItem('colvy_shopify_error_seen', failed)
+        router.replace('/admin/integrations/shopify')
+        return
+      }
       if (!document.cookie.includes('colvy_shopify_pending=') || sessionStorage.getItem('colvy_shopify_pending_seen')) return
       sessionStorage.setItem('colvy_shopify_pending_seen', '1')
       router.replace('/admin/integrations/shopify')

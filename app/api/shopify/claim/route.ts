@@ -4,7 +4,7 @@ import { requireCompanyAccess } from '@/lib/company-access'
 import { appFor, refreshAccessToken } from '@/lib/shopify-auth'
 import {
   CLAIM_COOKIE, PENDING_COOKIE, clearInstallCookies, connectStore, connectedElsewhere,
-  findPendingInstall, pendingTokens,
+  findPendingInstall, logInstallStep, pendingTokens,
 } from '@/lib/shopify-install'
 
 export const dynamic = 'force-dynamic'
@@ -62,12 +62,14 @@ export async function POST(req: NextRequest) {
     }
     const id = await connectStore(db, { companyId, userId: access.userId, shop: p.shop, tokens, storeName: p.store_name, app })
     await db.from('shopify_pending_installs').delete().eq('id', p.id)
+    await logInstallStep('claim', 'processed', { shop: p.shop, app, companyId, note: 'Connected to this workspace' })
     const res = NextResponse.json({ ok: true, store: { id, store_name: p.store_name || p.shop } })
     clearInstallCookies(res, req, [CLAIM_COOKIE, PENDING_COOKIE])
     return res
   } catch (e: any) {
     // Leave it claimable so the person can try again.
     await db.from('shopify_pending_installs').update({ claimed_at: null }).eq('id', p.id)
+    await logInstallStep('claim', 'error', { shop: p.shop, app: appFor(p.app_client_id), companyId, error: e?.message || 'Could not connect the store' })
     return NextResponse.json({ error: e?.message || 'Could not connect the store' }, { status: 500 })
   }
 }

@@ -1,8 +1,8 @@
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { appClientId, appForQuery, buildAuthorizeUrl, isShopDomain } from '@/lib/shopify-auth'
-import { FALLBACK_PAGE, INTENT_COOKIE, clearInstallCookies, connectedElsewhere, hasAllScopes, takeIntent, workspacePage, writeWithApp } from '@/lib/shopify-install'
+import { appClientId, appForQuery, buildAuthorizeUrl, isShopDomain, shopifyApps } from '@/lib/shopify-auth'
+import { FALLBACK_PAGE, INTENT_COOKIE, clearInstallCookies, connectedElsewhere, hasAllScopes, installFailed, logInstallStep, takeIntent, workspacePage, writeWithApp } from '@/lib/shopify-install'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,6 +17,9 @@ const withParams = (to: string, params: Record<string, string>) => {
   for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v)
   return u.toString()
 }
+
+// Which apps this deployment has, for the install log: public client IDs only.
+const appsSummary = () => shopifyApps().map(a => `${a.private ? 'private' : 'public'} …${a.key.slice(-4)}`).join(', ') || 'none'
 
 /**
  * GET /api/shopify/app — the app's "App URL" in the Shopify Dev Dashboard.
@@ -36,7 +39,15 @@ export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams
   const shop = (params.get('shop') || '').toLowerCase()
   const app = appForQuery(params)
-  if (!app || !isShopDomain(shop)) return NextResponse.redirect(FALLBACK_PAGE)
+  if (!app || !isShopDomain(shop)) {
+    // Opened from Shopify (it's signed) but no app secret set here matches:
+    // say so, rather than landing on the Shopify page as if nothing happened.
+    if (params.get('hmac') && isShopDomain(shop)) {
+      await logInstallStep('app_url', 'rejected', { shop, error: `Shopify's signature matched none of the app secrets on this deployment (apps: ${appsSummary()}). Check the Client secret in the environment settings.` })
+      return installFailed(req, FALLBACK_PAGE, "Colvy couldn't confirm this request came from Shopify, so your store wasn't connected. Open Colvy from your Shopify admin again, and contact Colvy support if this keeps happening.")
+    }
+    return NextResponse.redirect(FALLBACK_PAGE)
+  }
 
   const db = admin()
   // '*': app_client_id may not exist before migration V422.
@@ -56,11 +67,19 @@ export async function GET(req: NextRequest) {
     return res
   }
 
+  const fail = async (to: string | null | undefined, message: string, detail?: string) => {
+    await logInstallStep('app_url', 'error', { shop, app, companyId: intent?.company_id || null, error: detail || message })
+    const res = installFailed(req, to, message)
+    if (intent) clearInstallCookies(res, req, [INTENT_COOKIE])
+    return res
+  }
+
   if (healthy && (!intent || intent.company_id === healthy.company_id)) {
+    await logInstallStep('app_url', 'processed', { shop, app, companyId: healthy.company_id, note: 'Already connected: opened its workspace' })
     return done(withParams(await workspacePage(db, healthy.company_id), { store: healthy.id }))
   }
   if (intent && await connectedElsewhere(db, shop, intent.company_id)) {
-    return done(withParams(intent.return_to || FALLBACK_PAGE, { shopify_error: 'This store is already connected to another Colvy workspace. Disconnect it there first.' }))
+    return fail(intent.return_to, 'This store is already connected to another Colvy workspace. Disconnect it there first.')
   }
 
   // Which workspace the callback saves the store to: the one that asked, else
@@ -76,6 +95,10 @@ export async function GET(req: NextRequest) {
     return_to: returnTo, app_client_id: appClientId(app),
     expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
   }, row => db.from('shopify_oauth_states').insert(row))
-  if (error) return done(withParams(returnTo || FALLBACK_PAGE, { shopify_error: 'Could not start the Shopify sign-in. Please try again.' }))
+  if (error) {
+    // e.g. the app_client_id column (migration V422) is missing for the private app.
+    return fail(returnTo, 'Could not start the Shopify sign-in. Please try again.', `Saving the sign-in state failed: ${error.message}`)
+  }
+  await logInstallStep('app_url', 'processed', { shop, app, companyId, note: companyId ? 'Sent to Shopify to approve access' : 'Sent to Shopify to approve access (no workspace yet: picked after sign-in)' })
   return done(buildAuthorizeUrl(shop, nonce, app))
 }
