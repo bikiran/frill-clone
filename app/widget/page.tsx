@@ -95,6 +95,7 @@ function WidgetContent() {
   const [chatName, setChatName] = useState('')
   const [chatEmail, setChatEmail] = useState('')
   const [chatMobile, setChatMobile] = useState('')
+  const visitorPrefilled = useRef(false)
   const [smsOptIn, setSmsOptIn] = useState(false)
   const [chatStep, setChatStep] = useState<'form' | 'chat'>('form')
   // The server no longer recognises this browser as the one that started the
@@ -251,6 +252,16 @@ function WidgetContent() {
       const d: any = e.data
       if (!d || !d.colvy || d.type !== 'page' || !d.url) return
       setParentPage({ url: d.url, title: d.title || null })
+      // Signed in on the site (e.g. a Shopify customer account): fill in the
+      // start form once, leaving anything already typed alone.
+      if (d.visitor && typeof d.visitor === 'object' && e.source === window.parent && !visitorPrefilled.current) {
+        visitorPrefilled.current = true
+        const v = (x: unknown) => (typeof x === 'string' ? x.trim().slice(0, 200) : '')
+        const name = v(d.visitor.name), email = v(d.visitor.email), phone = v(d.visitor.phone)
+        if (name) setChatName(n => n || name)
+        if (email) setChatEmail(x => x || email)
+        if (phone) setChatMobile(x => x || phone)
+      }
       if (typeof d.clv === 'string' && d.clv) clickRef.current = d.clv
       // Read now, not when this listener was set up: a restored chat sets it up
       // before the company has loaded. Until it has, nothing is sent — the
