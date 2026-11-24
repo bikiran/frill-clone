@@ -7,6 +7,7 @@ import { attachListingFromPage } from '@/lib/listings-server'
 import { stitchLinkClick } from '@/lib/link-stitch'
 import { ilikeExact, exactEmailRow } from '@/lib/phone'
 import { planAllows } from '@/lib/plan-gate'
+import { checkChatDetails } from '@/lib/chat-details'
 
 export const dynamic = 'force-dynamic'
 
@@ -60,9 +61,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Chat isn’t available right now. Please contact the business another way.', chatOff: true }, { status: 403 })
     }
 
-    const name = (b.name || '').toString().trim().slice(0, 120) || null
-    const email = (b.email || '').toString().trim().slice(0, 200) || null
-    const phone = (b.phone || '').toString().trim().slice(0, 40) || null
+    // The same checks as the widget's form (lib/chat-details), against the
+    // business's own required fields: an old copy of the widget, or a script,
+    // can't start a chat as name "g", email "g" and phone "+61".
+    const { data: co } = await db.from('companies').select('widget_config').eq('id', companyId).maybeSingle()
+    const details = checkChatDetails(
+      { name: String(b.name ?? ''), email: String(b.email ?? ''), mobile: String(b.phone ?? '') },
+      (co as any)?.widget_config?.chat_form_fields,
+    )
+    if (!details.ok) return NextResponse.json({ error: details.error, field: details.field }, { status: 400 })
+    const { name, email, phone } = details
     const smsOptIn = !!b.smsOptIn
     const page = b.page || {}
     const pageHistory = Array.isArray(b.pageHistory) ? b.pageHistory.slice(0, 30) : []

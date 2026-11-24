@@ -2,6 +2,7 @@
 
 import { authFetch } from '@/lib/auth-fetch'
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getVoiceProvider } from '@/lib/voice-provider-client'
@@ -94,6 +95,29 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
   // that in component state only (not storage), so it comes back on refresh.
   const [pillDismissed, setPillDismissed] = useState(false)
   const [pillHover, setPillHover] = useState(false)
+  // On a phone or tablet (no side rail) the pill sat bottom-left, on top of the
+  // reply box. There it becomes a small phone icon with a status dot in the top
+  // bar, in the slot app/AppChrome keeps beside the bell; a tap says the status.
+  const [phoneSlot, setPhoneSlot] = useState<HTMLElement | null>(null)
+  const [chipTip, setChipTip] = useState(false)
+  useEffect(() => {
+    if (!showStatusPill || typeof window === 'undefined' || !window.matchMedia) return
+    const mq = window.matchMedia('(max-width: 860px)')
+    const find = () => {
+      const el = mq.matches ? document.getElementById('cv-phone-slot') : null
+      setPhoneSlot(prev => (prev === el ? prev : el))
+    }
+    find()
+    mq.addEventListener?.('change', find)
+    // The top bar can mount after this, or be re-rendered on navigation.
+    const t = window.setInterval(find, 1500)
+    return () => { mq.removeEventListener?.('change', find); window.clearInterval(t) }
+  }, [showStatusPill])
+  useEffect(() => {
+    if (!chipTip) return
+    const t = window.setTimeout(() => setChipTip(false), 2500)
+    return () => window.clearTimeout(t)
+  }, [chipTip])
   const [onHold, setOnHold] = useState(false)
   const [transferState, setTransferState] = useState<'none' | 'ringing' | 'consulting'>('none')
   const [transferBusy, setTransferBusy] = useState(false)
@@ -1309,7 +1333,26 @@ export default function IncomingCallListener({ companyId, agentName, showStatusP
     {/* Tiny phone-status indicator so it's visible whether the WebRTC client is
         actually connected to receive inbound calls (green = ready). Dismissable
         — hovering reveals a cross that hides it until the next page refresh. */}
-    {!pillDismissed && showStatusPill && (
+    {showStatusPill && phoneSlot && createPortal(
+      <button type="button" className="cv-phone-chip"
+        onClick={() => setChipTip(v => !v)}
+        aria-label={connErr ? `Phone: ${connErr}` : ready ? 'Phone ready to receive calls' : 'Phone connecting'}
+        title={connErr ? `Phone: ${connErr}` : ready ? 'Phone ready to receive calls' : 'Phone connecting…'}
+        style={{ position: 'relative', width: 36, height: 36, flexShrink: 0, padding: 0, border: 'none', borderRadius: 12, background: 'transparent', color: '#374151', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+        </svg>
+        <span aria-hidden style={{ position: 'absolute', top: 6, right: 5, width: 9, height: 9, borderRadius: '50%', background: connErr ? '#dc2626' : ready ? '#22c55e' : '#f59e0b', boxShadow: '0 0 0 2px #fff' }} />
+        {chipTip && (
+          <span role="status" style={{ position: 'absolute', top: 'calc(100% + 6px)', right: -6, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 999, background: '#fff', border: '1px solid var(--border)', boxShadow: '0 4px 14px rgba(0,0,0,0.12)', fontSize: 11.5, fontWeight: 700, color: connErr ? '#dc2626' : ready ? '#15803d' : '#b45309', zIndex: 60 }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: connErr ? '#dc2626' : ready ? '#22c55e' : '#f59e0b' }} />
+            {connErr ? 'Phone error' : ready ? 'Phone ready' : 'Connecting…'}
+          </span>
+        )}
+      </button>,
+      phoneSlot,
+    )}
+    {!pillDismissed && showStatusPill && !phoneSlot && (
       <div className="cv-phone-pill"
         onMouseEnter={() => setPillHover(true)}
         onMouseLeave={() => setPillHover(false)}
