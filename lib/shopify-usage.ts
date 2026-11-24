@@ -24,6 +24,7 @@
 // event would be dropped unbilled (SUBSCRIPTION_NOT_METERED).
 
 import { PARTNER_API_VERSION, partnerApiConfigured, planSelectionUrl, shopifyBillingStore, syncShopifyBilling } from '@/lib/shopify-billing'
+import { shopifyEnv } from '@/lib/shopify-auth'
 
 export const APP_EVENTS_VERSION = '2026-10'
 const orgId = () => process.env.SHOPIFY_PARTNER_ORG_ID || '5242426'
@@ -32,8 +33,8 @@ const appGid = () => process.env.SHOPIFY_APP_GID || 'gid://shopify/App/433393926
 /** The usage meter's event handle, or '' when SMS credit isn't sold through Shopify. */
 export const smsMeterHandle = () => String(process.env.SHOPIFY_SMS_METER || '').trim()
 const eventsClient = () => ({
-  id: process.env.SHOPIFY_EVENTS_CLIENT_ID || process.env.SHOPIFY_API_KEY || '',
-  secret: process.env.SHOPIFY_EVENTS_CLIENT_SECRET || process.env.SHOPIFY_API_SECRET || '',
+  id: shopifyEnv('SHOPIFY_EVENTS_CLIENT_ID') || shopifyEnv('SHOPIFY_API_KEY'),
+  secret: shopifyEnv('SHOPIFY_EVENTS_CLIENT_SECRET') || shopifyEnv('SHOPIFY_API_SECRET'),
 })
 /** Everything needed to bill SMS credit through Shopify is set. */
 export const shopifySmsBillingConfigured = () => !!smsMeterHandle() && !!eventsClient().id && !!eventsClient().secret && partnerApiConfigured()

@@ -34,16 +34,22 @@ import crypto from 'crypto'
 
 export type ShopifyApp = { key: string; secret: string; private: boolean }
 
+// An app setting from the environment, without the stray spaces or line break
+// a copy-paste into Vercel can add (a secret with one never verifies a single
+// Shopify signature, so every install bounced back unconnected).
+export const shopifyEnv = (name: string) => (process.env[name] || '').trim()
+const env = shopifyEnv
+
 /** The configured apps: the public Colvy app first, then the private one. */
 export function shopifyApps(): ShopifyApp[] {
   const out: ShopifyApp[] = []
-  const pub = { key: process.env.SHOPIFY_API_KEY || '', secret: process.env.SHOPIFY_API_SECRET || '' }
-  const priv = { key: process.env.SHOPIFY_CUSTOM_API_KEY || '', secret: process.env.SHOPIFY_CUSTOM_API_SECRET || '' }
+  const pub = { key: env('SHOPIFY_API_KEY'), secret: env('SHOPIFY_API_SECRET') }
+  const priv = { key: env('SHOPIFY_CUSTOM_API_KEY'), secret: env('SHOPIFY_CUSTOM_API_SECRET') }
   if (pub.key && pub.secret) out.push({ ...pub, private: false })
   if (priv.key && priv.secret && priv.key !== pub.key) out.push({ ...priv, private: true })
   return out
 }
-const PUBLIC_APP = (): ShopifyApp => ({ key: process.env.SHOPIFY_API_KEY || '', secret: process.env.SHOPIFY_API_SECRET || '', private: false })
+const PUBLIC_APP = (): ShopifyApp => ({ key: env('SHOPIFY_API_KEY'), secret: env('SHOPIFY_API_SECRET'), private: false })
 
 /** What a store row keeps in app_client_id: the private app's client ID, else null (the public app). */
 export const appClientId = (app: ShopifyApp | null | undefined): string | null => (app?.private ? app.key : null)
@@ -57,7 +63,7 @@ export function appFor(clientId?: string | null): ShopifyApp {
 }
 
 /** The private app's install link, when one is set up. */
-export const privateInstallUrl = () => (shopifyApps().some(a => a.private) && process.env.SHOPIFY_CUSTOM_INSTALL_URL) || null
+export const privateInstallUrl = () => (shopifyApps().some(a => a.private) && env('SHOPIFY_CUSTOM_INSTALL_URL')) || null
 
 // Everything the WooCommerce-parity plan needs, asked for once at install so
 // later phases don't send every merchant back through a re-consent screen.
@@ -71,8 +77,8 @@ export const SHOPIFY_SCOPES = [
 ].join(',')
 
 export const shopifyAppConfigured = () => shopifyApps().length > 0
-export const shopifyRedirectUri = () => process.env.SHOPIFY_REDIRECT_URI || 'https://colvy.com/api/shopify/callback'
-const scopes = () => process.env.SHOPIFY_SCOPES || SHOPIFY_SCOPES
+export const shopifyRedirectUri = () => env('SHOPIFY_REDIRECT_URI') || 'https://colvy.com/api/shopify/callback'
+const scopes = () => env('SHOPIFY_SCOPES') || SHOPIFY_SCOPES
 // The private app (shopify.app.private.toml) also asks for write_app_proxy:
 // Shopify won't release a new app with an app proxy without it. The public app
 // was created before that rule and deploys without it, so it isn't added there
@@ -128,7 +134,7 @@ const safeEqual = (a: string, b: string) => {
 
 // OAuth callback / app-URL requests: drop `hmac` (and legacy `signature`),
 // sort the rest, join key=value with &, HMAC-SHA256 hex with the app secret.
-export function verifyQueryHmac(params: URLSearchParams, secret = process.env.SHOPIFY_API_SECRET || ''): boolean {
+export function verifyQueryHmac(params: URLSearchParams, secret = env('SHOPIFY_API_SECRET')): boolean {
   const given = params.get('hmac') || ''
   if (!given || !secret) return false
   const pairs: string[] = []
@@ -150,7 +156,7 @@ export const appForQuery = (params: URLSearchParams) => shopifyApps().find(a => 
 // them with NO separator; HMAC-SHA256 hex with the app secret. Requests older
 // than `maxAgeSec` are refused so a captured URL can't be replayed for long.
 export function verifyProxySignature(params: URLSearchParams, opts: { secret?: string; maxAgeSec?: number; now?: number } = {}): boolean {
-  const secret = opts.secret ?? process.env.SHOPIFY_API_SECRET ?? ''
+  const secret = opts.secret ?? env('SHOPIFY_API_SECRET')
   const given = params.get('signature') || ''
   if (!given || !secret) return false
   const keys = Array.from(new Set(Array.from(params.keys()))).filter(k => k !== 'signature')
@@ -166,7 +172,7 @@ export function verifyProxySignature(params: URLSearchParams, opts: { secret?: s
 export const appForProxy = (params: URLSearchParams) => shopifyApps().find(a => verifyProxySignature(params, { secret: a.secret })) || null
 
 // Webhooks: base64 HMAC-SHA256 of the RAW body in X-Shopify-Hmac-Sha256.
-export function verifyWebhookHmac(rawBody: string, header: string | null, secret = process.env.SHOPIFY_API_SECRET || ''): boolean {
+export function verifyWebhookHmac(rawBody: string, header: string | null, secret = env('SHOPIFY_API_SECRET')): boolean {
   if (!header || !secret) return false
   const digest = crypto.createHmac('sha256', secret).update(rawBody, 'utf8').digest('base64')
   return safeEqual(digest, header)
