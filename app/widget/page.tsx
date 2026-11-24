@@ -303,17 +303,26 @@ function WidgetContent() {
     window.addEventListener('message', onMsg)
 
     // Presence heartbeat (60s). Cheap enough to run per open visitor, and it's
-    // the only signal that tells the inbox the customer is STILL on the page.
+    // the only signal that tells the inbox the customer is STILL on the page,
+    // so replies stay in the live chat instead of going out by SMS. Through
+    // /api/widget/update: the browser can't write conversations (RLS), and a
+    // direct update here failed silently, so a chat looked abandoned.
     const beat = () => {
       if (!chatConvId) return
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
-      ;(supabase as any).from('conversations')
-        .update({ page_seen_at: new Date().toISOString() })
-        .eq('id', chatConvId).then(() => {}, () => {})
+      const companyId = companyIdRef.current
+      if (!companyId) return
+      fetch('/api/widget/update', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...chatHeaders() },
+        body: JSON.stringify({ companyId, conversationId: chatConvId, fields: { page_seen_at: new Date().toISOString() } }),
+      }).catch(() => {})
     }
+    // Back on the tab: say so straight away rather than at the next beat.
+    const onVisible = () => { if (document.visibilityState === 'visible') beat() }
+    document.addEventListener('visibilitychange', onVisible)
     const hb = setInterval(beat, 60000)
     beat()
-    return () => { window.removeEventListener('message', onMsg); clearInterval(hb) }
+    return () => { window.removeEventListener('message', onMsg); clearInterval(hb); document.removeEventListener('visibilitychange', onVisible) }
   }, [chatConvId])
 
   // Reset article feedback state whenever a different item opens
