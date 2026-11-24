@@ -7,9 +7,18 @@
   Colvy which workspace this store is connected to, so the chat still shows.
 {%- endcomment -%}
 {%- assign slug = block.settings.slug | strip | default: app.metafields.colvy.slug.value -%}
+{%- comment -%}
+  A shopper signed in to their store account: their name, email and mobile
+  fill in the chat's start form, so they don't type them again. Only a
+  prefill: they can change it, and Colvy treats it like anything typed.
+{%- endcomment -%}
+{%- if customer -%}
+  {%- assign cv_name = customer.name | strip -%}
+  {%- assign cv_phone = customer.phone | default: customer.default_address.phone | strip -%}
+{%- endif -%}
 {%- # theme-check-disable RemoteAsset -%}
 {%- comment -%} The chat widget is Colvy's own script, versioned with Colvy (not this extension), so it loads from colvy.com. {%- endcomment -%}
-<script src="https://colvy.com/widget.js"{% if slug != blank %} data-slug="{{ slug | escape }}"{% endif %} data-shop="{{ shop.permanent_domain | escape }}" async></script>
+<script src="https://colvy.com/widget.js"{% if slug != blank %} data-slug="{{ slug | escape }}"{% endif %} data-shop="{{ shop.permanent_domain | escape }}"{% if customer %}{% if cv_name != blank %} data-visitor-name="{{ cv_name | escape }}"{% endif %}{% if customer.email != blank %} data-visitor-email="{{ customer.email | escape }}"{% endif %}{% if cv_phone != blank %} data-visitor-phone="{{ cv_phone | escape }}"{% endif %}{% endif %} async></script>
 {%- # theme-check-enable RemoteAsset -%}
 
 {% schema %}
