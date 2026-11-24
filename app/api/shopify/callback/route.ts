@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { appClientId, appForQuery, exchangeCode, isShopDomain } from '@/lib/shopify-auth'
 import { ShopifyService } from '@/lib/shopify-service'
-import { CLAIM_COOKIE, FALLBACK_PAGE, PENDING_COOKIE, PENDING_TTL_MS, connectStore, connectedElsewhere, savePendingInstall, setInstallCookie } from '@/lib/shopify-install'
+import { CLAIM_COOKIE, ERROR_COOKIE, FALLBACK_PAGE, PENDING_COOKIE, PENDING_TTL_MS, clearInstallCookies, connectStore, connectedElsewhere, installFailed, logInstallStep, savePendingInstall, setInstallCookie } from '@/lib/shopify-install'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,8 +35,16 @@ export async function GET(req: NextRequest) {
 
   // Signed by the public app or the privately shared one (lib/shopify-auth).
   const app = appForQuery(params)
+  // Every stop is logged (Super Admin → Webhook Explorer, source shopify_install)
+  // and shown on the Shopify page, wherever the person ends up signing in.
+  const fail = async (to: string | null | undefined, message: string, a: { detail?: string; companyId?: string | null; status?: 'rejected' | 'error' } = {}) => {
+    await logInstallStep('callback', a.status || 'error', { shop, app, companyId: a.companyId || null, error: a.detail || message })
+    return installFailed(req, to, message)
+  }
   if (!app || !isShopDomain(shop) || !state || !code) {
-    return back(FALLBACK_PAGE, { shopify_error: 'That Shopify response could not be verified. Please try installing again.' })
+    return fail(FALLBACK_PAGE, 'That Shopify response could not be verified. Please try installing again.', {
+      status: 'rejected', detail: !app ? "Shopify's signature matched none of the app secrets on this deployment" : 'Missing shop, state or code',
+    })
   }
 
   const db = admin()
@@ -46,10 +54,10 @@ export async function GET(req: NextRequest) {
     .eq('nonce', state).eq('kind', 'oauth').is('used_at', null).gt('expires_at', new Date().toISOString())
     .select('*')
   const st = claimed?.[0]
-  if (!st) return back(FALLBACK_PAGE, { shopify_error: 'This install link has expired. Open Colvy from your Shopify admin to try again.' })
+  if (!st) return fail(FALLBACK_PAGE, 'This install link has expired. Open Colvy from your Shopify admin to try again.')
   const returnTo = st.return_to || FALLBACK_PAGE
-  if (st.shop !== shop) return back(returnTo, { shopify_error: 'Shopify returned a different store than the one you started with.' })
-  if ((st.app_client_id || null) !== appClientId(app)) return back(returnTo, { shopify_error: 'Shopify answered for a different Colvy app than the one you started with. Please try again.' })
+  if (st.shop !== shop) return fail(returnTo, 'Shopify returned a different store than the one you started with.', { companyId: st.company_id })
+  if ((st.app_client_id || null) !== appClientId(app)) return fail(returnTo, 'Shopify answered for a different Colvy app than the one you started with. Please try again.', { companyId: st.company_id })
 
   try {
     const tokens = await exchangeCode(shop, code, app)
@@ -58,18 +66,23 @@ export async function GET(req: NextRequest) {
       const info = await new ShopifyService({ storeDomain: shop, accessToken: tokens.accessToken }).getShopInfo()
       const name = info.name || shop
       const claim = await savePendingInstall(db, shop, tokens, name, app)
+      await logInstallStep('callback', 'processed', { shop, app, note: 'Approved in Shopify: waiting for someone to sign in to Colvy and connect it' })
       const res = NextResponse.redirect(SIGN_IN_TO_FINISH)
       setInstallCookie(res, req, CLAIM_COOKIE, claim, PENDING_TTL_MS)
       setInstallCookie(res, req, PENDING_COOKIE, name.slice(0, 200), PENDING_TTL_MS, false)
+      clearInstallCookies(res, req, [ERROR_COOKIE])
       return res
     }
 
     if (await connectedElsewhere(db, shop, st.company_id)) {
-      return back(returnTo, { shopify_error: 'This store is already connected to another Colvy workspace. Disconnect it there first.' })
+      return fail(returnTo, 'This store is already connected to another Colvy workspace. Disconnect it there first.', { companyId: st.company_id })
     }
     const id = await connectStore(db, { companyId: st.company_id, userId: st.user_id, shop, tokens, app })
-    return back(returnTo, { shopify: 'connected', store: id })
+    await logInstallStep('callback', 'processed', { shop, app, companyId: st.company_id, note: 'Connected' })
+    const res = back(returnTo, { shopify: 'connected', store: id })
+    clearInstallCookies(res, req, [ERROR_COOKIE])
+    return res
   } catch (e: any) {
-    return back(returnTo, { shopify_error: e?.message || 'Shopify install failed' })
+    return fail(returnTo, e?.message || 'Shopify install failed', { companyId: st.company_id })
   }
 }

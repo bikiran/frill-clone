@@ -21,8 +21,9 @@
 // and the store row (app_client_id), and is used for every token exchange.
 
 import crypto from 'crypto'
-import type { NextRequest, NextResponse } from 'next/server'
+import { NextResponse, type NextRequest } from 'next/server'
 import { SHOPIFY_SCOPES, appClientId, tokenColumns, type ShopifyApp, type ShopifyTokenSet } from '@/lib/shopify-auth'
+import { logWebhookEvent } from '@/lib/webhook-log'
 import { ensureAppMetafields, ensureStoreWebhooks } from '@/lib/shopify-sync'
 import { ShopifyService } from '@/lib/shopify-service'
 import { adoptShopifyBilling } from '@/lib/shopify-billing'
@@ -30,6 +31,8 @@ import { adoptShopifyBilling } from '@/lib/shopify-billing'
 export const INTENT_COOKIE = 'colvy_shopify_intent'   // httpOnly: an intent nonce
 export const CLAIM_COOKIE = 'colvy_shopify_claim'     // httpOnly: a pending-install claim token
 export const PENDING_COOKIE = 'colvy_shopify_pending' // readable: the store's name, so pages can say what's waiting
+export const ERROR_COOKIE = 'colvy_shopify_error'     // readable: why the last install stopped
+export const ERROR_TTL_MS = 15 * 60 * 1000
 
 export const INTENT_TTL_MS = 30 * 60 * 1000
 export const PENDING_TTL_MS = 60 * 60 * 1000
@@ -54,6 +57,38 @@ export function setInstallCookie(res: NextResponse, req: NextRequest, name: stri
     domain: cookieDomain(req.headers.get('host') || req.nextUrl.hostname),
     path: '/', httpOnly, sameSite: 'lax', secure: req.nextUrl.protocol === 'https:',
     maxAge: Math.floor(maxAgeMs / 1000),
+  })
+}
+
+/**
+ * Send someone back to Colvy because an install stopped, saying why. The reason
+ * rides in ?shopify_error AND a short-lived readable cookie on .colvy.com: a
+ * failed install lands on colvy.com, and someone signed in only on their
+ * workspace's address goes through sign-in there, which drops the query string.
+ * The cookie lets the workspace's Shopify page show the reason all the same.
+ */
+export function installFailed(req: NextRequest, to: string | null | undefined, message: string): NextResponse {
+  const u = new URL(to || FALLBACK_PAGE)
+  u.searchParams.set('shopify_error', message)
+  const res = NextResponse.redirect(u.toString())
+  setInstallCookie(res, req, ERROR_COOKIE, message.slice(0, 300), ERROR_TTL_MS, false)
+  return res
+}
+
+/**
+ * One step of a Shopify install, kept in webhook_events (source shopify_install)
+ * for Super Admin → Webhook Explorer and the status card on the Shopify page:
+ * which step, which store, which app, and where it stopped. Never a secret or
+ * a token. Never throws.
+ */
+export async function logInstallStep(
+  step: 'app_url' | 'callback' | 'claim',
+  status: 'processed' | 'rejected' | 'error',
+  d: { shop?: string | null; app?: ShopifyApp | null; companyId?: string | null; note?: string | null; error?: string | null } = {},
+): Promise<void> {
+  await logWebhookEvent({
+    source: 'shopify_install', eventType: step, companyId: d.companyId || null, status, error: d.error || null,
+    payload: { shop: d.shop || null, app: d.app ? (d.app.private ? 'private' : 'public') : null, client_id: d.app?.key || null, note: d.note || null },
   })
 }
 
