@@ -5,6 +5,12 @@
  * On a Shopify store the Colvy chat app embed also passes the store's address
  * (data-shop="<store>.myshopify.com"). If it has no slug (the app metafield
  * isn't there yet), the workspace the store is connected to is looked up.
+ *
+ * A site that knows who's signed in can fill in the chat's start form for them:
+ *   data-visitor-name="Sam Lee" data-visitor-email="sam@example.com"
+ *   data-visitor-phone="+61412345678"
+ * (the Shopify app embed does this for a signed-in customer). It's only a
+ * prefill: the visitor can change it before starting the chat.
  */
 (function colvyWidget(resolvedSlug) {
   var script = document.currentScript || document.querySelector('script[data-slug],script[data-shop]')
@@ -535,6 +541,16 @@
   // Record the page we loaded on, immediately.
   recordPage()
 
+  // Who's signed in on this site, when it says (see the top of this file).
+  var VISITOR = (function () {
+    var v = {}, any = false
+    ;['name', 'email', 'phone'].forEach(function (k) {
+      var x = script ? String(script.getAttribute('data-visitor-' + k) || '').trim().slice(0, 200) : ''
+      if (x) { v[k] = x; any = true }
+    })
+    return any ? v : null
+  })()
+
   function sendPage() {
     try {
       var hist = recordPage()
@@ -546,6 +562,7 @@
           url: info.url, title: info.title,
           history: hist,
           clv: CLV || undefined,
+          visitor: VISITOR || undefined,
         }, BASE)
       }
     } catch (e) {}
