@@ -578,8 +578,9 @@ export function useInboxController() {
   // On phones we show one pane at a time: the conversation list, the open
   // thread, or the contact panel. Desktop shows all three side by side.
   const [mobilePane, setMobilePane] = useState<'list' | 'thread' | 'contact'>('list')
-  // This person's private chat with Colvy (components/inbox/ColvyChat), pinned
-  // at the top of the list. Open instead of a conversation, never alongside one.
+  // This person's private chat with Colvy (components/inbox/ColvyChat), a row
+  // in the list by time (colvyAt). Open instead of a conversation, never
+  // alongside one.
   const colvy = useColvySummary(companyId)
   const [colvyOpen, setColvyOpen] = useState(false)
   // For the list refresh (below), which mustn't open a conversation over it.
@@ -6666,15 +6667,16 @@ export function useInboxController() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // Where the Colvy chat sits in the list: on top while it has something new
-  // (an update, or an answer from the team), otherwise by time like any
-  // conversation, below the pinned ones, sinking as newer ones arrive. Not in
-  // searches, Closed, filters or views it doesn't belong to (Unread only while
-  // unread). Past the loaded page it's left out; the account menu opens it.
+  // Where the Colvy chat sits in the list: by time like any conversation,
+  // below the pinned ones, sinking as newer ones arrive. Something new from
+  // Colvy (an update, or an answer from the team) shows as its unread badge,
+  // but never lifts it above customers' chats: an unread welcome from weeks
+  // ago sat on top of a live chat that had just come in. Not in searches,
+  // Closed, filters or views it doesn't belong to (Unread only while unread).
+  // Past the loaded page it's left out; the account menu opens it.
   const colvyAt = (() => {
     if (!colvy.available || searchTerm.trim() || statusFilter === 'closed' || activeFilterCount > 0) return -1
     if (assignFilter !== 'all' && !(assignFilter === 'unread' && colvy.unread > 0)) return -1
-    if (colvy.unread > 0) return 0
     const t = Date.parse(colvy.last?.at || '')
     if (!Number.isFinite(t)) return -1
     const i = filteredConvs.findIndex(c => !pinnedIds.has(c.id) && !priorityPins.has(c.id) && (Date.parse((c as any).last_message_at || '') || 0) < t)
