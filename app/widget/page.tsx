@@ -18,6 +18,7 @@ import { type WidgetSize, isWidgetSize, postToHost, boardLinkFor } from '@/lib/w
 import { publicBoardUrl } from '@/lib/board-url'
 import EmptyScroll from '@/components/EmptyScroll'
 import CouponTicket from '@/components/CouponTicket'
+import { checkChatDetails, DEFAULT_CHAT_FIELDS } from '@/lib/chat-details'
 
 // Proof that this browser started the chat (lib/widget-access.ts): the key
 // /api/widget/start returned, and — for chats saved before keys existed — this
@@ -1857,13 +1858,12 @@ function WidgetContent() {
                 )}
                 <button type="button" disabled={chatCreating}
                   onClick={async () => {
-                    const ff = company?.widget_config?.chat_form_fields || { name: { show: true, required: true }, email: { show: true, required: false }, mobile: { show: true, required: false } }
-                    // Validate required fields per config.
-                    if (ff.name?.show && ff.name?.required && !chatName.trim()) { setChatCreateError('Please enter your name.'); return }
-                    if (ff.email?.show && ff.email?.required && !chatEmail.trim()) { setChatCreateError('Please enter your email.'); return }
-                    if (ff.mobile?.show && ff.mobile?.required && !chatMobile.trim()) { setChatCreateError('Please enter your mobile number.'); return }
-                    // Need at least something to identify the visitor.
-                    if (!chatName.trim() && !chatEmail.trim() && !chatMobile.trim()) { setChatCreateError('Please fill in at least one field.'); return }
+                    // Required fields per the business's form, and anything
+                    // filled in must look real: a name of one letter, an email
+                    // with no "@…", or "+61" with no number used to get through
+                    // (lib/chat-details; the server checks again).
+                    const details = checkChatDetails({ name: chatName, email: chatEmail, mobile: chatMobile }, company?.widget_config?.chat_form_fields || DEFAULT_CHAT_FIELDS)
+                    if (!details.ok) { setChatCreateError(details.error); return }
                     setChatCreating(true)
                     setChatCreateError('')
                     // Find-or-create the contact.
@@ -1873,8 +1873,6 @@ function WidgetContent() {
                     // phone but no email it created a brand-new contact every
                     // time — which is why the same person appeared twice.
                     let contactId: string | null = null
-                    const normalizedMobile = chatMobile.trim() ? (chatMobile.trim().startsWith('+') ? chatMobile.replace(/[^\d+]/g, '') : chatMobile.replace(/[^\d]/g, '').replace(/^0/, '+61').replace(/^61/, '+61')) : null
-                    const last8 = normalizedMobile ? normalizedMobile.replace(/\D/g, '').slice(-8) : null
 
                     try {
                       // Finding the contact and reusing their conversation now
@@ -1901,9 +1899,9 @@ function WidgetContent() {
                         body: JSON.stringify({
                           companyId: company?.id,
                           visitorId,
-                          name: chatName,
-                          email: chatEmail ? chatEmail.trim() : null,
-                          phone: normalizedMobile,
+                          name: details.name,
+                          email: details.email,
+                          phone: details.phone,
                           smsOptIn,
                           page: { url: parentPage.url || null, title: parentPage.title || null },
                           pageHistory: parentPageHistory,
@@ -1911,6 +1909,10 @@ function WidgetContent() {
                         }),
                       })
                       const startData = await startRes.json().catch(() => ({}))
+                      // The server checks the details too; its message says what to fix.
+                      if (startRes.status === 400 && startData.error && 'field' in startData) {
+                        setChatCreateError(startData.error); setChatCreating(false); return
+                      }
                       if (!startRes.ok || !startData.conversationId) {
                         throw new Error(startData.error || 'Could not start the chat')
                       }

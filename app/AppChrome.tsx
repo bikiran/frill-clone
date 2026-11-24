@@ -992,6 +992,10 @@ export default function AppChrome({
             <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
               {user ? (
                 <>
+                  {/* On a phone or tablet, the phone's status sits here as a
+                      small icon (components/IncomingCallListener). On a computer
+                      it's the pill in the middle of this bar. */}
+                  {pathname?.startsWith('/admin') && <span id="cv-phone-slot" style={{ display: 'contents' }} />}
                   {/* Colvy Powers: shows only when the business has it on */}
                   {pathname?.startsWith('/admin') && company?.id && <PowersChip companyId={company.id} />}
                   {/* Notification icon */}
