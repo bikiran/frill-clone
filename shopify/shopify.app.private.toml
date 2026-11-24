@@ -12,7 +12,7 @@
 # `client_id` is the private app's Client ID, the same value as
 # SHOPIFY_CUSTOM_API_KEY in Vercel. Paste it below.
 
-client_id = "PASTE_PRIVATE_APP_CLIENT_ID"
+client_id = "504edac9bf80b7e8502bf406492a42fe"
 name = "Colvy (private)"
 handle = "colvy-private"
 application_url = "https://colvy.com/api/shopify/app"
