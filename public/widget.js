@@ -124,6 +124,34 @@
   // Config (populated from /api/widget-data): default is CHAT ICON ONLY.
   var cfg = { mode: 'icon', label: 'Chat with us', color: '#ff7a6b', position: 'bottom-right', offsetX: '24', offsetXUnit: 'px', offsetY: '24', offsetYUnit: 'px' }
 
+  // A bar fixed along the bottom of the screen that belongs to the site, like a
+  // store theme's phone toolbar (Home / Search / Account / Cart). The bubble
+  // sits above it instead of covering its buttons. Its height in px, or 0.
+  function bottomBarHeight() {
+    try {
+      var vw = window.innerWidth, vh = window.innerHeight, h = 0
+      if (!document.elementsFromPoint) return 0
+      var xs = [vw * 0.2, vw * 0.5, vw - 28]
+      for (var i = 0; i < xs.length; i++) {
+        var els = document.elementsFromPoint(xs[i], vh - 3)
+        for (var j = 0; j < els.length; j++) {
+          for (var n = els[j]; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+            if (n.id && n.id.indexOf('colvy-') === 0) break
+            var cs = window.getComputedStyle(n)
+            if (cs.position !== 'fixed' && cs.position !== 'sticky') continue
+            var r = n.getBoundingClientRect()
+            if (r.width >= vw * 0.6 && r.bottom >= vh - 4 && r.height > 0 && r.height <= Math.min(160, vh * 0.25) && cs.visibility !== 'hidden' && cs.opacity !== '0') {
+              h = Math.max(h, Math.round(vh - r.top))
+            }
+            break
+          }
+        }
+      }
+      return h
+    } catch (e) { return 0 }
+  }
+  var lift = 0
+
   function applyPosition() {
     var ox = (cfg.offsetX || '24') + (cfg.offsetXUnit || 'px')
     var oy = (cfg.offsetY || '24') + (cfg.offsetYUnit || 'px')
@@ -148,14 +176,15 @@
       // Popup hangs below the bubble when it's at the top.
       popup.style.top = 'calc(' + oy + ' + 68px)'
     } else {
-      btn.style.bottom = oy
-      popup.style.bottom = 'calc(' + oy + ' + 68px)'
+      lift = bottomBarHeight()
+      btn.style.bottom = lift ? 'calc(' + oy + ' + ' + lift + 'px)' : oy
+      popup.style.bottom = 'calc(' + oy + ' + ' + (68 + lift) + 'px)'
     }
     popup.style.transformOrigin = (isMiddle ? 'center ' : (isTop ? 'top ' : 'bottom ')) + (isLeft ? 'left' : 'right')
   }
 
-  var CHAT_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
-  var CLOSE_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+  var CHAT_ICON = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
+  var CLOSE_ICON = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
 
   // Inject styles. Icon-only mode is a round button; icon+label is a pill.
   var style = document.createElement('style')
@@ -166,6 +195,15 @@
     '#colvy-btn *{pointer-events:none}',
     '#colvy-btn.icon{width:56px;height:56px;border-radius:999px;justify-content:center;padding:0}',
     '#colvy-btn.pill{padding:12px 18px;border-radius:999px}',
+    // Store themes style every button and svg on the page (sizes, padding,
+    // fills), which shrank the bubble's icon to a dot on some Shopify themes.
+    // The launcher keeps its own look whatever the site's CSS says.
+    '#colvy-btn,#colvy-btn *{box-sizing:border-box}',
+    '#colvy-btn{margin:0!important;min-width:0!important;min-height:0!important;max-width:none!important;max-height:none!important;line-height:1.2!important;letter-spacing:normal!important;text-transform:none!important;text-decoration:none!important;text-indent:0!important;opacity:1!important}',
+    '#colvy-btn.icon{width:56px!important;height:56px!important;padding:0!important;border-radius:999px!important}',
+    '#colvy-btn svg{display:block!important;flex:0 0 auto!important;width:26px!important;height:26px!important;min-width:0!important;min-height:0!important;max-width:none!important;max-height:none!important;margin:0!important;padding:0!important;fill:none!important;overflow:visible!important;transform:none!important;position:static!important}',
+    '#colvy-btn svg *{fill:none!important;stroke:#fff!important}',
+    '#colvy-btn.pill svg{width:20px!important;height:20px!important}',
     '#colvy-btn:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(0,0,0,0.22)}',
     '#colvy-btn.dragging{cursor:grabbing;transition:none;transform:scale(1.06);box-shadow:0 12px 36px rgba(0,0,0,0.28)}',
     '#colvy-popup{position:fixed;z-index:999999;width:360px;height:540px;border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,0.2),0 0 0 1px rgba(0,0,0,0.06);overflow:hidden;border:none;transform-origin:bottom right;transition:transform 0.25s cubic-bezier(0.16,1,0.3,1),opacity 0.2s,width 0.22s ease,height 0.22s ease;opacity:0;transform:scale(0.85) translateY(12px);pointer-events:none}',
@@ -429,6 +467,15 @@
     var sp = savedPosition()
     if (sp) cfg.position = sp
     applyPosition()
+    // Themes draw their phone toolbar late, and some hide it while scrolling:
+    // check again as the page settles, on resize and when scrolling stops.
+    var recheck = function () { if (!dragging && btn.style.display !== 'none' && lift !== bottomBarHeight()) applyPosition() }
+    var t = null
+    var later = function () { clearTimeout(t); t = setTimeout(recheck, 250) }
+    window.addEventListener('resize', later)
+    window.addEventListener('scroll', later, { passive: true })
+    window.addEventListener('load', recheck)
+    setTimeout(recheck, 1200); setTimeout(recheck, 3500)
   }
 
   // Size modes: normal | compact | expanded | fullscreen (driven from the
