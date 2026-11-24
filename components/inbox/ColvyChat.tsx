@@ -1,7 +1,8 @@
 'use client'
 
-// The Colvy chat in the inbox (lib/colvy-chat): a "Colvy" row pinned at the top
-// of the conversation list, with the official-account tick, and its thread.
+// The Colvy chat in the inbox (lib/colvy-chat): a "Colvy" row in the
+// conversation list, placed by time like any conversation (never above
+// customers' chats), with the official-account tick, and its thread.
 // The welcome, the updates the Colvy team posts, and a reply box that reaches
 // the Colvy team; only this person sees it. Read through /api/colvy-chat, so
 // it never touches the workspace's own conversations.
