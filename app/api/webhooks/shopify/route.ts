@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { ShopifyAuthError, appClientId, appForWebhook } from '@/lib/shopify-auth'
 import { saveShopifyCustomers } from '@/lib/shopify-customers'
@@ -9,8 +9,12 @@ import { runShopifyOrderAutomations } from '@/lib/shopify-automation'
 import { stageCheckout, stageFromWebhook } from '@/lib/shopify-checkouts'
 import { notifyCompany } from '@/lib/notify'
 import { onShopifyUninstalled } from '@/lib/shopify-billing'
+import { logWebhookEvent } from '@/lib/webhook-log'
 
 export const dynamic = 'force-dynamic'
+// The work after the answer (fetching an order, its automations, a product's
+// stock) can take longer than Shopify waits; it runs on within this limit.
+export const maxDuration = 60
 
 const admin = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -32,8 +36,15 @@ const admin = () => createClient(
  * app/uninstalled. Compliance topics (declared in the app config, required by
  * Shopify): customers/data_request, customers/redact, shop/redact.
  *
- * Answer 200 once handled; a 5xx makes Shopify retry, so only real failures
- * (database errors) return one.
+ * Shopify waits 5 seconds for an answer and counts anything slower as a failed
+ * delivery (and removes a subscription that keeps failing). Fetching an order,
+ * running its automations (texts, emails, alerts) or refreshing a product's
+ * stock often took longer: the Dev Dashboard showed 84% of deliveries failing
+ * at ~6s. So the signature is checked and the delivery answered at once, and
+ * the work runs straight after (after()). A delivery whose work fails isn't
+ * retried by Shopify; the 15-minute /api/cron/shopify-sync catches up orders
+ * and products changed since each store's last run, automations included.
+ * Each delivery is recorded in webhook_events (source shopify) with how it went.
  */
 export async function POST(req: NextRequest) {
   const raw = await req.text()
@@ -48,6 +59,23 @@ export async function POST(req: NextRequest) {
   const shopDomain = shop || String(payload?.shop_domain || '').toLowerCase()
   if (!shopDomain) return NextResponse.json({ ok: true, ignored: 'no shop' })
 
+  after(async () => {
+    const t0 = Date.now()
+    const r = await handleDelivery({ topic, shopDomain, payload, app })
+    await logWebhookEvent({
+      source: 'shopify', eventType: topic, companyId: r.companyId || null,
+      status: r.error ? 'error' : r.ignored ? 'ignored' : 'processed',
+      error: r.error || null,
+      payload: { shop: shopDomain, id: payload?.id ?? payload?.token ?? null, ms: Date.now() - t0, ...(r.ignored ? { ignored: r.ignored } : {}) },
+    })
+  })
+  return NextResponse.json({ ok: true })
+}
+
+type DeliveryResult = { companyId?: string | null; ignored?: string; error?: string }
+
+/** The work for one verified delivery, after Shopify has had its answer. */
+async function handleDelivery({ topic, shopDomain, payload, app }: { topic: string; shopDomain: string; payload: any; app: NonNullable<ReturnType<typeof appForWebhook>> }): Promise<DeliveryResult> {
   const db = admin()
   // An install nobody claimed in Colvy yet (lib/shopify-install) holds tokens
   // for an hour; a store redaction removes it too.
@@ -55,7 +83,7 @@ export async function POST(req: NextRequest) {
   // Normally one workspace per store; legacy pasted-token connections could
   // have the same store in more than one, so act for each.
   const { data: integs } = await db.from('shopify_integrations').select('*').eq('store_domain', shopDomain)
-  if (!integs?.length) return NextResponse.json({ ok: true, ignored: 'unknown shop' })
+  if (!integs?.length) return { ignored: 'unknown shop' }
 
   try {
     for (const integ of integs) {
@@ -168,10 +196,9 @@ export async function POST(req: NextRequest) {
     }
   } catch (e: any) {
     console.error('[shopify webhook]', topic, shopDomain, e?.message || e)
-    // Lost access isn't fixed by retrying — and Shopify deletes a subscription
-    // that keeps failing. The store is already flagged for reconnecting.
-    if (e instanceof ShopifyAuthError) return NextResponse.json({ ok: false, reauth: true })
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+    // Lost access: the store is already flagged for reconnecting.
+    if (e instanceof ShopifyAuthError) return { companyId: integs[0]?.company_id, error: 'Lost access to the store (it needs reconnecting)' }
+    return { companyId: integs[0]?.company_id, error: String(e?.message || e).slice(0, 300) }
   }
-  return NextResponse.json({ ok: true })
+  return { companyId: integs[0]?.company_id }
 }
