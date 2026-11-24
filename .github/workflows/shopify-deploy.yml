@@ -7,8 +7,10 @@
 # Colvy → Settings → App automation token → Create (it expires; rotate there).
 #
 # The privately shared app (shopify.app.private.toml) is deployed too once its
-# Client ID is filled in and SHOPIFY_PRIVATE_APP_AUTOMATION_TOKEN is set (the
-# same kind of token, from Dev Dashboard → Colvy (private)).
+# Client ID is filled in. Automation tokens now belong to the Shopify
+# organisation (a service account), so the same token deploys both apps when
+# they're in the same organisation; SHOPIFY_PRIVATE_APP_AUTOMATION_TOKEN, if
+# set, is used for the private app instead.
 name: Deploy Shopify app
 
 on:
@@ -66,11 +68,11 @@ jobs:
       - name: Deploy the private app
         if: steps.token.outputs.ok == 'true'
         env:
-          SHOPIFY_APP_AUTOMATION_TOKEN: ${{ secrets.SHOPIFY_PRIVATE_APP_AUTOMATION_TOKEN }}
+          SHOPIFY_APP_AUTOMATION_TOKEN: ${{ secrets.SHOPIFY_PRIVATE_APP_AUTOMATION_TOKEN || secrets.SHOPIFY_APP_AUTOMATION_TOKEN }}
           COMMIT_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
         run: |
           if [ -z "$SHOPIFY_APP_AUTOMATION_TOKEN" ] || grep -q PASTE_PRIVATE_APP_CLIENT_ID shopify.app.private.toml; then
-            echo "Private app not set up (Client ID in shopify.app.private.toml + SHOPIFY_PRIVATE_APP_AUTOMATION_TOKEN); skipping."
+            echo "Private app not set up (its Client ID in shopify.app.private.toml); skipping."
             exit 0
           fi
           npx --yes @shopify/cli@latest app deploy --config private --allow-updates --source-control-url "$COMMIT_URL"

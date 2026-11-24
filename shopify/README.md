@@ -84,11 +84,14 @@ Once, in this order:
    **Distribution → Custom distribution** (this can't be changed later), enter
    the store's `….myshopify.com` address and **Generate link**. Keep the link.
 2. **Config + storefront blocks.** Paste the app's **Client ID** into
-   `shopify/shopify.app.private.toml` (`client_id`, editable on GitHub), and
-   add a repository secret `SHOPIFY_PRIVATE_APP_AUTOMATION_TOKEN` (Dev
-   Dashboard → Colvy (private) → Settings → App automation token). The
+   `shopify/shopify.app.private.toml` (`client_id`, editable on GitHub). The
    "Deploy Shopify app" workflow then deploys the same URLs, permissions,
-   webhooks, app proxy and theme extension to it. From a computer instead:
+   webhooks, app proxy and theme extension to it, with the same
+   `SHOPIFY_APP_AUTOMATION_TOKEN`: automation tokens belong to the Shopify
+   organisation (Dev Dashboard → app → Settings → App CLI automation token →
+   Manage → service accounts), so one token deploys both apps when the
+   service account can reach both. A separate token can go in
+   `SHOPIFY_PRIVATE_APP_AUTOMATION_TOKEN`. From a computer instead:
    `npm run build && npx shopify app deploy --config private`.
 3. **Protected customer data**: request the same fields as the public app in
    the Dev Dashboard (Colvy (private) → API access).
