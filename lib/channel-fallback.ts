@@ -218,13 +218,21 @@ export async function deliverAutomatedMessage(params: {
   const viaEmail = await sendEmail()
   if (viaEmail) return viaEmail
 
+  // Why nothing went: "no mobile or email on file" only when that's true. A
+  // customer with both, on a business that can't text and has no mailbox,
+  // was told they had neither.
+  const notTexted = !phone ? 'no mobile on file'
+    : !smsAllowed ? (String(reason || '').match(/because (.+?)\.?$/)?.[1] || 'they can’t be texted')
+    : outsideHours ? 'it’s outside sending hours (9am–8pm)' : 'the text didn’t send'
+  const notEmailed = email ? 'the email didn’t send (is a mailbox connected under Integrations → Email?)' : 'no email on file'
   return {
     onLiveChat,
     channel: 'none',
     sent: false,
     error: smsError
       || (noOptIn ? `They didn’t opt in to texts on your website chat, so it wasn’t texted, and ${email ? 'the email didn’t send either' : 'there’s no email on file'}.` : null)
-      || 'No reachable channel — the contact has no mobile or email on file',
+      || (!phone && !email ? 'No reachable channel — the contact has no mobile or email on file'
+        : `Not sent: ${notTexted}, and ${notEmailed}.`),
     ...(noOptIn && reason ? { reason } : {}),
     ...(optedOut ? { optedOut: true } : {}),
   }
