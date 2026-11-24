@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { toE164 } from '@/lib/telnyx-service'
-import { resolveSmsSender, isLandlineRejection, SmsTooLongError } from '@/lib/sms-provider'
+import { resolveSmsSender, isLandlineRejection, SmsTooLongError, smsParts } from '@/lib/sms-provider'
+import { quoteSend } from '@/lib/sms-credits'
 import { smsTooLongReason, SMS_MAX_CHARS } from '@/lib/sms-segments'
 import { trackLinks, applyTrackedLinks, type TrackedLink } from '@/lib/link-tracking'
 import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
@@ -46,23 +47,54 @@ export async function POST(req: NextRequest) {
     // (a text back comes from the number the customer rang). Honoured only
     // for the business's own lines that can text; anything else is ignored.
     const fromWanted: string = typeof body0.from === 'string' ? body0.from : ''
+    // The inbox shows a reply as "Sending…" under an id it picked, and the
+    // message is saved under that id, so the bubble becomes the sent message.
+    const clientMessageId: string | null = typeof body0.clientMessageId === 'string'
+      && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body0.clientMessageId) ? body0.clientMessageId : null
     conversationId = body0.conversationId
     if (!companyId) return NextResponse.json({ error: 'Missing companyId' }, { status: 400 })
 
     const db = admin()
+    const internal = isInternalCall(req)
+    // Everything a send needs to look up, read at once (an inbox reply used to
+    // wait on a dozen reads one after another before the text even left):
+    // the conversation (owner, mobile, line, outlet), the demo guard, the
+    // provider, and the price check. They only read, and nothing is sent or
+    // answered from them until access is confirmed below, so for a signed-in
+    // caller they start alongside that check.
+    const readConv = async (): Promise<any> => {
+      if (!conversationId) return null
+      const full = await db.from('conversations')
+        .select('company_id, contact_id, sms_number, channel_number, assigned_location_id, location_id')
+        .eq('id', conversationId).maybeSingle()
+      if (!full.error) return full.data || null
+      // A database without one of those columns: the owner check alone, as before.
+      const { data } = await db.from('conversations').select('company_id, contact_id').eq('id', conversationId).maybeSingle()
+      return data || null
+    }
+    const startLookups = () => Promise.all([
+      readConv(),
+      isExternalSendBlocked(companyId, db),
+      resolveSmsSender(db, companyId),
+    ])
+    // The price check for the text as typed; a send whose text changes on the
+    // way (attachment or tracked links) is priced afresh.
+    const startQuote = () => smsTooLongReason(text) ? null : quoteSend(db, companyId, smsParts(text || '')).catch(() => null)
+    const early = internal || /^Bearer\s+\S/i.test(req.headers.get('authorization') || '')
+    const lookupsP = early ? startLookups() : null
+    const quoteP = early ? startQuote() : null
     // Texts go out on the workspace's own number (and cost money), so only its
     // members (Bearer) or our own server routes may send. A conversation id
     // must belong to the same workspace.
-    if (!isInternalCall(req) && !(await requireCompanyAccess(req, db, companyId)).ok) {
+    if (!internal && !(await requireCompanyAccess(req, db, companyId)).ok) {
+      lookupsP?.catch(() => {})
       return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     }
-    let threadContactId: string | null = null
-    if (conversationId) {
-      const { data: owner } = await db.from('conversations').select('company_id, contact_id').eq('id', conversationId).maybeSingle()
-      if (owner && owner.company_id !== companyId) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
-      threadContactId = owner?.contact_id || null
-    }
-    if (await isExternalSendBlocked(companyId, db)) { logBlockedSend(companyId, 'sms', db); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
+    const [conv, blocked, sender] = await (lookupsP || startLookups())
+    const quote = quoteP || startQuote()
+    if (conv && conv.company_id !== companyId) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    const threadContactId: string | null = conv?.contact_id || null
+    if (blocked) { logBlockedSend(companyId, 'sms', db); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
 
     // Longer than one text can carry: say so now, before any link is made or
     // anything charged. The provider refused it with only an error code, so
@@ -70,10 +102,9 @@ export async function POST(req: NextRequest) {
     const tooLong = smsTooLongReason(text)
     if (tooLong) return NextResponse.json({ error: tooLong, reason: 'too_long', length: String(text || '').length, limit: SMS_MAX_CHARS }, { status: 400 })
 
-    // Resolve whichever provider this company sends SMS through (Telnyx by
-    // default, Twilio when selected). One uniform sender — the rest of this
-    // route no longer cares which carrier is underneath.
-    const sender = await resolveSmsSender(db, companyId)
+    // Whichever provider this company sends SMS through (Telnyx by default,
+    // Twilio when selected). One uniform sender — the rest of this route no
+    // longer cares which carrier is underneath.
     if (!sender) {
       return NextResponse.json({ error: 'SMS not configured (connect Telnyx or Twilio with a number)' }, { status: 400 })
     }
@@ -81,8 +112,11 @@ export async function POST(req: NextRequest) {
     // Resolve destination number
     let dest = to
     if (!dest && conversationId) {
-      const { data: conv } = await db.from('conversations').select('sms_number').eq('id', conversationId).maybeSingle()
-      dest = conv?.sms_number
+      if (conv && 'sms_number' in conv) dest = conv.sms_number
+      else {
+        const { data: c } = await db.from('conversations').select('sms_number').eq('id', conversationId).maybeSingle()
+        dest = c?.sms_number
+      }
     }
     const e164 = toE164(dest || '')
     if (!e164) return NextResponse.json({ error: 'No valid destination mobile number' }, { status: 400 })
@@ -179,8 +213,8 @@ export async function POST(req: NextRequest) {
     try {
       // Pull the conversation's contact/outlet so clicks can be attributed to a
       // customer, agent and outlet in Link Reports.
-      let convMeta: any = null
-      if (conversationId) {
+      let convMeta: any = conv && 'assigned_location_id' in conv ? conv : null
+      if (conversationId && !convMeta && /https?:\/\//i.test(body)) {
         const { data } = await db.from('conversations')
           .select('contact_id, assigned_location_id').eq('id', conversationId).maybeSingle()
         convMeta = data
@@ -220,7 +254,7 @@ export async function POST(req: NextRequest) {
     // (lib/location-lines). With one shared number this is the usual number.
     let lineWanted = fromWanted
     if (!lineWanted && conversationId) {
-      try { lineWanted = (await replyLineFor(db, companyId, conversationId)) || '' } catch {}
+      try { lineWanted = (await replyLineFor(db, companyId, conversationId, conv)) || '' } catch {}
     }
     if (lineWanted) {
       try {
@@ -228,14 +262,16 @@ export async function POST(req: NextRequest) {
         if (f && canTextFrom(f) && phoneKey(f) !== phoneKey(sender.from) && (await businessNumbers(db, companyId)).lines.has(phoneKey(f))) fromLine = f
       } catch {}
     }
+    // A low-balance top-up after the charge waits until the reply is answered.
+    const later = (run: () => Promise<unknown>) => { try { after(run) } catch { run().catch(() => {}) } }
     let result
     try {
-      result = await sender.send({ to: e164, text: body, mediaUrls: batches[0], statusCallback, ...(fromLine ? { from: fromLine } : {}) })
+      result = await sender.send({ to: e164, text: body, mediaUrls: batches[0], statusCallback, quote, later, ...(fromLine ? { from: fromLine } : {}) })
     } catch (e) {
       // That line isn't set up for texting after all: the usual number instead.
       if (!fromLine || !isFromNumberRejection(e)) throw e
       fromLine = undefined
-      result = await sender.send({ to: e164, text: body, mediaUrls: batches[0], statusCallback })
+      result = await sender.send({ to: e164, text: body, mediaUrls: batches[0], statusCallback, later })
     }
     const providerMessageId = result.id
     // The rest of the photos. The first message (and its text) already went, so
@@ -251,7 +287,9 @@ export async function POST(req: NextRequest) {
       // The thread shows the same tracked short links the customer received,
       // so the inbox can show a link card with opens / device / city.
       const threadText = applyTrackedLinks(text || '', trackedLinks)
-      const { data: inserted } = await db.from('messages').insert({
+      // The message and the conversation are written together; the inbox
+      // shows the reply from the row handed back.
+      const msgRow = {
         conversation_id: conversationId,
         company_id: companyId,
         sender_type: 'agent',
@@ -261,11 +299,20 @@ export async function POST(req: NextRequest) {
         delivery_channel: 'sms',
         telnyx_message_id: providerMessageId,
         ...(trackedLinks.length ? { metadata: { links: trackedLinks } } : {}),
-      }).select('id').maybeSingle()
-      if (inserted?.id && trackedLinks.length) {
-        try { await db.from('short_links').update({ message_id: inserted.id }).in('code', trackedLinks.map(l => l.code)) } catch {}
       }
-      await db.from('conversations').update({
+      const insertP = (async () => {
+        let r: any = await db.from('messages').insert({ ...msgRow, ...(clientMessageId ? { id: clientMessageId } : {}) }).select('*').maybeSingle()
+        // That id is taken (a repeat): the text has gone, so log it under a new one.
+        if (r?.error && clientMessageId) r = await db.from('messages').insert(msgRow).select('*').maybeSingle()
+        return r
+      })().then(async (r: any) => {
+        const row = r?.data || null
+        if (row?.id && trackedLinks.length) {
+          try { await db.from('short_links').update({ message_id: row.id }).in('code', trackedLinks.map(l => l.code)) } catch {}
+        }
+        return row
+      })
+      const convP = db.from('conversations').update({
         last_message: applyTrackedLinks(text || '', trackedLinks) || 'Attachment',
         last_message_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -279,6 +326,8 @@ export async function POST(req: NextRequest) {
         sms_number: dest,
         sms_enabled: true,
       }).eq('id', conversationId)
+      const [inserted] = await Promise.all([insertP, convP])
+      return NextResponse.json({ ok: true, id: providerMessageId, ...(inserted ? { message: inserted } : {}), ...(mediaNotSent ? { mediaNotSent } : {}) })
     } else if (!conversationId && dest && !skipChatMessage) {
       // Brand-new outbound message (from the composer) — find or create a
       // conversation for this number so the sent SMS shows as a thread.

@@ -142,22 +142,40 @@ export interface EffectiveEntitlements {
  * effective plan (see `effectivePlan`); it is normalised defensively here.
  */
 export async function resolveEntitlements(db: any, companyId: string, plan: Plan): Promise<EffectiveEntitlements> {
+  let overrides: any = null
+  try {
+    const { data } = await db.from('company_entitlements').select('*').eq('company_id', companyId).maybeSingle()
+    overrides = data || null
+  } catch { /* table may not exist yet */ }
+  return entitlementsFromRow(plan, overrides)
+}
+
+/**
+ * The same as resolveEntitlements for a company_entitlements row already in
+ * hand (or null), so a caller that read the row once needn't read it again.
+ */
+export function entitlementsFromRow(plan: Plan, overrides: any): EffectiveEntitlements {
   const p = normalizePlan(plan)
   const planFeatures = PLAN_FEATURES[p] || []
   const featureOn = (k: string) => p === 'enterprise' || planFeatures.includes('*') || planFeatures.includes(k)
   const baseFeatures: Record<string, boolean> = {}
   OVERRIDABLE_FEATURES.forEach(f => { baseFeatures[f.key] = featureOn(f.key) })
   const baseLimits: Record<string, any> = { ...(PLAN_LIMITS[p] || {}) }
-  let overrides: any = null
-  try {
-    const { data } = await db.from('company_entitlements').select('*').eq('company_id', companyId).maybeSingle()
-    overrides = data || null
-  } catch { /* table may not exist yet */ }
   return {
     features: { ...baseFeatures, ...(overrides?.features || {}) },
     limits: { ...baseLimits, ...(overrides?.limits || {}) },
-    overrides,
+    overrides: overrides || null,
   }
+}
+
+/** companyHasFeature for a company_entitlements row already in hand (or null). */
+export function hasFeatureFromRow(plan: Plan, overrides: any, feature: string): boolean {
+  try {
+    const p = normalizePlan(plan)
+    const eff = entitlementsFromRow(p, overrides)
+    if (feature in eff.features) return !!eff.features[feature]
+    return canAccess(p, feature)
+  } catch { return false }
 }
 
 // Read a company's effective plan (honouring trial expiry) from the DB.
