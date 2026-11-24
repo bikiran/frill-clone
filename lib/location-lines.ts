@@ -22,9 +22,13 @@ export async function locationForLine(db: any, companyId: string, line: string |
  * customer texted, else their location's own number. Null means "the usual
  * texting number". The caller still checks the line can text.
  */
-export async function replyLineFor(db: any, companyId: string, conversationId: string): Promise<string | null> {
-  const { data: c } = await db.from('conversations').select('channel_number, assigned_location_id, location_id')
-    .eq('id', conversationId).eq('company_id', companyId).maybeSingle()
+export async function replyLineFor(db: any, companyId: string, conversationId: string, known?: { company_id?: string | null; channel_number?: string | null; assigned_location_id?: string | null; location_id?: string | null } | null): Promise<string | null> {
+  // A caller that already read the conversation (with these columns) hands
+  // it over, saving a round trip; it must be this company's.
+  const c = known && 'channel_number' in known
+    ? (known.company_id === companyId ? known : null)
+    : (await db.from('conversations').select('channel_number, assigned_location_id, location_id')
+        .eq('id', conversationId).eq('company_id', companyId).maybeSingle()).data
   if (!c) return null
   if (c.channel_number) return c.channel_number
   const loc = c.assigned_location_id || c.location_id

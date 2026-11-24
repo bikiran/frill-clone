@@ -122,11 +122,11 @@ export type AllowanceStatus = {
 }
 
 /** This month's allowance from the SMS billing policy: limit, usage and what's left. */
-export async function allowanceStatus(db: any, companyId: string, opts: { excludeCampaignId?: string | null; holds?: any[]; policy?: SmsPolicy } = {}): Promise<AllowanceStatus> {
+export async function allowanceStatus(db: any, companyId: string, opts: { excludeCampaignId?: string | null; holds?: any[]; policy?: SmsPolicy; used?: number } = {}): Promise<AllowanceStatus> {
   const period = smsPeriod()
   const [policy, used, holds] = await Promise.all([
     opts.policy ? Promise.resolve(opts.policy) : getSmsPolicy(db, companyId),
-    smsUsageThisMonth(db, companyId),
+    typeof opts.used === 'number' ? Promise.resolve(opts.used) : smsUsageThisMonth(db, companyId),
     opts.holds ? Promise.resolve(opts.holds) : readHolds(db, companyId),
   ])
   const base = { used, period, mode: policy.mode, chargesCredit: policy.chargesCredit, reason: policy.blockReason }
@@ -158,8 +158,9 @@ export type Quote = SendQuote & {
 
 /** Allowance first, then credit: what a send of `parts` would cost and whether it's covered. */
 export async function quoteSend(db: any, companyId: string, parts: number, opts: { tierParts?: number; excludeCampaignId?: string | null } = {}): Promise<Quote> {
-  const [{ ready, row }, holds, pricing, policy] = await Promise.all([readAccount(db, companyId), readHolds(db, companyId), resolveSmsPricing(db, companyId), getSmsPolicy(db, companyId)])
-  const allowance = await allowanceStatus(db, companyId, { excludeCampaignId: opts.excludeCampaignId, holds, policy })
+  // Everything read at once: each text sent waits on this.
+  const [{ ready, row }, holds, pricing, policy, used] = await Promise.all([readAccount(db, companyId), readHolds(db, companyId), resolveSmsPricing(db, companyId), getSmsPolicy(db, companyId), smsUsageThisMonth(db, companyId)])
+  const allowance = await allowanceStatus(db, companyId, { excludeCampaignId: opts.excludeCampaignId, holds, policy, used })
   const wallet = ready ? walletFromRow(companyId, row, holds.reduce((s, h) => s + (Number(h.held_cents) || 0), 0)) : emptyWallet(companyId, false)
   const q = quoteParts(pricing, { parts, allowanceRemaining: allowance.remaining, tierParts: opts.tierParts })
   const balance = wallet.balanceCents
@@ -330,11 +331,18 @@ export async function releaseCampaign(db: any, o: { companyId: string; campaignI
  * Charge one text (or `parts` parts) BEFORE it goes out: free inside the
  * allowance, otherwise from credit. ok:false means don't send.
  */
-export async function chargeSingleSend(db: any, o: { companyId: string; parts?: number; note?: string; createdBy?: string | null; autoTopUp?: boolean; deps?: AutoTopUpDeps }): Promise<{
+export async function chargeSingleSend(db: any, o: {
+  companyId: string; parts?: number; note?: string; createdBy?: string | null; autoTopUp?: boolean; deps?: AutoTopUpDeps
+  /** A quoteSend for this company started earlier (the send route starts it alongside its own lookups). Used when it's for the same number of parts. */
+  quote?: Promise<Quote | null> | null
+  /** Run the after-charge top-up check this way (after the reply has gone) instead of waiting for it. */
+  deferTopUp?: (run: () => Promise<unknown>) => void
+}): Promise<{
   ok: boolean; reason?: Refusal; chargedCents: number; billableParts: number; balanceCents: number; ledgerId?: string
 }> {
   const parts = Math.max(1, Math.floor(Number(o.parts) || 1))
-  const quote = await quoteSend(db, o.companyId, parts)
+  const early = o.quote ? await Promise.resolve(o.quote).catch(() => null) : null
+  const quote = early && early.parts === parts ? early : await quoteSend(db, o.companyId, parts)
   const blocked = policyRefusal(quote)
   if (blocked) return { ok: false, reason: blocked, chargedCents: 0, billableParts: blocked === 'limit' ? quote.billableParts : 0, balanceCents: quote.balanceCents }
   if (quote.unlimited || quote.billableParts === 0) return { ok: true, chargedCents: 0, billableParts: 0, balanceCents: quote.balanceCents }
@@ -349,7 +357,13 @@ export async function chargeSingleSend(db: any, o: { companyId: string; parts?: 
     if (t.ok) r = await call()
   }
   if (!r.ok) return { ok: false, reason: (r.reason as Refusal) || 'error', chargedCents: 0, billableParts: quote.billableParts, balanceCents: Number(r.balance_cents) || quote.balanceCents }
-  if (o.autoTopUp !== false) await maybeAutoTopUp(db, o.companyId, o.deps).catch(() => null)
+  if (o.autoTopUp !== false) {
+    // Topping up when the balance runs low can mean a card charge: it needn't
+    // hold up the text this charge paid for.
+    const run = () => maybeAutoTopUp(db, o.companyId, o.deps).catch(() => null)
+    if (o.deferTopUp) o.deferTopUp(run)
+    else await run()
+  }
   return { ok: true, chargedCents: quote.costCents, billableParts: quote.billableParts, balanceCents: Number(r.balance_cents) || 0, ledgerId: r.ledger_id }
 }
 

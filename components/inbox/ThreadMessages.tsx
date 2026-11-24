@@ -655,7 +655,7 @@ export default function ThreadMessages() {
                   {(contact?.name || msg.sender_name || 'V')[0].toUpperCase()}
                 </div>
               )}
-              <div className="chat-msg-col" style={{ maxWidth: '70%', minWidth: 0, position: 'relative' }}
+              <div className="chat-msg-col" style={{ maxWidth: '70%', minWidth: 0, position: 'relative', ...((msg as any)._pending ? { opacity: 0.6, pointerEvents: 'none' as const, transition: 'opacity .2s' } : { transition: 'opacity .2s' }) }}
                 onMouseEnter={() => setShowReactPicker(null)}>
                 {!isAgent && <p style={{ margin: '0 0 3px 4px', fontSize: 10, color: '#9ca3af' }}>{contact?.name || msg.sender_name || 'Visitor'}</p>}
                 {/* Outbound messages name the team member that sent them, so
@@ -1147,7 +1147,9 @@ export default function ThreadMessages() {
                     "Received 3:42 PM | 29 May | Facebook   Read by: SG" */}
                 <p style={{ margin: '4px 0 0', fontSize: 10.5, color: '#8a8f98', textAlign: isAgent ? 'right' : 'left', display: 'flex', gap: 6, alignItems: 'center', justifyContent: isAgent ? 'flex-end' : 'flex-start', flexWrap: 'wrap' }}>
                   <span style={{ fontStyle: 'italic' }}>
-                    {fmtReceipt(msg.created_at, isAgent, receiptChannel(msg, selected.channel)) || fmtTime(msg.created_at)}
+                    {(msg as any)._pending
+                      ? 'Sending by SMS…'
+                      : (fmtReceipt(msg.created_at, isAgent, receiptChannel(msg, selected.channel)) || fmtTime(msg.created_at))}
                   </span>
 
                   {/* WhatsApp delivery: Sent / Delivered / Read, or why it wasn't delivered. */}

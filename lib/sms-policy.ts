@@ -20,7 +20,7 @@
 // its allowance) share one read, and every new request reads it fresh, so a
 // change by the super admin applies to the very next send.
 
-import { companyHasFeature, effectivePlan, type Plan } from '@/lib/plan'
+import { hasFeatureFromRow, effectivePlan, type Plan } from '@/lib/plan'
 import { COLVY_CONTACT } from '@/lib/colvy-contact'
 import { cleanPlanPolicies, resolvePolicy, type CompanyPolicyRow, type PlanPolicies, type SmsPolicy } from '@/lib/sms-policy-core'
 
@@ -58,19 +58,23 @@ export async function readCompanyPolicy(db: any, companyId: string): Promise<{ r
   } catch (e) { return { ready: !isMissing(e), row: null } }
 }
 
-async function readPlanAndEntitlement(db: any, companyId: string): Promise<{ plan: Plan; entitlementLimit: any }> {
+// The plan and the company's entitlement overrides, read together (one round
+// trip: every text sent waits on this). The overrides row is handed back so
+// the 'channels' check needn't read it a second time.
+async function readPlanAndEntitlement(db: any, companyId: string): Promise<{ plan: Plan; entitlementLimit: any; overrides: any }> {
   let plan: Plan = 'free'
   let entitlementLimit: any = undefined
-  try {
-    const { data } = await db.from('companies').select('plan, trial_ends_at').eq('id', companyId).maybeSingle()
-    plan = effectivePlan(data?.plan, data?.trial_ends_at)
-  } catch {}
-  try {
-    const { data } = await db.from('company_entitlements').select('*').eq('company_id', companyId).maybeSingle()
-    const v = data?.limits?.smsPerMonth
-    if (v !== undefined && v !== null && v !== '') entitlementLimit = v
-  } catch {}
-  return { plan, entitlementLimit }
+  let overrides: any = null
+  const read = async (q: () => PromiseLike<any>) => { try { return await q() } catch { return { data: null } } }
+  const [co, ent] = await Promise.all([
+    read(() => db.from('companies').select('plan, trial_ends_at').eq('id', companyId).maybeSingle()),
+    read(() => db.from('company_entitlements').select('*').eq('company_id', companyId).maybeSingle()),
+  ])
+  try { plan = effectivePlan(co?.data?.plan, co?.data?.trial_ends_at) } catch {}
+  overrides = ent?.data || null
+  const v = overrides?.limits?.smsPerMonth
+  if (v !== undefined && v !== null && v !== '') entitlementLimit = v
+  return { plan, entitlementLimit, overrides }
 }
 
 /** The effective SMS billing policy for a company. Never throws. */
@@ -81,12 +85,14 @@ export async function getSmsPolicy(db: any, companyId: string, opts: { fresh?: b
   const hit = m.get(companyId)
   if (!opts.fresh && hit) return hit
   const p = (async () => {
-    const [{ plan, entitlementLimit }, planPolicies, own] = await Promise.all([
+    const [{ plan, entitlementLimit, overrides }, planPolicies, own] = await Promise.all([
       readPlanAndEntitlement(db, companyId),
       readPlanPolicies(db, opts),
       readCompanyPolicy(db, companyId),
     ])
-    const channels = await companyHasFeature(db, companyId, 'channels', plan).catch(() => false)
+    // Same answer as companyHasFeature(db, companyId, 'channels', plan), from
+    // the overrides row read above.
+    const channels = hasFeatureFromRow(plan, overrides, 'channels')
     return { companyId, ...resolvePolicy({ plan, channels, entitlementLimit, planPolicies, company: own.row, tableReady: own.ready }) }
   })()
   m.set(companyId, p)

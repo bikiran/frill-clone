@@ -698,12 +698,18 @@ export function useInboxController() {
     }
     setMessages(prev => {
       const win = threadWinRef.current
+      // Replies still showing "Sending…" stay until their saved row arrives.
+      const keepPending = (next: any[]) => {
+        const ids = new Set(next.map((r: any) => r.id))
+        const pend = prev.filter((m: any) => m._pending && m.conversation_id === convId && !ids.has(m.id))
+        return pend.length ? [...next, ...pend] : next
+      }
       if (usedSince && win.convId === convId && (!win.since || tsOf(win.since) < tsOf(usedSince))) {
         const cut = tsOf(usedSince)
         const have = new Set(rows.map((r: any) => r.id))
-        return [...prev.filter((m: any) => tsOf(m.created_at) < cut && !have.has(m.id)), ...rows]
+        return keepPending([...prev.filter((m: any) => tsOf(m.created_at) < cut && !have.has(m.id) && !m._pending), ...rows])
       }
-      return rows
+      return keepPending(rows)
     })
   }
   // The newest page of a thread, oldest-first.
@@ -2340,8 +2346,11 @@ export function useInboxController() {
         const isOpen = selectedRef.current?.id === payload.new.conversation_id
         if (isOpen) {
           setMessages(prev => {
-            if (prev.some((m: any) => m.id === payload.new.id)) return prev
-            return [...prev, payload.new]
+            const i = prev.findIndex((m: any) => m.id === payload.new.id)
+            if (i < 0) return [...prev, payload.new]
+            // A reply still showing "Sending…": the saved row takes its place.
+            if (!(prev[i] as any)._pending) return prev
+            const next = prev.slice(); next[i] = payload.new; return next
           })
           scrollBottom()
           // The agent is looking at this thread, so anything landing in it is
@@ -5569,15 +5578,22 @@ export function useInboxController() {
   // One send at a time per conversation. The reply stays in the box until it
   // has gone, so a second Enter or tap on Send while the first was still on its
   // way used to send it again: one reply went out three times.
-  const sendingFor = useRef<Set<string>>(new Set())
+  // A text reply empties the box the moment it's sent (it shows in the thread
+  // as "Sending…"), so it frees the guard then: the next message can go while
+  // the first is still on its way, and the same text can't go twice.
+  const sendingFor = useRef<Map<string, number>>(new Map())
   const sendReply = async () => {
     const id = selected?.id
     if (!id || sendingFor.current.has(id)) return
-    sendingFor.current.add(id)
-    try { await sendReplyOnce() } finally { sendingFor.current.delete(id) }
+    const token = Math.random()
+    sendingFor.current.set(id, token)
+    const release = () => { if (sendingFor.current.get(id) === token) sendingFor.current.delete(id) }
+    try { await sendReplyOnce(release) } finally { release() }
   }
-  const sendReplyOnce = async () => {
+  const sendReplyOnce = async (release?: () => void) => {
     if ((!replyNow.current.trim() && stagedMedia.length === 0) || !selected || !user) return
+    // As typed, to put back in the box if a text that already left it fails.
+    const typedRaw = replyNow.current
     // Live chat, email, Instagram and Messenger replies need the Inbox plan
     // (internal notes don't). The card above the reply box says so too.
     if (!internalMode && !inboxIncluded && replyNeedsInbox(composeChannel(), selected.channel)) { showToast(GATED.inbox.locked); return }
@@ -5595,8 +5611,10 @@ export function useInboxController() {
     // composer if this conversation is still open — otherwise it belongs to the
     // chat they moved to (and whatever they've started typing there).
     const sentFrom = selected.id
-    const sendDone = () => {
-      draft.discard()
+    // boxCleared: the box was emptied when this was sent and may hold the
+    // agent's next message by now, so it (and its draft) are left alone.
+    const sendDone = (opts: { boxCleared?: boolean } = {}) => {
+      if (!opts.boxCleared) draft.discard()
       if (voice) tagVoice(sentFrom, voiceSince, voice).then(() => { if (selectedIdRef.current === sentFrom) reloadThread(sentFrom) })
       // A payment link went out in this reply: that message becomes the
       // payment's card, which turns PAID when the money arrives (lib/payment-links).
@@ -5604,7 +5622,7 @@ export function useInboxController() {
         authFetch('/api/stripe/chat-payment/attach', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ companyId, conversationId: sentFrom }) })
           .then(r => r.json()).then(d => { if (d?.linked && selectedIdRef.current === sentFrom) reloadThread(sentFrom) }).catch(() => {})
       }
-      if (selectedIdRef.current !== sentFrom) return
+      if (selectedIdRef.current !== sentFrom || opts.boxCleared) return
       setReply(''); setReplyTo(null); setSending(false)
     }
 
@@ -5617,7 +5635,8 @@ export function useInboxController() {
     // reopen is. Customer-facing replies only; an internal note doesn't reopen.
     if (!internalMode && ['closed', 'resolved'].includes(String((selected as any).status || ''))) {
       const who = senderName || 'A team member'
-      try { await (supabase as any).from('conversations').update({ status: 'open' }).eq('id', selected.id) } catch {}
+      // Not waited for: the reply doesn't depend on it.
+      ;(supabase as any).from('conversations').update({ status: 'open' }).eq('id', selected.id).then(() => {}, () => {})
       setSelected(s => s && s.id === sentFrom ? ({ ...s, status: 'open' } as any) : s)
       logEvent('reopened', `Reopened when ${who} replied.`)
     }
@@ -5917,36 +5936,67 @@ export function useInboxController() {
       const wasSms = activeChannel === 'sms'
         || (selected as any).active_channel === 'sms'
         || String((selected as any).channel || '').toLowerCase() === 'sms'
+      // Written alongside the send, not before it: the text doesn't wait on them.
       if (!wasSms) {
-        try {
-          await (supabase as any).from('conversations').update({ active_channel: 'sms' }).eq('id', selected.id)
-          await (supabase as any).from('conversation_events').insert({
+        Promise.all([
+          (supabase as any).from('conversations').update({ active_channel: 'sms' }).eq('id', selected.id),
+          (supabase as any).from('conversation_events').insert({
             conversation_id: selected.id, company_id: companyId,
             event_type: 'channel_switch', actor_name: senderName,
             detail: 'Now chatting through SMS',
-          })
-        } catch {}
+          }),
+        ]).catch(() => {})
       } else if ((selected as any).active_channel !== 'sms') {
         // Keep the column in step without announcing anything.
-        try { await (supabase as any).from('conversations').update({ active_channel: 'sms' }).eq('id', selected.id) } catch {}
+        ;(supabase as any).from('conversations').update({ active_channel: 'sms' }).eq('id', selected.id).then(() => {}, () => {})
       }
+      // The reply shows in the thread straight away ("Sending by SMS…") and the
+      // box empties for the next message. The id is the message's own: the
+      // server saves the row under it, so the same bubble simply turns into
+      // the sent message. If the text can't go, it leaves the thread and goes
+      // back in the box.
+      const clientId: string | null = typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function' ? (crypto as any).randomUUID() : null
+      const pendingId = clientId || `pending-${Date.now()}`
+      const pending: any = {
+        id: pendingId, conversation_id: sentFrom, company_id: companyId, sender_type: 'agent',
+        sender_id: user!.id, sender_name: senderName, sender_email: user!.email || null, content, attachments: [], metadata: {},
+        delivery_channel: 'sms', is_internal: false, is_read: true, created_at: new Date().toISOString(), _pending: true,
+      }
+      setMessages(prev => [...prev, pending])
+      draft.discard()
+      setReply(''); setReplyTo(null); setSending(false)
+      release?.()
+      scrollBottom()
       try {
         const res = await authFetch('/api/telnyx/sms/send', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ companyId, conversationId: selected.id, to: smsNumber, text: content, senderName }),
+          body: JSON.stringify({ companyId, conversationId: sentFrom, to: smsNumber, text: content, senderName, ...(clientId ? { clientMessageId: clientId } : {}) }),
         })
         const data = await res.json()
         if (!res.ok) { const err: any = new Error(data.error || 'SMS failed'); err.reason = data.reason; throw err }
         setSmsCreditError('')
-        sendDone()
-        await reloadThread(selected.id)
-        scrollBottom()
+        sendDone({ boxCleared: true })
+        // The saved row takes the bubble's place; then the thread is re-read
+        // in the background (nothing waits on it).
+        const saved = data?.message
+        if (selectedIdRef.current === sentFrom) {
+          setMessages(prev => {
+            const i = prev.findIndex((m: any) => m.id === pendingId)
+            if (!saved) return i >= 0 ? prev.filter((_, j) => j !== i) : prev
+            if (saved.id !== pendingId && prev.some((m: any) => m.id === saved.id)) return prev.filter((_, j) => j !== i)
+            if (i < 0) return prev.some((m: any) => m.id === saved.id) ? prev : [...prev, saved]
+            const next = prev.slice(); next[i] = saved; return next
+          })
+          reloadThread(sentFrom).catch(() => {})
+        }
       } catch (e: any) {
         // Do NOT silently drop the reply into a live chat nobody is watching —
         // reaching the SMS branch means the customer isn't on a live widget, so a
         // chat fallback goes nowhere. Tell the agent why it didn't send and keep
         // their text so they can retry once SMS is connected.
         console.warn('SMS send failed:', e?.message)
+        setMessages(prev => prev.filter((m: any) => m.id !== pendingId))
+        if (selectedIdRef.current === sentFrom && !replyNow.current.trim()) setReply(typedRaw)
         setSending(false)
         const emsg = String(e?.message || 'SMS failed')
         const emsgClean = emsg.replace(/[.\s]+$/, '')

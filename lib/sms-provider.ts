@@ -12,7 +12,7 @@
 import { TelnyxService, toE164 } from './telnyx-service'
 import { TwilioService } from './twilio-service'
 import { assertSmsAllowed, recordSmsSent, checkSmsAllowance, SmsQuotaError } from './sms-quota'
-import { chargeSingleSend, refundSingleSend, costForParts } from './sms-credits'
+import { chargeSingleSend, refundSingleSend, costForParts, type Quote } from './sms-credits'
 import { fmtCents } from './sms-credits-core'
 import { analyseSms, smsTooLongReason } from './sms-segments'
 import { getSmsPolicy, blockedText } from './sms-policy'
@@ -32,6 +32,14 @@ export interface SmsSendParams {
    * from the number they know. Callers check it belongs to the business.
    */
   from?: string
+  /**
+   * Metered senders only: the price check for this text, started early by
+   * the caller alongside its own lookups (quoteSend for the same company).
+   * Used when it's for the same number of parts; otherwise checked afresh.
+   */
+  quote?: Promise<Quote | null> | null
+  /** Metered senders only: run bookkeeping that needn't hold up the reply (a low-balance top-up) this way, e.g. Next's after(). */
+  later?: (run: () => Promise<unknown>) => void
 }
 
 export interface SmsSendResult {
@@ -124,8 +132,8 @@ function unmetered(base: SmsSender): SmsSender {
  * confirms opt-outs), and recording an opt-out never sends anything, so a
  * blocked account still honours every STOP / START.
  */
-export async function payForText(db: any, companyId: string, parts: number): Promise<{ chargedCents: number; billableParts: number }> {
-  const c = await chargeSingleSend(db, { companyId, parts, note: 'Text sent' })
+export async function payForText(db: any, companyId: string, parts: number, opts: { quote?: SmsSendParams['quote']; later?: SmsSendParams['later'] } = {}): Promise<{ chargedCents: number; billableParts: number }> {
+  const c = await chargeSingleSend(db, { companyId, parts, note: 'Text sent', quote: opts.quote, deferTopUp: opts.later })
   if (c.ok) return { chargedCents: c.chargedCents, billableParts: c.billableParts }
   if (c.reason === 'plan' || c.reason === 'sms_disabled') {
     throw new SmsQuotaError(c.reason, blockedText(c.reason))
@@ -163,14 +171,15 @@ function meteredSender(db: any, companyId: string, base: SmsSender): SmsSender {
     async send(p: SmsSendParams): Promise<SmsSendResult> {
       assertFitsInText(p.text)  // too long to go: refused before it's paid for
       const parts = smsParts(p.text)
-      const paid = await payForText(db, companyId, parts)  // throws SmsQuotaError if blocked
+      const paid = await payForText(db, companyId, parts, { quote: p.quote, later: p.later })  // throws SmsQuotaError if blocked
       // Always send to an E.164 number. Callers pass whatever they have — a
       // contact's phone saved as "0478 019 667" was rejected by the provider,
       // and routes that swallow send errors (media requests) showed the link
       // in the thread while the customer never got it.
       let result: SmsSendResult
       try {
-        result = await base.send({ ...p, to: toE164(p.to || '') || p.to })
+        const { quote: _q, later: _l, ...out } = p
+        result = await base.send({ ...out, to: toE164(p.to || '') || p.to })
       } catch (e) {
         // The carrier refused it: give the credit back.
         if (paid.chargedCents > 0) {
@@ -199,14 +208,16 @@ export function smsParts(text: string | null | undefined): number {
  */
 export async function resolveSmsSender(db: any, companyId: string, opts: { metered?: boolean } = {}): Promise<SmsSender | null> {
   const meter = (base: SmsSender): SmsSender => opts.metered === false ? unmetered(base) : meteredSender(db, companyId, base)
-  const provider = await getSmsProvider(db, companyId)
+  // The provider setting and both integrations at once: every text waits on
+  // this, and reading them one after another cost three round trips.
+  const row = async (table: string) => {
+    try { const { data } = await db.from(table).select('*').eq('company_id', companyId).maybeSingle(); return data || null }
+    catch { return null }  // table missing
+  }
+  const [provider, twilioRow, telnyxRow] = await Promise.all([getSmsProvider(db, companyId), row('twilio_integrations'), row('telnyx_integrations')])
 
   if (provider === 'twilio') {
-    let t: any = null
-    try {
-      const { data } = await db.from('twilio_integrations').select('*').eq('company_id', companyId).maybeSingle()
-      t = data
-    } catch { /* table missing → fall back to Telnyx */ }
+    const t: any = twilioRow
     const usable = t?.account_sid && t?.auth_token && (t.phone_number || t.messaging_service_sid) && t.sms_enabled !== false
     if (usable) {
       const svc = new TwilioService(t.account_sid, t.auth_token)
@@ -239,7 +250,7 @@ export async function resolveSmsSender(db: any, companyId: string, opts: { meter
   }
 
   // Telnyx (default).
-  const { data: integ } = await db.from('telnyx_integrations').select('*').eq('company_id', companyId).maybeSingle()
+  const integ: any = telnyxRow
   if (integ?.api_key && integ.phone_number) {
     const svc = new TelnyxService(integ.api_key)
     return meter({
