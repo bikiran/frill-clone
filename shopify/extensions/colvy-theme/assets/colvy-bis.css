@@ -108,3 +108,11 @@
   .colvy-bis,.colvy-bis *{animation-duration:.001s!important;animation-delay:0s!important;transition-duration:.001s!important}
   .cbis-halo{display:none}
 }
+/* Themes fill every svg on the page (e.g. svg path{fill:currentColor}), which
+   turned these outline icons into solid blobs: they stay outlines here, and the
+   "on the list" tick keeps its own colours. */
+.colvy-bis__icon svg,.colvy-bis__icon svg *,.colvy-bis__seg svg,.colvy-bis__seg svg *,.colvy-bis__field>svg,.colvy-bis__field>svg *{fill:none!important;stroke:currentColor!important}
+.colvy-bis__mark .cbis-ring,.colvy-bis__mark .cbis-glyph{fill:none!important}
+.colvy-bis__mark .cbis-ring{stroke:#22c55e!important}
+.colvy-bis__mark .cbis-glyph{stroke:#fff!important}
+.colvy-bis__mark .cbis-fill{fill:url(#cbisG)!important;stroke:none!important}
