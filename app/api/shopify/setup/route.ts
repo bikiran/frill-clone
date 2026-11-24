@@ -1,7 +1,7 @@
 import { SUPER_ADMIN, callerUser, requireCompanyAccess } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { appFor, privateInstallUrl, shopifyAppConfigured } from '@/lib/shopify-auth'
+import { appFor, privateInstallUrl, shopifyAppConfigured, shopifyEnv } from '@/lib/shopify-auth'
 import { ensureStoreWebhooks } from '@/lib/shopify-sync'
 import { planSelectionUrl } from '@/lib/shopify-billing'
 
@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
     const privateInstall = link && (await callerUser(req, db))?.email === SUPER_ADMIN
       ? { store: String(link).match(/\/store\/([a-z0-9-]+)/i)?.[1] || null }
       : null
-    return NextResponse.json({ stores, appConfigured: shopifyAppConfigured(), apiKey: process.env.SHOPIFY_API_KEY || null, billing, privateInstall })
+    return NextResponse.json({ stores, appConfigured: shopifyAppConfigured(), apiKey: shopifyEnv('SHOPIFY_API_KEY') || null, billing, privateInstall })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
