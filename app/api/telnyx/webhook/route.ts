@@ -1,4 +1,5 @@
 import { telnyxSignatureOk, telnyxSignatureVerified } from '@/lib/telnyx-signature'
+import { followMerged } from '@/lib/same-customer'
 import { scheduleMessageThumbs } from '@/lib/image-thumb'
 import { queueMediaUploadReply } from '@/lib/media-upload-reply'
 import { smsKeyword, STOP_WORDS, START_WORDS, recordSmsKeyword, textOptOut, assertMayText } from '@/lib/sms-consent'
@@ -192,6 +193,9 @@ export async function POST(req: NextRequest) {
       let { data: conv } = await db.from('conversations')
         .select('*').eq('company_id', companyId).eq('sms_number', from)
         .order('last_message_at', { ascending: false }).limit(1).maybeSingle()
+      // A conversation merged into the customer's own (a second mobile confirmed
+      // as theirs, lib/same-customer): the text goes where it was merged.
+      if (conv?.merged_into) conv = await followMerged(db, companyId, conv)
 
       // 2) Match the sender to an existing CONTACT by phone, then reuse that
       //    contact's most recent conversation — so a reply to an order,

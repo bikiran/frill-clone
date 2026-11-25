@@ -13,6 +13,7 @@ import { MOODS, MOOD_COLOR, MOOD_LABEL, MoodBadge, MoodFace, isMood, launchMood 
 import { decodeEntities as dec } from '@/lib/decode-entities'
 import { supabase } from '@/lib/supabase'
 import CustomerGlance from '@/components/inbox/CustomerGlance'
+import SameCustomerBar from '@/components/inbox/SameCustomerBar'
 import { CHANNEL_NAME, STATUS_COLOR, STATUS_ICON, assigneeName, initials, timeAgo } from '@/components/inbox/inbox-shared'
 import { useInbox } from '@/components/inbox/InboxContext'
 import { createJobFrom, useJobsEnabled } from '@/components/jobs/createJob'
@@ -30,7 +31,7 @@ export default function ThreadTop() {
     setShowSnooze, setStatus, setTabletContact, showActions, showAssignMenu, showMoveMenu,
     showMsgSearch, showProducts, showSnooze, showToast, snoozeConversation, tabletContact,
     teamMembers, togglePin, user, wooOrders, storeConnected,
-    powersMe,
+    powersMe, loadConversations, myName,
   } = useInbox()
   const [powerUse, setPowerUse] = useState<null | 'priority_pin' | 'nudge'>(null)
   const powersOn = !!(powersMe?.enabled && powersMe.eligible && (powersMe.team || []).length > 1)
@@ -391,6 +392,19 @@ export default function ThreadTop() {
           const w = window.innerWidth
           if (w < 768) setMobilePane('contact')
           else if (w <= 1100) setTabletContact(true)
+        }} />
+
+      {/* A texting number that's the phone on another customer's store
+          orders: "Same customer as …?" (lib/same-customer). Only for a texting
+          conversation whose contact has no email yet. */}
+      <SameCustomerBar
+        conversationId={selected.id}
+        enabled={!!storeConnected && !!((selected as any).sms_number || contact?.phone) && !contact?.email && !(selected as any).merged_into}
+        userName={myName}
+        onMerged={id => {
+          showToast('Merged. Texts from this number now go to this conversation.')
+          loadConversations()
+          try { window.dispatchEvent(new CustomEvent('colvy:open-conversation', { detail: { conversationId: id } })) } catch {}
         }} />
 
       {/* AI detection banner */}

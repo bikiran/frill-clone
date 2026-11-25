@@ -23,10 +23,20 @@ export async function findContactByPhone(db: any, companyId: string, phone: stri
   const tail = digitsOf(phone)
   if (!companyId || !tail || tail.length < 8) return null
   const same = (c: any) => c?.phone && digitsOf(c.phone) === tail
-  try {
-    const { data, error } = await db.from('contacts').select('id, name, phone').eq('company_id', companyId).eq('phone_norm', tail).limit(5)
-    if (!error) { const hit = (data || []).find(same); if (hit) return hit }
-  } catch {}
+  const read = async (q: () => PromiseLike<any>) => { try { return await q() } catch { return { data: null, error: true } } }
+  // A number the team confirmed as a customer's other mobile (lib/same-customer)
+  // is theirs, ahead of a bare contact made for it before; read alongside the
+  // usual lookup.
+  const [confirmed, byNorm] = await Promise.all([
+    read(() => db.from('customer_identities').select('contact_id').eq('company_id', companyId).eq('kind', 'phone').eq('value', tail).eq('status', 'confirmed').limit(1)),
+    read(() => db.from('contacts').select('id, name, phone').eq('company_id', companyId).eq('phone_norm', tail).limit(5)),
+  ])
+  const ownerId = !confirmed.error && Array.isArray(confirmed.data) ? confirmed.data[0]?.contact_id : null
+  if (ownerId) {
+    const { data: owner } = await read(() => db.from('contacts').select('id, name, phone').eq('id', ownerId).eq('company_id', companyId).maybeSingle())
+    if (owner) return owner
+  }
+  if (!byNorm.error) { const hit = (byNorm.data || []).find(same); if (hit) return hit }
   try {
     const { data } = await db.from('contacts').select('id, name, phone').eq('company_id', companyId).ilike('phone', `%${tail}%`).limit(10)
     const hit = (data || []).find(same)
