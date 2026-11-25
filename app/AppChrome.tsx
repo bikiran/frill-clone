@@ -13,6 +13,7 @@ import LiveChat from '@/components/LiveChat'
 import OverlayWatch from '@/components/OverlayWatch'
 import UpdateNotification from '@/components/UpdateNotification'
 import NotificationsPanel, { notificationSoundOn, inWorkspace } from '@/components/NotificationsPanel'
+import { notificationPath, goToNotificationPath } from '@/lib/notification-path'
 import PowersChip from '@/components/powers/PowersChip'
 import Analytics from '@/components/Analytics'
 import { NEUTRAL_ICON } from '@/lib/tenant-meta'
@@ -22,21 +23,9 @@ import { setAppearance } from '@/lib/seasonal-themes'
 // notifications menu AND the bottom-right OS notification, so both route the
 // same way (the OS one used to only handle conversations and otherwise dumped
 // you on /admin — order and task alerts went nowhere useful).
-export function notificationPath(n: any): string {
-  const conv = n?.conversation_id || n?.conversationId
-  switch (n?.type) {
-    case 'idea': return n.idea_id ? `/?idea=${n.idea_id}` : '/'
-    case 'roadmap': return '/roadmap'
-    case 'announcement': return n.announcement_id ? `/announcements?id=${n.announcement_id}` : (typeof n.link === 'string' && n.link.startsWith('/announcements') ? n.link : '/announcements')
-    case 'help': return n.article_id ? `/help/${n.article_id}` : '/help'
-    case 'form': return n.form_id ? `/forms/${n.form_id}` : '/admin/forms'
-    case 'settings': return '/admin/settings'
-    case 'task': return '/admin/tasks'
-    case 'chat': case 'sms': case 'call': case 'order': case 'ticket': case 'cart': case 'activity':
-      return conv ? `/admin/inbox?conversation=${conv}` : '/admin/inbox'
-    default: return conv ? `/admin/inbox?conversation=${conv}` : '/admin'
-  }
-}
+// Where a notification goes when clicked: lib/notification-path (shared with
+// the panel and its tests). Re-exported for the callers that import it from here.
+export { notificationPath }
 
 const NAV_ITEMS = [
   { href: '/', label: 'Ideas', icon: 'ideas' },
@@ -812,60 +801,29 @@ export default function AppChrome({
   }
 
   const handleNotificationClick = async (notification: any) => {
-    // Mark as read
-    if (!notification.is_read) {
-      await markNotificationAsRead(notification.id)
-    }
-
-    // Navigate based on type
-    if (notification.type === 'idea' && notification.idea_id) {
-      setShowNotifications(false)
-      router.push(`/?idea=${notification.idea_id}`)
-    } else if (notification.type === 'roadmap') {
-      setShowNotifications(false)
-      router.push('/roadmap')
-    } else if (notification.type === 'announcement') {
-      // Board bell notifications from "Publish & notify" carry a link to the post.
-      setShowNotifications(false)
-      router.push(notificationPath(notification))
-    } else if (notification.type === 'help' && notification.article_id) {
-      setShowNotifications(false)
-      router.push(`/help/${notification.article_id}`)
-    } else if (notification.type === 'form' && notification.form_id) {
-      setShowNotifications(false)
-      router.push(`/forms/${notification.form_id}`)
-    } else if (notification.type === 'settings') {
-      setShowNotifications(false)
-      router.push('/admin/settings')
-    } else if (notification.type === 'task') {
-      setShowNotifications(false)
-      router.push('/admin/tasks')
-    } else if (['chat', 'sms', 'call', 'order', 'ticket', 'cart', 'activity'].includes(notification.type)) {
-      // CRM activity — go to the inbox (open the specific conversation if known).
-      setShowNotifications(false)
-      let convId = notification.conversation_id || notification.conversationId
-      // Older SMS notifications didn't store a conversation id — resolve it from
-      // the sender's phone number so the click still lands on the right thread.
-      if (!convId) {
-        const raw = String(notification.actor_name || '') + ' ' + String(notification.message || '')
-        const phone = raw.match(/\+?\d[\d ]{6,}\d/)?.[0]
-        if (phone) {
-          try {
-            const digits = phone.replace(/\D/g, '').slice(-9)
-            if (digits.length >= 8) {
-              const { data } = await (supabase as any).from('conversations')
-                .select('id').ilike('sms_number', `%${digits}%`).order('last_message_at', { ascending: false }).limit(1)
-              if (data?.[0]?.id) convId = data[0].id
-            }
-          } catch {}
-        }
+    setShowNotifications(false)
+    // Marked read on the way (the panel has already shown it read): the click
+    // doesn't wait for the save.
+    if (!notification.is_read) markNotificationAsRead(notification.id)
+    let n = notification
+    // Older SMS notifications didn't store a conversation id: find it from the
+    // sender's phone number so the click still lands on the right thread.
+    if (['sms', 'call', 'chat'].includes(n.type) && !(n.conversation_id || n.conversationId)) {
+      const raw = String(n.actor_name || '') + ' ' + String(n.message || '')
+      const phone = raw.match(/\+?\d[\d ]{6,}\d/)?.[0]
+      if (phone) {
+        try {
+          const digits = phone.replace(/\D/g, '').slice(-9)
+          if (digits.length >= 8) {
+            let q = (supabase as any).from('conversations').select('id').ilike('sms_number', `%${digits}%`)
+            if (companyIdRef.current) q = q.eq('company_id', companyIdRef.current)
+            const { data } = await q.order('last_message_at', { ascending: false }).limit(1)
+            if (data?.[0]?.id) n = { ...n, conversation_id: data[0].id }
+          }
+        } catch {}
       }
-      router.push(convId ? `/admin/inbox?conversation=${convId}` : '/admin/inbox')
-    } else {
-      // Fallback: any unrecognised type with a conversation goes to the inbox.
-      setShowNotifications(false)
-      if (notification.conversation_id) router.push(`/admin/inbox?conversation=${notification.conversation_id}`)
     }
+    goToNotificationPath(router, notificationPath(n))
   }
 
   // The board's menu (or Colvy's own, on colvy.com): the desktop bar and the
