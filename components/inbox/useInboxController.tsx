@@ -2154,13 +2154,19 @@ export function useInboxController() {
     if (!convId || deepLinkedRef.current === convId) return
     const wantCh = new URLSearchParams(window.location.search).get('channel')
     pendingSendChannelRef.current = (wantCh === 'sms' || wantCh === 'email' || wantCh === 'chat') ? wantCh : null
-    const found = conversations.find(c => c.id === convId)
-    if (found) { deepLinkedRef.current = convId; selectConversation(found); return }
-    // Not in the current folder — load it on its own and open it.
-    ;(async () => {
-      deepLinkedRef.current = convId
+    deepLinkedRef.current = convId
+    openConversationById(convId).then(ok => { if (!ok) deepLinkedRef.current = null })
+  }, [conversations, selected, companyId])
+
+  // Open one conversation by id: from the list when it's there, else loaded
+  // on its own (it may be closed, or outside the current folder). False when
+  // it can't be opened here.
+  const openConversationById = async (convId: string): Promise<boolean> => {
+    const found = conversationsRef.current.find(c => c.id === convId)
+    if (found) { selectConversation(found); return true }
+    {
       const { data: conv } = await (supabase as any).from('conversations').select('*').eq('id', convId).maybeSingle()
-      if (!conv) { deepLinkedRef.current = null; return }
+      if (!conv) return false
       // Only this workspace's conversations open here. Someone in several
       // workspaces can read the others too, and a link (or a notification)
       // from one used to open that conversation inside this one, replying
@@ -2168,10 +2174,10 @@ export function useInboxController() {
       if (conv.company_id !== companyId) {
         const { data: home } = await (supabase as any).from('companies').select('slug').eq('id', conv.company_id).maybeSingle()
         const host = window.location.hostname
-        if (home?.slug && host.endsWith('colvy.com')) { window.location.href = boardUrl(home.slug, `/admin/inbox?conversation=${encodeURIComponent(convId)}`); return }
+        if (home?.slug && host.endsWith('colvy.com')) { window.location.href = boardUrl(home.slug, `/admin/inbox?conversation=${encodeURIComponent(convId)}`); return true }
         showToast('That conversation is in another workspace.')
         try { window.history.replaceState(null, '', '/admin/inbox') } catch {}
-        return
+        return true
       }
       if (conv.contact_id) {
         const { data: ct } = await (supabase as any).from('contacts').select('*').eq('id', conv.contact_id).maybeSingle()
@@ -2179,8 +2185,25 @@ export function useInboxController() {
       }
       setConversations(prev => prev.some(c => c.id === conv.id) ? prev : [conv, ...prev])
       selectConversation(conv)
-    })()
-  }, [conversations, selected, companyId])
+      return true
+    }
+  }
+  // A notification (or any link) asking for a conversation while the inbox is
+  // already open: the address changes but the page doesn't reload, so the
+  // link above never sees it. Open it here.
+  const openByIdRef = useRef(openConversationById)
+  openByIdRef.current = openConversationById
+  useEffect(() => {
+    const on = (e: any) => {
+      const id = e?.detail?.conversationId
+      if (!id || typeof id !== 'string') return
+      deepLinkedRef.current = id
+      if (selectedRef.current?.id === id) { setColvyOpen(false); setMobilePane('thread'); return }
+      openByIdRef.current(id)
+    }
+    window.addEventListener('colvy:open-conversation', on as EventListener)
+    return () => window.removeEventListener('colvy:open-conversation', on as EventListener)
+  }, [])
 
   // Deep-link: open (or start) a thread with a specific contact from
   // ?contact=<id>&channel=<sms|email|chat>. This is what the "Message" / "Email"

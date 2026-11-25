@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { goToNotificationPath } from '@/lib/notification-path'
 import { createPortal } from 'react-dom'
 import DeliveryDetailsSheet from '@/components/DeliveryDetailsSheet'
 import { supabase } from '@/lib/supabase'
@@ -339,7 +340,7 @@ export default function NotificationsPanel({ userId, companyId = null, unreadCou
   const goToChat = (r: any) => {
     setOpenDelivery(null)
     onClose()
-    router.push(`/admin/inbox?conversation=${r.conversation_id}`)
+    goToNotificationPath(router, `/admin/inbox?conversation=${r.conversation_id}`)
   }
   // `at` makes a second click on the same order a new link, even on the Orders page.
   const goToOrder = (ref: string) => {
@@ -387,7 +388,8 @@ export default function NotificationsPanel({ userId, companyId = null, unreadCou
     onUnread('zero')
     try { await inWorkspace((supabase as any).from('notifications').update({ is_read: true }).eq('user_id', userId).eq('is_read', false), companyId) } catch {}
   }
-  const openOne = async (n: N) => { if (!n.is_read) await setRead(n, true); onOpen({ ...n, is_read: true }) }
+  // Shown read at once and saved on the way: the click doesn't wait for the save.
+  const openOne = (n: N) => { if (!n.is_read) setRead(n, true); onOpen({ ...n, is_read: true }) }
 
   // Which categories are here, and how many unread in each.
   const catCounts = useMemo(() => {
