@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js'
 import { computeMatches, maskEmail, maskPhone, type Candidate, type MatchSignals, type IdentityKind } from '@/lib/customer-match'
 import { phoneKey, emailKey, detectContactInfo } from '@/lib/phone'
 import { canEdit, canViewSensitive, type UserRole } from '@/lib/permissions'
+import { suggestByPhone, confirmByPhone, rejectByPhone } from '@/lib/same-customer'
 
 // Resolve the caller's role with the SERVICE-ROLE client (the shared
 // getUserRole helper uses an unauthenticated anon client, which RLS blocks
@@ -56,9 +57,27 @@ export async function POST(req: NextRequest) {
     // Role: viewers can look but not act, and see masked PII.
     const role = await resolveRole(db, access.userId, companyId)
 
-    const WRITE = ['confirm', 'unlink', 'reject', 'merge', 'request-details']
+    const WRITE = ['confirm', 'unlink', 'reject', 'merge', 'request-details', 'confirm-phone', 'reject-phone']
     if (WRITE.includes(action) && !canEdit(role)) {
       return NextResponse.json({ error: 'You don\'t have permission to change customer links.' }, { status: 403 })
+    }
+
+    // A texting number that's the phone on another customer's store orders
+    // (lib/same-customer): suggested, never merged until someone says so.
+    if (action === 'suggest-phone') {
+      const suggestion = await suggestByPhone(db, conv)
+      return NextResponse.json({ ok: true, suggestion, canEdit: canEdit(role) })
+    }
+    if (action === 'confirm-phone') {
+      if (!body.contactId) return NextResponse.json({ error: 'contactId required' }, { status: 400 })
+      const r = await confirmByPhone(db, conv, String(body.contactId), { id: access.userId || null, name: body.userName || null })
+      if ('error' in r) return NextResponse.json({ error: r.error }, { status: r.status })
+      return NextResponse.json(r)
+    }
+    if (action === 'reject-phone') {
+      if (!body.contactId) return NextResponse.json({ error: 'contactId required' }, { status: 400 })
+      await rejectByPhone(db, conv, String(body.contactId), { id: access.userId || null, name: body.userName || null })
+      return NextResponse.json({ ok: true })
     }
 
     if (action === 'confirm') return await confirmMatch(db, conv, body)

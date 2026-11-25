@@ -16,6 +16,7 @@ import { emitInboundEvent } from '@/lib/integration-hooks'
 import { queueMediaUploadReply } from '@/lib/media-upload-reply'
 import { smsKeyword, STOP_WORDS, START_WORDS, recordSmsKeyword, textOptOut, resolveAutomatedSmsSender } from '@/lib/sms-consent'
 import { findContactByPhone } from '@/lib/contact-capture'
+import { followMerged } from '@/lib/same-customer'
 import { scheduleMessageThumbs } from '@/lib/image-thumb'
 import { placeByLine } from '@/lib/location-lines'
 import { attachListingFromText } from '@/lib/listings-server'
@@ -82,6 +83,9 @@ export async function ingestInboundSms(params: {
   let { data: conv } = await db.from('conversations')
     .select('*').eq('company_id', companyId).eq('sms_number', from)
     .order('last_message_at', { ascending: false }).limit(1).maybeSingle()
+  // A conversation merged into the customer's own (a second mobile confirmed
+  // as theirs, lib/same-customer): the text goes where it was merged.
+  if (conv?.merged_into) conv = await followMerged(db, companyId, conv)
 
   // 2) Match sender to a contact by phone, reuse their latest conversation.
   let matchedContactId: string | null = conv?.contact_id || null
