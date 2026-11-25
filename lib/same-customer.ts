@@ -14,11 +14,17 @@
 //   rejectByPhone    — "not the same": never suggested again for this number
 //   followMerged     — a later text from the number lands in the conversation
 //                      it was merged into
+//   textingConversation — where an incoming text goes: through merges, and on
+//                      to the customer's current conversation when an older
+//                      thread still holds the number
+//
+// Replies go to whichever number texted last (lib/reply-number).
 //
 // Never automatic: nothing is merged until someone on the team says so.
 
 import { phoneKey, emailKey } from '@/lib/phone'
 import { maskEmail } from '@/lib/customer-match'
+import { lastTextedNumber } from '@/lib/reply-number'
 
 export type PhoneSuggestion = {
   contactId: string
@@ -67,6 +73,30 @@ export async function followMerged(db: any, companyId: string, conv: any): Promi
       c = data
     } catch { break }
   }
+  return c
+}
+
+/**
+ * Where an incoming text from `from` goes, once the fast path has found
+ * `conv` by its number: through any merges, then on to the customer's newer
+ * conversation when this number has texted there before. A conversation's
+ * number follows whichever of the customer's mobiles texted last
+ * (lib/reply-number), so an older thread can still hold their other one; the
+ * text belongs in the conversation they're in now.
+ */
+export async function textingConversation(db: any, companyId: string, conv: any, from: string): Promise<any> {
+  const c = conv?.merged_into ? await followMerged(db, companyId, conv) : conv
+  if (!c?.contact_id || !from) return c
+  try {
+    const { data: newer } = await db.from('conversations').select('*')
+      .eq('company_id', companyId).eq('contact_id', c.contact_id).is('merged_into', null)
+      .not('sms_number', 'is', null).neq('id', c.id)
+      .order('last_message_at', { ascending: false }).limit(1).maybeSingle()
+    if (!newer?.sms_number || !(String(newer.last_message_at || '') > String(c.last_message_at || ''))) return c
+    const { data: hit } = await db.from('messages').select('id')
+      .eq('conversation_id', newer.id).eq('sender_type', 'visitor').eq('sender_name', from).limit(1)
+    if (hit && hit.length) return newer
+  } catch { /* the conversation the number found */ }
   return c
 }
 
@@ -177,10 +207,15 @@ export async function confirmByPhone(db: any, conv: any, targetId: string, actor
       try { await db.from(table).update({ conversation_id: theirs.id }).eq('conversation_id', conv.id) } catch {}
     }
     await db.from('conversations').update({ status: 'resolved', is_archived: true, merged_into: theirs.id, updated_at: now }).eq('id', conv.id)
-    // Newest activity first in the list: whichever is later.
+    // Newest activity first in the list: whichever is later. Replies go to
+    // the number that texted last, of all the messages now in theirs.
     const later = [conv.last_message_at, theirs.last_message_at].filter(Boolean).sort().pop()
-    if (later && later !== theirs.last_message_at) {
-      await db.from('conversations').update({ last_message: conv.last_message, last_message_at: later, updated_at: now }).eq('id', theirs.id)
+    const replyTo = await lastTextedNumber(db, theirs.id)
+    const patch: Record<string, any> = {}
+    if (later && later !== theirs.last_message_at) Object.assign(patch, { last_message: conv.last_message, last_message_at: later })
+    if (replyTo && phoneKey(replyTo) !== phoneKey(theirs.sms_number || '')) patch.sms_number = replyTo
+    if (Object.keys(patch).length) {
+      await db.from('conversations').update({ ...patch, updated_at: now }).eq('id', theirs.id)
     }
     openId = theirs.id
   } else {

@@ -1,5 +1,6 @@
 import { telnyxSignatureOk, telnyxSignatureVerified } from '@/lib/telnyx-signature'
-import { followMerged } from '@/lib/same-customer'
+import { followMerged, textingConversation } from '@/lib/same-customer'
+import { replyNumberFor } from '@/lib/reply-number'
 import { scheduleMessageThumbs } from '@/lib/image-thumb'
 import { queueMediaUploadReply } from '@/lib/media-upload-reply'
 import { smsKeyword, STOP_WORDS, START_WORDS, recordSmsKeyword, textOptOut, assertMayText } from '@/lib/sms-consent'
@@ -194,8 +195,10 @@ export async function POST(req: NextRequest) {
         .select('*').eq('company_id', companyId).eq('sms_number', from)
         .order('last_message_at', { ascending: false }).limit(1).maybeSingle()
       // A conversation merged into the customer's own (a second mobile confirmed
-      // as theirs, lib/same-customer): the text goes where it was merged.
-      if (conv?.merged_into) conv = await followMerged(db, companyId, conv)
+      // as theirs, lib/same-customer): the text goes where it was merged. And
+      // an older thread still holding this number (replies moved to their
+      // other mobile) hands over to the conversation they're in now.
+      if (conv) conv = await textingConversation(db, companyId, conv, from)
 
       // 2) Match the sender to an existing CONTACT by phone, then reuse that
       //    contact's most recent conversation — so a reply to an order,
@@ -218,19 +221,10 @@ export async function POST(req: NextRequest) {
           const { data: contactConv } = await db.from('conversations')
             .select('*').eq('company_id', companyId).eq('contact_id', contact.id)
             .order('last_message_at', { ascending: false }).limit(1).maybeSingle()
-          if (contactConv) {
-            conv = contactConv
-            // Stamp the number on the thread so the fast path catches the next
-            // reply without needing this lookup at all. A STOP doesn't switch
-            // texting on, here or below.
-            if (!contactConv.sms_number) {
-              try {
-                await db.from('conversations')
-                  .update({ sms_number: from, ...(optingOut ? {} : { sms_enabled: true }), channel_number: to })
-                  .eq('id', contactConv.id)
-              } catch { /* not fatal */ }
-            }
-          }
+          // Their latest conversation (or the one it was merged into). The
+          // number is stamped on it below, so the fast path catches the next
+          // text without this lookup.
+          if (contactConv) conv = contactConv.merged_into ? await followMerged(db, companyId, contactConv) : contactConv
         }
       }
 
@@ -268,15 +262,21 @@ export async function POST(req: NextRequest) {
             fetch(`${origin}/api/inbox/auto-reply`, { method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ conversationId: newConv.id }) })
           } catch {}
         }
-      } else if (!conv.sms_number || conv.contact_id !== matchedContactId) {
-        // We reused an existing conversation — make sure it now carries the SMS
-        // number (so future replies fast-path match) and the contact link.
-        await db.from('conversations').update({
-          sms_number: conv.sms_number || from,
-          ...(optingOut ? {} : { sms_enabled: true }),
-          channel_number: conv.channel_number || to,
-          ...(matchedContactId && !conv.contact_id ? { contact_id: matchedContactId } : {}),
-        }).eq('id', conv.id)
+      } else {
+        // We reused an existing conversation: it carries the number that
+        // texted last (replies go there, and the fast path matches the next
+        // text; lib/reply-number) and the contact link. A STOP doesn't switch
+        // texting on, or move replies onto the phone that sent it.
+        const number = replyNumberFor(conv, from, { optingOut })
+        if (number || conv.contact_id !== matchedContactId) {
+          await db.from('conversations').update({
+            ...(number ? { sms_number: number } : {}),
+            ...(optingOut ? {} : { sms_enabled: true }),
+            channel_number: conv.channel_number || to,
+            ...(matchedContactId && !conv.contact_id ? { contact_id: matchedContactId } : {}),
+          }).eq('id', conv.id)
+          if (number) conv = { ...conv, sms_number: number }
+        }
       }
 
       if (conv) {
