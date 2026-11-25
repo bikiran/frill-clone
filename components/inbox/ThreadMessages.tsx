@@ -619,7 +619,9 @@ export default function ThreadMessages() {
               <div key={msg.id} id={`cmsg-${msg.id}`} data-cmsg="1">
                 {dateDivider}
                 {/* The card shows when it was received / sent itself. */}
-                <EmailMessage msg={msg} agentColor={companyInfo?.accent_color} businessName={companyInfo?.name} onOpenMedia={t => 'url' in t ? openChatMedia(t.url) : openEmailMedia(msg.id, t.index)} showWhy={canSeeEmailWhy} />
+                <div style={{ transition: 'opacity .2s', ...((msg as any)._pending ? { opacity: 0.6, pointerEvents: 'none' as const } : {}) }}>
+                  <EmailMessage msg={msg} agentColor={companyInfo?.accent_color} businessName={companyInfo?.name} onOpenMedia={t => 'url' in t ? openChatMedia(t.url) : openEmailMedia(msg.id, t.index)} showWhy={canSeeEmailWhy} />
+                </div>
                 {/* The same credit line a text gets: which agent wrote it,
                     who approved or edited it, Why?, and who has read it. */}
                 {(aiCredit || readByChip) && (
@@ -1148,7 +1150,7 @@ export default function ThreadMessages() {
                 <p style={{ margin: '4px 0 0', fontSize: 10.5, color: '#8a8f98', textAlign: isAgent ? 'right' : 'left', display: 'flex', gap: 6, alignItems: 'center', justifyContent: isAgent ? 'flex-end' : 'flex-start', flexWrap: 'wrap' }}>
                   <span style={{ fontStyle: 'italic' }}>
                     {(msg as any)._pending
-                      ? 'Sending by SMS…'
+                      ? `Sending by ${String((msg as any).delivery_channel || '') === 'email' ? 'email' : 'SMS'}…`
                       : (fmtReceipt(msg.created_at, isAgent, receiptChannel(msg, selected.channel)) || fmtTime(msg.created_at))}
                   </span>
 

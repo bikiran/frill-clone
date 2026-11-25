@@ -29,6 +29,7 @@ export default function InboxComposer() {
     companyId, companyInfo, composerDragging, composerH, contact, convHasSale, createTicket,
     customDateFor, deleteScheduled, dictatedRef, discardTicket, dismissSalePrompt, draft,
     emailDraftText, emailFromLabel, emailSignature, emojiBtnRef, expirable, expiryChip,
+    showPendingMessage, settlePendingMessage, dropPendingMessage,
     expiryDeleteMode, expiryMenuFor, fileInputRef, fmtRec, handleFileUpload, internalMode, isMobile,
     lastInboundId, liveTyping, loadConversations, logAiUpdate, mComposerOpen, mentionIndex,
     mentionMatches, mentionQuery, messages, myName, openMediaPicker, openMobileComposer,
@@ -181,9 +182,14 @@ export default function InboxComposer() {
             templateVars={templateVars}
             extraTools={(insert) => <>{renderSendMenu(true, insert)}{renderLinkTools(true, insert)}</>}
             onAiAssist={() => logAiUpdate('Reply drafted with Colvy AI')}
-            onSent={async () => {
-              await reloadThread(selected.id)
-              scrollBottom()
+            // The reply shows at once ("Sending…") and the saved email takes
+            // its place; the thread and list are re-read in the background.
+            onPending={showPendingMessage}
+            onSaved={settlePendingMessage}
+            onFailed={dropPendingMessage}
+            onSent={() => {
+              const id = selected.id
+              reloadThread(id).then(ok => { if (ok) scrollBottom() }).catch(() => {})
               loadConversations()
             }}
           />

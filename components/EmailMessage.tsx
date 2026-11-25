@@ -166,7 +166,9 @@ export default function EmailMessage({ msg, agentColor, onOpenMedia, businessNam
               {isAgent ? (isAuto ? 'Email sent automatically' : 'Email sent') : 'Email received'}
             </span>
             {isAgent && <VoiceTag kind={(msg as any)?.metadata?.voice} />}
-            {when && <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--slate)', whiteSpace: 'nowrap' }} title={isAgent ? 'Sent' : 'Received'}>{when}</span>}
+            {msg?._pending
+              ? <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--slate)', whiteSpace: 'nowrap', fontStyle: 'italic' }}>Sending…</span>
+              : when && <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--slate)', whiteSpace: 'nowrap' }} title={isAgent ? 'Sent' : 'Received'}>{when}</span>}
           </div>
           {isAgent ? (
             <p style={{ margin: '6px 0 0', fontSize: 12.5, color: 'var(--slate)', lineHeight: 1.45, overflowWrap: 'anywhere' }}>
