@@ -743,6 +743,7 @@ export const THREAD_MESSAGES_CSS = `
               .cmp-card.note .cmp-mode button[aria-selected="true"]{color:#b45309}
               .cmp-via{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--slate);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
               .cmp-via b{color:var(--ink);font-weight:700}
+              .cmp-via-to{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
               .cmp-sms-count{margin-left:8px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--slate)}
               .cmp-sms-count.over{color:#dc2626}
               .cmp-input::placeholder{color:#9ca3af}

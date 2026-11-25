@@ -16,7 +16,8 @@ import { emitInboundEvent } from '@/lib/integration-hooks'
 import { queueMediaUploadReply } from '@/lib/media-upload-reply'
 import { smsKeyword, STOP_WORDS, START_WORDS, recordSmsKeyword, textOptOut, resolveAutomatedSmsSender } from '@/lib/sms-consent'
 import { findContactByPhone } from '@/lib/contact-capture'
-import { followMerged } from '@/lib/same-customer'
+import { followMerged, textingConversation } from '@/lib/same-customer'
+import { replyNumberFor } from '@/lib/reply-number'
 import { scheduleMessageThumbs } from '@/lib/image-thumb'
 import { placeByLine } from '@/lib/location-lines'
 import { attachListingFromText } from '@/lib/listings-server'
@@ -84,8 +85,10 @@ export async function ingestInboundSms(params: {
     .select('*').eq('company_id', companyId).eq('sms_number', from)
     .order('last_message_at', { ascending: false }).limit(1).maybeSingle()
   // A conversation merged into the customer's own (a second mobile confirmed
-  // as theirs, lib/same-customer): the text goes where it was merged.
-  if (conv?.merged_into) conv = await followMerged(db, companyId, conv)
+  // as theirs, lib/same-customer): the text goes where it was merged. And an
+  // older thread still holding this number (replies moved to their other
+  // mobile) hands over to the conversation they're in now.
+  if (conv) conv = await textingConversation(db, companyId, conv, from)
 
   // 2) Match sender to a contact by phone, reuse their latest conversation.
   let matchedContactId: string | null = conv?.contact_id || null
@@ -99,13 +102,9 @@ export async function ingestInboundSms(params: {
       const { data: contactConv } = await db.from('conversations')
         .select('*').eq('company_id', companyId).eq('contact_id', contact.id)
         .order('last_message_at', { ascending: false }).limit(1).maybeSingle()
-      if (contactConv) {
-        conv = contactConv
-        // A STOP doesn't switch texting on, here or below.
-        if (!contactConv.sms_number) {
-          try { await db.from('conversations').update({ sms_number: from, ...(optingOut ? {} : { sms_enabled: true }), channel_number: to }).eq('id', contactConv.id) } catch {}
-        }
-      }
+      // Their latest conversation (or the one it was merged into). Its number
+      // moves to this one below.
+      if (contactConv) conv = contactConv.merged_into ? await followMerged(db, companyId, contactConv) : contactConv
     }
   }
 
@@ -124,13 +123,20 @@ export async function ingestInboundSms(params: {
     conv = newConv
     // The thank-you auto-reply goes out once the message is saved and checked (below).
     startedConversation = !!newConv && !optingOut
-  } else if (!conv.sms_number || conv.contact_id !== matchedContactId) {
-    await db.from('conversations').update({
-      sms_number: conv.sms_number || from,
-      ...(optingOut ? {} : { sms_enabled: true }),
-      channel_number: conv.channel_number || to,
-      ...(matchedContactId && !conv.contact_id ? { contact_id: matchedContactId } : {}),
-    }).eq('id', conv.id)
+  } else {
+    // Replies go to the number that texted last (lib/reply-number), so a
+    // customer texting from their other mobile is answered on it. A STOP
+    // doesn't switch texting on, here or below.
+    const number = replyNumberFor(conv, from, { optingOut })
+    if (number || conv.contact_id !== matchedContactId) {
+      await db.from('conversations').update({
+        ...(number ? { sms_number: number } : {}),
+        ...(optingOut ? {} : { sms_enabled: true }),
+        channel_number: conv.channel_number || to,
+        ...(matchedContactId && !conv.contact_id ? { contact_id: matchedContactId } : {}),
+      }).eq('id', conv.id)
+      if (number) conv = { ...conv, sms_number: number }
+    }
   }
 
   if (!conv) return { conversationId: null }

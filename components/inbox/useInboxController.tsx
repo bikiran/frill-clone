@@ -50,6 +50,9 @@ import { Contact, Conversation, Highlight, INBOX_HOUR12, Icon, Message, THREAD_P
 import { composerSubject } from '@/lib/email-subject'
 import { GATED, replyNeedsInbox } from '@/lib/plan-gate'
 import { splitPosCopies } from '@/lib/pos-sale-key'
+import { lastTextedNumber } from '@/lib/reply-number'
+import { phoneKey } from '@/lib/phone'
+import { formatPhone } from '@/lib/command-centre'
 
 // The contacts behind the list's rows, by id. One failed query used to blank
 // every name in the inbox (the rows fell back to their phone numbers): a column
@@ -2184,7 +2187,17 @@ export function useInboxController() {
   // it can't be opened here.
   const openConversationById = async (convId: string): Promise<boolean> => {
     const found = conversationsRef.current.find(c => c.id === convId)
-    if (found) { selectConversation(found); return true }
+    if (found) {
+      selectConversation(found)
+      // The list can be a moment behind (a merge just moved this one's reply
+      // number, lib/reply-number): the row as saved now, once it's read.
+      ;(supabase as any).from('conversations').select('*').eq('id', convId).maybeSingle().then(({ data }: any) => {
+        if (data && data.company_id === companyId && selectedRef.current?.id === convId) {
+          setSelected((prev: any) => (prev && prev.id === convId ? { ...prev, ...data } : prev))
+        }
+      }, () => {})
+      return true
+    }
     {
       const { data: conv } = await (supabase as any).from('conversations').select('*').eq('id', convId).maybeSingle()
       if (!conv) return false
@@ -2560,10 +2573,18 @@ export function useInboxController() {
     try {
       await (supabase as any).from('messages').update({ conversation_id: selected.id }).eq('conversation_id', sourceId)
       await (supabase as any).from('conversations').update({ status: 'resolved', is_archived: true, merged_into: selected.id }).eq('id', sourceId)
+      // Replies go to the number that texted last, of all the messages now
+      // here (lib/reply-number): the merged-in mobile when it was the latest.
+      let merged: any = selected
+      const replyTo = await lastTextedNumber(supabase, selected.id)
+      if (replyTo && phoneKey(replyTo) !== phoneKey((selected as any).sms_number || '')) {
+        await (supabase as any).from('conversations').update({ sms_number: replyTo }).eq('id', selected.id)
+        merged = { ...selected, sms_number: replyTo }
+      }
       setShowMergePicker(false)
       showToast('Conversations merged')
       await loadConversations()
-      selectConversation(selected)
+      selectConversation(merged)
     } catch (e: any) {
       showToast('Could not merge: ' + e.message)
     }
@@ -4638,6 +4659,14 @@ export function useInboxController() {
   // "Upload from your phone" stage media in the chat box, so they're chat-only.
   // Reply / Note switch on top of the reply box — shared by the chat box and
   // the email composer (on an email thread, Note swaps in the note box).
+  // A text going to another of the customer's mobiles than the one on their
+  // contact: replies go to the number that texted last (lib/reply-number), so
+  // the composer says which.
+  const smsToOtherMobile = (): boolean => {
+    const to = (selected as any)?.sms_number || ''
+    const ch = sendChannel !== 'auto' ? sendChannel : outboundChannel
+    return (ch === 'sms' || ch === 'call') && !!to && !!contact?.phone && phoneKey(to) !== phoneKey(contact.phone)
+  }
   const renderModeHead = () => (
                 <div className="cmp-head">
                   {(() => {
@@ -4662,7 +4691,7 @@ export function useInboxController() {
                     )
                   })()}
                   <span className="cmp-via">
-                    {ticketMode ? 'A support ticket, linked to this conversation' : internalMode ? 'Only your team sees this' : channelResolving ? 'Choosing a channel…' : <><span className="cmp-via-lbl">Sending by </span><b>{({ sms: 'SMS', email: 'email', chat: 'live chat', instagram: 'Instagram', messenger: 'Messenger', whatsapp: 'WhatsApp', call: 'SMS', colvy: 'Colvy app' } as Record<string, string>)[sendChannel !== 'auto' ? sendChannel : outboundChannel] || 'chat'}</b> {sendChannelGlyph(sendChannel !== 'auto' ? sendChannel : outboundChannel, 13)}</>}
+                    {ticketMode ? 'A support ticket, linked to this conversation' : internalMode ? 'Only your team sees this' : channelResolving ? 'Choosing a channel…' : <><span className="cmp-via-lbl">Sending by </span><b>{({ sms: 'SMS', email: 'email', chat: 'live chat', instagram: 'Instagram', messenger: 'Messenger', whatsapp: 'WhatsApp', call: 'SMS', colvy: 'Colvy app' } as Record<string, string>)[sendChannel !== 'auto' ? sendChannel : outboundChannel] || 'chat'}</b>{smsToOtherMobile() ? <span className="cmp-via-to" title="Replies go to the number that texted last"> to {formatPhone((selected as any).sms_number)}</span> : null} {sendChannelGlyph(sendChannel !== 'auto' ? sendChannel : outboundChannel, 13)}</>}
                     {/* Both a mobile and an email: one tap to the other. */}
                     {!internalMode && !ticketMode && !channelResolving && (() => {
                       const cur = sendChannel !== 'auto' ? sendChannel : outboundChannel
