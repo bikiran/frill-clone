@@ -1,10 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { sendGmail, sanitizeEmailHtml } from '@/lib/gmail'
+import { sendGmail, gmailMessageId, sanitizeEmailHtml } from '@/lib/gmail'
 import { isExternalSendBlocked, DEMO_BLOCK_MESSAGE, logBlockedSend } from '@/lib/demo-guard'
 import { requireCompanyAccess } from '@/lib/company-access'
 import { isInternalCall } from '@/lib/internal-call'
-import { planLock } from '@/lib/plan-gate'
+import { planAllows, planLock } from '@/lib/plan-gate'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,7 +18,15 @@ const admin = () => createClient(
 // message so it lands in the same email conversation on their side.
 export async function POST(req: NextRequest) {
   try {
-    const { conversationId, content, html: htmlOverride, agentName, to, cc, bcc, subject: subjectOverride, signature: sigOverride, attachments, metadata, skipChatMessage, threadMessageId } = await req.json()
+    const body0 = await req.json()
+    const { conversationId, content, html: htmlOverride, agentName, to, cc, bcc, subject: subjectOverride, signature: sigOverride, attachments, metadata, skipChatMessage, threadMessageId } = body0
+    const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    // The inbox shows a reply as "Sending…" under an id it picked; the message
+    // is saved under that id, so the card becomes the sent email.
+    const clientMessageId: string | null = typeof body0.clientMessageId === 'string' && UUID.test(body0.clientMessageId) ? body0.clientMessageId : null
+    // The workspace the caller says this is (the inbox sends it): its reads
+    // start straight away and are used only when the conversation agrees.
+    const companyHint: string | null = typeof body0.companyId === 'string' && UUID.test(body0.companyId) ? body0.companyId : null
     // Normalise attachments to {url,name,type} + a display kind for the thread.
     const atts = (Array.isArray(attachments) ? attachments : [])
       .filter((a: any) => a && a.url)
@@ -32,30 +40,56 @@ export async function POST(req: NextRequest) {
     }
 
     const db = admin()
+    const internal = isInternalCall(req)
 
-    const { data: conv } = await db.from('conversations').select('*').eq('id', conversationId).maybeSingle()
-    if (!conv) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
-    // Sends from the workspace's own mailbox, so only its members (Bearer) or our
-    // own server routes (scheduler, reminders, notifications) may call it.
-    if (!isInternalCall(req) && !(await requireCompanyAccess(req, db, conv.company_id)).ok) {
-      return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
-    }
-    if (await isExternalSendBlocked(conv.company_id, db)) { logBlockedSend(conv.company_id, 'email', db); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
-    // Email replies from the inbox are on the Inbox plans (lib/plan-gate). Our own
-    // server routes (reminders, notifications, scheduled sends) go through.
-    if (!isInternalCall(req)) { const locked = await planLock(db, conv.company_id, 'inbox'); if (locked) return locked }
-
-    // Recipient = the composer's To field, else whoever last emailed us on this
-    // thread (an email can thread onto an order conversation), else the contact.
-    const { data: contact } = await db.from('contacts').select('*').eq('id', conv.contact_id).maybeSingle()
-    const { data: lastInbound } = await db.from('messages')
+    // Everything a reply needs to look up, read at once (it used to wait on
+    // about ten reads one after another before the email even left). They
+    // only read; nothing is sent or answered from them until access is
+    // confirmed below.
+    const lastInboundP = db.from('messages')
       .select('email_message_id, email_subject, sender_email')
       .eq('conversation_id', conversationId)
       .eq('sender_type', 'visitor')
       .not('email_message_id', 'is', null)
       .order('created_at', { ascending: false })
       .limit(1)
-    const toEmail = (to && String(to).trim()) || lastInbound?.[0]?.sender_email || contact?.email
+    // Per workspace: the demo guard, the Inbox plan (inbox replies need it;
+    // our own server routes go through), the company's name, and its mailboxes.
+    const companyReads = (co: string) => Promise.all([
+      isExternalSendBlocked(co, db),
+      internal ? Promise.resolve(true) : planAllows(db, co, 'inbox'),
+      db.from('companies').select('name,slug').eq('id', co).maybeSingle(),
+      db.from('email_channels').select('*').eq('company_id', co).order('created_at', { ascending: true }),
+    ])
+    const signedIn = internal || /^Bearer\s+\S/i.test(req.headers.get('authorization') || '')
+    const earlyCo = signedIn && companyHint ? companyReads(companyHint) : null
+    const earlyAccess = signedIn && companyHint && !internal ? requireCompanyAccess(req, db, companyHint) : null
+    earlyCo?.catch(() => {}); earlyAccess?.catch(() => {})
+
+    const [{ data: conv }, { data: lastInbound }] = await Promise.all([
+      db.from('conversations').select('*').eq('id', conversationId).maybeSingle(),
+      lastInboundP,
+    ])
+    if (!conv) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+    const hinted = companyHint === conv.company_id
+    // Sends from the workspace's own mailbox, so only its members (Bearer) or our
+    // own server routes (scheduler, reminders, notifications) may call it.
+    if (!internal && !(await (hinted && earlyAccess ? earlyAccess : requireCompanyAccess(req, db, conv.company_id))).ok) {
+      return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
+    const [blocked, inboxAllowed, { data: company }, { data: companyChannels }] = await (hinted && earlyCo ? earlyCo : companyReads(conv.company_id))
+    if (blocked) { logBlockedSend(conv.company_id, 'email', db); return NextResponse.json({ error: DEMO_BLOCK_MESSAGE }, { status: 403 }) }
+    // Email replies from the inbox are on the Inbox plans (lib/plan-gate).
+    if (!inboxAllowed) { const locked = await planLock(db, conv.company_id, 'inbox'); if (locked) return locked }
+
+    // Recipient = the composer's To field, else whoever last emailed us on this
+    // thread (an email can thread onto an order conversation), else the contact
+    // (read only when it's needed).
+    let toEmail = (to && String(to).trim()) || lastInbound?.[0]?.sender_email || ''
+    if (!toEmail && conv.contact_id) {
+      const { data: contact } = await db.from('contacts').select('email').eq('id', conv.contact_id).maybeSingle()
+      toEmail = contact?.email || ''
+    }
     // Don't require the conversation to already BE an email thread. A widget /
     // abandoned-cart / chat conversation whose contact has an email address can
     // still be replied to by email — we send a fresh message from the company
@@ -69,22 +103,16 @@ export async function POST(req: NextRequest) {
 
     // Which mailbox does this conversation belong to? Fall back to the company's
     // first active mailbox for older conversations that predate multi-account.
-    let channel: any = null
-    if (conv.email_channel_id) {
+    const mailboxes: any[] = Array.isArray(companyChannels) ? companyChannels : []
+    let channel: any = conv.email_channel_id ? mailboxes.find(c => c.id === conv.email_channel_id) || null : null
+    if (!channel && conv.email_channel_id) {
       const { data } = await db.from('email_channels').select('*').eq('id', conv.email_channel_id).maybeSingle()
       channel = data
     }
-    if (!channel) {
-      const { data: channels } = await db.from('email_channels').select('*')
-        .eq('company_id', conv.company_id).eq('is_active', true)
-        .order('created_at', { ascending: true }).limit(1)
-      channel = channels?.[0]
-    }
+    if (!channel) channel = mailboxes.find(c => c.is_active === true) || null
     if (!channel) {
       return NextResponse.json({ error: 'No email account configured for this company.' }, { status: 400 })
     }
-
-    const { data: company } = await db.from('companies').select('name,slug').eq('id', conv.company_id).maybeSingle()
 
     // Thread the reply to the customer's most recent email.
     const inReplyTo = lastInbound?.[0]?.email_message_id || conv.email_message_id || null
@@ -140,19 +168,41 @@ export async function POST(req: NextRequest) {
       } catch { /* the send already happened */ }
     }
 
+    // The message row and the conversation, written together; the saved row
+    // goes back to the inbox. Under the inbox's id when it sent one (and under
+    // a new id should that one be taken).
+    const recordReply = async (row: Record<string, any>) => {
+      const insertP = (async () => {
+        let r: any = await db.from('messages').insert({ ...row, ...(clientMessageId ? { id: clientMessageId } : {}) }).select('*').maybeSingle()
+        if (r?.error && clientMessageId) r = await db.from('messages').insert(row).select('*').maybeSingle()
+        return r?.data || null
+      })()
+      const convP = db.from('conversations').update({
+        last_message: content.slice(0, 200),
+        last_message_at: new Date().toISOString(),
+      }).eq('id', conversationId)
+      const [saved] = await Promise.all([insertP, convP])
+      return saved
+    }
+
     if (channel.provider === 'gmail') {
+      // A reply recorded here (the inbox) reads its Message-ID back after
+      // answering; a caller that records its own row needs it in the answer.
+      const later = !skipChatMessage
       const out = await sendGmail(channel, {
         to: toEmail, cc: ccEmail, bcc: bccEmail, subject, body: fullText, html: bodyHtml,
         inReplyTo,
         threadId: conv.email_message_id || null,
         replyTo: convReplyTo,
         attachments: atts,
+        skipMessageId: later,
       })
       if (out.error) return NextResponse.json({ error: out.error }, { status: 502 })
 
       // Callers that record the thread row themselves (automated sends) pass skipChatMessage.
+      let saved: any = null
       if (!skipChatMessage) {
-        await db.from('messages').insert({
+        saved = await recordReply({
           conversation_id: conversationId,
           company_id: conv.company_id,
           sender_type: 'agent',
@@ -169,14 +219,19 @@ export async function POST(req: NextRequest) {
           email_html: bodyHtml,
           ...(displayAtts.length ? { attachments: displayAtts } : {}),
         })
-        await db.from('conversations').update({
-          last_message: content.slice(0, 200),
-          last_message_at: new Date().toISOString(),
-        }).eq('id', conversationId)
+        // The Message-ID, read once the reply has been answered, so the
+        // customer's answer threads onto this email.
+        if (later && out.id && saved?.id) {
+          const rowId = saved.id, gmailId = out.id
+          after(async () => {
+            const mid = await gmailMessageId(channel, gmailId).catch(() => null)
+            if (mid) await db.from('messages').update({ email_message_id: mid }).eq('id', rowId).then(() => {}, () => {})
+          })
+        }
       }
 
       await stampThreadRow({ gmail_message_id: out.id || null, email_message_id: out.messageId || null, email_from: fromLabel })
-      return NextResponse.json({ ok: true, id: out.id, messageId: out.messageId || null, subject, replyTo: convReplyTo || null, via: 'gmail' })
+      return NextResponse.json({ ok: true, id: out.id, messageId: out.messageId || null, subject, replyTo: convReplyTo || null, via: 'gmail', ...(saved ? { message: saved } : {}) })
     }
 
     // ── Webhook (domain) account: send via Resend.
@@ -219,8 +274,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: out?.message || 'Resend rejected the email', detail: out }, { status: 502 })
     }
 
+    let saved: any = null
     if (!skipChatMessage) {
-      await db.from('messages').insert({
+      saved = await recordReply({
         conversation_id: conversationId,
         company_id: conv.company_id,
         sender_type: 'agent',
@@ -237,15 +293,10 @@ export async function POST(req: NextRequest) {
         ...(displayAtts.length ? { attachments: displayAtts } : {}),
         ...(metadata && typeof metadata === 'object' ? { metadata } : {}),
       })
-
-      await db.from('conversations').update({
-        last_message: content.slice(0, 200),
-        last_message_at: new Date().toISOString(),
-      }).eq('id', conversationId)
     }
 
     await stampThreadRow({ email_message_id: out?.id || null, email_from: `${fromName} <${fromAddress}>` })
-    return NextResponse.json({ ok: true, id: out?.id, subject, replyTo: convReplyTo || null, via: 'resend' })
+    return NextResponse.json({ ok: true, id: out?.id, subject, replyTo: convReplyTo || null, via: 'resend', ...(saved ? { message: saved } : {}) })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }

@@ -47,6 +47,7 @@ import { useStoreStatus } from '@/lib/store-status'
 import { agentChannel, useAgentTeam } from '@/components/agents/useAgentTeam'
 import { suggestSale } from '@/lib/sale-signal'
 import { Contact, Conversation, Highlight, INBOX_HOUR12, Icon, Message, THREAD_PAGE, TeamMember, extractFromText, initialsOf, makeSnippet, parseTs, runPool, sendChannelGlyph, setInboxHour12, isFailureToast, threadCacheGet, threadCacheSet, toolBtn, tsOf, videoPoster } from '@/components/inbox/inbox-shared'
+import { composerSubject } from '@/lib/email-subject'
 import { GATED, replyNeedsInbox } from '@/lib/plan-gate'
 import { splitPosCopies } from '@/lib/pos-sale-key'
 
@@ -672,6 +673,26 @@ export function useInboxController() {
     applyThread(convId, data || [], since, fresh)
     return true
   }
+  // A reply shown in the thread before the server has it ("Sending…"). Its
+  // id is the message's own (the server saves it under that id), so the saved
+  // row simply takes its place; one that didn't go leaves the thread.
+  const showPendingMessage = (row: any) => {
+    if (!row?.id || selectedIdRef.current !== row.conversation_id) return
+    setMessages(prev => prev.some((m: any) => m.id === row.id) ? prev : [...prev, row])
+    scrollBottom()
+  }
+  const settlePendingMessage = (pendingId: string, saved: any | null) => {
+    setMessages(prev => {
+      const i = prev.findIndex((m: any) => m.id === pendingId)
+      const without = () => (i >= 0 ? prev.filter((_, j) => j !== i) : prev)
+      // No row back (an older server): the re-read that follows brings it.
+      if (!saved || (saved.conversation_id && saved.conversation_id !== selectedIdRef.current)) return without()
+      if (saved.id !== pendingId && prev.some((m: any) => m.id === saved.id)) return without()
+      if (i < 0) return prev.some((m: any) => m.id === saved.id) ? prev : [...prev, saved]
+      const next = prev.slice(); next[i] = saved; return next
+    })
+  }
+  const dropPendingMessage = (pendingId: string) => setMessages(prev => prev.filter((m: any) => m.id !== pendingId))
   // Re-read the open thread's LOADED WINDOW (everything from the oldest loaded
   // message onwards). For a conversation whose whole history is loaded this is
   // exactly the old full read.
@@ -5823,24 +5844,51 @@ export function useInboxController() {
       return
     }
 
+    // An email from the reply box: shows in the thread at once as an email
+    // card ("Sending…"), the box empties for the next message, and the saved
+    // email takes the card's place. One that can't go leaves the thread and
+    // goes back in the box (when the box is empty).
+    const sendEmailNow = async (to: string | null, onError: (e: any) => void) => {
+      const clientId: string | null = typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function' ? (crypto as any).randomUUID() : null
+      const pendingId = clientId || `pending-${Date.now()}`
+      const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      let subj: string | null = null
+      try { subj = composerSubject(messages as any, selected as any, { businessName: companyInfo?.name, contactName: contact?.name, contactPhone: contact?.phone, contactEmail: contact?.email, contactSource: (contact as any)?.source, contactTags: (contact as any)?.tags }) || null } catch {}
+      showPendingMessage({
+        id: pendingId, conversation_id: sentFrom, company_id: companyId, sender_type: 'agent',
+        sender_id: user!.id, sender_name: senderName, content, delivery_channel: 'email',
+        email_from: emailFromLabel || null, email_to: to || contact?.email || (selected as any).customer_email || null,
+        email_subject: subj, email_html: esc(content).replace(/\n/g, '<br>'),
+        attachments: [], metadata: {}, is_internal: false, is_read: true, created_at: new Date().toISOString(), _pending: true,
+      })
+      draft.discard()
+      setReply(''); setReplyTo(null); setSending(false)
+      release?.()
+      try {
+        const res = await authFetch('/api/email/reply', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversationId: sentFrom, content, agentName: senderName, ...(companyId ? { companyId } : {}), ...(to ? { to } : {}), ...(clientId ? { clientMessageId: clientId } : {}) }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Email failed to send')
+        sendDone({ boxCleared: true })
+        if (selectedIdRef.current === sentFrom) {
+          settlePendingMessage(pendingId, data?.message || null)
+          reloadThread(sentFrom).catch(() => {})
+        }
+      } catch (e: any) {
+        dropPendingMessage(pendingId)
+        if (selectedIdRef.current === sentFrom && !replyNow.current.trim()) setReply(typedRaw)
+        setSending(false)
+        onError(e)
+      }
+    }
+
     // Email conversations reply by email (threaded back into the customer's
     // original message), not through the chat widget, unless the agent picked
     // another channel ("Use SMS"): that reply goes the way the composer says.
     if (sendChannel === 'email' || ((selected as any).channel === 'email' && sendChannel === 'auto')) {
-      try {
-        const res = await authFetch('/api/email/reply', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ conversationId: selected.id, content, agentName: senderName }),
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error || 'Email failed to send')
-        sendDone()
-        await reloadThread(selected.id)
-        scrollBottom()
-      } catch (e: any) {
-        setSending(false)
-        alertDialog('Could not send the email: ' + e.message)
-      }
+      await sendEmailNow(null, (e: any) => alertDialog('Could not send the email: ' + e.message))
       return
     }
 
@@ -5914,31 +5962,23 @@ export function useInboxController() {
       const wasEmail = activeChannel === 'email'
         || (selected as any).active_channel === 'email'
         || String((selected as any).channel || '').toLowerCase() === 'email'
-      try {
-        if (!wasEmail) {
-          await (supabase as any).from('conversations').update({ active_channel: 'email' }).eq('id', selected.id)
-          await (supabase as any).from('conversation_events').insert({
+      // Written alongside the send, not before it: the email doesn't wait on them.
+      if (!wasEmail) {
+        Promise.all([
+          (supabase as any).from('conversations').update({ active_channel: 'email' }).eq('id', selected.id),
+          (supabase as any).from('conversation_events').insert({
             conversation_id: selected.id, company_id: companyId,
             event_type: 'channel_switch', actor_name: senderName,
             detail: 'Now replying by email',
-          })
-        } else if ((selected as any).active_channel !== 'email') {
-          await (supabase as any).from('conversations').update({ active_channel: 'email' }).eq('id', selected.id)
-        }
-        const res = await authFetch('/api/email/reply', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ conversationId: selected.id, content, agentName: senderName, to: emailTo }),
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error || 'Email failed to send')
-        sendDone()
-        await reloadThread(selected.id)
-        scrollBottom()
-      } catch (e: any) {
+          }),
+        ]).catch(() => {})
+      } else if ((selected as any).active_channel !== 'email') {
+        ;(supabase as any).from('conversations').update({ active_channel: 'email' }).eq('id', selected.id).then(() => {}, () => {})
+      }
+      await sendEmailNow(emailTo, (e: any) => {
         // Don't silently record a "Live Chat" the customer can't see — surface
         // why the email didn't go out and keep the reply for a retry.
         console.warn('Email send failed:', e?.message)
-        setSending(false)
         const emsg = String(e?.message || 'Email failed to send')
         const emsgClean = emsg.replace(/[.\s]+$/, '')
         if (/not configured|no .*mailbox|not connected|gmail/i.test(emsg)) {
@@ -5946,7 +5986,7 @@ export function useInboxController() {
         } else {
           showToast(`Couldn’t send email: ${emsgClean}. Your message wasn’t sent.`)
         }
-      }
+      })
       return
     }
 
@@ -6959,6 +6999,7 @@ export function useInboxController() {
     dismissAbandonedCart, dismissSalePrompt, doaMatch, downloadInvoice, draft, editContact,
     editField, editFieldValue, editOrder, editOrderData, editOrderLoading, editOrderSaving,
     editingScheduled, emailDraftText, emailFromLabel, emailGalleryMedia, emailSignature,
+    showPendingMessage, settlePendingMessage, dropPendingMessage,
     emojiBtnRef, events, expirable, expiryChip, expiryDeleteMode, expiryMenuFor, fieldBtn,
     fileInputRef, filteredConvs, filters, filtersCustomDates, fmtRec, folderBtnInbox, forwardBusy,
     forwardPicked, forwardResults, forwardSearch, forwardTo, forwarding, galleryFolder,

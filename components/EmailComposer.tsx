@@ -40,10 +40,19 @@ interface Props {
   // rather than the desktop's remembered drag height.
   compact?: boolean
   onBodyText?: (text: string) => void   // the draft's plain text, as it changes
+  // The reply shows in the thread the moment Send is pressed ("Sending…") and
+  // the editor empties for the next one. Its id is the message's own: the
+  // server saves the email under it, so the card becomes the sent email.
+  onPending?: (row: any) => void
+  /** It went: the saved row (null when the server didn't send one back). */
+  onSaved?: (pendingId: string, saved: any | null) => void
+  /** It didn't: the card leaves the thread (the editor gets the email back). */
+  onFailed?: (pendingId: string) => void
 }
 
 export default function EmailComposer({
   conversationId, companyId, toEmail, defaultSubject, fromLabel, replyTo, signature, agentName, onSent, onAiAssist, keyterms, extraTools, header, bodyHeight, templateVars, compact, onBodyText,
+  onPending, onSaved, onFailed,
 }: Props) {
   const [showDetails, setShowDetails] = useState(false)
   const [showFmt, setShowFmt] = useState(false)
@@ -289,31 +298,64 @@ export default function EmailComposer({
     if (!to.trim()) { setErr('Add a recipient'); return }
     const text = bodyText()
     if (!text) { setErr('Write a message'); return }
-    setSending(true); setErr('')
+    setErr('')
     const voice = voiceKind(text, dictatedRef.current)
     const since = new Date(Date.now() - 5000).toISOString()
-    try {
-      const res = await authFetch('/api/email/reply', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          conversationId, to: to.trim(), cc: cc.trim() || null, bcc: bcc.trim() || null,
-          subject: subject.trim() || defaultSubject,
-          content: text,                      // plain-text version (preview / fallback)
-          html: editorRef.current?.innerHTML || '',
-          agentName,
-          signature: selectedSigBody(),       // explicit — '' means no signature
-          attachments,
-        }),
-      })
-      const d = await res.json()
-      if (!res.ok) throw new Error(d.error || 'Send failed')
+    // What's in the editor now: sent as it is, and given back if it can't go.
+    const html = editorRef.current?.innerHTML || ''
+    const kept = { html, cc, showCc, bcc, showBcc, attachments }
+    const sig = selectedSigBody()
+    const subj = subject.trim() || defaultSubject
+    const payload = {
+      conversationId, to: to.trim(), cc: cc.trim() || null, bcc: bcc.trim() || null,
+      subject: subj,
+      content: text,                      // plain-text version (preview / fallback)
+      html,
+      agentName,
+      signature: sig,                     // explicit — '' means no signature
+      attachments,
+      ...(companyId ? { companyId } : {}),
+    }
+    const clientId: string | null = onPending && typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function' ? (crypto as any).randomUUID() : null
+    const pendingId = clientId || `pending-${Date.now()}`
+    const clear = () => {
       if (editorRef.current) editorRef.current.innerHTML = ''
       setBodyHtml(''); setCc(''); setShowCc(false); setBcc(''); setShowBcc(false); setAttachments([])
       clearDraft()
       dictatedRef.current = []
-      await tagVoice(conversationId, since, voice)
-      onSent()
+    }
+    if (onPending) {
+      const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      onPending({
+        id: pendingId, conversation_id: conversationId, company_id: companyId, sender_type: 'agent',
+        sender_name: agentName || null, content: sig ? `${text}\n\n${sig}` : text, delivery_channel: 'email',
+        email_from: fromLabel || null, email_to: to.trim(), email_cc: cc.trim() || null, email_subject: subj,
+        email_html: `${html}${sig ? `<br><br>${esc(sig).replace(/\n/g, '<br>')}` : ''}`,
+        attachments: attachments.map(a => ({ ...a, kind: String(a.type || '').startsWith('image') ? 'image' : String(a.type || '').startsWith('video') ? 'video' : 'file' })),
+        metadata: {}, is_internal: false, is_read: true, created_at: new Date().toISOString(), _pending: true,
+      })
+      clear()
+    } else setSending(true)
+    try {
+      const res = await authFetch('/api/email/reply', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, ...(clientId ? { clientMessageId: clientId } : {}) }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Send failed')
+      if (onPending) onSaved?.(pendingId, d?.message || null)
+      else clear()
+      // The thread is re-read once the voice tag is on (nothing waits on it).
+      tagVoice(conversationId, since, voice).catch(() => {}).finally(() => onSent())
     } catch (e: any) {
+      if (onPending) {
+        onFailed?.(pendingId)
+        // Back in the editor, unless a new email has been started there.
+        if (editorRef.current && !(editorRef.current.innerText || '').trim()) {
+          editorRef.current.innerHTML = kept.html
+          setBodyHtml(kept.html); setCc(kept.cc); setShowCc(kept.showCc); setBcc(kept.bcc); setShowBcc(kept.showBcc); setAttachments(kept.attachments)
+        }
+      }
       setErr(e.message || 'Could not send')
     } finally { setSending(false) }
   }

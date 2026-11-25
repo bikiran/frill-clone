@@ -39,9 +39,15 @@ export async function getGmailToken(channel: any): Promise<string | null> {
   }
 
   const expiresAt = new Date(Date.now() + (tok.expires_in || 3600) * 1000).toISOString()
-  await db.from('email_channels')
+  // Kept on the channel in hand too, so a second call in this request doesn't
+  // refresh again. Saved without waiting: the send needn't wait for it, and a
+  // save that's lost only means the next send refreshes once more.
+  channel.access_token = tok.access_token
+  channel.token_expires_at = expiresAt
+  db.from('email_channels')
     .update({ access_token: tok.access_token, token_expires_at: expiresAt, sync_error: null })
     .eq('id', channel.id)
+    .then(() => {}, () => {})
   return tok.access_token
 }
 
@@ -747,6 +753,8 @@ export async function sendGmail(channel: any, opts: {
   threadId?: string | null
   replyTo?: string | null
   attachments?: { url: string; name?: string; type?: string }[]
+  /** Don't read the sent email's Message-ID back now (gmailMessageId later): the reply needn't wait for it. */
+  skipMessageId?: boolean
 }): Promise<{ id?: string; threadId?: string; messageId?: string | null; error?: string }> {
   const token = await getGmailToken(channel)
   if (!token) return { error: 'Google connection expired — reconnect the account.' }
@@ -785,12 +793,9 @@ export async function sendGmail(channel: any, opts: {
 
   // Build the attachment parts (fetched + base64-encoded). Failed ones are
   // dropped rather than aborting the send.
-  const attParts: string[] = []
-  for (const a of (opts.attachments || [])) {
-    if (!a?.url) continue
-    const part = await attachmentPart(a)
-    if (part) attParts.push(part)
-  }
+  // Fetched together, kept in order.
+  const attParts: string[] = (await Promise.all((opts.attachments || []).filter(a => a?.url).map(a => attachmentPart(a))))
+    .filter((p): p is string => !!p)
 
   let mime: string
   if (attParts.length) {
@@ -819,19 +824,26 @@ export async function sendGmail(channel: any, opts: {
   })
   const data = await res.json()
   if (!res.ok) return { error: data?.error?.message || 'Gmail send failed' }
-  // Gmail writes its own Message-ID. Read it back so the customer's reply (its
-  // In-Reply-To names this id) threads onto the right conversation. Best-effort.
-  let messageId: string | null = null
-  try {
-    if (data.id) {
-      const meta = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${data.id}?format=metadata&metadataHeaders=Message-ID`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (meta.ok) {
-        const m = await meta.json()
-        messageId = header(m?.payload?.headers || [], 'Message-ID') || null
-      }
-    }
-  } catch { /* threading falls back to the subject */ }
+  if (opts.skipMessageId) return { id: data.id, threadId: data.threadId, messageId: null }
+  const messageId = data.id ? await readMessageId(token, data.id) : null
   return { id: data.id, threadId: data.threadId, messageId }
+}
+
+// Gmail writes its own Message-ID. Read it back so the customer's reply (its
+// In-Reply-To names this id) threads onto the right conversation. Best-effort.
+async function readMessageId(token: string, gmailId: string): Promise<string | null> {
+  try {
+    const meta = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(gmailId)}?format=metadata&metadataHeaders=Message-ID`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!meta.ok) return null
+    const m = await meta.json()
+    return header(m?.payload?.headers || [], 'Message-ID') || null
+  } catch { return null /* threading falls back to the subject */ }
+}
+
+/** The Message-ID of an email sent with sendGmail(…, { skipMessageId: true }), read afterwards. */
+export async function gmailMessageId(channel: any, gmailId: string): Promise<string | null> {
+  const token = await getGmailToken(channel)
+  return token && gmailId ? readMessageId(token, gmailId) : null
 }

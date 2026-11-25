@@ -46,19 +46,20 @@ export const lockedBody = (feature: GatedFeature) => ({ error: GATED[feature].lo
 export async function planAllows(db: any, companyId: string, feature: GatedFeature): Promise<boolean> {
   if (!companyId) return false
   let plan: Plan
-  try {
-    const { data, error } = await db.from('companies').select('plan, trial_ends_at').eq('id', companyId).maybeSingle()
-    if (error) return true
-    if (!data) return false
-    plan = effectivePlan(data.plan, data.trial_ends_at)
-  } catch { return true }
-  try {
-    const { data: ent, error } = await db.from('company_entitlements').select('features').eq('company_id', companyId).maybeSingle()
-    if (!error) {
-      const v = ent?.features?.[feature]
-      if (v === true || v === false) return v
-    }
-  } catch {}
+  // Both read at once (a reply waits on this); the same answers as reading
+  // the plan, then the company's override.
+  const read = async (q: () => PromiseLike<any>) => { try { return await q() } catch (e) { return { data: null, error: e, threw: true } } }
+  const [co, ent] = await Promise.all([
+    read(() => db.from('companies').select('plan, trial_ends_at').eq('id', companyId).maybeSingle()),
+    read(() => db.from('company_entitlements').select('features').eq('company_id', companyId).maybeSingle()),
+  ])
+  if (co.error) return true
+  if (!co.data) return false
+  try { plan = effectivePlan(co.data.plan, co.data.trial_ends_at) } catch { return true }
+  if (!ent.error) {
+    const v = ent.data?.features?.[feature]
+    if (v === true || v === false) return v
+  }
   return canAccess(plan, feature)
 }
 
