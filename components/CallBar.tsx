@@ -7,6 +7,7 @@ import { getVoiceProvider } from '@/lib/voice-provider-client'
 import { setActiveCall, clearActiveCall } from '@/lib/active-call'
 import { listCallDevices, handoffFetch } from '@/lib/call-device'
 import { hdDeviceOptions, applyHdAudio } from '@/lib/voice-audio'
+import { formatPhone } from '@/lib/command-centre'
 
 interface CallBarProps {
   companyId: string | null
@@ -656,6 +657,10 @@ export default function CallBar({ companyId, toNumber, contactName, contactId, c
         <p style={{ margin: 0, fontSize: 11, opacity: 0.7, display: 'flex', alignItems: 'center', gap: 6 }}>
           {state === 'connecting' && 'Connecting…'}
           {state === 'ringing' && 'Ringing…'}
+          {/* Under a name, the number being rung (a customer can have more than one). */}
+          {(state === 'connecting' || state === 'ringing') && callContactNameRef.current && callNumberRef.current && (
+            <span data-callbar-number>{formatPhone(callNumberRef.current)}</span>
+          )}
           {state === 'active' && (
             <>
               {movedTo ? `Moving to ${movedTo}…` : fmtDuration(seconds)}

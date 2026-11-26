@@ -45,3 +45,29 @@ export async function lastTextedNumber(db: any, conversationId: string): Promise
     return phoneOf(data?.sender_name)
   } catch { return null }
 }
+
+type CallRow = { direction?: string | null; from_number?: string | null; created_at?: string | null }
+type MessageRow = { sender_type?: string | null; delivery_channel?: string | null; sender_name?: string | null; created_at?: string | null }
+
+/**
+ * The number to ring back: whichever of the customer's numbers last called
+ * or texted in on this conversation, else the conversation's own number,
+ * else their contact's. A call can go to a landline, so a call from one
+ * counts here (a text reply still goes to the number that texted).
+ */
+export function callBackNumber(o: {
+  calls?: CallRow[] | null
+  messages?: MessageRow[] | null
+  smsNumber?: string | null
+  contactPhone?: string | null
+}): string | null {
+  let best: { n: string; at: string } | null = null
+  const consider = (n: string | null, at?: string | null) => {
+    if (!n) return
+    const t = String(at || '')
+    if (!best || t > best.at) best = { n, at: t }
+  }
+  for (const c of o.calls || []) if (c?.direction === 'inbound') consider(phoneOf(c.from_number), c.created_at)
+  for (const m of o.messages || []) if (m?.sender_type === 'visitor' && m.delivery_channel === 'sms') consider(phoneOf(m.sender_name), m.created_at)
+  return (best as { n: string } | null)?.n || o.smsNumber || o.contactPhone || null
+}

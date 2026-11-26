@@ -610,9 +610,10 @@ export async function POST(req: NextRequest) {
           const digitsOf = (s: string) => (s || '').replace(/\D/g, '').slice(-9)
           const fromTail = digitsOf(fromNum)
           if (fromTail) {
-            const { data: contacts } = await db.from('contacts')
-              .select('id, name, phone').eq('company_id', companyId).ilike('phone', `%${fromTail}%`).limit(10)
-            const match = (contacts || []).find((c: any) => c.phone && digitsOf(c.phone) === fromTail)
+            // However the number was saved, and a number the team confirmed as
+            // a customer's other mobile is theirs (lib/same-customer), as for
+            // texts and Twilio calls.
+            const match = await findContactByPhone(db, companyId, fromNum)
             if (match) { contactId = match.id; callerName = match.name }
           }
 
@@ -664,9 +665,11 @@ export async function POST(req: NextRequest) {
           let conversationId: string | null = null
           if (contactId) {
             try {
-              const { data: conv } = await db.from('conversations')
-                .select('id').eq('company_id', companyId).eq('contact_id', contactId)
+              const { data: latest } = await db.from('conversations')
+                .select('id, merged_into').eq('company_id', companyId).eq('contact_id', contactId)
                 .order('last_message_at', { ascending: false }).limit(1).maybeSingle()
+              // One merged away leads to the conversation it was merged into.
+              const conv = latest?.merged_into ? await followMerged(db, companyId, latest) : latest
               conversationId = conv?.id || null
               if (conv?.id) {
                 await db.from('conversations').update({

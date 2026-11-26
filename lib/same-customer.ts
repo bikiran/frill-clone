@@ -203,7 +203,7 @@ export async function confirmByPhone(db: any, conv: any, targetId: string, actor
   let openId = conv.id
   if (theirs) {
     await db.from('messages').update({ conversation_id: theirs.id }).eq('conversation_id', conv.id)
-    for (const table of ['conversation_events', 'conversation_tasks']) {
+    for (const table of ['conversation_events', 'conversation_tasks', 'calls']) {
       try { await db.from(table).update({ conversation_id: theirs.id }).eq('conversation_id', conv.id) } catch {}
     }
     await db.from('conversations').update({ status: 'resolved', is_archived: true, merged_into: theirs.id, updated_at: now }).eq('id', conv.id)
