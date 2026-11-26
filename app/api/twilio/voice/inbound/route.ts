@@ -3,6 +3,7 @@ import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { companyForInboundNumber } from '@/lib/inbound-company'
 import { ensureContactByPhone, findContactByPhone, isBlockedPhone } from '@/lib/contact-capture'
+import { followMerged } from '@/lib/same-customer'
 import { alertCall } from '@/lib/call-alerts'
 import { getPhoneCatalog } from '@/lib/phone-catalog'
 import { getPhoneAgent, answerWithAgent, businessClosedNow, phoneBookable, answersRealCallers, ensureStatusCallbacks } from '@/lib/phone-agent'
@@ -134,12 +135,15 @@ export async function POST(req: NextRequest) {
         // phone conversation: prefer an SMS / phone thread (or one on this
         // number), then the latest of the rest.
         const { data: convs } = await db.from('conversations')
-          .select('id, channel, sms_number, last_message_at').eq('company_id', companyId).or(ors.join(','))
+          .select('id, channel, sms_number, last_message_at, merged_into').eq('company_id', companyId).or(ors.join(','))
           .order('last_message_at', { ascending: false }).limit(10)
         const list = (convs || []) as any[]
         const phoneThread = list.find(c => ['sms', 'phone'].includes(String(c.channel || '').toLowerCase())
           || (fromTail && String(c.sms_number || '').replace(/\D/g, '').endsWith(fromTail)))
-        conversationId = (phoneThread || list[0])?.id || null
+        // One merged away (a second mobile confirmed as the customer's,
+        // lib/same-customer) leads to the conversation it was merged into.
+        const picked = phoneThread || list[0]
+        conversationId = (picked?.merged_into ? await followMerged(db, companyId, picked) : picked)?.id || null
       }
 
       const nowIso = new Date().toISOString()

@@ -44,6 +44,7 @@ function fakeDb(tables) {
           case 'not': return (k, op, v) => { if (op === 'is' && v === null) q.filters.push(r => r[k] != null); return chain }
           case 'in': return (k, vs) => { q.filters.push(r => vs.includes(r[k])); return chain }
           case 'ilike': return (k, v) => { q.filters.push(r => String(r[k] || '').toLowerCase() === String(v).toLowerCase()); return chain }
+          case 'contains': return (k, obj) => { q.filters.push(r => !!r[k] && Object.entries(obj).every(([kk, vv]) => r[k][kk] === vv)); return chain }
           case 'order': return (k, o) => { q.order = [k, o?.ascending !== false]; return chain }
           case 'limit': return (n) => { q.limit = n; return chain }
           case 'update': return (patch) => { q.op = 'update'; q.patch = patch; return chain }
@@ -174,6 +175,38 @@ console.log('Someone new, and a contact without a conversation number')
   db2.tables.conversations = db2.tables.conversations.filter(c => c.id !== 'cv-bare')
   const r2 = await text(db2, MAIN, 'Hello')
   ok(r2.conversationId === 'cv-emma' && conv(db2, 'cv-emma').sms_number === MAIN, 'found through her contact → her number recorded on it, as before')
+}
+
+console.log('Calling back')
+{
+  const calls = [
+    { direction: 'inbound', from_number: MAIN, created_at: '2026-11-20T10:00:00Z' },
+    { direction: 'outbound', from_number: '+61400000777', created_at: '2026-11-26T10:00:00Z' },
+  ]
+  const texts = [{ sender_type: 'visitor', delivery_channel: 'sms', sender_name: SECOND, created_at: '2026-11-24T10:00:00Z' }]
+  ok(rn.callBackNumber({ calls, messages: texts, smsNumber: MAIN, contactPhone: MAIN }) === SECOND, 'texted from the second mobile since she last called → ring that')
+  const later = [...calls, { direction: 'inbound', from_number: '(03) 9000 1234', created_at: '2026-11-25T10:00:00Z' }]
+  ok(rn.callBackNumber({ calls: later, messages: texts, smsNumber: MAIN, contactPhone: MAIN }) === '(03) 9000 1234', 'called from a landline since → ring the landline')
+  ok(rn.callBackNumber({ calls: [{ direction: 'inbound', from_number: 'anonymous', created_at: '2026-11-26T11:00:00Z' }], messages: texts, smsNumber: MAIN }) === SECOND, 'a withheld number is skipped')
+  ok(rn.callBackNumber({ calls: [], messages: [], smsNumber: SECOND, contactPhone: MAIN }) === SECOND, 'nothing in yet → the conversation’s number')
+  ok(rn.callBackNumber({ contactPhone: MAIN }) === MAIN, 'else the contact’s')
+  ok(rn.callBackNumber({ calls: [{ direction: 'outbound', from_number: '+61400000777', created_at: '2026-11-26T10:00:00Z' }], smsNumber: MAIN }) === MAIN, 'our own calls out don’t count')
+}
+
+console.log('Calls and merges')
+{
+  const db = world()
+  db.tables.calls = [{ id: 'call-1', company_id: CO, conversation_id: 'cv-bare', direction: 'inbound', from_number: SECOND, created_at: '2026-11-25T08:00:00Z' }]
+  await sc.confirmByPhone(db, conv(db, 'cv-bare'), 'ct-emma', {})
+  ok(db.tables.calls[0].conversation_id === 'cv-emma', 'a merge moves the calls into her conversation too')
+
+  const card = await import('../lib/call-card.ts')
+  const db2 = world()
+  conv(db2, 'cv-bare').merged_into = 'cv-emma'
+  db2.tables.calls = [{ id: 'call-2', company_id: CO, conversation_id: null, contact_id: 'ct-bare', direction: 'inbound', from_number: SECOND, duration_seconds: 42, status: 'completed' }]
+  await card.ensureCallCard(db2, 'call-2')
+  ok(db2.tables.calls[0].conversation_id === 'cv-emma', 'a call filed by its contact follows the merge to her conversation', db2.tables.calls[0].conversation_id)
+  ok(db2.tables.messages.some(m => m.conversation_id === 'cv-emma' && m.metadata?.call_id === 'call-2'), 'and its card is in her conversation')
 }
 
 console.log(failures ? `\n${failures} FAILED` : '\nall passed')

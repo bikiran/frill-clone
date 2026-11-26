@@ -1803,6 +1803,15 @@ export function useInboxController() {
   // linking rows (and any call the browser/webhook never posted a card for),
   // deduped in the render against calls that already have a timeline message.
   const [convCalls, setConvCalls] = useState<any[]>([])
+  // This conversation's calls, so any that lack a timeline card (historical
+  // calls, or calls the browser/webhook never posted) still show in the
+  // thread, and Call rings the number that last called (lib/reply-number).
+  const loadConvCalls = (convId: string) => {
+    ;(supabase as any).from('calls')
+      .select('id, created_at, direction, duration_seconds, recording_url, ai_summary, status, is_voicemail, agent_name, from_number')
+      .eq('conversation_id', convId).order('created_at', { ascending: true }).limit(200)
+      .then(({ data }: any) => { if (selectedRef.current?.id === convId) setConvCalls(data || []) }, () => {})
+  }
   const [notes, setNotes] = useState<any[]>([])
   const [tasks, setTasks] = useState<any[]>([])
   // Collapsible Notes/Tasks panels (Coax-style headers with a chevron).
@@ -2395,6 +2404,9 @@ export function useInboxController() {
         const row = payload.new
         if (row?.id && selectedRef.current?.id === row.id) {
           setSelected((prev: any) => (prev ? { ...prev, ...row } : prev))
+          // A call just came in on (or was logged to) the open conversation:
+          // its calls again, so Call rings the number that last called.
+          if (String(row.last_message || '').startsWith('📞')) loadConvCalls(row.id)
         }
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `company_id=eq.${companyId}` }, (payload: any) => {
@@ -2572,6 +2584,8 @@ export function useInboxController() {
     if (!selected?.id || sourceId === selected.id) return
     try {
       await (supabase as any).from('messages').update({ conversation_id: selected.id }).eq('conversation_id', sourceId)
+      // Its calls too, so they show here and Call rings the number that last called.
+      try { await (supabase as any).from('calls').update({ conversation_id: selected.id }).eq('conversation_id', sourceId) } catch {}
       await (supabase as any).from('conversations').update({ status: 'resolved', is_archived: true, merged_into: selected.id }).eq('id', sourceId)
       // Replies go to the number that texted last, of all the messages now
       // here (lib/reply-number): the merged-in mobile when it was the latest.
@@ -2679,12 +2693,7 @@ export function useInboxController() {
     // messages or contact — load them alongside instead of after.
     loadConversationExtras(conv.id)
     setConvCalls([])
-    // Load this conversation's calls so any that lack a timeline card (historical
-    // calls, or calls the browser/webhook never posted) still show in the thread.
-    ;(supabase as any).from('calls')
-      .select('id, created_at, direction, duration_seconds, recording_url, ai_summary, status, is_voicemail, agent_name')
-      .eq('conversation_id', conv.id).order('created_at', { ascending: true }).limit(200)
-      .then(({ data }: any) => { if (selectedRef.current?.id === conv.id) setConvCalls(data || []) }, () => {})
+    loadConvCalls(conv.id)
     // Restore which fields AI auto-saved for this contact (for the badge).
     try {
       const store = JSON.parse(localStorage.getItem('colvy-ai-saved') || '{}')

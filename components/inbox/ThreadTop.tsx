@@ -14,6 +14,9 @@ import { decodeEntities as dec } from '@/lib/decode-entities'
 import { supabase } from '@/lib/supabase'
 import CustomerGlance from '@/components/inbox/CustomerGlance'
 import SameCustomerBar from '@/components/inbox/SameCustomerBar'
+import { callBackNumber } from '@/lib/reply-number'
+import { phoneKey } from '@/lib/phone'
+import { formatPhone } from '@/lib/command-centre'
 import { CHANNEL_NAME, STATUS_COLOR, STATUS_ICON, assigneeName, initials, timeAgo } from '@/components/inbox/inbox-shared'
 import { useInbox } from '@/components/inbox/InboxContext'
 import { createJobFrom, useJobsEnabled } from '@/components/jobs/createJob'
@@ -31,7 +34,7 @@ export default function ThreadTop() {
     setShowSnooze, setStatus, setTabletContact, showActions, showAssignMenu, showMoveMenu,
     showMsgSearch, showProducts, showSnooze, showToast, snoozeConversation, tabletContact,
     teamMembers, togglePin, user, wooOrders, storeConnected,
-    powersMe, loadConversations, myName,
+    powersMe, loadConversations, myName, convCalls, messages,
   } = useInbox()
   const [powerUse, setPowerUse] = useState<null | 'priority_pin' | 'nudge'>(null)
   const powersOn = !!(powersMe?.enabled && powersMe.eligible && (powersMe.team || []).length > 1)
@@ -131,10 +134,17 @@ export default function ThreadTop() {
         {/* Browser calling — opens the draggable floating call panel
             (GlobalCallBar) so the call survives navigating away or
             switching conversations. */}
-        {(contact?.phone || (selected as any).sms_number) && (
-          <button type="button" title="Call" data-callbar-btn className="th-pill th-call"
+        {(contact?.phone || (selected as any).sms_number) && (() => {
+          // The number that last called or texted in (a second mobile, say),
+          // else the conversation's, else their contact's (lib/reply-number).
+          const number = callBackNumber({ calls: convCalls, messages, smsNumber: (selected as any).sms_number, contactPhone: contact?.phone })
+          const other = !!number && !!contact?.phone && phoneKey(number) !== phoneKey(contact.phone)
+          return (
+          <button type="button" data-callbar-btn className="th-pill th-call"
+            title={other ? `Call ${formatPhone(number)}, the number that last called or texted` : 'Call'}
+            aria-label={other ? `Call ${formatPhone(number)}` : 'Call'}
             onClick={() => window.dispatchEvent(new CustomEvent('colvy:call', { detail: {
-              number: contact?.phone || (selected as any).sms_number,
+              number,
               name: contact?.name,
               contactId: contact?.id,
               conversationId: selected.id,
@@ -142,7 +152,8 @@ export default function ThreadTop() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
             <span className="inbox-call-label">Call</span>
           </button>
-        )}
+          )
+        })()}
 
         {/* Tablet: slide the contact panel in */}
         <button type="button" className={`inbox-tablet-only th-btn${tabletContact ? ' on' : ''}`} style={{ display: 'none' }} onClick={() => setTabletContact(v => !v)} title="Contact info" aria-label="Contact info" aria-expanded={tabletContact}>

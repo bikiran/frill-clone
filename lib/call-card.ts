@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { followMerged } from '@/lib/same-customer'
 
 const fmtDuration = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 
@@ -73,13 +74,15 @@ export async function ensureCallCard(db: SupabaseClient, callRowId: string): Pro
     const num = call.direction === 'inbound' ? call.from_number : call.to_number
     if (!conversationId) {
       const digits = String(num || '').replace(/\D/g, '').slice(-9)
+      // One merged away leads to the conversation it was merged into.
+      const live = async (row: any) => (row?.merged_into ? await followMerged(db, call.company_id, row) : row)?.id || null
       if (call.contact_id) {
-        const { data } = await (db as any).from('conversations').select('id').eq('company_id', call.company_id).eq('contact_id', call.contact_id).order('last_message_at', { ascending: false }).limit(1).maybeSingle()
-        conversationId = data?.id || null
+        const { data } = await (db as any).from('conversations').select('id, merged_into').eq('company_id', call.company_id).eq('contact_id', call.contact_id).order('last_message_at', { ascending: false }).limit(1).maybeSingle()
+        conversationId = await live(data)
       }
       if (!conversationId && digits) {
-        const { data } = await (db as any).from('conversations').select('id').eq('company_id', call.company_id).ilike('sms_number', `%${digits}%`).order('last_message_at', { ascending: false }).limit(1).maybeSingle()
-        conversationId = data?.id || null
+        const { data } = await (db as any).from('conversations').select('id, merged_into').eq('company_id', call.company_id).ilike('sms_number', `%${digits}%`).order('last_message_at', { ascending: false }).limit(1).maybeSingle()
+        conversationId = await live(data)
       }
       if (!conversationId) {
         const { data } = await (db as any).from('conversations').insert({
