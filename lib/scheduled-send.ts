@@ -1,11 +1,15 @@
 import { internalHeaders } from '@/lib/internal-call'
+import { readSmsOptIn } from '@/lib/channel-choice-server'
 // Delivering a scheduled reply (server only). Shared by the cron worker and the
 // inbox's "Send now", so both send exactly the way the inbox does live:
 //   Instagram / Messenger → /api/meta/send
 //   Email                 → /api/email/reply
 //   SMS                   → /api/telnyx/sms/send
 //   WhatsApp              → /api/whatsapp/send (refused once the 24-hour window has closed)
-//   Live chat / widget    → inserted straight into messages
+//   Website chat          → inserted straight into messages
+// It goes by SMS or email when the agent scheduled it that way, whatever the
+// conversation's own channel; a conversation a call opened is texted. Anything
+// else that isn't a website chat has nowhere to go, and fails.
 
 /** Take a pending row for sending. Only one caller can win, so the cron and a
  *  "Send now" click can never both deliver the same message. */
@@ -23,7 +27,17 @@ export async function deliverScheduled(db: any, base: string, sm: any): Promise<
   const { data: conv } = await db.from('conversations').select('*').eq('id', sm.conversation_id).maybeSingle()
   if (!conv) return { ok: false, error: 'conversation not found' }
 
-  const channel = String(conv.channel || sm.channel || '').toLowerCase()
+  // The channel the composer showed when it was scheduled (SMS or email) wins
+  // over the conversation's own. The conversation's came first before, so a
+  // reply scheduled "by SMS" on a call thread or a website chat was only
+  // posted in the thread and marked sent, and the customer never got it.
+  // (A Colvy chat is answered in the app only, never by text or email.)
+  const convChannel = String(conv.channel || '').toLowerCase()
+  const asked = String(sm.channel || '').toLowerCase()
+  let channel = (asked === 'sms' || asked === 'email') && convChannel !== 'colvy' ? asked : convChannel || asked
+  // A conversation a call opened has no channel of its own: the caller is
+  // texted, as the inbox does live.
+  if (['phone', 'call', 'voice'].includes(channel)) channel = 'sms'
   const agentName = sm.sender_name || 'Scheduled'
   try {
     // An automated text held back overnight (lib/channel-fallback, sending
@@ -76,12 +90,25 @@ export async function deliverScheduled(db: any, base: string, sm: any): Promise<
         to = ct?.phone || null
       }
       if (!to) return { ok: false, error: 'no phone number on this conversation' }
+      // A text on a conversation that isn't an SMS one yet: a website chat
+      // visitor who didn't tick "Continue this conversation by text" isn't
+      // texted (as lib/channel-fallback). The SMS route checks opt-outs (STOP,
+      // blocked) on every scheduled text, as it always has.
+      if (convChannel !== 'sms' && (await readSmsOptIn(db, { companyId: conv.company_id, conv, phone: to })) === false) {
+        return { ok: false, error: 'They didn’t opt in to texts on your website chat, so it wasn’t texted.' }
+      }
       const r = await fetch(`${base}/api/telnyx/sms/send`, {
         method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ companyId: conv.company_id, conversationId: conv.id, to, text: content, senderName: agentName }),
       })
       return r.ok ? { ok: true } : { ok: false, error: (await r.json().catch(() => ({})))?.error || `sms ${r.status}` }
     }
+    // Only a website chat (only the widget sets visitor_id; order and cart
+    // threads are 'chat' too) or a Colvy chat in the app is read where it is
+    // posted. Anywhere else a row in the thread reaches no one, so it fails
+    // rather than showing as sent.
+    const postedIsRead = channel === 'widget' || channel === 'live_chat' || channel === 'colvy' || (channel === 'chat' && !!conv.visitor_id)
+    if (!postedIsRead) return { ok: false, error: 'No channel to send this on. Choose SMS or email and schedule it again.' }
     // Live chat / widget: no external hop — record it on the thread. The
     // COLVY_V299 trigger bumps the conversation; the widget picks it up live.
     const { error } = await db.from('messages').insert({
