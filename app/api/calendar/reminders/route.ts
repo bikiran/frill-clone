@@ -164,6 +164,8 @@ async function run(req: NextRequest) {
 
         // ── Customer reminder (delivery / appointment / booking / pickup)
         // Online bookings have their own reminder sweep (24h + 2h, reply C/R).
+        // What happened to it, for the run's results: 'sent', or why not.
+        let customerReminder: { sent: boolean; error?: string } | null = null
         if (e.notify_customer && e.external_source !== 'booking' && ['delivery', 'appointment', 'booking', 'pickup'].includes(e.event_type)) {
           try {
             const cid = e.customer_contact_id || e.contact_id
@@ -173,16 +175,40 @@ async function run(req: NextRequest) {
               if (ct && !ct.is_blocked) {
                 const custLine = `Reminder: your ${label.toLowerCase()} "${e.title}" is ${overdue ? 'due' : 'coming up'} — ${when}${e.time_window ? `, ${e.time_window}` : ''}.`
                 const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
+                // Tried once per event either way: reminded_at (below) is what
+                // stops this event being picked again, not customer_reminded_at.
+                customerReminder = { sent: false, error: 'no phone number on the contact' }
                 if (ct.phone) {
-                  await fetch(`${origin}/api/telnyx/sms/send`, {
+                  const res = await fetch(`${origin}/api/telnyx/sms/send`, {
                     method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify({ companyId, to: ct.phone, text: custLine, skipChatMessage: true }),
                   })
+                  if (res.ok) customerReminder = { sent: true }
+                  else {
+                    const j = await res.json().catch(() => null) as { error?: string } | null
+                    customerReminder = { sent: false, error: `the text was refused (${String(j?.error || `HTTP ${res.status}`).slice(0, 160)})` }
+                  }
                 }
-                await db.from('calendar_events').update({ customer_reminded_at: new Date().toISOString() }).eq('id', e.id)
-              }
-            }
-          } catch (err) { console.error('[calendar reminder] customer notify failed', err) }
+                // Stamped only when the text went.
+                if (customerReminder.sent) {
+                  await db.from('calendar_events').update({ customer_reminded_at: new Date().toISOString() }).eq('id', e.id)
+                }
+              } else customerReminder = { sent: false, error: ct ? 'the contact is blocked' : 'the contact no longer exists' }
+            } else customerReminder = { sent: false, error: 'no customer on the event' }
+          } catch (err) {
+            console.error('[calendar reminder] customer notify failed', err)
+            if (!customerReminder?.sent) customerReminder = { sent: false, error: 'the text could not be sent' }
+          }
+          // Asked for and not sent: the team hears about it (notifyCompany only
+          // writes in-app notifications for the owner and staff).
+          if (customerReminder && !customerReminder.sent) {
+            await notifyCompany({
+              db, companyId, type: 'calendar',
+              message: `Customer reminder not sent — ${e.title} (${when}): ${customerReminder.error}`,
+              actorName: 'Calendar',
+              conversationId: e.conversation_id || undefined,
+            })
+          }
         }
 
         // ── Email the team
@@ -250,7 +276,7 @@ async function run(req: NextRequest) {
           .update({ reminded_at: new Date().toISOString() }).eq('id', e.id)
 
         sent++
-        results.push({ id: e.id, title: e.title, overdue })
+        results.push({ id: e.id, title: e.title, overdue, ...(customerReminder ? { customerReminder } : {}) })
       }
     }
 
