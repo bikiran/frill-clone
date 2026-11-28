@@ -321,15 +321,15 @@ export async function POST(req: NextRequest) {
           origin, db,
         })
         notice = { channel: d.channel, sent: d.sent, error: d.error || null, deferredUntil: d.deferredUntil || null }
-        // Label the thread row with the channel it really went by (the column
-        // default is 'chat', so a texted notice read "Live Chat").
-        if (refundMsg?.id && (d.channel === 'sms' || d.channel === 'email')) {
-          try { await db.from('messages').update({ delivery_channel: d.channel }).eq('id', refundMsg.id) } catch {}
-        }
-        // A text held for sending hours, or nothing sent at all: say so on the
-        // row. Merged into its metadata, which other features read.
+        // How it really went, on the row. In metadata, not delivery_channel:
+        // the composers (web and app) read the newest delivery_channel in a
+        // thread to choose how the next reply goes out, so relabelling this
+        // row would change where replies are sent. `sent_via` is read by
+        // nothing but the stamp under the message. Merged into the row's
+        // metadata, which other features read.
         const flags = d.deferredUntil ? { deferred_until: d.deferredUntil }
-          : !d.sent ? { delivery_failed: true, delivery_error: d.error || null } : null
+          : !d.sent ? { delivery_failed: true, delivery_error: d.error || null }
+          : d.channel === 'sms' || d.channel === 'email' ? { sent_via: d.channel } : null
         if (refundMsg?.id && flags) {
           try {
             const { data: row } = await db.from('messages').select('metadata').eq('id', refundMsg.id).maybeSingle()

@@ -248,9 +248,9 @@ async function run(req: NextRequest) {
           } catch (e) { console.error('[review request] sms failed', e); smsWhy = 'the text could not be sent' }
         }
 
-        // ── One thread card row, stamped with the real delivery channel.
-        // Written before the email as it always was, so it starts as 'sms' or
-        // 'chat' and is corrected below once the email's answer is known.
+        // ── One thread card row. Written before the email as it always was,
+        // as 'sms' or 'chat'; how the email went is recorded in its metadata
+        // below once that answer is known.
         const posted = !!(rr.conversation_id && (channels.chat !== false || smsSent))
         let cardId: string | null = null
         if (posted) {
@@ -306,16 +306,19 @@ async function run(req: NextRequest) {
         const why = delivered ? null
           : `Not sent to the customer: ${smsWhy}; ${emailWhy}${cardId ? '; only posted in the thread, and the customer was not on the website chat' : ''}`
 
-        // The thread row says what happened: 'email' when only the email went,
-        // and when nothing reached them it stays 'chat' (only posted in the
-        // thread) with the reason. Metadata is merged, never replaced.
-        if (cardId && !smsSent && emailSent) {
-          await db.from('messages').update({ delivery_channel: 'email' }).eq('id', cardId)
-        } else if (cardId && !delivered) {
+        // The thread row says what happened, in its metadata (merged, never
+        // replaced): `sent_via: 'email'` when only the email went, and the
+        // reason when nothing reached them. delivery_channel is left as it was
+        // inserted: the composers (web and app) read the newest
+        // delivery_channel in a thread to choose how the next reply goes out,
+        // so relabelling this row would change where replies are sent.
+        if (cardId && !smsSent && (emailSent || !delivered)) {
           const { data: row } = await db.from('messages').select('metadata').eq('id', cardId).maybeSingle()
           if (row) {
             await db.from('messages').update({
-              metadata: { ...(row.metadata || {}), delivery_failed: true, delivery_error: why, review_title: 'Review Request Not Sent' },
+              metadata: { ...(row.metadata || {}), ...(emailSent
+                ? { sent_via: 'email', review_title: 'Review Request Sent by Email' }
+                : { delivery_failed: true, delivery_error: why, review_title: 'Review Request Not Sent' }) },
             }).eq('id', cardId)
           }
         }
