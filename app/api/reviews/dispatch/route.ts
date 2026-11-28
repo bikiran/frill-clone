@@ -8,7 +8,8 @@ import { assessReviewSentiment } from '@/lib/review-sentiment'
 import { shortenUrl } from '@/lib/short-link'
 import { findCustomerGoogleReview } from '@/lib/review-match'
 import { withJobLog } from '@/lib/job-log'
-import { isLiveOnPage } from '@/lib/channel-choice'
+import { isLiveOnPage, isMobileNumber } from '@/lib/channel-choice'
+import { readSmsOptIn, smsConsentFor } from '@/lib/channel-choice-server'
 
 export const dynamic = 'force-dynamic'
 
@@ -230,15 +231,41 @@ async function run(req: NextRequest) {
         // posted its own default-'chat' card, so one request produced a
         // "Live Chat" card plus a duplicate "SMS" row.
         let smsSent = false
+        // The number the text goes to: the contact's own, else the number on
+        // the request's conversation (the thread the order or booking is in).
+        // Only the contact's phone was looked at, so a customer whose mobile
+        // was on the conversation alone was never texted.
+        // The conversation's number is only used when it is a mobile and the
+        // customer may be texted on it: never a website chat visitor who typed
+        // it and didn't tick "Continue this conversation by text" (sms_enabled
+        // false on their chat), nor anyone the opt-in rule (readSmsOptIn) or
+        // an opt-out / block (smsConsentFor, asked for this contact as well as
+        // the number) rules out. /api/telnyx/sms/send checks opt-outs again.
+        // Only for a request with a contact, and only that contact's own
+        // conversation: the one-request-per-customer rules above are kept per
+        // contact, and another customer's thread is never texted.
+        let smsTo: string | null = contact?.phone || null
+        let noNumberWhy = 'the contact has no phone number'
+        if (channels.sms && contact && !smsTo && rr.conversation_id) {
+          try {
+            const { data: cv } = await db.from('conversations').select('*').eq('id', rr.conversation_id).eq('company_id', rr.company_id).maybeSingle()
+            const n: string | null = cv?.contact_id === contact.id ? cv.sms_number || null : null
+            const websiteChat = !!cv?.visitor_id || ['widget', 'live_chat'].includes(String(cv?.channel || '').toLowerCase())
+            if (n && !isMobileNumber(n)) noNumberWhy = 'the contact has no phone number and the conversation’s number isn’t a mobile'
+            else if (n && ((websiteChat && cv.sms_enabled === false) || (await readSmsOptIn(db, { companyId: rr.company_id, conv: cv, phone: n })) === false)) noNumberWhy = 'the contact has no phone number and they didn’t opt in to texts on the website chat'
+            else if (n && (await smsConsentFor(db, rr.company_id, n, contact.id)) !== 'ok') noNumberWhy = 'the contact has no phone number and the conversation’s number can’t be texted (opted out, or it couldn’t be checked)'
+            else if (n) smsTo = n
+          } catch { /* couldn't be read or checked: not texted */ }
+        }
         // Why the text / the email didn't go, for the request's error when
         // nothing reached the customer.
-        let smsWhy = !channels.sms ? 'texting is off for review requests' : !contact?.phone ? 'the contact has no phone number' : ''
-        if (channels.sms && contact?.phone) {
+        let smsWhy = !channels.sms ? 'texting is off for review requests' : !smsTo ? noNumberWhy : ''
+        if (channels.sms && smsTo) {
           try {
             const base = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
             const res = await fetch(`${base}/api/telnyx/sms/send`, {
               method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
-              body: JSON.stringify({ companyId: rr.company_id, conversationId: rr.conversation_id, to: contact.phone, text, senderName: business, skipChatMessage: true }),
+              body: JSON.stringify({ companyId: rr.company_id, conversationId: rr.conversation_id, to: smsTo, text, senderName: business, skipChatMessage: true }),
             })
             smsSent = res.ok
             if (!res.ok) {

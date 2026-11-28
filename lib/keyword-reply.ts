@@ -121,7 +121,10 @@ async function intentAllows(text: string, keywords: string[], reply: string): Pr
  *  - sends the business's exact saved answer — it never writes its own
  *
  * Works for any channel. `deliver` lets the caller push the reply out over the
- * customer's channel (e.g. text it back over SMS) in addition to storing it.
+ * customer's channel (e.g. text it back over SMS). It runs BEFORE the reply is
+ * stored and must throw when nothing went out: a reply that wasn't delivered is
+ * not written into the thread, doesn't count as the rule's one answer, and
+ * comes back as not matched, so Colvy AI or a person answers the customer.
  */
 export async function runKeywordReply(opts: {
   conversationId: string
@@ -187,6 +190,17 @@ export async function runKeywordReply(opts: {
   // Links in the canned answer go out as tracked short links.
   try { reply = await trackLinksInText(reply, { companyId, conversationId, channel: opts.channel || 'chat' }) } catch {}
 
+  // Send it over the customer's channel (SMS/email) first, when the caller
+  // delivers it. A reply that didn't go out (opted out, texting not set up,
+  // the carrier or mail service refused it) used to sit in the thread marked
+  // SMS/Email as if sent, and kept Colvy AI from answering.
+  if (opts.deliver) {
+    try { await opts.deliver(reply) } catch (e) {
+      console.error('[keyword reply] delivery failed', e)
+      return { matched: false, reason: 'not delivered' }
+    }
+  }
+
   await db.from('messages').insert({
     conversation_id: conversationId,
     company_id: companyId,
@@ -202,11 +216,6 @@ export async function runKeywordReply(opts: {
     last_message: reply.slice(0, 200),
     last_message_at: new Date().toISOString(),
   }).eq('id', conversationId)
-
-  // Push it out over the customer's channel (SMS/email) if the caller can.
-  if (opts.deliver) {
-    try { await opts.deliver(reply) } catch (e) { console.error('[keyword reply] delivery failed', e) }
-  }
 
   try {
     await db.from('keyword_reply_hits').insert({

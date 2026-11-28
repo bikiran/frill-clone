@@ -2,6 +2,7 @@ import { isStaffMember } from '@/lib/company-access'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { deliverAutomatedMessage } from '@/lib/channel-fallback'
+import { readSmsOptIn, smsConsentFor } from '@/lib/channel-choice-server'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,6 +51,34 @@ export async function POST(req: NextRequest) {
     const email = order.customer_email || null
     if (!phone && !email && !order.conversation_id) return NextResponse.json({ error: 'No phone or email on this order to send tracking to.' }, { status: 400 })
 
+    // What the order itself lacks, from its conversation: the thread's number,
+    // else its contact's phone; and the contact's email. Only the order's own
+    // phone / email were used, so an order without them answered "no mobile or
+    // email on file" while its conversation had the customer's number.
+    // A number found this way is only used when the customer may be texted on
+    // it: never a website chat visitor who typed a mobile and didn't tick
+    // "Continue this conversation by text" (sms_enabled false on their chat),
+    // nor anyone the opt-in rule (readSmsOptIn) or an opt-out / block
+    // (smsConsentFor) rules out.
+    // deliverAutomatedMessage and /api/telnyx/sms/send check again on the way.
+    // Nothing is taken from a conversation that belongs to a different
+    // contact than the order's.
+    let threadPhone: string | null = null
+    let threadEmail: string | null = null
+    if ((!phone || !email) && order.conversation_id) {
+      try {
+        const { data: found } = await db.from('conversations').select('*').eq('id', order.conversation_id).eq('company_id', companyId).maybeSingle()
+        const cv = found && (!order.contact_id || !found.contact_id || found.contact_id === order.contact_id) ? found : null
+        const ct = cv?.contact_id ? (await db.from('contacts').select('*').eq('id', cv.contact_id).eq('company_id', companyId).maybeSingle()).data : null
+        if (!email) threadEmail = ct?.email || null
+        const websiteChat = !!cv?.visitor_id || ['widget', 'live_chat'].includes(String(cv?.channel || '').toLowerCase())
+        const noOptIn = websiteChat && !!cv?.sms_number && cv.sms_enabled === false
+        const n: string | null = !phone && !noOptIn ? cv?.sms_number || ct?.phone || null : null
+        if (n && (await smsConsentFor(db, companyId, n, cv?.contact_id || order.contact_id || null)) === 'ok'
+          && (await readSmsOptIn(db, { companyId, conv: cv, contact: ct, phone: n })) !== false) threadPhone = n
+      } catch { /* couldn't be read or checked: nothing from the thread */ }
+    }
+
     // Ensure a conversation exists (delivery + inbox thread hang off it).
     let conversationId: string | null = order.conversation_id || null
     if (!conversationId) {
@@ -64,16 +93,27 @@ export async function POST(req: NextRequest) {
     }
     if (!conversationId) return NextResponse.json({ error: 'Could not create a conversation to send on.' }, { status: 500 })
 
-    const result = await deliverAutomatedMessage({
-      companyId, conversationId, text, phone, email,
+    const send = {
+      companyId, conversationId, text,
       senderName: body.senderName || 'Team',
       subject: `Tracking for order ${order.order_number}`,
       origin: req.nextUrl.origin,
       // The shared rule (lib/channel-choice): their last channel; a customer
       // who hasn't messaged gets order updates by email, else SMS. No texts at night.
-      preferChannel: 'auto', newCustomerDefault: 'email', sendingHours: true,
+      preferChannel: 'auto' as const, newCustomerDefault: 'email' as const, sendingHours: true,
       db,
-    })
+    }
+    // The order's own phone / email first, exactly as before.
+    let result = await deliverAutomatedMessage({ ...send, phone, email })
+    // That reached nobody (nothing sent, nothing held for the morning): once
+    // more, with only what the order lacked, from its conversation. Whatever
+    // already reaches the customer on the order's own details is untouched.
+    if (!result?.sent && !result?.deferredUntil && (threadPhone || threadEmail)) {
+      const again = await deliverAutomatedMessage({ ...send, phone: threadPhone, email: threadEmail })
+      // Its answer stands when it went (or is held), or when the order had
+      // nothing of its own to try; otherwise the order's own reason does.
+      if (again?.sent || again?.deferredUntil || (!phone && !email)) result = again
+    }
     // How it really went: sent (texted, emailed, or seen in the open chat), a
     // text held for sending hours, or nothing at all. The thread row, the
     // timeline and the answer below each say which, instead of always "sent".

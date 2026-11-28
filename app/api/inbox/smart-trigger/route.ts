@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import { formsDb } from '@/lib/forms-server'
 import { quietVerdict } from '@/lib/conversation-protection'
 import { planAllows } from '@/lib/plan-gate'
+import { isLiveOnPage } from '@/lib/channel-choice'
 
 function admin() {
   return createClient(
@@ -27,7 +28,7 @@ const TRIGGER_WORDS = [
 export async function POST(req: NextRequest) {
   try {
     // Only our own server (widget messages, inbound SMS) calls this, with the
-    // internal header: it posts into a customer's thread (and can text them).
+    // internal header: it posts into a customer's thread.
     if (!isInternalCall(req)) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     const { conversationId, text } = await req.json()
     if (!conversationId || !text) return NextResponse.json({ ok: true, skipped: 'missing' })
@@ -45,6 +46,15 @@ export async function POST(req: NextRequest) {
     if (quiet) return NextResponse.json({ ok: true, skipped: `protection: ${quiet}` })
     // Only offer once per conversation
     if (conv.claim_offered) return NextResponse.json({ ok: true, skipped: 'already offered' })
+    // The offer is a card in the website chat (a button, or the claim form
+    // itself): it is only written into the thread, never texted or emailed.
+    // So it's made only where the customer will see it: a website chat
+    // conversation, or one that moved to SMS / email while they're on the
+    // chat right now. Otherwise nothing is posted and the one offer is kept
+    // for when they next write in the chat; the team sees their message as usual.
+    if (!['widget', 'live_chat', 'chat'].includes(String(conv.channel || 'chat').toLowerCase()) && !isLiveOnPage(conv.page_seen_at)) {
+      return NextResponse.json({ ok: true, triggered: false, reason: 'not a live chat' })
+    }
 
     const { data: company } = await db.from('companies').select('name, conversation_actions').eq('id', conv.company_id).maybeSingle()
     const actions = company?.conversation_actions || {}

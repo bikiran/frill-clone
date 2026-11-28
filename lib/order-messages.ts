@@ -70,6 +70,33 @@ export function completedKey(o: { pickup: boolean; trackingSent: boolean }): Com
 }
 
 /**
+ * The Completed message with the Google review reminder added after it (Order
+ * automation → "Google review reminder"), as ONE message: it is delivered with
+ * the Completed message, in the same text or email. It used to be a second
+ * row in the thread that was never sent to anyone. Plain keyboard characters
+ * only, so the reminder can't turn a text into the costlier Unicode kind.
+ */
+export function withReviewLine(body: string, reviewUrl: string | null | undefined): string {
+  const url = String(reviewUrl || '').trim()
+  if (!url) return body
+  return `${body.trimEnd()}\n\nWe'd love your feedback - leave us a Google review here: ${url}`
+}
+
+/**
+ * Is the separate Review requests feature switched on for this business? It
+ * sends its own review ask after a completed order, so the reminder line is
+ * left off the Completed message then. Unreadable counts as on: better one
+ * ask than two.
+ */
+export async function reviewRequestsOn(db: any, companyId: string): Promise<boolean> {
+  try {
+    const { data, error } = await db.from('companies').select('review_request_settings').eq('id', companyId).maybeSingle()
+    if (error) return true
+    return !!data?.review_request_settings?.enabled
+  } catch { return true }
+}
+
+/**
  * Saved messages, with the newer Completed variants following an older saved
  * "Completed" where that's what the business meant: their own wording keeps
  * going to shipped orders without tracking (as it did before the split), and a

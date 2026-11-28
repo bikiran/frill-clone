@@ -218,7 +218,9 @@ export async function ingestInboundSms(params: {
       conversationId: conv.id, text, companyId, channel: 'sms',
       deliver: async (reply) => {
         const sender = await resolveAutomatedSmsSender(db, companyId, { contactId: conv.contact_id || matchedContactId || null })
-        if (sender) await sender.send({ to: from, text: reply })
+        // Nothing to send it with: not answered, so Colvy AI or a person picks it up.
+        if (!sender) throw new Error('SMS is not set up')
+        await sender.send({ to: from, text: reply })
       },
     }))?.matched
   } catch (e) { console.error('[inbound-sms keyword reply]', e) }

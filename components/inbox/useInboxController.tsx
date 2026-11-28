@@ -938,7 +938,12 @@ export function useInboxController() {
         contact_id: (selected as any).contact_id || contact?.id || null,
         message: content,
         scheduled_for: when.toISOString(),
-        channel: sendChannel !== 'auto' ? sendChannel : ((selected as any).channel || 'chat'),
+        // The channel the composer shows ("Sending by …"), as the app stores:
+        // lib/scheduled-send sends by SMS or email when that is what was
+        // shown. It used to store the conversation's own channel, so a reply
+        // scheduled under "Sending by SMS" on a website chat the visitor had
+        // left was only posted in the thread.
+        channel: composeChannel() || (selected as any).channel || 'chat',
         status: 'pending',
         type: 'message',
         created_by: user.id,
