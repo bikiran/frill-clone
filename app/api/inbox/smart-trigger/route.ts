@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     // conversation, or one that moved to SMS / email while they're on the
     // chat right now. Otherwise nothing is posted and the one offer is kept
     // for when they next write in the chat; the team sees their message as usual.
-    if (!['widget', 'chat'].includes(String(conv.channel || 'chat').toLowerCase()) && !isLiveOnPage(conv.page_seen_at)) {
+    if (!['widget', 'live_chat', 'chat'].includes(String(conv.channel || 'chat').toLowerCase()) && !isLiveOnPage(conv.page_seen_at)) {
       return NextResponse.json({ ok: true, triggered: false, reason: 'not a live chat' })
     }
 
