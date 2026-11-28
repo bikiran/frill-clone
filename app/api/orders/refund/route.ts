@@ -71,6 +71,9 @@ export async function POST(req: NextRequest) {
     let data: any = null
     let orderLabel = String(orderId)
     let dedupeOrderId: any = orderId
+    // How the "notify customer" message really went. Stays null when none was
+    // attempted here: unticked, or no conversation to post it in.
+    let notice: { channel: string; sent: boolean; error: string | null; deferredUntil: string | null } | null = null
 
     let shop = null
     try { shop = await resolveShopifyOrderRef(db, companyId, { orderId, channel, orderRowId }) }
@@ -308,7 +311,7 @@ export async function POST(req: NextRequest) {
         // Reach them off live chat too (SMS → email); the thread message is
         // already written, so those routes skip re-posting it.
         const origin = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
-        await deliverAutomatedMessage({
+        const d = await deliverAutomatedMessage({
           companyId, conversationId, text: body,
           phone: contact?.phone || conv?.sms_number || null,
           email: contact?.email || null,
@@ -317,6 +320,22 @@ export async function POST(req: NextRequest) {
           preferChannel: 'auto', threadMessageId: refundMsg?.id || null, newCustomerDefault: 'email', sendingHours: true,
           origin, db,
         })
+        notice = { channel: d.channel, sent: d.sent, error: d.error || null, deferredUntil: d.deferredUntil || null }
+        // Label the thread row with the channel it really went by (the column
+        // default is 'chat', so a texted notice read "Live Chat").
+        if (refundMsg?.id && (d.channel === 'sms' || d.channel === 'email')) {
+          try { await db.from('messages').update({ delivery_channel: d.channel }).eq('id', refundMsg.id) } catch {}
+        }
+        // A text held for sending hours, or nothing sent at all: say so on the
+        // row. Merged into its metadata, which other features read.
+        const flags = d.deferredUntil ? { deferred_until: d.deferredUntil }
+          : !d.sent ? { delivery_failed: true, delivery_error: d.error || null } : null
+        if (refundMsg?.id && flags) {
+          try {
+            const { data: row } = await db.from('messages').select('metadata').eq('id', refundMsg.id).maybeSingle()
+            if (row) await db.from('messages').update({ metadata: { ...(row.metadata || {}), ...flags } }).eq('id', refundMsg.id)
+          } catch {}
+        }
 
         // A FULL refund flips WooCommerce to "refunded"; if the store's
         // order.updated webhook is wired up, it would send the same template
@@ -335,6 +354,7 @@ export async function POST(req: NextRequest) {
         }
       } catch (e) {
         console.error('[Refund] customer notify failed', e)
+        if (!notice) notice = { channel: 'none', sent: false, error: 'The refund message couldn’t be sent.', deferredUntil: null }
       }
     }
     // Quiet refunds still keep the thread's status badge in step.
@@ -343,7 +363,8 @@ export async function POST(req: NextRequest) {
     }
 
     await audit(req, db, companyId, 'refund_issued', `${okGuard.actor.name ? `${okGuard.actor.name} refunded` : 'Refunded'} ${refundAmount ? `$${refundAmount}` : 'an amount'} on ${shop ? 'Shopify ' : ''}order #${orderLabel}${okGuard.pinRequired ? ' (PIN checked)' : ''}${reason ? ` — ${String(reason).slice(0, 120)}` : ''}`, { order_id: String(orderId), amount: refundAmount, conversation_id: conversationId || null, by: okGuard.actor.userId })
-    return NextResponse.json({ ok: true, refund: data, amount: refundAmount, notified: notify })
+    // `notified` still repeats the tick box; `notice` is what happened to the message.
+    return NextResponse.json({ ok: true, refund: data, amount: refundAmount, notified: notify, notice })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
