@@ -6,6 +6,7 @@ import { ingestInboundSms, InboundAttachment } from '@/lib/inbound-sms'
 import { uploadToR2, r2Configured } from '@/lib/r2'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { applyDeliveryReceipt } from '@/lib/campaign-receipts'
+import { applySmsThreadReceipt } from '@/lib/sms-receipts'
 import { companyForInboundNumber } from '@/lib/inbound-company'
 import { toWebMp4 } from '@/lib/transcode'
 import { needsWebMp4 } from '@/lib/web-video'
@@ -96,11 +97,25 @@ export async function POST(req: NextRequest) {
         const status = messageStatus.toLowerCase()
         const delivered = status === 'delivered'
         const failed = ['undelivered', 'failed'].includes(status)
+        const errText = get('ErrorCode') ? `Twilio error ${get('ErrorCode')}` : null
+        let campaign = null
         if (sid && (delivered || failed)) {
-          const errText = get('ErrorCode') ? `Twilio error ${get('ErrorCode')}` : null
           // One row read, one conditional update and one counter increment —
           // not two exact COUNTs over the campaign's recipients per callback.
-          await applyDeliveryReceipt(db, sid, delivered ? 'delivered' : 'failed', errText || status)
+          campaign = await applyDeliveryReceipt(db, sid, delivered ? 'delivered' : 'failed', errText || status)
+        }
+        // Not a campaign text: an inbox reply, an upload link or an automatic
+        // text. Its receipt goes on its thread row (metadata.sms), so a text
+        // the carrier accepted and then couldn't deliver no longer reads as
+        // sent for ever. Only a row of the business that owns the sending
+        // number, and only when signed by Colvy's account or that business's.
+        if (sid && !campaign && (delivered || failed || status === 'sent')) {
+          await applySmsThreadReceipt(db, {
+            providerId: sid, provider: 'twilio', ourNumber: get('From'),
+            status: delivered ? 'delivered' : failed ? 'failed' : 'sent',
+            error: failed ? (errText || status) : null,
+            allowed: companyId => twilioSignedFor(req, form, db, companyId),
+          })
         }
       } catch (e) { console.error('[twilio] delivery receipt failed', e) }
       return xml(EMPTY_TWIML)
