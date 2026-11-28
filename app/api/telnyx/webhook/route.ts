@@ -388,7 +388,8 @@ export async function POST(req: NextRequest) {
           keywordAnswered = !!(await runKeywordReply({
             conversationId: conv.id, text, companyId, channel: 'sms',
             deliver: async (reply) => {
-              if (!integ?.api_key || !integ.phone_number) return
+              // Nothing to send it with: not answered, so Colvy AI or a person picks it up.
+              if (!integ?.api_key || !integ.phone_number) throw new Error('SMS is not set up')
               await assertMayText(db, companyId, from, conv.contact_id || matchedContactId || null)
               const svc = new TelnyxService(integ.api_key)
               await svc.sendSMS({

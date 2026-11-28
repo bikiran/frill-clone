@@ -515,14 +515,16 @@ export async function POST(req: NextRequest) {
       await runKeywordReply({
         conversationId: conv.id, text: content, companyId, channel: 'email',
         deliver: async (reply) => {
-          if (!process.env.RESEND_API_KEY) return
+          // Throws when the answer can't be emailed (or the mail service
+          // refuses it), so it isn't written into the thread as sent.
+          if (!process.env.RESEND_API_KEY) throw new Error('Email sending is not set up')
           const fromAddress = channel.from_address || channel.inbound_address
-          if (!fromAddress) return
+          if (!fromAddress) throw new Error('No address to send the answer from')
           const { data: co } = await db.from('companies').select('name').eq('id', companyId).maybeSingle()
           const fromName = channel.from_name || co?.name || 'Support'
           const headers: Record<string, string> = {}
           if (messageId) { headers['In-Reply-To'] = messageId; headers['References'] = messageId }
-          await fetch('https://api.resend.com/emails', {
+          const res = await fetch('https://api.resend.com/emails', {
             method: 'POST',
             headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -534,6 +536,7 @@ export async function POST(req: NextRequest) {
               ...(Object.keys(headers).length ? { headers } : {}),
             }),
           })
+          if (!res.ok) throw new Error(`The answer couldn’t be emailed (${res.status})`)
         },
       })
     } catch (e) { console.error('[email keyword reply]', e) }
