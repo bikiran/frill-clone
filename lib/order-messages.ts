@@ -83,6 +83,20 @@ export function withReviewLine(body: string, reviewUrl: string | null | undefine
 }
 
 /**
+ * Is the separate Review requests feature switched on for this business? It
+ * sends its own review ask after a completed order, so the reminder line is
+ * left off the Completed message then. Unreadable counts as on: better one
+ * ask than two.
+ */
+export async function reviewRequestsOn(db: any, companyId: string): Promise<boolean> {
+  try {
+    const { data, error } = await db.from('companies').select('review_request_settings').eq('id', companyId).maybeSingle()
+    if (error) return true
+    return !!data?.review_request_settings?.enabled
+  } catch { return true }
+}
+
+/**
  * Saved messages, with the newer Completed variants following an older saved
  * "Completed" where that's what the business meant: their own wording keeps
  * going to shipped orders without tracking (as it did before the split), and a

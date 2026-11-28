@@ -43,6 +43,12 @@ export async function deliverScheduled(db: any, base: string, sm: any): Promise<
   // texted, as the inbox does live.
   if (['phone', 'call', 'voice'].includes(channel)) channel = 'sms'
   const agentName = sm.sender_name || 'Scheduled'
+  // SMS or email was chosen for a website chat (its visitor had left). When
+  // that can't go (texting or a mailbox isn't set up, they opted out, no
+  // opt-in, the allowance is used up) it is posted in the chat, where they
+  // read it when they come back: what happened to every such reply before.
+  const websiteChat = ['widget', 'live_chat'].includes(convChannel) || (convChannel === 'chat' && !!conv.visitor_id)
+  const chatIfNot = websiteChat && channel !== convChannel
   try {
     // An automated text held back overnight (lib/channel-fallback, sending
     // hours). Its message is already on the thread, so only the text goes out;
@@ -80,12 +86,16 @@ export async function deliverScheduled(db: any, base: string, sm: any): Promise<
         const { data: ct } = await db.from('contacts').select('email').eq('id', conv.contact_id).maybeSingle()
         to = ct?.email || null
       }
-      if (!to) return { ok: false, error: 'no email address on this conversation' }
-      const r = await fetch(`${base}/api/email/reply`, {
-        method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ conversationId: conv.id, content, agentName, to }),
-      })
-      return r.ok ? { ok: true } : { ok: false, error: (await r.json().catch(() => ({})))?.error || `email ${r.status}` }
+      let res: { ok: boolean; error?: string } = { ok: false, error: 'no email address on this conversation' }
+      if (to) {
+        const r = await fetch(`${base}/api/email/reply`, {
+          method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ conversationId: conv.id, content, agentName, to }),
+        })
+        res = r.ok ? { ok: true } : { ok: false, error: (await r.json().catch(() => ({})))?.error || `email ${r.status}` }
+      }
+      if (res.ok || !chatIfNot) return res
+      channel = convChannel
     }
     if (channel === 'sms') {
       let to: string | null = conv.sms_number || null
@@ -93,19 +103,22 @@ export async function deliverScheduled(db: any, base: string, sm: any): Promise<
         const { data: ct } = await db.from('contacts').select('phone').eq('id', conv.contact_id).maybeSingle()
         to = ct?.phone || null
       }
-      if (!to) return { ok: false, error: 'no phone number on this conversation' }
+      let res: { ok: boolean; error?: string } = { ok: false, error: 'no phone number on this conversation' }
       // A text on a conversation that isn't an SMS one yet: a website chat
       // visitor who didn't tick "Continue this conversation by text" isn't
       // texted (as lib/channel-fallback). The SMS route checks opt-outs (STOP,
       // blocked) on every scheduled text, as it always has.
-      if (convChannel !== 'sms' && (await readSmsOptIn(db, { companyId: conv.company_id, conv, phone: to })) === false) {
-        return { ok: false, error: 'They didn’t opt in to texts on your website chat, so it wasn’t texted.' }
+      if (to && convChannel !== 'sms' && (await readSmsOptIn(db, { companyId: conv.company_id, conv, phone: to })) === false) {
+        res = { ok: false, error: 'They didn’t opt in to texts on your website chat, so it wasn’t texted.' }
+      } else if (to) {
+        const r = await fetch(`${base}/api/telnyx/sms/send`, {
+          method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ companyId: conv.company_id, conversationId: conv.id, to, text: content, senderName: agentName }),
+        })
+        res = r.ok ? { ok: true } : { ok: false, error: (await r.json().catch(() => ({})))?.error || `sms ${r.status}` }
       }
-      const r = await fetch(`${base}/api/telnyx/sms/send`, {
-        method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ companyId: conv.company_id, conversationId: conv.id, to, text: content, senderName: agentName }),
-      })
-      return r.ok ? { ok: true } : { ok: false, error: (await r.json().catch(() => ({})))?.error || `sms ${r.status}` }
+      if (res.ok || !chatIfNot) return res
+      channel = convChannel
     }
     // Posting in the thread is for a chat: a website chat, a Colvy chat in the
     // app, or a plain 'chat' conversation (the customer portal's Messages

@@ -156,6 +156,11 @@ console.log('When the reminder is left out')
   const noLink = world({ companies: [{ id: CO, name: 'Reef & Co', order_chat_automation: { enabled: true } }] })
   await go(noLink, order())
   ok(sentRows(noLink).length === 1 && !/Google review/.test(sentRows(noLink)[0].content) && sends.length === 1, 'no review link saved: the Completed message as it always was', sentRows(noLink).map(r => r.content))
+
+  // Review requests (the separate feature) sends its own ask a day later.
+  const both = world({ companies: [{ id: CO, name: 'Reef & Co', order_chat_automation: { enabled: true, review_url: REVIEW }, review_request_settings: { enabled: true } }] })
+  await go(both, order())
+  ok(sentRows(both).length === 1 && !sentRows(both)[0].content.includes(REVIEW) && sends.length === 1 && !sends[0].text.includes(REVIEW), 'Review requests is on as well: no reminder line, so the customer is asked once', sentRows(both).map(r => r.content))
 }
 
 console.log(failures ? `\n${failures} check(s) FAILED` : '\nAll checks passed')

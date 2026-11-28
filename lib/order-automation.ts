@@ -16,7 +16,7 @@ import { linkContactIdentity, linkedContacts } from '@/lib/identity'
 import { attributeOrderToLinks } from '@/lib/link-attribution'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { claimEvent, claimOrderAnnouncement, orderAlertVerb } from '@/lib/order-alerts'
-import { DEFAULT_ORDER_MESSAGES, isStaleOrderMessage, withCompletedFallbacks, isPickupMethod, completedKey, trackingAlreadySent, withReviewLine } from '@/lib/order-messages'
+import { DEFAULT_ORDER_MESSAGES, isStaleOrderMessage, withCompletedFallbacks, isPickupMethod, completedKey, trackingAlreadySent, withReviewLine, reviewRequestsOn } from '@/lib/order-messages'
 import { findCustomerGoogleReview } from '@/lib/review-match'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 import { customerNoticeHeld } from '@/lib/order-notify'
@@ -311,7 +311,9 @@ export async function runOrderAutomation(db: any, companyId: string, o: NormalOr
       .replace(/\{total\}/g, money(o.total))
     // The Google review reminder is part of the Completed message (one row, one
     // send), unless this customer has already left a Google review.
-    if (status === 'completed' && cfg.review_url && !(await findCustomerGoogleReview(db, companyId, contact?.id)).reviewed) {
+    // Not when Review requests are switched on too: that sends its own ask a
+    // day later, and the customer would be asked twice for one order.
+    if (status === 'completed' && cfg.review_url && !(await reviewRequestsOn(db, companyId)) && !(await findCustomerGoogleReview(db, companyId, contact?.id)).reviewed) {
       body = withReviewLine(body, cfg.review_url)
     }
     const { data: autoMsg } = await db.from('messages').insert({

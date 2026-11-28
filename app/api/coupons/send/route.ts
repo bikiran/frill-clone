@@ -180,7 +180,9 @@ export async function POST(req: NextRequest) {
         const sendEmail = async () => {
           const r = await fetch(`${base}/api/email/reply`, {
             method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ conversationId, content, to: email, subject: 'Your coupon', agentName: createdByName || 'Support' }),
+            // On a thread that isn't an email one the coupon card is the
+            // thread's record (relabelled Email below): no second row.
+            body: JSON.stringify({ conversationId, content, to: email, subject: 'Your coupon', agentName: createdByName || 'Support', ...(convChannel !== 'email' ? { skipChatMessage: true } : {}) }),
           })
           return r.ok
         }

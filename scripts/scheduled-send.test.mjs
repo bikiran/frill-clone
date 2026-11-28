@@ -120,7 +120,7 @@ console.log('Who is not texted')
 {
   const widgetContact = { id: 'ct', company_id: CO, phone: MOBILE, source: 'widget' }
   const noOptIn = await deliver({ channel: 'widget', visitor_id: 'v1', contact_id: 'ct', sms_number: MOBILE, sms_enabled: false }, 'sms', { contacts: [widgetContact] })
-  ok(!noOptIn.r.ok && /opt in/.test(noOptIn.r.error) && noOptIn.calls.length === 0 && noOptIn.posted.length === 0, 'a website chat visitor who didn’t opt in to texts: it fails, no text, nothing in the thread', noOptIn)
+  ok(noOptIn.r.ok && noOptIn.calls.length === 0 && noOptIn.posted.length === 1 && noOptIn.posted[0].delivery_channel === 'widget', 'a website chat visitor who didn’t opt in to texts: no text, it is posted in their chat as before', noOptIn)
   const rangLater = await deliver({ channel: 'phone', contact_id: 'ct', sms_number: MOBILE, sms_enabled: false }, 'sms', {
     contacts: [widgetContact], more: [{ id: 'cv-chat', company_id: CO, channel: 'widget', visitor_id: 'v1', contact_id: 'ct', sms_number: MOBILE, sms_enabled: false }],
   })
@@ -129,6 +129,23 @@ console.log('Who is not texted')
   answer = () => new Response(JSON.stringify({ error: 'This customer has opted out of texts (they replied STOP), so it wasn’t texted.', optedOut: true }), { status: 409 })
   const stopped = await deliver({ channel: 'phone', sms_number: MOBILE }, 'sms')
   ok(!stopped.r.ok && /opted out/.test(stopped.r.error) && stopped.calls.length === 1 && stopped.posted.length === 0, 'the SMS route refuses (opted out): it fails, and nothing is written into the thread', stopped)
+  answer = () => new Response('{"ok":true}', { status: 200 })
+}
+
+console.log('A website chat where the chosen SMS or email can’t go')
+{
+  answer = () => new Response(JSON.stringify({ error: 'SMS is not set up' }), { status: 400 })
+  const noSms = await deliver({ channel: 'widget', visitor_id: 'v1', sms_number: MOBILE, sms_enabled: true }, 'sms')
+  ok(noSms.r.ok && noSms.calls.length === 1 && noSms.posted.length === 1 && noSms.posted[0].delivery_channel === 'widget', 'the text is refused: posted in the chat, as it was before', noSms)
+  const noMail = await deliver({ channel: 'widget', visitor_id: 'v1', customer_email: 'sam@example.com' }, 'email')
+  ok(noMail.r.ok && noMail.calls.length === 1 && noMail.posted.length === 1 && noMail.posted[0].delivery_channel === 'widget', 'the email is refused: posted in the chat', noMail)
+  const noAddress = await deliver({ channel: 'chat', visitor_id: 'v1' }, 'email')
+  ok(noAddress.r.ok && noAddress.calls.length === 0 && noAddress.posted.length === 1, 'no address to email: posted in the chat', noAddress)
+  // Not a website chat: a refused text fails, nothing is posted as if sent.
+  const order = await deliver({ channel: 'chat', sms_number: MOBILE }, 'sms')
+  ok(!order.r.ok && order.posted.length === 0, 'an order thread (no visitor): a refused text fails, nothing is posted', order)
+  const call = await deliver({ channel: 'phone', sms_number: MOBILE }, 'sms')
+  ok(!call.r.ok && call.posted.length === 0, 'a call thread: a refused text fails, nothing is posted', call)
   answer = () => new Response('{"ok":true}', { status: 200 })
 }
 
