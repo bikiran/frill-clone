@@ -31,10 +31,14 @@ export async function deliverScheduled(db: any, base: string, sm: any): Promise<
   // over the conversation's own. The conversation's came first before, so a
   // reply scheduled "by SMS" on a call thread or a website chat was only
   // posted in the thread and marked sent, and the customer never got it.
-  // (A Colvy chat is answered in the app only, never by text or email.)
+  // Not on a Colvy chat (answered in the app only) or a WhatsApp, Messenger or
+  // Instagram conversation: those still go the conversation's own way, as
+  // they always have (the app has no WhatsApp choice, so it stores 'sms' on a
+  // WhatsApp thread; honouring that would turn a WhatsApp reply into a text).
   const convChannel = String(conv.channel || '').toLowerCase()
   const asked = String(sm.channel || '').toLowerCase()
-  let channel = (asked === 'sms' || asked === 'email') && convChannel !== 'colvy' ? asked : convChannel || asked
+  const ownWay = ['colvy', 'whatsapp', 'instagram', 'facebook'].includes(convChannel)
+  let channel = (asked === 'sms' || asked === 'email') && !ownWay ? asked : convChannel || asked
   // A conversation a call opened has no channel of its own: the caller is
   // texted, as the inbox does live.
   if (['phone', 'call', 'voice'].includes(channel)) channel = 'sms'
@@ -103,11 +107,12 @@ export async function deliverScheduled(db: any, base: string, sm: any): Promise<
       })
       return r.ok ? { ok: true } : { ok: false, error: (await r.json().catch(() => ({})))?.error || `sms ${r.status}` }
     }
-    // Only a website chat (only the widget sets visitor_id; order and cart
-    // threads are 'chat' too) or a Colvy chat in the app is read where it is
-    // posted. Anywhere else a row in the thread reaches no one, so it fails
-    // rather than showing as sent.
-    const postedIsRead = channel === 'widget' || channel === 'live_chat' || channel === 'colvy' || (channel === 'chat' && !!conv.visitor_id)
+    // Posting in the thread is for a chat: a website chat, a Colvy chat in the
+    // app, or a plain 'chat' conversation (the customer portal's Messages
+    // section shows those, and the inbox posts there live too). A conversation
+    // of any other kind (a contact form, …) has nobody reading the thread, so
+    // it fails rather than showing as sent.
+    const postedIsRead = ['chat', 'widget', 'live_chat', 'colvy', ''].includes(channel)
     if (!postedIsRead) return { ok: false, error: 'No channel to send this on. Choose SMS or email and schedule it again.' }
     // Live chat / widget: no external hop — record it on the thread. The
     // COLVY_V299 trigger bumps the conversation; the widget picks it up live.

@@ -98,10 +98,15 @@ console.log('The channel the agent scheduled it on')
   ok(email.r.ok && email.calls.length === 1 && email.calls[0].path === '/api/email/reply' && email.calls[0].body.to === 'sam@example.com', 'an SMS thread scheduled by email is emailed, not texted', email)
   const emailOnCall = await deliver({ channel: 'phone', sms_number: MOBILE, customer_email: 'sam@example.com' }, 'email')
   ok(emailOnCall.r.ok && emailOnCall.calls.length === 1 && emailOnCall.calls[0].path === '/api/email/reply', 'a call thread scheduled by email is emailed', emailOnCall)
-  // The agent chose SMS on a thread with a channel of its own: it is texted.
-  for (const ch of ['email', 'whatsapp', 'instagram']) {
-    const picked = await deliver({ channel: ch, sms_number: MOBILE, customer_email: 'sam@example.com' }, 'sms')
-    ok(picked.r.ok && picked.calls.length === 1 && picked.calls[0].path === SMS, `a${ch === 'whatsapp' ? '' : 'n'} ${ch} thread scheduled by SMS is texted`, picked)
+  const smsOnEmail = await deliver({ channel: 'email', sms_number: MOBILE, customer_email: 'sam@example.com' }, 'sms')
+  ok(smsOnEmail.r.ok && smsOnEmail.calls.length === 1 && smsOnEmail.calls[0].path === SMS, 'an email thread scheduled by SMS is texted', smsOnEmail)
+  // WhatsApp, Messenger and Instagram conversations keep their own way, as
+  // before (the app stores 'sms' on a WhatsApp thread: it has no WhatsApp choice).
+  for (const [ch, path] of [['whatsapp', '/api/whatsapp/send'], ['instagram', '/api/meta/send'], ['facebook', '/api/meta/send']]) {
+    for (const stored of ['sms', 'email']) {
+      const kept = await deliver({ channel: ch, sms_number: MOBILE, customer_email: 'sam@example.com' }, stored)
+      ok(kept.r.ok && kept.calls.length === 1 && kept.calls[0].path === path, `a ${ch} thread with '${stored}' stored still goes by ${ch}`, kept)
+    }
   }
   // Only SMS and email are taken from the scheduled row: Messenger, Instagram
   // and WhatsApp send on their own conversation, so its channel decides.
@@ -130,9 +135,8 @@ console.log('Who is not texted')
 console.log('Nowhere to send it')
 {
   for (const [conv, stored, what] of [
-    [{ channel: 'chat', sms_number: MOBILE }, 'chat', 'an order thread (chat, no visitor) scheduled as chat'],
     [{ channel: 'form', customer_email: 'sam@example.com' }, 'form', 'a contact-form thread'],
-    [{ channel: null }, '', 'no channel at all'],
+    [{ channel: 'form', customer_email: 'sam@example.com' }, 'chat', 'a contact-form thread scheduled as chat'],
   ]) {
     const { r, calls, posted } = await deliver(conv, stored)
     ok(!r.ok && /No channel/.test(r.error) && calls.length === 0 && posted.length === 0, `${what}: it fails, and nothing is written into the thread`, { r, calls, posted })
@@ -146,6 +150,9 @@ console.log('A website chat is still posted in the thread')
     [{ channel: 'widget', visitor_id: 'v1', sms_number: MOBILE }, 'chat', 'widget'],
     [{ channel: 'live_chat' }, 'live_chat', 'live_chat'],
     [{ channel: 'chat', visitor_id: 'v1' }, 'chat', 'chat'],
+    // A plain chat thread (an order, or one the customer reads in the portal):
+    // posted, as the inbox does live.
+    [{ channel: 'chat', sms_number: MOBILE }, 'chat', 'chat'],
   ]) {
     const { r, calls, posted } = await deliver(conv, stored)
     ok(r.ok && calls.length === 0 && posted.length === 1 && posted[0].delivery_channel === dc && posted[0].content === 'Your order is ready', `${conv.channel} (stored '${stored}') → posted as ${dc}, no send`, { r, calls, posted })
