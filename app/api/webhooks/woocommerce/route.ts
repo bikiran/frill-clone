@@ -678,12 +678,24 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     // Tag the thread message with the channel it actually went out on. The row
     // defaults to 'chat', so without this an order update sent by SMS still
     // showed "Live Chat" in the timeline — confusing when the whole
-    // conversation has been over SMS.
-    if (autoMsg?.id && (delivery.channel === 'sms' || delivery.channel === 'email')) {
+    // conversation has been over SMS. Only when it went, or a text is held
+    // for sending hours.
+    const held = !delivery.sent && !!delivery.deferredUntil
+    if (autoMsg?.id && (delivery.sent || held) && (delivery.channel === 'sms' || delivery.channel === 'email')) {
       try {
         await db.from('messages')
           .update({ delivery_channel: delivery.channel })
           .eq('id', autoMsg.id)
+      } catch {}
+    }
+    // Held, or nothing went and they aren't on the chat to see it: say so on
+    // the row. Merged, so order_automation (the hourly limit above) stays.
+    const flags = held ? { deferred_until: delivery.deferredUntil }
+      : !delivery.sent && !delivery.onLiveChat ? { delivery_failed: true, delivery_error: delivery.error || null } : null
+    if (autoMsg?.id && flags) {
+      try {
+        const { data: row } = await db.from('messages').select('metadata').eq('id', autoMsg.id).maybeSingle()
+        if (row) await db.from('messages').update({ metadata: { ...(row.metadata || {}), ...flags } }).eq('id', autoMsg.id)
       } catch {}
     }
   } catch (e) {

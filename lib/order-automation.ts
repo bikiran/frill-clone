@@ -336,8 +336,20 @@ export async function runOrderAutomation(db: any, companyId: string, o: NormalOr
         origin: process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com',
         force: !!(cfg.also_sms || cfg.also_email), db,
       })
-      if (autoMsg?.id && (delivery.channel === 'sms' || delivery.channel === 'email')) {
+      // 'sms' / 'email' only when it went, or a text is held for sending hours.
+      const held = !delivery.sent && !!delivery.deferredUntil
+      if (autoMsg?.id && (delivery.sent || held) && (delivery.channel === 'sms' || delivery.channel === 'email')) {
         try { await db.from('messages').update({ delivery_channel: delivery.channel }).eq('id', autoMsg.id) } catch {}
+      }
+      // Held, or nothing went and they aren't on the chat to see it: say so on
+      // the row. Merged, so order_automation (the hourly limit above) stays.
+      const flags = held ? { deferred_until: delivery.deferredUntil }
+        : !delivery.sent && !delivery.onLiveChat ? { delivery_failed: true, delivery_error: delivery.error || null } : null
+      if (autoMsg?.id && flags) {
+        try {
+          const { data: row } = await db.from('messages').select('metadata').eq('id', autoMsg.id).maybeSingle()
+          if (row) await db.from('messages').update({ metadata: { ...(row.metadata || {}), ...flags } }).eq('id', autoMsg.id)
+        } catch {}
       }
     } catch (e) { console.error('[order automation] delivery failed', e) }
   }
