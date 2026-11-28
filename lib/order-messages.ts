@@ -70,6 +70,19 @@ export function completedKey(o: { pickup: boolean; trackingSent: boolean }): Com
 }
 
 /**
+ * The Completed message with the Google review reminder added after it (Order
+ * automation → "Google review reminder"), as ONE message: it is delivered with
+ * the Completed message, in the same text or email. It used to be a second
+ * row in the thread that was never sent to anyone. Plain keyboard characters
+ * only, so the reminder can't turn a text into the costlier Unicode kind.
+ */
+export function withReviewLine(body: string, reviewUrl: string | null | undefined): string {
+  const url = String(reviewUrl || '').trim()
+  if (!url) return body
+  return `${body.trimEnd()}\n\nWe'd love your feedback - leave us a Google review here: ${url}`
+}
+
+/**
  * Saved messages, with the newer Completed variants following an older saved
  * "Completed" where that's what the business meant: their own wording keeps
  * going to shipped orders without tracking (as it did before the split), and a

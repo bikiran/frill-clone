@@ -16,7 +16,7 @@ import { linkContactIdentity, linkedContacts } from '@/lib/identity'
 import { attributeOrderToLinks } from '@/lib/link-attribution'
 import { notifyCompany, pushInboundMessage } from '@/lib/notify'
 import { claimEvent, claimOrderAnnouncement, orderAlertVerb } from '@/lib/order-alerts'
-import { DEFAULT_ORDER_MESSAGES, isStaleOrderMessage, withCompletedFallbacks, isPickupMethod, completedKey, trackingAlreadySent } from '@/lib/order-messages'
+import { DEFAULT_ORDER_MESSAGES, isStaleOrderMessage, withCompletedFallbacks, isPickupMethod, completedKey, trackingAlreadySent, withReviewLine } from '@/lib/order-messages'
 import { findCustomerGoogleReview } from '@/lib/review-match'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 import { customerNoticeHeld } from '@/lib/order-notify'
@@ -302,26 +302,24 @@ export async function runOrderAutomation(db: any, companyId: string, o: NormalOr
 
   if (shouldSend) {
     const refundedAmount = o.refundedTotal ? money(Math.abs(o.refundedTotal)) : money(o.total)
-    const body = template
+    let body = template
       .replace(/\{business\}/g, businessName)
       .replace(/\{name\}/g, firstName)
       .replace(/\{full_name\}/g, billingName || displayName)
       .replace(/\{order\}/g, String(o.number))
       .replace(/\{amount\}/g, refundedAmount)
       .replace(/\{total\}/g, money(o.total))
+    // The Google review reminder is part of the Completed message (one row, one
+    // send), unless this customer has already left a Google review.
+    if (status === 'completed' && cfg.review_url && !(await findCustomerGoogleReview(db, companyId, contact?.id)).reviewed) {
+      body = withReviewLine(body, cfg.review_url)
+    }
     const { data: autoMsg } = await db.from('messages').insert({
       conversation_id: conv.id, company_id: companyId,
       sender_type: 'agent', sender_name: businessName, content: body,
       message_type: 'text', is_read: true,
       metadata: { auto: true, order_automation: status, order_id: o.externalId },
     }).select('id').maybeSingle()
-    if (status === 'completed' && cfg.review_url && !(await findCustomerGoogleReview(db, companyId, contact?.id)).reviewed) {
-      await db.from('messages').insert({
-        conversation_id: conv.id, company_id: companyId, sender_type: 'agent', sender_name: businessName,
-        content: `We'd love your feedback — leave us a Google review here: ${cfg.review_url}`,
-        message_type: 'text', is_read: true, metadata: { auto: true, order_automation: 'review' },
-      })
-    }
     await db.from('conversations').update({ last_message: body, last_message_at: new Date().toISOString() }).eq('id', conv.id)
     try {
       const delivery = await deliverAutomatedMessage({

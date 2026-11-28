@@ -12,7 +12,7 @@ import { logWebhookEvent } from '@/lib/webhook-log'
 import { upsertWooOrder } from '@/lib/orders-sync'
 import { claimEvent, claimOrderAnnouncement, inStoreLabel, orderAlertVerb, wooPushIcon } from '@/lib/order-alerts'
 import { wooDateToISO } from '@/lib/orders'
-import { DEFAULT_ORDER_MESSAGES, isStaleOrderMessage, withCompletedFallbacks, isPickupMethod, completedKey, trackingAlreadySent } from '@/lib/order-messages'
+import { DEFAULT_ORDER_MESSAGES, isStaleOrderMessage, withCompletedFallbacks, isPickupMethod, completedKey, trackingAlreadySent, withReviewLine } from '@/lib/order-messages'
 import { findCustomerGoogleReview } from '@/lib/review-match'
 import { logEnquiryReopened } from '@/lib/conversation-timeline'
 import { notifyWaitlist, resolveWaitlistSettings } from '@/lib/waitlist'
@@ -592,7 +592,7 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
 
   if (shouldSend) {
   const refundedAmount = order.refunds?.length ? `$${Math.abs(order.refunds.reduce((s: number, r: any) => s + (parseFloat(r.total) || 0), 0)).toFixed(2)}` : `$${order.total}`
-  const body = template
+  let body = template
     .replace(/\{business\}/g, businessName)
     .replace(/\{name\}/g, firstName)
     .replace(/\{full_name\}/g, billingName || displayName)
@@ -600,23 +600,19 @@ async function runOrderChatAutomation(db: any, companyId: string, order: any) {
     .replace(/\{amount\}/g, refundedAmount)
     .replace(/\{total\}/g, `$${order.total}`)
 
+  // Completed orders can include a Google review reminder, unless this customer
+  // has already left a Google review. It is part of the Completed message (one
+  // row, one send): as a second thread row it was never sent to anyone.
+  if (status === 'completed' && cfg.review_url && !(await findCustomerGoogleReview(db, companyId, contact?.id)).reviewed) {
+    body = withReviewLine(body, cfg.review_url)
+  }
+
   const { data: autoMsg } = await db.from('messages').insert({
     conversation_id: conv.id, company_id: companyId,
     sender_type: 'agent', sender_name: businessName, content: body,
     message_type: 'text', is_read: true,
     metadata: { auto: true, order_automation: status, order_id: order.id },
   }).select('id').maybeSingle()
-
-  // Completed orders can include a Google review reminder as a follow-up line,
-  // unless this customer has already left a Google review.
-  if (status === 'completed' && cfg.review_url && !(await findCustomerGoogleReview(db, companyId, contact?.id)).reviewed) {
-    await db.from('messages').insert({
-      conversation_id: conv.id, company_id: companyId,
-      sender_type: 'agent', sender_name: businessName,
-      content: `We'd love your feedback — leave us a Google review here: ${cfg.review_url}`,
-      message_type: 'text', is_read: true, metadata: { auto: true, order_automation: 'review' },
-    })
-  }
 
   // Bump the thread to the top with the latest line, but do NOT mark it unread —
   // this is a message WE sent, so it's already read (it was counting against the
