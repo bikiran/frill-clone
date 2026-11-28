@@ -134,7 +134,13 @@ export async function POST(req: NextRequest) {
         // default (V115), so a thread opened from a contact or during a call
         // posted the link as "Live Chat" and the customer, who had no chat
         // open, never got it. Opt-outs are still checked on every text below.
-        const smsOff = conv?.sms_enabled === false && !!conv?.sms_number
+        // A thread a call opened is the same: it holds the caller's number with
+        // sms_enabled at the column default, and nobody switched texting off
+        // on it (lib/missed-call-text.ts already reads it that way). Treating
+        // it as "off" posted the link into the thread, answered ok, and the
+        // customer, on the phone to us, never got the text.
+        const callThread = ['phone', 'call', 'voice'].includes(String(conv?.channel || '').toLowerCase())
+        const smsOff = conv?.sms_enabled === false && !!conv?.sms_number && !callThread
         if (to && !smsOff && smsAllowed && !byOtherChannel) {
           // The opt-out guard checks the number actually texted — the thread's
           // number can be someone else's than the sender's — and the contact.
