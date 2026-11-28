@@ -60,6 +60,15 @@ export function aiStandsDown(r: EventResult | null | undefined): string | null {
   return null
 }
 
+/**
+ * A missed call's Reply goes by text when the call was filed in a website chat
+ * conversation (an order's thread, a chat the caller once started): written
+ * into that thread only, it never reached someone who rang.
+ */
+export function missedCallInChat(trigger: string | null | undefined, convChannel: string | null | undefined): boolean {
+  return trigger === 'missed_call' && ['chat', 'widget'].includes(String(convChannel || 'chat').toLowerCase())
+}
+
 const now = () => new Date().toISOString()
 const isMissingTable = (e: any) => /^(42P01|PGRST205|PGRST202|42883)$/.test(String(e?.code || '')) || /does not exist|could not find|schema cache/i.test(String(e?.message || ''))
 
@@ -342,14 +351,17 @@ async function act(db: any, r: Run, n: GNode): Promise<{ ok: boolean; note: stri
       const text = fill(c.text, nm).trim()
       if (!text) return { ok: false, note: 'The reply is empty.' }
       const meta = { automation_id: r.flow.id, automation_run_id: r.id, automation_name: r.flow.name, agent_name: 'Automation', ai: true }
-      const viaText = conv.channel === 'phone' || (conv.channel === 'sms' && r.ctx.channel !== 'email')
+      // A missed call filed in a website chat conversation is answered by text
+      // to the number that rang, the way a call-only thread is.
+      const callInChat = missedCallInChat(r.ctx.trigger, conv.channel)
+      const viaText = conv.channel === 'phone' || callInChat || (conv.channel === 'sms' && r.ctx.channel !== 'email')
+      const phone = (callInChat ? r.ctx.phone || conv.sms_number : conv.sms_number || r.ctx.phone) || null
       if (viaText) {
-        const phone = conv.sms_number || r.ctx.phone || null
         const { state } = await textOptOut(db, r.companyId, phone, conv.contact_id || null)
         if (state !== 'ok') return { ok: false, note: state === 'opted_out' ? 'Not sent: the customer opted out of texts.' : 'Not sent: couldn’t check whether the customer opted out of texts.' }
       }
-      const sent = conv.channel === 'phone'
-        ? await sendAiReply(db, { conv: { ...conv, channel: 'sms', sms_number: conv.sms_number || r.ctx.phone }, companyId: r.companyId, businessName: nm.business || 'Us', text, meta })
+      const sent = conv.channel === 'phone' || callInChat
+        ? await sendAiReply(db, { conv: { ...conv, channel: 'sms', sms_number: phone }, companyId: r.companyId, businessName: nm.business || 'Us', text, meta })
         : await sendAgentMessage(db, { companyId: r.companyId, conversationId: conv.id, text, runId: '', agentName: 'Automation', channel: r.ctx.channel === 'email' ? 'email' : null, meta })
       if (!sent.ok) return { ok: false, note: `Not sent: ${sent.error || 'the reply couldn’t be sent.'}` }
       r.ev.replied = true
