@@ -1226,7 +1226,14 @@ export function useInboxController() {
             body: 'Please save your card securely with Stripe — we\'ll never see your card details:',
             url: d.url, silent: true,
           })
-        } catch (e: any) { showToast(`Saved, but sending failed: ${e.message}`) }
+        } catch (e: any) {
+          // The link didn't go. Say so and stop: "sent" below used to replace
+          // this straight away. The card is in the thread either way.
+          showToast(`Saved, but sending failed: ${e.message}`)
+          await reloadThread(selected.id)
+          scrollBottom()
+          return
+        }
       }
       await reloadThread(selected.id)
       scrollBottom()

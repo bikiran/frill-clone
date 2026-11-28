@@ -74,6 +74,11 @@ export async function POST(req: NextRequest) {
       preferChannel: 'auto', newCustomerDefault: 'email', sendingHours: true,
       db,
     })
+    // How it really went: sent (texted, emailed, or seen in the open chat), a
+    // text held for sending hours, or nothing at all. The thread row, the
+    // timeline and the answer below each say which, instead of always "sent".
+    const held = !result?.sent && !!result?.deferredUntil
+    const notSent = !result?.sent && !held
 
     // Record the message in the thread so it shows in the inbox. deliverAutomated-
     // Message sends the SMS/email with skipChatMessage:true (to avoid a duplicate),
@@ -85,7 +90,11 @@ export async function POST(req: NextRequest) {
         sender_type: 'agent', sender_name: body.senderName || 'Team',
         content: text, message_type: 'text', is_read: true,
         delivery_channel: result?.channel === 'email' ? 'email' : result?.channel === 'sms' ? 'sms' : 'chat',
-        metadata: { auto: true, tracking: true },
+        metadata: {
+          auto: true, tracking: true,
+          ...(held ? { deferred_until: result.deferredUntil } : {}),
+          ...(notSent ? { delivery_failed: true, delivery_error: result?.error || null } : {}),
+        },
       })
       await db.from('conversations').update({
         last_message: text.slice(0, 200), last_message_at: new Date().toISOString(),
@@ -101,11 +110,20 @@ export async function POST(req: NextRequest) {
     try {
       await db.from('order_events').insert({
         order_id: orderId, company_id: companyId, type: 'tracking_sent', actor_id: uid,
-        detail: `Tracking sent to customer${body.trackingNumber ? ` · ${body.trackingNumber}` : ''}`,
+        // The type stays 'tracking_sent' whatever happened: the Completed order
+        // message reads it (lib/order-messages trackingAlreadySent).
+        detail: `${notSent ? 'Tracking saved, but not sent to the customer' : held ? 'Tracking saved, the text is held until sending hours (9am–8pm)' : 'Tracking sent to customer'}${body.trackingNumber ? ` · ${body.trackingNumber}` : ''}${notSent && result?.error ? ` · ${result.error}` : ''}`,
       })
     } catch {}
 
-    return NextResponse.json({ ok: true, channel: result?.channel || null, conversationId })
+    // `channel` is unchanged ('sms' also for a held text, 'none' when nothing
+    // went). Not named `error`: callers read that as the request having failed.
+    return NextResponse.json({
+      ok: true, channel: result?.channel || null, conversationId,
+      sent: !!result?.sent,
+      deliveryError: notSent ? (result?.error || 'Not sent.') : null,
+      deferredUntil: result?.deferredUntil || null,
+    })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || String(e) }, { status: 500 })
   }

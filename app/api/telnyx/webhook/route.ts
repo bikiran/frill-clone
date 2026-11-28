@@ -15,6 +15,7 @@ import { handleBookingSmsReply } from '@/lib/booking-replies'
 import { TelnyxService } from '@/lib/telnyx-service'
 import { logWebhookEvent } from '@/lib/webhook-log'
 import { applyDeliveryReceipt } from '@/lib/campaign-receipts'
+import { applySmsThreadReceipt } from '@/lib/sms-receipts'
 import { ensureCallCard, setCallPreview } from '@/lib/call-card'
 import { companyForInboundNumber } from '@/lib/inbound-company'
 import { ensureContactByPhone, findContactByPhone } from '@/lib/contact-capture'
@@ -96,13 +97,26 @@ export async function POST(req: NextRequest) {
         if (providerId && status) {
           const delivered = status === 'delivered'
           const failed = ['delivery_failed', 'failed', 'undelivered', 'expired'].includes(status)
+          const errText = event?.payload?.errors?.[0]?.detail
+            || event?.payload?.errors?.[0]?.title
+            || null
+          let campaign = null
           if (delivered || failed) {
-            const errText = event?.payload?.errors?.[0]?.detail
-              || event?.payload?.errors?.[0]?.title
-              || null
             // The recipient's own change moves the campaign's counters — no
             // COUNT over every recipient on each receipt.
-            await applyDeliveryReceipt(db, String(providerId), delivered ? 'delivered' : 'failed', errText || status)
+            campaign = await applyDeliveryReceipt(db, String(providerId), delivered ? 'delivered' : 'failed', errText || status)
+          }
+          // Not a campaign text: an inbox reply, an upload link or an automatic
+          // text. Its receipt goes on its thread row (metadata.sms), so a text
+          // the carrier accepted and then couldn't deliver no longer reads as
+          // sent for ever. Only a row of the business that owns the sending
+          // number.
+          if (!campaign && (delivered || failed || status === 'sent')) {
+            await applySmsThreadReceipt(db, {
+              providerId: String(providerId), provider: 'telnyx', ourNumber: event?.payload?.from?.phone_number,
+              status: delivered ? 'delivered' : failed ? 'failed' : 'sent',
+              error: failed ? String(errText || status) : null,
+            })
           }
         }
       } catch (e) {

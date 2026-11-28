@@ -8,6 +8,7 @@ import { assessReviewSentiment } from '@/lib/review-sentiment'
 import { shortenUrl } from '@/lib/short-link'
 import { findCustomerGoogleReview } from '@/lib/review-match'
 import { withJobLog } from '@/lib/job-log'
+import { isLiveOnPage } from '@/lib/channel-choice'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,6 +46,9 @@ async function run(req: NextRequest) {
     if (!due || due.length === 0) return NextResponse.json({ ok: true, sent: 0 })
 
     let sent = 0
+    // Requests that were tried and reached nobody (no text, no email, and the
+    // customer wasn't on the chat to see the thread row).
+    let notDelivered = 0
     const results: any[] = []
     // Contacts already sent a review request in THIS run — so a customer with
     // several due orders doesn't get one review message per order in one pass.
@@ -106,7 +110,10 @@ async function run(req: NextRequest) {
             const cutoff = new Date(Date.now() - 30 * 864e5).toISOString()
             const { data: prior } = await db.from('review_requests')
               .select('id').eq('company_id', rr.company_id).eq('contact_id', rr.contact_id)
-              .eq('status', 'sent').gte('sent_at', cutoff).neq('id', rr.id).limit(1)
+              // 'failed' with a sent_at is a request that was tried and reached
+              // nobody (below). It used to be stored as 'sent', so it still
+              // counts here: who gets asked is unchanged.
+              .in('status', ['sent', 'failed']).gte('sent_at', cutoff).neq('id', rr.id).limit(1)
             if (prior && prior.length) {
               await db.from('review_requests').update({ status: 'skipped', error: 'Review request already sent to this customer recently' }).eq('id', rr.id)
               results.push({ id: rr.id, skipped: 'recent review request' })
@@ -223,6 +230,9 @@ async function run(req: NextRequest) {
         // posted its own default-'chat' card, so one request produced a
         // "Live Chat" card plus a duplicate "SMS" row.
         let smsSent = false
+        // Why the text / the email didn't go, for the request's error when
+        // nothing reached the customer.
+        let smsWhy = !channels.sms ? 'texting is off for review requests' : !contact?.phone ? 'the contact has no phone number' : ''
         if (channels.sms && contact?.phone) {
           try {
             const base = process.env.NEXT_PUBLIC_SITE_URL || 'https://colvy.com'
@@ -231,31 +241,43 @@ async function run(req: NextRequest) {
               body: JSON.stringify({ companyId: rr.company_id, conversationId: rr.conversation_id, to: contact.phone, text, senderName: business, skipChatMessage: true }),
             })
             smsSent = res.ok
-          } catch (e) { console.error('[review request] sms failed', e) }
+            if (!res.ok) {
+              const j = await res.json().catch(() => null) as { error?: string } | null
+              smsWhy = `the text was refused (${String(j?.error || `HTTP ${res.status}`).slice(0, 160)})`
+            }
+          } catch (e) { console.error('[review request] sms failed', e); smsWhy = 'the text could not be sent' }
         }
 
-        // ── One thread card row, stamped with the real delivery channel.
-        if (rr.conversation_id && (channels.chat !== false || smsSent)) {
-          await db.from('messages').insert({
+        // ── One thread card row. Written before the email as it always was,
+        // as 'sms' or 'chat'; how the email went is recorded in its metadata
+        // below once that answer is known.
+        const posted = !!(rr.conversation_id && (channels.chat !== false || smsSent))
+        let cardId: string | null = null
+        if (posted) {
+          const { data: card } = await db.from('messages').insert({
             conversation_id: rr.conversation_id, company_id: rr.company_id,
             sender_type: 'agent', sender_name: business,
             content: text, message_type: 'text', is_read: true,
             metadata: { auto: true, review_request: true },
             delivery_channel: smsSent ? 'sms' : 'chat',
-          })
+          }).select('id').maybeSingle()
+          cardId = card?.id || null
           await db.from('conversations').update({
-            last_message: text.slice(0, 200), last_message_at: new Date().toISOString(), review_requested: true,
+            last_message: text.slice(0, 200), last_message_at: new Date().toISOString(), ...(smsSent ? { review_requested: true } : {}),
           }).eq('id', rr.conversation_id)
         }
 
         // ── Email
+        let emailSent = false
+        let emailWhy = !channels.email ? 'email is off for review requests' : !contact?.email ? 'the contact has no email address'
+          : !process.env.RESEND_API_KEY ? 'email sending is not set up' : ''
         if (channels.email && contact?.email && process.env.RESEND_API_KEY) {
           try {
             const { data: ec } = await db.from('email_channels')
               .select('from_address, from_name, inbound_address').eq('company_id', rr.company_id).limit(1)
             const from = ec?.[0]?.from_address || ec?.[0]?.inbound_address
             if (from) {
-              await fetch('https://api.resend.com/emails', {
+              const er = await fetch('https://api.resend.com/emails', {
                 method: 'POST',
                 headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -265,14 +287,60 @@ async function run(req: NextRequest) {
                   text,
                 }),
               })
-            }
-          } catch (e) { console.error('[review request] email failed', e) }
+              emailSent = er.ok
+              if (!er.ok) emailWhy = `the email was refused (HTTP ${er.status})`
+            } else emailWhy = 'no mailbox is connected to send from'
+          } catch (e) { console.error('[review request] email failed', e); emailWhy = 'the email could not be sent' }
         }
 
-        await db.from('review_requests').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', rr.id)
+        // ── What really reached the customer. With no text and no email, the
+        // thread row only reaches someone who is on the website chat right now
+        // (conversations.page_seen_at, which only the widget writes) or who
+        // reads this thread in the Colvy app.
+        let onChat = false
+        if (cardId && !smsSent && !emailSent) {
+          const { data: cv } = await db.from('conversations').select('channel, page_seen_at').eq('id', rr.conversation_id).maybeSingle()
+          onChat = isLiveOnPage(cv?.page_seen_at) || String(cv?.channel || '').toLowerCase() === 'colvy'
+        }
+        const delivered = smsSent || emailSent || onChat
+        const why = delivered ? null
+          : `Not sent to the customer: ${smsWhy}; ${emailWhy}${cardId ? '; only posted in the thread, and the customer was not on the website chat' : ''}`
+
+        // The thread row says what happened, in its metadata (merged, never
+        // replaced): `sent_via: 'email'` when only the email went, and the
+        // reason when nothing reached them. delivery_channel is left as it was
+        // inserted: the composers (web and app) read the newest
+        // delivery_channel in a thread to choose how the next reply goes out,
+        // so relabelling this row would change where replies are sent.
+        if (cardId && !smsSent && (emailSent || !delivered)) {
+          const { data: row } = await db.from('messages').select('metadata').eq('id', cardId).maybeSingle()
+          if (row) {
+            await db.from('messages').update({
+              metadata: { ...(row.metadata || {}), ...(emailSent
+                ? { sent_via: 'email', review_title: 'Review Request Sent by Email' }
+                : { delivery_failed: true, delivery_error: why, review_title: 'Review Request Not Sent' }) },
+            }).eq('id', cardId)
+          }
+        }
+        if (posted && !smsSent && delivered) {
+          await db.from('conversations').update({ review_requested: true }).eq('id', rr.conversation_id)
+        }
+
+        // A request that reached nobody is 'failed' with the reason, not
+        // 'sent'. It keeps sent_at (when it was tried) and its place in
+        // sentContacts so the one-request-per-customer rules above skip
+        // exactly the requests they skipped before.
+        await db.from('review_requests').update(delivered
+          ? { status: 'sent', sent_at: new Date().toISOString() }
+          : { status: 'failed', error: why, sent_at: new Date().toISOString() }).eq('id', rr.id)
         if (rr.contact_id) sentContacts.add(rr.contact_id)
-        sent++
-        results.push({ id: rr.id, order: rr.order_id, status: 'sent' })
+        if (delivered) {
+          sent++
+          results.push({ id: rr.id, order: rr.order_id, status: 'sent' })
+        } else {
+          notDelivered++
+          results.push({ id: rr.id, order: rr.order_id, status: 'failed', error: why })
+        }
       } catch (e: any) {
         await db.from('review_requests').update({ status: 'failed', error: e.message }).eq('id', rr.id)
         results.push({ id: rr.id, status: 'failed', error: e.message })
@@ -281,7 +349,7 @@ async function run(req: NextRequest) {
 
     // Anyone can nudge this (the admin shell pings it), but the per-request
     // details — ids, sentiment reasons, errors — are only for our own calls.
-    return NextResponse.json(isInternalCall(req) ? { ok: true, sent, results } : { ok: true, sent })
+    return NextResponse.json(isInternalCall(req) ? { ok: true, sent, notDelivered, results } : { ok: true, sent, notDelivered })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }

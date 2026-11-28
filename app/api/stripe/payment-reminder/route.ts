@@ -60,16 +60,27 @@ export async function POST(req: NextRequest) {
     let sent = ''
     try {
       if (channel === 'email' && email) {
-        await fetch(`${base}/api/email/reply`, {
+        const er = await fetch(`${base}/api/email/reply`, {
           method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ conversationId: pay.conversation_id, to: email, subject: conv?.subject || 'Payment reminder', content: text, agentName: senderName }),
         })
+        // Not emailed (no mailbox, the provider refused it): say so — never
+        // report the reminder as sent, or log it in the timeline.
+        if (!er.ok) {
+          const d = await er.json().catch(() => ({}))
+          return NextResponse.json({ error: d?.error || 'The reminder email didn’t send.' }, { status: 502 })
+        }
         sent = 'email'
       } else if (['facebook', 'instagram', 'messenger'].includes(channel)) {
-        await fetch(`${base}/api/meta/send`, {
+        const mr = await fetch(`${base}/api/meta/send`, {
           method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ conversationId: pay.conversation_id, content: text, agentName: senderName }),
         })
+        // Same for Messenger / Instagram (Meta's reply window, a disconnected account).
+        if (!mr.ok) {
+          const d = await mr.json().catch(() => ({}))
+          return NextResponse.json({ error: d?.error || 'The reminder didn’t send.' }, { status: 502 })
+        }
         sent = channel
       } else if (phone) {
         const res = await fetch(`${base}/api/telnyx/sms/send`, {
