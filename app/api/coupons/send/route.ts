@@ -7,6 +7,8 @@ import { internalHeaders } from '@/lib/internal-call'
 import { shopifyCreateDiscountCode, shopifyStoreFor, ShopifyCreateError } from '@/lib/shopify-create'
 import { readStoreJson } from '@/lib/store-response'
 import { audit } from '@/lib/activity-logging'
+import { isMobileNumber } from '@/lib/channel-choice'
+import { readSmsOptIn } from '@/lib/channel-choice-server'
 
 function admin() {
   return createClient(
@@ -112,10 +114,32 @@ export async function POST(req: NextRequest) {
     // column default ('chat') and read "Live Chat" under a coupon that actually
     // went out by SMS. The web inbox sends the channel it's replying on; with
     // `deliver`, it's whichever channel we dispatch on below.
-    const { data: conv } = await db.from('conversations').select('channel, sms_number').eq('id', conversationId).maybeSingle()
+    const { data: conv } = await db.from('conversations').select('channel, sms_number, contact_id').eq('id', conversationId).maybeSingle()
     const convChannel = String(conv?.channel || '').toLowerCase()
-    const deliverVia = convChannel === 'sms' || (!!conv?.sms_number && convChannel !== 'email') ? 'sms'
-      : convChannel === 'email' && email ? 'email' : null
+    // The number a `deliver` text goes to: the conversation's own, else the
+    // linked contact's mobile (as /api/media-requests resolves it). Only the
+    // conversation's number was looked at, so a coupon sent from the app on a
+    // call, chat or Messenger thread without one was made, posted in the thread
+    // and never reached a customer whose mobile was on their contact.
+    // The contact's number is used only when it is a mobile and the opt-in
+    // rule allows it (readSmsOptIn: never a contact who came only from the
+    // website chat form and didn't tick "Continue this conversation by text").
+    // STOP opt-outs and blocked contacts are refused by /api/telnyx/sms/send,
+    // as for the conversation's number. An email thread still goes by email.
+    let smsTo: string | null = conv?.sms_number || null
+    let noTextWhy = 'No mobile on file'
+    if (deliver && !smsTo && convChannel !== 'email') {
+      try {
+        const cid = conv?.contact_id || contactId
+        const c = cid ? (await db.from('contacts').select('*').eq('id', cid).eq('company_id', companyId).maybeSingle()).data : null
+        const phone: string | null = c?.phone || null
+        if (phone && !isMobileNumber(phone)) noTextWhy = 'Their number isn’t a mobile'
+        else if (phone && (await readSmsOptIn(db, { companyId, conversationId, contactId: cid, contact: c, phone })) === false) noTextWhy = 'They didn’t opt in to texts on your website chat'
+        else if (phone) smsTo = phone
+      } catch { noTextWhy = 'Their mobile couldn’t be checked' }
+    }
+    // Text when there's a number to text, else email when there's an address.
+    const deliverVia = smsTo && convChannel !== 'email' ? 'sms' : email ? 'email' : null
     const asked = String(sendChannel || '').toLowerCase()
     const via = asked && asked !== 'widget' ? asked : deliver ? deliverVia : null
 
@@ -159,7 +183,7 @@ export async function POST(req: NextRequest) {
         if (base && deliverVia === 'sms') {
           const res = await fetch(`${base}/api/telnyx/sms/send`, {
             method: 'POST', headers: internalHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ companyId, conversationId, to: conv?.sms_number, text: content, senderName: createdByName || 'Support', skipChatMessage: true }),
+            body: JSON.stringify({ companyId, conversationId, to: smsTo, text: content, senderName: createdByName || 'Support', skipChatMessage: true }),
           })
           if (res.ok) delivered = 'sms'
           else {
@@ -172,6 +196,15 @@ export async function POST(req: NextRequest) {
         } else if (base && deliverVia === 'email') {
           delivered = (await sendEmail()) ? 'email' : false
           if (!delivered) deliveryError = 'The coupon email didn’t send.'
+        } else if (deliverVia) {
+          // A channel was chosen (and the card labelled with it) but nothing
+          // could be sent from here.
+          delivered = false
+          deliveryError = 'The coupon couldn’t be delivered.'
+        } else {
+          // Nothing to send it by. `delivered` stays null (the card is only in
+          // the conversation); the reason goes with it.
+          deliveryError = `${convChannel === 'email' ? 'No email address on file' : `${noTextWhy} and no email address`}, so the coupon was only added to the conversation.`
         }
       } catch (e: any) { delivered = false; deliveryError = e?.message || 'The coupon couldn’t be delivered.' }
       // The card says how it really went.
